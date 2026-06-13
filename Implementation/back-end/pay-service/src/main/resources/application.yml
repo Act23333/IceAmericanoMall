@@ -1,0 +1,22 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: pay-service
+  datasource:
+    url: jdbc:mysql://${ia.db.host:localhost}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: ${hm.db.pw:root123}
+  cloud:
+    nacos:
+      server-addr: ${ia.nacos.host:localhost}:8848
+  data:
+    redis:
+      host: ${ia.redis.host:localhost}
+      port: 6379
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true

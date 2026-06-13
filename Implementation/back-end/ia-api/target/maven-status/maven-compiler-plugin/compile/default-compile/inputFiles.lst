@@ -1,0 +1,9 @@
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/client/SkuClient.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/client/UserClient.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/config/DefaultFeignConfig.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/dto/LoginRespDTO.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/dto/PasswordLoginReqDTO.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/dto/RegisterReqDTO.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/dto/SkuDTO.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/dto/SmsLoginReqDTO.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/fallback/UserClientFallback.java

@@ -1,0 +1,7 @@
+org/icedAmericanoMall/service/LogisticsService.class
+org/icedAmericanoMall/controller/LogisticsController.class
+org/icedAmericanoMall/service/impl/LogisticsServiceImpl.class
+org/icedAmericanoMall/mapper/OrderLogisticsMapper.class
+org/icedAmericanoMall/LogisticsApplication.class
+org/icedAmericanoMall/config/MyMetaObjectHandler.class
+org/icedAmericanoMall/domain/entity/OrderLogisticsEntity.class

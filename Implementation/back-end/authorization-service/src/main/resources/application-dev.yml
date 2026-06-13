@@ -1,0 +1,24 @@
+# Dev profile: all infra on localhost, Nacos discovery disabled for solo dev
+spring:
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+      config:
+        enabled: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+jwt:
+  access-token-ttl: 3600
+  refresh-token-ttl: 604800
+  keystore:
+    password: changeit
+    key-password: changeit
+
+logging:
+  level:
+    org.icedAmericanoMall: DEBUG
+    org.nolazy: DEBUG

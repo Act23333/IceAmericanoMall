@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <annotationProcessing>
+      <profile default="true" name="Default" enabled="true" />
+      <profile name="Maven default annotation processors profile" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+      </profile>
+      <profile name="Annotation profile for ia-common" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+        <processorPath useClasspath="false">
+          <entry name="/mnt/e/maven/myRepository/org/projectlombok/lombok/unknown/lombok-unknown.jar" />
+          <entry name="/mnt/e/maven/myRepository/org/mapstruct/mapstruct-processor/1.5.5.Final/mapstruct-processor-1.5.5.Final.jar" />
+          <entry name="/mnt/e/maven/myRepository/org/mapstruct/mapstruct/1.5.5.Final/mapstruct-1.5.5.Final.jar" />
+        </processorPath>
+        <module name="ia-common" />
+      </profile>
+      <profile name="Annotation profile for search-service" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+        <processorPath useClasspath="false">
+          <entry name="E:/maven/myRepository/org/projectlombok/lombok/unknown/lombok-unknown.jar" />
+          <entry name="E:/maven/myRepository/org/mapstruct/mapstruct-processor/1.5.5.Final/mapstruct-processor-1.5.5.Final.jar" />
+          <entry name="E:/maven/myRepository/org/mapstruct/mapstruct/1.5.5.Final/mapstruct-1.5.5.Final.jar" />
+          <entry name="E:/maven/myRepository/org/projectlombok/lombok/unknown/lombok-unknown.jar" />
+          <entry name="E:/maven/myRepository/org/mapstruct/mapstruct-processor/1.5.5.Final/mapstruct-processor-1.5.5.Final.jar" />
+          <entry name="E:/maven/myRepository/org/mapstruct/mapstruct/1.5.5.Final/mapstruct-1.5.5.Final.jar" />
+        </processorPath>
+        <module name="search-service" />
+      </profile>
+      <profile name="Annotation profile for IcedAmericanoMall" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+        <processorPath useClasspath="false">
+          <entry name="/mnt/e/maven/myRepository/org/projectlombok/lombok/unknown/lombok-unknown.jar" />
+          <entry name="/mnt/e/maven/myRepository/org/mapstruct/mapstruct-processor/1.5.5.Final/mapstruct-processor-1.5.5.Final.jar" />
+          <entry name="/mnt/e/maven/myRepository/org/mapstruct/mapstruct/1.5.5.Final/mapstruct-1.5.5.Final.jar" />
+          <entry name="/mnt/e/maven/myRepository/org/projectlombok/lombok/unknown/lombok-unknown.jar" />
+          <entry name="/mnt/e/maven/myRepository/org/mapstruct/mapstruct-processor/1.5.5.Final/mapstruct-processor-1.5.5.Final.jar" />
+          <entry name="/mnt/e/maven/myRepository/org/mapstruct/mapstruct/1.5.5.Final/mapstruct-1.5.5.Final.jar" />
+        </processorPath>
+        <module name="cart-service" />
+        <module name="gate-service" />
+        <module name="pay-service" />
+        <module name="logistics-service" />
+        <module name="trade-service" />
+        <module name="item-service" />
+        <module name="authorization-service" />
+        <module name="user-service" />
+        <module name="ia-api" />
+      </profile>
+    </annotationProcessing>
+  </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="authorization-service" options="-parameters" />
+      <module name="cart-service" options="-parameters" />
+      <module name="gate-service" options="-parameters" />
+      <module name="ia-api" options="-parameters" />
+      <module name="ia-common" options="-parameters" />
+      <module name="item-service" options="-parameters" />
+      <module name="logistics-service" options="-parameters" />
+      <module name="pay-service" options="-parameters" />
+      <module name="search-service" options="-parameters" />
+      <module name="trade-service" options="-parameters" />
+      <module name="user-service" options="-parameters" />
+    </option>
+  </component>
+</project>
