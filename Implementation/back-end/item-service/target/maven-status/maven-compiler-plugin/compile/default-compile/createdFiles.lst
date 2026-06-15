@@ -1,3 +1,4 @@
+org/icedAmericanoMall/domain/dto/StockOpReq.class
 org/icedAmericanoMall/service/CategoryService.class
 org/icedAmericanoMall/convert/ProductConverter.class
 org/icedAmericanoMall/mapper/CategoryMapper.class

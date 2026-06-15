@@ -3,7 +3,9 @@ package org.icedAmericanoMall.service.impl;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
+import org.icedAmericanoMall.client.OrderClient;
 import org.icedAmericanoMall.domain.entity.PayOrderEntity;
+import org.icedAmericanoMall.dto.OrderSummaryDTO;
 import org.icedAmericanoMall.enums.PayStatusEnum;
 import org.icedAmericanoMall.mapper.PayOrderMapper;
 import org.icedAmericanoMall.service.PayOrderService;
@@ -16,14 +18,22 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Map;
 
+/**
+ * Order status update via Feign after payment:
+ * PENDING_PAYMENT(1) → PENDING_SHIPMENT(2) upon successful payment.
+ */
 @Slf4j
 @Service
 public class PayOrderServiceImpl extends ServiceImpl<PayOrderMapper, PayOrderEntity> implements PayOrderService {
 
-    private final PaymentClient paymentClient;
+    private static final int ORDER_STATUS_PENDING_SHIPMENT = 2;
 
-    public PayOrderServiceImpl(PaymentClient paymentClient) {
+    private final PaymentClient paymentClient;
+    private final OrderClient orderClient;
+
+    public PayOrderServiceImpl(PaymentClient paymentClient, OrderClient orderClient) {
         this.paymentClient = paymentClient;
+        this.orderClient = orderClient;
     }
 
     @Override
@@ -36,12 +46,19 @@ public class PayOrderServiceImpl extends ServiceImpl<PayOrderMapper, PayOrderEnt
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "订单已支付");
         }
 
+        // Fetch actual order amount from trade-service
+        OrderSummaryDTO orderSummary = orderClient.getOrder(orderNo);
+        if (orderSummary == null) {
+            throw new BizException(ErrorCode.USER_NOT_FOUND, "订单不存在: " + orderNo);
+        }
+        int actualAmount = orderSummary.getTotalAmount();
+
         PayOrderEntity payOrder = new PayOrderEntity();
         payOrder.setBizOrderNo(orderNo);
         payOrder.setPayOrderNo(IdUtil.fastSimpleUUID());
         payOrder.setBizUserId(userId);
         payOrder.setPayChannelCode("WECHAT");
-        payOrder.setAmount(1); // Will be set from order total — placeholder
+        payOrder.setAmount(actualAmount);
         payOrder.setPayType(4); // 扫码支付
         payOrder.setStatus(PayStatusEnum.PENDING_PAY.getCode());
         payOrder.setPayOverTime(LocalDateTime.now().plusMinutes(30));
@@ -80,8 +97,14 @@ public class PayOrderServiceImpl extends ServiceImpl<PayOrderMapper, PayOrderEnt
         payOrder.setResultCode(params.get("result_code"));
         updateById(payOrder);
 
-        // In production: update order status to PENDING_SHIPMENT via Feign
-        log.info("支付成功，支付单号: {}, 订单号: {}", payOrderNo, payOrder.getBizOrderNo());
+        // Update order status to PENDING_SHIPMENT via Feign
+        try {
+            orderClient.updateOrderStatus(payOrder.getBizOrderNo(), ORDER_STATUS_PENDING_SHIPMENT);
+            log.info("支付成功，订单状态已更新: payOrderNo={}, orderNo={}", payOrderNo, payOrder.getBizOrderNo());
+        } catch (Exception e) {
+            log.error("支付成功但订单状态更新失败: orderNo={}", payOrder.getBizOrderNo(), e);
+            // Non-fatal: payment is recorded; order status can be reconciled
+        }
     }
 
     @Override

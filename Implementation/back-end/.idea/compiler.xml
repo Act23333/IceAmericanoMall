@@ -8,17 +8,6 @@
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
       </profile>
-      <profile name="Annotation profile for ia-common" enabled="true">
-        <sourceOutputDir name="target/generated-sources/annotations" />
-        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
-        <outputRelativeToContentRoot value="true" />
-        <processorPath useClasspath="false">
-          <entry name="/mnt/e/maven/myRepository/org/projectlombok/lombok/unknown/lombok-unknown.jar" />
-          <entry name="/mnt/e/maven/myRepository/org/mapstruct/mapstruct-processor/1.5.5.Final/mapstruct-processor-1.5.5.Final.jar" />
-          <entry name="/mnt/e/maven/myRepository/org/mapstruct/mapstruct/1.5.5.Final/mapstruct-1.5.5.Final.jar" />
-        </processorPath>
-        <module name="ia-common" />
-      </profile>
       <profile name="Annotation profile for search-service" enabled="true">
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
@@ -41,9 +30,6 @@
           <entry name="/mnt/e/maven/myRepository/org/projectlombok/lombok/unknown/lombok-unknown.jar" />
           <entry name="/mnt/e/maven/myRepository/org/mapstruct/mapstruct-processor/1.5.5.Final/mapstruct-processor-1.5.5.Final.jar" />
           <entry name="/mnt/e/maven/myRepository/org/mapstruct/mapstruct/1.5.5.Final/mapstruct-1.5.5.Final.jar" />
-          <entry name="/mnt/e/maven/myRepository/org/projectlombok/lombok/unknown/lombok-unknown.jar" />
-          <entry name="/mnt/e/maven/myRepository/org/mapstruct/mapstruct-processor/1.5.5.Final/mapstruct-processor-1.5.5.Final.jar" />
-          <entry name="/mnt/e/maven/myRepository/org/mapstruct/mapstruct/1.5.5.Final/mapstruct-1.5.5.Final.jar" />
         </processorPath>
         <module name="cart-service" />
         <module name="gate-service" />
@@ -51,7 +37,7 @@
         <module name="logistics-service" />
         <module name="trade-service" />
         <module name="item-service" />
-        <module name="authorization-service" />
+        <module name="ia-common" />
         <module name="user-service" />
         <module name="ia-api" />
       </profile>

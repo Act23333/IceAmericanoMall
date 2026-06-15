@@ -11,6 +11,12 @@
             <option name="homePath" value="/home/nolazy/.jdks/ms-21.0.11" />
           </config>
         </ContributedStateBase>
+        <ContributedStateBase type="MavenRuntime">
+          <config>
+            <option name="homePath" value="/usr/share/maven" />
+            <option name="versionString" value="3.8.7" />
+          </config>
+        </ContributedStateBase>
       </target>
     </targets>
   </component>

@@ -23,6 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class ProductServiceImpl extends ServiceImpl<ProductMapper, ProductEntity> implements ProductService {
@@ -116,5 +118,20 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, ProductEntity
                 .eq(ProductEntity::getId, productId)
                 .set(ProductEntity::getStatus, status)
                 .update();
+    }
+
+    @Override
+    public Map<Long, Long> getSellerIdMapByProductIds(List<Long> productIds) {
+        if (productIds == null || productIds.isEmpty()) {
+            return Map.of();
+        }
+        return lambdaQuery()
+                .in(ProductEntity::getId, productIds)
+                .list()
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        ProductEntity::getId,
+                        ProductEntity::getSellerId,
+                        (a, b) -> a));
     }
 }

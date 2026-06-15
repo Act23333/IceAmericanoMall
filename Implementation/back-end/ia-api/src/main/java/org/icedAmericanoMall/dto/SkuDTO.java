@@ -11,6 +11,7 @@ public class SkuDTO implements Serializable {
 
     private Long skuId;
     private Long productId;
+    private Long sellerId;
     private String productName;
     private String spec;
     private Integer price;

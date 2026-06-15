@@ -2,7 +2,7 @@ package org.icedAmericanoMall.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
-import org.icedAmericanoMall.enums.OrderStatusEnum;
+import org.icedAmericanoMall.dto.OrderSummaryDTO;
 import org.icedAmericanoMall.service.OrderService;
 import org.springframework.web.bind.annotation.*;
 
@@ -33,10 +33,18 @@ public class InternalOrderController {
     }
 
     /**
-     * Get order summary — called by pay-service to retrieve totalAmount for payment initiation.
+     * Get order summary for payment initiation — returns totalAmount + status.
      */
     @GetMapping("/{orderNo}")
-    public OrderEntity getOrder(@PathVariable String orderNo) {
-        return orderService.getByOrderNo(orderNo);
+    public OrderSummaryDTO getOrder(@PathVariable String orderNo) {
+        OrderEntity order = orderService.getByOrderNo(orderNo);
+        if (order == null) {
+            return null;
+        }
+        OrderSummaryDTO dto = new OrderSummaryDTO();
+        dto.setOrderNo(order.getOrderNo());
+        dto.setTotalAmount(order.getTotalAmount());
+        dto.setStatus(order.getStatus());
+        return dto;
     }
 }

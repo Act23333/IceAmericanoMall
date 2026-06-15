@@ -1,5 +1,6 @@
 package org.icedAmericanoMall.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -15,9 +16,7 @@ import org.noLazy.common.domain.Result;
 import org.noLazy.common.utils.UserContext;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/trade/order")
@@ -32,10 +31,7 @@ public class OrderController {
     @PostMapping
     public Result<OrderVO> create(@Valid @RequestBody CreateOrderReq req) {
         Long userId = UserContext.getUser();
-        // In production: cart items are fetched from cart-service via Feign.
-        // For now, the frontend / internal flow populates cartItemIds that map
-        // to actual cart items enriched by the Manager.
-        OrderVO vo = orderManager.createOrder(userId, req, List.of());
+        OrderVO vo = orderManager.createOrder(userId, req);
         return Result.ok(vo);
     }
 
@@ -47,15 +43,8 @@ public class OrderController {
         }
         OrderVO vo = orderConverter.entityToVO(order);
         List<OrderItemEntity> items = orderItemMapper.selectList(
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<OrderItemEntity>()
-                        .eq(OrderItemEntity::getOrderId, order.getId()))
-                .stream()
-                .map(i -> {
-                    OrderItemEntity e = new OrderItemEntity();
-                    e.setId(i.getId());
-                    return e;
-                }).collect(Collectors.toList());
-        // Populate items from DB
+                new LambdaQueryWrapper<OrderItemEntity>()
+                        .eq(OrderItemEntity::getOrderId, order.getId()));
         vo.setItems(orderConverter.itemEntitiesToVOs(items));
         return Result.ok(vo);
     }

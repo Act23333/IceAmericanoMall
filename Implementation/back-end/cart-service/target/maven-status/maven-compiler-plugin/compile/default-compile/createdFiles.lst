@@ -1,4 +1,5 @@
 org/icedAmericanoMall/dto/request/CartUpdateReq.class
+org/icedAmericanoMall/controller/InternalCartController.class
 org/icedAmericanoMall/service/ICartService.class
 org/icedAmericanoMall/config/MyMetaObjectHandler.class
 org/icedAmericanoMall/convert/CartConverterImpl.class

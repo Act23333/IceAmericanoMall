@@ -7,10 +7,13 @@ import org.icedAmericanoMall.convert.SkuConverter;
 import org.icedAmericanoMall.domain.dto.StockOpReq;
 import org.icedAmericanoMall.domain.entity.SkuEntity;
 import org.icedAmericanoMall.dto.SkuDTO;
+import org.icedAmericanoMall.service.ProductService;
 import org.icedAmericanoMall.service.SkuService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -19,12 +22,26 @@ import java.util.List;
 public class InternalSkuController {
 
     private final SkuService skuService;
+    private final ProductService productService;
     private final SkuConverter skuConverter;
 
     @GetMapping("/list/batch")
     public List<SkuDTO> getSkuListByIds(@RequestParam("ids") List<Long> skuIds) {
         List<SkuEntity> entities = skuService.getSkuListByIds(skuIds);
-        return skuConverter.entitiesToDTOs(entities);
+        List<SkuDTO> dtos = skuConverter.entitiesToDTOs(entities);
+
+        // Enrich with sellerId from associated products
+        List<Long> productIds = entities.stream()
+                .map(SkuEntity::getProductId)
+                .distinct()
+                .toList();
+        Map<Long, Long> productSellerMap = productService.getSellerIdMapByProductIds(productIds);
+
+        for (int i = 0; i < dtos.size(); i++) {
+            SkuEntity entity = entities.get(i);
+            dtos.get(i).setSellerId(productSellerMap.get(entity.getProductId()));
+        }
+        return dtos;
     }
 
     /**
