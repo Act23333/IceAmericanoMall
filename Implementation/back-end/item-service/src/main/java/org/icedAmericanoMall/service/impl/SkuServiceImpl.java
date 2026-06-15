@@ -1,6 +1,7 @@
 package org.icedAmericanoMall.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.domain.entity.SkuEntity;
 import org.icedAmericanoMall.mapper.SkuMapper;
 import org.icedAmericanoMall.service.SkuService;
@@ -11,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+@Slf4j
 @Service
 public class SkuServiceImpl extends ServiceImpl<SkuMapper, SkuEntity> implements SkuService {
 
@@ -48,11 +50,17 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, SkuEntity> implements
     public void restoreStock(Long skuId, int quantity) {
         SkuEntity sku = getById(skuId);
         if (sku == null) {
+            log.warn("SKU不存在，跳过库存恢复: skuId={}", skuId);
             return;
         }
-        lambdaUpdate()
+        boolean updated = lambdaUpdate()
                 .eq(SkuEntity::getId, skuId)
+                .eq(SkuEntity::getVersion, sku.getVersion())
                 .setIncrBy(SkuEntity::getStock, quantity)
                 .update();
+        if (!updated) {
+            log.warn("库存恢复失败（版本冲突），重试中: skuId={}", skuId);
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "库存恢复失败，请重试");
+        }
     }
 }

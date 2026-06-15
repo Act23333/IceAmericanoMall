@@ -31,6 +31,14 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, CartEntity> impleme
     }
 
     @Override
+    public List<CartEntity> getSelectedItems(Long userId) {
+        return lambdaQuery()
+                .eq(CartEntity::getUserId, userId)
+                .eq(CartEntity::getSelected, true)
+                .list();
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void addItem(Long userId, CartAddReq req) {
         // Upsert: if item with same userId+skuId exists, increment quantity
