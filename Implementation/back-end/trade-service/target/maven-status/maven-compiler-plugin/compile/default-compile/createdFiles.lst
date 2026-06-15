@@ -7,6 +7,7 @@ org/icedAmericanoMall/TradeApplication.class
 org/icedAmericanoMall/controller/InternalOrderController.class
 org/icedAmericanoMall/service/impl/OrderServiceImpl.class
 org/icedAmericanoMall/controller/SellerOrderController.class
+org/icedAmericanoMall/controller/SellerDashboardController.class
 org/icedAmericanoMall/domain/dto/ShipOrderReq.class
 org/icedAmericanoMall/domain/entity/OrderLogisticsEntity.class
 org/icedAmericanoMall/domain/dto/CreateOrderReq.class

@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.icedAmericanoMall.convert.ProductConverter;
 import org.icedAmericanoMall.convert.SkuConverter;
 import org.icedAmericanoMall.domain.dto.CreateProductReq;
+import org.icedAmericanoMall.domain.dto.UpdateProductReq;
 import org.icedAmericanoMall.domain.entity.ProductEntity;
 import org.icedAmericanoMall.domain.entity.SkuEntity;
 import org.icedAmericanoMall.domain.vo.ProductVO;
@@ -133,5 +134,25 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, ProductEntity
                         ProductEntity::getId,
                         ProductEntity::getSellerId,
                         (a, b) -> a));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateProduct(Long productId, Long sellerId, UpdateProductReq req) {
+        ProductEntity product = getById(productId);
+        if (product == null) {
+            throw new BizException(ErrorCode.USER_NOT_FOUND, "商品不存在");
+        }
+        if (!product.getSellerId().equals(sellerId)) {
+            throw new BizException(ErrorCode.FORBIDDEN, "无权修改该商品");
+        }
+        lambdaUpdate()
+                .eq(ProductEntity::getId, productId)
+                .set(req.getName() != null, ProductEntity::getName, req.getName())
+                .set(req.getMainImage() != null, ProductEntity::getMainImage, req.getMainImage())
+                .set(req.getDescription() != null, ProductEntity::getDescription, req.getDescription())
+                .set(req.getBrand() != null, ProductEntity::getBrand, req.getBrand())
+                .set(req.getCategoryId() != null, ProductEntity::getCategoryId, req.getCategoryId())
+                .update();
     }
 }

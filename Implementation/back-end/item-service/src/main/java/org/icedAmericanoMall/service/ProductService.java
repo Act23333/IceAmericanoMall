@@ -3,6 +3,7 @@ package org.icedAmericanoMall.service;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.icedAmericanoMall.domain.dto.CreateProductReq;
+import org.icedAmericanoMall.domain.dto.UpdateProductReq;
 import org.icedAmericanoMall.domain.entity.ProductEntity;
 import org.icedAmericanoMall.domain.vo.ProductVO;
 
@@ -23,4 +24,6 @@ public interface ProductService extends IService<ProductEntity> {
      * Get a map of productId → sellerId for batch SKU enrichment (internal Feign use).
      */
     Map<Long, Long> getSellerIdMapByProductIds(List<Long> productIds);
+
+    void updateProduct(Long productId, Long sellerId, UpdateProductReq req);
 }

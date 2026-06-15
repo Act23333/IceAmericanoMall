@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.icedAmericanoMall.domain.dto.CreateProductReq;
 import org.icedAmericanoMall.domain.dto.ProductPageReq;
+import org.icedAmericanoMall.domain.dto.UpdateProductReq;
 import org.icedAmericanoMall.domain.vo.ProductVO;
 import org.icedAmericanoMall.service.ProductService;
 import org.noLazy.common.domain.Result;
@@ -42,6 +43,13 @@ public class ProductController {
     @PutMapping("/{id}/status")
     public Result<Void> updateStatus(@PathVariable Long id, @RequestParam Integer status) {
         productService.updateProductStatus(id, status);
+        return Result.ok();
+    }
+
+    @PutMapping("/{id}")
+    public Result<Void> update(@PathVariable Long id, @RequestBody UpdateProductReq req) {
+        Long sellerId = UserContext.getUser();
+        productService.updateProduct(id, sellerId, req);
         return Result.ok();
     }
 }

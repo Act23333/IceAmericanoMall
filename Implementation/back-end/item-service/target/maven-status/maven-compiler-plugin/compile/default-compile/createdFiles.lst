@@ -18,6 +18,7 @@ org/icedAmericanoMall/convert/CategoryConverterImpl.class
 org/icedAmericanoMall/convert/SkuConverterImpl.class
 org/icedAmericanoMall/domain/dto/ProductPageReq.class
 org/icedAmericanoMall/enums/ProductStatusEnum.class
+org/icedAmericanoMall/domain/dto/UpdateProductReq.class
 org/icedAmericanoMall/controller/ProductController.class
 org/icedAmericanoMall/config/MyMetaObjectHandler.class
 org/icedAmericanoMall/controller/CategoryController.class
