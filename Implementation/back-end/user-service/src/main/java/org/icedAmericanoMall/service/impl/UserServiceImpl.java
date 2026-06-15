@@ -95,7 +95,22 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
 
 
     /**
-     * 用户注册
+     * <pre>
+     * Scenario: 手机号+验证码注册成功
+     *   Given 手机号未被注册
+     *   And 验证码在 Redis 中存在且未过期
+     *   And 人机验证已通过（sendSmsCode时校验）
+     *   When 用户提交注册请求
+     *   Then 创建用户记录，状态为"正常"
+     *   And 密码 BCrypt 加密存储
+     *   And 返回 LoginRespDTO 含用户信息
+     *   And 验证码从 Redis 中删除
+     *
+     * Scenario: 重复手机号注册
+     *   Given 手机号已被注册
+     *   When 用户提交注册请求
+     *   Then 抛出 BizException "手机号已注册"
+     * </pre>
      */
     @Override
     public LoginRespDTO register(RegisterReqDTO request) {
@@ -125,8 +140,26 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
 
 
     /**
-     * 发送短信验证码（含极验人机校验）
-     * 验证码有效期为5分钟，但是如果用户未收到或者被拦截，用户可于一分钟后再次请求发送。旧验证码自动过期不可使用
+     * <pre>
+     * Scenario: 发送短信验证码
+     *   Given 手机号格式正确
+     *   And 极验人机验证通过
+     *   And 60秒内未重复发送
+     *   When 用户请求发送验证码
+     *   Then 生成6位验证码存储到 Redis（5分钟有效）
+     *   And 异步调用短信服务发送
+     *   And 设置60秒发送间隔限制
+     *
+     * Scenario: 人机验证失败拒绝发送
+     *   Given 极验校验未通过
+     *   When 用户请求发送验证码
+     *   Then 抛出 BizException "人机验证失败"
+     *
+     * Scenario: 频率限制
+     *   Given 60秒内已发送过验证码
+     *   When 用户再次请求发送
+     *   Then 抛出 UnauthorizedException "发送操作太频繁"
+     * </pre>
      */
     @Override
     public void sendSmsCode(SmsCodeSendReq smsCodeSendReq) {
@@ -178,10 +211,23 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
     }
 
     /**
-     * 用户根据密码登录
+     * <pre>
+     * Scenario: 密码登录成功
+     *   Given 手机号/用户名已注册，状态正常
+     *   And 密码 BCrypt 校验通过
+     *   When 用户提交正确的密码
+     *   Then 返回 LoginRespDTO 含用户ID、用户名、角色
      *
-     * @param passwordLoginReqDTO
-     * @return
+     * Scenario: 密码错误
+     *   Given 手机号/用户名已注册
+     *   When 用户提交错误的密码
+     *   Then 抛出 BizException "手机号或密码错误"
+     *
+     * Scenario: 账号被禁用
+     *   Given 用户状态为"禁用"
+     *   When 用户尝试登录
+     *   Then 抛出 BizException "账号已被禁用"
+     * </pre>
      */
     @Override
     public LoginRespDTO loginByPassword(PasswordLoginReqDTO passwordLoginReqDTO) {
@@ -223,10 +269,20 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
     }
 
     /**
-     * 用户根据验证码登录
+     * <pre>
+     * Scenario: 验证码登录（老用户）
+     *   Given 手机号已注册且状态正常
+     *   And 验证码校验通过
+     *   When 用户提交验证码登录请求
+     *   Then 直接登录成功，返回 LoginRespDTO
      *
-     * @param smsLoginReqDTO
-     * @return
+     * Scenario: 验证码登录（新用户自动注册）
+     *   Given 手机号未注册
+     *   And 验证码校验通过
+     *   When 用户提交验证码登录请求
+     *   Then 自动创建用户（默认用户名 ice_xxx）
+     *   And 返回 LoginRespDTO
+     * </pre>
      */
     @Override
     public LoginRespDTO loginBySms(SmsLoginReqDTO smsLoginReqDTO) {

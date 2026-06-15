@@ -13,8 +13,23 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Scans for expired pay orders and auto-cancels them, triggering
- * order cancellation and stock restoration on the trade-service side.
+ * 支付超时自动取消定时任务。
+ *
+ * <pre>
+ * Scenario: 支付超过有效期自动取消
+ *   Given PayOrder 状态为"待支付"
+ *   And payOverTime 已过期
+ *   When 定时任务每30秒扫描一次
+ *   Then PayOrder 状态变更为"超时取消"
+ *   And 通过 Feign 将关联的 trade-service Order 状态更新为"已取消"
+ *   And trade-service 侧自动触发库存回滚
+ *
+ * Scenario: 超时取消失败不影响其他支付单
+ *   Given 存在多个超时支付单
+ *   When 其中某个取消失败
+ *   Then 仅记录错误日志
+ *   And 继续处理下一个支付单
+ * </pre>
  */
 @Slf4j
 @Component

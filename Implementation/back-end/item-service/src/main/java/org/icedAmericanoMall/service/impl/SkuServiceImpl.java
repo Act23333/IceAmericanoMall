@@ -24,6 +24,26 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, SkuEntity> implements
         return lambdaQuery().in(SkuEntity::getId, skuIds).list();
     }
 
+    /**
+     * <pre>
+     * Scenario: 扣减库存（乐观锁）
+     *   Given SKU 存在且库存充足
+     *   When 调用 deductStock
+     *   Then 库存减去指定数量
+     *   And 销量增加指定数量
+     *   And 使用 @Version 乐观锁防并发超卖
+     *
+     * Scenario: 库存不足拒绝扣减
+     *   Given SKU 库存为 3
+     *   When 扣减数量为 5
+     *   Then 抛出 BizException "库存不足"
+     *
+     * Scenario: 乐观锁冲突重试
+     *   Given SKU 版本号已变更（被其他事务修改）
+     *   When 扣减时版本号不匹配
+     *   Then 抛出 BizException "库存扣减失败，请重试"
+     * </pre>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deductStock(Long skuId, int quantity) {
@@ -45,6 +65,20 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, SkuEntity> implements
         }
     }
 
+    /**
+     * <pre>
+     * Scenario: 恢复库存（乐观锁）
+     *   Given SKU 存在
+     *   When 订单取消或超时触发库存恢复
+     *   Then 库存增加指定数量
+     *   And 使用 @Version 乐观锁防并发冲突
+     *
+     * Scenario: SKU不存在时跳过
+     *   Given SKU 已被删除
+     *   When 尝试恢复库存
+     *   Then 记录 warn 日志并跳过
+     * </pre>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void restoreStock(Long skuId, int quantity) {

@@ -18,8 +18,22 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Scans for unpaid orders older than 30 minutes and auto-cancels them,
- * including stock restoration via Feign to item-service.
+ * 超时未支付订单自动取消定时任务。
+ *
+ * <pre>
+ * Scenario: 30分钟未支付自动取消
+ *   Given 订单状态为"待付款"
+ *   And 订单创建时间超过30分钟
+ *   When 定时任务每分钟扫描一次
+ *   Then 订单状态变更为"已取消"
+ *   And 回滚已扣减的 SKU 库存
+ *
+ * Scenario: 单个订单取消失败不影响其他
+ *   Given 存在多个超时订单
+ *   When 其中某个订单取消或库存恢复失败
+ *   Then 仅记录错误日志
+ *   And 继续处理下一个订单
+ * </pre>
  */
 @Slf4j
 @Component

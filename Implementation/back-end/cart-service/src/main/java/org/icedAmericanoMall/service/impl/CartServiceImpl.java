@@ -23,6 +23,15 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, CartEntity> impleme
         this.cartConverter = cartConverter;
     }
 
+    /**
+     * <pre>
+     * Scenario: 查看购物车
+     *   Given 用户已登录
+     *   When GET /api/cart
+     *   Then 返回购物车列表（含商品名/规格/单价/数量/选中状态/小计）
+     *   And 计算总价和选中商品总价
+     * </pre>
+     */
     @Override
     public CartVO getCart(Long userId) {
         List<CartEntity> items = lambdaQuery().eq(CartEntity::getUserId, userId).list();
@@ -38,10 +47,20 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, CartEntity> impleme
                 .list();
     }
 
+    /**
+     * <pre>
+     * Scenario: 添加商品到购物车（去重合并）
+     *   Given 用户已登录
+     *   When POST /api/cart/item with {skuId, quantity}
+     *   Then 若购物车中不存在同一 SKU，则新增记录
+     *   And 若已存在同一 SKU，则累加数量（防重复）
+     *   And 默认设置为选中状态
+     * </pre>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void addItem(Long userId, CartAddReq req) {
-        // Upsert: if item with same userId+skuId exists, increment quantity
+        // (user_id, sku_id) 唯一约束 —— 相同SKU累加数量，不创建重复行
         CartEntity existing = lambdaQuery()
                 .eq(CartEntity::getUserId, userId)
                 .eq(CartEntity::getSkuId, req.getSkuId())
@@ -61,6 +80,19 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, CartEntity> impleme
         save(cartEntity);
     }
 
+    /**
+     * <pre>
+     * Scenario: 修改购物车商品数量
+     *   Given 购物车中存在该 SKU
+     *   When PUT /api/cart/item with {skuId, quantity}
+     *   Then 更新该购物车项的数量
+     *
+     * Scenario: 数量设为0则删除
+     *   Given 购物车中存在该 SKU
+     *   When 数量 ≤ 0
+     *   Then 该购物车项被删除
+     * </pre>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateItem(Long userId, CartUpdateReq req) {

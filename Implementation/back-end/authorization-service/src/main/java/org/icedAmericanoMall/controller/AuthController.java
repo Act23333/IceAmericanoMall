@@ -52,12 +52,33 @@ public class AuthController {
     private Long refreshTokenTtl;
 
     /**
-     * 用户登录接口方法
-     * @return 用户登录信息
-     * 为什么要将密码登录和手机号登录放到一个方法中，而不是分开两个接口，根据前端应对用户行为进行调用呢
-     *  增加了前端的复杂度，前端需要根据用户的行为选择请求对应的接口
-     *  因为前端需要绑定后端的方法，所以扩展性下降，如果使用一个登录方法，前端不需要知道具体逻辑，后端修改，前端不用修改，扩展性增加
-     *  且后端的复杂度增加了，应为需要单独给每个接口增加限流和安全防控
+     * 统一登录入口 —— 根据 loginType 区分密码登录 / 验证码登录。
+     *
+     * <pre>
+     * Scenario: 密码登录成功 → JWT 签发
+     *   Given 手机号/用户名已注册且状态正常
+     *   When POST /api/auth/login with {username/phone, password, loginType=PASSWORD}
+     *   Then 通过 Feign 调用 user-service 校验密码
+     *   And 生成 JWT accessToken（含 userId, username, role）
+     *   And 生成 refreshToken 存入 Redis
+     *   And 返回 accessToken + refreshToken
+     *
+     * Scenario: 验证码登录成功 → JWT 签发
+     *   Given 手机号已注册（或首次登录自动注册）
+     *   When POST /api/auth/login with {phone, code, loginType=SMS}
+     *   Then 通过 Feign 调用 user-service 校验验证码
+     *   And 返回 JWT Token
+     *
+     * Scenario: 登录失败次数过多 → 锁定1分钟
+     *   Given 同一账号1分钟内登录失败5次
+     *   When 第6次尝试登录
+     *   Then 返回 "登录失败次数过多，请1分钟后再试"
+     *
+     * Scenario: 登录成功清除失败计数
+     *   Given 之前有登录失败记录
+     *   When 本次登录成功
+     *   Then 清除 Redis 中的失败计数
+     * </pre>
      */
     @PostMapping("/login")
     public Result<OAuth2TokenResp> login(@Validated @RequestBody LoginReq request) {
@@ -124,6 +145,16 @@ public class AuthController {
         }
     }
 
+    /**
+     * <pre>
+     * Scenario: 注册成功 → 直接返回 Token
+     *   Given 手机号未注册
+     *   And 验证码有效
+     *   When POST /api/auth/register
+     *   Then 通过 Feign 调用 user-service 完成注册
+     *   And 返回 JWT accessToken + refreshToken
+     * </pre>
+     */
     @PostMapping("/register")
     public Result<OAuth2TokenResp> register(@Validated @RequestBody RegisterReq request) {
         RegisterReqDTO registerReqDTO = BeanUtils.copyBean(request, RegisterReqDTO.class);
@@ -160,6 +191,15 @@ public class AuthController {
         return response;
     }
 
+    /**
+     * <pre>
+     * Scenario: Token 刷新（令牌轮换）
+     *   Given 持有有效的 refreshToken（Redis 中存在）
+     *   When POST /api/auth/refresh?refresh_token=xxx
+     *   Then 返回新的 accessToken 和 refreshToken
+     *   And 旧的 refreshToken 被轮换（rotate）
+     * </pre>
+     */
     @PostMapping("/refresh")
     public Result<OAuth2TokenResp> refresh(@RequestParam("refresh_token") String refreshToken) {
         //第一次刷新refreshToken
@@ -181,6 +221,15 @@ public class AuthController {
         );
     }
 
+    /**
+     * <pre>
+     * Scenario: 退出登录使 RefreshToken 失效
+     *   Given 持有有效的 refreshToken
+     *   When POST /api/auth/logout?refresh_token=xxx
+     *   Then refreshToken 从 Redis 中删除（吊销）
+     *   And 后续使用该 refreshToken 无法刷新
+     * </pre>
+     */
     @PostMapping("/logout")
     public Result<Void> logout(@RequestParam("refresh_token") String refreshToken) {
         refreshTokenUtils.revokeRefreshToken(refreshToken);

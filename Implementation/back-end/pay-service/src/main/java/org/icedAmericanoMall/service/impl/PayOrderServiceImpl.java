@@ -19,8 +19,31 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
- * Order status update via Feign after payment:
- * PENDING_PAYMENT(1) → PENDING_SHIPMENT(2) upon successful payment.
+ * 支付订单服务 —— 对接微信支付渠道，处理支付发起、回调、状态查询。
+ *
+ * <pre>
+ * Scenario: 微信支付发起
+ *   Given 订单状态为"待付款"
+ *   And 订单存在于 trade-service
+ *   When 用户请求发起支付
+ *   Then 通过 Feign 从 trade-service 获取订单实际金额
+ *   And 创建 PayOrder 记录，状态"待支付"
+ *   And 调用 PaymentClient 获取支付二维码链接
+ *   And 设置支付超时时间为30分钟后
+ *
+ * Scenario: 支付成功回调（幂等）
+ *   Given 微信支付回调通知签名校验通过
+ *   And PayOrder 状态为"待支付"
+ *   When 支付平台回调 /api/pay/callback/wechat
+ *   Then PayOrder 状态变更为"已支付"
+ *   And 记录支付成功时间
+ *   And 通过 Feign 将关联 Order 状态更新为"待发货"
+ *
+ * Scenario: 重复回调幂等保护
+ *   Given PayOrder 状态已是"已支付"
+ *   When 再次收到支付回调
+ *   Then 直接返回，不做任何变更
+ * </pre>
  */
 @Slf4j
 @Service

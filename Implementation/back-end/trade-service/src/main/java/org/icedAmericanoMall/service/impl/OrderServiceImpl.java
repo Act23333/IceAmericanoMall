@@ -41,6 +41,15 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
         this.skuClient = skuClient;
     }
 
+    /**
+     * <pre>
+     * Scenario: 原子创建订单及订单项
+     *   Given 订单实体和订单项列表已由 OrderManager 组装完毕
+     *   When 调用 createOrderWithItems
+     *   Then 在同一事务中保存订单和所有订单项
+     *   And 订单项关联订单ID
+     * </pre>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void createOrderWithItems(OrderEntity order, List<OrderItemEntity> items) {
@@ -77,6 +86,27 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
         return page(new Page<>(page, size), wrapper);
     }
 
+    /**
+     * <pre>
+     * Scenario: 用户取消待付款订单
+     *   Given 订单状态为"待付款"
+     *   And 当前用户是订单所属人
+     *   When 用户请求取消订单
+     *   Then 订单状态变更为"已取消"
+     *   And 记录关闭时间
+     *   And 回滚已扣减的 SKU 库存
+     *
+     * Scenario: 非待付款状态拒绝取消
+     *   Given 订单状态不是"待付款"
+     *   When 用户请求取消订单
+     *   Then 抛出 BizException "仅待付款订单可取消"
+     *
+     * Scenario: 非订单所属人无权操作
+     *   Given 订单属于用户A
+     *   When 用户B请求取消订单
+     *   Then 抛出 ForbiddenException "无权操作该订单"
+     * </pre>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void cancelOrder(String orderNo, Long userId) {
@@ -96,32 +126,20 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
                 .set(OrderEntity::getCloseTime, LocalDateTime.now())
                 .update();
 
-        // Restore stock via Feign to item-service
+        // 释放被锁定的库存
         restoreOrderStock(order.getId());
     }
 
-    private void restoreOrderStock(Long orderId) {
-        List<OrderItemEntity> items = orderItemMapper.selectList(
-                new LambdaQueryWrapper<OrderItemEntity>()
-                        .eq(OrderItemEntity::getOrderId, orderId));
-        if (items.isEmpty()) {
-            return;
-        }
-        List<StockOpDTO> stockOps = items.stream().map(item -> {
-            StockOpDTO op = new StockOpDTO();
-            op.setSkuId(item.getSkuId());
-            op.setQuantity(item.getQuantity());
-            return op;
-        }).collect(Collectors.toList());
-
-        try {
-            skuClient.restoreStock(stockOps);
-            log.info("订单取消，库存已恢复: orderId={}", orderId);
-        } catch (Exception e) {
-            log.error("库存恢复失败，需人工处理: orderId={}", orderId, e);
-        }
-    }
-
+    /**
+     * <pre>
+     * Scenario: 用户确认收货
+     *   Given 订单状态为"待收货"
+     *   And 当前用户是订单所属人
+     *   When 用户点击确认收货
+     *   Then 订单状态变更为"已完成"
+     *   And 记录完成时间
+     * </pre>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void confirmReceipt(String orderNo, Long userId) {
@@ -142,6 +160,16 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
                 .update();
     }
 
+    /**
+     * <pre>
+     * Scenario: 商家发货
+     *   Given 订单状态为"待发货"
+     *   And 当前商家是订单所属商家
+     *   When 商家填写物流单号和物流公司并提交发货
+     *   Then 订单状态变更为"待收货"
+     *   And 创建物流记录（物流单号、物流公司、收件人、联系电话）
+     * </pre>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void shipOrder(String orderNo, Long sellerId, String logisticsNumber, String logisticsCompany) {
@@ -168,5 +196,31 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
         logistics.setContact(order.getReceiverName());
         logistics.setMobile(order.getReceiverPhone());
         orderLogisticsMapper.insert(logistics);
+    }
+
+    /**
+     * 恢复订单关联的SKU库存 —— 用户取消 / 超时取消共用。
+     * 通过 Feign 调用 item-service 的 restoreStock 接口批量恢复。
+     */
+    private void restoreOrderStock(Long orderId) {
+        List<OrderItemEntity> items = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItemEntity>()
+                        .eq(OrderItemEntity::getOrderId, orderId));
+        if (items.isEmpty()) {
+            return;
+        }
+        List<StockOpDTO> stockOps = items.stream().map(item -> {
+            StockOpDTO op = new StockOpDTO();
+            op.setSkuId(item.getSkuId());
+            op.setQuantity(item.getQuantity());
+            return op;
+        }).collect(Collectors.toList());
+
+        try {
+            skuClient.restoreStock(stockOps);
+            log.info("订单取消，库存已恢复: orderId={}", orderId);
+        } catch (Exception e) {
+            log.error("库存恢复失败，需人工处理: orderId={}", orderId, e);
+        }
     }
 }
