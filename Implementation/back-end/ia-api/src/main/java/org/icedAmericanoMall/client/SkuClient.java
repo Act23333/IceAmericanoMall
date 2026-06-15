@@ -1,9 +1,11 @@
 package org.icedAmericanoMall.client;
 
-import org.noLazy.common.domain.Result;
 import org.icedAmericanoMall.dto.SkuDTO;
+import org.icedAmericanoMall.dto.StockOpDTO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
@@ -13,4 +15,16 @@ public interface SkuClient {
 
     @GetMapping("/list/batch")
     List<SkuDTO> getSkuListByIds(@RequestParam("ids") List<Long> skuIds);
+
+    /**
+     * Batch deduct stock — used during order creation.
+     */
+    @PostMapping("/deduct")
+    void deductStock(@RequestBody List<StockOpDTO> items);
+
+    /**
+     * Batch restore stock — used on order cancellation / timeout.
+     */
+    @PostMapping("/restore")
+    void restoreStock(@RequestBody List<StockOpDTO> items);
 }
