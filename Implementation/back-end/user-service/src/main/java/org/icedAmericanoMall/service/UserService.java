@@ -22,4 +22,6 @@ public interface UserService extends IService<UserEntity> {
     LoginRespDTO loginBySms(SmsLoginReqDTO smsLoginDTO);
 
     UserInfoResp getByUserId(Long userId);
+
+    void updateProfile(Long userId, String avatar);
 }

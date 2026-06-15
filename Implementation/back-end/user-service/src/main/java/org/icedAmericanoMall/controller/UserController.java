@@ -2,6 +2,7 @@ package org.icedAmericanoMall.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.icedAmericanoMall.domain.dto.UpdateProfileReq;
 import org.icedAmericanoMall.service.UserService;
 import org.icedAmericanoMall.domain.dto.SmsCodeSendReq;
 import org.icedAmericanoMall.domain.vo.UserInfoResp;
@@ -52,10 +53,15 @@ public class UserController {
 
     @GetMapping("/info")
     public Result<UserInfoResp> getUserInfo() {
-        //获取用户ID
         Long userId = UserContext.getUser();
-        //根据用户ID查询可视化的信息
         UserInfoResp userInfoResp = userService.getByUserId(userId);
         return Result.ok(userInfoResp);
+    }
+
+    @PutMapping("/profile")
+    public Result<Void> updateProfile(@RequestBody UpdateProfileReq req) {
+        Long userId = UserContext.getUser();
+        userService.updateProfile(userId, req.getAvatar());
+        return Result.ok();
     }
 }

@@ -51,4 +51,16 @@ public class AdminUserController {
         sellerService.updateStatus(id, 1); // 正常
         return Result.ok();
     }
+
+    @PutMapping("/user/{id}/role")
+    public Result<Void> setUserRole(@PathVariable Long id, @RequestParam Integer roleType) {
+        if (roleType < 0 || roleType > 2) {
+            return Result.error(400, "无效的角色类型: 0=USER, 1=SELLER, 2=ADMIN");
+        }
+        userService.lambdaUpdate()
+                .eq(org.icedAmericanoMall.domain.entity.UserEntity::getId, id)
+                .set(org.icedAmericanoMall.domain.entity.UserEntity::getRoleType, roleType)
+                .update();
+        return Result.ok();
+    }
 }

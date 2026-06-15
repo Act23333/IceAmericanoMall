@@ -119,7 +119,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         redisTemplate.delete(SMS_CODE_PREFIX + phone);
         log.info("用户注册成功，手机号：{}，用户名：{}", phone, username);
         LoginRespDTO resp = BeanUtils.copyBean(userEntity, LoginRespDTO.class);
-        resp.setRole("ROLE_USER");
+        resp.setRole(mapRole(userEntity.getRoleType()));
         return resp;
     }
 
@@ -216,7 +216,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         //防止用户状态实时变更（比如刚获取验证码就被管理员禁用）
         if (userEntity.getStatus() == UserStatusEnum.NORMAL) {
             LoginRespDTO resp = BeanUtils.copyBean(userEntity, LoginRespDTO.class);
-            resp.setRole("ROLE_USER");
+            resp.setRole(mapRole(userEntity.getRoleType()));
             return resp;
         }
         throw new BizException(ErrorCode.USER_STATUS_ABNORMAL);
@@ -251,7 +251,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
             }
             // 状态正常，直接返回登录信息
             LoginRespDTO resp = BeanUtils.copyBean(userEntity, LoginRespDTO.class);
-            resp.setRole("ROLE_USER");
+            resp.setRole(mapRole(userEntity.getRoleType()));
             return resp;
         }
         //如果不存在，这说明用户第一次登录，使用默认值并注册
@@ -259,7 +259,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         user.setPhone(phone);
         registerUser(user);
         LoginRespDTO resp = BeanUtils.copyBean(user, LoginRespDTO.class);
-        resp.setRole("ROLE_USER");
+        resp.setRole(mapRole(userEntity.getRoleType()));
         return resp;
     }
 
@@ -273,6 +273,27 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
             throw new BizException(ErrorCode.USER_STATUS_ABNORMAL);
         }
         return UserConverter.INSTANCE.map(userEntity);
+    }
+
+    @Override
+    public void updateProfile(Long userId, String avatar) {
+        UserEntity user = lambdaQuery().eq(UserEntity::getId, userId).one();
+        if (user == null) {
+            throw new BizException(ErrorCode.USER_NOT_FOUND);
+        }
+        lambdaUpdate()
+                .eq(UserEntity::getId, userId)
+                .set(UserEntity::getAvatar, avatar)
+                .update();
+    }
+
+    private String mapRole(Integer roleType) {
+        if (roleType == null) return "ROLE_USER";
+        return switch (roleType) {
+            case 1 -> "ROLE_SELLER";
+            case 2 -> "ROLE_ADMIN";
+            default -> "ROLE_USER";
+        };
     }
 
     // ==================== 私有辅助方法 ====================

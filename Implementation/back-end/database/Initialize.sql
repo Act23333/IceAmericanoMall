@@ -36,6 +36,7 @@ CREATE TABLE `user` (
                         `register_time` DATETIME NOT NULL COMMENT '注册时间（业务时间）',
                         `status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：1-正常，0-禁用',
                         `balance` INT NOT NULL DEFAULT 0 COMMENT '余额（单位：分）',
+                        `role_type` TINYINT NOT NULL DEFAULT 0 COMMENT '角色：0-普通用户，1-商家，2-管理员',
                         `create_time` DATETIME NOT NULL COMMENT '记录创建时间',
                         `update_time` DATETIME NOT NULL COMMENT '最后更新时间',
                         PRIMARY KEY (`id`),

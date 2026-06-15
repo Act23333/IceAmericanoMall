@@ -39,6 +39,9 @@ public class UserEntity {
 
     private Integer balance;             // 余额（单位：分）
 
+    /** 0=ROLE_USER, 1=ROLE_SELLER, 2=ROLE_ADMIN */
+    private Integer roleType;            // 角色类型
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;    // 记录创建时间（自动填充）
 

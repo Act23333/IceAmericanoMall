@@ -3,9 +3,11 @@ org/icedAmericanoMall/group/CreateGroup.class
 org/icedAmericanoMall/domain/entity/UserEntity.class
 org/icedAmericanoMall/controller/AddressController.class
 org/icedAmericanoMall/domain/entity/AddressEntity.class
+org/icedAmericanoMall/controller/SignController.class
 org/icedAmericanoMall/constants/RedisKeyConstants.class
 org/icedAmericanoMall/mapper/AddressMapper.class
 org/icedAmericanoMall/service/UserService.class
+org/icedAmericanoMall/domain/dto/UpdateProfileReq.class
 org/icedAmericanoMall/domain/vo/UserInfoResp.class
 org/icedAmericanoMall/service/impl/UserServiceImpl.class
 org/icedAmericanoMall/config/ResourceServerConfig.class

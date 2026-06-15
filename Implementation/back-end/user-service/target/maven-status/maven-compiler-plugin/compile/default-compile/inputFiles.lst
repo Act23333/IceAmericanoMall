@@ -9,12 +9,14 @@
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/controller/AddressController.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/controller/AdminUserController.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/controller/InternalUserController.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/controller/SignController.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/controller/UserController.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/convert/AddressConverter.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/convert/UserConverter.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/domain/dto/AddressReq.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/domain/dto/RegisterDTO.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/domain/dto/SmsCodeSendReq.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/domain/dto/UpdateProfileReq.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/domain/entity/AddressEntity.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/domain/entity/SellerEntity.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/user-service/src/main/java/org/icedAmericanoMall/domain/entity/UserEntity.java
