@@ -1,11 +1,15 @@
 package org.icedAmericanoMall.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
+import org.icedAmericanoMall.client.SkuClient;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
 import org.icedAmericanoMall.domain.entity.OrderItemEntity;
 import org.icedAmericanoMall.domain.entity.OrderLogisticsEntity;
+import org.icedAmericanoMall.dto.StockOpDTO;
 import org.icedAmericanoMall.enums.OrderStatusEnum;
 import org.icedAmericanoMall.mapper.OrderItemMapper;
 import org.icedAmericanoMall.mapper.OrderLogisticsMapper;
@@ -19,16 +23,22 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> implements OrderService {
 
     private final OrderItemMapper orderItemMapper;
     private final OrderLogisticsMapper orderLogisticsMapper;
+    private final SkuClient skuClient;
 
-    public OrderServiceImpl(OrderItemMapper orderItemMapper, OrderLogisticsMapper orderLogisticsMapper) {
+    public OrderServiceImpl(OrderItemMapper orderItemMapper,
+                            OrderLogisticsMapper orderLogisticsMapper,
+                            SkuClient skuClient) {
         this.orderItemMapper = orderItemMapper;
         this.orderLogisticsMapper = orderLogisticsMapper;
+        this.skuClient = skuClient;
     }
 
     @Override
@@ -85,7 +95,31 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
                 .set(OrderEntity::getStatus, OrderStatusEnum.CANCELLED.getCode())
                 .set(OrderEntity::getCloseTime, LocalDateTime.now())
                 .update();
-        // In production: restore stock via Feign to item-service
+
+        // Restore stock via Feign to item-service
+        restoreOrderStock(order.getId());
+    }
+
+    private void restoreOrderStock(Long orderId) {
+        List<OrderItemEntity> items = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItemEntity>()
+                        .eq(OrderItemEntity::getOrderId, orderId));
+        if (items.isEmpty()) {
+            return;
+        }
+        List<StockOpDTO> stockOps = items.stream().map(item -> {
+            StockOpDTO op = new StockOpDTO();
+            op.setSkuId(item.getSkuId());
+            op.setQuantity(item.getQuantity());
+            return op;
+        }).collect(Collectors.toList());
+
+        try {
+            skuClient.restoreStock(stockOps);
+            log.info("订单取消，库存已恢复: orderId={}", orderId);
+        } catch (Exception e) {
+            log.error("库存恢复失败，需人工处理: orderId={}", orderId, e);
+        }
     }
 
     @Override
