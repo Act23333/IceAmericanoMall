@@ -14,6 +14,16 @@ spring:
       host: localhost
       port: 6379
 
+# ==================== 微信支付（开发环境使用 Mock 桩代码） ====================
+# 设置 merchant-id 为有效值即可激活真实微信支付
+wechat:
+  pay:
+    merchant-id:  # 留空 = 自动使用 MockWechatPaymentClient
+    private-key-path: ""
+    merchant-serial-number: ""
+    api-v3-key: ""
+    notify-url: ""
+
 logging:
   level:
     org.icedAmericanoMall: DEBUG

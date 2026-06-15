@@ -20,3 +20,12 @@ spring:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+
+# ==================== 微信支付配置（生产环境通过环境变量注入） ====================
+wechat:
+  pay:
+    merchant-id: ${WECHAT_PAY_MERCHANT_ID:}
+    private-key-path: ${WECHAT_PAY_PRIVATE_KEY_PATH:/etc/wechat/apiclient_key.pem}
+    merchant-serial-number: ${WECHAT_PAY_MERCHANT_SERIAL:}
+    api-v3-key: ${WECHAT_PAY_API_V3_KEY:}
+    notify-url: ${WECHAT_PAY_NOTIFY_URL:https://your-domain.com/api/pay/callback/wechat}

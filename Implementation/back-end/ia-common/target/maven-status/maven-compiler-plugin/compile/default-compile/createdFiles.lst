@@ -5,6 +5,7 @@ org/noLazy/common/client/sms/impl/AliyunSmsClient.class
 org/noLazy/common/config/WebConfig.class
 org/noLazy/common/dto/Geetest4ValidateResponse.class
 org/noLazy/common/exception/BizException.class
+org/noLazy/common/config/WechatPayProperties.class
 org/noLazy/common/domain/PageQuery.class
 org/noLazy/common/config/MybatisConfig.class
 org/noLazy/common/utils/CollUtils.class
@@ -17,6 +18,7 @@ org/noLazy/common/aspect/GlobalExceptionHandler.class
 org/noLazy/common/convert/Convert.class
 org/noLazy/common/utils/BeanUtils.class
 org/noLazy/common/utils/RateLimitUtils.class
+org/noLazy/common/client/payment/impl/WechatPaymentClient$MockWechatPaymentClient.class
 org/noLazy/common/utils/IpUtil.class
 org/noLazy/common/exception/BadRequestException.class
 org/noLazy/common/utils/SmsCodeGenerator.class

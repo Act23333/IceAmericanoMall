@@ -14,6 +14,7 @@
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-common/src/main/java/org/noLazy/common/config/MybatisConfig.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-common/src/main/java/org/noLazy/common/config/RedisLuaScriptConfig.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-common/src/main/java/org/noLazy/common/config/WebConfig.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-common/src/main/java/org/noLazy/common/config/WechatPayProperties.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-common/src/main/java/org/noLazy/common/convert/Convert.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-common/src/main/java/org/noLazy/common/convert/IMapper.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-common/src/main/java/org/noLazy/common/domain/PageDTO.java
