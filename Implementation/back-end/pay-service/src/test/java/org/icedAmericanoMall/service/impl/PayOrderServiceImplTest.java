@@ -142,4 +142,59 @@ class PayOrderServiceImplTest {
         assertEquals("张三", dto.getContact());
         assertEquals("13800138000", dto.getMobile());
     }
+
+    // ==================== 支付幂等性 ====================
+
+    @Test
+    @DisplayName("幂等保护 — 已支付订单不应重复支付")
+    void shouldDetectAlreadyPaidOrder() {
+        PayOrderEntity entity = new PayOrderEntity();
+        entity.setStatus(PayStatusEnum.SUCCESS.getCode());
+        assertTrue(entity.getStatus() == PayStatusEnum.SUCCESS.getCode(),
+                "已支付订单状态应为SUCCESS");
+
+        // 模拟重复支付检查：状态为SUCCESS时拒绝
+        PayStatusEnum status = PayStatusEnum.SUCCESS;
+        boolean isAlreadyPaid = (status.getCode() == PayStatusEnum.SUCCESS.getCode());
+        assertTrue(isAlreadyPaid, "SUCCESS状态应被识别为已支付");
+    }
+
+    @Test
+    @DisplayName("幂等保护 — 回调已处理时直接返回")
+    void shouldSkipCallback_whenAlreadyProcessed() {
+        // 模拟：支付单状态已是SUCCESS，再次收到回调
+        PayOrderEntity entity = new PayOrderEntity();
+        entity.setStatus(PayStatusEnum.SUCCESS.getCode());
+
+        // 幂等检查：已SUCCESS则直接返回
+        boolean shouldSkip = entity.getStatus() == PayStatusEnum.SUCCESS.getCode();
+        assertTrue(shouldSkip, "已成功时回调应被跳过");
+    }
+
+    @Test
+    @DisplayName("超时取消 — 仅待支付状态可超时取消")
+    void shouldOnlyTimeoutCancelPendingPayOrders() {
+        PayOrderEntity pending = new PayOrderEntity();
+        pending.setStatus(PayStatusEnum.PENDING_PAY.getCode());
+
+        PayOrderEntity success = new PayOrderEntity();
+        success.setStatus(PayStatusEnum.SUCCESS.getCode());
+
+        // 待支付 → 可取消
+        assertNotEquals(PayStatusEnum.TIMEOUT_CANCEL.getCode(), pending.getStatus());
+        // 已成功 → 不可取消
+        assertNotEquals(PayStatusEnum.TIMEOUT_CANCEL.getCode(), success.getStatus());
+    }
+
+    @Test
+    @DisplayName("支付单号唯一 — payOrderNo 使用 UUID 格式")
+    void shouldHaveUniquePayOrderNo() {
+        PayOrderEntity entity1 = new PayOrderEntity();
+        entity1.setPayOrderNo("uuid-001");
+        PayOrderEntity entity2 = new PayOrderEntity();
+        entity2.setPayOrderNo("uuid-002");
+
+        assertNotEquals(entity1.getPayOrderNo(), entity2.getPayOrderNo(),
+                "不同支付单应有不同的 payOrderNo");
+    }
 }

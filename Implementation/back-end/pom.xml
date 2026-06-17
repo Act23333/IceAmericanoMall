@@ -25,6 +25,7 @@
         <module>trade-service</module>
         <module>item-service</module>
         <module>logistics-service</module>
+        <module>search-service</module>
     </modules>
 
     <!--实现 Maven 的配置继承-->

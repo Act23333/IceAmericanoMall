@@ -1,25 +1,59 @@
 package org.icedAmericanoMall.service.impl;
 
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.icedAmericanoMall.client.LogisticsClient;
+import org.icedAmericanoMall.client.SkuClient;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
 import org.icedAmericanoMall.domain.entity.OrderItemEntity;
 import org.icedAmericanoMall.domain.entity.OrderLogisticsEntity;
 import org.icedAmericanoMall.enums.OrderStatusEnum;
+import org.icedAmericanoMall.mapper.OrderItemMapper;
+import org.icedAmericanoMall.mapper.OrderMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for OrderServiceImpl — entity, enum, and business rule validation.
+ * Unit tests for OrderServiceImpl — entity, enum, business rule validation
+ * and mock-based service method tests.
  *
  * Note: Methods using MyBatis-Plus lambdaQuery()/lambdaUpdate() chains
  * (cancelOrder, confirmReceipt, shipOrder, pageAllOrders) require
  * {@code @SpringBootTest} integration tests with Testcontainers or H2.
  */
+@ExtendWith(MockitoExtension.class)
 @DisplayName("OrderServiceImpl 单元测试")
 class OrderServiceImplTest {
+
+    @Mock
+    private OrderMapper mockOrderMapper;
+    @Mock
+    private OrderItemMapper mockOrderItemMapper;
+    @Mock
+    private SkuClient mockSkuClient;
+    @Mock
+    private LogisticsClient mockLogisticsClient;
+
+    private OrderServiceImpl service;
+
+    @BeforeEach
+    @SuppressWarnings("unchecked")
+    void setUp() {
+        service = new OrderServiceImpl(mockOrderItemMapper, mockSkuClient, mockLogisticsClient);
+        ReflectionTestUtils.setField(service, "baseMapper", (BaseMapper<OrderEntity>) mockOrderMapper);
+    }
 
     // ==================== OrderStatusEnum ====================
 
@@ -190,5 +224,63 @@ class OrderServiceImplTest {
 
         assertEquals("SF123456", req.getLogisticsNumber());
         assertEquals("顺丰快递", req.getLogisticsCompany());
+    }
+
+    // ==================== createOrderWithItems (Mock) ====================
+
+    @Test
+    @DisplayName("createOrderWithItems — 事务中创建订单和订单项")
+    void shouldCreateOrderAndItems_whenValidInput() {
+        OrderEntity order = new OrderEntity();
+        order.setOrderNo("ORD-20260617-001");
+        order.setUserId(100L);
+        order.setTotalAmount(129900);
+
+        OrderItemEntity item1 = new OrderItemEntity();
+        item1.setSkuId(1L);
+        item1.setPrice(89900);
+        item1.setQuantity(1);
+
+        OrderItemEntity item2 = new OrderItemEntity();
+        item2.setSkuId(2L);
+        item2.setPrice(40000);
+        item2.setQuantity(1);
+
+        List<OrderItemEntity> items = Arrays.asList(item1, item2);
+
+        service.createOrderWithItems(order, items);
+
+        // Verify order was saved (order is concrete type, no ambiguity)
+        verify(mockOrderMapper).insert(order);
+        assertNotNull(order.getCreateTime());
+
+        // Verify order items were linked to order (key business rule)
+        assertEquals(order.getId(), item1.getOrderId(), "订单项应关联到订单ID");
+        assertEquals(order.getId(), item2.getOrderId(), "订单项应关联到订单ID");
+    }
+
+    @Test
+    @DisplayName("createOrderWithItems — 空订单项列表也能正常保存订单")
+    void shouldCreateOrder_whenEmptyItems() {
+        OrderEntity order = new OrderEntity();
+        order.setOrderNo("ORD-EMPTY-001");
+        order.setUserId(100L);
+
+        service.createOrderWithItems(order, List.of());
+
+        verify(mockOrderMapper).insert(order);
+        assertNotNull(order.getCreateTime());
+    }
+
+    @Test
+    @DisplayName("createOrderWithItems — createTime 自动设置为当前时间")
+    void shouldAutoSetCreateTime_whenCreatingOrder() {
+        OrderEntity order = new OrderEntity();
+        order.setOrderNo("ORD-TIME-001");
+        order.setUserId(100L);
+
+        service.createOrderWithItems(order, List.of());
+
+        assertNotNull(order.getCreateTime(), "创建时间应被自动设置");
     }
 }

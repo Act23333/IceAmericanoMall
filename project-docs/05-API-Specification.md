@@ -122,13 +122,7 @@ Response (200):
 #### POST /api/auth/login/phone — 验证码登录
 
 ```
-Request:
-{
-  "phone": "13800138000",
-  "smsCode": "123456"
-}
-
-Response: 同上
+已合并到 POST /api/auth/login，通过 loginType=SMS 参数区分。
 ```
 
 #### POST /api/auth/register — 注册
@@ -172,15 +166,7 @@ Response (200): Token 加入黑名单（Redis），Refresh Token 删除
 #### POST /api/auth/captcha/sms — 发送短信验证码
 
 ```
-Request:
-{
-  "phone": "13800138000"
-}
-
-Response (200):
-{ "code": 200, "message": "发送成功" }
-
-说明：验证码存入 Redis，有效期 5 分钟；同一手机号 60 秒内限制 1 次
+功能位于 user-service: POST /user/code
 ```
 
 ---
@@ -191,21 +177,55 @@ Response (200):
 
 ### 4.1 用户服务 (user-service)
 
+#### 用户端（`/user`）
+
 | 方法 | 路径 | 说明 | 阶段 |
 |------|------|------|------|
-| GET | `/api/user/info` | 获取当前用户信息 | ✅ |
-| PUT | `/api/user/info` | 修改个人信息（昵称/头像） | ✅ |
-| GET | `/api/user/{id}` | 获取指定用户信息（内部调用） | ✅ |
-| GET | `/api/user/page` | 分页查询用户（管理后台） | ✅ |
-| PUT | `/api/user/{id}/status` | 启用/禁用用户（管理员） | ✅ |
-| POST | `/api/user/sign` | 每日签到 | ✅ |
-| GET | `/api/user/sign/status` | 签到状态（今天是否已签到） | ✅ |
-| GET | `/api/user/address` | 我的地址列表 | ✅ |
-| POST | `/api/user/address` | 新增地址 | ✅ |
-| PUT | `/api/user/address/{id}` | 修改地址 | ✅ |
-| DELETE | `/api/user/address/{id}` | 删除地址 | ✅ |
-| PUT | `/api/user/address/{id}/default` | 设为默认地址 | ✅ |
-| POST | `/api/user/sms-code` | 发送短信验证码 | ✅ |
+| GET | `/user/info` | 获取当前用户信息 | ✅ |
+| PUT | `/user/profile` | 修改个人信息（昵称/头像） | ✅ |
+| POST | `/user/code` | 发送短信验证码 | ✅ |
+| POST | `/user/sign` | 每日签到 | ✅ |
+| GET | `/user/sign/status` | 签到状态（今天是否已签到） | ✅ |
+
+#### 地址管理（`/user/address`）
+
+| 方法 | 路径 | 说明 | 阶段 |
+|------|------|------|------|
+| GET | `/user/address/list` | 我的地址列表 | ✅ |
+| POST | `/user/address/add` | 新增地址 | ✅ |
+| GET | `/user/address/{id}` | 获取单个地址 | ✅ |
+| PUT | `/user/address/update/{id}` | 修改地址 | ✅ |
+| DELETE | `/user/address/delete/{id}` | 删除地址 | ✅ |
+| PUT | `/user/address/default/{id}` | 设为默认地址 | ✅ |
+
+#### 商家端（`/api/seller`）
+
+| 方法 | 路径 | 说明 | 阶段 |
+|------|------|------|------|
+| POST | `/api/seller/register` | 用户申请成为商家 | ✅ |
+| GET | `/api/seller/shop` | 获取当前商家店铺信息 | ✅ |
+| PUT | `/api/seller/shop` | 更新店铺信息（部分更新） | ✅ |
+
+#### 管理员（`/api/admin`）
+
+| 方法 | 路径 | 说明 | 阶段 |
+|------|------|------|------|
+| GET | `/api/admin/user/page` | 分页查询用户 | ✅ |
+| PUT | `/api/admin/user/{id}/status` | 启用/禁用用户 | ✅ |
+| PUT | `/api/admin/user/{id}/role` | 修改用户角色 | ✅ |
+| GET | `/api/admin/seller/pending` | 待审核商家列表 | ✅ |
+| PUT | `/api/admin/seller/{id}/approve` | 审核通过商家 | ✅ |
+
+#### 内部接口（`/internal/user`，Feign 专用）
+
+| 方法 | 路径 | 说明 | 阶段 |
+|------|------|------|------|
+| POST | `/internal/user/register` | 注册用户 | ✅ |
+| POST | `/internal/user/login/password` | 密码登录校验 | ✅ |
+| POST | `/internal/user/login/sms` | 验证码登录校验 | ✅ |
+| GET | `/internal/user/{id}` | 获取用户信息 | ✅ |
+| GET | `/internal/user/address/{id}` | 获取地址信息 | ✅ |
+| GET | `/internal/user/count` | 用户总数统计 | ✅ |
 
 ### 4.2 商品服务 (item-service)
 
@@ -224,13 +244,17 @@ Response (200):
 | 方法 | 路径 | 说明 | 阶段 |
 |------|------|------|------|
 | GET | `/api/cart` | 我的购物车列表 | ✅ |
-| POST | `/api/cart` | 添加商品到购物车 | ✅ |
-| PUT | `/api/cart/{id}` | 修改数量 | ✅ |
-| PUT | `/api/cart/{id}/select` | 切换选中状态 | ✅ |
-| DELETE | `/api/cart/{id}` | 删除购物车项 | ✅ |
-| DELETE | `/api/cart/batch` | 批量删除 | ✅ |
+| POST | `/api/cart/item` | 添加商品到购物车 | ✅ |
+| PUT | `/api/cart/item` | 修改购物车项数量 | ✅ |
+| PATCH | `/api/cart/item/{skuId}/selected` | 切换选中状态 | ✅ |
+| DELETE | `/api/cart/item/{skuId}` | 删除购物车项 | ✅ |
+| DELETE | `/api/cart/clear` | 清空购物车 | ✅ |
+
+> 购物车项以 `skuId` 为唯一标识，同一 SKU 重复添加时合并数量。
 
 ### 4.4 订单服务 (trade-service)
+
+#### 用户端（`/api/trade/order`）
 
 | 方法 | 路径 | 说明 | 阶段 |
 |------|------|------|------|
@@ -239,8 +263,29 @@ Response (200):
 | GET | `/api/trade/order/page` | 我的订单分页（按状态） | ✅ |
 | POST | `/api/trade/order/{orderNo}/cancel` | 取消订单 | ✅ |
 | POST | `/api/trade/order/{orderNo}/confirm` | 确认收货 | ✅ |
+
+#### 商家端（`/api/trade/seller`）
+
+| 方法 | 路径 | 说明 | 阶段 |
+|------|------|------|------|
 | GET | `/api/trade/seller/order/page` | 商家查看订单（按状态） | ✅ |
+| GET | `/api/trade/seller/order/{orderNo}` | 商家查看订单详情 | ✅ |
 | POST | `/api/trade/seller/order/{orderNo}/ship` | 商家发货 | ✅ |
+| GET | `/api/trade/seller/dashboard` | 商家仪表盘（今日订单/待发货/月收入） | ✅ |
+
+#### 管理员（`/api/trade/admin`）
+
+| 方法 | 路径 | 说明 | 阶段 |
+|------|------|------|------|
+| GET | `/api/trade/admin/dashboard` | 管理仪表盘（用户数/订单数/收入） | ✅ |
+| GET | `/api/trade/admin/orders/page` | 所有订单分页（按状态筛选） | ✅ |
+
+#### 内部接口（`/internal/trade/order`，Feign 专用）
+
+| 方法 | 路径 | 说明 | 阶段 |
+|------|------|------|------|
+| PUT | `/internal/trade/order/{orderNo}/status` | 更新订单状态 | ✅ |
+| GET | `/internal/trade/order/{orderNo}` | 获取订单摘要 | ✅ |
 
 ### 4.5 支付服务 (pay-service)
 
@@ -262,7 +307,14 @@ Response (200):
 
 | 方法 | 路径 | 说明 | 阶段 |
 |------|------|------|------|
-| GET | `/api/logistics/{orderId}` | 查询物流轨迹 | ✅ |
+| GET | `/api/logistics/{orderId}` | 查询物流轨迹（含物流状态） | ✅ |
+
+#### 内部接口（`/internal/logistics`，Feign 专用）
+
+| 方法 | 路径 | 说明 | 阶段 |
+|------|------|------|------|
+| POST | `/internal/logistics/create` | 创建物流记录（trade-service 调用） | ✅ |
+| PUT | `/internal/logistics/{orderId}/status` | 更新物流状态 | ✅ |
 
 ---
 

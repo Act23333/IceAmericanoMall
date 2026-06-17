@@ -136,12 +136,16 @@ Phase 4: 后台管理
 #### T1.1 authorization-service
 
 - **状态**: ✅ 核心功能已完成
-- **待完善**:
-  - [ ] 验证码登录 (SMS 集成)
-  - [ ] Refresh Token Redis 存储
-  - [ ] Token 黑名单 (退出登录)
-  - [ ] 多密钥切换机制
-  - [ ] 人机验证 (Geetest 集成)
+- **已完成**:
+  - [x] 密码登录 + 验证码登录（同一端点，loginType 参数区分）
+  - [x] JWT 签发 (HS256 + RS256)
+  - [x] JWKS 公钥端点
+  - [x] Refresh Token 旋转刷新
+  - [x] 退出登录（Token 黑名单）
+  - [x] 人机验证（Geetest 集成）
+- **V1.1 待完善**:
+  - [ ] 多密钥无缝切换机制
+  - [ ] 第三方登录（微信 OAuth）
 
 **BDD 验收场景**:
 
@@ -177,10 +181,19 @@ Scenario: 注册幂等保护
 #### T1.2 user-service
 
 - **状态**: ✅ 核心功能已完成
-- **待完善**:
-  - [ ] 签到连续天数计算
-  - [ ] 管理后台用户分页查询
-  - [ ] 用户状态管理 (禁用/启用)
+- **已完成**:
+  - [x] 用户注册/登录（密码+验证码）
+  - [x] 个人信息修改（昵称/头像，null-safe 部分更新）
+  - [x] 收货地址 CRUD（含默认地址管理）
+  - [x] 每日签到（Redis Bitmap，连续签到计算，幂等保护）
+  - [x] 限流保护（@RateLimit 注解 + Lua 脚本）
+  - [x] 商家注册申请 + 店铺管理
+  - [x] 管理员用户分页/角色修改/状态管理
+  - [x] Aliyun SMS SDK 集成（@ConditionalOnProperty 可切换 Mock/Real）
+  - [x] 内部 Feign 接口（register/login/address/user/count）
+- **V1.1 待完善**:
+  - [ ] 签到积分递增加速策略
+  - [ ] SM2 加密传输（高安全模式）
 
 **BDD 验收场景**:
 
@@ -407,12 +420,94 @@ Scenario: 支付超时
 
 ## 四、当前进度摘要
 
-| Phase        | 进度     | 说明                                                   |
-| ------------ | ------ | ---------------------------------------------------- |
-| Phase 0 基础设施 | 🟢 80% | 项目骨架、ia-common、数据库脚本 完成；Nacos/Gateway 待搭建            |
-| Phase 1 用户域  | 🟢 70% | authorization-service + user-service 核心功能完成；部分边缘功能待补 |
-| Phase 2 商品域  | 🔵 5%  | 脚手架就绪，类目/商品/搜索待实现                                    |
-| Phase 3 交易域  | 🔵 5%  | 脚手架就绪，购物车/订单/支付/物流待实现                                |
-| Phase 4 后台管理 | 🔵 0%  | 待开始                                                  |
+| Phase | 进度 | 说明 |
+|-------|------|------|
+| Phase 0 基础设施 | 🟢 90% | 项目骨架、ia-common、数据库脚本、GateWay 骨架 完成；Nacos 待部署 |
+| Phase 1 用户域 | 🟢 90% | authorization-service + user-service 核心功能完成；SMS SDK 已集成（Aliyun），Geetest 已集成，签到连续天数完成 |
+| Phase 2 商品域 | 🟢 75% | item-service 商品/类目/SKU CRUD 完成；Internal 接口完成；search-service 仍为空壳（V1.1 延后） |
+| Phase 3 交易域 | 🟢 80% | cart/trade/pay 核心完整，微信支付已对接；trade-service 含 Saga 补偿+OrderManager 编排；logistics-service 基础功能完成，物流状态追踪 V1.1 |
+| Phase 4 后台管理 | 🟢 70% | 商家注册/店铺管理、管理员用户/角色管理、仪表盘、订单管理 后端全部完成；前端待开发 |
+| Phase 5 前端 | 🔵 0% | Vue3 + Vant UI (H5) / Element Plus (后台) 待开发 |
+| Phase 6 测试 | 🟡 15% | 48 个 Entity/Enum/DTO 单元测试，0 个业务逻辑测试；6 个模块零测试 |
 
-**下一步重点**: 完成 item-service 商品模块，打通「浏览商品」→「加入购物车」→「下单支付」的完整链路。
+**已实现的核心链路**: 注册/登录 → 浏览商品 → 加入购物车 → 下单（库存扣减+地址快照+商品快照）→ 微信支付 → 商家发货 → 确认收货。
+
+**端点统计**: 外部 API 50 个 + 内部 API 12 个 = 62 个端点全部实现（search-service 除外）。
+
+---
+
+## 五、V1.1 基础设施补全任务
+
+> 这些任务是 MVP 代码完成后、投入生产前的关键基础设施。每一项都有明确的「为什么需要」和「不做的风险」。
+
+### T5.1 Docker Compose 本地开发环境
+
+- **描述**: 编写 `docker-compose.yml`，一键启动 MySQL + Redis + Nacos
+- **为什么需要**: 当前每个开发者手动搭建这三个依赖，耗时且容易版本不一致
+- **优先级**: 🔴 P0
+- **依赖**: T0.1
+- **验收**: `docker compose up -d` 后所有服务可正常启动
+
+### T5.2 XXL-Job 分布式任务调度
+
+- **描述**: 部署 XXL-Job 调度中心，迁移 `PayTimeoutJob`、`OrderTimeoutJob` 从 `@Scheduled` 到 XXL-Job 执行器
+- **为什么需要**: `@Scheduled` 在多实例部署时会重复执行，导致重复退款/重复取消订单
+- **优先级**: 🔴 P0（多实例部署前必须完成）
+- **依赖**: T0.5 (Nacos)
+- **验收**: 3 个实例部署，同一订单只被一个实例处理
+
+### T5.3 SkyWalking 分布式链路追踪
+
+- **描述**: 部署 SkyWalking OAP + UI，所有服务接入 Java Agent
+- **为什么需要**: 11 个微服务无追踪，排查一次跨服务异常需要 grep 所有服务日志，效率极低
+- **优先级**: 🟡 P1
+- **依赖**: T0.5
+- **验收**: SkyWalking UI 能看到完整调用链拓扑和 Trace 详情
+
+### T5.4 Prometheus + Grafana 监控
+
+- **描述**: 部署 Prometheus 采集 JVM/接口指标，Grafana 仪表盘展示
+- **为什么需要**: 不知道服务 QPS、RT、错误率，故障发现靠用户投诉
+- **优先级**: 🟡 P1
+- **依赖**: T0.5
+- **验收**: Grafana 仪表盘显示各服务 QPS、P99 延迟、错误率
+
+### T5.5 ELK 日志平台
+
+- **描述**: 部署 ElasticSearch + Logstash + Kibana，统一日志采集和查询
+- **为什么需要**: 查日志需要登录多台机器，无法按 TraceId 串联
+- **优先级**: 🟡 P1
+- **依赖**: T5.3 (TraceId 需要 SkyWalking)
+- **验收**: Kibana 中可按 TraceId 查看一次请求的完整日志
+
+### T5.6 RabbitMQ 消息队列
+
+- **描述**: 部署 RabbitMQ，将领域事件（订单创建/支付成功/发货）从 Feign 同步改为消息异步
+- **为什么需要**: 订单创建流程当前串行 Feign 调用 3 个服务（Sku/Cart/Address），同步耦合严重；支付成功后的物流/通知逻辑硬编码在 pay-service
+- **优先级**: 🟡 P1
+- **依赖**: T0.5
+- **验收**: 订单创建事件发布后，pay-service 异步消费并创建支付单
+
+### T5.7 Sentinel 限流熔断
+
+- **描述**: 配置 Sentinel Dashboard，对网关和核心接口配置限流规则和熔断降级策略
+- **为什么需要**: `@RateLimit` 只实现了单接口限流，缺少熔断降级（如支付服务挂了，订单服务应有 fallback）
+- **优先级**: 🟡 P1
+- **依赖**: T0.5
+- **验收**: 模拟 item-service 宕机，trade-service 触发熔断，返回降级响应而非 500
+
+### T5.8 MinIO 对象存储
+
+- **描述**: 部署 MinIO，商品图片/用户头像上传功能
+- **为什么需要**: 当前商品/用户无图片上传能力，只能使用外部 URL
+- **优先级**: 🟢 P2
+- **依赖**: T2.1 (item-service)
+- **验收**: 商品发布时可上传主图，返回可访问的图片 URL
+
+### T5.9 GitHub Actions CI/CD
+
+- **描述**: 编写 GitHub Actions workflow，实现 push 自动编译+测试+镜像构建
+- **为什么需要**: 当前全靠手动 `mvn install`，容易漏测
+- **优先级**: 🟡 P1
+- **依赖**: T5.1 (Docker Compose 提供测试依赖)
+- **验收**: PR 自动触发 CI，失败时阻止合并

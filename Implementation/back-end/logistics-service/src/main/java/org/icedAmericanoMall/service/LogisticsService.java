@@ -8,4 +8,6 @@ public interface LogisticsService extends IService<OrderLogisticsEntity> {
     OrderLogisticsEntity getByOrderId(Long orderId);
 
     void createLogistics(OrderLogisticsEntity entity);
+
+    void updateStatus(Long orderId, Integer status);
 }

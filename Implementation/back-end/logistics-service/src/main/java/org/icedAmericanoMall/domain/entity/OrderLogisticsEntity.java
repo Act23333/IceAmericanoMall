@@ -33,6 +33,11 @@ public class OrderLogisticsEntity implements Serializable {
 
     private String detail;
 
+    /**
+     * 物流状态: 1-待揽收, 2-运输中, 3-已签收, 4-已退回
+     */
+    private Integer status;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 

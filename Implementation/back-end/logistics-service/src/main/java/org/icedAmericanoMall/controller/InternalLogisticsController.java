@@ -34,4 +34,12 @@ public class InternalLogisticsController {
         entity.setDetail(dto.getDetail());
         logisticsService.createLogistics(entity);
     }
+
+    /**
+     * Update logistics status (called by scheduled task or courier callback).
+     */
+    @PutMapping("/{orderId}/status")
+    public void updateStatus(@PathVariable Long orderId, @RequestParam Integer status) {
+        logisticsService.updateStatus(orderId, status);
+    }
 }
