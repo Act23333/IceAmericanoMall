@@ -3,6 +3,7 @@ package org.icedAmericanoMall.client;
 import org.icedAmericanoMall.dto.*;
 import org.icedAmericanoMall.fallback.UserClientFallback;
 import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -17,4 +18,8 @@ public interface UserClient {
 
     @PostMapping("/login/sms")
     LoginRespDTO loginBySms(@RequestBody SmsLoginReqDTO request);
+
+    /** Get total user count for admin dashboard */
+    @GetMapping("/count")
+    Long countUsers();
 }

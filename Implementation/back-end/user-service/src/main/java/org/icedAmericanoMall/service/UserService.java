@@ -2,6 +2,7 @@ package org.icedAmericanoMall.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.icedAmericanoMall.domain.dto.SmsCodeSendReq;
+import org.icedAmericanoMall.domain.dto.UpdateProfileReq;
 import org.icedAmericanoMall.domain.entity.UserEntity;
 import org.icedAmericanoMall.domain.vo.UserInfoResp;
 import org.icedAmericanoMall.dto.*;
@@ -23,5 +24,8 @@ public interface UserService extends IService<UserEntity> {
 
     UserInfoResp getByUserId(Long userId);
 
-    void updateProfile(Long userId, String avatar);
+    void updateProfile(Long userId, UpdateProfileReq req);
+
+    /** 内部调用 — 获取用户总数 */
+    long countUsers();
 }

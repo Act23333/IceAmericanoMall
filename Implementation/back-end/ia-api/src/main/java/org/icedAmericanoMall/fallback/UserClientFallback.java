@@ -39,6 +39,12 @@ public class UserClientFallback implements FallbackFactory<UserClient> {
                 log.error("用户登录失败", cause);
                 return null;
             }
+
+            @Override
+            public Long countUsers() {
+                log.error("获取用户总数失败", cause);
+                return 0L;
+            }
         };
     }
 }

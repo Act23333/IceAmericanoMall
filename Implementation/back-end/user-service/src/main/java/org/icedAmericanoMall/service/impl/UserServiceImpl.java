@@ -10,6 +10,7 @@ import org.icedAmericanoMall.service.UserService;
 import org.icedAmericanoMall.constants.UserStatusEnum;
 import org.icedAmericanoMall.convert.UserConverter;
 import org.icedAmericanoMall.domain.dto.SmsCodeSendReq;
+import org.icedAmericanoMall.domain.dto.UpdateProfileReq;
 import org.icedAmericanoMall.domain.entity.UserEntity;
 import org.icedAmericanoMall.domain.vo.UserInfoResp;
 import org.icedAmericanoMall.dto.LoginRespDTO;
@@ -331,16 +332,34 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         return UserConverter.INSTANCE.map(userEntity);
     }
 
+    /**
+     * <pre>
+     * Scenario: 用户更新个人资料
+     *   Given 持有有效 JWT
+     *   When PUT /user/profile with {nickname, avatar}
+     *   Then 仅更新非空字段（null-safe 部分更新）
+     *   And 返回成功
+     * </pre>
+     */
     @Override
-    public void updateProfile(Long userId, String avatar) {
+    public void updateProfile(Long userId, UpdateProfileReq req) {
         UserEntity user = lambdaQuery().eq(UserEntity::getId, userId).one();
         if (user == null) {
             throw new BizException(ErrorCode.USER_NOT_FOUND);
         }
-        lambdaUpdate()
-                .eq(UserEntity::getId, userId)
-                .set(UserEntity::getAvatar, avatar)
-                .update();
+        var updater = lambdaUpdate().eq(UserEntity::getId, userId);
+        if (req.getNickname() != null && !req.getNickname().isBlank()) {
+            updater.set(UserEntity::getUsername, req.getNickname());
+        }
+        if (req.getAvatar() != null && !req.getAvatar().isBlank()) {
+            updater.set(UserEntity::getAvatar, req.getAvatar());
+        }
+        updater.update();
+    }
+
+    @Override
+    public long countUsers() {
+        return lambdaQuery().count();
     }
 
     private String mapRole(Integer roleType) {

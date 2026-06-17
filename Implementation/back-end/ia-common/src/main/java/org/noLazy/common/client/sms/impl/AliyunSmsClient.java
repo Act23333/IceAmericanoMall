@@ -1,33 +1,72 @@
 package org.noLazy.common.client.sms.impl;
 
-import lombok.RequiredArgsConstructor;
+import com.aliyun.dysmsapi20170525.Client;
+import com.aliyun.dysmsapi20170525.models.SendSmsRequest;
+import com.aliyun.teaopenapi.models.Config;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.noLazy.common.client.sms.SmsClient;
-import org.noLazy.common.exception.BizException;
-import org.noLazy.common.enums.ErrorCode;
 import org.noLazy.common.utils.AliyunSmsProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
  * Aliyun SMS client — only activated when {@code aliyun.sms.enabled=true}.
- * Requires {@code aliyun.sms.*} properties and the Aliyun SMS SDK on the classpath.
- * For local development the {@link MockSmsClient} is used instead.
+ * Uses the official Aliyun dysmsapi20170525 SDK.
+ * For local development {@link MockSmsClient} is used instead (default).
+ *
+ * <pre>
+ * Required configuration (application.yml):
+ *   aliyun.sms:
+ *     enabled: true
+ *     access-key-id: your-key
+ *     access-key-secret: your-secret
+ *     sign-name: 冰美商城
+ *     template-code: SMS_123456789
+ * </pre>
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 @ConditionalOnProperty(name = "aliyun.sms.enabled", havingValue = "true")
 public class AliyunSmsClient implements SmsClient {
 
     private final AliyunSmsProperties properties;
+    private Client client;
+
+    public AliyunSmsClient(AliyunSmsProperties properties) {
+        this.properties = properties;
+    }
+
+    @PostConstruct
+    public void init() {
+        try {
+            Config config = new Config()
+                    .setAccessKeyId(properties.getAccessKeyId())
+                    .setAccessKeySecret(properties.getAccessKeySecret());
+            config.endpoint = "dysmsapi.aliyuncs.com";
+            this.client = new Client(config);
+            log.info("阿里云短信客户端初始化成功");
+        } catch (Exception e) {
+            log.error("阿里云短信客户端初始化失败", e);
+        }
+    }
 
     @Override
     public void send(String phone, String code) {
-        // TODO: Integrate Aliyun SMS SDK when credentials are available.
-        // For now, log the code and throw a clear error so the developer knows to configure Aliyun
-        // or use the MockSmsClient (default).
-        log.warn("Aliyun SMS is enabled but SDK integration is pending. Phone: {}, Code: {}", phone, code);
-        throw new BizException(ErrorCode.INTERNAL_ERROR, "Aliyun SMS SDK not yet integrated. Disable aliyun.sms.enabled for local dev.");
+        if (client == null) {
+            log.error("阿里云短信客户端未初始化，无法发送短信 phone={}", phone);
+            return;
+        }
+        try {
+            SendSmsRequest request = new SendSmsRequest()
+                    .setPhoneNumbers(phone)
+                    .setSignName(properties.getSignName())
+                    .setTemplateCode(properties.getTemplateCode())
+                    .setTemplateParam("{\"code\":\"" + code + "\"}");
+            client.sendSms(request);
+            log.info("短信发送成功 phone={}", phone);
+        } catch (Exception e) {
+            log.error("阿里云短信发送失败 phone={}", phone, e);
+        }
     }
 }

@@ -19,4 +19,9 @@ public class LogisticsServiceImpl extends ServiceImpl<OrderLogisticsMapper, Orde
         }
         return entity;
     }
+
+    @Override
+    public void createLogistics(OrderLogisticsEntity entity) {
+        save(entity);
+    }
 }

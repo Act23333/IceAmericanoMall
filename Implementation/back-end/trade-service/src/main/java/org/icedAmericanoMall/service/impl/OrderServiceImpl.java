@@ -5,14 +5,14 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
+import org.icedAmericanoMall.client.LogisticsClient;
 import org.icedAmericanoMall.client.SkuClient;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
 import org.icedAmericanoMall.domain.entity.OrderItemEntity;
-import org.icedAmericanoMall.domain.entity.OrderLogisticsEntity;
+import org.icedAmericanoMall.dto.CreateLogisticsDTO;
 import org.icedAmericanoMall.dto.StockOpDTO;
 import org.icedAmericanoMall.enums.OrderStatusEnum;
 import org.icedAmericanoMall.mapper.OrderItemMapper;
-import org.icedAmericanoMall.mapper.OrderLogisticsMapper;
 import org.icedAmericanoMall.mapper.OrderMapper;
 import org.icedAmericanoMall.service.OrderService;
 import org.noLazy.common.enums.ErrorCode;
@@ -30,15 +30,15 @@ import java.util.stream.Collectors;
 public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> implements OrderService {
 
     private final OrderItemMapper orderItemMapper;
-    private final OrderLogisticsMapper orderLogisticsMapper;
     private final SkuClient skuClient;
+    private final LogisticsClient logisticsClient;
 
     public OrderServiceImpl(OrderItemMapper orderItemMapper,
-                            OrderLogisticsMapper orderLogisticsMapper,
-                            SkuClient skuClient) {
+                            SkuClient skuClient,
+                            LogisticsClient logisticsClient) {
         this.orderItemMapper = orderItemMapper;
-        this.orderLogisticsMapper = orderLogisticsMapper;
         this.skuClient = skuClient;
+        this.logisticsClient = logisticsClient;
     }
 
     /**
@@ -167,7 +167,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
      *   And 当前商家是订单所属商家
      *   When 商家填写物流单号和物流公司并提交发货
      *   Then 订单状态变更为"待收货"
-     *   And 创建物流记录（物流单号、物流公司、收件人、联系电话）
+     *   And 通过 Feign 调用 logistics-service 创建物流记录
      * </pre>
      */
     @Override
@@ -189,13 +189,30 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
                 .set(OrderEntity::getConsignTime, LocalDateTime.now())
                 .update();
 
-        OrderLogisticsEntity logistics = new OrderLogisticsEntity();
-        logistics.setOrderId(order.getId());
-        logistics.setLogisticsNumber(logisticsNumber);
-        logistics.setLogisticsCompany(logisticsCompany);
-        logistics.setContact(order.getReceiverName());
-        logistics.setMobile(order.getReceiverPhone());
-        orderLogisticsMapper.insert(logistics);
+        // 通过 Feign 调用 logistics-service 创建物流记录（修复数据所有权）
+        CreateLogisticsDTO logisticsDTO = new CreateLogisticsDTO();
+        logisticsDTO.setOrderId(order.getId());
+        logisticsDTO.setLogisticsNumber(logisticsNumber);
+        logisticsDTO.setLogisticsCompany(logisticsCompany);
+        logisticsDTO.setContact(order.getReceiverName());
+        logisticsDTO.setMobile(order.getReceiverPhone());
+        try {
+            logisticsClient.createLogistics(logisticsDTO);
+            log.info("物流记录创建成功: orderId={}", order.getId());
+        } catch (Exception e) {
+            log.error("物流记录创建失败，需人工处理: orderId={}", order.getId(), e);
+            // 不阻断主流程：订单状态已更新，物流记录可后续补录
+        }
+    }
+
+    @Override
+    public IPage<OrderEntity> pageAllOrders(Integer status, int page, int size) {
+        var wrapper = new LambdaQueryWrapper<OrderEntity>();
+        if (status != null) {
+            wrapper.eq(OrderEntity::getStatus, status);
+        }
+        wrapper.orderByDesc(OrderEntity::getCreateTime);
+        return page(new Page<>(page, size), wrapper);
     }
 
     /**

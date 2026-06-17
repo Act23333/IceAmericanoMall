@@ -53,4 +53,12 @@ public class InternalUserController {
     public UserInfoResp getUser(@PathVariable Long id) {
         return userService.getByUserId(id);
     }
+
+    /**
+     * Get total user count — internal Feign use (admin dashboard).
+     */
+    @GetMapping("/count")
+    public long countUsers() {
+        return userService.countUsers();
+    }
 }

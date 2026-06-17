@@ -61,7 +61,7 @@ public class UserController {
     @PutMapping("/profile")
     public Result<Void> updateProfile(@RequestBody UpdateProfileReq req) {
         Long userId = UserContext.getUser();
-        userService.updateProfile(userId, req.getAvatar());
+        userService.updateProfile(userId, req);
         return Result.ok();
     }
 }

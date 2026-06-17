@@ -22,4 +22,7 @@ public interface OrderService extends IService<OrderEntity> {
     void confirmReceipt(String orderNo, Long userId);
 
     void shipOrder(String orderNo, Long sellerId, String logisticsNumber, String logisticsCompany);
+
+    /** Admin: 查看所有订单（不限用户/商家） */
+    IPage<OrderEntity> pageAllOrders(Integer status, int page, int size);
 }

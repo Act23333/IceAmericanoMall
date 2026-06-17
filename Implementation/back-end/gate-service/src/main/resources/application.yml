@@ -77,6 +77,14 @@ spring:
           filters:
             - StripPrefix=0
 
+        # 商家路由（需要角色校验）
+        - id: seller-routes
+          uri: lb://user-service
+          predicates:
+            - Path=/api/seller/**
+          filters:
+            - StripPrefix=0
+
   security:
     oauth2:
       resourceserver:

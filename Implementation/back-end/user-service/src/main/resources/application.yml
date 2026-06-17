@@ -25,6 +25,7 @@ geetest:
 
 aliyun:
   sms:
+    enabled: false  # 开发环境关闭，使用 MockSmsClient
     access-key-id: LTAI5tXXXXXXXXXXXX
     access-key-secret: xxxxxxxxxxxxxxxxxxxxxx
     sign-name: 冰美式商城

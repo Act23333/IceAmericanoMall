@@ -148,6 +148,12 @@
             <artifactId>spring-boot-starter-aop</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- 阿里云短信 SDK -->
+        <dependency>
+            <groupId>com.aliyun</groupId>
+            <artifactId>dysmsapi20170525</artifactId>
+            <version>3.1.0</version>
+        </dependency>
     </dependencies>
 
     <build>

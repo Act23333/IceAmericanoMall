@@ -11,5 +11,9 @@ public class UpdateProfileReq implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
+    /** 头像 URL */
     private String avatar;
+
+    /** 昵称（映射到 username） */
+    private String nickname;
 }
