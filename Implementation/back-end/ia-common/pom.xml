@@ -154,6 +154,18 @@
             <artifactId>dysmsapi20170525</artifactId>
             <version>3.1.0</version>
         </dependency>
+        <!-- XXL-Job 分布式调度（可选：仅 trade/pay-service 使用时引入） -->
+        <dependency>
+            <groupId>com.xuxueli</groupId>
+            <artifactId>xxl-job-core</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- RabbitMQ（可选：仅 trade/pay/logistics-service 使用时引入） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 
     <build>

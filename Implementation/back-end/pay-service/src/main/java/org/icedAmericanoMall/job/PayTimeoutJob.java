@@ -1,5 +1,6 @@
 package org.icedAmericanoMall.job;
 
+import com.xxl.job.core.handler.annotation.XxlJob;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.client.OrderClient;
@@ -13,7 +14,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 支付超时自动取消定时任务。
+ * 支付超时自动取消任务。
+ * <p>
+ * 支持两种调度方式：
+ * <ul>
+ *   <li>{@code @Scheduled} — 开发环境单机运行</li>
+ *   <li>{@code @XxlJob} — 生产环境通过 XXL-Job Admin 调度</li>
+ * </ul>
  *
  * <pre>
  * Scenario: 支付超过有效期自动取消
@@ -22,13 +29,6 @@ import java.util.List;
  *   When 定时任务每30秒扫描一次
  *   Then PayOrder 状态变更为"超时取消"
  *   And 通过 Feign 将关联的 trade-service Order 状态更新为"已取消"
- *   And trade-service 侧自动触发库存回滚
- *
- * Scenario: 超时取消失败不影响其他支付单
- *   Given 存在多个超时支付单
- *   When 其中某个取消失败
- *   Then 仅记录错误日志
- *   And 继续处理下一个支付单
  * </pre>
  */
 @Slf4j
@@ -41,8 +41,18 @@ public class PayTimeoutJob {
     private final PayOrderService payOrderService;
     private final OrderClient orderClient;
 
-    @Scheduled(fixedRate = 30_000) // every 30 seconds
-    public void cancelTimeoutPayOrders() {
+    @Scheduled(fixedRate = 30_000)
+    public void cancelTimeoutPayOrdersScheduled() {
+        doCancelTimeoutPayOrders();
+    }
+
+    @XxlJob("cancelTimeoutPayOrders")
+    public void cancelTimeoutPayOrdersXxlJob() {
+        log.info("XXL-Job: cancelTimeoutPayOrders triggered");
+        doCancelTimeoutPayOrders();
+    }
+
+    private void doCancelTimeoutPayOrders() {
         LocalDateTime cutoff = LocalDateTime.now();
         List<PayOrderEntity> timeoutOrders = payOrderService.lambdaQuery()
                 .eq(PayOrderEntity::getStatus, PayStatusEnum.PENDING_PAY.getCode())
@@ -56,7 +66,6 @@ public class PayTimeoutJob {
                         .set(PayOrderEntity::getStatus, PayStatusEnum.TIMEOUT_CANCEL.getCode())
                         .update();
 
-                // Cancel the associated trade order (stock restore happens on trade-service side)
                 try {
                     orderClient.updateOrderStatus(payOrder.getBizOrderNo(), ORDER_STATUS_CANCELLED);
                 } catch (Exception e) {

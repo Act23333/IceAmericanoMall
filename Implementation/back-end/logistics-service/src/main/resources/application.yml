@@ -1,5 +1,5 @@
 server:
-  port: 8086
+  port: 8087
 
 spring:
   application:
@@ -20,3 +20,7 @@ spring:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+
+# RabbitMQ 消息队列 — 开发环境关闭
+rabbitmq:
+  enabled: false

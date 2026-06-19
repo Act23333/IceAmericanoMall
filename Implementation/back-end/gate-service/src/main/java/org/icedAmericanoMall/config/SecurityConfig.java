@@ -39,7 +39,8 @@ public class SecurityConfig {
                         .pathMatchers(
                                 "/api/item/category/**",
                                 "/api/item/product/page",
-                                "/api/item/product/*"
+                                "/api/item/product/*",
+                                "/api/search/**"
                         ).permitAll()
                         // 其他所有请求都需要认证
                         .anyExchange().authenticated()

@@ -1,6 +1,7 @@
 version: "3.8"
 
 services:
+  # ==================== MVP 基础服务（默认启动） ====================
   mysql:
     image: mysql:9.0
     container_name: ia-mall-mysql
@@ -49,6 +50,64 @@ services:
       timeout: 5s
       retries: 10
 
+  # ==================== V1.1 中间件（通过 profile 按需启用） ====================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.25
+    container_name: ia-mall-elasticsearch
+    profiles: ["v1.1"]
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: ia-mall-rabbitmq
+    profiles: ["v1.1"]
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  xxl-job-admin:
+    image: xuxueli/xxl-job-admin:2.4.2
+    container_name: ia-mall-xxl-job
+    profiles: ["v1.1"]
+    environment:
+      PARAMS: "--spring.datasource.url=jdbc:mysql://mysql:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai --spring.datasource.username=root --spring.datasource.password=root123"
+    ports:
+      - "8088:8088"
+    depends_on:
+      - mysql
+
+  minio:
+    image: minio/minio:latest
+    container_name: ia-mall-minio
+    profiles: ["v1.1"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+
 volumes:
   mysql-data:
   redis-data:
+  es-data:
+  minio-data:

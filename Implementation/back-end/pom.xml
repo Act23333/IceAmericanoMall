@@ -68,6 +68,7 @@
         <hutool.version>5.8.43</hutool.version>
         <mysql.version>9.3.0</mysql.version>
         <elasticsearch.version>7.17.25</elasticsearch.version>
+        <xxl-job.version>2.4.2</xxl-job.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <webmvc-swagger.version>2.8.8</webmvc-swagger.version>
         <webflux-swagger.version>2.6.0</webflux-swagger.version>
@@ -176,6 +177,12 @@
                 <groupId>io.jsonwebtoken</groupId>
                 <artifactId>jjwt-jackson</artifactId>
                 <version>${jjwt.version}</version>
+            </dependency>
+            <!-- XXL-Job distributed scheduling -->
+            <dependency>
+                <groupId>com.xuxueli</groupId>
+                <artifactId>xxl-job-core</artifactId>
+                <version>${xxl-job.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.nolazy</groupId>

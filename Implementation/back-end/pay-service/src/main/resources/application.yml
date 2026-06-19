@@ -21,6 +21,21 @@ mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
 
+# RabbitMQ 消息队列 — 开发环境关闭，生产环境设置 rabbitmq.enabled=true
+rabbitmq:
+  enabled: false
+
+# XXL-Job 分布式调度 — 开发环境关闭，生产环境设置 xxl.job.enabled=true
+xxl:
+  job:
+    enabled: false
+    admin-addresses: http://localhost:8088/xxl-job-admin
+    executor:
+      appname: pay-service
+      port: 9998
+      log-path: /tmp/xxl-job/pay-service
+      log-retention-days: 30
+
 # ==================== 微信支付配置（生产环境通过环境变量注入） ====================
 wechat:
   pay:

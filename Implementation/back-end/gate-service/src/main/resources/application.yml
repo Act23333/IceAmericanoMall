@@ -77,6 +77,14 @@ spring:
           filters:
             - StripPrefix=0
 
+        # 搜索服务路由（公开）
+        - id: search-service
+          uri: lb://search-service
+          predicates:
+            - Path=/api/search/**
+          filters:
+            - StripPrefix=0
+
         # 商家路由（需要角色校验）
         - id: seller-routes
           uri: lb://user-service
