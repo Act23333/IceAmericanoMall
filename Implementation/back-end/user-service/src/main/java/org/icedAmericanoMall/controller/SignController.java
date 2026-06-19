@@ -1,6 +1,6 @@
 package org.icedAmericanoMall.controller;
 
-import lombok.RequiredArgsConstructor;
+import org.icedAmericanoMall.service.PointsService;
 import org.icedAmericanoMall.service.UserSignService;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.utils.UserContext;
@@ -33,17 +33,33 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/user/sign")
-@RequiredArgsConstructor
 public class SignController {
 
     private final UserSignService userSignService;
+    private final PointsService pointsService;
+
+    public SignController(UserSignService userSignService, PointsService pointsService) {
+        this.userSignService = userSignService;
+        this.pointsService = pointsService;
+    }
 
     @PostMapping
     public Result<Map<String, Object>> sign() {
         Long userId = UserContext.getUser();
-        userSignService.sign(userId);
+        boolean isFirstToday = userSignService.sign(userId);
+
+        // Award points on first sign-in of the day (consecutive day bonus)
+        long earnedPoints = 0;
+        if (isFirstToday) {
+            long continuousDays = userSignService.countContinuousSign(userId);
+            // Day 1: 10pts, Day 2: 15pts, Day 3+: 20pts per day (capped at 200pts/month)
+            earnedPoints = Math.min(10 + (continuousDays - 1) * 5, 20);
+            pointsService.addPoints(userId, (int) earnedPoints, 1, "每日签到 连续第" + continuousDays + "天");
+        }
+
         Map<String, Object> result = new HashMap<>();
-        result.put("signed", true);
+        result.put("signed", isFirstToday);
+        result.put("earnedPoints", earnedPoints);
         result.put("monthCount", userSignService.countCurrentMonthSign(userId));
         result.put("continuousDays", userSignService.countContinuousSign(userId));
         return Result.ok(result);

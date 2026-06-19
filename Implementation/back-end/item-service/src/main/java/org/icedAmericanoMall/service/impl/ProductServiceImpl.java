@@ -55,7 +55,9 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, ProductEntity
         } else if ("price".equals(sort)) {
             wrapper.orderBy(true, "asc".equals(order), ProductEntity::getId);
         } else {
-            wrapper.orderByDesc(ProductEntity::getCreateTime);
+            // Default: ad products first, then by create_time
+            wrapper.orderByDesc(ProductEntity::getIsAd)
+                   .orderByDesc(ProductEntity::getCreateTime);
         }
 
         IPage<ProductEntity> entityPage = page(new Page<>(page, size), wrapper);

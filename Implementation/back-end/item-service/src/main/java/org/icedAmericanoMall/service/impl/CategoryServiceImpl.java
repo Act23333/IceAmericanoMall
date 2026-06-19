@@ -25,14 +25,32 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, CategoryEnt
 
     @Override
     public List<CategoryTreeVO> getCategoryTree() {
-        // MVP: only level-1 categories by default
-        List<CategoryEntity> categories = lambdaQuery()
-                .eq(CategoryEntity::getLevel, 1)
+        // 查询所有分类，按 sort_order 排序
+        List<CategoryEntity> allCategories = lambdaQuery()
                 .orderByAsc(CategoryEntity::getSortOrder)
                 .list();
-        return categories.stream()
-                .map(categoryConverter::entityToTreeVO)
+
+        // 按 parentId 分组
+        Map<Long, List<CategoryEntity>> childrenMap = allCategories.stream()
+                .filter(c -> c.getParentId() != null)
+                .collect(Collectors.groupingBy(CategoryEntity::getParentId));
+
+        // 构建树：从根节点（parentId=null）开始递归
+        return allCategories.stream()
+                .filter(c -> c.getParentId() == null)
+                .map(root -> buildTreeNode(root, childrenMap))
                 .collect(Collectors.toList());
+    }
+
+    private CategoryTreeVO buildTreeNode(CategoryEntity entity, Map<Long, List<CategoryEntity>> childrenMap) {
+        CategoryTreeVO vo = categoryConverter.entityToTreeVO(entity);
+        List<CategoryEntity> children = childrenMap.getOrDefault(entity.getId(), List.of());
+        if (!children.isEmpty()) {
+            vo.setChildren(children.stream()
+                    .map(child -> buildTreeNode(child, childrenMap))
+                    .collect(Collectors.toList()));
+        }
+        return vo;
     }
 
     @Override

@@ -8,6 +8,5 @@ import org.mapstruct.Mapping;
 @Mapper(componentModel = "spring")
 public interface CategoryConverter {
 
-    @Mapping(target = "children", ignore = true)
     CategoryTreeVO entityToTreeVO(CategoryEntity entity);
 }
