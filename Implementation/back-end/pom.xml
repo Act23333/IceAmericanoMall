@@ -26,6 +26,7 @@
         <module>item-service</module>
         <module>logistics-service</module>
         <module>search-service</module>
+        <module>ai-service</module>
     </modules>
 
     <!--实现 Maven 的配置继承-->

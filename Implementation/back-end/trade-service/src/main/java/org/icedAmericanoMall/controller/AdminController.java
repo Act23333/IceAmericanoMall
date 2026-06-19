@@ -97,4 +97,30 @@ public class AdminController {
             @RequestParam(required = false) Integer status) {
         return Result.ok(orderService.pageAllOrders(status, page, size));
     }
+
+    /**
+     * V1.2: 30-day order trend — daily count + revenue for chart.
+     */
+    @GetMapping("/stats/trend")
+    public Result<?> trend(@RequestParam(defaultValue = "30") int days) {
+        var rows = new java.util.ArrayList<Map<String, Object>>();
+        for (int i = days - 1; i >= 0; i--) {
+            LocalDate date = LocalDate.now().minusDays(i);
+            LocalDateTime start = date.atStartOfDay();
+            LocalDateTime end = date.plusDays(1).atStartOfDay();
+
+            long count = orderService.lambdaQuery()
+                    .ge(OrderEntity::getCreateTime, start)
+                    .lt(OrderEntity::getCreateTime, end).count();
+
+            var list = orderService.lambdaQuery()
+                    .eq(OrderEntity::getStatus, OrderStatusEnum.COMPLETED.getCode())
+                    .ge(OrderEntity::getCreateTime, start)
+                    .lt(OrderEntity::getCreateTime, end).list();
+            int revenue = list.stream().mapToInt(o -> o.getTotalAmount() != null ? o.getTotalAmount() : 0).sum();
+
+            rows.add(Map.of("date", date.toString(), "orders", count, "revenue", revenue));
+        }
+        return Result.ok(rows);
+    }
 }

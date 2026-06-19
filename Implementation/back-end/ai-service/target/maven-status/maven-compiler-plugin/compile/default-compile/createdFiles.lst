@@ -1,0 +1,5 @@
+org/icedAmericanoMall/tool/ProductSearchTool.class
+org/icedAmericanoMall/config/AiProperties.class
+org/icedAmericanoMall/agent/ProductAssistantAgent.class
+org/icedAmericanoMall/controller/AiAssistantController.class
+org/icedAmericanoMall/AiServiceApplication.class

@@ -1,0 +1,22 @@
+server:
+  port: 8089
+
+spring:
+  application:
+    name: ai-service
+  cloud:
+    nacos:
+      server-addr: ${ia.nacos.host:localhost}:8848
+
+# AI 配置 — 开发环境关闭，生产环境设置 ai.enabled=true
+ai:
+  enabled: false
+  llm:
+    provider: deepseek
+    api-key: ${DEEPSEEK_API_KEY:}
+    base-url: https://api.deepseek.com/v1
+    model: deepseek-chat
+  embedding:
+    provider: deepseek
+    api-key: ${DEEPSEEK_API_KEY:}
+    model: text-embedding-3-small

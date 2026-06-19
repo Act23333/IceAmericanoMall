@@ -1,0 +1,5 @@
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/AiServiceApplication.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/agent/ProductAssistantAgent.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/config/AiProperties.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/controller/AiAssistantController.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/tool/ProductSearchTool.java
