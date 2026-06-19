@@ -99,6 +99,10 @@ spring:
         jwt:
           jwk-set-uri: http://localhost:9000/oauth2/jwks
 
+# Sentinel 限流熔断 — 开发环境关闭，生产环境设置 sentinel.enabled=true
+sentinel:
+  enabled: false
+
 logging:
   level:
     org.springframework.security: DEBUG

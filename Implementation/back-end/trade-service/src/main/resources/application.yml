@@ -25,6 +25,10 @@ mybatis-plus:
 rabbitmq:
   enabled: false
 
+# Sentinel 限流熔断 — 开发环境关闭
+sentinel:
+  enabled: false
+
 # XXL-Job 分布式调度 — 开发环境关闭，生产环境设置 xxl.job.enabled=true
 xxl:
   job:
