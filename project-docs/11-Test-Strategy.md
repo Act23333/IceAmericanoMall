@@ -5,7 +5,28 @@
 
 ---
 
-## 一、测试金字塔
+## 〇、当前实施状态 vs 目标策略
+
+> ⚠️ 以下测试金字塔为 **V1.1 目标策略**。当前 MVP 阶段的实际覆盖与目标差距较大。
+
+| 测试层级 | 目标占比 | 当前实际 | 状态 |
+|---------|---------|---------|------|
+| Unit (Entity/Enum/DTO) | 70% | **77 tests** (7/12 模块) | ✅ 部分覆盖 |
+| Unit (Mockito 业务逻辑) | 70% | **~15 tests** (logistics/trade/cart/pay) | 🟡 起步 |
+| API / Integration | 20% | **0 tests** | ❌ 未开始 |
+| Contract (Pact) | — | **0 tests** | ❌ 未开始 |
+| E2E | 5% | **0 tests** | ❌ 未开始 |
+| Performance (JMeter) | — | **0 tests** | ❌ 未开始 |
+| JaCoCo 覆盖率 | — | **未配置** | ❌ 未开始 |
+
+**已覆盖模块**: ia-common (8), user-service (9), cart-service (12), pay-service (14), trade-service (16), item-service (5), logistics-service (13)  
+**零测试模块**: authorization-service, gate-service, ia-api, search-service, database
+
+**已知限制**: MyBatis-Plus `ServiceImpl` 的 `lambdaQuery()`/`lambdaUpdate()` 链无法被 Mockito mock（`currentModelClass()` 从 Mapper 接口读取泛型类型信息，在 Mockito 代理中丢失）。这些方法需要 `@SpringBootTest` + H2 或 Testcontainers 集成测试。
+
+---
+
+## 一、测试金字塔（V1.1 目标）
 
 ```
        /\

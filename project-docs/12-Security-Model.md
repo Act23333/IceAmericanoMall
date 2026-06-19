@@ -10,7 +10,7 @@
 ### Level 0 — 系统级
 
 ```
-[用户浏览器/App] ──HTTPS──→ [IceAmericanoMall] ──→ [微信支付/支付宝]
+[用户浏览器/App] ──HTTPS──→ [IceAmericanoMall] ──→ [微信支付（当前）/ 支付宝（V1.2+）]
         │                         │                       │
    信任边界 A                 内部网络               信任边界 B
 ```
@@ -23,7 +23,7 @@
                   禁止外网访问               ├──→ user-service (获取地址)
                   /internal/**              ├──→ cart-service (获取选中商品)
                                             ├──→ item-service (锁库存)
-                                            └──→ pay-service ──(边界B)──→ 微信支付/支付宝
+                                            └──→ pay-service ──(边界B)──→ 微信支付（当前）/ 支付宝（V1.2+）
 ```
 
 **边界 A**：公网 → 系统入口
@@ -72,10 +72,12 @@
 
 | # | 威胁 | 严重度 | 对策 |
 |---|------|--------|------|
-| D1 | 短信接口被恶意调用 | 🔴 高 | `@RateLimit(limit=1, period=60)` — 每 60s 仅1次 |
-| D2 | 登录接口被爆破 | 🔴 高 | `@RateLimit(limit=5, period=60)` — 失败 5 次锁定 |
+| D1 | 短信接口被恶意调用 | 🔴 高 | `@RateLimit(key="ip", limit=10, period=1min)` — 每 IP 每分钟 10 次 |
+| D2 | 登录接口被爆破 | 🔴 高 | `@RateLimit` 待实现 — 计划登录失败锁定 + Geetest 人机验证 |
 | D3 | 商品查询被刷 | 🟡 中 | `@RateLimit(limit=100, period=60)` + 缓存 |
-| D4 | 大流量打垮 Gateway | 🟡 中 | Sentinel 限流 + 熔断降级 |
+| D4 | 大流量打垮 Gateway | 🟡 中 | Sentinel 限流 + 熔断降级（⚠️ V1.1 计划，当前未部署） |
+| D5 | WebSocket 连接耗尽 | 🟡 中 | 心跳检测 + 最大连接数限制 + Token 认证（⚠️ V1.2 计划，WebSocket 未实现） |
+| D6 | 分布式任务重复调度 | 🟡 中 | XXL-Job 路由策略（⚠️ V1.1 计划，当前使用 @Scheduled 单机运行） |
 
 ### E — Elevation of Privilege（权限提升）
 
@@ -84,6 +86,9 @@
 | E1 | 普通用户调用管理员接口 | 🔴 高 | Gateway 拦截 `/admin/**`，校验角色为 ADMIN |
 | E2 | 商家操作其他商家的商品 | 🔴 高 | Manager 层校验 `product.sellerId == currentUser.sellerId` |
 | E3 | 通过 `/internal/**` 绕过认证 | 🔴 高 | Gateway 禁止 `/internal/**` 被外网访问 + 内网 Feign 拦截器 |
+| E4 | 消息队列被注入伪造事件 | 🔴 高 | RabbitMQ 生产者和消费者双向 TLS 认证（⚠️ V1.1 计划，当前未部署） |
+| E5 | XXL-Job 执行器被伪造 | 🟡 中 | 执行器 AccessToken 认证（⚠️ V1.1 计划，当前未部署） |
+| E6 | 对象存储直传绕过业务校验 | 🟡 中 | MinIO/OSS Pre-signed URL 短时有效（⚠️ V1.1 计划，当前未部署） |
 
 ---
 
@@ -92,14 +97,14 @@
 | OWASP Top 10 (2021) | 本项目风险 | 应对措施 |
 |---------------------|-----------|---------|
 | A01: Broken Access Control | **高** | Manager 层资源归属校验 + Gateway 角色拦截 |
-| A02: Cryptographic Failures | **中** | BCrypt + RS256 JWT + TLS 1.3 + JWT 密钥轮换（§五）+ PII 静态加密（§六） |
+| A02: Cryptographic Failures | **中** | BCrypt + RS256 JWT + TLS 1.3 + JWT 密钥轮换（§五）+ PII 静态加密（§六 ⚠️ V1.1 计划）+ Vault 密钥管理（⚠️ 计划） |
 | A03: Injection | **高** | MyBatis-Plus 参数化查询 + 排序字段白名单校验 |
-| A04: Insecure Design | **中** | 本文档（威胁建模）+ ADR 记录关键决策 |
-| A05: Security Misconfiguration | **中** | 生产配置关闭 stacktrace + CORS 白名单 |
-| A06: Vulnerable Components | **低** | Maven 版本锁定 + Dependabot 定期扫描 |
-| A07: Identification Failures | **高** | 密码强度策略 + @RateLimit 防爆破 + 验证码 |
-| A08: Software Integrity Failures | **低** | CI/CD 构建签名 |
-| A09: Logging & Monitoring Failures | **中** | 操作审计表 + 异常告警（Prometheus Alert） |
+| A04: Insecure Design | **中** | 本文档（威胁建模）+ ADR 记录关键决策 + Seata/Sentinel 安全配置 |
+| A05: Security Misconfiguration | **中** | 生产配置关闭 stacktrace + CORS 白名单 + Sentinel 规则审计 |
+| A06: Vulnerable Components | **低** | Maven 版本锁定 + GitHub Dependabot 定期扫描 |
+| A07: Identification Failures | **高** | 密码强度策略 + @RateLimit 防爆破 + Geetest 人机验证 |
+| A08: Software Integrity Failures | **低** | GitHub Actions CI/CD 构建签名 |
+| A09: Logging & Monitoring Failures | **中** | 操作审计表 + Prometheus Alert + ELK 集中日志 (V1.1) + SkyWalking 链路追踪 |
 | A10: Server-Side Request Forgery | **低** | 无外部 URL 抓取需求，Gateway 出站白名单 |
 
 ---
@@ -108,16 +113,19 @@
 
 | 控制层 | 机制 | 覆盖威胁 |
 |--------|------|---------|
-| 传输层 | HTTPS (TLS 1.3) | T1-T4, I1-I6 |
+| 传输层 | HTTPS (TLS 1.3) + Nginx 反向代理 | T1-T4, I1-I6 |
 | 认证层 | JWT RS256 + JWKS | S1, S2 |
 | 鉴权层 | RBAC + 资源归属校验 | E1, E2, I1, I2 |
 | 输入层 | 参数校验 + 白名单 | A03-Injection |
-| 限流层 | @RateLimit (Redis Lua) | D1-D3 |
-| 数据层 | DO/DTO/VO 隔离 | I6 |
+| 限流层 | @RateLimit (Redis Lua) + Sentinel 熔断 | D1-D4 |
+| 数据层 | DO/DTO/VO 隔离 + AES-256 PII 加密 | I6, A02 |
 | 审计层 | 操作日志 + 不可变日志表 | R1, R2 |
-| 运维层 | Gateway 路由控制 + 内部接口隔离 | E3 |
-| 密钥层 | JWT 密钥轮换 + Keystore 密码管理 | S1, S2 |
+| 运维层 | Gateway 路由控制 + `/internal/**` 隔离 | E3 |
+| 密钥层 | JWT 密钥轮换 + Vault/K8s Secret | S1, S2, A02 |
 | 加密层 | AES-256 PII 加密 + HMAC 辅助列 | A02, 个保法合规 |
+| 消息层 | RabbitMQ TLS + 生产/消费双向认证 (V1.1) | E4 |
+| 调度层 | XXL-Job AccessToken + 执行器注册校验 (V1.1) | E5 |
+| 存储层 | MinIO/OSS Pre-signed URL + 防盗链 (V1.1) | E6 |
 
 ---
 
@@ -145,9 +153,10 @@ jwt:
 ```
 
 **硬约束：**
-- `.p12` 和 `.jks` 文件 **不得** 提交到 Git 仓库（已加入 `.gitignore`）
-- 密码通过 K8s Secret / Vault 注入，**不得** 出现在 `application.yml` 中
+- `.p12` 和 `.jks` 文件 **不得** 提交到 Git 仓库（生产密钥）。开发环境 `icedmall.jks` 仅用于本地测试，V1.1 需迁移到环境变量注入并加入 `.gitignore`
+- 密码通过 **Vault**（生产环境）或 **K8s Secret** 注入，**不得** 出现在 `application.yml` 中
 - 开发/测试环境使用独立密钥对，**严禁** 共用生产密钥
+- Vault 引入时机：V1.1（与 K8s 部署同步），MVP 阶段使用环境变量过渡
 
 ### 5.3 Refresh Token 安全
 
@@ -162,9 +171,11 @@ jwt:
 
 ## 六、数据静态加密
 
-### 6.1 PII 敏感字段加密
+> ⚠️ **当前状态：V1.1 计划，未实现。** MVP 阶段 PII 字段（手机号/地址/姓名）以明文 VARCHAR 存储。以下方案为 V1.1 目标架构，实施前需完成：Key Management（Vault/K8s Secret）、AES 加解密工具类、phone_hash 辅助列迁移。
 
-以下字段在 MySQL 中 **不得明文存储**：
+### 6.1 PII 敏感字段加密（V1.1 目标）
+
+以下字段 **V1.1 迁移后**不得明文存储：
 
 | 表 | 字段 | 加密方式 | 说明 |
 |----|------|---------|------|

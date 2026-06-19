@@ -12,15 +12,31 @@
 | Java | **21** | 只能使用 LTS 版本，升级需评估所有依赖兼容性 |
 | Spring Boot | **3.5.4** | 由父 POM 统一管理，子模块不得覆盖 |
 | Spring Cloud | **2025.0.1** | 与 Spring Boot 版本绑定 |
-| Spring Cloud Alibaba | **2025.0.0.0** | 与 Spring Cloud 版本绑定 |
+| Spring Cloud Alibaba | **2025.0.0.0** | 与 Spring Cloud 版本绑定；含 Sentinel、Nacos |
 | MyBatis-Plus | **3.5.11** | 父 POM dependencyManagement 管理，子模块不加版本 |
 | MySQL Connector | **9.3.0** | |
 | Hutool | **5.8.43** | 仅使用 `cn.hutool` 包，禁止引入 hutool-v2 |
 | MapStruct | **1.5.5.Final** | Lombok 必须在 processor path 中先于 MapStruct |
 | Lombok | **1.18.42** | scope=provided，子模块需显式声明 |
 | JJWT | **0.13.0** | |
+| Redisson | **3.26.0** | 分布式锁在 `authorization-service`（登录并发控制），非 ia-common |
+| 微信支付 SDK | **0.2.17** | wechatpay-java，封装在 `ia-common` client 层 |
+| 阿里云短信 SDK | **3.1.0** | dysmsapi20170525，封装在 `ia-common` client 层 |
+| ElasticSearch | **7.17.25** | V1.1 上线 search-service（当前为骨架） |
 
 **子模块版本原则**：所有版本号在父 POM `<dependencyManagement>` 中统一管理，子模块只声明 groupId:artifactId，不加 version。
+
+### 计划引入的技术版本（V1.1+）
+
+| 组件 | 预计版本 | 引入时机 | 替换目标 |
+|------|---------|---------|---------|
+| Sentinel | 与 SCA 绑定 | V1.1 | 补充 `@RateLimit`，增加熔断降级 |
+| Seata | 2.x | V1.1 | 替换手动 Saga 补偿 |
+| XXL-Job | 2.4+ | V1.1 | 替换 `@Scheduled` 定时任务 |
+| SkyWalking | 9.x | V1.1 | 新增，无替换 |
+| RabbitMQ | 3.13+ | V1.1 | 新增，领域事件异步化 |
+| Canal | 1.1+ | V1.2 | 新增，MySQL→ES/Redis 同步 |
+| ShardingSphere | 5.x | V2.0 | 分库分表（触发条件：单表 > 500 万行） |
 
 ---
 
@@ -282,3 +298,42 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 - 未经父 POM 版本管理的第三方库（需先评审）
 - 已废弃的库（如 `springfox-swagger` → 已由 Knife4j 替代）
 - 与 ia-common 已提供功能重复的库
+
+---
+
+## 九、分布式事务约束（当前：手动 Saga / 未来：Seata）
+
+| 规则 | 说明 |
+|------|------|
+| 补偿必须幂等 | 库存回滚 `restoreStock()` 使用 `stock = stock + quantity` 而非 `stock = oldValue`，防止重复补偿 |
+| 补偿链完整 | 下单涉及 N 步远程调用，每一步失败必须有对应的补偿操作，不能只补偿第一步 |
+| 事务边界明确 | 跨服务调用不在同一本地事务中 —— 先远程扣库存，再本地创订单；本地失败立即远程补偿 |
+| Seata 引入后 | AT 模式用于支付回调（强一致）；TCC 模式用于库存扣减（二阶段）；Saga 模式用于下单全链路（长事务） |
+| 禁止 XA | 不使用 JTA/XA 分布式事务（性能差，MySQL 锁粒度大） |
+
+## 十、定时任务约束（当前：@Scheduled / 未来：XXL-Job）
+
+| 规则 | 说明 |
+|------|------|
+| 禁止单机 @Scheduled 做关键业务 | `PayTimeoutJob`、`OrderTimeoutJob` 等涉及钱/库存的定时任务，在多实例下会重复执行。MVP 单机可接受，V1.1 必须迁移至 XXL-Job |
+| 分片策略 | 多实例时按 `order_id % instanceCount` 分片，避免同一订单被多个实例处理 |
+| 故障转移 | XXL-Job 故障转移：执行器宕机 → 调度中心自动路由到备用执行器 |
+| 幂等设计 | 定时任务处理函数必须幂等（可能重复触发），使用状态机 + 乐观锁保证 |
+
+## 十一、链路追踪约束（未来：SkyWalking）
+
+| 规则 | 说明 |
+|------|------|
+| TraceId 传递 | Feign 拦截器自动传递 TraceId（`X-Trace-Id` header）；自己 `new Thread()` 的场景必须手动传递 |
+| 日志包含 TraceId | 所有 `log.info/error` 格式中包含 `[traceId:%s]`，方便 ELK 串联 |
+| 不追踪健康检查 | `/actuator/health`、`/health` 等端点排除在追踪之外，避免噪音 |
+| 敏感数据不上报 | Span Tag 中不得包含手机号、密码、Token 等 PII |
+
+## 十二、消息队列约束（计划 V1.1：RabbitMQ）
+
+| 规则 | 说明 |
+|------|------|
+| 消息必达 | 核心事件（订单创建/支付成功）使用 Publisher Confirm + 持久化队列，保证不丢消息 |
+| 消费幂等 | 消费者必须幂等（可能重复投递），使用 `bizOrderNo + eventType` 做去重 |
+| 顺序性 | 同一订单的事件必须顺序消费（通过 Routing Key 路由到同一 Queue） |
+| 死信队列 | 消费失败 N 次后进入死信队列，人工介入处理 |

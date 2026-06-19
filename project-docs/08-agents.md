@@ -211,6 +211,66 @@ try { ... } catch (Exception e) { e.printStackTrace(); }  // 吞异常
 
 ---
 
+## 七、关键模式速查
+
+### 7.1 @Version 乐观锁
+
+`orders` 和 `sku` 表使用 `@Version` 进行乐观锁并发控制。更新前必须先查出当前 version，更新时 MyBatis-Plus 自动 `WHERE version = ?` 并自增。
+
+```java
+// ✅ 正确：通过 Service 的 getById 查出实体（含 version），修改后 updateById
+SkuEntity sku = skuService.getById(skuId);
+sku.setStock(sku.getStock() - quantity);
+skuService.updateById(sku);  // MyBatis-Plus: UPDATE ... SET stock=? WHERE id=? AND version=sku.getVersion()
+
+// ❌ 禁止：直接 lambdaUpdate 跳过 version 检查（会破坏乐观锁）
+lambdaUpdate().eq(SkuEntity::getId, skuId).setSql("stock = stock - " + quantity).update();
+```
+
+### 7.2 Validation Groups（CreateGroup / UpdateGroup）
+
+DTO 校验使用标记接口区分创建/更新场景：
+
+```java
+// group/CreateGroup.java
+public interface CreateGroup {}
+
+// group/UpdateGroup.java
+public interface UpdateGroup {}
+
+// DTO 中按场景标注
+@NotBlank(groups = CreateGroup.class)  // 创建时必填
+@NotBlank(groups = {CreateGroup.class, UpdateGroup.class})  // 创建和更新都需要
+
+// Controller 中按场景激活
+public Result create(@RequestBody @Validated(CreateGroup.class) ProductReq req) { ... }
+```
+
+### 7.3 /internal 端点异常规则
+
+`/internal/**` 路径被 Gateway 拦截禁止外网访问，同时**异常不包装 Result**：
+
+- Controller 上使用 `@RestController`（非 `@ResponseBody` + `Result`）
+- 方法返回原始类型（`UserEntity`, `void`, `long`）
+- 异常由 `@ControllerAdvice` 中的 `GlobalExceptionHandler` 处理，但**不包装为 Result 格式**
+- 这是为了让 Feign 调用方可以读取原始 HTTP 状态码
+
+```java
+// ✅ 正确：内部 Controller 不包装 Result
+@RestController
+@RequestMapping("/internal/user")
+public class InternalUserController {
+    @GetMapping("/{id}")
+    public UserEntity getUser(@PathVariable Long id) { ... }  // 直接返回 entity
+}
+
+// ❌ 禁止：内部接口包装 Result
+@GetMapping("/{id}")
+public Result<UserEntity> getUser(@PathVariable Long id) { return Result.success(...); }
+```
+
+---
+
 ## 七、测试生成规则 (TDD)
 
 ### 单元测试模板

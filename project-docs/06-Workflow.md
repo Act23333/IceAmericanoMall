@@ -207,7 +207,39 @@ refactor: 将限流逻辑提取到 Manager 层
 
 ---
 
-## 七、技术决策速查
+## 七、CI/CD 流水线（计划 V1.1：GitHub Actions）
+
+```
+代码推送 (develop/feature)
+  │
+  ├── Stage 1: 编译 & 测试
+  │     ├── mvn clean install (全模块)
+  │     ├── 单元测试 + 集成测试 (Testcontainers)
+  │     └── 代码风格检查 (Checkstyle)
+  │
+  ├── Stage 2: 构建镜像
+  │     ├── 每个服务构建 Docker 镜像
+  │     └── 推送到私有镜像仓库
+  │
+  └── Stage 3: 部署 (PR 合并到 main)
+        ├── Docker Compose 更新容器
+        └── 冒烟测试 (核心 API)
+```
+
+### 本地开发环境（Docker Compose）
+
+```yaml
+# 一键启动开发依赖
+services:
+  mysql:       # MySQL 9.3.0, port 3306
+  redis:       # Redis 7.x, port 6379
+  nacos:       # Nacos 2.x, port 8848
+  # ES (可选): ElasticSearch 7.17.25, port 9200
+```
+
+---
+
+## 八、技术决策速查
 
 | 问题 | 决策 | 详见文档 |
 |------|------|---------|
@@ -221,6 +253,15 @@ refactor: 将限流逻辑提取到 Manager 层
 | 第三方 API 怎么调？ | 独立封装在 infra 层，不散落 Service | 02-Architecture §4.2 |
 | 异常怎么处理？ | ia-common 统一异常体系 + GlobalExceptionHandler | 02-Architecture §3.3 |
 | Swagger 文档？ | Knife4j (OpenAPI 3) | 02-Architecture §2 |
+| 分布式事务怎么办？ | MVP 手动 Saga 补偿，V1.1 引入 Seata | 09-constraints §9 |
+| 定时任务多实例？ | MVP @Scheduled 单机，V1.1 迁移到 XXL-Job | 09-constraints §10 |
+| 跨服务问题排查？ | V1.1 引入 SkyWalking 分布式追踪 | 09-constraints §11 |
+| 消息怎么异步化？ | V1.1 引入 RabbitMQ，核心事件发布/订阅 | 03-Domain-Model §8 |
+| 商品图片存哪里？ | V1.1 MinIO/阿里云 OSS 对象存储 | 02-Architecture §2.3 |
+| ES 数据怎么同步？ | V1.2 Canal CDC MySQL binlog → ES | 04-Data-Model §1 |
+| 分库分表用什么？ | V2.0 Apache ShardingSphere | 04-Data-Model §1 |
+| CI/CD 用什么？ | GitHub Actions | 06-Workflow §7 |
+| 本地开发环境？ | Docker Compose 一键启动 MySQL/Redis/Nacos | 06-Workflow §7 |
 
 ---
 

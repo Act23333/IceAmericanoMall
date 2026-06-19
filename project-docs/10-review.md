@@ -33,6 +33,7 @@
 □ 没有 try-catch（异常交给 GlobalExceptionHandler）
 □ 返回类型为 Result<T>（T 是 VO，不是 Entity）
 □ 参数使用 @Validated 校验（复杂校验用 DTO validation 注解）
+□ DTO 使用了 validation group（CreateGroup/UpdateGroup），Controller 对应标注 @Validated(XxxGroup.class)
 □ 路径使用 RESTful 风格，不含动词（/api/user 而不是 /api/getUser）
 ```
 
@@ -170,6 +171,7 @@ grep -r "Result<.*Entity>" --include="*Controller.java"
 □ 没有 SELECT * + 全表扫描（必要时加 LIMIT）
 □ 循环内没有数据库调用（N+1 问题）
 □ 下单/支付等关键操作有幂等保护
+□ @Version 乐观锁 — inventory/sku/orders 更新前查出实体，用 updateById 而非 lambdaUpdate
 □ 大数据量操作分批处理（禁止一次性加载全部数据到内存）
 □ Redis Key 有 TTL（禁止永不过期的 Key）
 ```

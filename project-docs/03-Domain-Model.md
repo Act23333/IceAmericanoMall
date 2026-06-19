@@ -44,8 +44,9 @@
 | 用户上下文 | 认证上下文 | 共享内核 (User) | user-service 提供 Feign 接口      |
 | 用户上下文 | 订单上下文 | 客户/供应商      | trade-service 调用 user-service |
 | 商品上下文 | 订单上下文 | 客户/供应商      | item-service 提供商品信息           |
-| 订单上下文 | 支付上下文 | 发布/订阅       | 订单事件触发支付                      |
-| 订单上下文 | 物流上下文 | 发布/订阅       | 支付成功后触发物流                     |
+| 订单上下文 | 支付上下文 | 发布/订阅       | 订单事件通过 **RabbitMQ** 触发支付（V1.1） |
+| 订单上下文 | 物流上下文 | 发布/订阅       | 支付成功后通过 **RabbitMQ** 触发物流（V1.1） |
+| 订单上下文 | 通知上下文 | 发布/订阅       | 状态变更通过 **WebSocket** 实时推送（V1.2） |
 | 商品上下文 | AI搜索上下文 | 客户/供应商  | ai-service 调用 search-service + item-service |
 | 用户上下文 | AI客服上下文 | 客户/供应商  | ai-service 调用 user-service + trade-service |
 | AI搜索上下文 | AI客服上下文 | 共享内核 (Embedding) | 向量检索能力复用                      |
@@ -277,6 +278,9 @@
 | `AmountCalculator`  | 订单总价计算、优惠分摊、运费计算     | 订单上下文 |
 | `OrderStateMachine` | 订单状态流转控制           | 订单上下文 |
 | `PaymentRouter`     | 根据支付方式路由到不同渠道      | 支付上下文 |
+| `EventPublisher`   | 领域事件投递（RabbitMQ, V1.1） | 全局（ia-common） |
+| `NotificationService` | WebSocket 实时推送（V1.2） | 通知上下文 |
+| `DistributedScheduler` | 分布式定时任务协调（XXL-Job, V1.1） | 全局 |
 | `ProductVectorizer` | 商品信息 → Embedding 向量（V2.0+） | AI搜索上下文 |
 | `RAGRetriever`     | 多路召回 + 重排序（V2.0+）       | AI客服上下文 |
 | `AgentPlanner`     | ReAct 推理 + 工具链编排（V2.0+）  | AI搜索上下文 |
@@ -284,15 +288,18 @@
 
 ---
 
-## 八、领域事件 (未来扩展)
+## 八、领域事件
 
-| 事件               | 触发场景   | 消费者              |
-| ---------------- | ------ | ---------------- |
-| `OrderCreated`   | 用户提交订单 | 支付上下文（发起支付）      |
-| `OrderPaid`      | 支付成功回调 | 物流上下文（准备发货）、通知服务 |
-| `OrderShipped`   | 商家发货   | 通知服务（推送物流信息）     |
-| `OrderCompleted` | 用户确认收货 | 积分上下文（下单积分奖励）    |
-| `UserRegistered` | 新用户注册  | 营销上下文（新用户奖励）     |
+> MVP 阶段通过 Feign 同步调用；V1.1 引入 **RabbitMQ** 后全部改为异步发布/订阅。
+
+| 事件 | 触发场景 | 消费者 | 投递方式 | 可靠性 |
+|------|---------|--------|---------|--------|
+| `OrderCreated` | 用户提交订单 | 支付上下文（发起支付） | RabbitMQ (V1.1) | Publisher Confirm + 持久化 |
+| `OrderPaid` | 支付成功回调 | 物流上下文（准备发货）、通知服务（推送） | RabbitMQ (V1.1) | 同上 |
+| `OrderShipped` | 商家发货 | 通知服务（**WebSocket** 推送物流信息, V1.2） | RabbitMQ (V1.1) | 同上 |
+| `OrderCompleted` | 用户确认收货 | 积分上下文（下单积分奖励） | RabbitMQ (V1.1) | 同上 |
+| `UserRegistered` | 新用户注册 | 营销上下文（新用户奖励） | RabbitMQ (V1.1) | 同上 |
+| `OrderCancelled` | 订单超时/手动取消 | 商品上下文（库存回滚补偿） | Feign 同步（MVP）/ RabbitMQ (V1.1) | 补偿必须幂等 |
 
 ---
 

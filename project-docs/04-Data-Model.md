@@ -48,6 +48,18 @@
 
 冰美商城当前使用 `AUTO_INCREMENT`，分库分表前切换为 `ASSIGN_ID`。
 
+**分库分表路线**：当前单库单表满足 MVP 需求。当单表数据量超过 500 万行时，引入 **Apache ShardingSphere** 做水平分片，同时将主键策略切换为 `ASSIGN_ID`（雪花算法），避免 DB 自增冲突。
+
+### 数据同步策略（计划 V1.2）
+
+当 ElasticSearch 上线后，需要保证 MySQL 与 ES 的数据一致性：
+
+| 同步路径 | 方案 | 触发条件 |
+|---------|------|---------|
+| MySQL → ElasticSearch | **Canal** (binlog 订阅) | 商品上架/下架/信息变更时，近实时同步至 ES 索引 |
+| MySQL → Redis | Canal → 刷新缓存 | 商品价格/库存变更时，失效 Redis 缓存 |
+| 定时全量同步 | XXL-Job 日间低频 | 兜底：每天凌晨 3 点全量重建 ES 索引 |
+
 ### 标识使用原则
 
 | 场景 | 使用 | 原因 |
