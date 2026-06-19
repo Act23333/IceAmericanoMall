@@ -24,6 +24,8 @@ public class CouponEntity implements Serializable {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private Integer status;
+    /** 商家ID（NULL=平台券） */
+    private Long sellerId;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
     @TableField(fill = FieldFill.INSERT_UPDATE)
