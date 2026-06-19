@@ -3,9 +3,7 @@ package org.icedAmericanoMall.client;
 import org.icedAmericanoMall.dto.*;
 import org.icedAmericanoMall.fallback.UserClientFallback;
 import org.springframework.cloud.openfeign.FeignClient;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.*;
 
 @FeignClient(name = "user-service", path = "/internal/user", fallbackFactory = UserClientFallback.class)
 public interface UserClient {
@@ -22,4 +20,10 @@ public interface UserClient {
     /** Get total user count for admin dashboard */
     @GetMapping("/count")
     Long countUsers();
+
+    /** Award points — called by trade-service on order completion */
+    @PostMapping("/points/add")
+    Long addPoints(@RequestParam Long userId, @RequestParam int points,
+                   @RequestParam(defaultValue = "2") int type,
+                   @RequestParam(defaultValue = "下单奖励") String source);
 }

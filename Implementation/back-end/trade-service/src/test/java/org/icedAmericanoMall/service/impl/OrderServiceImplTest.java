@@ -3,6 +3,7 @@ package org.icedAmericanoMall.service.impl;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.icedAmericanoMall.client.LogisticsClient;
 import org.icedAmericanoMall.client.SkuClient;
+import org.icedAmericanoMall.client.UserClient;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
 import org.icedAmericanoMall.domain.entity.OrderItemEntity;
 import org.icedAmericanoMall.domain.entity.OrderLogisticsEntity;
@@ -45,13 +46,15 @@ class OrderServiceImplTest {
     private SkuClient mockSkuClient;
     @Mock
     private LogisticsClient mockLogisticsClient;
+    @Mock
+    private UserClient mockUserClient;
 
     private OrderServiceImpl service;
 
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
-        service = new OrderServiceImpl(mockOrderItemMapper, mockSkuClient, mockLogisticsClient);
+        service = new OrderServiceImpl(mockOrderItemMapper, mockSkuClient, mockLogisticsClient, mockUserClient);
         ReflectionTestUtils.setField(service, "baseMapper", (BaseMapper<OrderEntity>) mockOrderMapper);
     }
 

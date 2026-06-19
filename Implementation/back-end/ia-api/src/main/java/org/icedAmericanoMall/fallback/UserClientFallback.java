@@ -45,6 +45,12 @@ public class UserClientFallback implements FallbackFactory<UserClient> {
                 log.error("获取用户总数失败", cause);
                 return 0L;
             }
+
+            @Override
+            public Long addPoints(Long userId, int points, int type, String source) {
+                log.error("积分发放失败: userId={}, points={}", userId, points, cause);
+                return 0L;
+            }
         };
     }
 }

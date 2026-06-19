@@ -7,6 +7,7 @@ import org.apache.ibatis.session.SqlSessionFactory;
 import org.h2.Driver;
 import org.icedAmericanoMall.client.LogisticsClient;
 import org.icedAmericanoMall.client.SkuClient;
+import org.icedAmericanoMall.client.UserClient;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
 import org.icedAmericanoMall.domain.entity.OrderItemEntity;
 import org.icedAmericanoMall.enums.OrderStatusEnum;
@@ -96,7 +97,7 @@ class OrderServiceImplH2Test {
 
         OrderItemMapper orderItemMapper = sqlSessionFactory.openSession().getMapper(OrderItemMapper.class);
         OrderServiceImpl impl = new OrderServiceImpl(
-                orderItemMapper, mock(SkuClient.class), mock(LogisticsClient.class));
+                orderItemMapper, mock(SkuClient.class), mock(LogisticsClient.class), mock(UserClient.class));
         ReflectionTestUtils.setField(impl, "baseMapper",
                 sqlSessionFactory.openSession().getMapper(OrderMapper.class));
 

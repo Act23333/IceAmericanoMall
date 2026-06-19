@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.client.LogisticsClient;
 import org.icedAmericanoMall.client.SkuClient;
+import org.icedAmericanoMall.client.UserClient;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
 import org.icedAmericanoMall.domain.entity.OrderItemEntity;
 import org.icedAmericanoMall.dto.CreateLogisticsDTO;
@@ -32,13 +33,16 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
     private final OrderItemMapper orderItemMapper;
     private final SkuClient skuClient;
     private final LogisticsClient logisticsClient;
+    private final UserClient userClient;
 
     public OrderServiceImpl(OrderItemMapper orderItemMapper,
                             SkuClient skuClient,
-                            LogisticsClient logisticsClient) {
+                            LogisticsClient logisticsClient,
+                            UserClient userClient) {
         this.orderItemMapper = orderItemMapper;
         this.skuClient = skuClient;
         this.logisticsClient = logisticsClient;
+        this.userClient = userClient;
     }
 
     /**
@@ -158,6 +162,14 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
                 .set(OrderEntity::getStatus, OrderStatusEnum.COMPLETED.getCode())
                 .set(OrderEntity::getEndTime, LocalDateTime.now())
                 .update();
+
+        // Award points: 1% of pay_amount (e.g., 10000分 → 100积分)
+        try {
+            int points = order.getPayAmount() / 100;
+            if (points > 0) userClient.addPoints(order.getUserId(), points, 2, "下单奖励");
+        } catch (Exception e) {
+            log.error("下单奖励积分发放失败: orderNo={}", order.getOrderNo(), e);
+        }
     }
 
     /**

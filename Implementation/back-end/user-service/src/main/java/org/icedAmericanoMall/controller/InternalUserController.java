@@ -8,6 +8,7 @@ import org.icedAmericanoMall.dto.PasswordLoginReqDTO;
 import org.icedAmericanoMall.dto.RegisterReqDTO;
 import org.icedAmericanoMall.dto.SmsLoginReqDTO;
 import org.icedAmericanoMall.service.AddressService;
+import org.icedAmericanoMall.service.PointsService;
 import org.icedAmericanoMall.service.UserService;
 import org.noLazy.common.annotation.RateLimit;
 import org.noLazy.common.utils.RateLimitUtils;
@@ -20,6 +21,7 @@ public class InternalUserController {
 
     private final UserService userService;
     private final AddressService addressService;
+    private final PointsService pointsService;
     private final RateLimitUtils rateLimitUtils;
 
     @PostMapping("/register")
@@ -60,5 +62,15 @@ public class InternalUserController {
     @GetMapping("/count")
     public long countUsers() {
         return userService.countUsers();
+    }
+
+    /**
+     * Award points — internal Feign use (trade-service calls on order completion).
+     */
+    @PostMapping("/points/add")
+    public long addPoints(@RequestParam Long userId, @RequestParam int points,
+                           @RequestParam(defaultValue = "2") int type,
+                           @RequestParam(defaultValue = "下单奖励") String source) {
+        return pointsService.addPoints(userId, points, type, source);
     }
 }
