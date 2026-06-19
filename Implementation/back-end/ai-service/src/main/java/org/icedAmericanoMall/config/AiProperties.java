@@ -6,10 +6,8 @@ import org.springframework.stereotype.Component;
 
 @Data
 @Component
-@ConfigurationProperties(prefix = "ai.llm")
+@ConfigurationProperties(prefix = "ai")
 public class AiProperties {
-    private String provider = "deepseek";
-    private String apiKey;
-    private String baseUrl = "https://api.deepseek.com/v1";
-    private String model = "deepseek-chat";
+    /** 全局 AI 开关 — 关闭时所有 Agent bean 不创建，使用降级响应 */
+    private boolean enabled = false;
 }

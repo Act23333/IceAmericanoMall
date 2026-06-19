@@ -7,16 +7,30 @@ spring:
   cloud:
     nacos:
       server-addr: ${ia.nacos.host:localhost}:8848
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
+      base-url: https://api.deepseek.com/v1
+      chat:
+        options:
+          model: deepseek-chat
+          temperature: 0.7
+      embedding:
+        api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
+        base-url: https://api.deepseek.com/v1
+        options:
+          model: text-embedding-3-small
 
-# AI 配置 — 开发环境关闭，生产环境设置 ai.enabled=true
+# LangChain4j — DeepSeek (OpenAI 兼容)
+langchain4j:
+  open-ai:
+    chat-model:
+      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
+      base-url: https://api.deepseek.com/v1
+      model-name: deepseek-chat
+      temperature: 0.7
+      timeout: 60s
+
+# AI 服务开关 — 开发环境关闭，生产环境设置 ai.enabled=true
 ai:
   enabled: false
-  llm:
-    provider: deepseek
-    api-key: ${DEEPSEEK_API_KEY:}
-    base-url: https://api.deepseek.com/v1
-    model: deepseek-chat
-  embedding:
-    provider: deepseek
-    api-key: ${DEEPSEEK_API_KEY:}
-    model: text-embedding-3-small

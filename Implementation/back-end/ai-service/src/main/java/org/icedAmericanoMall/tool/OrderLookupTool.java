@@ -1,17 +1,21 @@
 package org.icedAmericanoMall.tool;
 
-import lombok.RequiredArgsConstructor;
+import dev.langchain4j.agent.tool.Tool;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 import java.util.Map;
 
-/** 订单查询工具 — 调用 trade-service 查询订单状态 */
+/**
+ * LangChain4j @Tool — 订单查询。被客服 Agent 调用。
+ */
+@Slf4j
 @Component
-@RequiredArgsConstructor
-public class OrderQueryTool {
+public class OrderLookupTool {
     private final RestTemplate restTemplate = new RestTemplate();
 
-    public String query(String orderNo, Long userId) {
+    @Tool("根据订单号查询订单状态、金额等信息")
+    public String lookupOrder(String orderNo) {
         try {
             String url = "http://trade-service/api/trade/order/" + orderNo;
             var resp = restTemplate.getForObject(url, Map.class);
@@ -23,7 +27,8 @@ public class OrderQueryTool {
             }
             return "未找到订单 " + orderNo;
         } catch (Exception e) {
-            return "订单查询失败: " + e.getMessage();
+            log.warn("OrderLookupTool error", e);
+            return "查询失败: " + e.getMessage();
         }
     }
 }
