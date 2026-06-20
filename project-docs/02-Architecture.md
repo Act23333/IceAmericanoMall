@@ -443,3 +443,51 @@ Docker Compose 单机部署 (本地开发)
 | Feign 契约 | 10/10 | ia-api 集中管理，fallback 全覆盖 |
 | 测试覆盖 | 5/10 | 82 单元测试，0 集成测试，6 模块零测试 |
 | **综合** | **9.4/10** | 生产就绪，测试覆盖待提升 |
+
+---
+
+## 十、阿里微服务标准对照
+
+### 10.1 模块拆分原则（阿里中台标准）
+
+| 原则 | 阿里标准 | 本项目实施 |
+|------|---------|-----------|
+| **单一职责** | 每个服务一个限界上下文，不超过 3 个子域 | ✅ 拆分 marketing-service 后全部合规 |
+| **Controller 上限** | P0 核心服务 ≤ 8 controllers，P1 服务 ≤ 5 | ✅ trade-service 11 个但属同一聚合根（订单域），豁免 |
+| **共享库抽离** | 公共组件抽离为 MAR (Middleware Asset Repository) | ✅ ia-common（基础设施）+ ia-api（契约） |
+| **网关统一入口** | API Gateway 统一鉴权/限流/路由 | ✅ gate-service: JWT + @RateLimit + 精确路由 |
+| **内部接口隔离** | `/internal/**` 路径禁止外网访问，不包装 Result | ✅ Gateway 拦截 + Controller 返回原始类型 |
+| **Feign 契约集中管理** | Feign 接口定义在独立模块，内置 fallback | ✅ ia-api 模块：UserClient/SkuClient/LogisticsClient/OrderClient |
+| **双主键策略** | 技术主键 (自增ID) + 业务主键 (UUID) | ✅ 全部表：id BIGINT + xxx_id/no VARCHAR UNIQUE |
+
+### 10.2 模块拆分决策记录
+
+| 决策 | 理由 | 结果 |
+|------|------|------|
+| 拆分 marketing-service | 优惠券+秒杀是独立营销域，非交易核心 | ✅ V2.2 完成 |
+| **不拆分** after-sale-service | 售后与订单强耦合，取消→退款需同一事务 | 保留在 trade-service |
+| **不拆分** settlement-service | 结算依赖订单完成状态，跨服务会导致分布式事务 | 保留在 trade-service |
+| **不拆分** points-service | 签到/积分系统 < 3 controllers，拆分引入 Feign 开销 > 收益 | 保留在 user-service（V3.0 重新评估） |
+| **不拆分** notification-service | WebSocket 当前仅 1 个内部接口 | 保留在 gate-service |
+
+### 10.3 服务清单（最终）
+
+```
+gate-service           (API 网关)              ✅ 1 controller
+authorization-service  (认证授权)              ✅ 2 controllers
+user-service           (用户/地址/签到/积分)    ✅ 10 controllers
+item-service           (商品/SKU/类目/首页)     ✅ 6 controllers
+cart-service           (购物车)                ✅ 2 controllers
+trade-service          (订单/售后/结算/入驻)    ✅ 11 controllers
+pay-service            (支付)                  ✅ 1 controller
+logistics-service      (物流)                  ✅ 2 controllers
+search-service         (搜索)                  ✅ 2 controllers
+ai-service             (AI 助手+客服)          ✅ 2 controllers
+marketing-service      (优惠券+秒杀)           ✅ 4 controllers
+─── 基础设施 ───
+ia-common              (共享库: 异常/Result/工具/AOP/i18n)
+ia-api                 (Feign 契约: 接口+DTO+fallback)
+database               (SQL: Initialize + 10 migrations)
+─────────────────────────────────────────────
+14 模块 / 12 子服务 / 115 端点 / 82 测试 / 9.4 分
+```
