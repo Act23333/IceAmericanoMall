@@ -1,0 +1,44 @@
+[mysqld]
+# ========== 基础配置 ==========
+character-set-server=utf8mb4
+collation-server=utf8mb4_unicode_ci
+default-time-zone=+08:00
+max_allowed_packet=64M
+
+# ========== 连接与线程池 ==========
+max_connections=500
+thread_cache_size=32
+back_log=256
+
+# ========== InnoDB 引擎调优 ==========
+innodb_buffer_pool_size=512M
+innodb_log_file_size=256M
+innodb_flush_log_at_trx_commit=2
+innodb_flush_method=O_DIRECT
+innodb_io_capacity=2000
+innodb_read_io_threads=8
+innodb_write_io_threads=8
+
+# ========== 查询缓存与排序 ==========
+sort_buffer_size=4M
+join_buffer_size=4M
+tmp_table_size=64M
+max_heap_table_size=64M
+
+# ========== Binlog (主从复制/CDC 基础) ==========
+server-id=1
+log-bin=mysql-bin
+binlog_format=ROW
+binlog_row_image=FULL
+expire_logs_days=7
+max_binlog_size=512M
+sync_binlog=1
+
+# ========== 慢查询日志 ==========
+slow_query_log=1
+slow_query_log_file=/var/log/mysql/slow.log
+long_query_time=1
+
+# ========== 其他 ==========
+explicit_defaults_for_timestamp=1
+lower_case_table_names=1

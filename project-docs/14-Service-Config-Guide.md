@@ -1,291 +1,431 @@
 # 14 — 服务配置指南
 
-> 帮助开发者从零搭建 IceAmericanoMall 所需的全部服务组件和第三方平台配置。
+> 从零搭建 IceAmericanoMall 所需的全部组件：Docker 容器编排、中间件配置、第三方平台注册、微服务环境变量。
 
 ---
 
 ## 一、架构全景
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                      第三方平台 (需注册)                      │
-│  微信支付 │ 阿里云短信 │ 极验验证 │ DeepSeek API             │
-└────────────────────────────────────────────────────────────┘
-                            ↑
-┌────────────────────────────────────────────────────────────┐
-│                   自建中间件 (Docker 一键启动)                │
-│  MySQL │ Redis │ Nacos │ ES │ RabbitMQ │ XXL-Job │ MinIO   │
-└────────────────────────────────────────────────────────────┘
-                            ↑
-┌────────────────────────────────────────────────────────────┐
-│              12 个微服务 (Spring Boot + Nacos)               │
-│  gateway │ auth │ user │ item │ cart │ trade │ pay │ ...   │
-└────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    第三方平台 (需注册获取密钥)                    │
+│  微信支付 │ 阿里云短信 │ 极验验证 │ DeepSeek API               │
+└──────────────────────────────────────────────────────────────┘
+                           ↑ HTTPS (Nginx 反向代理)
+┌──────────────────────────────────────────────────────────────┐
+│                  自建中间件 (Docker 一键编排)                    │
+│  Nginx │ MySQL │ Redis │ Nacos │ ES │ RabbitMQ │ XXL-Job │ MinIO │
+└──────────────────────────────────────────────────────────────┘
+                           ↑ 内部网络 (172.20.0.0/16)
+┌──────────────────────────────────────────────────────────────┐
+│             12 个微服务 (Spring Boot + Nacos 注册发现)          │
+│  gateway │ auth │ user │ item │ cart │ trade │ pay │ ...     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
----
-
-## 二、服务端口规划
-
-| 服务 | 端口 | 说明 |
-|------|------|------|
-| gate-service | **8080** | 统一 API 入口 |
-| authorization-service | **9000** | OAuth2 认证 + JWT 签发 |
-| user-service | **8080** | 注意：与 gateway 同端口（本地分机器部署时调整） |
-| item-service | **8082** | 商品/类目/SKU |
-| cart-service | **8083** | 购物车 |
-| trade-service | **8084** | 订单/售后/结算/入驻 |
-| pay-service | **8085** | 支付 |
-| search-service | **8086** | 搜索（ES 未启用时降级为 DB） |
-| logistics-service | **8087** | 物流 |
-| ai-service | **8089** | AI 助手 + 客服 |
-| marketing-service | **8090** | 优惠券 + 秒杀 |
+**设计原则：**
+- 容器间通过 `backend` 网络通信，宿主机仅暴露必要端口
+- 全部中间件启用健康检查，`depends_on` 保证启动顺序
+- 数据持久化：MySQL/Redis/ES/RabbitMQ/MinIO 均挂载独立 volume
+- 资源限制：每个容器设置 CPU/内存上限，防止单点资源耗尽
+- 日志轮转：json-file driver，单文件 50MB，保留 3 个
 
 ---
 
-## 三、自建中间件（Docker Compose 一键启动）
-
-### 3.1 启动命令
+## 二、快速开始
 
 ```bash
-# 只启动基础服务（MySQL + Redis + Nacos）
+# 1. 复制环境变量模板
 cd Implementation/back-end
+cp .env.example .env
+
+# 2. 编辑 .env，修改所有 changeit_* 密码
+
+# 3. 启动基础设施（MySQL + Redis + Nacos）
 docker compose up -d
 
-# 启动全部中间件（含 ES + RabbitMQ + XXL-Job + MinIO）
-docker compose --profile v1.1 up -d
+# 4. 等待健康检查通过
+docker compose ps    # STATUS 全部显示 healthy
+
+# 5. 启动全部中间件（ES + RabbitMQ + XXL-Job + MinIO + Nginx）
+docker compose --profile v1.1 --profile v1.2 up -d
+
+# 6. 初始化数据库表
+docker compose exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} icedamericano_mall < database/Initialize.sql
+
+# 7. 启动微服务（在 IDE 或命令行分别启动）
 ```
-
-### 3.2 MySQL
-
-| 配置项 | 值 |
-|--------|-----|
-| 镜像 | `mysql:9.0` |
-| 端口 | **3306** |
-| root 密码 | `root123` |
-| 数据库 | `icedamericano_mall` |
-| 初始化 SQL | `database/Initialize.sql`（自动执行） |
-
-**手动创建数据库**（如果不使用 Docker）：
-
-```sql
-CREATE DATABASE icedamericano_mall DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci;
--- 然后执行 database/Initialize.sql
--- 再按版本顺序执行 database/migrations/V*.sql
-```
-
-### 3.3 Redis
-
-| 配置项 | 值 |
-|--------|-----|
-| 镜像 | `redis:7-alpine` |
-| 端口 | **6379** |
-| 密码 | 无（开发环境） |
-
-### 3.4 Nacos（注册中心 + 配置中心）
-
-| 配置项 | 值 |
-|--------|-----|
-| 镜像 | `nacos/nacos-server:v2.4.0` |
-| Web 控制台 | **http://localhost:8848/nacos** |
-| gRPC 端口 | **9848** |
-| 用户名/密码 | `nacos` / `nacos` |
-| 模式 | standalone（单机） |
-
-**验证**：访问 `http://localhost:8848/nacos`，在「服务管理→服务列表」中应能看到注册的服务。
-
-### 3.5 ElasticSearch（V1.1 profile）
-
-| 配置项 | 值 |
-|--------|-----|
-| 镜像 | `docker.elastic.co/elasticsearch/elasticsearch:7.17.25` |
-| HTTP 端口 | **9200** |
-| 集群端口 | **9300** |
-| 安全 | 关闭（xpack.security.enabled=false） |
-| 内存 | 512MB |
-
-**启用条件**：`search.elasticsearch.enabled=true`（search-service application.yml）
-
-### 3.6 RabbitMQ（V1.1 profile）
-
-| 配置项 | 值 |
-|--------|-----|
-| 镜像 | `rabbitmq:3.13-management-alpine` |
-| AMQP 端口 | **5672** |
-| 管理控制台 | **http://localhost:15672** |
-| 用户名/密码 | `admin` / `admin123` |
-
-**启用条件**：`rabbitmq.enabled=true`（trade/pay/logistics application.yml）
-
-### 3.7 XXL-Job Admin（V1.1 profile）
-
-| 配置项 | 值 |
-|--------|-----|
-| 镜像 | `xuxueli/xxl-job-admin:2.4.2` |
-| 控制台 | **http://localhost:8088/xxl-job-admin** |
-| 用户名/密码 | `admin` / `123456` |
-| 数据库 | 复用 `icedamericano_mall`（需手动执行 XXL-Job 初始化 SQL） |
-
-**启用条件**：`xxl.job.enabled=true`
-
-**XXL-Job 初始化 SQL**（首次部署需手动执行）：
-```sql
--- 从 https://github.com/xuxueli/xxl-job/blob/master/doc/db/tables_xxl_job.sql 获取
-```
-
-### 3.8 MinIO（V1.1 profile）
-
-| 配置项 | 值 |
-|--------|-----|
-| 镜像 | `minio/minio:latest` |
-| API 端口 | **9000** |
-| 控制台端口 | **9001** |
-| 用户名/密码 | `minioadmin` / `minioadmin` |
-
-**启用条件**：`minio.enabled=true`
 
 ---
 
-## 四、第三方平台配置
+## 三、服务端口规划
 
-### 4.1 微信支付（pay-service）
+| 组件 | 容器名 | 端口 | 网络 | 说明 |
+|------|--------|------|------|------|
+| Nginx | ia-nginx | **80** | 宿主机 | 反向代理 + 限流 |
+| Gateway | gate-service | **8080** | backend | API 统一入口 |
+| Auth | authorization-service | **9000** | backend | OAuth2 + JWT |
+| User | user-service | **8080** | backend | 同端口，分实例部署 |
+| Item | item-service | **8082** | backend | 商品/类目/SKU |
+| Cart | cart-service | **8083** | backend | 购物车 |
+| Trade | trade-service | **8084** | backend | 订单/售后/结算 |
+| Pay | pay-service | **8085** | backend | 支付回调 |
+| Search | search-service | **8086** | backend | ES 搜索 |
+| Logistics | logistics-service | **8087** | backend | 物流 |
+| AI | ai-service | **8089** | backend | AI 助手 |
+| Marketing | marketing-service | **8090** | backend | 优惠券+秒杀 |
+| MySQL | ia-mysql | **3306** | 宿主机 | 数据库 |
+| Redis | ia-redis | **6379** | 宿主机 | 缓存+限流 |
+| Nacos | ia-nacos | **8848/9848** | 宿主机 | 注册+配置中心 |
+| ES | ia-elasticsearch | **9200/9300** | 宿主机 | 搜索引擎 |
+| RabbitMQ | ia-rabbitmq | **5672/15672** | 宿主机 | 消息队列/管理 |
+| XXL-Job | ia-xxl-job | **8088** | 宿主机 | 调度中心 |
+| MinIO | ia-minio | **9000/9001** | 宿主机 | 对象存储/控制台 |
 
-**注册流程**：
-1. 前往 [微信支付商户平台](https://pay.weixin.qq.com/) 注册商户号
-2. 在「账户中心→API安全」中设置 APIv3 密钥
-3. 下载商户证书（apiclient_key.pem）
+---
 
-**环境变量**：
+## 四、自建中间件 — 详细配置
 
-| 变量 | 说明 | 示例 |
-|------|------|------|
-| `WECHAT_PAY_MERCHANT_ID` | 商户号 | `1234567890` |
-| `WECHAT_PAY_PRIVATE_KEY_PATH` | 商户私钥路径 | `/etc/wechat/apiclient_key.pem` |
-| `WECHAT_PAY_MERCHANT_SERIAL` | 商户证书序列号 | `ABC123...` |
-| `WECHAT_PAY_API_V3_KEY` | API v3 密钥 | 32 位随机字符串 |
-| `WECHAT_PAY_NOTIFY_URL` | 支付回调地址 | `https://your-domain.com/api/pay/callback/wechat` |
+### 4.1 MySQL 9.0
 
-**本地开发**：设置 `WECHAT_PAY_MERCHANT_ID=false` 使用 Mock 支付客户端，不调用真实微信接口。
+**为什么需要：** 全部业务数据存储（用户/商品/订单/支付等 11+ 张表）
 
-### 4.2 阿里云短信（user-service）
+**Docker 配置要点：**
 
-**注册流程**：
-1. 前往 [阿里云短信服务控制台](https://dysms.console.aliyun.com/) 开通服务
-2. 申请短信签名（如「冰美式商城」）
-3. 申请短信模板（验证码类型）
-4. 获取 AccessKey ID 和 AccessKey Secret
+| 配置项 | 说明 |
+|--------|------|
+| 资源限制 | CPU 2 核 / 内存 1G（生产建议 4C8G） |
+| 持久化 | `mysql-data` volume → `/var/lib/mysql` |
+| 配置文件 | `docker/mysql/conf.d/custom.cnf` 挂载到 `/etc/mysql/conf.d/` |
+| Binlog | ROW 格式，server-id=1，为主从复制和 Canal CDC 做准备 |
+| 健康检查 | `mysqladmin ping`，5 次重试，30s 启动等待 |
+| 字符集 | utf8mb4 + utf8mb4_unicode_ci |
 
-**application.yml 配置**：
+**my.cnf 关键参数：**
 
-```yaml
-aliyun:
-  sms:
-    enabled: true                         # 启用真实短信
-    access-key-id: LTAI5tXXXXXXXXXXXX      # 替换为实际 AccessKey
-    access-key-secret: xxxxxxxxxxxxxxxxxx  # 替换为实际 Secret
-    sign-name: 冰美式商城                   # 短信签名
-    template-code: SMS_123456789           # 短信模板CODE
+```ini
+innodb_buffer_pool_size=512M            # 生产建议为物理内存 50%-70%
+innodb_flush_log_at_trx_commit=2        # 性能优先（1=最安全，2=性能好）
+max_connections=500                     # 预留给 12 个微服务的连接池
+binlog_format=ROW                       # 为 Canal CDC 主从同步准备
+slow_query_log=1                         # 慢查询监控
 ```
 
-**本地开发**：`aliyun.sms.enabled=false` 使用 MockSmsClient（打印日志，不发送）。
-
-### 4.3 极验人机验证（user-service）
-
-**注册流程**：
-1. 前往 [极验官网](https://www.geetest.com/) 注册账号
-2. 创建应用，获取 captcha-id 和 key
-
-**application.yml 配置**：
-
-```yaml
-geetest:
-  captcha-id: "你的captcha_id"    # 替换为实际值
-  key: "你的key"                  # 替换为实际值
-```
-
-### 4.4 DeepSeek API（ai-service）
-
-**注册流程**：
-1. 前往 [DeepSeek 开放平台](https://platform.deepseek.com/) 注册账号
-2. 在「API Keys」页面创建 API Key
-
-**环境变量**：
-
+**初始化：**
 ```bash
-export DEEPSEEK_API_KEY=sk-your-api-key-here
+# 自动执行 (Docker 首次启动)
+# database/Initialize.sql → /docker-entrypoint-initdb.d/01-init.sql
+# 手动执行迁移:
+docker compose exec mysql mysql -u root -p icedamericano_mall < database/migrations/V1.1__add_points.sql
+# ... 按版本号顺序执行
 ```
 
-**启用条件**：`ai.enabled=true`
+**分布式扩展：**
+- **读写分离**：配置 MySQL Router 或 ShardingSphere 读写分离
+- **主从复制**：添加 MySQL 从库容器，配置 `replica_host` + `CHANGE MASTER TO`
+- **分库分表**：V2.0 计划引入 ShardingSphere（触发条件：单表 > 500 万行）
+- **CDC 同步**：`binlog_format=ROW` 已就绪，接入 Canal 即可实时同步到 ES/Redis
 
-**计费**：约 ¥1/百万 tokens
+**需要提供的配置信息：**
+
+| 配置键 | 示例值 | 来源 |
+|--------|--------|------|
+| `MYSQL_ROOT_PASSWORD` | `changeit_root_2024` | `.env` 文件 |
+| `MYSQL_DATABASE` | `icedamericano_mall` | `.env` 文件 |
+| 连接地址 | `mysql:3306`（容器内）/ `localhost:3306`（宿主机） | Docker 网络 |
 
 ---
 
-## 五、环境变量速查表
+### 4.2 Redis 7
 
-### 生产环境必须设置的变量
+**为什么需要：** Token 缓存、验证码存储、签到 Bitmap、限流计数器（Lua 脚本）、分布式锁（Redisson）、浏览历史
 
-| 变量 | 服务 | 默认值（开发） | 说明 |
-|------|------|-------------|------|
-| `ia.db.host` | user, search | `localhost` | MySQL 地址 |
-| `hm.db.pw` | 所有 | `root123` | MySQL root 密码 |
-| `ia.nacos.host` | 大部分 | `localhost` | Nacos 地址 |
-| `ia.redis.host` | 大部分 | `localhost` | Redis 地址 |
-| `DEEPSEEK_API_KEY` | ai | `sk-placeholder` | DeepSeek API Key |
-| `KEYSTORE_PASSWORD` | auth | `changeit` | JWT 密钥库密码 |
-| `KEY_PASSWORD` | auth | `changeit` | JWT 密钥密码 |
+**Docker 配置要点：**
+
+| 配置项 | 说明 |
+|--------|------|
+| 资源限制 | CPU 1 核 / 内存 512MB |
+| 持久化 | `redis-data` volume → `/data`，RDB(changes) + AOF(everysec) 双写 |
+| 配置文件 | `docker/redis/redis.conf` 挂载 |
+| 淘汰策略 | `allkeys-lru`（内存满时淘汰最少使用的 key） |
+| 连接 | maxclients 10000，tcp-keepalive 300s |
+
+**Redis 持久化策略：**
+```
+RDB (快照):    900秒内 ≥1次变更 / 300秒≥10次 / 60秒≥10000次
+AOF (增量):    每秒 fsync 一次 (everysec)，rewrite 触发: 增长 100% 且 ≥64MB
+```
+
+**分布式扩展：**
+- **哨兵模式 (Sentinel)**：添加 3 个 Sentinel 容器，实现自动故障转移
+- **集群模式 (Cluster)**：3 主 3 从，支持水平扩展
+- **读写分离**：从节点 `replica-read-only yes` 用于读操作
+
+**需要提供的配置信息：**
+
+| 键 | 默认值 | 说明 |
+|----|--------|------|
+| `REDIS_PASSWORD` | 无 | 生产必设 |
+| 连接地址 | `redis:6379`（容器内）/ `localhost:6379`（宿主机） | — |
+
+---
+
+### 4.3 Nacos 2.4（注册中心 + 配置中心）
+
+**为什么需要：** 12 个微服务的服务发现、健康检查、配置热更新
+
+**Docker 配置要点：**
+
+| 配置项 | 说明 |
+|--------|------|
+| 资源限制 | CPU 1 核 / 内存 1G |
+| 鉴权 | `NACOS_AUTH_ENABLE=true`，token + identity key 双重验证 |
+| 持久化 | MySQL 存储配置数据（`SPRING_DATASOURCE_PLATFORM=mysql`） |
+| 健康检查 | `curl /nacos/v1/console/health/readiness`，10 次重试 |
+
+**访问地址：**
+- 控制台: `http://localhost:8848/nacos`
+- 服务列表: `http://localhost:8848/nacos/#/serviceManagement`
+
+**分布式扩展：**
+- **集群模式**：部署 3 个 Nacos 节点，配置 `nacos/conf/cluster.conf`
+- **Nginx 负载均衡**：`upstream nacos_cluster { server nacos1:8848; server nacos2:8848; server nacos3:8848; }`
+
+**需要提供的配置信息：**
+
+| 键 | 默认值 | 说明 |
+|----|--------|------|
+| `NACOS_AUTH_TOKEN` | 自动生成 | JWT 签名密钥，≥ 32 字符 |
+| 控制台地址 | `http://localhost:8848/nacos` | 开发环境 |
+
+---
+
+### 4.4 ElasticSearch 7.17（V1.1 profile）
+
+**为什么需要：** 商品全文检索（IK 分词）、向量检索（V1.2）、日志聚合（ELK）
+
+**Docker 配置要点：**
+
+| 配置项 | 说明 |
+|--------|------|
+| 资源限制 | CPU 2 核 / 内存 2G（生产建议 4C8G+） |
+| 持久化 | `es-data` volume → `/usr/share/elasticsearch/data` |
+| 内存锁定 | `bootstrap.memory_lock=true`（禁用 swap，提高性能） |
+| 快照备份 | `es-snapshots` volume → `/usr/share/elasticsearch/snapshots` |
+| 健康检查 | `curl /_cluster/health` 返回 green 或 yellow |
+
+**分布式扩展：**
+- 改为 3 节点集群：`discovery.type` 改为 `discovery.seed_hosts` 配置
+- 索引分片策略：每个索引 3 primary + 1 replica
+
+**需要提供的配置信息：**
+
+| 键 | 默认值 | 说明 |
+|----|--------|------|
+| `ES_JAVA_OPTS` | `-Xms1g -Xmx1g` | JVM 堆内存，≤ 物理内存 50% |
+| HTTP 地址 | `localhost:9200` | 开发环境 |
+
+---
+
+### 4.5 RabbitMQ 3.13（V1.1 profile）
+
+**为什么需要：** 领域事件异步解耦（订单创建→支付、支付成功→物流、发货→通知）
+
+**Docker 配置要点：**
+
+| 配置项 | 说明 |
+|--------|------|
+| 资源限制 | CPU 1 核 / 内存 512MB |
+| 持久化 | `rabbitmq-data` volume → `/var/lib/rabbitmq` |
+| 内存阈值 | `VM_MEMORY_HIGH_WATERMARK=0.6`（使用 60% 内存时限流） |
+| 磁盘阈值 | `DISK_FREE_LIMIT=2GB`（剩余 < 2GB 时拒绝写入） |
+
+**需要提供的配置信息：**
+
+| 键 | 默认值 | 说明 |
+|----|--------|------|
+| `RABBITMQ_DEFAULT_USER` | `admin` | 用户名 |
+| `RABBITMQ_DEFAULT_PASS` | `admin123` | 密码 |
+| 管理控制台 | `http://localhost:15672` | 开发环境 |
+
+---
+
+### 4.6 XXL-Job Admin 2.4.2（V1.1 profile）
+
+**为什么需要：** 分布式任务调度，替换 `@Scheduled` 避免多实例重复执行
+
+**需要提供的配置信息：**
+
+| 键 | 默认值 | 说明 |
+|----|--------|------|
+| 控制台 | `http://localhost:8088/xxl-job-admin` | 用户名 `admin` / 密码 `123456` |
+| `XXL_JOB_ACCESS_TOKEN` | `iamall_token` | 执行器通信 token |
+
+---
+
+### 4.7 MinIO（V1.1 profile）
+
+**为什么需要：** 商品图片、用户头像、商家 Logo 对象存储
+
+**需要提供的配置信息：**
+
+| 键 | 默认值 | 说明 |
+|----|--------|------|
+| `MINIO_ROOT_USER` | `minioadmin` | 用户名 |
+| `MINIO_ROOT_PASSWORD` | `minioadmin` | 密码 |
+| 控制台 | `http://localhost:9001` | 管理 Bucket |
+
+---
+
+### 4.8 Nginx（V1.2 profile）
+
+**为什么需要：** 反向代理 + 限流 + TLS 终结
+
+**配置示例**：`docker/nginx/conf.d/gateway.conf`
+```nginx
+upstream gateway_cluster {
+    least_conn;
+    server gate-service-1:8080;
+    keepalive 32;
+}
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
+```
+
+---
+
+## 五、第三方平台配置
+
+### 5.1 微信支付（pay-service）
+
+**注册步骤：**
+1. [微信支付商户平台](https://pay.weixin.qq.com/) → 注册企业/个体工商户
+2. 「账户中心 → API安全」→ 设置 APIv3 密钥（32 位随机字符串）
+3. 下载商户证书 → 上传到服务器 `/etc/wechat/apiclient_key.pem`
+4. 获取商户号、证书序列号
+
+**环境变量（.env）：**
+
+| 变量 | 说明 | 从哪里获取 |
+|------|------|-----------|
+| `WECHAT_PAY_MERCHANT_ID` | 商户号 | 商户平台首页 |
+| `WECHAT_PAY_MERCHANT_SERIAL` | 证书序列号 | API安全 → 证书管理 |
+| `WECHAT_PAY_API_V3_KEY` | APIv3 密钥 | 自行设置（32位） |
+| `WECHAT_PAY_NOTIFY_URL` | 回调地址 | 你的域名，如 `https://api.your-domain.com/api/pay/callback/wechat` |
+
+**本地开发：** `wechat.pay.merchant-id=false` → 自动使用 Mock 支付客户端
+
+---
+
+### 5.2 阿里云短信（user-service）
+
+**注册步骤：**
+1. [阿里云短信控制台](https://dysms.console.aliyun.com/) → 开通服务
+2. 「国内消息 → 签名管理」→ 申请短信签名（显示在短信开头，如「冰美式商城」）
+3. 「国内消息 → 模板管理」→ 申请验证码模板（包含 `${code}` 变量）
+4. RAM 访问控制 → 创建 AccessKey（AccessKey ID + Secret）
+
+**需要填写的配置：**
+
+| 配置项 | 从哪里获取 | 示例值 |
+|--------|-----------|--------|
+| `ALIYUN_ACCESS_KEY_ID` | RAM 控制台 | `LTAI5tXXXXXXXXXXXX` |
+| `ALIYUN_ACCESS_KEY_SECRET` | RAM 控制台 | `xxxxxxxxxxxxxxxxxxxxxx` |
+| `ALIYUN_SMS_SIGN_NAME` | 签名审核通过 | `冰美式商城` |
+| `ALIYUN_SMS_TEMPLATE_CODE` | 模板审核通过 | `SMS_123456789` |
+
+**本地开发：** `aliyun.sms.enabled=false` → 使用 MockSmsClient（仅打印日志）
+
+---
+
+### 5.3 极验人机验证（user-service）
+
+**注册步骤：**
+1. [极验官网](https://www.geetest.com/) → 注册 → 创建应用
+2. 获取 `captcha-id` 和 `key`
+
+**配置：** `geetest.captcha-id` / `geetest.key`
+
+---
+
+### 5.4 DeepSeek API（ai-service）
+
+**注册步骤：**
+1. [DeepSeek 开放平台](https://platform.deepseek.com/) → 注册 → API Keys
+2. 设置 `DEEPSEEK_API_KEY=sk-xxx`（.env 文件）
+
+**计费：** 约 ¥1/百万 tokens（deepseek-chat 模型）
+
+**本地开发：** `ai.enabled=false` → AI 服务返回「未启用」提示
+
+---
+
+## 六、环境变量速查表
+
+### 6.1 生产环境必设
+
+| 变量 | 服务 | 默认值 | 说明 |
+|------|------|--------|------|
+| `MYSQL_ROOT_PASSWORD` | 所有 | `root123` | MySQL root 密码 |
+| `REDIS_PASSWORD` | 所有 | 无 | Redis 认证密码 |
+| `NACOS_AUTH_TOKEN` | Nacos | 自动 | Nacos JWT 密钥 (≥32字符) |
+| `DEEPSEEK_API_KEY` | ai | 占位 | DeepSeek API 密钥 |
 | `WECHAT_PAY_MERCHANT_ID` | pay | — | 微信商户号 |
-| `WECHAT_PAY_PRIVATE_KEY_PATH` | pay | `/etc/wechat/apiclient_key.pem` | 商户私钥 |
-| `WECHAT_PAY_MERCHANT_SERIAL` | pay | — | 商户证书序列号 |
-| `WECHAT_PAY_API_V3_KEY` | pay | — | APIv3 密钥 |
+| `WECHAT_PAY_API_V3_KEY` | pay | — | 微信 APIv3 密钥 |
+| `KEYSTORE_PASSWORD` | auth | `changeit` | JWT 密钥库密码 |
 
-### 功能开关
+### 6.2 功能开关（全部默认关闭）
 
-| 配置 | 默认 | 开启后 |
-|------|------|--------|
-| `aliyun.sms.enabled` | `false` | 使用真实阿里云短信 |
-| `search.elasticsearch.enabled` | `false` | ES 全文检索（关闭则 DB LIKE） |
-| `rabbitmq.enabled` | `false` | MQ 异步事件（关闭则 Feign 同步） |
-| `xxl.job.enabled` | `false` | XXL-Job 分布式调度（关闭则 @Scheduled） |
-| `sentinel.enabled` | `false` | Sentinel 限流熔断（关闭则 @RateLimit AOP） |
-| `minio.enabled` | `false` | MinIO 对象存储（关闭则 MockStorageClient） |
-| `ai.enabled` | `false` | Spring AI + LangChain4j Agent |
-| `seata.enabled` | `false` | Seata 分布式事务（关闭则手动 Saga） |
-| `websocket.enabled` | `false` | WebSocket 实时推送 |
-
----
-
-## 六、搭建顺序
-
-```
-Step 1  Docker: docker compose up -d               → MySQL + Redis + Nacos 就绪
-Step 2  执行 database/Initialize.sql                → 11 张基础表
-Step 3  执行 database/migrations/V*.sql             → 按版本顺序执行迁移
-Step 4  启动各微服务 (mvn spring-boot:run)          → 观察 Nacos 注册列表
-Step 5  启动 gateway                                → http://localhost:8080
-Step 6  测试: POST /api/auth/login                  → 获取 Token
-Step 7  按需：docker compose --profile v1.1 up -d   → ES + MQ + XXL-Job + MinIO
-Step 8  按需配置第三方平台（微信支付/阿里云短信/DeepSeek）
-```
+| 开关 | 开启后的行为 |
+|------|------------|
+| `aliyun.sms.enabled=true` | 真实短信发送 |
+| `search.elasticsearch.enabled=true` | ES 全文检索（关闭 → DB LIKE） |
+| `rabbitmq.enabled=true` | MQ 异步事件（关闭 → Feign 同步） |
+| `xxl.job.enabled=true` | XXL-Job 调度（关闭 → @Scheduled） |
+| `sentinel.enabled=true` | Sentinel 限流熔断（关闭 → @RateLimit AOP） |
+| `minio.enabled=true` | MinIO 真实存储（关闭 → Mock 占位 URL） |
+| `ai.enabled=true` | Spring AI Agent（关闭 → 降级提示） |
+| `seata.enabled=true` | Seata 分布式事务（关闭 → 手动 Saga） |
+| `websocket.enabled=true` | WebSocket 实时推送 |
 
 ---
 
-## 七、快速验证
+## 七、搭建顺序
+
+```
+Step 1  cp .env.example .env && 编辑密码
+Step 2  docker compose up -d                      → MySQL + Redis + Nacos
+Step 3  docker compose ps (确认全部 healthy)
+Step 4  执行 database/Initialize.sql               → 11 张基础表
+Step 5  执行 database/migrations/V*.sql             → 按版本顺序
+Step 6  mvn -f Implementation/back-end/pom.xml clean install -DskipTests
+Step 7  按顺序启动微服务 (gateway/auth/user/item/cart/trade/pay/...)
+Step 8  访问 http://localhost:8848/nacos           → 确认 12 个服务已注册
+Step 9  docker compose --profile v1.1 up -d        → ES + MQ + XXL-Job + MinIO
+Step 10 配置第三方平台密钥 (.env) + 开启功能开关 (application.yml)
+Step 11 测试: POST /api/auth/login → 获取 Token → 调用各接口
+```
+
+---
+
+## 八、验证命令
 
 ```bash
-# 1. 基础服务健康检查
-curl http://localhost:8848/nacos/v1/console/health/readiness   # Nacos
-redis-cli -h localhost ping                                     # Redis
-mysql -h localhost -u root -proot123 -e "SELECT 1"              # MySQL
+# 基础服务
+curl http://localhost:8848/nacos/v1/console/health/readiness         # Nacos
+docker compose exec redis redis-cli -a $REDIS_PASSWORD ping           # Redis
+docker compose exec mysql mysqladmin ping -u root -p$MYSQL_ROOT_PASSWORD  # MySQL
 
-# 2. 认证测试（假设 authorization-service 在 9000 端口运行）
+# 认证测试
 curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"phone":"13800138000","password":"123456","loginType":"PASSWORD"}'
 
-# 3. V1.1 中间件
-curl http://localhost:9200                                      # ES
-curl -u admin:admin123 http://localhost:15672/api/overview      # RabbitMQ
-curl http://localhost:8088/xxl-job-admin                        # XXL-Job
-curl http://localhost:9001                                      # MinIO Console
+# V1.1 中间件
+curl http://localhost:9200/_cluster/health                            # ES
+curl -u admin:admin123 http://localhost:15672/api/overview            # RabbitMQ
+curl http://localhost:8088/xxl-job-admin                              # XXL-Job
+curl http://localhost:9000/minio/health/live                          # MinIO
+
+# 微服务健康 (需要 actuator)
+curl http://localhost:8084/actuator/health                            # Trade Service
 ```

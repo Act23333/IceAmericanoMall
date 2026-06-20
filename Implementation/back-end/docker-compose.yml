@@ -1,113 +1,315 @@
 version: "3.8"
 
+# ============================================
+# IceAmericanoMall 分布式容器编排
+# 默认启动基础三件 (MySQL + Redis + Nacos)
+# v1.1 profile: ES + RabbitMQ + XXL-Job + MinIO + Nginx
+# ============================================
+
+x-common-logging: &common-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "3"
+
+x-common-restart: &common-restart
+  restart: unless-stopped
+
+networks:
+  backend:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
 services:
-  # ==================== MVP 基础服务（默认启动） ====================
+  # ==================== 基础设施 (默认启动) ====================
+
+  # ---------- MySQL 9.0 (主库) ----------
   mysql:
     image: mysql:9.0
-    container_name: ia-mall-mysql
+    container_name: ia-mysql
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
     environment:
-      MYSQL_ROOT_PASSWORD: root123
-      MYSQL_DATABASE: icedamericano_mall
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-icedamericano_mall}
+      MYSQL_USER: ${MYSQL_USER:-iamall}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-iamall123}
     ports:
-      - "3306:3306"
+      - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      - ./database/Initialize.sql:/docker-entrypoint-initdb.d/01-init.sql
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+      - ./database/Initialize.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./database/migrations:/docker-entrypoint-initdb.d/02-migrations:ro
+      - ./docker/mysql/conf.d/custom.cnf:/etc/mysql/conf.d/custom.cnf:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root123}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
+  # ---------- Redis 7 (RDB + AOF 持久化) ----------
   redis:
     image: redis:7-alpine
-    container_name: ia-mall-redis
+    container_name: ia-redis
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    command: redis-server /usr/local/etc/redis/redis.conf
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    sysctls:
+      - net.core.somaxconn=1024
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  # ---------- Nacos 2.4 (注册中心 + 配置中心, standalone) ----------
   nacos:
     image: nacos/nacos-server:v2.4.0
-    container_name: ia-mall-nacos
+    container_name: ia-nacos
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
     environment:
       MODE: standalone
       PREFER_HOST_MODE: hostname
+      NACOS_AUTH_ENABLE: "true"
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-SecretKey012345678901234567890123456789012345678901234567890123456789}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_DB_NAME: ${MYSQL_DATABASE:-icedamericano_mall}
+      MYSQL_SERVICE_USER: root
+      MYSQL_SERVICE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_SERVICE_PORT: 3306
     ports:
-      - "8848:8848"
-      - "9848:9848"
+      - "${NACOS_HTTP_PORT:-8848}:8848"
+      - "${NACOS_GRPC_PORT:-9848}:9848"
+    volumes:
+      - nacos-logs:/home/nacos/logs
+      - ./docker/nacos/conf:/home/nacos/conf:ro
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8848/nacos/v1/console/health/readiness"]
       interval: 15s
       timeout: 5s
       retries: 10
+      start_period: 40s
 
-  # ==================== V1.1 中间件（通过 profile 按需启用） ====================
+  # ==================== V1.1 中间件 (通过 --profile v1.1 启用) ====================
+
+  # ---------- ElasticSearch 7.17 ----------
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:7.17.25
-    container_name: ia-mall-elasticsearch
+    container_name: ia-elasticsearch
     profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
     environment:
-      - discovery.type=single-node
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-      - xpack.security.enabled=false
+      discovery.type: single-node
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms1g -Xmx1g}
+      xpack.security.enabled: "false"
+      xpack.monitoring.collection.enabled: "true"
+      bootstrap.memory_lock: "true"
+      path.repo: /usr/share/elasticsearch/snapshots
     ports:
-      - "9200:9200"
-      - "9300:9300"
+      - "${ES_HTTP_PORT:-9200}:9200"
+      - "${ES_TRANSPORT_PORT:-9300}:9300"
     volumes:
       - es-data:/usr/share/elasticsearch/data
+      - es-snapshots:/usr/share/elasticsearch/snapshots
+      - ./docker/es/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q 'green\\|yellow'"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
+  # ---------- RabbitMQ 3.13 Management ----------
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
-    container_name: ia-mall-rabbitmq
+    container_name: ia-rabbitmq
     profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
     environment:
-      RABBITMQ_DEFAULT_USER: admin
-      RABBITMQ_DEFAULT_PASS: admin123
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-admin123}
+      RABBITMQ_VM_MEMORY_HIGH_WATERMARK: 0.6
+      RABBITMQ_DISK_FREE_LIMIT: 2GB
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${RABBITMQ_AMQP_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
     healthcheck:
       test: ["CMD", "rabbitmqctl", "status"]
-      interval: 10s
-      timeout: 5s
+      interval: 15s
+      timeout: 10s
       retries: 5
+      start_period: 30s
 
+  # ---------- XXL-Job Admin 2.4.2 ----------
   xxl-job-admin:
     image: xuxueli/xxl-job-admin:2.4.2
-    container_name: ia-mall-xxl-job
+    container_name: ia-xxl-job
     profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
     environment:
-      PARAMS: "--spring.datasource.url=jdbc:mysql://mysql:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai --spring.datasource.username=root --spring.datasource.password=root123"
+      PARAMS: >-
+        --spring.datasource.url=jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-icedamericano_mall}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+        --spring.datasource.username=root
+        --spring.datasource.password=${MYSQL_ROOT_PASSWORD:-root123}
+        --server.servlet.context-path=/xxl-job-admin
+        --xxl.job.accessToken=${XXL_JOB_ACCESS_TOKEN:-iamall_token}
     ports:
-      - "8088:8088"
+      - "${XXL_JOB_PORT:-8088}:8088"
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
+  # ---------- MinIO ----------
   minio:
-    image: minio/minio:latest
-    container_name: ia-mall-minio
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    container_name: ia-minio
     profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BROWSER_REDIRECT_URL: ""
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
     command: server /data --console-address ":9001"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ==================== V1.2 反向代理 (--profile v1.2) ====================
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: ia-nginx
+    profiles: ["v1.2"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      - nacos
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   mysql-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/mysql
   redis-data:
+    driver: local
+  nacos-logs:
+    driver: local
   es-data:
+    driver: local
+  es-snapshots:
+    driver: local
+  rabbitmq-data:
+    driver: local
   minio-data:
+    driver: local
+  nginx-logs:
+    driver: local
