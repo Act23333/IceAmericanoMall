@@ -4,7 +4,7 @@
 
 基于 **Spring Cloud Alibaba 微服务架构**的 B2B2C 电商平台（对标淘宝/京东模式），实现从用户注册到商家结算的完整交易闭环。后端 **14 个模块、115+ API 端点、82 单元测试**，支持千万级用户扩展。
 
-**技术栈**: Java 21 · Spring Boot 3.5.4 · Spring Cloud 2025.0.1 · Spring Cloud Alibaba 2025.0.0.0 · MyBatis-Plus 3.5.11 · MySQL 9.0 · Redis 7 · Nacos 2.4 · ElasticSearch 7.17 · RabbitMQ 3.13 · XXL-Job 2.4 · Sentinel · Seata · MinIO · Docker Compose · Spring AI + LangChain4j · JWT (RS256) · OAuth2 · Knife4j
+**技术栈**: Java 21 · Spring Boot 3.5.4 · Spring Cloud 2025.0.1 · Spring Cloud Alibaba 2025.0.0.0 · MyBatis-Plus 3.5.11 · MySQL 9.0 · Redis 7 · Nacos 2.4 · ElasticSearch 7.17 · RabbitMQ 3.13 · XXL-Job 2.4 · Sentinel · Seata · MinIO · Docker Compose · **Spring AI 1.0.0-M5 · LangChain4j 1.0.0-beta1 · DeepSeek V3** · JWT (RS256) · OAuth2 · Knife4j
 
 ---
 
@@ -36,11 +36,13 @@
 - 支付订单生成前查 `pay_order` 表进行**数据库唯一约束幂等校验**：已存在 SUCCESS 状态直接返回、已存在 PENDING 状态复用流水
 - 支付回调采用**状态机 + 事务**保证幂等：`status == PENDING_PAY` 才更新为 SUCCESS，重复回调直接返回
 
-### 6. AI 智能导购（Spring AI + LangChain4j）
-- 基于 **Spring AI 1.0.0-M5** + **LangChain4j 1.0.0-beta1** 构建 AI 商品助手和智能客服
-- 使用 LangChain4j `AiServices` 框架生成 **ReAct Agent** 代理（LLM 推理→工具选择→结果汇总），`@Tool` 注解将 search-service / trade-service 封装为 Agent 工具
-- **DeepSeek V3** 作为 LLM（OpenAI 兼容协议），`MessageWindowChatMemory` 支持 10-20 轮对话上下文
-- `@ConditionalOnProperty(ai.enabled)` 实现 AI 功能可插拔
+### 6. AI 智能导购与智能客服（Spring AI + LangChain4j 双引擎）
+- 创建独立的 **ai-service 微服务**，基于 **Spring AI 1.0.0-M5** 实现 ChatClient 自动配置（DeepSeek V3 作为 LLM，通过 OpenAI 兼容协议接入），基于 **LangChain4j 1.0.0-beta1** 的 `AiServices` 框架生成 Agent 运行时代理
+- 设计**双 Agent 架构**：`ShoppingAssistant`（商品导购，ReAct 推理循环：用户口语化需求→LLM 解析意图→`@Tool` 自动调用 search-service 检索→汇总推荐理由）+ `CustomerServiceAssistant`（智能客服，FAQ 知识库上下文注入 + 订单号正则提取→`@Tool` 自动调用 trade-service 查询物流状态→低置信度转人工提示）
+- 使用 `@Tool` 注解将 search-service 的商品搜索 API 和 trade-service 的订单查询 API 声明为 LangChain4j Agent 可调用的**工具函数**，LLM 自动决定何时调用哪个工具、如何组装参数、如何总结结果
+- 实现 **多轮对话记忆**：`MessageWindowChatMemory` 保留最近 10-20 轮上下文，支持"跟刚才那个比哪个更好？"等指代消解场景
+- 向量检索预留：Spring AI Embedding 接口接入 DeepSeek Embedding API，ES `dense_vector` 映射就绪，待 ES 集群上线后即可实现语义搜索替代关键词匹配
+- AI 服务可插拔设计：`@ConditionalOnProperty(ai.enabled)` + `@Autowired(required=false)`，AI 未启用时自动返回降级提示，不影响核心交易链路
 
 ### 7. 第三方集成与安全
 - 集成 **微信支付 API v3**（Native 扫码支付）：证书签名、回调验签、幂等处理、超时关闭
@@ -59,4 +61,4 @@
 | 单元测试 | 82 个，0 失败，16 个测试类覆盖 7 个模块 |
 | 数据库 | 11 张业务表 + 10 个版本迁移 SQL，双主键策略（自增+UUID） |
 | 技术集成 | 15+ 种中间件/第三方服务，全部 `@ConditionalOnProperty` 可插拔 |
-| AI 能力 | Spring AI + LangChain4j 双引擎，ReAct Agent + @Tool 工具链 |
+| AI 能力 | ai-service 独立模块，Spring AI + LangChain4j 双引擎，双 Agent（导购+客服），@Tool 声明式工具链，DeepSeek V3 驱动 |
