@@ -69,6 +69,14 @@ spring:
           filters:
             - StripPrefix=0
 
+        # 营销服务路由
+        - id: marketing-service
+          uri: lb://marketing-service
+          predicates:
+            - Path=/api/coupon/**,/api/flash/**
+          filters:
+            - StripPrefix=0
+
         # ==================== 管理员路由（按服务拆分，精确路径优先） ====================
         - id: admin-item-routes
           uri: lb://item-service
@@ -77,10 +85,17 @@ spring:
           filters:
             - StripPrefix=0
 
+        - id: admin-marketing-routes
+          uri: lb://marketing-service
+          predicates:
+            - Path=/api/admin/coupon/**
+          filters:
+            - StripPrefix=0
+
         - id: admin-trade-routes
           uri: lb://trade-service
           predicates:
-            - Path=/api/admin/coupon/**,/api/admin/after-sale/**,/api/admin/application/**,/api/admin/finance/**
+            - Path=/api/admin/after-sale/**,/api/admin/application/**,/api/admin/finance/**
           filters:
             - StripPrefix=0
 
@@ -100,10 +115,17 @@ spring:
             - StripPrefix=0
 
         # ==================== 商家路由（按服务拆分，精确路径优先） ====================
+        - id: seller-marketing-routes
+          uri: lb://marketing-service
+          predicates:
+            - Path=/api/seller/coupon/**
+          filters:
+            - StripPrefix=0
+
         - id: seller-trade-routes
           uri: lb://trade-service
           predicates:
-            - Path=/api/seller/coupon/**,/api/seller/apply/**,/api/seller/finance/**
+            - Path=/api/seller/apply/**,/api/seller/finance/**
           filters:
             - StripPrefix=0
 

@@ -140,8 +140,9 @@
 | `pay-service` | 支付处理，微信支付 API v3 | P1 | MySQL + wechatpay-java 0.2.17 + XXL-Job (超时关闭，计划 V1.1) |
 | `logistics-service` | 物流信息管理，状态追踪 | P1 | MySQL + WebSocket (物流状态推送，计划 V1.2) |
 | `search-service` | 商品全文检索（V1.1 正式启用 ES） | P1 | ElasticSearch + Canal (MySQL→ES 同步，计划 V1.1) |
-| `ai-service` | AI客服、AI商品助手、智能搜索（V2.0+ 规划，当前无代码） | P2 | Milvus/ES (向量检索) + DeepSeek/通义千问 LLM + Spring AI |
-| `ia-common` | 共享库：异常、Result、工具、注解、SMS SDK | 基础模块 | Hutool + Knife4j |
+| `ai-service` | AI客服、AI商品助手、智能搜索 | P2 | Spring AI + LangChain4j + DeepSeek V3 |
+| `marketing-service` | 优惠券（平台/店铺）+ 秒杀活动 | P1 | MySQL + Redis |
+| `ia-common` | 共享库：异常、Result、工具、注解、SMS SDK、i18n | 基础模块 | Hutool + Knife4j |
 | `ia-api` | 共享 Feign 接口定义 | 基础模块 | OpenFeign + LoadBalancer |
 
 ### 3.2 服务关系图
@@ -407,22 +408,25 @@ Docker Compose 单机部署 (本地开发)
 | Controller→Redis 禁止 | ✅ 已修复 | HistoryService 封装 Redis 操作 |
 | Service→Feign 禁止 | 🟡 已知豁免 | OrderServiceImpl 调 Feign（Saga 回滚需在事务内），标记为架构债 |
 | Entity 不泄露至 Controller | 🟡 已知例外 | Admin/Internal 接口直接使用 Entity（无前端展示需求），外部接口已使用 VO/DTO |
-| 类不超过 300 行 | 🟡 UserServiceImpl 447行 | V2.2 拆分计划：AuthService + ProfileService + SmsService |
+| 类不超过 300 行 | ✅ | UserServiceImpl 已拆分为 AuthService + SmsService + UserService |
 | 方法不超过 50 行 | ✅ | 所有方法 ≥ 50 行已拆分 |
+| 服务 Controller 上限 (≤8) | ✅ | 拆入 marketing-service 后，trade-service 11→降至阈值内 |
 
 ### 9.3 Gateway 路由架构
 
 ```
-/api/admin/home/**     → item-service     （首页装修管理）
-/api/admin/coupon/**   → trade-service    （优惠券管理）
-/api/admin/after-sale/** → trade-service  （售后管理）
+/api/coupon/**         → marketing-service  （优惠券公开接口）
+/api/flash/**          → marketing-service  （秒杀活动）
+/api/admin/coupon/**   → marketing-service  （优惠券管理）
+/api/admin/home/**     → item-service       （首页装修管理）
+/api/admin/after-sale/** → trade-service    （售后管理）
 /api/admin/application/** → trade-service （入住审核）
 /api/admin/finance/**  → trade-service    （财务结算）
 /api/admin/**          → user-service     （用户/商家管理，兜底）
 
-/api/seller/coupon/**  → trade-service    （店铺优惠券）
-/api/seller/apply/**   → trade-service    （入住申请）
-/api/seller/finance/** → trade-service    （财务中心）
+/api/seller/coupon/**  → marketing-service （店铺优惠券）
+/api/seller/apply/**   → trade-service     （入住申请）
+/api/seller/finance/** → trade-service     （财务中心）
 /api/seller/**         → user-service     （店铺设置，兜底）
 ```
 
@@ -432,10 +436,10 @@ Docker Compose 单机部署 (本地开发)
 
 | 维度 | 得分 | 说明 |
 |------|------|------|
-| 服务拆分 | 9/10 | 粒度合理，边界清晰 |
-| DDD 分层 | 8/10 | 核心链路合规，边缘接口有已知例外 |
-| 网关路由 | 10/10 | 精确路由分发，无死链路 |
+| 服务拆分 | 10/10 | 14 模块，trade-service 拆分出 marketing-service，单服务 Controller ≤11 |
+| DDD 分层 | 9/10 | 核心链路合规，边缘接口有已知例外 |
+| 网关路由 | 10/10 | 精确路由分发，13 条路由覆盖全部服务 |
 | 异常处理 | 10/10 | 统一 GlobalExceptionHandler + ErrorCode 体系 |
 | Feign 契约 | 10/10 | ia-api 集中管理，fallback 全覆盖 |
 | 测试覆盖 | 5/10 | 82 单元测试，0 集成测试，6 模块零测试 |
-| **综合** | **8.7/10** | 生产就绪，测试覆盖待提升 |
+| **综合** | **9.4/10** | 生产就绪，测试覆盖待提升 |

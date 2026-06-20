@@ -3,7 +3,6 @@ package org.icedAmericanoMall.service.impl;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.icedAmericanoMall.domain.entity.CouponEntity;
 import org.icedAmericanoMall.domain.entity.UserCouponEntity;
-import org.icedAmericanoMall.enums.OrderStatusEnum;
 import org.icedAmericanoMall.mapper.CouponMapper;
 import org.icedAmericanoMall.mapper.UserCouponMapper;
 import org.icedAmericanoMall.service.CouponService;
