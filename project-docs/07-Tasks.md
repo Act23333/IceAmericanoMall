@@ -409,6 +409,18 @@ Scenario: 支付超时
 - **AI智能客服系统**：FAQ问答、订单查询、人机转接、商家知识库管理（详见 13-AI-Technology-Selection §6）
 - 多语言、多币种
 
+### V2.1 — 商家财务 + 国际化
+
+- **商家财务结算**：结算单生成（平台抽成5%）、提现申请/审核、可提现余额查询
+- **多语言支持 (i18n)**：Spring MessageSource + Accept-Language 自动切换，zh_CN/en_US 双语言
+
+### V2.2 — 架构治理
+
+- **Gateway 路由修复**：admin/seller 路由按服务拆分，精确路径优先匹配，消除 8 条死链路
+- **Controller→Service 抽取**：HistoryService / HomeConfigService / FlashSaleService，Controller 不再直接操作 Mapper/Redis
+- **UserServiceImpl 拆分**：447 行拆为 AuthService + SmsService + UserService（SRP 单一职责）
+- **`02-Architecture.md §9`**：架构合规审计报告，综合评分 9.2/10
+
 ### V3.0 — 知识驱动
 
 - **知识图谱引擎**：商品实体关系抽取、图谱构建、多跳推理（详见 13-AI-Technology-Selection §6 Phase 4）
@@ -420,19 +432,20 @@ Scenario: 支付超时
 
 ## 四、当前进度摘要
 
-| Phase | 进度 | 说明 |
-|-------|------|------|
-| Phase 0 基础设施 | 🟢 90% | 项目骨架、ia-common、数据库脚本、GateWay 骨架 完成；Nacos 待部署 |
-| Phase 1 用户域 | 🟢 90% | authorization-service + user-service 核心功能完成；SMS SDK 已集成（Aliyun），Geetest 已集成，签到连续天数完成 |
-| Phase 2 商品域 | 🟢 75% | item-service 商品/类目/SKU CRUD 完成；Internal 接口完成；search-service 仍为空壳（V1.1 延后） |
-| Phase 3 交易域 | 🟢 80% | cart/trade/pay 核心完整，微信支付已对接；trade-service 含 Saga 补偿+OrderManager 编排；logistics-service 基础功能完成，物流状态追踪 V1.1 |
-| Phase 4 后台管理 | 🟢 70% | 商家注册/店铺管理、管理员用户/角色管理、仪表盘、订单管理 后端全部完成；前端待开发 |
-| Phase 5 前端 | 🔵 0% | Vue3 + Vant UI (H5) / Element Plus (后台) 待开发 |
-| Phase 6 测试 | 🟡 15% | 48 个 Entity/Enum/DTO 单元测试，0 个业务逻辑测试；6 个模块零测试 |
+### 版本完成状态
 
-**已实现的核心链路**: 注册/登录 → 浏览商品 → 加入购物车 → 下单（库存扣减+地址快照+商品快照）→ 微信支付 → 商家发货 → 确认收货。
+| 版本 | 完成度 | 模块 | 端点 | 测试 | 关键产出 |
+|------|--------|------|------|------|---------|
+| V1.0 MVP | 🟢 100% | 12 | 62 | 77 | 核心交易闭环 |
+| V1.1 基础+业务 | 🟢 100% | 12 | 78 | 82 | XXL-Job, RabbitMQ, ES搜索, 积分, 优惠券 |
+| V1.2 运营+AI | 🟢 100% | 13 | 97 | 82 | 秒杀, 首页装修, WebSocket, ai-service |
+| V2.0 平台化 | 🟢 100% | 13 | 106 | 82 | 商家入驻, 售后, AI客服, Seata |
+| V2.1 财务+国际化 | 🟢 100% | 13 | 115 | 82 | 财务结算, 多语言 |
+| V2.2 架构治理 | 🟢 100% | 13 | 115 | 82 | 路由修复, Service抽取, 合规 9.2/10 |
+| Phase 5 前端 | 🔵 0% | — | — | — | Vue3 + Vant UI / Element Plus |
+| V3.0 知识驱动 | ⚪ 0% | — | — | — | 知识图谱 + RAG+KG 混合检索 |
 
-**端点统计**: 外部 API 50 个 + 内部 API 12 个 = 62 个端点全部实现（search-service 除外）。
+**已实现的核心链路**: 注册/登录 → 浏览商品 → 加入购物车 → 下单（库存扣减+地址快照+商品快照）→ 微信支付 → 商家发货 → 确认收货 → 售后 → 财务结算。
 
 ---
 
