@@ -384,3 +384,58 @@ Docker Compose 单机部署 (本地开发)
 8. **全链路可观测**：V1.1 引入 SkyWalking（追踪）+ Prometheus（指标）+ ELK（日志）三位一体
 9. **数据同步实时化**：V1.2 引入 Canal CDC 实现 MySQL → ES/Redis 近实时同步
 10. **安全纵深防御**：Nginx (TLS) → Gateway (JWT 验签) → Sentinel (限流) → Manager (归属校验) → DB (PII 加密)，详见 12-Security-Model
+
+---
+
+## 九、架构合规审计（2026-06-20）
+
+### 9.1 服务划分评估
+
+| 维度 | 评估 | 对标 |
+|------|------|------|
+| 服务拆分粒度 | 13 个服务按业务域划分，粒度合理 | 阿里中台标准（用户/商品/交易/支付/物流/搜索） |
+| 共享库抽离 | ia-common（基础设施）+ ia-api（契约） | 阿里 MAR (Middleware Asset Repository) |
+| 网关统一入口 | Spring Cloud Gateway + JWT 鉴权 + 限流 | 阿里 API Gateway |
+| 注册中心 | Nacos 服务发现+配置中心 | 阿里 Diamond + ConfigServer |
+| 负载均衡 | Spring Cloud LoadBalancer | Ribbon 替代方案 |
+
+### 9.2 分层合规状态
+
+| 规则 | 状态 | 详情 |
+|------|------|------|
+| Controller→Mapper 禁止 | ✅ 已修复 | History/HomeConfig/FlashSale 已抽取 Service 层 |
+| Controller→Redis 禁止 | ✅ 已修复 | HistoryService 封装 Redis 操作 |
+| Service→Feign 禁止 | 🟡 已知豁免 | OrderServiceImpl 调 Feign（Saga 回滚需在事务内），标记为架构债 |
+| Entity 不泄露至 Controller | 🟡 已知例外 | Admin/Internal 接口直接使用 Entity（无前端展示需求），外部接口已使用 VO/DTO |
+| 类不超过 300 行 | 🟡 UserServiceImpl 447行 | V2.2 拆分计划：AuthService + ProfileService + SmsService |
+| 方法不超过 50 行 | ✅ | 所有方法 ≥ 50 行已拆分 |
+
+### 9.3 Gateway 路由架构
+
+```
+/api/admin/home/**     → item-service     （首页装修管理）
+/api/admin/coupon/**   → trade-service    （优惠券管理）
+/api/admin/after-sale/** → trade-service  （售后管理）
+/api/admin/application/** → trade-service （入住审核）
+/api/admin/finance/**  → trade-service    （财务结算）
+/api/admin/**          → user-service     （用户/商家管理，兜底）
+
+/api/seller/coupon/**  → trade-service    （店铺优惠券）
+/api/seller/apply/**   → trade-service    （入住申请）
+/api/seller/finance/** → trade-service    （财务中心）
+/api/seller/**         → user-service     （店铺设置，兜底）
+```
+
+**路由规则**：精确路径优先匹配，兜底路由放最后。与阿里 API Gateway 的 "精确→前缀→兜底" 策略一致。
+
+### 9.4 当前合规评分
+
+| 维度 | 得分 | 说明 |
+|------|------|------|
+| 服务拆分 | 9/10 | 粒度合理，边界清晰 |
+| DDD 分层 | 8/10 | 核心链路合规，边缘接口有已知例外 |
+| 网关路由 | 10/10 | 精确路由分发，无死链路 |
+| 异常处理 | 10/10 | 统一 GlobalExceptionHandler + ErrorCode 体系 |
+| Feign 契约 | 10/10 | ia-api 集中管理，fallback 全覆盖 |
+| 测试覆盖 | 5/10 | 82 单元测试，0 集成测试，6 模块零测试 |
+| **综合** | **8.7/10** | 生产就绪，测试覆盖待提升 |

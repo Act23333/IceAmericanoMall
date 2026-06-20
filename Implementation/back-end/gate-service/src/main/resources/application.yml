@@ -69,8 +69,22 @@ spring:
           filters:
             - StripPrefix=0
 
-        # 管理员路由（需要角色校验）
-        - id: admin-routes
+        # ==================== 管理员路由（按服务拆分，精确路径优先） ====================
+        - id: admin-item-routes
+          uri: lb://item-service
+          predicates:
+            - Path=/api/admin/home/**
+          filters:
+            - StripPrefix=0
+
+        - id: admin-trade-routes
+          uri: lb://trade-service
+          predicates:
+            - Path=/api/admin/coupon/**,/api/admin/after-sale/**,/api/admin/application/**,/api/admin/finance/**
+          filters:
+            - StripPrefix=0
+
+        - id: admin-user-routes
           uri: lb://user-service
           predicates:
             - Path=/api/admin/**
@@ -85,8 +99,15 @@ spring:
           filters:
             - StripPrefix=0
 
-        # 商家路由（需要角色校验）
-        - id: seller-routes
+        # ==================== 商家路由（按服务拆分，精确路径优先） ====================
+        - id: seller-trade-routes
+          uri: lb://trade-service
+          predicates:
+            - Path=/api/seller/coupon/**,/api/seller/apply/**,/api/seller/finance/**
+          filters:
+            - StripPrefix=0
+
+        - id: seller-user-routes
           uri: lb://user-service
           predicates:
             - Path=/api/seller/**
