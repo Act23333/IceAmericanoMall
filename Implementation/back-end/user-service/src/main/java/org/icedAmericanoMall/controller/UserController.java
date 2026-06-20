@@ -1,8 +1,8 @@
 package org.icedAmericanoMall.controller;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.domain.dto.UpdateProfileReq;
+import org.icedAmericanoMall.service.SmsService;
 import org.icedAmericanoMall.service.UserService;
 import org.icedAmericanoMall.domain.dto.SmsCodeSendReq;
 import org.icedAmericanoMall.domain.vo.UserInfoResp;
@@ -28,26 +28,26 @@ import java.util.concurrent.TimeUnit;
  */
 
 @RequestMapping("/user")
-@RequiredArgsConstructor
 @RestController
-@Controller
 @Slf4j
 public class UserController {
     private final UserService userService;
+    private final SmsService smsService;
     private final RateLimitUtils rateLimitUtils;
+
+    public UserController(UserService userService, SmsService smsService, RateLimitUtils rateLimitUtils) {
+        this.userService = userService;
+        this.smsService = smsService;
+        this.rateLimitUtils = rateLimitUtils;
+    }
+
     @PostMapping("/code")
     @RateLimit(key = "ip", limit = 10, duration = 1, unit = TimeUnit.MINUTES)
-//   @RateLimit(key = "#request.phone ?: #request.username")
     public Result<Void> sendCode(@RequestBody SmsCodeSendReq smsCodeSendReq) {
- //         IP限流（每分钟10次）
-//        if (!rateLimitUtils.checkSmsByIp()) {
-//            throw new BizException(ErrorCode.FREQUENT_ERROR, "IP请求过于频繁，请稍后再试");
-//        }
-        //手机号限流（分钟/小时/天）
         if (!rateLimitUtils.checkSmsByPhone(smsCodeSendReq.getPhone())) {
             throw new BizException(ErrorCode.FREQUENT_ERROR, "短信发送过于频繁，请稍后再试");
         }
-        userService.sendSmsCode(smsCodeSendReq);
+        smsService.sendCode(smsCodeSendReq);
         return Result.ok("验证码已发送");
     }
 

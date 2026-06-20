@@ -8,6 +8,7 @@ import org.icedAmericanoMall.dto.PasswordLoginReqDTO;
 import org.icedAmericanoMall.dto.RegisterReqDTO;
 import org.icedAmericanoMall.dto.SmsLoginReqDTO;
 import org.icedAmericanoMall.service.AddressService;
+import org.icedAmericanoMall.service.AuthService;
 import org.icedAmericanoMall.service.PointsService;
 import org.icedAmericanoMall.service.UserService;
 import org.noLazy.common.annotation.RateLimit;
@@ -16,28 +17,38 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/internal/user")
-@RequiredArgsConstructor
 public class InternalUserController {
 
+    private final AuthService authService;
     private final UserService userService;
     private final AddressService addressService;
     private final PointsService pointsService;
     private final RateLimitUtils rateLimitUtils;
 
+    public InternalUserController(AuthService authService, UserService userService,
+                                   AddressService addressService, PointsService pointsService,
+                                   RateLimitUtils rateLimitUtils) {
+        this.authService = authService;
+        this.userService = userService;
+        this.addressService = addressService;
+        this.pointsService = pointsService;
+        this.rateLimitUtils = rateLimitUtils;
+    }
+
     @PostMapping("/register")
     @RateLimit(key = "#registerReqDTO.deviceId", limit = 3, duration = 3600)
     public LoginRespDTO register(@RequestBody RegisterReqDTO registerReqDTO) {
-        return userService.register(registerReqDTO);
+        return authService.register(registerReqDTO);
     }
 
     @PostMapping("/login/password")
     public LoginRespDTO loginByPassword(@RequestBody PasswordLoginReqDTO passwordLoginReqDTO) {
-        return userService.loginByPassword(passwordLoginReqDTO);
+        return authService.loginByPassword(passwordLoginReqDTO);
     }
 
     @PostMapping("/login/sms")
     public LoginRespDTO loginBySms(@RequestBody SmsLoginReqDTO smsLoginReqDTO) {
-        return userService.loginBySms(smsLoginReqDTO);
+        return authService.loginBySms(smsLoginReqDTO);
     }
 
     /**
