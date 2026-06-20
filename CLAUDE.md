@@ -11,6 +11,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 5. **Check `09-constraints.md` anti-patterns** — before committing
 6. **Self-review** against `10-review.md` checklist
 
+### 文档-代码一致性规则（Doc-Code Consistency Rule）
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ 文档已定稿 + 符合大厂规范 → 以文档为准生成代码，有问题提出来讨论   │
+│ 文档有争议/待定/自相矛盾  → 先讨论确认再动手                    │
+│ 文档过时/与代码矛盾       → 先修正文档，再改代码                 │
+│ 代码有但文档无 → 代码是例外  │ 文档有但代码无 → 代码缺失需补齐     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**原则**：项目文档（`project-docs/`）是唯一可信的规格来源。代码实现必须与文档一致。当发现不一致时，判断文档是否正确——正确则改代码，有问题则先提出来讨论。
+
 | Task type | Must-read docs |
 |---|---|
 | New microservice | 02-Architecture, 04-Data-Model, 06-Workflow §3 |
