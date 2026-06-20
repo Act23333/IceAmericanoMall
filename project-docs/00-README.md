@@ -17,6 +17,7 @@
 | 11  | [11-Test-Strategy.md](./11-Test-Strategy.md)                     | 测试策略文档 — 测什么、怎么测、测到什么程度          | 开发、QA       |
 | 12  | [12-Security-Model.md](./12-Security-Model.md)                   | 安全威胁模型 — 威胁识别与防护策略               | 开发、安全评审     |
 | 13  | [13-AI-Technology-Selection.md](./13-AI-Technology-Selection.md) | AI 技术选型文档 — LLM/向量数据库/Agent 方案对比 | 架构师、开发      |
+| 14  | [14-Service-Config-Guide.md](./14-Service-Config-Guide.md) | 服务配置指南 — 全部中间件和第三方平台搭建步骤         | 运维、开发        |
 
 ## 与开发方法论的对应关系
 
