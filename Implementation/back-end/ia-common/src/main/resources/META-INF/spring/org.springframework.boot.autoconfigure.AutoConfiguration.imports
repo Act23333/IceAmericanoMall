@@ -2,5 +2,8 @@ org.noLazy.common.config.JsonConfig
 org.noLazy.common.config.MybatisConfig
 org.noLazy.common.config.WebConfig
 org.noLazy.common.config.RedisLuaScriptConfig
+org.noLazy.common.config.I18nConfig
+org.noLazy.common.config.XxlJobConfig
+org.noLazy.common.config.RabbitMqConfig
 org.noLazy.common.aspect.RateLimitAspect
 org.noLazy.common.aspect.GlobalExceptionHandler
