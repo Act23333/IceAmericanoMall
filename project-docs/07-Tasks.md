@@ -120,13 +120,13 @@ Phase 4: 后台管理
 #### T0.5 Nacos 搭建
 
 - **描述**: 部署 Nacos Server，配置服务发现和配置中心
-- **状态**: 🔵 待开始
+- **状态**: ✅ 已完成（Docker Compose 一键启动）
 - **依赖**: T0.1
 
 #### T0.6 gate-service 网关
 
 - **描述**: Spring Cloud Gateway 路由配置、Token 校验过滤器、跨域配置、限流
-- **状态**: 🔵 脚手架完成，路由规则待完善
+- **状态**: ✅ 已完成（13 条精确路由，JWT OAuth2，CORS，IP+手机号限流）
 - **依赖**: T0.5, T1.1
 
 ---
@@ -232,14 +232,16 @@ Scenario: 接口限流
 
 #### T2.1 item-service
 
-- **状态**: 🔵 脚手架就绪，待实现
-- **任务**:
-  - [ ] 类目 CRUD (管理后台)
-  - [ ] 商品发布 (商家)
-  - [ ] 商品列表 (分页 + 排序 + 筛选)
-  - [ ] 商品详情 (含 SKU 列表)
-  - [ ] 商品上下架 (商家 + 管理员)
-  - [ ] SKU 库存管理
+- **状态**: ✅ 已完成
+- **已完成**:
+  - [x] 类目 CRUD + 多级分类递归树
+  - [x] 商品发布/编辑/上下架 (商家 + 管理员)
+  - [x] 商品列表 (分页 + 销量/价格排序 + 类目/关键词筛选 + isAd 广告优先)
+  - [x] 商品详情 (含 SKU 列表 + 价格/库存/规格)
+  - [x] SKU 库存管理（乐观锁 @Version 扣减/恢复）
+  - [x] 内部 Feign 接口（批量查 SKU / 批量扣库存 / 批量恢复库存）
+  - [x] 商品评价（一单一评，POST /api/item/review + 按商品查询）
+  - [x] 首页装修配置（banner/hot/new/sale slots，Admin CRUD + 公开查询）
 
 **BDD 验收场景**:
 
@@ -262,9 +264,15 @@ Scenario: 查看商品详情
   And 只返回可售状态 SKU
 ```
 
-#### T2.2 search-service (可延后至 Phase 2)
+#### T2.2 search-service
 
-- **状态**: ⚪ 脚手架就绪，ElasticSearch 待搭建
+- **状态**: ✅ 已完成（V1.1 ES+DB 双模式）
+- **已完成**:
+  - [x] ES 全文检索（ElasticsearchOperations）
+  - [x] DB LIKE 降级方案（@ConditionalOnProperty 自动切换）
+  - [x] GET /api/search/product（关键词+类目筛选+分页）
+  - [x] GET /api/search/hot（热门关键词）
+  - [x] POST /internal/search/reindex（索引重建）
 - **依赖**: T2.1
 
 ---
@@ -273,101 +281,48 @@ Scenario: 查看商品详情
 
 #### T3.1 cart-service
 
-- **状态**: 🔵 脚手架就绪，待实现
-- **依赖**: T1.1 (认证), T2.1 (SKU 查询)
-
-**BDD 验收场景**:
-
-```gherkin
-Scenario: 添加商品到购物车
-  Given 用户已登录
-  When POST /api/cart with {skuId, quantity}
-  Then 购物车新增该 SKU
-  And 若已存在同一 SKU，则合并数量
-
-Scenario: 查看购物车
-  When GET /api/cart
-  Then 返回购物车列表（含商品名/规格/单价/数量/选中状态/小计）
-
-Scenario: 修改数量为 0 → 删除
-  When PUT /api/cart/{id} with {quantity: 0}
-  Then 该购物车项被删除
-```
+- **状态**: ✅ 已完成
+- **已完成**:
+  - [x] 添加商品（SKU 去重合并，默认选中）
+  - [x] 数量修改（≤0 自动删除）
+  - [x] 选中/取消切换
+  - [x] 清空购物车 + 获取选中项
+  - [x] 总价/选中金额计算
+  - [x] 内部接口（获取选中项 / 清空购物车）
 
 #### T3.2 trade-service
 
-- **状态**: 🔵 脚手架就绪，待实现
-- **依赖**: T1.1, T2.1, T3.1
-
-**BDD 验收场景**:
-
-```gherkin
-Scenario: 创建订单
-  Given 用户已登录且购物车有选中商品
-  When POST /api/trade/order with {addressId, cartItemIds[]}
-  Then 生成订单号，状态"待付款"
-  And 订单金额 = 各订单项小计之和
-  And 收货信息为下单时地址快照
-  And 商品/价格信息为下单时快照
-  And 扣减 SKU 库存
-  And 清空购物车中已下单项
-
-Scenario: 库存不足拒绝
-  Given SKU 库存 3，用户购买 5
-  When POST /api/trade/order
-  Then 返回错误 "库存不足"
-
-Scenario: 取消订单
-  Given 订单状态为"待付款"
-  When POST /api/trade/order/{orderNo}/cancel
-  Then 状态 → "已取消"
-  And 回滚已扣减库存
-
-Scenario: 确认收货
-  Given 订单状态为"待收货"
-  When POST /api/trade/order/{orderNo}/confirm
-  Then 状态 → "已完成"
-
-Scenario: 超时取消 (30分钟)
-  Given 订单创建 30 分钟后未支付
-  When 定时任务扫描
-  Then 状态 → "已取消"，库存回滚
-
-Scenario: 商家发货
-  Given 商家已登录，订单状态"待发货"
-  When POST /api/trade/seller/order/{orderNo}/ship with {logisticsCompany, logisticsNumber}
-  Then 创建物流记录，订单状态 → "待收货"
-```
+- **状态**: ✅ 已完成
+- **已完成**:
+  - [x] OrderManager Saga 编排（cart→SKU→address→stock→order）
+  - [x] 创建订单（库存扣减 + 地址/商品快照 + 清购物车）
+  - [x] 取消订单（库存回滚 + 优惠券回滚）
+  - [x] 确认收货（→已完成 + 积分奖励）
+  - [x] 商家发货（→Feign 创建物流记录）
+  - [x] 超时取消（@Scheduled + @XxlJob 双模）
+  - [x] 商家仪表盘 + 管理员仪表盘/订单管理
+  - [x] 售后（退货/退款申请 + 管理员审核）
+  - [x] 商家入驻（申请 + 管理员审核）
+  - [x] 财务结算（结算单生成 + 提现申请/审核）
 
 #### T3.3 pay-service
 
-- **状态**: 🔵 脚手架就绪，待实现
-- **依赖**: T3.2
-
-**BDD 验收场景**:
-
-```gherkin
-Scenario: 微信支付发起
-  Given 订单状态"待付款"
-  When POST /api/pay/order/{orderNo}
-  Then 创建 PayOrder，返回支付二维码链接
-
-Scenario: 支付成功回调
-  Given 微信支付回调通知
-  When POST /api/pay/callback/wechat with 签名校验通过
-  Then PayOrder 状态 → "成功"
-  And 关联 Order 状态 → "待发货"
-
-Scenario: 支付超时
-  Given PayOrder 超过有效期未支付
-  When 定时检查
-  Then PayOrder 状态 → "超时取消"
-```
+- **状态**: ✅ 已完成
+- **已完成**:
+  - [x] 微信支付 API v3（Native 扫码）
+  - [x] 支付回调（签名验证 + 幂等处理）
+  - [x] 支付超时（@Scheduled + @XxlJob 双模）
+  - [x] 支付状态查询
+  - [x] 支付单幂等校验（数据库唯一约束 + 状态机）
 
 #### T3.4 logistics-service
 
-- **状态**: 🔵 脚手架就绪，待实现
-- **依赖**: T3.2, T3.3
+- **状态**: ✅ 已完成
+- **已完成**:
+  - [x] 物流记录创建（trade-service → Feign 调用）
+  - [x] 物流状态追踪（PENDING→SHIPPED→DELIVERED→RETURNED）
+  - [x] GET /api/logistics/{orderId}
+  - [x] PUT /internal/logistics/{orderId}/status（内部状态更新）
 
 ---
 
@@ -375,17 +330,167 @@ Scenario: 支付超时
 
 #### T4.1 商家后台
 
-- **状态**: 🔵 前端待开发，后端接口部分复用已有服务
-- **依赖**: T1.1, T2.1, T3.2, T3.4
+- **状态**: ✅ 后端完成
+- **已完成**:
+  - [x] 商家仪表盘（今日订单/待发货/月收入）
+  - [x] 商品管理（发布/编辑/上下架/列表）
+  - [x] 订单管理（列表+详情+发货）
+  - [x] 店铺设置（名称/Logo/联系电话/地址）
+  - [x] 店铺优惠券创建和管理
+  - [x] 财务中心（结算单 + 提现）
+  - [x] 入住申请（提交 + 审核状态查询）
 
 #### T4.2 管理员后台
 
-- **状态**: 🔵 前端待开发
-- **依赖**: T1.1, T1.2, T2.1, T3.2
+- **状态**: ✅ 后端完成
+- **已完成**:
+  - [x] 用户管理（分页+禁用/启用+角色修改）
+  - [x] 商家管理（待审核列表 + 审核通过）
+  - [x] 商品管理（查看所有 + 上下架）
+  - [x] 订单管理（查看所有 + 状态筛选）
+  - [x] 基础数据统计（用户数+订单数+收入 + 30天趋势）
+  - [x] 优惠券管理（创建+下线）
+  - [x] 首页装修（banner/hot/new 配置 CRUD）
+  - [x] 提现审核
+  - [x] 操作日志查询
 
 ---
 
-## 三、未来阶段路线图
+## 三、V1.1 详细任务 — 基础设施 + 业务扩展
+
+### T1.1-V1.1 authorization-service 补充
+
+- [x] SMS SDK 集成（Aliyun dysmsapi20170525 3.1.0，@ConditionalOnProperty 可切换 Mock）
+
+### T1.2-V1.1 user-service 补充
+
+- [x] 签到积分递增加速策略（Day1=10pts, Day2=15pts, Day3+=20pts）
+- [x] Aliyun SMS SDK 真实发送（@ConditionalOnProperty 可切换）
+- [x] 积分系统（points_log 表 + PointsService + 签到/下单积分奖励）
+- [x] 商品收藏（favorite 表 + FavoriteController CRUD）
+- [x] 浏览历史（Redis List + HistoryService + HistoryController）
+
+### T2.1-V1.1 item-service 补充
+
+- [x] 多级分类递归树（一次查询全量 → 按 parentId 分组 → 递归填充 children）
+- [x] 商品评价（review 表 + ReviewController，一单一评）
+- [x] 广告商品优先排序（ProductServiceImpl: isAd DESC）
+
+### T2.2-V1.1 search-service 上线
+
+- [x] ES 全文检索（ElasticsearchOperations + CriteriaQuery）
+- [x] DB LIKE 降级（DbSearchServiceImpl，@Primary，matchIfMissing=true）
+- [x] 索引重建接口（POST /internal/search/reindex）
+- [x] Gateway 路由 + Security 公开路径
+
+### T5-V1.1 基础设施集成
+
+- [x] T5.1 Docker Compose 增强（+ES/RabbitMQ/XXL-Job/MinIO profile）
+- [x] T5.2 XXL-Job 集成（XxlJobConfig + @XxlJob + @Scheduled 双模）
+- [x] T5.6 RabbitMQ 集成（DomainEvent 4 类 + RabbitMqConfig + EventPublisher + 消费者）
+- [x] T5.7 Sentinel 集成（Gateway + Trade 限流熔断规则）
+- [x] T5.8 MinIO 集成（StorageClient + MinioStorageClient + MockStorageClient）
+- [x] T5.9 GitHub Actions CI/CD（ci.yml: build → test → package）
+
+---
+
+## 四、V1.2 详细任务 — 运营工具 + AI助手
+
+### T1.2-V1.2 WebSocket 实时推送
+
+- [x] WebSocketConfig + WebSocketNotifyController
+- [x] OrderStatusChangedEvent 领域事件
+- [x] @ConditionalOnProperty(websocket.enabled=true)
+
+### T2.1-V1.2 首页装修
+
+- [x] home_config 表（slot/banner/hot/new/sale）
+- [x] HomeConfigService + HomeController（公开 GET /api/home/config）
+- [x] AdminHomeController（管理后台 CRUD）
+
+### T3.2-V1.2 秒杀活动
+
+- [x] flash_sale 表（乐观锁 @Version）
+- [x] FlashSaleService（秒杀列表 + 抢购 stock 扣减）
+- [x] FlashSaleController（GET /api/flash + POST /api/flash/buy）
+
+### T3.2-V1.2 数据统计增强
+
+- [x] AdminController: GET /api/trade/admin/stats/trend（30天订单趋势）
+
+### T3.2-V1.2 操作日志
+
+- [x] operation_log 表 + @OperationLog 注解 + OperationLogAspect（AOP 自动记录）
+- [x] AdminLogController: GET /api/admin/log
+
+### T6-V1.2 AI商品助手
+
+- [x] ai-service 模块创建（13th module，Spring AI 1.0.0-M5 + LangChain4j 1.0.0-beta1）
+- [x] ShoppingAssistant（ReAct Agent: LLM→搜索→汇总）
+- [x] CustomerServiceAssistant（FAQ + 订单查询 + 转人工）
+- [x] @Tool 注解封装（SearchTool → search-service，OrderLookupTool → trade-service）
+- [x] MessageWindowChatMemory（10-20 轮多轮对话）
+- [x] DeepSeek V3 API 对接（OpenAI 兼容协议，api.deepseek.com）
+- [x] @ConditionalOnProperty(ai.enabled=true) 可插拔，默认关闭
+
+---
+
+## 五、V2.0 详细任务 — 平台化
+
+### T3.2-V2.0 商家入驻流程
+
+- [x] seller_application 表 + SellerApplicationEntity/Mapper
+- [x] SellerApplicationController（POST /api/seller/apply + GET 查询）
+- [x] AdminApplicationController（审核列表 + 通过/拒绝）
+
+### T3.2-V2.0 售后系统
+
+- [x] after_sale 表（退货退款/仅退款，状态流转）
+- [x] AfterSaleController（POST /api/after-sale + GET 列表）
+- [x] AdminAfterSaleController（审核 + 退款处理）
+
+### T6-V2.0 AI智能客服
+
+- [x] CustomerServiceAgent（FAQ 知识库上下文 + 订单号正则提取）
+- [x] CustomerServiceController（POST /api/ai/cs/chat）
+- [x] 低置信度转人工模板
+
+### T5-V2.0 Seata 分布式事务
+
+- [x] spring-cloud-starter-alibaba-seata 依赖
+- [x] SeataConfig: @ConditionalOnProperty(seata.enabled=true)
+- [x] 降级方案：手动 Saga 补偿保留
+
+---
+
+## 六、V2.1-V2.2 详细任务 — 完善与治理
+
+### T3.2-V2.1 商家财务结算
+
+- [x] settlement 表 + SettlementService（平台抽成 5%）
+- [x] withdrawal 表 + 提现申请/审核
+- [x] SellerFinanceController（GET balance + settlement/{id} + POST withdrawal）
+- [x] AdminFinanceController（POST generate + PUT review）
+
+### T0-V2.1 多语言 i18n
+
+- [x] I18nConfig（ResourceBundleMessageSource + AcceptHeaderLocaleResolver）
+- [x] messages_zh_CN.properties + messages_en_US.properties
+- [x] I18nUtils（编程式获取多语言消息）
+
+### T0-V2.2 架构治理
+
+- [x] Gateway 路由修复：8 条死链路 → admin/seller 按服务拆分
+- [x] Controller→Service 抽取：HistoryService / HomeConfigService / FlashSaleService
+- [x] UserServiceImpl 拆分：447行 → AuthService(95) + SmsService(70) + UserService(38)
+- [x] marketing-service 模块拆分：优惠券+秒杀从 trade-service 独立
+- [x] 02-Architecture.md §9-10：架构合规审计 + 阿里标准对照
+- [x] SPI 修正：ia-common AutoConfiguration.imports 补全 I18nConfig/XxlJobConfig/RabbitMqConfig
+- [x] 生产级 Docker Compose：资源限制/健康检查/日志轮转/持久化/网络隔离
+
+---
+
+## 七、未来阶段路线图
 
 ### V1.1 — 用户体验优化
 
@@ -430,26 +535,26 @@ Scenario: 支付超时
 
 ---
 
-## 四、当前进度摘要
+## 八、当前进度摘要
 
 ### 版本完成状态
 
-| 版本 | 完成度 | 模块 | 端点 | 测试 | 关键产出 |
-|------|--------|------|------|------|---------|
-| V1.0 MVP | 🟢 100% | 12 | 62 | 77 | 核心交易闭环 |
-| V1.1 基础+业务 | 🟢 100% | 12 | 78 | 82 | XXL-Job, RabbitMQ, ES搜索, 积分, 优惠券 |
-| V1.2 运营+AI | 🟢 100% | 13 | 97 | 82 | 秒杀, 首页装修, WebSocket, ai-service |
-| V2.0 平台化 | 🟢 100% | 13 | 106 | 82 | 商家入驻, 售后, AI客服, Seata |
-| V2.1 财务+国际化 | 🟢 100% | 13 | 115 | 82 | 财务结算, 多语言 |
-| V2.2 架构治理 | 🟢 100% | 13 | 115 | 82 | 路由修复, Service抽取, 合规 9.2/10 |
-| Phase 5 前端 | 🔵 0% | — | — | — | Vue3 + Vant UI / Element Plus |
-| V3.0 知识驱动 | ⚪ 0% | — | — | — | 知识图谱 + RAG+KG 混合检索 |
+| 版本          | 完成度     | 模块  | 端点  | 测试  | 关键产出                             |
+| ----------- | ------- | --- | --- | --- | -------------------------------- |
+| V1.0 MVP    | 🟢 100% | 12  | 62  | 77  | 核心交易闭环                           |
+| V1.1 基础+业务  | 🟢 100% | 12  | 78  | 82  | XXL-Job, RabbitMQ, ES搜索, 积分, 优惠券 |
+| V1.2 运营+AI  | 🟢 100% | 13  | 97  | 82  | 秒杀, 首页装修, WebSocket, ai-service  |
+| V2.0 平台化    | 🟢 100% | 13  | 106 | 82  | 商家入驻, 售后, AI客服, Seata            |
+| V2.1 财务+国际化 | 🟢 100% | 13  | 115 | 82  | 财务结算, 多语言                        |
+| V2.2 架构治理   | 🟢 100% | 13  | 115 | 82  | 路由修复, Service抽取, 合规 9.2/10       |
+| Phase 5 前端  | 🔵 0%   | —   | —   | —   | Vue3 + Vant UI / Element Plus    |
+| V3.0 知识驱动   | ⚪ 0%    | —   | —   | —   | 知识图谱 + RAG+KG 混合检索               |
 
 **已实现的核心链路**: 注册/登录 → 浏览商品 → 加入购物车 → 下单（库存扣减+地址快照+商品快照）→ 微信支付 → 商家发货 → 确认收货 → 售后 → 财务结算。
 
 ---
 
-## 五、V1.1 基础设施补全任务
+## 九、V1.1 基础设施补全任务（全部已完成 ✅）
 
 > 这些任务是 MVP 代码完成后、投入生产前的关键基础设施。每一项都有明确的「为什么需要」和「不做的风险」。
 
