@@ -399,21 +399,79 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
 
 ---
 
-## 六、环境变量速查表
+## 六、密钥安全模型
 
-### 6.1 生产环境必设
+### 6.1 三层分离
 
-| 变量                       | 服务    | 默认值        | 说明                   |
-| ------------------------ | ----- | ---------- | -------------------- |
-| `MYSQL_ROOT_PASSWORD`    | 所有    | `root123`  | MySQL root 密码        |
-| `REDIS_PASSWORD`         | 所有    | 无          | Redis 认证密码           |
-| `NACOS_AUTH_TOKEN`       | Nacos | 自动         | Nacos JWT 密钥 (≥32字符) |
-| `DEEPSEEK_API_KEY`       | ai    | 占位         | DeepSeek API 密钥      |
-| `WECHAT_PAY_MERCHANT_ID` | pay   | —          | 微信商户号                |
-| `WECHAT_PAY_API_V3_KEY`  | pay   | —          | 微信 APIv3 密钥          |
-| `KEYSTORE_PASSWORD`      | auth  | `changeit` | JWT 密钥库密码            |
+```
+┌─────────────────────────────────────────────────────────┐
+│ 层级1: Docker Compose .env (容器密码)                    │
+│   MySQL / Redis / Nacos / RabbitMQ / MinIO 密码          │
+│   作用域: docker compose 启动容器时注入                    │
+│   存储: .env 文件 (已在 .gitignore)                       │
+├─────────────────────────────────────────────────────────┤
+│ 层级2: 操作系统环境变量 (第三方 API 密钥)                   │
+│   WECHAT_PAY_* / ALIYUN_* / DEEPSEEK_API_KEY / JWT 密钥  │
+│   作用域: IDE / mvn spring-boot:run / docker run -e       │
+│   存储: ~/.bashrc / IDE EnvFile / K8s Secret / Vault      │
+├─────────────────────────────────────────────────────────┤
+│ 层级3: application.yml (功能开关 + 服务地址)               │
+│   ia.db.host / ia.nacos.host / *.enabled                  │
+│   作用域: Spring Boot 自动加载                             │
+│   存储: Git 仓库 (无敏感信息)                               │
+└─────────────────────────────────────────────────────────┘
+```
 
-### 6.2 功能开关（全部默认关闭）
+### 6.2 为什么 .env 不给 Spring Boot 用
+
+`.env` 是 Docker Compose 的变量文件，只在 `docker compose up` 时被 Compose 解析。
+当你在 IDE 里 `mvn spring-boot:run` 时，Spring Boot 不会读取 `.env`。
+
+**正确做法：** 第三方 API 密钥通过操作系统环境变量设置，Spring Boot 的 `application.yml` 用 `${WECHAT_PAY_MERCHANT_ID}` 占位符自动读取。
+
+### 6.3 本地开发设置 API 密钥
+
+```bash
+# 方式1: IDE 运行配置中添加 Environment Variables
+#   IntelliJ: Run → Edit Configurations → Environment variables
+#   VS Code: launch.json → "env": { "DEEPSEEK_API_KEY": "sk-xxx" }
+
+# 方式2: Shell 配置文件
+echo 'export DEEPSEEK_API_KEY=sk-xxx' >> ~/.bashrc
+echo 'export WECHAT_PAY_MERCHANT_ID=1234567890' >> ~/.bashrc
+
+# 方式3: Docker 环境变量文件 (仅 docker compose 中的 service 容器)
+# 在 docker-compose.yml 的 service 下添加:
+#   environment:
+#     - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+```
+
+### 6.4 生产环境密钥管理
+
+| 方案 | 适用场景 | 说明 |
+|------|---------|------|
+| K8s Secret | K8s 部署 | `kubectl create secret generic icedmall-secrets --from-literal=api-key=xxx` |
+| Vault | 企业级 | 动态密钥轮换，审计日志，RBAC 权限 |
+| Docker Secret | Docker Swarm | `docker secret create wechat_pay_key apiclient_key.pem` |
+| 环境变量 | 单机/小团队 | 最简单，配合 systemd EnvironmentFile 使用 |
+
+---
+
+## 七、环境变量速查表
+
+### 7.1 生产环境必设
+
+| 变量                       | 层级 | 服务  | 默认值    |
+| -------------------------- | ---- | ----- | --------- |
+| `MYSQL_ROOT_PASSWORD`      | 容器 | MySQL | `root123` |
+| `REDIS_PASSWORD`           | 容器 | Redis | 无        |
+| `NACOS_AUTH_TOKEN`         | 容器 | Nacos | 自动      |
+| `DEEPSEEK_API_KEY`         | 系统 | ai    | —         |
+| `WECHAT_PAY_MERCHANT_ID`   | 系统 | pay   | —         |
+| `WECHAT_PAY_API_V3_KEY`    | 系统 | pay   | —         |
+| `KEYSTORE_PASSWORD`        | 系统 | auth  | `changeit` |
+
+### 7.2 功能开关（全部默认关闭）
 
 | 开关                                  | 开启后的行为                             |
 | ----------------------------------- | ---------------------------------- |
@@ -429,7 +487,7 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
 
 ---
 
-## 七、搭建顺序
+## 八、搭建顺序
 
 ```
 Step 1  cp .env.example .env && 编辑密码
@@ -449,7 +507,7 @@ Step 13 测试: POST /api/auth/login → 获取 Token → 调用各接口
 
 ---
 
-## 八、验证命令
+## 九、验证命令
 
 ```bash
 # 基础服务
