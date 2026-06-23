@@ -1,5 +1,9 @@
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/AiServiceApplication.java
-/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/agent/ProductAssistantAgent.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/agent/CustomerServiceAssistant.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/agent/ShoppingAssistant.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/config/AiAgentConfig.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/config/AiProperties.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/controller/AiAssistantController.java
-/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/tool/ProductSearchTool.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/controller/CustomerServiceController.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/tool/OrderLookupTool.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ai-service/src/main/java/org/icedAmericanoMall/tool/SearchTool.java

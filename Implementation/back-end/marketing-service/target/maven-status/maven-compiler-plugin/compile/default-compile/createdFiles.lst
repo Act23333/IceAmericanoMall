@@ -1,0 +1,15 @@
+org/icedAmericanoMall/controller/MerchantCouponController.class
+org/icedAmericanoMall/mapper/UserCouponMapper.class
+org/icedAmericanoMall/service/CouponService.class
+org/icedAmericanoMall/domain/entity/UserCouponEntity.class
+org/icedAmericanoMall/controller/CouponController.class
+org/icedAmericanoMall/service/impl/FlashSaleServiceImpl.class
+org/icedAmericanoMall/domain/entity/CouponEntity.class
+org/icedAmericanoMall/service/FlashSaleService.class
+org/icedAmericanoMall/controller/FlashSaleController.class
+org/icedAmericanoMall/service/impl/CouponServiceImpl.class
+org/icedAmericanoMall/MarketingApplication.class
+org/icedAmericanoMall/mapper/FlashSaleMapper.class
+org/icedAmericanoMall/controller/AdminCouponController.class
+org/icedAmericanoMall/mapper/CouponMapper.class
+org/icedAmericanoMall/domain/entity/FlashSaleEntity.class

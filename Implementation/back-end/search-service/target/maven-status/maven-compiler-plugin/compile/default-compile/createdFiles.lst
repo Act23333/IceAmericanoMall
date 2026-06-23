@@ -1,0 +1,9 @@
+org/icedAmericanoMall/service/SearchService.class
+org/icedAmericanoMall/controller/SearchController.class
+org/icedAmericanoMall/config/SearchProperties.class
+org/icedAmericanoMall/service/impl/DbSearchServiceImpl.class
+org/icedAmericanoMall/config/ElasticSearchConfig.class
+org/icedAmericanoMall/domain/dto/ProductSearchResult.class
+org/icedAmericanoMall/service/impl/EsSearchServiceImpl.class
+org/icedAmericanoMall/SearchApplication.class
+org/icedAmericanoMall/controller/InternalSearchController.class

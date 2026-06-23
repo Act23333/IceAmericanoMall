@@ -1,11 +1,13 @@
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/client/AddressClient.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/client/CartClient.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/client/LogisticsClient.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/client/OrderClient.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/client/SkuClient.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/client/UserClient.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/config/DefaultFeignConfig.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/dto/AddressDTO.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/dto/CartItemDTO.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/dto/CreateLogisticsDTO.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/dto/LoginRespDTO.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/dto/OrderSummaryDTO.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/dto/PasswordLoginReqDTO.java
@@ -15,5 +17,6 @@
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/dto/StockOpDTO.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/fallback/AddressClientFallback.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/fallback/CartClientFallback.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/fallback/LogisticsClientFallback.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/fallback/OrderClientFallback.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/ia-api/src/main/java/org/icedAmericanoMall/fallback/UserClientFallback.java

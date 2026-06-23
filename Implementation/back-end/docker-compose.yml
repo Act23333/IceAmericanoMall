@@ -1,3 +1,5 @@
+version: "3.8"
+
 # ============================================
 # IceAmericanoMall 分布式容器编排
 # 默认启动基础三件 (MySQL + Redis + Nacos)
@@ -112,7 +114,6 @@ services:
       - "${NACOS_GRPC_PORT:-9848}:9848"
     volumes:
       - nacos-logs:/home/nacos/logs
-      - ./docker/nacos/conf:/home/nacos/conf:ro
     depends_on:
       mysql:
         condition: service_healthy
@@ -293,6 +294,11 @@ services:
 
 volumes:
   mysql-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/mysql
   redis-data:
     driver: local
   nacos-logs:
