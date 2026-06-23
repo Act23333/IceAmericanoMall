@@ -401,52 +401,39 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
 
 ## 六、密钥安全模型
 
-### 6.1 三层分离
+### 6.1 设计目标：.env 作为统一入口
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ 层级1: Docker Compose .env (容器密码)                    │
-│   MySQL / Redis / Nacos / RabbitMQ / MinIO 密码          │
-│   作用域: docker compose 启动容器时注入                    │
-│   存储: .env 文件 (已在 .gitignore)                       │
-├─────────────────────────────────────────────────────────┤
-│ 层级2: 操作系统环境变量 (第三方 API 密钥)                   │
-│   WECHAT_PAY_* / ALIYUN_* / DEEPSEEK_API_KEY / JWT 密钥  │
-│   作用域: IDE / mvn spring-boot:run / docker run -e       │
-│   存储: ~/.bashrc / IDE EnvFile / K8s Secret / Vault      │
-├─────────────────────────────────────────────────────────┤
-│ 层级3: application.yml (功能开关 + 服务地址)               │
-│   ia.db.host / ia.nacos.host / *.enabled                  │
-│   作用域: Spring Boot 自动加载                             │
-│   存储: Git 仓库 (无敏感信息)                               │
-└─────────────────────────────────────────────────────────┘
+                     ┌─────────────┐
+                     │   .env 文件  │  (不在 Git，.gitignore 保护)
+                     └──────┬──────┘
+                            │ docker compose 自动注入
+          ┌─────────────────┼─────────────────┐
+          ▼                 ▼                  ▼
+   ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+   │ Docker 容器   │ │ Docker 容器   │ │ Docker 容器   │
+   │ MySQL/Redis  │ │ Nacos/ES/MQ  │ │ Spring Boot  │
+   │ (密码)       │ │ (密码)       │ │ (API密钥等)  │
+   └──────────────┘ └──────────────┘ └──────────────┘
 ```
 
-### 6.2 为什么 .env 不给 Spring Boot 用
+**容器化后**：所有变量（容器密码 + API 密钥）都在 `.env` 中，docker compose 统一注入到所有容器。
+Spring Boot 的 `application.yml` 通过 `${WECHAT_PAY_MERCHANT_ID}` 等占位符读取。
 
-`.env` 是 Docker Compose 的变量文件，只在 `docker compose up` 时被 Compose 解析。
-当你在 IDE 里 `mvn spring-boot:run` 时，Spring Boot 不会读取 `.env`。
+### 6.2 当前过渡期：非容器化服务需额外步骤
 
-**正确做法：** 第三方 API 密钥通过操作系统环境变量设置，Spring Boot 的 `application.yml` 用 `${WECHAT_PAY_MERCHANT_ID}` 占位符自动读取。
-
-### 6.3 本地开发设置 API 密钥
+如果你的 Spring Boot 服务还没进 docker-compose（还在 IDE 或 `mvn spring-boot:run`），需要把 `.env` 中的 API 密钥单独 export：
 
 ```bash
-# 方式1: IDE 运行配置中添加 Environment Variables
-#   IntelliJ: Run → Edit Configurations → Environment variables
-#   VS Code: launch.json → "env": { "DEEPSEEK_API_KEY": "sk-xxx" }
+# 快速方案：source .env 到当前 shell
+set -a && source .env && set +a
+mvn spring-boot:run
 
-# 方式2: Shell 配置文件
-echo 'export DEEPSEEK_API_KEY=sk-xxx' >> ~/.bashrc
-echo 'export WECHAT_PAY_MERCHANT_ID=1234567890' >> ~/.bashrc
-
-# 方式3: Docker 环境变量文件 (仅 docker compose 中的 service 容器)
-# 在 docker-compose.yml 的 service 下添加:
-#   environment:
-#     - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+# 或 IDE 中配置 Environment Variables
+# IntelliJ: Run → Edit Configurations → EnvFile → 选择 .env 文件
 ```
 
-### 6.4 生产环境密钥管理
+### 6.3 生产环境安全
 
 | 方案 | 适用场景 | 说明 |
 |------|---------|------|
