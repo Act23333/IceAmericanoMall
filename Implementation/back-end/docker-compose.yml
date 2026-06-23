@@ -44,7 +44,8 @@ services:
       - mysql-data:/var/lib/mysql
       - ./database/Initialize.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
       - ./database/migrations:/docker-entrypoint-initdb.d/02-migrations:ro
-      - ./database/middleware:/docker-entrypoint-initdb.d/03-middleware:ro
+      - ./database/middleware/nacos-mysql.sql:/docker-entrypoint-initdb.d/03-nacos-mysql.sql:ro
+      - ./database/middleware/xxl-job-mysql.sql:/docker-entrypoint-initdb.d/04-xxl-job-mysql.sql:ro
       - ./docker/mysql/conf.d/custom.cnf:/etc/mysql/conf.d/custom.cnf:ro
     deploy:
       resources:
