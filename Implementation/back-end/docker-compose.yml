@@ -43,9 +43,17 @@ services:
     volumes:
       - mysql-data:/var/lib/mysql
       - ./database/Initialize.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
-      - ./database/migrations:/docker-entrypoint-initdb.d/02-migrations:ro
-      - ./database/middleware/nacos-mysql.sql:/docker-entrypoint-initdb.d/03-nacos-mysql.sql:ro
-      - ./database/middleware/xxl-job-mysql.sql:/docker-entrypoint-initdb.d/04-xxl-job-mysql.sql:ro
+      - ./database/migrations/V1.1__add_points.sql:/docker-entrypoint-initdb.d/02-points.sql:ro
+      - ./database/migrations/V1.1__add_coupon.sql:/docker-entrypoint-initdb.d/03-coupon.sql:ro
+      - ./database/migrations/V1.1__add_logistics_status.sql:/docker-entrypoint-initdb.d/04-logistics.sql:ro
+      - ./database/migrations/V1.1__add_review_favorite.sql:/docker-entrypoint-initdb.d/05-review.sql:ro
+      - ./database/migrations/V1.2__add_flash_sale_home.sql:/docker-entrypoint-initdb.d/06-flash-home.sql:ro
+      - ./database/migrations/V1.2__add_operation_log.sql:/docker-entrypoint-initdb.d/07-oplog.sql:ro
+      - ./database/migrations/V1.2__add_shop_coupon.sql:/docker-entrypoint-initdb.d/08-shop-coupon.sql:ro
+      - ./database/migrations/V2.0__add_after_sale_application.sql:/docker-entrypoint-initdb.d/09-after-sale.sql:ro
+      - ./database/migrations/V2.1__add_settlement.sql:/docker-entrypoint-initdb.d/10-settlement.sql:ro
+      - ./database/middleware/nacos-mysql.sql:/docker-entrypoint-initdb.d/11-nacos-mysql.sql:ro
+      - ./database/middleware/xxl-job-mysql.sql:/docker-entrypoint-initdb.d/12-xxl-job-mysql.sql:ro
       - ./docker/mysql/conf.d/custom.cnf:/etc/mysql/conf.d/custom.cnf:ro
     deploy:
       resources:
