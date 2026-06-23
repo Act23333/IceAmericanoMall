@@ -83,7 +83,7 @@ services:
           cpus: '1'
           memory: 512M
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -234,12 +234,6 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8088/xxl-job-admin"]
-      interval: 20s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
 
   # ---------- MinIO ----------
   minio:
@@ -302,6 +296,10 @@ services:
 volumes:
   mysql-data:
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/mysql
   redis-data:
     driver: local
   nacos-logs:
