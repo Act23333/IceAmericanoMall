@@ -5,16 +5,16 @@ spring:
   application:
     name: pay-service
   datasource:
-    url: jdbc:mysql://${ia.db.host:localhost}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: root
     password: ${hm.db.pw:root123}
   cloud:
     nacos:
-      server-addr: ${ia.nacos.host:localhost}:8848
+      server-addr: ${ia.nacos.host:192.168.10.128}:8848
   data:
     redis:
-      host: ${ia.redis.host:localhost}
+      host: ${ia.redis.host:192.168.10.128}
       port: 6379
 
 mybatis-plus:
@@ -29,7 +29,7 @@ rabbitmq:
 xxl:
   job:
     enabled: false
-    admin-addresses: http://localhost:8088/xxl-job-admin
+    admin-addresses: http://192.168.10.128:8088/xxl-job-admin
     executor:
       appname: pay-service
       port: 9998

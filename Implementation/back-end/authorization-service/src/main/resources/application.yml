@@ -4,19 +4,22 @@ server:
 spring:
   application:
     name: authorization-server
+  cloud:
+    nacos:
+      server-addr: ${ia.nacos.host:192.168.10.128}:8848
   security:
     oauth2:
       authorizationserver:
-        issuer: http://localhost:9000
+        issuer: http://192.168.10.128:9000
         endpoint:
           oidc:
             enabled: true
       resourceserver:
         jwt:
-                  jwk-set-uri: http://localhost:9000/oauth2/jwks
+                  jwk-set-uri: http://192.168.10.128:9000/oauth2/jwks
   data:
     redis:
-      host: localhost
+      host: ${ia.redis.host:192.168.10.128}
       port: 6379
 
 jwt:

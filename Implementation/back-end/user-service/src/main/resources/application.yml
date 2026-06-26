@@ -17,7 +17,7 @@ spring:
   data:
     redis:
       port: 6379
-      host: redis-service
+      host: 192.168.10.128
       client-name: user-service  # 服务名-环境-实例ID,使用CLIENT LIST可查看所有连接和对应的客户端名称
 geetest:
   captcha-id: "你的captcha_id"
