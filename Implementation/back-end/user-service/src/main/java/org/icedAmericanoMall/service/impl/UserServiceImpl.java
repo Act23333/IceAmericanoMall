@@ -19,13 +19,19 @@ import java.util.Objects;
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> implements UserService {
 
+    private final UserConverter userConverter;
+
+    public UserServiceImpl(UserConverter userConverter) {
+        this.userConverter = userConverter;
+    }
+
     @Override
     public UserInfoResp getByUserId(Long userId) {
         UserEntity user = lambdaQuery().eq(UserEntity::getId, userId).one();
         if (Objects.isNull(user)) throw new BizException(ErrorCode.USER_NOT_FOUND);
         if (user.getStatus() == UserStatusEnum.FROZEN)
             throw new BizException(ErrorCode.USER_STATUS_ABNORMAL);
-        return UserConverter.INSTANCE.map(user);
+        return userConverter.map(user);
     }
 
     @Override

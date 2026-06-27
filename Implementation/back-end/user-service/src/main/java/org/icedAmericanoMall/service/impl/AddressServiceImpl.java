@@ -22,10 +22,16 @@ import java.util.List;
 @Service
 public class AddressServiceImpl extends ServiceImpl<AddressMapper, AddressEntity> implements AddressService {
 
+    private final AddressConverter addressConverter;
+
+    public AddressServiceImpl(AddressConverter addressConverter) {
+        this.addressConverter = addressConverter;
+    }
+
     @Override
     public List<AddressResp> getListByCurrentUser(Long currentUserId) {
         List<AddressEntity> addressList = lambdaQuery().eq(AddressEntity::getUserId, currentUserId).list();
-        return AddressConverter.INSTANCE.mapList(addressList);
+        return addressConverter.mapList(addressList);
     }
 
     @Override
@@ -44,17 +50,14 @@ public class AddressServiceImpl extends ServiceImpl<AddressMapper, AddressEntity
     @Transactional(rollbackFor = Exception.class)
     public void setDefault(Long id) {
         Long currentUserId = UserContext.getUser();
-        // Verify ownership
         AddressEntity address = lambdaQuery().eq(AddressEntity::getId, id).one();
         if (address == null || !address.getUserId().equals(currentUserId)) {
             throw new BizException(ErrorCode.ILLEGAL_REQUEST, "无权操作该地址");
         }
-        // Unset all other defaults for this user
         lambdaUpdate()
                 .eq(AddressEntity::getUserId, currentUserId)
                 .set(AddressEntity::getDefaulted, false)
                 .update();
-        // Set the target as default
         boolean update = lambdaUpdate()
                 .eq(AddressEntity::getId, id)
                 .set(AddressEntity::getDefaulted, true)
@@ -70,7 +73,7 @@ public class AddressServiceImpl extends ServiceImpl<AddressMapper, AddressEntity
         if (addressEntity == null) {
             throw new BizException(ErrorCode.USER_NOT_FOUND, "地址不存在");
         }
-        return AddressConverter.INSTANCE.map(addressEntity);
+        return addressConverter.map(addressEntity);
     }
 
     @Override
