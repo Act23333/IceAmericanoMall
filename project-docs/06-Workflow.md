@@ -13,7 +13,7 @@ Phase 1 (MVP)              Phase 1.5 (完善)               Phase 2 (平台化) 
 核心交易闭环               精细化运营 + AI                平台生态                       知识驱动
 用户→商品→购物车→下单→支付  优惠券/秒杀/积分/搜索/AI商品助手  商家入驻/财务结算/客服(含AI客服)  知识图谱/RAG+KG混合检索/场景化推荐
                                                                         
-现在所处阶段：Phase 1 MVP —— user-service + authorization-service 已部分实现
+现在所处阶段：V2.2 架构治理完成 —— 14 模块 / 115+ 端点 / 89 测试 / 合规评分 9.4/10。下一阶段：V3.0 知识驱动
 
 相关图表：
 - MVP 范围用例图：`drawio/IA-MALL-MVP.drawio`（标注了 Must/Should/Could 优先级）

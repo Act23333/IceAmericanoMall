@@ -185,7 +185,7 @@
 
 - [ ] 部署 LLM Gateway（统一管理 API Key、限流、日志）
 - [ ] 基于 ES 向量检索实现基础商品语义搜索
-- [ ] 实现 ReAct Agent 框架（自研轻量版本，不引入 Spring AI 重依赖）
+- [x] 实现 ReAct Agent 框架（Spring AI 1.0.0-M5 + LangChain4j 1.0.0-beta1，`AiServices` 接口代理 + `@Tool` 声明式工具链）
 - [ ] 接入 search-service + item-service 作为 Agent Tool
 - [ ] 支持「自然语言搜索 → 多条件筛选 → 商品对比」完整链路
 - [ ] 接入 DeepSeek/通义千问 Embedding API（MVP 不自建，按量付费）

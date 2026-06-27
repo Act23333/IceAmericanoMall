@@ -97,14 +97,17 @@ Authorization: Bearer <JWT_TOKEN>
 
 ### 3.3 认证接口
 
-#### POST /api/auth/login — 密码登录
+认证采用 Strategy 模式，通过 `identityType` + `credentialType` 枚举组合分发到对应的 LoginStrategy 实现。
+
+#### POST /api/auth/login — 统一登录入口
 
 ```
 Request:
 {
-  "phone": "13800138000",
-  "password": "123456",
-  "captcha": "人机验证token"  // 可选，多设备/IP登录时触发
+  "identityType": "PHONE",       // USERNAME | PHONE | EMAIL
+  "credentialType": "PASSWORD",  // PASSWORD | SMS_CODE
+  "account": "13800138000",      // 账号（手机号/用户名/邮箱）
+  "credential": "123456"         // 凭证（密码/验证码）
 }
 
 Response (200):
@@ -119,11 +122,18 @@ Response (200):
 }
 ```
 
-#### POST /api/auth/login/phone — 验证码登录
+**支持的登录方式：**
+| identityType | credentialType | 对应 Strategy |
+|-------------|---------------|---------------|
+| PHONE | PASSWORD | PasswordLoginStrategy |
+| PHONE | SMS_CODE | SmsLoginStrategy |
+| USERNAME | PASSWORD | PasswordLoginStrategy |
+| EMAIL | PASSWORD | EmailPasswordLoginStrategy |
 
-```
-已合并到 POST /api/auth/login，通过 loginType=SMS 参数区分。
-```
+**安全机制：**
+- Redisson 分布式锁防并发登录
+- Redis Lua 脚本限流（5次失败/60秒锁定）
+- 登录失败计数器 + 自动重置
 
 #### POST /api/auth/register — 注册
 
@@ -163,10 +173,12 @@ Authorization: Bearer <token>
 Response (200): Token 加入黑名单（Redis），Refresh Token 删除
 ```
 
-#### POST /api/auth/captcha/sms — 发送短信验证码
+#### POST /user/code — 发送短信验证码
 
 ```
 功能位于 user-service: POST /user/code
+限流: @RateLimit(IP, 10次/分钟) + 手机号限流
+人机验证: Geetest 极验
 ```
 
 ---

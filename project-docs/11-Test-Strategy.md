@@ -11,8 +11,8 @@
 
 | 测试层级 | 目标占比 | 当前实际 | 状态 |
 |---------|---------|---------|------|
-| Unit (Entity/Enum/DTO) | 70% | **77 tests** (7/12 模块) | ✅ 部分覆盖 |
-| Unit (Mockito 业务逻辑) | 70% | **~15 tests** (logistics/trade/cart/pay) | 🟡 起步 |
+| Unit (Entity/Enum/DTO) | 70% | **89 tests** (8/14 模块) | ✅ 部分覆盖 |
+| Unit (Mockito 业务逻辑) | 70% | **~22 tests** (auth/logistics/trade/cart/pay) | 🟡 起步 |
 | API / Integration | 20% | **0 tests** | ❌ 未开始 |
 | Contract (Pact) | — | **0 tests** | ❌ 未开始 |
 | E2E | 5% | **0 tests** | ❌ 未开始 |
