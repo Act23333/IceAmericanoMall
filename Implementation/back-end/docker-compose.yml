@@ -1,4 +1,3 @@
-version: "3.8"
 
 # ============================================
 # IceAmericanoMall 分布式容器编排
@@ -109,15 +108,21 @@ services:
       MODE: standalone
       PREFER_HOST_MODE: hostname
       NACOS_AUTH_ENABLE: "true"
-      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-SecretKey012345678901234567890123456789012345678901234567890123456789}
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-your_base64_key_here}
       NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
       NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}
       SPRING_DATASOURCE_PLATFORM: mysql
       MYSQL_SERVICE_HOST: mysql
       MYSQL_SERVICE_DB_NAME: nacos_config
+      MYSQL_SERVICE_PORT: 3306
       MYSQL_SERVICE_USER: root
       MYSQL_SERVICE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
-      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_DB_PARAM: characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    # MYSQL_SERVICE_HOST: mysql
+    # MYSQL_SERVICE_DB_NAME: nacos_config
+    # MYSQL_SERVICE_PORT: 3306
+#	 JVM_XMS: 256m
+#	 JVM_XMX: 256m
     ports:
       - "${NACOS_HTTP_PORT:-8848}:8848"
       - "${NACOS_GRPC_PORT:-9848}:9848"
@@ -197,13 +202,15 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-admin}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-admin123}
-      RABBITMQ_VM_MEMORY_HIGH_WATERMARK: 0.6
-      RABBITMQ_DISK_FREE_LIMIT: 2GB
+      # 以下两行已删除，改为配置文件
+      # RABBITMQ_VM_MEMORY_HIGH_WATERMARK: 0.6
+      # RABBITMQ_DISK_FREE_LIMIT: 2GB
     ports:
       - "${RABBITMQ_AMQP_PORT:-5672}:5672"
       - "${RABBITMQ_MGMT_PORT:-15672}:15672"
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
+      - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro   # 新增挂载
     deploy:
       resources:
         limits:
@@ -227,13 +234,19 @@ services:
       - backend
     environment:
       PARAMS: >-
-        --spring.datasource.url=jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-icedamericano_mall}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+        --logging.level.root=DEBUG
+        --logging.level.org.springframework.web=DEBUG
+        --spring.datasource.url=jdbc:mysql://mysql:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
         --spring.datasource.username=root
         --spring.datasource.password=${MYSQL_ROOT_PASSWORD:-root123}
         --server.servlet.context-path=/xxl-job-admin
         --xxl.job.accessToken=${XXL_JOB_ACCESS_TOKEN:-iamall_token}
+        --server.address=0.0.0.0
+        --server.tomcat.max-connections=200
+        --server.tomcat.accept-count=100
+        --server.tomcat.threads.max=50
     ports:
-      - "${XXL_JOB_PORT:-8088}:8088"
+      - "${XXL_JOB_PORT:-8088}:8080"
     depends_on:
       mysql:
         condition: service_healthy

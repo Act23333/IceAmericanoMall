@@ -1,7 +1,6 @@
 org/icedAmericanoMall/config/RateLimiterConfig.class
 org/icedAmericanoMall/GatewayApplication.class
 org/icedAmericanoMall/controller/WebSocketNotifyController.class
-org/icedAmericanoMall/filter/JwtAuthenticationFilter.class
 org/icedAmericanoMall/config/SecurityConfig.class
 org/icedAmericanoMall/config/WebSocketConfig.class
 org/icedAmericanoMall/config/SentinelConfig.class

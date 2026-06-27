@@ -17,7 +17,7 @@ import reactor.core.publisher.Mono;
 
 @Component
 @Slf4j
-public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
+public class UserContextHeaderFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -44,6 +44,6 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
     @Override
     public int getOrder() {
-        return 0; // 确保在 Security 过滤器之后执行
+            return Ordered.LOWEST_PRECEDENCE; // 确保在 Security 过滤器之后执行
     }
 }

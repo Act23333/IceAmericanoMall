@@ -6,7 +6,7 @@ spring:
     name: ai-service
   cloud:
     nacos:
-      server-addr: ${ia.nacos.host:localhost}:8848
+      server-addr: ${ia.nacos.host:192.168.10.128}:8848
   ai:
     openai:
       api-key: ${DEEPSEEK_API_KEY:sk-placeholder}

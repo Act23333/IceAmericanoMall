@@ -3,7 +3,13 @@
 -- 来源: https://github.com/xuxueli/xxl-job/blob/2.4.2/doc/db/tables_xxl_job.sql
 -- 执行方式: docker compose exec mysql mysql -u root -p icedamericano_mall < database/middleware/xxl-job-mysql.sql
 -- ============================================
+-- ============================================
+-- XXL-Job 2.4.2 MySQL 表结构（独立数据库）
+-- 专用数据库: xxl_job
+-- ============================================
 
+CREATE DATABASE IF NOT EXISTS `xxl_job` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `xxl_job`;
 CREATE TABLE IF NOT EXISTS `xxl_job_info` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `job_group` int(11) NOT NULL COMMENT '执行器主键ID',

@@ -4,4 +4,4 @@
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/gate-service/src/main/java/org/icedAmericanoMall/config/SentinelConfig.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/gate-service/src/main/java/org/icedAmericanoMall/config/WebSocketConfig.java
 /home/nolazy/projects/IceAmericanoMall/Implementation/back-end/gate-service/src/main/java/org/icedAmericanoMall/controller/WebSocketNotifyController.java
-/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/gate-service/src/main/java/org/icedAmericanoMall/filter/JwtAuthenticationFilter.java
+/home/nolazy/projects/IceAmericanoMall/Implementation/back-end/gate-service/src/main/java/org/icedAmericanoMall/filter/UserContextHeaderFilter.java
