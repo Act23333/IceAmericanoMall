@@ -35,7 +35,7 @@
 
 | 层级 | 技术 | 版本 | 使用场景 |
 |------|------|------|---------|
-| **认证框架** | Spring Security + Custom JWT | — | 认证授权：Strategy 模式登录（密码/验证码/邮箱），JWT RS256 签名，JWKS 端点 |
+| **认证框架** | Spring Security + OAuth2 Authorization Server | 1.3.0 | 认证授权：OAuth2 Resource Server (JWT 验签) + JWKS 端点 + Strategy 模式登录（密码/验证码/邮箱） |
 | **令牌** | JWT (JJWT) | 0.13.0 | HS256（内部服务）+ RS256（外部客户端）双模式 |
 | **密码加密** | BCrypt | — | 用户密码哈希（`PasswordEncoder`） |
 | **数据加密** | AES-256-CBC | — | PII 字段静态加密（手机号/地址/收货人姓名）（⚠️ V1.1 计划，当前未实现） |
