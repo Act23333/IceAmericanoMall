@@ -1,14 +1,15 @@
-# Dev profile: all infra on localhost, Nacos discovery disabled for solo dev
+# Dev profile: shared infra defaults to 192.168.10.128 for this project.
 spring:
   cloud:
     nacos:
+      server-addr: ${ia.nacos.host:192.168.10.128}:8848
       discovery:
-        enabled: false
+        enabled: true
       config:
-        enabled: false
+        enabled: true
   data:
     redis:
-      host: localhost
+      host: ${ia.redis.host:192.168.10.128}
       port: 6379
 
 jwt:
