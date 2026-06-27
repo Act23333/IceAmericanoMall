@@ -5,9 +5,8 @@ import lombok.RequiredArgsConstructor;
 import org.icedAmericanoMall.domain.entity.WithdrawalEntity;
 import org.icedAmericanoMall.enums.SettlementStatusEnum;
 import org.icedAmericanoMall.enums.WithdrawalStatusEnum;
-import org.icedAmericanoMall.mapper.SettlementMapper;
-import org.icedAmericanoMall.mapper.WithdrawalMapper;
 import org.icedAmericanoMall.service.SettlementService;
+import org.icedAmericanoMall.service.WithdrawalService;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.enums.ErrorCode;
 import org.noLazy.common.exception.BizException;
@@ -22,8 +21,7 @@ import java.util.List;
 public class AdminFinanceController {
 
     private final SettlementService settlementService;
-    private final SettlementMapper settlementMapper;
-    private final WithdrawalMapper withdrawalMapper;
+    private final WithdrawalService withdrawalService;
 
     /** 手动生成结算单 */
     @PostMapping("/settlement/generate")
@@ -37,37 +35,34 @@ public class AdminFinanceController {
     @GetMapping("/settlement/page")
     public Result<?> pageSettlement(@RequestParam(defaultValue = "1") int page,
                                      @RequestParam(defaultValue = "20") int size) {
-        var result = settlementMapper.selectPage(
-                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(page, size),
-                new LambdaQueryWrapper<org.icedAmericanoMall.domain.entity.SettlementEntity>()
-                        .orderByDesc(org.icedAmericanoMall.domain.entity.SettlementEntity::getCreateTime));
-        return Result.ok(result);
+        return Result.ok(settlementService.lambdaQuery()
+                .orderByDesc(org.icedAmericanoMall.domain.entity.SettlementEntity::getCreateTime)
+                .page(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(page, size)));
     }
 
     /** 提现审核列表 */
     @GetMapping("/withdrawal/page")
-    public Result<List<WithdrawalEntity>> pageWithdrawal(@RequestParam(defaultValue = "1") Integer status) {
-        return Result.ok(withdrawalMapper.selectList(
-                new LambdaQueryWrapper<WithdrawalEntity>()
-                        .eq(status != null, WithdrawalEntity::getStatus, status)
-                        .orderByDesc(WithdrawalEntity::getCreateTime)));
+    public Result<?> pageWithdrawal(@RequestParam(required = false) Integer status,
+                                     @RequestParam(defaultValue = "1") int page,
+                                     @RequestParam(defaultValue = "20") int size) {
+        return Result.ok(withdrawalService.pageByStatus(status, page, size));
     }
 
     /** 审核提现 */
     @PutMapping("/withdrawal/{id}/review")
     public Result<?> reviewWithdrawal(@PathVariable Long id, @RequestParam Integer status,
                                        @RequestParam(required = false) String remark) {
-        WithdrawalEntity w = withdrawalMapper.selectById(id);
+        WithdrawalEntity w = withdrawalService.getById(id);
         if (w == null) throw new BizException(ErrorCode.USER_NOT_FOUND, "提现申请不存在");
         w.setStatus(status); w.setAdminRemark(remark);
-        withdrawalMapper.updateById(w);
+        withdrawalService.updateById(w);
         // 审核通过 → 结算单状态更新为已打款
         if (status.equals(WithdrawalStatusEnum.PAID_OUT.getCode())) {
-            settlementMapper.selectList(
-                    new LambdaQueryWrapper<org.icedAmericanoMall.domain.entity.SettlementEntity>()
-                            .eq(org.icedAmericanoMall.domain.entity.SettlementEntity::getSellerId, w.getSellerId())
-                            .eq(org.icedAmericanoMall.domain.entity.SettlementEntity::getStatus, SettlementStatusEnum.SETTLED.getCode()))
-                    .forEach(s -> { s.setStatus(SettlementStatusEnum.PAID_OUT.getCode()); settlementMapper.updateById(s); });
+            settlementService.lambdaQuery()
+                    .eq(org.icedAmericanoMall.domain.entity.SettlementEntity::getSellerId, w.getSellerId())
+                    .eq(org.icedAmericanoMall.domain.entity.SettlementEntity::getStatus, SettlementStatusEnum.SETTLED.getCode())
+                    .list()
+                    .forEach(s -> { s.setStatus(SettlementStatusEnum.PAID_OUT.getCode()); settlementService.updateById(s); });
         }
         return Result.ok();
     }
