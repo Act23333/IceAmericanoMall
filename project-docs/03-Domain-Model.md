@@ -273,7 +273,10 @@
 | 领域服务                | 职责                 | 所在上下文 |
 | ------------------- | ------------------ | ----- |
 | `PasswordEncoder`   | 密码加密与验证（BCrypt）    | 用户上下文 |
-| `TokenService`      | JWT 签发、验证、刷新       | 认证上下文 |
+| `LoginTokenService` | JWT RS256 签发、Access Token + Refresh Token 双Token模式 | 认证上下文 |
+| `LoginStrategy` (接口) | 登录策略接口：`support(IdentityType, CredentialType)` + `login(LoginReq)` | 认证上下文 |
+| `LoginStrategyFactory` | 注入 `List<LoginStrategy>`，按 identityType+credentialType 分发 | 认证上下文 |
+| `LoginContext` | 登录门面：分布式锁(Redisson) + 失败计数(Lua) + 策略执行 | 认证上下文 |
 | `StockManager`      | 库存扣减、回滚（下单锁定/取消释放） | 商品上下文 |
 | `AmountCalculator`  | 订单总价计算、优惠分摊、运费计算     | 订单上下文 |
 | `OrderStateMachine` | 订单状态流转控制           | 订单上下文 |
