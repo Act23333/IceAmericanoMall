@@ -20,8 +20,8 @@
     "lucide-react": "^0.400.0",
     "next": "^15.0.0",
     "next-themes": "^0.3.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "react-hook-form": "^7.50.0",
     "tailwind-merge": "^2.3.0",
     "zod": "^3.23.0",
@@ -31,8 +31,8 @@
     "@icedmall/config": "workspace:*",
     "@tailwindcss/postcss": "^4.3.1",
     "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
     "typescript": "^5.5.0"
   }
 }
