@@ -1,0 +1,40 @@
+@use '../../app.scss';
+
+.page {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+.empty-cart {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60px 40px;
+}
+
+.empty-icon {
+  font-size: 64px;
+}
+
+.empty-title {
+  margin-top: 20px;
+  font-size: 18px;
+  color: var(--color-ink-black);
+}
+
+.empty-desc {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--color-warm-gray-dark);
+}
+
+.empty-btn {
+  margin-top: 24px;
+  padding: 12px 40px;
+  border-radius: 20px;
+  background: var(--color-accent-green);
+  color: #FFFFFF;
+  font-size: 15px;
+}

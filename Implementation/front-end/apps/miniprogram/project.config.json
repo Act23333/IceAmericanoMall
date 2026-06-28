@@ -1,5 +1,5 @@
 {
-  "miniprogramRoot": "dist/weapp/",
+  "miniprogramRoot": "dist/",
   "projectname": "icedmall-miniprogram",
   "description": "冰美商城 — 微信小程序",
   "appid": "touristappid",

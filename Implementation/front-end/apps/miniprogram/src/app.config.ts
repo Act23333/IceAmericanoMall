@@ -5,9 +5,9 @@
 export default {
   pages: [
     'pages/index/index',
-    'pages/marketplace/marketplace',
-    'pages/cart/cart',
-    'pages/profile/profile',
+    'pages/marketplace/index',
+    'pages/cart/index',
+    'pages/profile/index',
   ],
   window: {
     backgroundTextStyle: 'light',
@@ -22,30 +22,10 @@ export default {
     backgroundColor: '#FFFFFF',
     borderStyle: 'white',
     list: [
-      {
-        pagePath: 'pages/index/index',
-        text: '首页',
-        iconPath: 'assets/icons/home.png',
-        selectedIconPath: 'assets/icons/home-active.png',
-      },
-      {
-        pagePath: 'pages/marketplace/marketplace',
-        text: '商城',
-        iconPath: 'assets/icons/shop.png',
-        selectedIconPath: 'assets/icons/shop-active.png',
-      },
-      {
-        pagePath: 'pages/cart/cart',
-        text: '购物车',
-        iconPath: 'assets/icons/cart.png',
-        selectedIconPath: 'assets/icons/cart-active.png',
-      },
-      {
-        pagePath: 'pages/profile/profile',
-        text: '我的',
-        iconPath: 'assets/icons/user.png',
-        selectedIconPath: 'assets/icons/user-active.png',
-      },
+      { pagePath: 'pages/index/index', text: '首页' },
+      { pagePath: 'pages/marketplace/index', text: '商城' },
+      { pagePath: 'pages/cart/index', text: '购物车' },
+      { pagePath: 'pages/profile/index', text: '我的' },
     ],
   },
 };
