@@ -1,0 +1,23 @@
+{
+  "name": "@icedmall/ui",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "clsx": "^2.1.0",
+    "tailwind-merge": "^2.3.0",
+    "lucide-react": "^0.400.0"
+  },
+  "devDependencies": {
+    "@icedmall/config": "workspace:*",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.5.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}

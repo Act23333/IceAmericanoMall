@@ -1,0 +1,18 @@
+{
+  "name": "@icedmall/api",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@icedmall/config": "workspace:*",
+    "typescript": "^5.5.0"
+  }
+}

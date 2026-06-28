@@ -1,0 +1,22 @@
+{
+  "name": "@icedmall/miniprogram",
+  "version": "0.0.1",
+  "private": true,
+  "description": "📦 小程序端 (Taro 4) — 后期激活。微信/支付宝小程序，一套 React 代码编译。",
+  "scripts": {
+    "dev:weapp": "taro build --type weapp --watch",
+    "build:weapp": "taro build --type weapp",
+    "dev:alipay": "taro build --type alipay --watch",
+    "build:alipay": "taro build --type alipay"
+  },
+  "dependencies": {
+    "@icedmall/api": "workspace:*",
+    "@icedmall/utils": "workspace:*"
+  },
+  "devDependencies": {
+    "@tarojs/cli": "^4.0.0",
+    "@tarojs/components": "^4.0.0",
+    "@tarojs/taro": "^4.0.0",
+    "@tarojs/react": "^4.0.0"
+  }
+}

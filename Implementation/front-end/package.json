@@ -1,0 +1,29 @@
+{
+  "name": "ice-americano-mall-frontend",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @icedmall/web dev",
+    "dev:admin": "pnpm --filter @icedmall/admin dev",
+    "dev:seller": "pnpm --filter @icedmall/seller dev",
+    "build": "turbo build",
+    "build:web": "pnpm --filter @icedmall/web build",
+    "build:admin": "pnpm --filter @icedmall/admin build",
+    "build:seller": "pnpm --filter @icedmall/seller build",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "format": "prettier --write '**/*.{ts,tsx,js,jsx,json,css,md}'",
+    "format:check": "prettier --check '**/*.{ts,tsx,js,jsx,json,css,md}'",
+    "type-check": "turbo type-check",
+    "clean": "turbo clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

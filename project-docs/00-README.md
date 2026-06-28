@@ -18,6 +18,7 @@
 | 12  | [12-Security-Model.md](./12-Security-Model.md)                   | 安全威胁模型 — 威胁识别与防护策略               | 开发、安全评审     |
 | 13  | [13-AI-Technology-Selection.md](./13-AI-Technology-Selection.md) | AI 技术选型文档 — LLM/向量数据库/Agent 方案对比 | 架构师、开发      |
 | 14  | [14-Service-Config-Guide.md](./14-Service-Config-Guide.md) | 服务配置指南 — 全部中间件和第三方平台搭建步骤         | 运维、开发        |
+| 15  | [15-Front-End-Technology-Selection.md](./15-Front-End-Technology-Selection.md) | 前端技术选型文档 — React/Next.js 全栈技术方案          | 前端开发、架构师    |
 
 ## 与开发方法论的对应关系
 
@@ -32,6 +33,7 @@
 | **Agent** (AI 编码规范)       | 08-agents, 09-constraints                                | AI 生成代码的行为约束和禁止模式         |
 | **Event Storming** (事件风暴) | 02-Architecture, 03-Domain-Model (来自 doc/methodology/02) | 领域事件 → 聚合 → 限界上下文         |
 | **AI** (人工智能)             | 13-AI-Technology-Selection, 02-Architecture §二           | RAG + Agentic Search 技术选型 |
+| **Frontend** (前端架构)       | 15-Front-End-Technology-Selection, 02-Architecture §2.10  | React 19 + Next.js 15 全栈方案, RSC/ISR/SSG 渲染策略 |
 
 ## 项目阶段概览
 

@@ -115,11 +115,26 @@
 
 ### 2.10 前端
 
+> 完整选型分析见 [15-Front-End-Technology-Selection.md](./15-Front-End-Technology-Selection.md)
+
 | 层级 | 技术 | 版本 | 使用场景 |
 |------|------|------|---------|
-| **用户端 (H5)** | Vue 3 + Vant UI | — | 手机浏览器适配（计划） |
-| **商家/管理后台** | Vue 3 + Element Plus | — | PC 后台管理系统（计划） |
-| **构建工具** | Vite | 5.x | 前端构建（计划） |
+| **全栈框架** | Next.js (App Router) | 15+ | SSR/ISG/SSG 混合渲染，React Server Components 默认开启 |
+| **UI 库** | React | 19 | Server Components + `use()` hook + actions |
+| **类型系统** | TypeScript | 5.x | strict 模式，前后端共享 DTO 类型 |
+| **样式方案** | Tailwind CSS | 4 | 原子化 CSS，design tokens 约束设计系统 |
+| **通用组件** | Shadcn/ui | latest | 代码拥有式组件库，移动端适配，基于 Radix 原语 |
+| **后台组件** | Ant Design 5 + ProComponents | 5.20+ | Table/Form/ProTable 开箱即用，仅用于 PC 后台 |
+| **服务端状态** | TanStack Query | v5 | 缓存/去重/乐观更新/无限滚动，与 RSC 完美配合 |
+| **客户端状态** | Zustand | v5 | 购物车/认证/UI 状态，极简 API |
+| **表单校验** | React Hook Form + Zod | 7.x / 3.x | 非受控高性能表单 + 类型安全校验 |
+| **构建工具** | Turbopack (Rust) | — | Next.js 内置，比 Webpack 快 10x |
+| **包管理** | pnpm (Monorepo) | 9+ | 严格依赖解析 + workspace 原生支持 |
+| **移动端** | PWA → Taro 4 | — | Service Worker 离线优先；后期用 Taro 编译小程序 |
+| **E2E 测试** | Playwright | latest | 多浏览器并行，trace viewer 调试 |
+| **单元/组件测试** | Vitest + React Testing Library | latest | Vite 原生速度，用户视角测试 |
+| **错误追踪** | Sentry | latest | React Error Boundary + Session Replay |
+| **代码检查** | ESLint 9 + Prettier 3 | latest | Flat config + Tailwind class 自动排序 |
 
 ---
 
