@@ -24,6 +24,24 @@ export default defineConfig({
   },
   framework: 'react',
   compiler: 'webpack5',
+  compilerOptions: {
+    webpackChain(chain) {
+      // 确保 React 不会跨 chunk 分割（避免 __SECRET_INTERNALS 引用断裂）
+      chain.optimization.splitChunks({
+        chunks: 'all',
+        cacheGroups: {
+          react: {
+            name: 'vendors',
+            test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+            priority: 20,
+            chunks: 'all',
+          },
+        },
+      });
+      // 确保所有文件解析到同一个 react 实例
+      chain.resolve.alias.set('react', require.resolve('react'));
+    },
+  },
   mini: {
     postcss: {
       pxtransform: {
