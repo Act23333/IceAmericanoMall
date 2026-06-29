@@ -21,7 +21,13 @@ mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
 
-# RabbitMQ 消息队列 — 开发环境关闭，生产环境设置 rabbitmq.enabled=true
+  rabbitmq:
+    host: ${ia.rabbitmq.host:192.168.10.128}
+    port: 5672
+    username: ${RABBITMQ_DEFAULT_USER:-admin}
+    password: ${RABBITMQ_DEFAULT_PASS:-admin123}
+
+# RabbitMQ 功能开关 — 开发环境关闭
 rabbitmq:
   enabled: false
 
@@ -29,7 +35,7 @@ rabbitmq:
 xxl:
   job:
     enabled: false
-    admin-addresses: http://localhost:8088/xxl-job-admin
+    admin-addresses: http://192.168.10.128:8088/xxl-job-admin
     executor:
       appname: pay-service
       port: 9998
