@@ -1,4 +1,4 @@
-@use '../../app.scss';
+/* 购物车页 */
 
 .page {
   display: flex;
@@ -11,30 +11,32 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 60px 40px;
+  padding: 120rpx 80rpx;
 }
 
 .empty-icon {
-  font-size: 64px;
+  font-size: 120rpx;
 }
 
 .empty-title {
-  margin-top: 20px;
-  font-size: 18px;
-  color: var(--color-ink-black);
+  margin-top: 40rpx;
+  font-size: 36rpx;
+  color: #1A1A1A;
+  font-weight: 500;
 }
 
 .empty-desc {
-  margin-top: 8px;
-  font-size: 14px;
-  color: var(--color-warm-gray-dark);
+  margin-top: 16rpx;
+  font-size: 28rpx;
+  color: #8C8A87;
 }
 
 .empty-btn {
-  margin-top: 24px;
-  padding: 12px 40px;
-  border-radius: 20px;
-  background: var(--color-accent-green);
+  margin-top: 48rpx;
+  padding: 24rpx 80rpx;
+  border-radius: 36rpx;
+  background: #4A7C59;
   color: #FFFFFF;
-  font-size: 15px;
+  font-size: 30rpx;
+  font-weight: 500;
 }

@@ -1,74 +1,77 @@
-@use '../../app.scss';
+/* 我的页 */
 
 .page {
-  padding-bottom: 40px;
+  padding-bottom: 80rpx;
 }
 
 .profile-header {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 60px 24px 40px;
+  padding: 120rpx 48rpx 80rpx;
   background: linear-gradient(180deg, #F7F6F3, #FAFAF8);
 }
 
 .avatar {
-  width: 80px;
-  height: 80px;
+  width: 140rpx;
+  height: 140rpx;
   border-radius: 50%;
-  background: var(--color-warm-gray);
+  background: linear-gradient(135deg, #E8E6E1, #F0EFEC);
+  border: 4rpx solid rgba(255, 255, 255, 0.8);
 }
 
 .nickname {
-  margin-top: 16px;
-  font-size: 20px;
-  color: var(--color-ink-black);
+  margin-top: 32rpx;
+  font-size: 40rpx;
+  color: #1A1A1A;
+  font-weight: 500;
 }
 
 .login-hint {
-  margin-top: 8px;
-  font-size: 14px;
-  color: var(--color-accent-green);
+  margin-top: 16rpx;
+  font-size: 28rpx;
+  color: #4A7C59;
 }
 
 .menu-section {
-  margin-top: 20px;
-  padding: 0 20px;
+  margin-top: 40rpx;
+  padding: 0 40rpx;
 }
 
 .menu-item {
   display: flex;
   align-items: center;
-  padding: 20px 16px;
-  border-radius: 16px;
+  padding: 40rpx 32rpx;
+  border-radius: 28rpx;
   background: #FFFFFF;
-  margin-bottom: 10px;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.03);
 }
 
 .menu-icon {
-  font-size: 24px;
-  width: 44px;
+  font-size: 44rpx;
+  width: 80rpx;
   text-align: center;
 }
 
 .menu-text {
   flex: 1;
-  margin-left: 12px;
+  margin-left: 24rpx;
 }
 
 .menu-title {
-  font-size: 16px;
-  color: var(--color-ink-black);
+  font-size: 32rpx;
+  color: #1A1A1A;
 }
 
 .menu-desc {
   display: block;
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--color-warm-gray-dark);
+  margin-top: 4rpx;
+  font-size: 24rpx;
+  color: #8C8A87;
 }
 
 .menu-arrow {
-  font-size: 20px;
-  color: var(--color-warm-gray-dark);
+  font-size: 36rpx;
+  color: #B8B5B0;
 }
