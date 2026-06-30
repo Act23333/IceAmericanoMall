@@ -54,6 +54,7 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         redisTemplate.delete(SMS_CODE_PREFIX + phone);
 
         LoginRespDTO resp = BeanUtils.copyBean(user, LoginRespDTO.class);
+        resp.setUserId(user.getId());   // 技术PK (Long), 不是 user.getUserId() (String UUID)
         resp.setRole(mapRole(user.getRoleType()));
         return resp;
     }
@@ -70,6 +71,7 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
             throw new BizException(ErrorCode.USER_STATUS_ABNORMAL);
 
         LoginRespDTO resp = BeanUtils.copyBean(user, LoginRespDTO.class);
+        resp.setUserId(user.getId());
         resp.setRole(mapRole(user.getRoleType()));
         return resp;
     }
@@ -85,6 +87,7 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
             if (user.getStatus() == UserStatusEnum.FROZEN)
                 throw new BizException(ErrorCode.USER_STATUS_ABNORMAL, "账号已被禁用");
             LoginRespDTO resp = BeanUtils.copyBean(user, LoginRespDTO.class);
+            resp.setUserId(user.getId());
             resp.setRole(mapRole(user.getRoleType()));
             return resp;
         }
@@ -93,6 +96,7 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         user.setPhone(phone);
         registerUser(user);
         LoginRespDTO resp = BeanUtils.copyBean(user, LoginRespDTO.class);
+        resp.setUserId(user.getId());
         resp.setRole(mapRole(user.getRoleType()));
         return resp;
     }
