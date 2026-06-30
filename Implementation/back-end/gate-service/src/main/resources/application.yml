@@ -1,145 +1,152 @@
 server:
   port: 8080
+  servlet:
+    context-path: /
 
 spring:
   application:
     name: gateway-service
+  profiles:
+    active: dev
   cloud:
     gateway:
-      routes:
-        # 认证服务路由
-        - id: auth-service
-          uri: lb://authorization-server
-          predicates:
-            - Path=/api/auth/**
-          filters:
-            - StripPrefix=0
+      server:
+        webflux: # webmvc是web框架
+          routes:
+            # 认证服务路由
+                    - id: auth-service
+                      uri: lb://authorization-server
+                      predicates:
+                        - Path=/api/auth/**
+                      filters:
+                        - StripPrefix=0
 
-        # 用户服务路由（带限流）
-        - id: user-service
-          uri: lb://user-service
-          predicates:
-            - Path=/api/user/**
-          filters:
-            - StripPrefix=0
-            - name: RequestRateLimiter
-              args:
-                key-resolver: "#{@ipKeyResolver}"
-                redis-rate-limiter.replenishRate: 10
-                redis-rate-limiter.burstCapacity: 20
-                redis-rate-limiter.requestedTokens: 1
+                    # 用户服务路由（带限流）
+                    - id: user-service
+                      uri: lb://user-service
+                      predicates:
+                        - Path=/api/user/**
+                      filters:
+                        - StripPrefix=0
+                        - name: RequestRateLimiter
+                          args:
+                            key-resolver: "#{@ipKeyResolver}"
+                            redis-rate-limiter.replenishRate: 10
+                            redis-rate-limiter.burstCapacity: 20
+                            redis-rate-limiter.requestedTokens: 1
 
-        # 商品服务路由
-        - id: item-service
-          uri: lb://item-service
-          predicates:
-            - Path=/api/item/**
-          filters:
-            - StripPrefix=0
+                    # 商品服务路由
+                    - id: item-service
+                      uri: lb://item-service
+                      predicates:
+                        - Path=/api/item/**
+                      filters:
+                        - StripPrefix=0
 
-        # 购物车服务路由
-        - id: cart-service
-          uri: lb://cart-service
-          predicates:
-            - Path=/api/cart/**
-          filters:
-            - StripPrefix=0
+                    # 购物车服务路由
+                    - id: cart-service
+                      uri: lb://cart-service
+                      predicates:
+                        - Path=/api/cart/**
+                      filters:
+                        - StripPrefix=0
 
-        # 交易服务路由
-        - id: trade-service
-          uri: lb://trade-service
-          predicates:
-            - Path=/api/trade/**
-          filters:
-            - StripPrefix=0
+                    # 交易服务路由
+                    - id: trade-service
+                      uri: lb://trade-service
+                      predicates:
+                        - Path=/api/trade/**
+                      filters:
+                        - StripPrefix=0
 
-        # 支付服务路由
-        - id: pay-service
-          uri: lb://pay-service
-          predicates:
-            - Path=/api/pay/**
-          filters:
-            - StripPrefix=0
+                    # 支付服务路由
+                    - id: pay-service
+                      uri: lb://pay-service
+                      predicates:
+                        - Path=/api/pay/**
+                      filters:
+                        - StripPrefix=0
 
-        # 物流服务路由
-        - id: logistics-service
-          uri: lb://logistics-service
-          predicates:
-            - Path=/api/logistics/**
-          filters:
-            - StripPrefix=0
+                    # 物流服务路由
+                    - id: logistics-service
+                      uri: lb://logistics-service
+                      predicates:
+                        - Path=/api/logistics/**
+                      filters:
+                        - StripPrefix=0
 
-        # 营销服务路由
-        - id: marketing-service
-          uri: lb://marketing-service
-          predicates:
-            - Path=/api/coupon/**,/api/flash/**
-          filters:
-            - StripPrefix=0
+                    # 营销服务路由
+                    - id: marketing-service
+                      uri: lb://marketing-service
+                      predicates:
+                        - Path=/api/coupon/**,/api/flash/**
+                      filters:
+                        - StripPrefix=0
 
-        # ==================== 管理员路由（按服务拆分，精确路径优先） ====================
-        - id: admin-item-routes
-          uri: lb://item-service
-          predicates:
-            - Path=/api/admin/home/**
-          filters:
-            - StripPrefix=0
+                    # ==================== 管理员路由（按服务拆分，精确路径优先） ====================
+                    - id: admin-item-routes
+                      uri: lb://item-service
+                      predicates:
+                        - Path=/api/admin/home/**
+                      filters:
+                        - StripPrefix=0
 
-        - id: admin-marketing-routes
-          uri: lb://marketing-service
-          predicates:
-            - Path=/api/admin/coupon/**
-          filters:
-            - StripPrefix=0
+                    - id: admin-marketing-routes
+                      uri: lb://marketing-service
+                      predicates:
+                        - Path=/api/admin/coupon/**
+                      filters:
+                        - StripPrefix=0
 
-        - id: admin-trade-routes
-          uri: lb://trade-service
-          predicates:
-            - Path=/api/admin/after-sale/**,/api/admin/application/**,/api/admin/finance/**
-          filters:
-            - StripPrefix=0
+                    - id: admin-trade-routes
+                      uri: lb://trade-service
+                      predicates:
+                        - Path=/api/admin/after-sale/**,/api/admin/application/**,/api/admin/finance/**
+                      filters:
+                        - StripPrefix=0
 
-        - id: admin-user-routes
-          uri: lb://user-service
-          predicates:
-            - Path=/api/admin/**
-          filters:
-            - StripPrefix=0
+                    - id: admin-user-routes
+                      uri: lb://user-service
+                      predicates:
+                        - Path=/api/admin/**
+                      filters:
+                        - StripPrefix=0
 
-        # 搜索服务路由（公开）
-        - id: search-service
-          uri: lb://search-service
-          predicates:
-            - Path=/api/search/**
-          filters:
-            - StripPrefix=0
+                    # 搜索服务路由（公开）
+                    - id: search-service
+                      uri: lb://search-service
+                      predicates:
+                        - Path=/api/search/**
+                      filters:
+                        - StripPrefix=0
 
-        # ==================== 商家路由（按服务拆分，精确路径优先） ====================
-        - id: seller-marketing-routes
-          uri: lb://marketing-service
-          predicates:
-            - Path=/api/seller/coupon/**
-          filters:
-            - StripPrefix=0
+                    # ==================== 商家路由（按服务拆分，精确路径优先） ====================
+                    - id: seller-marketing-routes
+                      uri: lb://marketing-service
+                      predicates:
+                        - Path=/api/seller/coupon/**
+                      filters:
+                        - StripPrefix=0
 
-        - id: seller-trade-routes
-          uri: lb://trade-service
-          predicates:
-            - Path=/api/seller/apply/**,/api/seller/finance/**
-          filters:
-            - StripPrefix=0
+                    - id: seller-trade-routes
+                      uri: lb://trade-service
+                      predicates:
+                        - Path=/api/seller/apply/**,/api/seller/finance/**
+                      filters:
+                        - StripPrefix=0
 
-        - id: seller-user-routes
-          uri: lb://user-service
-          predicates:
-            - Path=/api/seller/**
-          filters:
-            - StripPrefix=0
+                    - id: seller-user-routes
+                      uri: lb://user-service
+                      predicates:
+                        - Path=/api/seller/**
+                      filters:
+                        - StripPrefix=0
 
   security:
     oauth2:
       resourceserver:
         jwt:
+#          jwk-set-uri: http://192.168.10.128:9000/oauth2/jwks
           jwk-set-uri: http://192.168.10.128:9000/oauth2/jwks
 
 # Sentinel 限流熔断 — 开发环境关闭，生产环境设置 sentinel.enabled=true
