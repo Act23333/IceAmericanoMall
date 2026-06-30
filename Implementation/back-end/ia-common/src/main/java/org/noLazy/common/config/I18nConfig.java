@@ -1,5 +1,6 @@
 package org.noLazy.common.config;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.MessageSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -11,11 +12,14 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
+import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type.SERVLET;
+
 /**
  * i18n 多语言配置 — 根据 Accept-Language 请求头自动切换语言。
  * 默认 zh_CN，支持 en_US。
  */
 @Configuration
+@ConditionalOnWebApplication(type = SERVLET)
 public class I18nConfig {
 
     @Bean
