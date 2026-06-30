@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.core.ParameterNameDiscoverer;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -17,11 +18,14 @@ import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type.SERVLET;
+
 import java.lang.reflect.Method;
 import java.util.Collections;
 
 @Slf4j
 @Component
+@ConditionalOnWebApplication(type = SERVLET)
 public class RateLimitUtils {
 
     @Resource

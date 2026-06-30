@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -20,6 +21,8 @@ import org.springframework.validation.BindException;
 
 import java.util.Objects;
 import java.util.stream.Collectors;
+
+import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type.SERVLET;
 
 /**
  * @ClassName: CommonExceptionAdvice
@@ -32,6 +35,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @RestControllerAdvice
+@ConditionalOnWebApplication(type = SERVLET)
 @RequiredArgsConstructor
 public class GlobalExceptionHandler {
     private final RateLimitUtils rateLimitUtils;
