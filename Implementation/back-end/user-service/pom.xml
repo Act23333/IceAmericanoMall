@@ -98,13 +98,17 @@
     </dependencies>
 
     <build>
-        <plugins>
-            <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-compiler-plugin</artifactId>
-            <configuration>
-                <parameters>true</parameters>
-            </configuration>
-        </plugin></plugins>
+<!--        <plugins>-->
+            <!--它指示 maven-compiler-plugin 将方法参数的名称（parameter names）编译到 .class 文件中（使用 -parameters javac 标志）。
+            通常，Java 编译器不会保留参数名（由于类型擦除和默认行为，它们会变成 arg0、arg1）。
+            使用此参数后，反射 API（Method.getParameters()）可以在运行时检索到实际的参数名。-->
+            <!--也会覆盖父模块插件配置-->
+<!--            <plugin>-->
+<!--            <groupId>org.apache.maven.plugins</groupId>-->
+<!--            <artifactId>maven-compiler-plugin</artifactId>-->
+<!--            <configuration>-->
+<!--                <parameters>true</parameters>-->
+<!--            </configuration>-->
+<!--        </plugin></plugins>-->
     </build>
 </project>
