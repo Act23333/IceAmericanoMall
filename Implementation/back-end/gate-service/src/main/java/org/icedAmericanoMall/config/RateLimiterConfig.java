@@ -13,6 +13,7 @@ public class RateLimiterConfig {
 
     @Primary
     @Bean
+    @Primary
     public KeyResolver ipKeyResolver() {
         return exchange -> {
             String ip = Objects.requireNonNull(exchange.getRequest().getRemoteAddress()).getAddress().getHostAddress();

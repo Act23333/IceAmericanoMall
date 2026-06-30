@@ -10,14 +10,18 @@ import org.noLazy.common.enums.ErrorCode;
 import org.noLazy.common.exception.BizException;
 import org.noLazy.common.utils.IpUtil;
 import org.noLazy.common.utils.RateLimitUtils;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.dao.DataAccessException;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import org.springframework.stereotype.Component;
 
+import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type.SERVLET;
+
 @Aspect
 @Component
+@ConditionalOnWebApplication(type = SERVLET)
 @Slf4j
 @RequiredArgsConstructor
 public class RateLimitAspect {

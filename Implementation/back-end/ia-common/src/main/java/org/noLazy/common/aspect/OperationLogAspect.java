@@ -6,10 +6,13 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.noLazy.common.annotation.OperationLog;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+
+import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type.SERVLET;
 
 /**
  * 操作日志 AOP — 拦截 @OperationLog 注解的方法，写入 operation_log 表。
@@ -17,6 +20,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 @Slf4j
 @Aspect
 @Component
+@ConditionalOnWebApplication(type = SERVLET)
 public class OperationLogAspect {
 
     private final JdbcTemplate jdbcTemplate;
