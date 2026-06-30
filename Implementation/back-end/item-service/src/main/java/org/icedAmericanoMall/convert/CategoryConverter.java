@@ -8,6 +8,9 @@ import org.mapstruct.Mapping;
 @Mapper(componentModel = "spring")
 public interface CategoryConverter {
 
-    @Mapping(target = "children", ignore = true)   // 告诉 MapStruct，这个属性我来处理
+    /**
+     * entity → TreeVO: children 由 service 层递归构建，MapStruct 无需处理。
+     */
+    @Mapping(target = "children", ignore = true)
     CategoryTreeVO entityToTreeVO(CategoryEntity entity);
 }
