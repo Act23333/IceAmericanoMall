@@ -2,15 +2,17 @@ package org.noLazy.common.config;
 
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * RabbitMQ 配置 — 仅在 rabbitmq.enabled=true 时激活。
+ * RabbitMQ 配置 — 仅在 rabbitmq.enabled=true 且 spring-amqp 在类路径时激活。
  * 声明领域事件所需的 Queue / Exchange / Binding。
  */
 @Configuration
+@ConditionalOnClass(TopicExchange.class)
 public class RabbitMqConfig {
 
     public static final String EXCHANGE = "icedmall.events";

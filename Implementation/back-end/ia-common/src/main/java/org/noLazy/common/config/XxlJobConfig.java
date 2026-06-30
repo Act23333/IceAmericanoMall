@@ -2,13 +2,14 @@ package org.noLazy.common.config;
 
 import com.xxl.job.core.executor.impl.XxlJobSpringExecutor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * XXL-Job 执行器配置 — 仅在 xxl.job.enabled=true 时激活。
+ * XXL-Job 执行器配置 — 仅在 xxl.job.enabled=true 且类路径有 XXL-Job 时激活。
  *
  * <pre>
  * Required configuration (application.yml):
@@ -22,6 +23,7 @@ import org.springframework.context.annotation.Configuration;
  */
 @Slf4j
 @Configuration
+@ConditionalOnClass(XxlJobSpringExecutor.class)
 public class XxlJobConfig {
 
     @Bean
