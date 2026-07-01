@@ -1,22 +1,20 @@
-package org.noLazy.common.client.sms.impl;
+package org.icedAmericanoMall.integration.sms;
 
 import com.aliyun.dysmsapi20170525.Client;
 import com.aliyun.dysmsapi20170525.models.SendSmsRequest;
 import com.aliyun.teaopenapi.models.Config;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.noLazy.common.client.sms.SmsClient;
 import org.noLazy.common.utils.AliyunSmsProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * Aliyun SMS client — only activated when {@code aliyun.sms.enabled=true}.
- * Uses the official Aliyun dysmsapi20170525 SDK.
- * For local development {@link MockSmsClient} is used instead (default).
+ * 阿里云短信客户端 — {@code aliyun.sms.enabled=true} 时激活。
  *
  * <pre>
- * Required configuration (application.yml):
+ * application.yml:
  *   aliyun.sms:
  *     enabled: true
  *     access-key-id: your-key
@@ -27,6 +25,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
+@ConditionalOnClass(Client.class)
 @ConditionalOnProperty(name = "aliyun.sms.enabled", havingValue = "true")
 public class AliyunSmsClient implements SmsClient {
 
@@ -54,7 +53,7 @@ public class AliyunSmsClient implements SmsClient {
     @Override
     public void send(String phone, String code) {
         if (client == null) {
-            log.error("阿里云短信客户端未初始化，无法发送短信 phone={}", phone);
+            log.error("阿里云短信客户端未初始化 phone={}", phone);
             return;
         }
         try {

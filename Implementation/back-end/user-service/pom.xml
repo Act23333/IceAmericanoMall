@@ -18,6 +18,10 @@
             <groupId>org.nolazy</groupId>
             <artifactId>ia-common</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.nolazy</groupId>
+            <artifactId>ia-integration</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.projectlombok</groupId>

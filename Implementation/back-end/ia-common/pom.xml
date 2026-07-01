@@ -125,24 +125,6 @@
 <!--            <version>2.0.52</version>   &lt;!&ndash; 如果你在父工程中管理了 fastjson 版本，这里可以不写 version &ndash;&gt;-->
 <!--        </dependency>-->
         <!-- 其他 common 需要的依赖 -->
-        <!--导入http连接框架-->
-        <dependency>
-            <groupId>org.apache.httpcomponents.client5</groupId>
-            <artifactId>httpclient5</artifactId>
-        </dependency>
-        <!-- 微信支付 API v3 官方 Java SDK -->
-        <dependency>
-            <groupId>com.github.wechatpay-apiv3</groupId>
-            <artifactId>wechatpay-java</artifactId>
-            <version>0.2.17</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>commons-logging</groupId>
-                    <artifactId>commons-logging</artifactId>
-                </exclusion>
-            </exclusions>
-            <optional>true</optional>
-        </dependency>
         <!--导入redis依赖-->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -155,12 +137,6 @@
             <artifactId>spring-boot-starter-aop</artifactId>
 <!--            <optional>true</optional>-->
         </dependency>
-        <!-- 阿里云短信 SDK -->
-        <dependency>
-            <groupId>com.aliyun</groupId>
-            <artifactId>dysmsapi20170525</artifactId>
-            <version>3.1.0</version>
-        </dependency>
         <!-- XXL-Job 分布式调度（可选：仅 trade/pay-service 使用时引入） -->
         <dependency>
             <groupId>com.xuxueli</groupId>
@@ -171,12 +147,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <!-- MinIO 对象存储 SDK（可选） -->
-        <dependency>
-            <groupId>io.minio</groupId>
-            <artifactId>minio</artifactId>
             <optional>true</optional>
         </dependency>
     </dependencies>

@@ -9,7 +9,7 @@ import org.icedAmericanoMall.dto.OrderSummaryDTO;
 import org.icedAmericanoMall.enums.PayStatusEnum;
 import org.icedAmericanoMall.mapper.PayOrderMapper;
 import org.icedAmericanoMall.service.PayOrderService;
-import org.noLazy.common.client.payment.PaymentClient;
+import org.icedAmericanoMall.integration.payment.PaymentClient;
 import org.noLazy.common.enums.ErrorCode;
 import org.noLazy.common.exception.BizException;
 import org.springframework.stereotype.Service;

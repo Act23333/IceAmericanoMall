@@ -1,23 +1,23 @@
-package org.noLazy.common.client.storage.impl;
+package org.icedAmericanoMall.integration.storage;
 
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.noLazy.common.client.storage.StorageClient;
 import org.noLazy.common.config.StorageProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 
 /**
- * MinIO 对象存储实现 — 仅在 minio.enabled=true 时激活。
+ * MinIO 对象存储 — {@code minio.enabled=true} 时激活。
  */
 @Slf4j
 @Component
+@ConditionalOnClass(MinioClient.class)
 @ConditionalOnProperty(name = "minio.enabled", havingValue = "true")
 public class MinioStorageClient implements StorageClient {
 
@@ -43,20 +43,13 @@ public class MinioStorageClient implements StorageClient {
 
     @Override
     public String upload(String bucket, String objectName, InputStream data, String contentType) {
-        if (client == null) {
-            log.error("MinIO client not initialized, upload skipped: {}/{}", bucket, objectName);
-            return null;
-        }
+        if (client == null) return null;
         try {
             client.putObject(PutObjectArgs.builder()
-                    .bucket(bucket)
-                    .object(objectName)
+                    .bucket(bucket).object(objectName)
                     .stream(data, data.available(), -1)
-                    .contentType(contentType)
-                    .build());
-            String url = getUrl(bucket, objectName);
-            log.info("Uploaded to MinIO: {}/{}", bucket, objectName);
-            return url;
+                    .contentType(contentType).build());
+            return getUrl(bucket, objectName);
         } catch (Exception e) {
             log.error("MinIO upload failed: {}/{}", bucket, objectName, e);
             return null;
@@ -67,10 +60,7 @@ public class MinioStorageClient implements StorageClient {
     public InputStream download(String bucket, String objectName) {
         if (client == null) return null;
         try {
-            return client.getObject(GetObjectArgs.builder()
-                    .bucket(bucket)
-                    .object(objectName)
-                    .build());
+            return client.getObject(GetObjectArgs.builder().bucket(bucket).object(objectName).build());
         } catch (Exception e) {
             log.error("MinIO download failed: {}/{}", bucket, objectName, e);
             return null;

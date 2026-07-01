@@ -20,6 +20,7 @@
         <module>authorization-service</module>
         <module>gate-service</module>
         <module>ia-api</module>
+        <module>ia-integration</module>
         <module>cart-service</module>
         <module>pay-service</module>
         <module>trade-service</module>
@@ -89,6 +90,7 @@
         <jjwt.version>0.13.0</jjwt.version>
         <ia-common.version>1.0</ia-common.version>
         <ia-api.version>1.0</ia-api.version>
+        <ia-integration.version>1.0</ia-integration.version>
         <lombok.version>1.18.42</lombok.version>
         <spring-ai.version>1.0.0-M5</spring-ai.version>
         <langchain4j.version>1.0.0-beta1</langchain4j.version>
@@ -227,6 +229,11 @@
                 <groupId>org.nolazy</groupId>
                 <artifactId>ia-api</artifactId>
                 <version>${ia-api.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.nolazy</groupId>
+                <artifactId>ia-integration</artifactId>
+                <version>${ia-integration.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

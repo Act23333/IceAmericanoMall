@@ -1,13 +1,12 @@
-package org.noLazy.common.client.sms.impl;
+package org.icedAmericanoMall.integration.sms;
 
 import lombok.extern.slf4j.Slf4j;
-import org.noLazy.common.client.sms.SmsClient;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 /**
- * Mock SMS client for local development — logs verification codes instead of sending real SMS.
- * Activated by default; real AliyunSmsClient requires {@code aliyun.sms.enabled=true}.
+ * Mock 短信客户端 — 本地开发默认激活，将验证码打印到日志。
+ * 生产环境通过 {@code aliyun.sms.enabled=true} 切换到 AliyunSmsClient。
  */
 @Slf4j
 @Component
