@@ -1,12 +1,9 @@
-package org.noLazy.common.config;
+package org.icedAmericanoMall.integration.storage;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-/**
- * MinIO / OSS 对象存储配置。
- */
 @Data
 @Component
 @ConfigurationProperties(prefix = "minio")

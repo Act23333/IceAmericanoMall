@@ -1,7 +1,7 @@
 package org.icedAmericanoMall.integration.captcha;
 
 import lombok.extern.slf4j.Slf4j;
-import org.noLazy.common.config.GeetestProperties;
+import org.icedAmericanoMall.integration.captcha.GeetestProperties;
 import org.noLazy.common.dto.Geetest4ValidateRequest;
 import org.noLazy.common.dto.Geetest4ValidateResponse;
 import org.noLazy.common.utils.Geetest4SignUtil;

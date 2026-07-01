@@ -8,7 +8,7 @@ import com.wechat.pay.java.service.payments.nativepay.model.*;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.noLazy.common.config.WechatPayProperties;
+import org.icedAmericanoMall.integration.payment.WechatPayProperties;
 import org.noLazy.common.enums.ErrorCode;
 import org.noLazy.common.exception.BizException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
