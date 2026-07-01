@@ -9,7 +9,7 @@ public class SkuDTO implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    private Long skuId;
+    private Long id;          // 技术主键 (sku.id)
     private Long productId;
     private Long sellerId;
     private String productName;

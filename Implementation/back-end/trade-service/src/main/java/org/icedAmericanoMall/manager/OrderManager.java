@@ -88,7 +88,7 @@ public class OrderManager {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "商品信息异常，请刷新后重试");
         }
         Map<Long, SkuDTO> skuMap = skuList.stream()
-                .collect(Collectors.toMap(SkuDTO::getSkuId, s -> s, (a, b) -> a));
+                .collect(Collectors.toMap(SkuDTO::getId, s -> s, (a, b) -> a));
 
         // Then: 合并购物车数据与SKU详情，逐个校验库存并构建快照
         List<CartItemSnapshot> snapshots = new ArrayList<>();

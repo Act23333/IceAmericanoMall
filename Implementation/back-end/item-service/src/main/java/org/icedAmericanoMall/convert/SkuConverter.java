@@ -21,13 +21,9 @@ public interface SkuConverter {
     List<SkuVO> entitiesToVOs(List<SkuEntity> entities);
 
     /**
-     * entity → DTO: SkuDTO.skuId 期望 Long(技术主键)，
-     * 但 MapStruct 按名称匹配到了 SkuEntity.skuId(String 业务UUID)会运行时崩溃。
-     * 显式指定 source = "id" 映射技术主键。
-     *
+     * entity → DTO: SkuDTO.id (Long) ← SkuEntity.id (Long) 自动匹配技术主键。
      * sellerId / productName 在 SkuEntity 中不存在，需调用方从 ProductEntity 补齐。
      */
-    @Mapping(target = "skuId", source = "id")
     @Mapping(target = "sellerId", ignore = true)
     @Mapping(target = "productName", ignore = true)
     SkuDTO entityToDTO(SkuEntity entity);
