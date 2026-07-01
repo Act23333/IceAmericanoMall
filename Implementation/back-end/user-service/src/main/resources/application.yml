@@ -4,11 +4,6 @@ server:
 spring:
   application:
     name: user-service
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          jwk-set-uri: http://${ia.nacos.host:192.168.10.128}:9000/oauth2/jwks
   datasource:
     url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
     driver-class-name: com.mysql.cj.jdbc.Driver
