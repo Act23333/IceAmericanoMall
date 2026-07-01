@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  * Feign client for user-service internal address endpoints.
  * Used by trade-service to snapshot address at order time.
  */
-@FeignClient(name = "user-service", path = "/internal/user")
+@FeignClient(name = "user-service", path = "/user/address", contextId = "address")
 public interface AddressClient {
 
     /**

@@ -13,13 +13,12 @@ import org.springframework.stereotype.Component;
  * @ProjectName: IcedAmericanoMall
  * @Package: org.icedAmericanoMall.config
  */
+
 @Data
 @ConfigurationProperties(prefix = "jwt.keystore")
 public class JwtProperties {
-
-    private String keystore;
+    private String keyStorePath;
     private String keystorePassword;
     private String keyPassword;
     private String keyAlias;
-
 }

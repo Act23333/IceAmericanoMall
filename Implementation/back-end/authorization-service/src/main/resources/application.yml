@@ -6,22 +6,36 @@ spring:
     name: authorization-server
   cloud:
     nacos:
-      server-addr: ${ia.nacos.host:192.168.10.128}:8848
+      server-addr: 192.168.10.128:8848
       discovery:
         enabled: true
+        # 关闭 Nacos 服务端认证（仅限开发环境）
+        #如果仅在本地开发，且不介意安全问题，可修改 Nacos 服务端配置文件（conf/application.properties）：
+        #
+        #properties
+        #nacos.core.auth.enabled=false
+        username: nacos
+        password: nacoss
+#      config:
+
   data:
     redis:
       host: ${ia.redis.host:192.168.10.128}
       port: 6379
+      password: redis
 
 jwt:
   access-token-ttl: 3600
   refresh-token-ttl: 604800
   keystore:
-    path: classpath:keystore/authorization-server.p12
-    password: ${KEYSTORE_PASSWORD:changeit}
-    alias: jwt-rsa
-    key-password: ${KEY_PASSWORD:changeit}
+#    JwkSourceConfig 使用了 ClassPathResource 来加载文件，而文件路径为 classpath:keystore/keystore.p12。但需要注意的是：
+    #ClassPathResource 的构造函数不需要 classpath: 前缀，它默认从类路径根目录查找。
+    key-store-path: keystore/keystore.p12
+    key-password: ${KEYSTORE_PASSWORD:nolazy}
+    keystore-password: ${KEYSTORE_PASSWORD:nolazy}
+    key-alias: jwt
+  #  key-password: ${KEY_PASSWORD:changeit}     # key password (可选，如果和 storepass 相同可省略)[reference:21]
+
 
 logging:
   level:

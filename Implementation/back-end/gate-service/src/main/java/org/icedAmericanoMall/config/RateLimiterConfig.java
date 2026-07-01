@@ -11,7 +11,6 @@ import java.util.Objects;
 @Configuration
 public class RateLimiterConfig {
 
-    @Primary
     @Bean
     @Primary
     public KeyResolver ipKeyResolver() {

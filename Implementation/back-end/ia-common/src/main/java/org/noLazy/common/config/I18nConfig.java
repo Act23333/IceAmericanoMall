@@ -33,7 +33,7 @@ public class I18nConfig {
     }
 
     @Bean
-    public AcceptHeaderLocaleResolver localeResolver() {
+    public AcceptHeaderLocaleResolver customLocaleResolver() {
         return new AcceptHeaderLocaleResolver() {
             private final List<Locale> supported = Arrays.asList(
                     Locale.SIMPLIFIED_CHINESE, Locale.US);

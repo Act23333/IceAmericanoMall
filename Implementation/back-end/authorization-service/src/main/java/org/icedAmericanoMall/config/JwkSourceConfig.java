@@ -32,7 +32,7 @@ public class JwkSourceConfig {
     private Object[] loadKeyAndCertificate() throws Exception {
         String keyPassword = jwtProperties.getKeyPassword();
         String keyStorePassword = jwtProperties.getKeystorePassword();
-        String keyStorePath = jwtProperties.getKeystore();
+        String keyStorePath = jwtProperties.getKeyStorePath();
         String keyAlias = jwtProperties.getKeyAlias();
         String pwd = (keyPassword == null || keyPassword.isEmpty()) ? keyStorePassword : keyPassword;
 

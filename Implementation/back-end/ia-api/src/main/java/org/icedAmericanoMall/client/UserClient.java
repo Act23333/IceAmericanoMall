@@ -5,7 +5,7 @@ import org.icedAmericanoMall.fallback.UserClientFallback;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 
-@FeignClient(name = "user-service", path = "/internal/user", fallbackFactory = UserClientFallback.class)
+@FeignClient(name = "user-service", path = "/internal/user", contextId = "internal", fallbackFactory = UserClientFallback.class)
 public interface UserClient {
 
     @PostMapping("/register")

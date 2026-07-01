@@ -84,7 +84,7 @@
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
-            <optional>true</optional>
+<!--            <optional>true</optional>-->
         </dependency>
 
 
@@ -92,7 +92,7 @@
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-jsqlparser</artifactId>
-            <optional>true</optional>
+<!--            <optional>true</optional> 这个maven标签为true标识依赖不需要传递-->
         </dependency>
 <!--        <dependency>-->
 <!--            <groupId>com.baomidou</groupId>-->
@@ -153,7 +153,7 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aop</artifactId>
-            <optional>true</optional>
+<!--            <optional>true</optional>-->
         </dependency>
         <!-- 阿里云短信 SDK -->
         <dependency>
