@@ -2,6 +2,8 @@ server:
   port: 7091
 
 logging:
+  file:
+    path: /root/logs/seata
   console:
     user:
       username: seata
