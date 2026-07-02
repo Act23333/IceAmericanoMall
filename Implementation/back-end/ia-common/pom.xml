@@ -149,6 +149,12 @@
             <artifactId>spring-boot-starter-amqp</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- Seata AT 模式（可选：仅 trade/pay-service 使用） -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-seata</artifactId>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 
     <build>
