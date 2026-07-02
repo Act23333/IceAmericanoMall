@@ -1,47 +1,59 @@
+# ============================================================
+# Seata Server 2.x 配置 — TC 事务协调器
+# 存储: MySQL (db) | 注册/配置: Nacos | 端口: 7091/8091
+# ============================================================
+
 server:
   port: 7091
 
-logging:
-  file:
-    path: /root/logs/seata
+spring:
+  application:
+    name: seata-server
 
-# Seata 1.8 控制台登录
-console:
-  user:
-    username: seata
-    password: seata
+logging:
+  console:
+    user:
+      username: ${SEATA_USERNAME:-seata}
+      password: ${SEATA_PASSWORD:-seata}
 
 seata:
-  security:
-    secretKey: SeataSecretKey012345678901234
   config:
     type: nacos
     nacos:
-      server-addr: nacos:8848
+      server-addr: ${NACOS_HOST:-nacos}:8848
+      namespace: ""
       group: SEATA_GROUP
-      username: nacos
-      password: nacoss
+      username: ${NACOS_USERNAME:-nacos}
+      password: ${NACOS_PASSWORD:-nacoss}
+      data-id: seata.properties
+
   registry:
     type: nacos
     nacos:
-      server-addr: nacos:8848
+      application: seata-server
+      server-addr: ${NACOS_HOST:-nacos}:8848
+      namespace: ""
       group: SEATA_GROUP
-      username: nacos
-      password: nacoss
+      username: ${NACOS_USERNAME:-nacos}
+      password: ${NACOS_PASSWORD:-nacoss}
+
   store:
     mode: db
     db:
       datasource: druid
       db-type: mysql
       driver-class-name: com.mysql.cj.jdbc.Driver
-      url: jdbc:mysql://mysql:3306/seata?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
-      user: root
-      password: root
+      url: jdbc:mysql://${MYSQL_HOST:-mysql}:3306/seata?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      user: ${MYSQL_USER:-root}
+      password: ${MYSQL_PASSWORD:-root}
       min-conn: 5
       max-conn: 100
       global-table: global_table
       branch-table: branch_table
       lock-table: lock_table
+      distributed-lock-table: distributed_lock
       query-limit: 100
+      max-wait: 5000
+
   server:
-    service-port: 8091
+    service-port: 8091  # RPC 端口，业务服务连这个

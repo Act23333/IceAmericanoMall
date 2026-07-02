@@ -309,9 +309,9 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  # ---------- Seata Server 1.8 (分布式事务 TC) ----------
+  # ---------- Seata Server 2.7 (分布式事务 TC) ----------
   seata:
-    image: seataio/seata-server:1.8.0
+    image: apache/seata-server:2.7.0.jdk21
     container_name: ia-seata
     profiles: ["v1.1"]
     <<: *common-restart
@@ -327,11 +327,6 @@ services:
       MYSQL_HOST: mysql
       MYSQL_USER: root
       MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
-      JAVA_OPTS: >-
-        -Dconsole.user.username=seata
-        -Dconsole.user.password=seata
-        -Dseata.security.secretKey=SeataSecretKey012345678901234
-        -Dlogging.file.path=/root/logs/seata
     ports:
       - "${SEATA_CONSOLE_PORT:-7091}:7091"
       - "${SEATA_RPC_PORT:-8091}:8091"
