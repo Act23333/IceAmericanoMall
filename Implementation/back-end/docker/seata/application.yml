@@ -4,10 +4,12 @@ server:
 logging:
   file:
     path: /root/logs/seata
-  console:
-    user:
-      username: seata
-      password: seata
+
+# Seata 1.8 控制台登录
+console:
+  user:
+    username: seata
+    password: seata
 
 seata:
   config:
