@@ -309,9 +309,9 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  # ---------- Seata Server 2.7 (分布式事务 TC) ----------
+  # ---------- Seata Server 2.5 (分布式事务 TC) ----------
   seata:
-    image: apache/seata-server:2.7.0.jdk21
+    image: apache/seata-server:2.5.0
     container_name: ia-seata
     profiles: ["v1.1"]
     <<: *common-restart
