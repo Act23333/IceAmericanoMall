@@ -53,6 +53,7 @@ services:
       - ./database/migrations/V2.1__add_settlement.sql:/docker-entrypoint-initdb.d/10-settlement.sql:ro
       - ./database/middleware/nacos-mysql.sql:/docker-entrypoint-initdb.d/11-nacos-mysql.sql:ro
       - ./database/middleware/xxl-job-mysql.sql:/docker-entrypoint-initdb.d/12-xxl-job-mysql.sql:ro
+      - ./database/middleware/seata-mysql.sql:/docker-entrypoint-initdb.d/13-seata-mysql.sql:ro
       - ./docker/mysql/conf.d/custom.cnf:/etc/mysql/conf.d/custom.cnf:ro
     deploy:
       resources:
@@ -308,6 +309,47 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  # ---------- Seata Server 2.1 (分布式事务 TC) ----------
+  seata:
+    image: seataio/seata-server:2.1.0
+    container_name: ia-seata
+    profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      SEATA_USERNAME: ${SEATA_USERNAME:-seata}
+      SEATA_PASSWORD: ${SEATA_PASSWORD:-seata}
+      NACOS_HOST: nacos
+      NACOS_USERNAME: nacos
+      NACOS_PASSWORD: nacoss
+      MYSQL_HOST: mysql
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+    ports:
+      - "${SEATA_CONSOLE_PORT:-7091}:7091"
+      - "${SEATA_RPC_PORT:-8091}:8091"
+    volumes:
+      - ./docker/seata/application.yml:/seata-server/resources/application.yml:ro
+      - seata-logs:/root/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7091"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   # ==================== V1.2 反向代理 (--profile v1.2) ====================
 
   # ---------- 前端: 用户端 (Next.js 15) ----------
@@ -438,6 +480,8 @@ volumes:
   rabbitmq-data:
     driver: local
   minio-data:
+    driver: local
+  seata-logs:
     driver: local
   nginx-logs:
     driver: local
