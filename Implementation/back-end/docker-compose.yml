@@ -286,6 +286,28 @@ services:
       timeout: 5s
       retries: 3
 
+  # ---------- Sentinel Dashboard 1.8.6 (流量控制 + 熔断降级) ----------
+  sentinel:
+    image: bladex/sentinel-dashboard:1.8.6
+    container_name: ia-sentinel
+    profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      SERVER_PORT: 8858
+      SENTINEL_DASHBOARD_USERNAME: ${SENTINEL_USERNAME:-sentinel}
+      SENTINEL_DASHBOARD_PASSWORD: ${SENTINEL_PASSWORD:-sentinel}
+      JAVA_OPTS: -Dserver.port=8858 -Dcsp.sentinel.dashboard.server=localhost:8858 -Dproject.name=sentinel-dashboard
+    ports:
+      - "${SENTINEL_PORT:-8858}:8858"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
   # ==================== V1.2 反向代理 (--profile v1.2) ====================
 
   # ---------- 前端: 用户端 (Next.js 15) ----------
