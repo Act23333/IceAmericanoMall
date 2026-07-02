@@ -309,9 +309,9 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  # ---------- Seata Server 2.5 (分布式事务 TC) ----------
+  # ---------- Seata Server 1.8 (分布式事务 TC) ----------
   seata:
-    image: apache/seata-server:2.5.0
+    image: seataio/seata-server:1.8.0
     container_name: ia-seata
     profiles: ["v1.1"]
     <<: *common-restart
@@ -331,7 +331,8 @@ services:
       - "${SEATA_CONSOLE_PORT:-7091}:7091"
       - "${SEATA_RPC_PORT:-8091}:8091"
     volumes:
-      - ./docker/seata/application.yml:/seata-server/resources/application.yml:ro
+      - ./docker/seata/registry.conf:/seata-server/resources/registry.conf:ro
+      - ./docker/seata/file.conf:/seata-server/resources/file.conf:ro
       - seata-logs:/root/logs
     depends_on:
       mysql:
