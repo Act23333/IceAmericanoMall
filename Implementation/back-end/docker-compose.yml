@@ -330,6 +330,7 @@ services:
       JAVA_OPTS: >-
         -Dconsole.user.username=seata
         -Dconsole.user.password=seata
+        -Dseata.security.secretKey=SeataSecretKey012345678901234
         -Dlogging.file.path=/root/logs/seata
     ports:
       - "${SEATA_CONSOLE_PORT:-7091}:7091"

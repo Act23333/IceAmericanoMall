@@ -12,6 +12,8 @@ console:
     password: seata
 
 seata:
+  security:
+    secretKey: SeataSecretKey012345678901234
   config:
     type: nacos
     nacos:
