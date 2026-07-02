@@ -309,9 +309,9 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  # ---------- Seata Server 2.1 (分布式事务 TC) ----------
+  # ---------- Seata Server 1.8 (分布式事务 TC) ----------
   seata:
-    image: seataio/seata-server:2.1.0
+    image: seataio/seata-server:1.8.0
     container_name: ia-seata
     profiles: ["v1.1"]
     <<: *common-restart
