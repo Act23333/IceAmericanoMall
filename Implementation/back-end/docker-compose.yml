@@ -1,4 +1,5 @@
 
+
 # ============================================
 # IceAmericanoMall 分布式容器编排
 # 默认启动基础三件 (MySQL + Redis + Nacos)
@@ -24,9 +25,9 @@ networks:
 services:
   # ==================== 基础设施 (默认启动) ====================
 
-  # ---------- MySQL 9.0 (主库) ----------
+  # ---------- MySQL 8.4 (主库) ----------
   mysql:
-    image: mysql:9.0
+    image: mysql:8.4
     container_name: ia-mysql
     <<: *common-restart
     logging: *common-logging
@@ -58,8 +59,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2'
-          memory: 1G
+          cpus: '1'
+          memory: 512M
         reservations:
           cpus: '0.5'
           memory: 512M
@@ -90,7 +91,7 @@ services:
       resources:
         limits:
           cpus: '1'
-          memory: 512M
+          memory: 256M
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-}", "ping"]
       interval: 10s
@@ -119,9 +120,9 @@ services:
       MYSQL_SERVICE_USER: root
       MYSQL_SERVICE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
       MYSQL_SERVICE_DB_PARAM: characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    # MYSQL_SERVICE_HOST: mysql
-    # MYSQL_SERVICE_DB_NAME: nacos_config
-    # MYSQL_SERVICE_PORT: 3306
+      # MYSQL_SERVICE_HOST: mysql
+      # MYSQL_SERVICE_DB_NAME: nacos_config
+      # MYSQL_SERVICE_PORT: 3306
 #	 JVM_XMS: 256m
 #	 JVM_XMX: 256m
     ports:
@@ -157,7 +158,7 @@ services:
       - backend
     environment:
       discovery.type: single-node
-      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms1g -Xmx1g}
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms512m -Xmx512m}
       xpack.security.enabled: "false"
       xpack.monitoring.collection.enabled: "true"
       bootstrap.memory_lock: "true"
@@ -216,7 +217,7 @@ services:
       resources:
         limits:
           cpus: '1'
-          memory: 512M
+          memory: 256M
     healthcheck:
       test: ["CMD", "rabbitmqctl", "status"]
       interval: 15s
@@ -234,6 +235,7 @@ services:
     networks:
       - backend
     environment:
+      JAVA_OPTS: "-Xms256m -Xmx512m -XX:+UseG1GC"
       PARAMS: >-
         --logging.level.root=DEBUG
         --logging.level.org.springframework.web=DEBUG
@@ -255,7 +257,7 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 512M
+          memory: 1G
 
   # ---------- MinIO ----------
   minio:
@@ -280,13 +282,12 @@ services:
       resources:
         limits:
           cpus: '1'
-          memory: 512M
+          memory: 256M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 15s
       timeout: 5s
       retries: 3
-
   # ---------- Sentinel Dashboard 1.8.6 (流量控制 + 熔断降级) ----------
   sentinel:
     image: bladex/sentinel-dashboard:1.8.6
@@ -308,7 +309,7 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
-
+          
   # ---------- Seata Server 2.5 (分布式事务 TC) ----------
   seata:
     image: seataio/seata-server:2.5.0
@@ -332,8 +333,6 @@ services:
         condition: service_healthy
       nacos:
         condition: service_started
-      nacos:
-        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -346,6 +345,7 @@ services:
       retries: 5
       start_period: 30s
 
+  
   # ==================== V1.2 反向代理 (--profile v1.2) ====================
 
   # ---------- 前端: 用户端 (Next.js 15) ----------
@@ -481,3 +481,4 @@ volumes:
     driver: local
   nginx-logs:
     driver: local
+
