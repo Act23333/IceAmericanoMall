@@ -318,7 +318,7 @@ services:
 
   # ---------- Seata Server 2.5 (分布式事务 TC) ----------
   seata:
-    image: seataio/seata-server:2.5.0
+    image: apache/seata-server:2.5.0
     container_name: ia-seata
     profiles: ["v1.1"]
     <<: *common-restart
