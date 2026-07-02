@@ -25,6 +25,11 @@ spring:
       config:
         file-extension: yaml
         shared-configs:
+#      sentinel:
+#        enabled: true
+#        eager: true
+#        transport:
+#        dashboard: ${SENTINEL_DASHBOARD:192.168.10.128}:8858
 
     gateway:
       server:

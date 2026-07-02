@@ -16,12 +16,15 @@ spring:
       password: nacoss
       discovery:
         enabled: true
+    openfeign:
+      okhttp:
+        enabled: true
   data:
     redis:
       host: ${ia.redis.host:192.168.10.128}
       port: 6379
       client-name: user-service
-      password: rediss
+      password: redis
 
 mybatis-plus:
   configuration:
@@ -46,3 +49,4 @@ aliyun:
 logging:
   level:
     org.icedAmericanoMall: DEBUG
+

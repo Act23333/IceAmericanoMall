@@ -12,28 +12,56 @@ spring:
   cloud:
     nacos:
       server-addr: ${ia.nacos.host:192.168.10.128}:8848
+      username: nacos
+      password: nacoss
+      discovery:
+        enabled: true
+    openfeign:
+      okhttp:
+        enabled: true
+      # Sentinel 限流熔断 — 开发环境关闭
+    sentinel:
+      # 基础配置
+      enabled: true  # 这个属性在最新版本中可能已被弃用或无效，通常不需要显式配置
+      eager: true    # 取消Sentinel的懒加载，在应用启动时即初始化
+      transport:
+        dashboard: 192.168.10.128:8858 # 指定Sentinel控制台的地址和端口
+        port: 8719                # 客户端与Dashboard通信的端口
+      filter:
+        enabled: true             # 启用Sentinel对Spring Web MVC的过滤器支持[reference:4]
+      http-method-specify: true      # 开启 HTTP 方法区分，解决 RESTful API 问题
+
+
+
   data:
     redis:
       host: ${ia.redis.host:192.168.10.128}
       port: 6379
 
-mybatis-plus:
-  configuration:
-    map-underscore-to-camel-case: true
-
   rabbitmq:
     host: ${ia.rabbitmq.host:192.168.10.128}
     port: 5672
     username: ${RABBITMQ_DEFAULT_USER:-admin}
-    password: ${RABBITMQ_DEFAULT_PASS:-admin123}
+    password: ${RABBITMQ_DEFAULT_PASS:-iadmin}
 
-# RabbitMQ 功能开关 — 开发环境关闭
-rabbitmq:
-  enabled: false
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+  global-config:
+    db-config:
+      update-strategy: not_null
+      id-type: auto
 
-# Sentinel 限流熔断 — 开发环境关闭
-sentinel:
-  enabled: false
+
+logging:
+  level:
+    org.icedAmericanoMall: DEBUG
+
+# 开启 Feign 对 Sentinel 的支持
+feign:
+  sentinel:
+    enabled: true
 
 # XXL-Job 分布式调度 — 开发环境关闭，生产环境设置 xxl.job.enabled=true
 xxl:
