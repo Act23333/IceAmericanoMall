@@ -309,9 +309,9 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  # ---------- Seata Server 1.8 (分布式事务 TC) ----------
+  # ---------- Seata Server 2.5 (分布式事务 TC) ----------
   seata:
-    image: seataio/seata-server:1.8.0
+    image: seataio/seata-server:2.5.0
     container_name: ia-seata
     profiles: ["v1.1"]
     <<: *common-restart
@@ -321,22 +321,17 @@ services:
     environment:
       SEATA_USERNAME: ${SEATA_USERNAME:-seata}
       SEATA_PASSWORD: ${SEATA_PASSWORD:-seata}
-      NACOS_HOST: nacos
-      NACOS_USERNAME: nacos
-      NACOS_PASSWORD: nacoss
-      MYSQL_HOST: mysql
-      MYSQL_USER: root
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
     ports:
       - "${SEATA_CONSOLE_PORT:-7091}:7091"
       - "${SEATA_RPC_PORT:-8091}:8091"
     volumes:
-      - ./docker/seata/registry.conf:/seata-server/resources/registry.conf:ro
-      - ./docker/seata/file.conf:/seata-server/resources/file.conf:ro
+      - ./docker/seata/application.yml:/seata-server/resources/application.yml:ro
       - seata-logs:/root/logs
     depends_on:
       mysql:
         condition: service_healthy
+      nacos:
+        condition: service_started
       nacos:
         condition: service_healthy
     deploy:
