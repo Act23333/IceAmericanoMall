@@ -31,8 +31,6 @@ spring:
         enabled: true             # 启用Sentinel对Spring Web MVC的过滤器支持[reference:4]
       http-method-specify: true      # 开启 HTTP 方法区分，解决 RESTful API 问题
 
-
-
   data:
     redis:
       host: ${ia.redis.host:192.168.10.128}
@@ -43,6 +41,33 @@ spring:
     port: 5672
     username: ${RABBITMQ_DEFAULT_USER:-admin}
     password: ${RABBITMQ_DEFAULT_PASS:-iadmin}
+# ==================== Seata AT 模式 (分布式事务) ====================
+# AT 模式: 一阶段自动提交 + 二阶段回滚时自动生成反向 SQL
+# 适用: 下单全链路 (cart→sku→order→pay), 支付回调改订单状态
+seata:
+  enabled: true
+  tx-service-group: icedmall_tx_group
+  service:
+    vgroup-mapping:
+      icedmall_tx_group: default
+  registry:
+    type: nacos
+    nacos:
+      application: seata-server
+      server-addr: ${ia.nacos.host:192.168.10.128}:8848
+      group: SEATA_GROUP
+      username: nacos
+      password: nacoss
+  config:
+    type: nacos
+    nacos:
+      server-addr: ${ia.nacos.host:192.168.10.128}:8848
+      group: SEATA_GROUP
+      username: nacos
+      password: nacoss
+
+
+
 
 mybatis-plus:
   configuration:

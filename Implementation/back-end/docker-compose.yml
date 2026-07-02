@@ -53,6 +53,7 @@ services:
       - ./database/migrations/V2.1__add_settlement.sql:/docker-entrypoint-initdb.d/10-settlement.sql:ro
       - ./database/middleware/nacos-mysql.sql:/docker-entrypoint-initdb.d/11-nacos-mysql.sql:ro
       - ./database/middleware/xxl-job-mysql.sql:/docker-entrypoint-initdb.d/12-xxl-job-mysql.sql:ro
+      - ./database/middleware/seata-mysql.sql:/docker-entrypoint-initdb.d/13-seata-mysql.sql:ro
       - ./docker/mysql/conf.d/custom.cnf:/etc/mysql/conf.d/custom.cnf:ro
     deploy:
       resources:
@@ -286,6 +287,70 @@ services:
       timeout: 5s
       retries: 3
 
+  # ---------- Sentinel Dashboard 1.8.6 (流量控制 + 熔断降级) ----------
+  sentinel:
+    image: bladex/sentinel-dashboard:1.8.6
+    container_name: ia-sentinel
+    profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      SERVER_PORT: 8858
+      SENTINEL_DASHBOARD_USERNAME: ${SENTINEL_USERNAME:-sentinel}
+      SENTINEL_DASHBOARD_PASSWORD: ${SENTINEL_PASSWORD:-sentinel}
+      JAVA_OPTS: -Dserver.port=8858 -Dcsp.sentinel.dashboard.server=localhost:8858 -Dproject.name=sentinel-dashboard
+    ports:
+      - "${SENTINEL_PORT:-8858}:8858"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ---------- Seata Server 1.8 (分布式事务 TC) ----------
+  seata:
+    image: seataio/seata-server:1.8.0
+    container_name: ia-seata
+    profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      SEATA_USERNAME: ${SEATA_USERNAME:-seata}
+      SEATA_PASSWORD: ${SEATA_PASSWORD:-seata}
+      NACOS_HOST: nacos
+      NACOS_USERNAME: nacos
+      NACOS_PASSWORD: nacoss
+      MYSQL_HOST: mysql
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+    ports:
+      - "${SEATA_CONSOLE_PORT:-7091}:7091"
+      - "${SEATA_RPC_PORT:-8091}:8091"
+    volumes:
+      - ./docker/seata/registry.conf:/seata-server/resources/registry.conf:ro
+      - ./docker/seata/file.conf:/seata-server/resources/file.conf:ro
+      - seata-logs:/root/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7091"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   # ==================== V1.2 反向代理 (--profile v1.2) ====================
 
   # ---------- 前端: 用户端 (Next.js 15) ----------
@@ -416,6 +481,8 @@ volumes:
   rabbitmq-data:
     driver: local
   minio-data:
+    driver: local
+  seata-logs:
     driver: local
   nginx-logs:
     driver: local
