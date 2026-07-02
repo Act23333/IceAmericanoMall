@@ -288,6 +288,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
+
   # ---------- Sentinel Dashboard 1.8.6 (流量控制 + 熔断降级) ----------
   sentinel:
     image: bladex/sentinel-dashboard:1.8.6
@@ -309,7 +310,12 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
-          
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8858"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
   # ---------- Seata Server 2.5 (分布式事务 TC) ----------
   seata:
     image: seataio/seata-server:2.5.0
@@ -441,10 +447,14 @@ services:
       - nginx-logs:/var/log/nginx
       - nginx-cache:/var/cache/nginx
     depends_on:
-      - nacos
-      - frontend-web
-      - frontend-admin
-      - frontend-seller
+      nacos:
+        condition: service_started
+      frontend-web:
+        condition: service_started
+      frontend-admin:
+        condition: service_started
+      frontend-seller:
+        condition: service_started
     deploy:
       resources:
         limits:
