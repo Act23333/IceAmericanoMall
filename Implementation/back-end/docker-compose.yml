@@ -327,6 +327,10 @@ services:
       MYSQL_HOST: mysql
       MYSQL_USER: root
       MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      JAVA_OPTS: >-
+        -Dconsole.user.username=seata
+        -Dconsole.user.password=seata
+        -Dlogging.file.path=/root/logs/seata
     ports:
       - "${SEATA_CONSOLE_PORT:-7091}:7091"
       - "${SEATA_RPC_PORT:-8091}:8091"
