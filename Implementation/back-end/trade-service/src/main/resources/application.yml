@@ -47,10 +47,14 @@ spring:
 seata:
   enabled: true
   tx-service-group: icedmall_tx_group
+<<<<<<< HEAD
   service:
     vgroup-mapping:
       icedmall_tx_group: seata-server   # 映射到 Nacos 中注册的 Seata Server 服务名
 
+=======
+  # vgroup-mapping 已移至 Nacos 配置中心 (Data ID: service.vgroupMapping.icedmall_tx_group, Group: SEATA_GROUP)
+>>>>>>> b4e223e675789f0ebae10163d4adec5840b63773
   registry:
     type: nacos
     nacos:
