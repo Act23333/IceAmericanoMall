@@ -4,10 +4,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.client.CartClient;
 import org.icedAmericanoMall.dto.CartItemDTO;
 import org.springframework.cloud.openfeign.FallbackFactory;
+import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 @Slf4j
+@Component
 public class CartClientFallback implements FallbackFactory<CartClient> {
     @Override
     public CartClient create(Throwable cause) {

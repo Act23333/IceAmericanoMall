@@ -7,6 +7,7 @@ import org.icedAmericanoMall.dto.PasswordLoginReqDTO;
 import org.icedAmericanoMall.dto.RegisterReqDTO;
 import org.icedAmericanoMall.dto.SmsLoginReqDTO;
 import org.springframework.cloud.openfeign.FallbackFactory;
+import org.springframework.stereotype.Component;
 
 /**
  * @ClassName: UserClientFallback
@@ -18,6 +19,7 @@ import org.springframework.cloud.openfeign.FallbackFactory;
  * @Package: org.icedAmericanoMall.fallback
  */
 @Slf4j
+@Component
 public class UserClientFallback implements FallbackFactory<UserClient> {
     @Override
     public UserClient create(Throwable cause) {
