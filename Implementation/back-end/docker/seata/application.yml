@@ -1,0 +1,59 @@
+# ============================================================
+# Seata Server 2.5 — Spring Boot 原生配置
+# 替代旧版 registry.conf + file.conf
+# ============================================================
+
+server:
+  port: 7091
+
+spring:
+  application:
+    name: seata-server
+
+logging:
+  level:
+    io.seata: info
+
+# ==================== 注册中心: Nacos ====================
+seata:
+  registry:
+    type: nacos
+    nacos:
+      application: seata-server
+      server-addr: nacos:8848
+      group: SEATA_GROUP
+      namespace: ""
+      username: nacos
+      password: nacoss
+
+  config:
+    type: nacos
+    nacos:
+      server-addr: nacos:8848
+      group: SEATA_GROUP
+      namespace: ""
+      username: nacos
+      password: nacoss
+
+  # ==================== 存储: MySQL ====================
+  store:
+    mode: db
+    db:
+      datasource: druid
+      db-type: mysql
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://mysql:3306/seata?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      user: root
+      password: root
+      min-conn: 5
+      max-conn: 100
+      global-table: global_table
+      branch-table: branch_table
+      lock-table: lock_table
+      query-limit: 100
+      max-wait: 5000
+
+  # ==================== 安全 ====================
+  security:
+    secretKey: ${SEATA_SECRET_KEY:-seata}
+    tokenValidityInMilliseconds: 1800000
