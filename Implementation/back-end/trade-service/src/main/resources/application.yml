@@ -23,7 +23,9 @@ spring:
 seata:
   enabled: true
   tx-service-group: icedmall_tx_group
-  # vgroup-mapping 已移至 Nacos 配置中心 (Data ID: service.vgroupMapping.icedmall_tx_group, Group: SEATA_GROUP)
+  service:
+    vgroup-mapping:
+      icedmall_tx_group: default
   registry:
     type: nacos
     nacos:
@@ -35,14 +37,7 @@ seata:
       accessKey: ${NACOS_AUTH_IDENTITY_VALUE:security}
       secretKey: ${NACOS_AUTH_IDENTITY_KEY:serverIdentity}
   config:
-    type: nacos
-    nacos:
-      server-addr: ${ia.nacos.host:192.168.10.128}:8848
-      group: SEATA_GROUP
-      username: nacos
-      password: nacoss
-      accessKey: ${NACOS_AUTH_IDENTITY_VALUE:security}
-      secretKey: ${NACOS_AUTH_IDENTITY_KEY:serverIdentity}
+    type: file
 
 mybatis-plus:
   configuration:
