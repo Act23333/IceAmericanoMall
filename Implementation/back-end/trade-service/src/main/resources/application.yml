@@ -49,7 +49,8 @@ seata:
   tx-service-group: icedmall_tx_group
   service:
     vgroup-mapping:
-      icedmall_tx_group: default
+      icedmall_tx_group: seata-server   # 映射到 Nacos 中注册的 Seata Server 服务名
+
   registry:
     type: nacos
     nacos:
