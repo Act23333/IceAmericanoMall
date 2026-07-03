@@ -1,16 +1,19 @@
 # ============================================================
 # Seata Server 2.5 — Spring Boot 原生配置
-# 替代旧版 registry.conf + file.conf
+# SCA 2025.0.0.0 官方适配版本
+# 启动前确保 Nacos 中已创建 service.vgroupMapping.icedmall_tx_group = default
 # ============================================================
-
-server:
-  port: 7091
 
 spring:
   application:
     name: seata-server
+  main:
+    # Seata Server 2.5 不依赖嵌入式 Web 容器，控制台由 Seata 自身 Netty 提供
+    web-application-type: none
 
 logging:
+  file:
+    path: /root/logs/seata
   level:
     io.seata: info
 
@@ -23,8 +26,13 @@ seata:
       server-addr: nacos:8848
       group: SEATA_GROUP
       namespace: ""
-      username: nacos
-      password: nacoss
+      cluster: default
+      username: ${SEATA_NACOS_USER:nacos}
+      password: ${SEATA_NACOS_PWD:nacoss}
+      # Nacos 2.4 identity 认证 — 2.5 使用 camelCase 属性名
+      # accessKey 对应 NACOS_AUTH_IDENTITY_VALUE, secretKey 对应 NACOS_AUTH_IDENTITY_KEY
+      accessKey: ${NACOS_AUTH_IDENTITY_VALUE:security}
+      secretKey: ${NACOS_AUTH_IDENTITY_KEY:serverIdentity}
 
   config:
     type: nacos
@@ -32,8 +40,10 @@ seata:
       server-addr: nacos:8848
       group: SEATA_GROUP
       namespace: ""
-      username: nacos
-      password: nacoss
+      username: ${SEATA_NACOS_USER:nacos}
+      password: ${SEATA_NACOS_PWD:nacoss}
+      accessKey: ${NACOS_AUTH_IDENTITY_VALUE:security}
+      secretKey: ${NACOS_AUTH_IDENTITY_KEY:serverIdentity}
 
   # ==================== 存储: MySQL ====================
   store:
@@ -55,5 +65,5 @@ seata:
 
   # ==================== 安全 ====================
   security:
-    secretKey: ${SEATA_SECRET_KEY:-seata}
+    secretKey: ${SEATA_SECRET_KEY:seata}
     tokenValidityInMilliseconds: 1800000
