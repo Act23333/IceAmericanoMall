@@ -87,3 +87,4 @@ CREATE TABLE IF NOT EXISTS undo_log
     log_modified  DATETIME(6)  NOT NULL COMMENT 'modify datetime',
     UNIQUE KEY ux_undo_log (xid, branch_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT ='AT transaction mode undo table';
+

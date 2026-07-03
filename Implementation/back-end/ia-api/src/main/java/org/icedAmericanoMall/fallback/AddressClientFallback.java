@@ -4,8 +4,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.client.AddressClient;
 import org.icedAmericanoMall.dto.AddressDTO;
 import org.springframework.cloud.openfeign.FallbackFactory;
+import org.springframework.stereotype.Component;
 
 @Slf4j
+@Component
 public class AddressClientFallback implements FallbackFactory<AddressClient> {
     @Override
     public AddressClient create(Throwable cause) {
