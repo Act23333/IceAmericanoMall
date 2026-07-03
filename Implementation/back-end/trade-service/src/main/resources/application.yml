@@ -34,6 +34,8 @@ seata:
       group: SEATA_GROUP
       username: nacos
       password: nacoss
+      accessKey: ${NACOS_AUTH_IDENTITY_VALUE:security}
+      secretKey: ${NACOS_AUTH_IDENTITY_KEY:serverIdentity}
   config:
     type: nacos
     nacos:
@@ -41,6 +43,8 @@ seata:
       group: SEATA_GROUP
       username: nacos
       password: nacoss
+      accessKey: ${NACOS_AUTH_IDENTITY_VALUE:security}
+      secretKey: ${NACOS_AUTH_IDENTITY_KEY:serverIdentity}
 
 mybatis-plus:
   configuration:

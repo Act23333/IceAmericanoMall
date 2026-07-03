@@ -311,12 +311,12 @@ services:
           cpus: '0.5'
           memory: 512M
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8858"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8858"]
       interval: 15s
       timeout: 5s
       retries: 3
 
-  # ---------- Seata Server 2.5 (分布式事务 TC) ----------
+  # ---------- Seata Server 2.5 (分布式事务 TC, SCA 2025.0.0.0 官方适配) ----------
   seata:
     image: apache/seata-server:2.5.0
     container_name: ia-seata
@@ -326,11 +326,19 @@ services:
     networks:
       - backend
     environment:
-      SEATA_USERNAME: ${SEATA_USERNAME:-seata}
-      SEATA_PASSWORD: ${SEATA_PASSWORD:-seata}
+      # 可选：动态注入Nacos账号密码，yml配合占位符使用
+      SEATA_NACOS_USER: ${SEATA_NACOS_USER:-nacos}
+      SEATA_NACOS_PWD: ${SEATA_NACOS_PWD:-nacoss}
+      # Nacos 2.4 identity 认证，需与 nacos 服务的值一致
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}
+      # 对外暴露宿主机IP，其他微服务能正常连接TC
+      SEATA_IP: 192.168.10.128
     ports:
-      - "${SEATA_CONSOLE_PORT:-7091}:7091"
+      # RPC核心端口，必须对外开放
       - "${SEATA_RPC_PORT:-8091}:8091"
+      # 控制台端口，可选注释掉不暴露
+      - "${SEATA_CONSOLE_PORT:-7091}:7091"
     volumes:
       - ./docker/seata/application.yml:/seata-server/resources/application.yml:ro
       - seata-logs:/root/logs
@@ -338,19 +346,19 @@ services:
       mysql:
         condition: service_healthy
       nacos:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
           cpus: '1'
           memory: 1G
+    # 修复：TCP探测RPC 8091端口，不再curl http
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7091"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8091"]
       interval: 20s
       timeout: 5s
       retries: 5
       start_period: 30s
-
   
   # ==================== V1.2 反向代理 (--profile v1.2) ====================
 
