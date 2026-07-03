@@ -1,7 +1,7 @@
 # ============================================================
-# Seata Server 2.5 — Spring Boot 原生配置
+# Seata Server 2.5 — Spring Boot 原生配置 (纯本地模式)
 # SCA 2025.0.0.0 官方适配版本
-# 启动前确保 Nacos 中已创建 service.vgroupMapping.icedmall_tx_group = default
+# 注册中心用 Nacos，配置读本地文件，不依赖 Nacos 配置中心
 # ============================================================
 
 spring:
@@ -17,8 +17,8 @@ logging:
   level:
     io.seata: info
 
-# ==================== 注册中心: Nacos ====================
 seata:
+  # ==================== 注册中心: Nacos (客户端通过这里发现 Seata) ====================
   registry:
     type: nacos
     nacos:
@@ -29,21 +29,33 @@ seata:
       cluster: default
       username: ${SEATA_NACOS_USER:nacos}
       password: ${SEATA_NACOS_PWD:nacoss}
-      # Nacos 2.4 identity 认证 — 2.5 使用 camelCase 属性名
-      # accessKey 对应 NACOS_AUTH_IDENTITY_VALUE, secretKey 对应 NACOS_AUTH_IDENTITY_KEY
       accessKey: ${NACOS_AUTH_IDENTITY_VALUE:security}
       secretKey: ${NACOS_AUTH_IDENTITY_KEY:serverIdentity}
 
+  # ==================== 配置: 本地文件 (不依赖 Nacos 配置中心) ====================
   config:
-    type: nacos
-    nacos:
-      server-addr: nacos:8848
-      group: SEATA_GROUP
-      namespace: ""
-      username: ${SEATA_NACOS_USER:nacos}
-      password: ${SEATA_NACOS_PWD:nacoss}
-      accessKey: ${NACOS_AUTH_IDENTITY_VALUE:security}
-      secretKey: ${NACOS_AUTH_IDENTITY_KEY:serverIdentity}
+    type: file
+
+  # ==================== 服务端传输 ====================
+  transport:
+    type: TCP
+    server: NIO
+    heartbeat: true
+    serialization: seata
+    compressor: none
+    threadFactory:
+      bossThreadPrefix: NettyBoss
+      workerThreadPrefix: NettyServerNIOWorker
+      serverExecutorThreadPrefix: NettyServerBizHandler
+      shareBossWorker: false
+      bossThreadSize: 1
+
+  # ==================== 事务组映射 (本地定义，后续迁移到 Nacos 共享配置) ====================
+  service:
+    vgroupMapping:
+      icedmall_tx_group: default
+    enableDegrade: false
+    disableGlobalTransaction: false
 
   # ==================== 存储: MySQL ====================
   store:
