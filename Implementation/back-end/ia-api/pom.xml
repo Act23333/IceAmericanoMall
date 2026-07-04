@@ -22,6 +22,7 @@
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-openfeign</artifactId>
+<!--            <optional>true</optional>-->
         </dependency>
         <!--负载均衡，老版本使用Ribbon，现在使用的是loadbalancer-->
         <dependency>

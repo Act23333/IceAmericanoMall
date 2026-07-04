@@ -8,25 +8,36 @@ spring:
     url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: root
-    password: ${hm.db.pw:root123}
+    password: ${hm.db.pw:root}
   cloud:
     nacos:
       server-addr: ${ia.nacos.host:192.168.10.128}:8848
+      username: nacos
+      password: nacoss
+      discovery:
+        enabled: true
   data:
     redis:
       host: ${ia.redis.host:192.168.10.128}
       port: 6379
-
-mybatis-plus:
-  configuration:
-    map-underscore-to-camel-case: true
-
+      password: redis
+      client-name: logistics-service
   rabbitmq:
     host: ${ia.rabbitmq.host:192.168.10.128}
     port: 5672
     username: ${RABBITMQ_DEFAULT_USER:-admin}
-    password: ${RABBITMQ_DEFAULT_PASS:-admin123}
+    password: ${RABBITMQ_DEFAULT_PASS:-iadmin}
 
-# RabbitMQ 功能开关 — 开发环境关闭
-rabbitmq:
-  enabled: false
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+  global-config:
+    db-config:
+      update-strategy: not_null
+      id-type: auto
+logging:
+  level:
+    org.icedAmericanoMall: DEBUG
+
+
