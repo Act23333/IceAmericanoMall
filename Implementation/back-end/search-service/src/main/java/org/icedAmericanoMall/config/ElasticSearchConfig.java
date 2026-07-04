@@ -4,10 +4,8 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpHost;
-import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.UsernamePasswordCredentials;
-import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.elasticsearch.client.RestClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -16,8 +14,10 @@ import org.springframework.data.elasticsearch.client.elc.ElasticsearchTemplate;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 
 /**
- * ElasticSearch 客户端配置 — 仅在 search.elasticsearch.enabled=true 时激活。
+ * ElasticSearch 7.17 客户端配置 — 仅在 search.elasticsearch.enabled=true 时激活。
+ * Docker 部署 xpack.security.enabled=false，无需认证。
  */
+@Slf4j
 @Configuration
 public class ElasticSearchConfig {
 
@@ -30,20 +30,15 @@ public class ElasticSearchConfig {
     @Bean
     @ConditionalOnProperty(name = "search.elasticsearch.enabled", havingValue = "true")
     public ElasticsearchClient elasticsearchClient() {
-        BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
-        credentialsProvider.setCredentials(
-                AuthScope.ANY,
-                new UsernamePasswordCredentials("elastic", "changeme"));
-
         RestClient restClient = RestClient.builder(
                         HttpHost.create(properties.getHost() + ":" + properties.getPort()))
-                .setHttpClientConfigCallback(httpClientBuilder ->
-                        httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider))
                 .build();
 
-        ElasticsearchTransport transport = new RestClientTransport(
-                restClient, new JacksonJsonpMapper());
-        return new ElasticsearchClient(transport);
+        ElasticsearchTransport transport = new RestClientTransport(restClient, new JacksonJsonpMapper());
+        ElasticsearchClient client = new ElasticsearchClient(transport);
+
+        log.info("ElasticSearch client connected to {}:{}", properties.getHost(), properties.getPort());
+        return client;
     }
 
     @Bean

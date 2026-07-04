@@ -1,80 +1,112 @@
 package org.icedAmericanoMall.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.icedAmericanoMall.domain.dto.ProductSearchResult;
+import org.icedAmericanoMall.convert.ProductSearchConverter;
+import org.icedAmericanoMall.domain.entity.ProductEntity;
+import org.icedAmericanoMall.domain.entity.SkuEntity;
+import org.icedAmericanoMall.domain.vo.ProductSearchVO;
+import org.icedAmericanoMall.mapper.ProductMapper;
+import org.icedAmericanoMall.mapper.SkuMapper;
 import org.icedAmericanoMall.service.SearchService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
- * 数据库搜索降级实现 — ES 未启用时的默认方案。
- * 通过 MySQL LIKE 做简单关键词搜索。
+ * DB LIKE 搜索 — ES 未启用时的默认实现。
+ * 使用 MyBatis-Plus lambdaQuery 参数化，杜绝 SQL 注入。
  */
 @Slf4j
 @Service
 @Primary
+@RequiredArgsConstructor
 @ConditionalOnProperty(name = "search.elasticsearch.enabled", havingValue = "false", matchIfMissing = true)
-public class DbSearchServiceImpl implements SearchService {
+public class DbSearchServiceImpl extends ServiceImpl<ProductMapper, ProductEntity> implements SearchService {
 
-    private final JdbcTemplate jdbcTemplate;
+    private final SkuMapper skuMapper;
+    private final ProductSearchConverter converter;
+    private final RedisTemplate<String, String> redisTemplate;
 
-    public DbSearchServiceImpl(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
-    }
+    private static final String HOT_KEYWORDS_KEY = "search:hot:keywords";
+    private static final String HISTORY_KEY_PREFIX = "search:history:";
 
     @Override
-    public Page<ProductSearchResult> search(String keyword, Long categoryId, int page, int size) {
-        StringBuilder sql = new StringBuilder(
-                "SELECT p.id as productId, p.name, p.description, p.category_id as categoryId, "
-                        + "s.price, p.main_image as image, p.sold_count as soldCount "
-                        + "FROM product p "
-                        + "LEFT JOIN sku s ON s.product_id = p.id AND s.status = 1 "
-                        + "WHERE p.status = 1 ");
-        StringBuilder countSql = new StringBuilder(
-                "SELECT COUNT(*) FROM product p WHERE p.status = 1 ");
+    public Page<ProductSearchVO> search(String keyword, Long categoryId, int page, int size) {
+        if (keyword != null && !keyword.isBlank()) {
+            recordKeyword(keyword.trim());
+        }
+
+        LambdaQueryWrapper<ProductEntity> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(ProductEntity::getStatus, 1);
 
         if (keyword != null && !keyword.isBlank()) {
-            String like = " AND (p.name LIKE '%" + keyword + "%' OR p.description LIKE '%" + keyword + "%') ";
-            sql.append(like);
-            countSql.append(like);
+            wrapper.and(w -> w
+                    .like(ProductEntity::getName, keyword)
+                    .or()
+                    .like(ProductEntity::getDescription, keyword));
         }
         if (categoryId != null) {
-            String cat = " AND p.category_id = " + categoryId + " ";
-            sql.append(cat);
-            countSql.append(cat);
+            wrapper.eq(ProductEntity::getCategoryId, categoryId);
+        }
+        wrapper.orderByDesc(ProductEntity::getSoldCount);
+
+        Page<ProductEntity> entityPage = page(new Page<>(page, size), wrapper);
+
+        if (entityPage.getRecords().isEmpty()) {
+            return new Page<>(page, size, 0);
         }
 
-        sql.append(" GROUP BY p.id ORDER BY p.sold_count DESC LIMIT ").append(size)
-                .append(" OFFSET ").append((page - 1) * size);
+        Map<Long, Integer> priceMap = getMinPrices(entityPage.getRecords());
+        List<ProductSearchVO> vos = converter.entitiesToVOs(entityPage.getRecords());
+        vos.forEach(vo -> vo.setPrice(priceMap.getOrDefault(vo.getId(), 0)));
 
-        Long total = jdbcTemplate.queryForObject(countSql.toString(), Long.class);
-        List<ProductSearchResult> records = jdbcTemplate.query(sql.toString(),
-                (rs, rowNum) -> {
-                    ProductSearchResult r = new ProductSearchResult();
-                    r.setProductId(rs.getLong("productId"));
-                    r.setName(rs.getString("name"));
-                    r.setDescription(rs.getString("description"));
-                    r.setCategoryId(rs.getLong("categoryId"));
-                    r.setPrice(rs.getInt("price"));
-                    r.setImage(rs.getString("image"));
-                    r.setSoldCount(rs.getInt("soldCount"));
-                    return r;
-                });
-
-        Page<ProductSearchResult> resultPage = new Page<>(page, size);
-        resultPage.setRecords(records);
-        resultPage.setTotal(total != null ? total : 0);
-        return resultPage;
+        Page<ProductSearchVO> voPage = new Page<>(page, size, entityPage.getTotal());
+        voPage.setRecords(vos);
+        return voPage;
     }
 
     @Override
-    public List<String> getHotKeywords() {
-        return Collections.emptyList();
+    public List<String> getHotKeywords(int limit) {
+        var top = redisTemplate.opsForZSet().reverseRange(HOT_KEYWORDS_KEY, 0, limit - 1);
+        return top != null ? new ArrayList<>(top) : Collections.emptyList();
+    }
+
+    @Override
+    public List<String> getSearchHistory(Long userId, int limit) {
+        String key = HISTORY_KEY_PREFIX + userId;
+        List<String> history = redisTemplate.opsForList().range(key, 0, limit - 1);
+        return history != null ? history : Collections.emptyList();
+    }
+
+    private void recordKeyword(String keyword) {
+        try {
+            redisTemplate.opsForZSet().incrementScore(HOT_KEYWORDS_KEY, keyword, 1);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private Map<Long, Integer> getMinPrices(List<ProductEntity> products) {
+        if (products.isEmpty()) return Collections.emptyMap();
+        List<Long> ids = products.stream().map(ProductEntity::getId).toList();
+
+        List<SkuEntity> skus = skuMapper.selectList(
+                new LambdaQueryWrapper<SkuEntity>()
+                        .in(SkuEntity::getProductId, ids)
+                        .eq(SkuEntity::getStatus, 1));
+
+        return skus.stream()
+                .collect(Collectors.groupingBy(
+                        SkuEntity::getProductId,
+                        Collectors.collectingAndThen(
+                                Collectors.minBy(Comparator.comparingInt(SkuEntity::getPrice)),
+                                opt -> opt.map(SkuEntity::getPrice).orElse(0))));
     }
 }

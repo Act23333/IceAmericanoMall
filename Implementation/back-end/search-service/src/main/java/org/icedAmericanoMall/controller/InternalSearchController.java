@@ -1,14 +1,20 @@
 package org.icedAmericanoMall.controller;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch.core.BulkRequest;
+import co.elastic.clients.elasticsearch.core.bulk.BulkResponseItem;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.icedAmericanoMall.domain.entity.ProductEntity;
+import org.icedAmericanoMall.mapper.ProductMapper;
+import org.icedAmericanoMall.mapper.SkuMapper;
+import org.icedAmericanoMall.domain.entity.SkuEntity;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * 内部搜索管理接口 — 索引重建等运维操作。供 XXL-Job / Canal 调用。
@@ -19,24 +25,65 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class InternalSearchController {
 
-    private final JdbcTemplate jdbcTemplate;
+    private final ProductMapper productMapper;
+    private final SkuMapper skuMapper;
+
+    @Autowired(required = false)
+    private ElasticsearchClient esClient;
 
     /**
-     * 全量重建商品索引 — 从 MySQL 拉取所有上架商品写入 ES。
-     * 仅在 ES 启用时有效。
+     * 全量重建商品索引 — 从主库拉取所有上架商品写入 ES。
+     * 仅在 ES 启用时有效（esClient != null）。
      */
     @PostMapping("/reindex")
-    public String reindex() {
-        List<Map<String, Object>> products = jdbcTemplate.queryForList(
-                "SELECT p.id as productId, p.name, p.description, p.category_id as categoryId, "
-                        + "s.price, p.main_image as image, IFNULL(p.sold_count, 0) as soldCount "
-                        + "FROM product p "
-                        + "LEFT JOIN sku s ON s.product_id = p.id AND s.status = 1 "
-                        + "WHERE p.status = 1 "
-                        + "GROUP BY p.id");
+    public Map<String, Object> reindex() {
+        // 1. 拉取所有上架商品
+        List<ProductEntity> products = productMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ProductEntity>()
+                        .eq(ProductEntity::getStatus, 1));
 
-        log.info("Reindexing {} products into ElasticSearch...", products.size());
-        // ES reindex 将在 V1.1 ES 上线后启用
-        return "Reindex triggered for " + products.size() + " products (ES not yet connected)";
+        // 2. 获取最低 SKU 价格
+        Map<Long, Integer> priceMap = new HashMap<>();
+        for (ProductEntity p : products) {
+            List<SkuEntity> skus = skuMapper.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<SkuEntity>()
+                            .eq(SkuEntity::getProductId, p.getId())
+                            .eq(SkuEntity::getStatus, 1));
+            priceMap.put(p.getId(), skus.stream().mapToInt(SkuEntity::getPrice).min().orElse(0));
+        }
+
+        // 3. 写入 ES
+        if (esClient != null) {
+            try {
+                // 先删除旧索引
+                try { esClient.indices().delete(d -> d.index("products")); } catch (Exception ignored) {}
+
+                BulkRequest.Builder bulk = new BulkRequest.Builder();
+                for (ProductEntity p : products) {
+                    Map<String, Object> doc = new LinkedHashMap<>();
+                    doc.put("id", p.getId());
+                    doc.put("productId", p.getProductId());
+                    doc.put("name", p.getName());
+                    doc.put("description", p.getDescription());
+                    doc.put("brand", p.getBrand());
+                    doc.put("categoryId", p.getCategoryId());
+                    doc.put("price", priceMap.getOrDefault(p.getId(), 0));
+                    doc.put("mainImage", p.getMainImage());
+                    doc.put("soldCount", p.getSoldCount());
+                    bulk.operations(op -> op.index(idx -> idx.index("products").id(String.valueOf(p.getId())).document(doc)));
+                }
+                var response = esClient.bulk(bulk.build());
+                long errors = response.items().stream().filter(i -> i.error() != null).count();
+                log.info("ES reindex complete: {} products, {} errors", products.size(), errors);
+            } catch (Exception e) {
+                log.error("ES reindex failed", e);
+                return Map.of("status", "error", "message", e.getMessage(), "count", products.size());
+            }
+        } else {
+            log.info("ES not enabled, reindex skipped. {} products available.", products.size());
+        }
+
+        return Map.of("status", "ok", "count", products.size(),
+                "esEnabled", esClient != null);
     }
 }
