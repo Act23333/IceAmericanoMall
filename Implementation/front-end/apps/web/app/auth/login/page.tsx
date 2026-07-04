@@ -80,25 +80,25 @@ export default function LoginPage() {
         </div>
 
         {/* 标签切换 */}
-        <div className="mt-8 flex rounded-xl bg-warm-100 p-1">
-          <button
-            type="button"
+        <div className="mt-8 flex rounded-xl bg-warm-100 p-1" role="tablist">
+          <div
+            role="tab" aria-selected={tab === 'sms'}
             onClick={() => setTab('sms')}
-            className={`flex-1 py-2 text-sm rounded-lg transition-all ${
+            className={`flex-1 py-2 text-sm text-center rounded-lg cursor-pointer transition-all select-none ${
               tab === 'sms' ? 'bg-white text-ink-black shadow-sm' : 'text-warm-600 hover:text-ink-soft'
             }`}
           >
             验证码登录
-          </button>
-          <button
-            type="button"
+          </div>
+          <div
+            role="tab" aria-selected={tab === 'password'}
             onClick={() => setTab('password')}
-            className={`flex-1 py-2 text-sm rounded-lg transition-all ${
+            className={`flex-1 py-2 text-sm text-center rounded-lg cursor-pointer transition-all select-none ${
               tab === 'password' ? 'bg-white text-ink-black shadow-sm' : 'text-warm-600 hover:text-ink-soft'
             }`}
           >
             密码登录
-          </button>
+          </div>
         </div>
 
         {/* 表单 */}
