@@ -8,14 +8,28 @@ spring:
     url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: root
-    password: ${hm.db.pw:root123}
+    password: ${hm.db.pw:root}
   cloud:
     nacos:
       server-addr: ${ia.nacos.host:192.168.10.128}:8848
+      username: nacos
+      password: nacoss
+      discovery:
+        enabled: true
+    openfeign:
+      okhttp:
+        enabled: true
   data:
     redis:
       host: ${ia.redis.host:192.168.10.128}
       port: 6379
+      password: redis
+      client-name: pay-service
+  rabbitmq:
+    host: ${ia.rabbitmq.host:192.168.10.128}
+    port: 5672
+    username: ${RABBITMQ_DEFAULT_USER:-admin}
+    password: ${RABBITMQ_DEFAULT_PASS:-admin123}
 
 # ==================== Seata AT 模式 (分布式事务) ====================
 seata:
@@ -40,16 +54,13 @@ seata:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+  global-config:
+    db-config:
+      update-strategy: not_null
+      id-type: auto
 
-  rabbitmq:
-    host: ${ia.rabbitmq.host:192.168.10.128}
-    port: 5672
-    username: ${RABBITMQ_DEFAULT_USER:-admin}
-    password: ${RABBITMQ_DEFAULT_PASS:-admin123}
 
-# RabbitMQ 功能开关 — 开发环境关闭
-rabbitmq:
-  enabled: false
 
 # XXL-Job 分布式调度 — 开发环境关闭，生产环境设置 xxl.job.enabled=true
 xxl:
@@ -70,3 +81,10 @@ wechat:
     merchant-serial-number: ${WECHAT_PAY_MERCHANT_SERIAL:}
     api-v3-key: ${WECHAT_PAY_API_V3_KEY:}
     notify-url: ${WECHAT_PAY_NOTIFY_URL:https://your-domain.com/api/pay/callback/wechat}
+
+
+
+logging:
+  level:
+    org.icedAmericanoMall: DEBUG
+    io.seata: DEBUG
