@@ -1,11 +1,10 @@
 /**
- * TanStack Query hooks — 按领域拆分
- *
- * 每个 hook 封装：
- * - query key（配合 queries/key-factory）
- * - fetch 调用（通过 apiClient）
- * - 缓存策略（staleTime / gcTime）
+ * TanStack Query hooks
  */
-
 export { useCategories } from './use-categories';
 export { useProducts, useProduct } from './use-products';
+export { useCart, useAddToCart, useUpdateCartItem, useRemoveCartItem, useToggleSelect, useClearCart } from './use-cart';
+export { useOrders, useOrder, useCreateOrder, useCancelOrder, useConfirmOrder } from './use-orders';
+export { useUserInfo } from './use-user';
+export { useAddresses, useAddAddress, useUpdateAddress, useDeleteAddress } from './use-address';
+export { useSearch, useHotKeywords, useSearchHistory } from './use-search';

@@ -1,50 +1,91 @@
 /**
- * TypeScript 类型定义
- *
- * TODO: 从后端 Knife4j OpenAPI JSON 自动生成
- * 命令：npx openapi-typescript http://localhost:8080/v3/api-docs -o ./types/schema.ts
+ * TypeScript 类型 — 与后端 VO/DTO 精确对齐
+ * 来源: project-docs/05-API-Specification.md
  */
 
-// ===== 通用类型 =====
+// ===== 通用 =====
 
-/** 分页请求参数 */
 export interface PageQuery {
   page: number;
   size: number;
 }
 
-/** 分页响应 */
 export interface PageResult<T> {
   records: T[];
   total: number;
   size: number;
   current: number;
+  pages: number;
+}
+
+// ===== 认证 =====
+
+export interface LoginReq {
+  identityType: 'PHONE' | 'USERNAME' | 'EMAIL';
+  credentialType: 'PASSWORD' | 'SMS_CODE';
+  account: string;
+  credential: string;
+}
+
+export interface RegisterReq {
+  phone: string;
+  password: string;
+  code: string;
+  username?: string;
+}
+
+/** OAuth2TokenResp — 后端 @JsonProperty snake_case 序列化 */
+export interface LoginResp {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  refresh_token: string;
+  user_id: number;
+  username: string;
 }
 
 // ===== 用户 =====
-// (以下为示例，实际从 OpenAPI 生成)
 
-export interface UserVO {
-  id: number;
+export interface UserInfoResp {
   userId: string;
   username: string;
-  nickname: string;
   phone: string;
   avatar: string;
-  role: string;
   status: number;
+  registerTime: string;
+  balance: number;
 }
 
-export interface AddressVO {
+export interface AddressResp {
   id: number;
-  userId: string;
-  receiverName: string;
-  receiverPhone: string;
+  userId: number;
+  receiver: string;
+  phone: string;
   province: string;
   city: string;
   district: string;
+  street: string;
   detail: string;
-  isDefault: boolean;
+  defaulted: boolean;
+  label?: string;
+  longitude?: number;
+  latitude?: number;
+  createTime: string;
+  updateTime: string;
+}
+
+export interface AddressReq {
+  receiver: string;
+  phone: string;
+  province: string;
+  city: string;
+  district: string;
+  street: string;
+  detail: string;
+  defaulted?: boolean;
+  label?: string;
+  longitude?: number;
+  latitude?: number;
 }
 
 // ===== 商品 =====
@@ -52,45 +93,66 @@ export interface AddressVO {
 export interface CategoryVO {
   id: number;
   name: string;
-  parentId: number | null;
-  icon: string;
   sortOrder: number;
+  children: CategoryVO[];
 }
 
 export interface ProductVO {
   id: number;
   productId: string;
-  name: string;
-  description: string;
+  sellerId: number;
   categoryId: number;
+  name: string;
   mainImage: string;
-  minPrice: number; // int (cents)
-  maxPrice: number;
-  sales: number;
+  description: string;
+  brand: string;
+  soldCount: number;
+  commentCount: number;
   status: number;
+  publishTime: string;
+  skus: SkuVO[];
 }
 
 export interface SkuVO {
   id: number;
   skuId: string;
-  productId: string;
+  productId: number;
   spec: string;
-  price: number; // int (cents)
+  price: number;
   stock: number;
   image: string;
+  soldCount: number;
+  status: number;
 }
 
 // ===== 购物车 =====
 
-export interface CartItemVO {
-  id: number;
-  skuId: string;
+export interface CartVO {
+  items: CartItemResp[];
+  totalPrice: number;
+  selectedPrice: number;
+  allSelected: boolean;
+}
+
+export interface CartItemResp {
+  skuId: number;
   productName: string;
   spec: string;
   image: string;
-  price: number; // int (cents)
+  price: number;
   quantity: number;
   selected: boolean;
+  subTotal: number;
+}
+
+export interface CartAddReq {
+  skuId: number;
+  quantity?: number;
+}
+
+export interface CartUpdateReq {
+  skuId: number;
+  quantity: number;
 }
 
 // ===== 订单 =====
@@ -98,18 +160,84 @@ export interface CartItemVO {
 export interface OrderVO {
   id: number;
   orderNo: string;
-  totalAmount: number; // int (cents)
-  status: string;
-  items: OrderItemVO[];
+  userId: number;
+  sellerId: number;
+  totalAmount: number;
+  payAmount: number;
+  discountAmount: number;
+  status: number;
+  paymentType: number;
+  receiverName: string;
+  receiverPhone: string;
+  receiverAddress: string;
   createTime: string;
+  payTime?: string;
+  consignTime?: string;
+  endTime?: string;
+  items: OrderItemVO[];
 }
 
 export interface OrderItemVO {
   id: number;
+  skuId: number;
   productName: string;
-  spec: string;
-  image: string;
-  price: number; // int (cents)
+  skuSpec: string;
+  price: number;
   quantity: number;
   subTotal: number;
+  image: string;
+}
+
+export interface CreateOrderReq {
+  addressId?: number;
+  cartItemIds: number[];
+  remark?: string;
+}
+
+// ===== 搜索 =====
+
+export interface ProductSearchVO {
+  id: number;
+  productId: string;
+  categoryId: number;
+  name: string;
+  description: string;
+  brand: string;
+  mainImage: string;
+  price: number;
+  soldCount: number;
+}
+
+// ===== 优惠券 =====
+
+export interface CouponEntity {
+  id?: number;
+  couponId?: string;
+  name: string;
+  type: number;
+  value: number;
+  minAmount: number;
+  startTime: string;
+  endTime: string;
+  status?: number;
+}
+
+export interface UserCouponEntity {
+  id: number;
+  couponId: string;
+  userId: number;
+  status: number;
+  usedTime?: string;
+}
+
+// ===== 秒杀 =====
+
+export interface FlashSaleEntity {
+  id: number;
+  productId: number;
+  price: number;
+  stock: number;
+  startTime: string;
+  endTime: string;
+  status: number;
 }

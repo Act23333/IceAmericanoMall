@@ -148,10 +148,10 @@ export default function SearchPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {data.records.map((product) => (
               <ProductCard
-                key={product.productId}
+                key={product.id}
                 product={product}
                 variant="default"
-                onClick={() => router.push(`/product/${product.productId}`)}
+                onClick={() => router.push(`/product/${product.id}`)}
               />
             ))}
           </div>

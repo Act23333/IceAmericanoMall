@@ -1,23 +1,12 @@
 /**
  * 认证操作 — 登录/注册/刷新/登出
+ * 与后端 AuthController + OAuth2TokenResp (@JsonProperty snake_case) 对齐
  */
 
-import { apiClient, ApiError } from '@icedmall/api';
+import { apiClient } from '@icedmall/api';
+import type { LoginReq, RegisterReq, LoginResp } from '@icedmall/api';
 
-interface LoginReq {
-  identity: string; // 手机号 / 用户名
-  credential: string; // 密码 / 验证码
-  identityType: 'PHONE' | 'USERNAME';
-  credentialType: 'PASSWORD' | 'SMS_CODE';
-}
-
-interface LoginResp {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: number;
-  tokenType: string;
-}
-
+/** 登录 — POST /api/auth/login */
 export async function login(req: LoginReq): Promise<LoginResp> {
   return apiClient<LoginResp>('/api/auth/login', {
     method: 'POST',
@@ -25,13 +14,7 @@ export async function login(req: LoginReq): Promise<LoginResp> {
   });
 }
 
-interface RegisterReq {
-  phone: string;
-  password: string;
-  smsCode: string;
-  nickname?: string;
-}
-
+/** 注册 — POST /api/auth/register */
 export async function register(req: RegisterReq): Promise<LoginResp> {
   return apiClient<LoginResp>('/api/auth/register', {
     method: 'POST',
@@ -39,12 +22,16 @@ export async function register(req: RegisterReq): Promise<LoginResp> {
   });
 }
 
-export async function refreshToken(): Promise<LoginResp> {
-  return apiClient<LoginResp>('/api/auth/refresh', {
+/** 刷新 Token — POST /api/auth/refresh?refresh_token=xxx */
+export async function refreshToken(token: string): Promise<LoginResp> {
+  return apiClient<LoginResp>(`/api/auth/refresh?refresh_token=${encodeURIComponent(token)}`, {
     method: 'POST',
   });
 }
 
-export async function logout(): Promise<void> {
-  await apiClient('/api/auth/logout', { method: 'POST' });
+/** 登出 — POST /api/auth/logout?refresh_token=xxx */
+export async function logout(token: string): Promise<void> {
+  await apiClient(`/api/auth/logout?refresh_token=${encodeURIComponent(token)}`, {
+    method: 'POST',
+  });
 }

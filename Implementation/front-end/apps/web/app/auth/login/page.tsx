@@ -44,7 +44,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const result = await login({
-        identity: phone,
+        account: phone,
         credential: mode === 'password' ? password : smsCode,
         identityType: 'PHONE',
         credentialType: mode === 'password' ? 'PASSWORD' : 'SMS_CODE',
@@ -53,8 +53,6 @@ export default function LoginPage() {
       setUser({
         userId: String(result.user_id ?? ''),
         username: result.username ?? '',
-        nickname: result.username ?? '',
-        role: 'BUYER',
       });
 
       router.push('/marketplace');

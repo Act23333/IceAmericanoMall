@@ -20,7 +20,7 @@ export const revalidate = 120;
 export async function generateStaticParams() {
   try {
     const data = await getProducts({ sort: 'sales', order: 'desc', size: 20 });
-    return (data?.records ?? []).map((p) => ({ id: p.productId }));
+    return (data?.records ?? []).map((p) => ({ id: String(p.id) }));  // 后端 Long id
   } catch {
     return [];
   }

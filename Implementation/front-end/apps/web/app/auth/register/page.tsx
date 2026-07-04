@@ -41,14 +41,12 @@ export default function RegisterPage() {
       const result = await register({
         phone,
         password,
-        smsCode,
+        code: smsCode,
       });
 
       setUser({
         userId: String(result.user_id ?? ''),
         username: result.username ?? phone,
-        nickname: result.username ?? '',
-        role: 'BUYER',
       });
 
       router.push('/marketplace');

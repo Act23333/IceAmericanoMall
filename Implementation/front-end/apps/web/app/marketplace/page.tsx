@@ -66,13 +66,13 @@ export default async function MarketplacePage() {
             href="/marketplace?sort=sales&order=desc"
           >
             {newProducts!.records.map((product) => (
-              <div key={product.productId} className="snap-start shrink-0 w-[260px]">
+              <div key={product.id} className="snap-start shrink-0 w-[260px]">
                 <ProductCard
                   product={product}
                   variant="glass"
                   onClick={() => {
                     if (typeof window !== 'undefined') {
-                      window.location.href = `/product/${product.productId}`;
+                      window.location.href = `/product/${product.id}`;
                     }
                   }}
                 />
@@ -91,13 +91,13 @@ export default async function MarketplacePage() {
             href="/marketplace?sort=price&order=asc"
           >
             {hotProducts!.records.map((product) => (
-              <div key={product.productId} className="snap-start shrink-0 w-[260px]">
+              <div key={product.id} className="snap-start shrink-0 w-[260px]">
                 <ProductCard
                   product={product}
                   variant="glass"
                   onClick={() => {
                     if (typeof window !== 'undefined') {
-                      window.location.href = `/product/${product.productId}`;
+                      window.location.href = `/product/${product.id}`;
                     }
                   }}
                 />

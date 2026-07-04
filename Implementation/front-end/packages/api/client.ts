@@ -1,16 +1,11 @@
 /**
  * API 客户端 — Fetch 封装
  *
- * 自动：
- * - 附加 httpOnly Cookie (access_token)
- * - 解析 ia-common Result<T> 格式
- * - 401 时触发 Token 刷新
- * - 网络错误统一转换为 Error
+ * 自动: httpOnly Cookie, 解析 Result<T>, 错误转换
  */
-
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.icedmall.com';
 
-export interface ApiResult<T> {
+interface ApiResult<T> {
   code: number;
   msg: string;
   data: T;
@@ -36,19 +31,16 @@ export async function apiClient<T>(
       'Content-Type': 'application/json; charset=utf-8',
       ...options?.headers,
     },
-    credentials: 'include', // 发送 httpOnly Cookie
+    credentials: 'include',
   });
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(
-      body.code || res.status,
-      body.msg || `HTTP ${res.status}`,
-    );
+    throw new ApiError(body.code || res.status, body.msg || `HTTP ${res.status}`);
   }
 
   const body: ApiResult<T> = await res.json();
-  if (body.code !== 200 && body.code !== 0) {
+  if (body.code !== 200) {
     throw new ApiError(body.code, body.msg);
   }
 

@@ -76,21 +76,16 @@ export function ProductCard({
 
         <div className="mt-2 flex items-baseline gap-2">
           <span className="text-base font-semibold text-ink-black">
-            ¥{formatPrice(product.minPrice)}
+            ¥{formatPrice(product.skus?.[0]?.price ?? 0)}
           </span>
-          {product.maxPrice > product.minPrice && (
-            <span className="text-xs text-warm-400 line-through">
-              ¥{formatPrice(product.maxPrice)}
-            </span>
-          )}
         </div>
 
-        {/* 标签 — 克制，仅在有时展示 */}
-        {product.sales > 0 && (
+        {/* 销量 */}
+        {product.soldCount > 0 && (
           <p className="mt-1.5 text-xs text-warm-600">
-            {product.sales > 10000
-              ? `${(product.sales / 10000).toFixed(1)}万人已购`
-              : `${product.sales}人已购`}
+            {product.soldCount > 10000
+              ? `${(product.soldCount / 10000).toFixed(1)}万人已购`
+              : `${product.soldCount}人已购`}
           </p>
         )}
       </div>
