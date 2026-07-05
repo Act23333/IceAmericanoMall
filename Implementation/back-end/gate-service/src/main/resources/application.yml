@@ -3,3 +3,7 @@ server:
   servlet:
     context-path: /
 
+spring:
+  cloud:
+    bootstrap:
+      enabled: true
