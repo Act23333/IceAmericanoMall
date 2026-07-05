@@ -8,6 +8,7 @@ import org.springframework.core.Ordered;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import org.springframework.stereotype.Component;
@@ -22,6 +23,7 @@ public class UserContextHeaderFilter implements GlobalFilter, Ordered {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         return ReactiveSecurityContextHolder.getContext()
+                .defaultIfEmpty(new SecurityContextImpl())   // 无上下文时用空的安全上下文兜底
                 .flatMap(ctx -> {
                     Authentication auth = ctx.getAuthentication();
                     if (auth != null && auth.getPrincipal() instanceof Jwt jwt) {
@@ -36,11 +38,9 @@ public class UserContextHeaderFilter implements GlobalFilter, Ordered {
 
                         return chain.filter(exchange.mutate().request(mutatedRequest).build());
                     }
-                    // 已认证但非 JWT，直接放行
+                    // 无 JWT（公开路径或无认证信息），直接放行原请求
                     return chain.filter(exchange);
-                })
-                // 无 SecurityContext（公开路径），直接放行
-                .switchIfEmpty(chain.filter(exchange));
+                });
     }
 
     @Override
