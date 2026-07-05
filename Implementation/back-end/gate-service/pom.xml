@@ -48,11 +48,11 @@
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
         </dependency>
-        <!--读取bootstrap文件-->
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-starter-bootstrap</artifactId>
-        </dependency>
+        <!--读取bootstrap文件，Spring Cloud Alibaba 2025.1.0.0 已弃用-->
+<!--        <dependency>-->
+<!--            <groupId>org.springframework.cloud</groupId>-->
+<!--            <artifactId>spring-cloud-starter-bootstrap</artifactId>-->
+<!--        </dependency>-->
         <!--token（jwt）的验证工具，可以自动发送/获取认证服务器的公钥-->
         <dependency>
             <groupId>org.springframework.boot</groupId>
