@@ -36,10 +36,11 @@ public class UserContextHeaderFilter implements GlobalFilter, Ordered {
 
                         return chain.filter(exchange.mutate().request(mutatedRequest).build());
                     }
-                    // 无认证信息（公开路径或未认证），直接放行
+                    // 已认证但非 JWT，直接放行
                     return chain.filter(exchange);
                 })
-                ;
+                // 无 SecurityContext（公开路径），直接放行
+                .switchIfEmpty(chain.filter(exchange));
     }
 
     @Override
