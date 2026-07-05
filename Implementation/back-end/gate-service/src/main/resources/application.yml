@@ -44,7 +44,9 @@ spring:
         # 营销服务路由
         - id: marketing-service
           uri: lb://marketing-service
-          predicates: [Path=/api/coupon/**,/api/flash/**]
+          predicates:
+            - Path=/api/coupon/**
+            - Path=/api/flash/**
         # 管理员路由
         - id: admin-user-routes
           uri: lb://user-service
