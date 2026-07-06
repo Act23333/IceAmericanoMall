@@ -67,15 +67,7 @@ export default async function MarketplacePage() {
           >
             {newProducts!.records.map((product) => (
               <div key={product.id} className="snap-start shrink-0 w-[260px]">
-                <ProductCard
-                  product={product}
-                  variant="glass"
-                  onClick={() => {
-                    if (typeof window !== 'undefined') {
-                      window.location.href = `/product/${product.id}`;
-                    }
-                  }}
-                />
+                <ProductCard product={product} variant="glass" href={`/product/${product.id}`} />
               </div>
             ))}
           </HorizontalScroll>
@@ -92,15 +84,7 @@ export default async function MarketplacePage() {
           >
             {hotProducts!.records.map((product) => (
               <div key={product.id} className="snap-start shrink-0 w-[260px]">
-                <ProductCard
-                  product={product}
-                  variant="glass"
-                  onClick={() => {
-                    if (typeof window !== 'undefined') {
-                      window.location.href = `/product/${product.id}`;
-                    }
-                  }}
-                />
+                <ProductCard product={product} variant="glass" href={`/product/${product.id}`} />
               </div>
             ))}
           </HorizontalScroll>
