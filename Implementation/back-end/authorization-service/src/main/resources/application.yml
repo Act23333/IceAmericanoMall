@@ -3,19 +3,22 @@ server:
 
 spring:
   application:
-    name: authorization-server
+    name: authorization-service
   cloud:
     nacos:
       server-addr: 192.168.10.128:8848
+      username: nacos
+      password: nacoss
       discovery:
         enabled: true
-        # 关闭 Nacos 服务端认证（仅限开发环境）
+      config:
+        import-check:
+          enabled: false
+        #关闭 Nacos 服务端认证（仅限开发环境）
         #如果仅在本地开发，且不介意安全问题，可修改 Nacos 服务端配置文件（conf/application.properties）：
         #
         #properties
         #nacos.core.auth.enabled=false
-        username: nacos
-        password: nacoss
 #      config:
 
   data:
@@ -23,6 +26,7 @@ spring:
       host: ${ia.redis.host:192.168.10.128}
       port: 6379
       password: redis
+      client-name: authorization-service
 
 jwt:
   access-token-ttl: 3600
