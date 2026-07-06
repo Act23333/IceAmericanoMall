@@ -1,16 +1,19 @@
 package org.icedAmericanoMall.service.impl;
 
+import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
+import co.elastic.clients.elasticsearch._types.query_dsl.MatchQuery;
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.domain.vo.ProductSearchVO;
 import org.icedAmericanoMall.service.SearchService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
-import org.springframework.data.elasticsearch.core.query.Criteria;
-import org.springframework.data.elasticsearch.core.query.CriteriaQuery;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -18,7 +21,7 @@ import java.util.*;
 
 /**
  * ElasticSearch 全文检索 — search.elasticsearch.enabled=true 时激活。
- * ES 7.17 + IK 中文分词。
+ * ES 7.17 + IK 中文分词, NativeQuery + MatchQuery。
  */
 @Slf4j
 @Service
@@ -38,17 +41,24 @@ public class EsSearchServiceImpl implements SearchService {
             recordKeyword(keyword.trim());
         }
 
-        Criteria criteria = new Criteria();
+        var bool = new BoolQuery.Builder();
+
         if (keyword != null && !keyword.isBlank()) {
-            criteria = criteria.and(new Criteria("name").contains(keyword)
-                    .or("description").contains(keyword));
-        }
-        if (categoryId != null) {
-            criteria = criteria.and(new Criteria("categoryId").is(categoryId));
+            bool.should(Query.of(q -> q.match(MatchQuery.of(m -> m.field("name").query(keyword)))));
+            bool.should(Query.of(q -> q.match(MatchQuery.of(m -> m.field("description").query(keyword)))));
+            bool.minimumShouldMatch("1");
+        } else {
+            bool.must(Query.of(q -> q.matchAll(m -> m)));
         }
 
-        CriteriaQuery query = new CriteriaQuery(criteria)
-                .setPageable(org.springframework.data.domain.PageRequest.of(page - 1, size));
+        if (categoryId != null) {
+            bool.filter(Query.of(q -> q.term(t -> t.field("categoryId").value(categoryId))));
+        }
+
+        NativeQuery query = NativeQuery.builder()
+                .withQuery(Query.of(q -> q.bool(bool.build())))
+                .withPageable(PageRequest.of(page - 1, size))
+                .build();
 
         SearchHits<ProductSearchVO> hits = esOps.search(query, ProductSearchVO.class);
 
