@@ -53,7 +53,7 @@ export function Navbar() {
         <div className="flex items-center gap-2">
           {/* 搜索 */}
           <a
-            href="/marketplace"
+            href="/search"
             className="p-2 text-ink-soft hover:text-ink-black transition-colors rounded-full hover:bg-warm-100"
             aria-label="搜索"
           >

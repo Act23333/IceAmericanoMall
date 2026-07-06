@@ -1,22 +1,13 @@
 'use client';
 
-import { useState, useCallback, useDeferredValue } from 'react';
-import { useProducts, useCategories } from '@icedmall/api';
-import { ProductCard, SearchBar, SectionReveal } from '@icedmall/ui';
+import { useState, useDeferredValue, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-
-const SORT_OPTIONS = [
-  { value: 'sales-desc', label: '热销优先' },
-  { value: 'price-asc', label: '价格从低到高' },
-  { value: 'price-desc', label: '价格从高到低' },
-  { value: 'newest-desc', label: '最新上架' },
-];
+import { useSearch, useHotKeywords, useCategories } from '@icedmall/api';
+import { ProductCard, SearchBar, SectionReveal } from '@icedmall/ui';
 
 /**
- * 商品搜索页 — Client Component
- *
- * TanStack Query 驱动的实时搜索 + 过滤 + 排序 + 分页
- * useDeferredValue 避免搜索输入卡顿
+ * 商品搜索页 — ES IK 分词搜索 + 热门关键词
+ * TanStack Query 驱动, useDeferredValue 防抖
  */
 export default function SearchPage() {
   const searchParams = useSearchParams();
@@ -25,157 +16,152 @@ export default function SearchPage() {
   const [keyword, setKeyword] = useState(searchParams.get('keyword') ?? '');
   const deferredKeyword = useDeferredValue(keyword);
   const [categoryId, setCategoryId] = useState<number | undefined>(
-    searchParams.get('categoryId') ? Number(searchParams.get('categoryId')) : undefined,
-  );
-  const [sort, setSort] = useState(searchParams.get('sort') ?? 'sales');
-  const [order, setOrder] = useState<'asc' | 'desc'>(
-    (searchParams.get('order') as 'asc' | 'desc') ?? 'desc',
+    searchParams.get('categoryId') ? Number(searchParams.get('categoryId')) : undefined
   );
   const [page, setPage] = useState(Number(searchParams.get('page') ?? 1));
   const size = 20;
 
   const { data: categories } = useCategories();
-  const { data, isLoading, isError, refetch } = useProducts({
-    keyword: deferredKeyword,
-    categoryId,
-    sort,
-    order,
-    page,
-    size,
-  });
+  const { data: hotKeywords } = useHotKeywords(8);
 
-  const handleSortChange = (value: string) => {
-    const [newSort, newOrder] = value.split('-') as [string, 'asc' | 'desc'];
-    setSort(newSort);
-    setOrder(newOrder);
-    setPage(1);
-  };
+  // 搜索页使用专用搜索 API (ES IK 分词)
+  const { data, isLoading, isError, refetch } = useSearch(deferredKeyword, categoryId, page, size);
+
+  // URL 同步
+  useEffect(() => {
+    const sp = new URLSearchParams();
+    if (deferredKeyword) sp.set('keyword', deferredKeyword);
+    if (categoryId) sp.set('categoryId', String(categoryId));
+    if (page > 1) sp.set('page', String(page));
+    const qs = sp.toString();
+    router.replace(`/search${qs ? '?' + qs : ''}`, { scroll: false });
+  }, [deferredKeyword, categoryId, page, router]);
 
   const totalPages = data ? Math.ceil(data.total / size) : 0;
 
+  const handleSearch = (kw: string) => {
+    setKeyword(kw);
+    setPage(1);
+    setCategoryId(undefined);
+  };
+
+  const handleHotClick = (kw: string) => {
+    setKeyword(kw);
+    setPage(1);
+  };
+
+  const handleCategoryClick = (catId: number | undefined) => {
+    setCategoryId(catId);
+    setPage(1);
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 pt-24 pb-20">
-      {/* ── 搜索栏 ── */}
-      <div className="max-w-xl mx-auto mb-8">
-        <SearchBar
-          placeholder="搜索商品、品牌、分类…"
-          onSearch={(v) => setKeyword(v)}
-        />
+      {/* 搜索栏 */}
+      <div className="max-w-xl mx-auto mb-6">
+        <SearchBar placeholder="搜索商品、品牌、分类…" onSearch={handleSearch} />
       </div>
 
-      {/* ── 筛选栏 ── */}
-      <div className="flex flex-wrap items-center gap-3 mb-8">
-        {/* 分类筛选 */}
-        {categories && categories.length > 0 && (
-          <div className="flex gap-2 flex-wrap">
+      {/* 热门搜索词 */}
+      {hotKeywords && hotKeywords.length > 0 && (
+        <div className="mb-6 flex flex-wrap items-center gap-2 justify-center">
+          <span className="text-xs text-warm-400">热门搜索:</span>
+          {hotKeywords.map((kw) => (
             <button
-              onClick={() => { setCategoryId(undefined); setPage(1); }}
+              key={kw}
+              onClick={() => handleHotClick(kw)}
+              className="px-3 py-1 text-xs rounded-full border border-warm-200 text-warm-600 hover:border-accent-green hover:text-accent-green transition-colors bg-white"
+            >
+              {kw}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 分类筛选 */}
+      {categories && categories.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-6">
+          <button
+            onClick={() => handleCategoryClick(undefined)}
+            className={`px-3 py-1.5 text-xs rounded-full border transition-all ${
+              !categoryId
+                ? 'border-accent-gold bg-accent-gold/5 text-ink-black'
+                : 'border-warm-200 text-warm-600 hover:border-warm-400'
+            }`}
+          >
+            全部分类
+          </button>
+          {categories.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => handleCategoryClick(cat.id)}
               className={`px-3 py-1.5 text-xs rounded-full border transition-all ${
-                !categoryId
+                categoryId === cat.id
                   ? 'border-accent-gold bg-accent-gold/5 text-ink-black'
                   : 'border-warm-200 text-warm-600 hover:border-warm-400'
               }`}
             >
-              全部分类
+              {cat.name}
             </button>
-            {categories.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => { setCategoryId(cat.id); setPage(1); }}
-                className={`px-3 py-1.5 text-xs rounded-full border transition-all ${
-                  categoryId === cat.id
-                    ? 'border-accent-gold bg-accent-gold/5 text-ink-black'
-                    : 'border-warm-200 text-warm-600 hover:border-warm-400'
-                }`}
-              >
-                {cat.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* ── 排序 + 结果计数 ── */}
-      <div className="flex items-center justify-between mb-6">
-        <p className="text-sm text-warm-600">
-          {data ? `共 ${data.total} 件商品` : '搜索中…'}
-        </p>
-        <select
-          value={`${sort}-${order}`}
-          onChange={(e) => handleSortChange(e.target.value)}
-          className="px-3 py-1.5 text-sm rounded-xl border border-warm-200 bg-white text-ink-soft outline-none focus:border-accent-green"
-        >
-          {SORT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
-        </select>
-      </div>
+        </div>
+      )}
 
-      {/* ── 商品网格 ── */}
+      {/* 结果计数 */}
+      {data && (
+        <p className="text-sm text-warm-600 mb-4">{keyword ? `搜索"${keyword}"` : '全部'} — 共 {data.total} 件商品</p>
+      )}
+
+      {/* 加载 */}
       {isLoading && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="aspect-square rounded-2xl bg-warm-100 animate-glass-shimmer" />
           ))}
         </div>
       )}
 
+      {/* 错误 */}
       {isError && (
         <div className="text-center py-20">
           <div className="text-4xl">☁️</div>
-          <p className="mt-4 text-warm-600">加载失败</p>
-          <button
-            onClick={() => refetch()}
-            className="mt-3 text-sm text-accent-green hover:underline"
-          >
-            重试
-          </button>
+          <p className="mt-4 text-warm-600">搜索服务暂不可用</p>
+          <button onClick={() => refetch()} className="mt-3 text-sm text-accent-green hover:underline">重试</button>
         </div>
       )}
 
+      {/* 空结果 */}
       {!isLoading && !isError && data && data.records.length === 0 && (
         <div className="text-center py-20">
           <div className="text-6xl select-none">🍃</div>
-          <h2 className="mt-4 text-lg font-medium text-ink-black">没有找到商品</h2>
-          <p className="mt-2 text-sm text-warm-600">
-            试试其他关键词或筛选条件
-          </p>
+          <h2 className="mt-4 text-lg font-medium text-ink-black">没有找到&quot;{keyword}&quot;相关商品</h2>
+          <p className="mt-2 text-sm text-warm-600">试试其他关键词或浏览全部分类</p>
+          <button onClick={() => { setKeyword(''); setCategoryId(undefined); }}
+            className="mt-4 text-sm text-accent-green hover:underline">清除筛选</button>
         </div>
       )}
 
+      {/* 结果 */}
       {!isLoading && !isError && data && data.records.length > 0 && (
         <SectionReveal>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {data.records.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                variant="default"
-                onClick={() => router.push(`/product/${product.id}`)}
-              />
+              <ProductCard key={product.id} product={product} href={`/product/${product.id}`} />
             ))}
           </div>
         </SectionReveal>
       )}
 
-      {/* ── 分页 ── */}
+      {/* 分页 */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-12">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            className="px-3 py-1.5 text-sm rounded-lg border border-warm-200 bg-white text-ink-soft hover:border-warm-400 disabled:opacity-30 disabled:cursor-not-allowed"
-          >
+        <div className="flex items-center justify-center gap-2 mt-8">
+          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}
+            className="px-3 py-1.5 text-sm rounded-lg border border-warm-200 bg-white text-ink-soft hover:border-warm-400 disabled:opacity-30 disabled:cursor-not-allowed">
             上一页
           </button>
-          <span className="text-sm text-warm-600">
-            {page} / {totalPages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-            className="px-3 py-1.5 text-sm rounded-lg border border-warm-200 bg-white text-ink-soft hover:border-warm-400 disabled:opacity-30 disabled:cursor-not-allowed"
-          >
+          <span className="text-sm text-warm-600">{page} / {totalPages}</span>
+          <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+            className="px-3 py-1.5 text-sm rounded-lg border border-warm-200 bg-white text-ink-soft hover:border-warm-400 disabled:opacity-30 disabled:cursor-not-allowed">
             下一页
           </button>
         </div>
