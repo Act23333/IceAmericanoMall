@@ -5,7 +5,6 @@ import { useOrder, useCancelOrder, useConfirmOrder } from '@icedmall/api';
 import { Button, GlassCard, PriceDisplay } from '@icedmall/ui';
 import { formatPrice, ORDER_STATUS_TEXT } from '@icedmall/utils';
 import Link from 'next/link';
-import { use } from 'react';
 
 export default function OrderDetailPage() {
   const params = useParams();

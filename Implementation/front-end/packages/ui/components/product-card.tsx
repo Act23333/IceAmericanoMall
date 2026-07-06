@@ -1,3 +1,5 @@
+'use client';
+
 import { cn } from '../lib/utils';
 import { formatPrice } from '@icedmall/utils';
 import type { ProductVO } from '@icedmall/api';
