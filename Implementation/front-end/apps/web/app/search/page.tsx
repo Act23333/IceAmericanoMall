@@ -9,9 +9,38 @@ const API = process.env.NEXT_PUBLIC_API_URL || '';
 interface Product { id: number; productId: string; categoryId: number; name: string; brand: string; mainImage: string; price: number; soldCount: number; }
 interface PageData { records: Product[]; total: number; pages: number; }
 
+/** 搜索历史组件 — 读取 localStorage */
+function SearchHistory({ onSearch }: { onSearch: (kw: string) => void }) {
+  const [history, setHistory] = useState<string[]>([]);
+  useEffect(() => { setHistory(loadHistory()); }, []);
+  if (history.length === 0) return null;
+  return (
+    <div className="mb-8">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium text-warm-600">🕐 搜索历史</h3>
+        <button onClick={() => { clearHistory(); setHistory([]); }} className="text-xs text-warm-400 hover:text-danger transition-colors">清空</button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {history.map((kw, i) => (
+          <button key={i} onClick={() => onSearch(kw)}
+            className="px-3 py-1 text-xs rounded-full border border-warm-200 text-warm-600 hover:border-accent-green hover:text-accent-green transition-colors bg-white">{kw}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /**
  * 搜索页 — 空状态展示推荐商品, 搜索后展示结果+分类筛选
  */
+/** 本地搜索历史持久化 */
+function loadHistory(): string[] { try { return JSON.parse(localStorage.getItem('search-history') || '[]'); } catch { return []; } }
+function saveHistory(kw: string) {
+  const h = [kw, ...loadHistory().filter((k) => k !== kw)].slice(0, 10);
+  localStorage.setItem('search-history', JSON.stringify(h));
+}
+function clearHistory() { localStorage.removeItem('search-history'); }
+
 export default function SearchPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -51,6 +80,9 @@ export default function SearchPage() {
     if (kw) sp.set('keyword', kw);
     if (catId) sp.set('categoryId', String(catId));
 
+    // 保存搜索历史
+    if (kw) saveHistory(kw);
+
     fetch(`${API}/api/search/product?${sp.toString()}`)
       .then((r) => r.json())
       .then((j) => setData(j.data))
@@ -76,6 +108,9 @@ export default function SearchPage() {
         <div className="max-w-xl mx-auto mb-10">
           <SearchBar placeholder="搜索商品、品牌、分类…" onSearch={handleSearch} />
         </div>
+
+        {/* 搜索历史 */}
+        <SearchHistory onSearch={doSearch} />
 
         {/* 热门搜索 */}
         {hotKeywords.length > 0 && (
