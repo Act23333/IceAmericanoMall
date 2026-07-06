@@ -9,6 +9,29 @@ const API = process.env.NEXT_PUBLIC_API_URL || '';
 interface Product { id: number; productId: string; categoryId: number; name: string; brand: string; mainImage: string; price: number; soldCount: number; }
 interface PageData { records: Product[]; total: number; pages: number; }
 
+/** 关键词高亮 — 将搜索词拆分为单个字符和词组，红色标出 */
+function HighlightName({ name, keyword }: { name: string; keyword: string }) {
+  if (!keyword.trim()) return <>{name}</>;
+  // 把关键词拆成独立词组(按空格) + 单字, 去重
+  const parts = [...new Set([...keyword.split(/\s+/).filter(Boolean), ...keyword.replace(/\s+/g, '').split('')])];
+  const pattern = parts.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  if (!pattern) return <>{name}</>;
+
+  const regex = new RegExp(`(${pattern})`, 'gi');
+  const segments = name.split(regex);
+  return (
+    <>
+      {segments.map((s, i) =>
+        regex.test(s) ? (
+          <mark key={i} className="bg-accent-gold/20 text-accent-green-dark rounded px-0.5">{s}</mark>
+        ) : (
+          <span key={i}>{s}</span>
+        )
+      )}
+    </>
+  );
+}
+
 /** 搜索历史组件 — 读取 localStorage */
 function SearchHistory({ onSearch }: { onSearch: (kw: string) => void }) {
   const [history, setHistory] = useState<string[]>([]);
@@ -85,8 +108,11 @@ export default function SearchPage() {
 
     fetch(`${API}/api/search/product?${sp.toString()}`)
       .then((r) => r.json())
-      .then((j) => setData(j.data))
-      .catch(() => {})
+      .then((j) => {
+        if (j.code === 200) setData(j.data);
+        else setData({ records: [], total: 0, pages: 0 });
+      })
+      .catch(() => setData({ records: [], total: 0, pages: 0 }))
       .finally(() => setLoading(false));
 
     // URL 同步
@@ -171,7 +197,16 @@ export default function SearchPage() {
       {/* Results */}
       {!loading && data && data.records.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {data.records.map((p) => (<ProductCard key={p.id} product={p} href={`/product/${p.id}`} />))}
+          {data.records.map((p) => (
+            <div key={p.id} className="relative">
+              <ProductCard product={p} href={`/product/${p.id}`} />
+              {keyword && (
+                <p className="mt-1 text-xs text-warm-500 px-1 truncate">
+                  <HighlightName name={p.name} keyword={keyword} />
+                </p>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
