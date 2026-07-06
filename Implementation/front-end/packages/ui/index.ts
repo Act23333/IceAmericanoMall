@@ -27,3 +27,4 @@ export { CategoryCard } from './components/category-card';
 export { HorizontalScroll } from './components/horizontal-scroll';
 export { SkuSelector } from './components/sku-selector';
 export { ImageGallery } from './components/image-gallery';
+export { InfiniteProductGrid } from './components/infinite-product-grid';

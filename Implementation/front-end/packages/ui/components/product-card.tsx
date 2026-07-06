@@ -53,12 +53,12 @@ export function ProductCard({
           variant === 'horizontal' ? 'w-1/3 shrink-0' : 'aspect-square w-full',
         )}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={product.mainImage}
           alt={product.name}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           loading="lazy"
+          decoding="async"
         />
       </div>
 

@@ -8,3 +8,5 @@ export { useOrders, useOrder, useCreateOrder, useCancelOrder, useConfirmOrder } 
 export { useUserInfo } from './use-user';
 export { useAddresses, useAddAddress, useUpdateAddress, useDeleteAddress } from './use-address';
 export { useSearch, useHotKeywords, useSearchHistory } from './use-search';
+export { useHomeConfig } from './use-home-config';
+export type { HomeConfigItem } from './use-home-config';

@@ -22,6 +22,20 @@ export default function RegisterPage() {
   const [smsCode, setSmsCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [smsCountdown, setSmsCountdown] = useState(0);
+
+  const sendSms = async () => {
+    if (smsCountdown > 0) return;
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/user/code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
+      });
+      setSmsCountdown(60);
+      const timer = setInterval(() => setSmsCountdown((c) => { if (c <= 1) { clearInterval(timer); return 0; } return c - 1; }), 1000);
+    } catch { /* ignore */ }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,10 +112,10 @@ export default function RegisterPage() {
                 placeholder="6位验证码" maxLength={6}
                 className="flex-1 rounded-xl border border-warm-200 bg-white px-4 py-2.5 text-sm outline-none transition-colors focus:border-accent-green focus:ring-2 focus:ring-accent-green/20 placeholder:text-warm-400"
               />
-              <button type="button"
-                className="shrink-0 rounded-xl bg-warm-100 px-4 py-2.5 text-sm text-ink-soft hover:bg-warm-200 transition-colors"
+              <button type="button" onClick={sendSms} disabled={smsCountdown > 0}
+                className="shrink-0 rounded-xl bg-warm-100 px-4 py-2.5 text-sm text-ink-soft hover:bg-warm-200 transition-colors disabled:opacity-50"
               >
-                获取验证码
+                {smsCountdown > 0 ? `${smsCountdown}s` : '获取验证码'}
               </button>
             </div>
           </div>
