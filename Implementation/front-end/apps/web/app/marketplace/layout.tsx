@@ -1,8 +1,7 @@
 /**
  * 商城布局 — 导航 + 内容 + 页脚
  */
-export const revalidate = 300;
-export const dynamic = 'force-static';
+export const revalidate = 60;
 
 import { Footer } from '@icedmall/ui';
 import { Navbar } from '@/app/components/navbar';
