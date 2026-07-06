@@ -3,6 +3,7 @@
  */
 export const dynamic = 'force-dynamic';
 
+import { Suspense } from 'react';
 import { Footer } from '@icedmall/ui';
 import { Navbar } from '@/app/components/navbar';
 
@@ -15,7 +16,15 @@ export default function MarketplaceLayout({
     <>
       <Navbar />
       <main className="min-h-screen pt-16">
-        {children}
+        <Suspense fallback={
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 px-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="aspect-square rounded-2xl bg-warm-100 animate-glass-shimmer" />
+            ))}
+          </div>
+        }>
+          {children}
+        </Suspense>
       </main>
       <Footer />
     </>
