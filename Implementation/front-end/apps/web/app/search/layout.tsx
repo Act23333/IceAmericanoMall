@@ -1,17 +1,10 @@
-/**
- * 搜索页布局
- */
 export const dynamic = 'force-dynamic';
 
 import { Suspense } from 'react';
 import { Footer } from '@icedmall/ui';
 import { Navbar } from '@/app/components/navbar';
 
-export default function SearchLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function SearchLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <Navbar />
