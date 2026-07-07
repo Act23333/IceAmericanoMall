@@ -10,9 +10,9 @@ import org.springframework.security.web.SecurityFilterChain;
 /**
  * auth-service 安全配置 — 放行自己的公开端点。
  *
- * Spring Boot 检测到 oauth2-resource-server 依赖会自动
- * 启用 HTTP Basic 保护所有端点, 导致 login/register 等
- * 公开接口返回 401。此处显式配置放行。
+ * spring-boot-starter-security 默认启用 HTTP Basic 保护
+ * 所有端点, 导致 login/register 等公开接口返回 401。
+ * 此处显式配置放行 /api/auth/**。
  */
 @Configuration
 @EnableWebSecurity
