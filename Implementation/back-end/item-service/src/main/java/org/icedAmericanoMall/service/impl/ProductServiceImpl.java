@@ -23,8 +23,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class ProductServiceImpl extends ServiceImpl<ProductMapper, ProductEntity> implements ProductService {
@@ -60,7 +62,23 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, ProductEntity
         }
 
         IPage<ProductEntity> entityPage = page(new Page<>(page, size), wrapper);
-        return entityPage.convert(productConverter::entityToVO);
+        IPage<ProductVO> voPage = entityPage.convert(productConverter::entityToVO);
+
+        // 补充 SKU 最低价格 (列表页不需要完整 SKU 列表, 只需 minPrice)
+        if (!voPage.getRecords().isEmpty()) {
+            List<Long> productIds = voPage.getRecords().stream().map(ProductVO::getId).toList();
+            Map<Long, List<SkuEntity>> skuMap = skuService.lambdaQuery()
+                    .in(SkuEntity::getProductId, productIds)
+                    .eq(SkuEntity::getStatus, 1)
+                    .list()
+                    .stream()
+                    .collect(Collectors.groupingBy(SkuEntity::getProductId));
+            voPage.getRecords().forEach(vo -> {
+                List<SkuEntity> skus = skuMap.getOrDefault(vo.getId(), Collections.emptyList());
+                vo.setSkus(skuConverter.entitiesToVOs(skus));
+            });
+        }
+        return voPage;
     }
 
     @Override
