@@ -28,6 +28,8 @@ export default function LoginPage() {
   const [smsCode, setSmsCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [failCount, setFailCount] = useState(0);
+  const [cooldown, setCooldown] = useState(0); // 连续失败N次后冷却秒数
   const [smsCountdown, setSmsCountdown] = useState(0);
 
   const sendSms = async () => {
@@ -78,6 +80,14 @@ export default function LoginPage() {
       router.push('/marketplace');
     } catch (err: unknown) {
       setError(getUserMessage(err as { code?: number; message?: string }));
+      // 连续失败3次 → 冷却10秒 (UX限流, 非安全边界)
+      const newFails = failCount + 1;
+      setFailCount(newFails);
+      if (newFails >= 3) {
+        setCooldown(10);
+        setFailCount(0);
+        const timer = setInterval(() => setCooldown((c) => { if (c <= 1) { clearInterval(timer); return 0; } return c - 1; }), 1000);
+      }
     } finally {
       setLoading(false);
     }
@@ -178,8 +188,9 @@ export default function LoginPage() {
 
           {error && <p className="text-sm text-danger text-center">{error}</p>}
 
-          <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full mt-2">
-            {tab === 'sms' ? '登录' : '登录'}
+          <Button type="submit" variant="primary" size="lg"
+            loading={loading} disabled={cooldown > 0} className="w-full mt-2">
+            {cooldown > 0 ? `请${cooldown}秒后重试` : '登录'}
           </Button>
         </form>
 
