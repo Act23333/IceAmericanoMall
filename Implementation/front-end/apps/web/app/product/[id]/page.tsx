@@ -8,7 +8,7 @@
  */
 
 import { getProduct, getProducts } from '@icedmall/api';
-import { ProductCard, ImageGallery, PriceDisplay, SectionReveal } from '@icedmall/ui';
+import { ProductCard, ImageGallery, SectionReveal } from '@icedmall/ui';
 import { AddToCart } from './add-to-cart';
 import type { Metadata } from 'next';
 
@@ -79,7 +79,6 @@ export default async function ProductDetailPage({ params }: Props) {
     relatedProducts = [];
   }
 
-  const firstSku = product.skus?.[0];
   const images = product.mainImage ? [product.mainImage] : [];
 
   return (
@@ -101,15 +100,6 @@ export default async function ProductDetailPage({ params }: Props) {
             <p className="mt-4 text-sm text-warm-600 leading-relaxed">{product.description}</p>
           )}
 
-          <div className="mt-6">
-            <PriceDisplay cents={firstSku?.price ?? 0} size="lg" />
-            {product.soldCount > 0 && (
-              <p className="mt-1 text-xs text-warm-400">
-                已售 {product.soldCount > 10000 ? `${(product.soldCount / 10000).toFixed(1)}万` : product.soldCount}
-              </p>
-            )}
-          </div>
-
           <AddToCart product={product} />
 
           <div className="mt-8 flex items-center gap-6 text-xs text-warm-400">
@@ -128,10 +118,10 @@ export default async function ProductDetailPage({ params }: Props) {
             <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-6">
               {relatedProducts.map((rel) => (
                 <ProductCard
-                  key={rel.productId}
+                  key={rel.id}
                   product={rel}
                   variant="glass"
-                  href={`/product/${rel.productId}`}
+                  href={`/product/${rel.id}`}
                 />
               ))}
             </div>

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Button, SkuSelector } from '@icedmall/ui';
+import { useState, useEffect } from 'react';
+import { Button, SkuSelector, PriceDisplay, QuantityStepper } from '@icedmall/ui';
 import { useCartStore } from '@/app/stores/cart-store';
 import { type ProductVO } from '@icedmall/api';
 
@@ -10,49 +10,61 @@ interface AddToCartProps {
 }
 
 /**
- * SKU 选择 + 加入购物车 — Client Component Island
+ * SKU 选择 + 数量步进 + 加入购物车 — Client Component
  *
- * 交互：
- * 1. 用户选择 SKU → 价格联动
- * 2. 点击加购 → 写入 Zustand Cart Store
- * 3. 反馈: "✓ 已加入" 持续 1.5s
+ * 京东风格: 价格联动 | 数量± | 加购反馈
  */
 export function AddToCart({ product }: AddToCartProps) {
   const addItem = useCartStore((s) => s.addItem);
   const [added, setAdded] = useState(false);
+  const [quantity, setQuantity] = useState(1);
 
-  // 默认选中第一个有库存的 SKU
+  // SKU 选项
   const skuOptions = (product.skus ?? []).map((s) => ({
-    id: s.id,
-    skuId: s.skuId,
-    spec: s.spec,
-    price: s.price,
-    stock: s.stock,
-    image: s.image,
+    id: s.id, skuId: s.skuId, spec: s.spec, price: s.price, stock: s.stock, image: s.image,
   }));
   const defaultSku = skuOptions.find((s) => s.stock > 0);
   const [selectedSkuId, setSelectedSkuId] = useState(defaultSku?.skuId ?? '');
   const selectedSku = skuOptions.find((s) => s.skuId === selectedSkuId);
 
+  // Issue 10: 切换 SKU 时重置"已加入购物车"状态
+  useEffect(() => { setAdded(false); }, [selectedSkuId]);
+
+  // Issue 11: 数量步进
+  const stock = selectedSku?.stock ?? 0;
+
   const handleAdd = () => {
     const sku = selectedSku ?? defaultSku;
     if (!sku || sku.stock <= 0) return;
-
     addItem({
       skuId: sku.skuId,
       productName: product.name,
       spec: sku.spec,
       image: sku.image || product.mainImage || '',
       price: sku.price,
-      quantity: 1,
+      quantity,
     });
-
     setAdded(true);
+    // 重置数量
+    setQuantity(1);
     setTimeout(() => setAdded(false), 1500);
   };
 
   return (
-    <div className="mt-8 space-y-4">
+    <div className="mt-8 space-y-5">
+      {/* Issue 8: 主价格联动 — 放在 Client 组件内读取 selectedSku */}
+      <div>
+        <PriceDisplay
+          cents={selectedSku?.price ?? defaultSku?.price ?? 0}
+          size="lg"
+        />
+        {selectedSku && selectedSku.price !== (defaultSku?.price) && (
+          <span className="text-xs text-warm-400 line-through ml-2">
+            ¥{(defaultSku?.price ?? 0) / 100}
+          </span>
+        )}
+      </div>
+
       {/* SKU 选择器 */}
       {skuOptions.length > 1 && (
         <div>
@@ -65,26 +77,31 @@ export function AddToCart({ product }: AddToCartProps) {
         </div>
       )}
 
-      {/* 选中 SKU 价格 */}
-      {selectedSku && selectedSku.price !== (product.skus?.[0]?.price) && (
-        <p className="text-sm text-warm-600">
-          已选: <span className="text-ink-black font-medium">¥{(selectedSku.price / 100).toFixed(2)}</span>
-        </p>
-      )}
+      {/* 数量选择器 */}
+      <div>
+        <p className="text-sm text-ink-soft font-medium mb-3">数量</p>
+        <QuantityStepper
+          value={quantity}
+          onChange={setQuantity}
+          max={Math.min(stock, 999)}
+        />
+        {stock > 0 && stock < 10 && (
+          <span className="ml-3 text-xs text-danger">仅剩 {stock} 件</span>
+        )}
+      </div>
 
       {/* 加购按钮 */}
       <div className="flex items-center gap-3 pt-2">
         <Button
           onClick={handleAdd}
-          disabled={!selectedSku || selectedSku.stock <= 0}
+          disabled={!selectedSku || stock <= 0}
           variant="primary"
           size="lg"
           className="min-w-[200px]"
-          loading={false}
         >
           {added
             ? '✓ 已加入购物车'
-            : (!selectedSku || selectedSku.stock <= 0)
+            : stock <= 0
               ? '暂时缺货'
               : '加入购物车'}
         </Button>
