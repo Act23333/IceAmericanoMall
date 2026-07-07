@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { Search } from 'lucide-react';
+import { useState } from 'react';
+import { Search, ArrowRight } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface SearchBarProps {
@@ -11,49 +11,79 @@ interface SearchBarProps {
   onSearch?: (keyword: string) => void;
 }
 
-export function SearchBar({ className, placeholder = '搜索商品、品牌、分类…', defaultValue, onSearch }: SearchBarProps) {
+/**
+ * 搜索栏 — 品牌风格「东方自然主义 × 未来玻璃艺术」
+ * 毛玻璃底座 + 绿色确认按钮 + 悬停微光
+ */
+export function SearchBar({
+  className,
+  placeholder = '搜索商品、品牌、分类…',
+  defaultValue,
+  onSearch,
+}: SearchBarProps) {
   const [value, setValue] = useState(defaultValue ?? '');
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [focused, setFocused] = useState(false);
 
   const submit = () => {
     const kw = value.trim();
-    if (kw) {
-      onSearch?.(kw);
-      // 保持关键词在输入框
-      setValue(kw);
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    submit();
+    if (kw) onSearch?.(kw);
   };
 
   return (
-    <form onSubmit={handleSubmit} className={cn('w-full', className)}>
-      <div className="relative flex items-center">
-        <Search className="absolute left-3.5 h-4 w-4 text-warm-400 pointer-events-none" />
+    <form
+      onSubmit={(e) => { e.preventDefault(); submit(); }}
+      className={cn('w-full', className)}
+    >
+      <div
+        className={cn(
+          'relative flex items-center rounded-2xl border transition-all duration-300',
+          'bg-white/60 backdrop-blur-xl shadow-sm',
+          focused
+            ? 'border-accent-green/40 shadow-lg shadow-accent-green/5 ring-2 ring-accent-green/10'
+            : 'border-warm-200 hover:border-warm-400 hover:shadow-md',
+        )}
+      >
+        {/* 搜索图标 */}
+        <Search className="absolute left-4 h-4 w-4 text-warm-400 transition-colors duration-300"
+          style={{ opacity: focused ? 0.8 : 0.5 }} />
+
+        {/* 输入框 */}
         <input
-          ref={inputRef}
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           placeholder={placeholder}
-          className="w-full rounded-l-full border border-r-0 border-warm-200 bg-white/70 py-2.5 pl-10 pr-4 text-sm text-ink-black placeholder:text-warm-400 outline-none transition-all backdrop-blur-sm focus:border-accent-green focus:bg-white focus:ring-2 focus:ring-accent-green/20"
+          className="flex-1 bg-transparent py-3 pl-11 pr-4 text-sm text-ink-black placeholder:text-warm-400 outline-none"
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              submit();
-            }
+            if (e.key === 'Enter') { e.preventDefault(); submit(); }
           }}
         />
-        <button
-          type="submit"
-          onClick={(e) => { e.preventDefault(); submit(); }}
-          className="shrink-0 rounded-r-full bg-accent-green px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-green-light active:bg-accent-green-dark"
+
+        {/* 确认按钮 — 只在有输入或聚焦时显示 */}
+        <div
+          className={cn(
+            'shrink-0 pr-1.5 transition-all duration-300',
+            (value || focused) ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-2'
+          )}
         >
-          搜索
-        </button>
+          <button
+            type="submit"
+            onClick={(e) => { e.preventDefault(); submit(); }}
+            className={cn(
+              'flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium',
+              'bg-accent-green text-white shadow-sm',
+              'transition-all duration-200',
+              'hover:bg-accent-green-light hover:shadow-md',
+              'active:scale-[0.97]',
+              'disabled:opacity-50 disabled:cursor-not-allowed',
+            )}
+          >
+            <span>搜索</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </form>
   );

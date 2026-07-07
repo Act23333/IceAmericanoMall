@@ -38,15 +38,15 @@ function SearchHistory({ onSearch }: { onSearch: (kw: string) => void }) {
   useEffect(() => { setHistory(loadHistory()); }, []);
   if (history.length === 0) return null;
   return (
-    <div className="mb-8">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-warm-600">🕐 搜索历史</h3>
+    <div className="mb-10">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xs tracking-wider text-warm-400 font-medium">🕐 搜索历史</h3>
         <button onClick={() => { clearHistory(); setHistory([]); }} className="text-xs text-warm-400 hover:text-danger transition-colors">清空</button>
       </div>
       <div className="flex flex-wrap gap-2">
         {history.map((kw, i) => (
           <button key={i} onClick={() => onSearch(kw)}
-            className="px-3 py-1 text-xs rounded-full border border-warm-200 text-warm-600 hover:border-accent-green hover:text-accent-green transition-colors bg-white">{kw}</button>
+            className="px-4 py-2 text-sm rounded-xl border border-warm-200 bg-white/70 backdrop-blur-sm text-ink-soft hover:border-accent-green/30 hover:text-accent-green hover:shadow-sm transition-all duration-200">{kw}</button>
         ))}
       </div>
     </div>
@@ -131,7 +131,7 @@ export default function SearchPage() {
     return (
       <div className="mx-auto max-w-7xl px-4 pt-24 pb-20">
         {/* 搜索栏 */}
-        <div className="max-w-xl mx-auto mb-10">
+        <div className="max-w-2xl mx-auto mb-12">
           <SearchBar placeholder="搜索商品、品牌、分类…" onSearch={handleSearch} />
         </div>
 
@@ -141,11 +141,11 @@ export default function SearchPage() {
         {/* 热门搜索 */}
         {hotKeywords.length > 0 && (
           <div className="mb-10">
-            <h3 className="text-sm font-medium text-warm-600 mb-3">🔥 热门搜索</h3>
+            <h3 className="text-xs tracking-wider text-warm-400 mb-4 font-medium">🔥 热门搜索</h3>
             <div className="flex flex-wrap gap-2">
               {hotKeywords.map((kw) => (
                 <button key={kw} onClick={() => doSearch(kw)}
-                  className="px-4 py-1.5 text-sm rounded-full bg-warm-100 text-ink-soft hover:bg-accent-green/10 hover:text-accent-green transition-colors">{kw}</button>
+                  className="px-4 py-2 text-sm rounded-xl border border-warm-200 bg-white/70 backdrop-blur-sm text-ink-soft hover:border-accent-green/30 hover:text-accent-green hover:shadow-sm transition-all duration-200">{kw}</button>
               ))}
             </div>
           </div>
@@ -154,7 +154,7 @@ export default function SearchPage() {
         {/* 推荐商品 */}
         {recommend.length > 0 && (
           <div>
-            <h3 className="text-sm font-medium text-warm-600 mb-3">✨ 为你推荐</h3>
+            <h3 className="text-xs tracking-wider text-warm-400 mb-4 font-medium">✨ 为你推荐</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {recommend.map((p) => (<ProductCard key={p.id} product={p} href={`/product/${p.id}`} />))}
             </div>
@@ -176,10 +176,10 @@ export default function SearchPage() {
       {categories.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-6">
           <button onClick={() => doSearch(keyword, undefined, 1)}
-            className={`px-3 py-1.5 text-xs rounded-full border transition-all ${!categoryId ? 'border-accent-gold bg-accent-gold/5 text-ink-black' : 'border-warm-200 text-warm-600 hover:border-warm-400'}`}>全部分类</button>
+            className={`px-4 py-2 text-sm rounded-xl border transition-all duration-200 ${!categoryId ? 'border-accent-green bg-accent-green text-white shadow-sm' : 'border-warm-200 bg-white/80 backdrop-blur-sm text-warm-600 hover:border-warm-400 hover:shadow-sm'}`}>全部</button>
           {categories.map((cat) => (
             <button key={cat.id} onClick={() => doSearch(keyword, cat.id, 1)}
-              className={`px-3 py-1.5 text-xs rounded-full border transition-all ${categoryId === cat.id ? 'border-accent-gold bg-accent-gold/5 text-ink-black' : 'border-warm-200 text-warm-600 hover:border-warm-400'}`}>{cat.name}</button>
+              className={`px-4 py-2 text-sm rounded-xl border transition-all duration-200 ${categoryId === cat.id ? 'border-accent-green bg-accent-green text-white shadow-sm' : 'border-warm-200 bg-white/80 backdrop-blur-sm text-warm-600 hover:border-warm-400 hover:shadow-sm'}`}>{cat.name}</button>
           ))}
         </div>
       )}

@@ -48,7 +48,7 @@ export default async function MarketplacePage({ searchParams }: Props) {
             {categories.map((cat) => (
               <a key={cat.id} href={`/marketplace?categoryId=${cat.id}`}
                 className={`shrink-0 px-4 py-2 text-sm rounded-full border transition-all ${
-                  categoryId === cat.id ? 'border-accent-green bg-accent-green text-white' : 'border-warm-200 text-warm-600 hover:border-warm-400 bg-white'
+                  categoryId === cat.id ? 'border-accent-green bg-accent-green text-white' : 'border-warm-200 text-warm-600 hover:border-warm-400 bg-white/80 backdrop-blur-sm hover:shadow-sm'
                 }`}>{cat.name}</a>
             ))}
           </div>
