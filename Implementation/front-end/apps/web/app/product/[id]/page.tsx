@@ -131,11 +131,7 @@ export default async function ProductDetailPage({ params }: Props) {
                   key={rel.productId}
                   product={rel}
                   variant="glass"
-                  onClick={() => {
-                    if (typeof window !== 'undefined') {
-                      window.location.href = `/product/${rel.productId}`;
-                    }
-                  }}
+                  href={`/product/${rel.productId}`}
                 />
               ))}
             </div>
