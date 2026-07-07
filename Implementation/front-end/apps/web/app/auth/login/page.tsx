@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Button, GlassCard } from '@icedmall/ui';
 import { login } from '@icedmall/auth';
 import { useAuthStore } from '@icedmall/auth';
-import { phoneSchema, passwordSchema } from '@icedmall/utils';
+import { phoneSchema, passwordSchema, smsCodeSchema } from '@icedmall/utils';
+import { getUserMessage } from '@icedmall/api';
 import Link from 'next/link';
 
 /**
@@ -53,7 +54,7 @@ export default function LoginPage() {
 
     if (tab === 'sms') {
       if (!phoneSchema.safeParse(phone).success) { setError('请输入正确的手机号'); return; }
-      if (smsCode.length !== 6) { setError('请输入6位验证码'); return; }
+      if (!smsCodeSchema.safeParse(smsCode).success) { setError('请输入6位数字验证码'); return; }
     } else {
       // 密码登录: 账号可以是手机号或用户名
       if (!account.trim()) { setError('请输入手机号或用户名'); return; }
@@ -76,8 +77,7 @@ export default function LoginPage() {
       });
       router.push('/marketplace');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '登录失败，请重试';
-      setError(msg);
+      setError(getUserMessage(err as { code?: number; message?: string }));
     } finally {
       setLoading(false);
     }

@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Button, GlassCard } from '@icedmall/ui';
 import { register } from '@icedmall/auth';
 import { useAuthStore } from '@icedmall/auth';
-import { phoneSchema, passwordSchema, usernameSchema } from '@icedmall/utils';
+import { phoneSchema, passwordSchema, usernameSchema, smsCodeSchema } from '@icedmall/utils';
+import { getUserMessage } from '@icedmall/api';
 import Link from 'next/link';
 
 /**
@@ -43,7 +44,7 @@ export default function RegisterPage() {
 
     if (!phoneSchema.safeParse(phone).success) { setError('请输入正确的手机号'); return; }
     if (!passwordSchema.safeParse(password).success) { setError('密码需8-32位，包含字母和数字'); return; }
-    if (smsCode.length !== 6) { setError('请输入6位验证码'); return; }
+    if (!smsCodeSchema.safeParse(smsCode).success) { setError('请输入6位数字验证码'); return; }
     // username 可选，但如果填了需验证
     if (username.trim() && !usernameSchema.safeParse(username.trim()).success) {
       setError('用户名需3-20位，以字母开头'); return;
@@ -64,8 +65,7 @@ export default function RegisterPage() {
       });
       router.push('/marketplace');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '注册失败，请重试';
-      setError(msg);
+      setError(getUserMessage(err as { code?: number; message?: string }));
     } finally {
       setLoading(false);
     }
