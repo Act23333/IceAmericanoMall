@@ -12,7 +12,7 @@
 
 import type { ProductVO, CategoryVO, PageResult } from './types';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://gate-service:8080';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://192.168.10.1:8080';
 
 interface ApiResult<T> {
   code: number;
