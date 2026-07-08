@@ -53,10 +53,7 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         registerUser(user);
         redisTemplate.delete(SMS_CODE_PREFIX + phone);
 
-        LoginRespDTO resp = BeanUtils.copyBean(user, LoginRespDTO.class);
-        resp.setUserId(user.getId());   // 技术PK (Long), 不是 user.getUserId() (String UUID)
-        resp.setRole(mapRole(user.getRoleType()));
-        return resp;
+        return toLoginResp(user);
     }
 
     @Override
@@ -70,10 +67,7 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         if (user.getStatus() != UserStatusEnum.NORMAL)
             throw new BizException(ErrorCode.USER_STATUS_ABNORMAL);
 
-        LoginRespDTO resp = BeanUtils.copyBean(user, LoginRespDTO.class);
-        resp.setUserId(user.getId());
-        resp.setRole(mapRole(user.getRoleType()));
-        return resp;
+        return toLoginResp(user);
     }
 
     @Override
@@ -86,19 +80,13 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         if (user != null) {
             if (user.getStatus() == UserStatusEnum.FROZEN)
                 throw new BizException(ErrorCode.USER_STATUS_ABNORMAL, "账号已被禁用");
-            LoginRespDTO resp = BeanUtils.copyBean(user, LoginRespDTO.class);
-            resp.setUserId(user.getId());
-            resp.setRole(mapRole(user.getRoleType()));
-            return resp;
+            return toLoginResp(user);
         }
         // New user auto-register
         user = new UserEntity();
         user.setPhone(phone);
         registerUser(user);
-        LoginRespDTO resp = BeanUtils.copyBean(user, LoginRespDTO.class);
-        resp.setUserId(user.getId());
-        resp.setRole(mapRole(user.getRoleType()));
-        return resp;
+        return toLoginResp(user);
     }
 
     private void registerUser(UserEntity user) {
@@ -115,6 +103,16 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
             throw new BizException(ErrorCode.PHONE_ALREADY_REGISTERED, "手机号已被注册");
         if (StrUtil.isNotBlank(username) && lambdaQuery().eq(UserEntity::getUsername, username).exists())
             throw new BizException(ErrorCode.USERNAME_ALREADY_TAKEN, "用户名已被占用");
+    }
+
+    /** 手动构建 LoginRespDTO — 避免 BeanUtils.copyBean 的 String UUID → Long 转换崩溃 */
+    private LoginRespDTO toLoginResp(UserEntity user) {
+        LoginRespDTO resp = new LoginRespDTO();
+        resp.setUserId(user.getId());           // Long 技术PK
+        resp.setUsername(user.getUsername());
+        resp.setPhone(user.getPhone());
+        resp.setRole(mapRole(user.getRoleType()));
+        return resp;
     }
 
     private String mapRole(Integer roleType) {
