@@ -63,7 +63,7 @@ public class LoginContext {
         Long result = stringRedisTemplate.execute(
                 checkLimitScript,
                 Collections.singletonList(failKey),
-                MAX_FAIL_COUNT
+                String.valueOf(MAX_FAIL_COUNT)
         );
         if (result != null && result == -1) {
             throw new BizException(ErrorCode.FREQUENT_ERROR, "登录失败次数过多，请1分钟后再试");
