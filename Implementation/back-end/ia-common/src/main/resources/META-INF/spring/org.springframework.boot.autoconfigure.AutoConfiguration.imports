@@ -8,3 +8,4 @@ org.noLazy.common.config.RabbitMqConfig
 org.noLazy.common.aspect.RateLimitAspect
 org.noLazy.common.aspect.GlobalExceptionHandler
 org.noLazy.common.utils.RateLimitUtils
+org.noLazy.common.config.RedisConfig
