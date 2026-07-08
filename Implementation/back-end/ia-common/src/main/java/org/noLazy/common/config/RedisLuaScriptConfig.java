@@ -1,6 +1,6 @@
 package org.noLazy.common.config;
 
-import org.apache.ibatis.io.Resources;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import jakarta.annotation.Resource;
