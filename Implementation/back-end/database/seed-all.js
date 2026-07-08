@@ -21,7 +21,7 @@ const es = new Client({ node: 'http://192.168.10.128:9200' });
 const IMG = (id) => `https://img1${id % 5 + 10}.360buyimg.com/n1/s400x400_jfs/t1/${200000 + id * 1000}/12/3456/123456/667a8b9cF0d1e2f3a.jpg`;
 
 const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-const PASS = bcrypt.hashSync('Test1234', 10);
+const PASS = bcrypt.hashSync('Test1234!', 10);
 
 /* ================================================================
    数据
