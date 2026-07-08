@@ -13,9 +13,12 @@ export const phoneSchema = z
 export const passwordSchema = z
   .string()
   .min(8, '密码至少8位')
-  .max(32, '密码最多32位')
-  .regex(/[a-zA-Z]/, '密码需包含字母')
-  .regex(/\d/, '密码需包含数字');
+  .max(20, '密码最多20位')
+  .regex(/[a-z]/, '密码需包含小写字母')
+  .regex(/[A-Z]/, '密码需包含大写字母')
+  .regex(/\d/, '密码需包含数字')
+  .regex(/[!@#$%^&*]/, '密码需包含特殊字符(!@#$%^&*)')
+  .regex(/^[0-9a-zA-Z!@#$%^&*]+$/, '密码只能包含字母、数字和!@#$%^&*');
 
 /** 短信验证码 (6位数字) */
 export const smsCodeSchema = z
