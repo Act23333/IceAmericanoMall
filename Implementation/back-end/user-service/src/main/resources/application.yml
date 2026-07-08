@@ -49,4 +49,7 @@ aliyun:
 logging:
   level:
     org.icedAmericanoMall: DEBUG
-
+  pattern:
+    dateformat: HH:mm:ss:SSS
+  file:
+    path: "logs/${spring.application.name}"
