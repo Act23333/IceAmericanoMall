@@ -5,15 +5,18 @@ import org.icedAmericanoMall.domain.dto.OAuth2TokenResp;
 import org.icedAmericanoMall.domain.dto.auth.LoginReq;
 import org.noLazy.common.enums.ErrorCode;
 import org.noLazy.common.exception.BizException;
+import org.redisson.api.RAtomicLong;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
-import java.util.Collections;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 登录门面 — Redisson 分布式锁 + 失败计数限流。
+ * 使用 Redisson 原生 API 避免 StringRedisTemplate 与 Redisson 编码冲突。
+ */
 @Service
 @RequiredArgsConstructor
 public class LoginContext {
@@ -21,12 +24,9 @@ public class LoginContext {
     private static final int MAX_FAIL_COUNT = 5;
     private static final String FAIL_KEY_PREFIX = "login_fail:";
     private static final String LOCK_KEY_PREFIX = "lock:login:";
-    private static final String FAIL_TTL_SECONDS = "60";
+    private static final Duration FAIL_TTL = Duration.ofSeconds(60);
 
     private final LoginStrategyFactory loginStrategyFactory;
-    private final StringRedisTemplate stringRedisTemplate;
-    private final RedisScript<Long> checkLimitScript;
-    private final RedisScript<Void> loginRateLimitRedisScript;
     private final RedissonClient redissonClient;
 
     public OAuth2TokenResp login(LoginReq request) {
@@ -39,7 +39,7 @@ public class LoginContext {
             OAuth2TokenResp response = loginStrategyFactory
                     .getStrategy(request.getIdentityType(), request.getCredentialType())
                     .login(request);
-            stringRedisTemplate.delete(failKey);
+            clearFailCount(failKey);
             return response;
         } catch (BizException e) {
             recordLoginFail(failKey);
@@ -59,23 +59,26 @@ public class LoginContext {
         }
     }
 
+    /** 检查失败次数是否超限 — Redisson RAtomicLong */
     private void checkFailLimit(String failKey) {
-        Long result = stringRedisTemplate.execute(
-                checkLimitScript,
-                Collections.singletonList(failKey),
-                String.valueOf(MAX_FAIL_COUNT)
-        );
-        if (result != null && result == -1) {
+        RAtomicLong counter = redissonClient.getAtomicLong(failKey);
+        long current = counter.get();
+        if (current >= MAX_FAIL_COUNT) {
             throw new BizException(ErrorCode.FREQUENT_ERROR, "登录失败次数过多，请1分钟后再试");
         }
     }
 
+    /** 记录失败次数 — Redisson INCR + EXPIRE 原子操作 */
     private void recordLoginFail(String failKey) {
-        stringRedisTemplate.execute(
-                loginRateLimitRedisScript,
-                Collections.singletonList(failKey),
-                FAIL_TTL_SECONDS
-        );
+        RAtomicLong counter = redissonClient.getAtomicLong(failKey);
+        counter.expireIfNotSet(FAIL_TTL);
+        counter.incrementAndGet();
+        counter.expire(FAIL_TTL);
+    }
+
+    /** 成功后清除失败计数 */
+    private void clearFailCount(String failKey) {
+        redissonClient.getAtomicLong(failKey).delete();
     }
 
     private void unlockLogin(RLock lock) {
