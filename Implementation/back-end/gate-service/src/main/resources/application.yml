@@ -3,6 +3,8 @@ server:
   servlet:
     context-path: /
 spring:
+  main:
+    allow-bean-definition-overriding: true # 开启bean覆盖
   application:
     name: gateway-service
 #  profiles:

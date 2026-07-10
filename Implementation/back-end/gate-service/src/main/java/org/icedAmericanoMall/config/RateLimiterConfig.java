@@ -16,7 +16,6 @@ public class RateLimiterConfig {
     public KeyResolver ipKeyResolver() {
         return exchange -> {
             String ip = Objects.requireNonNull(exchange.getRequest().getRemoteAddress()).getAddress().getHostAddress();
-
             // 可选：解析 X-Forwarded-For 头获取真实IP
             // String realIp = exchange.getRequest().getHeaders().getFirst("X-Forwarded-For");
             return Mono.just(ip);

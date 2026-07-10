@@ -2,11 +2,13 @@ package org.icedAmericanoMall.dto;
 
 import lombok.Data;
 
+import java.io.Serial;
 import java.io.Serializable;
 
 @Data
 public class SkuDTO implements Serializable {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     private Long id;          // 技术主键 (sku.id)
