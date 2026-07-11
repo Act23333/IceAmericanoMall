@@ -11,6 +11,9 @@ import org.icedAmericanoMall.dto.PasswordLoginReqDTO;
 import org.icedAmericanoMall.dto.RegisterReqDTO;
 import org.icedAmericanoMall.dto.ResetPasswordReqDTO;
 import org.icedAmericanoMall.dto.SmsLoginReqDTO;
+import org.icedAmericanoMall.dto.WechatLoginReqDTO;
+import org.icedAmericanoMall.integration.wechat.WechatOAuthClient;
+import org.icedAmericanoMall.integration.wechat.WechatUserInfo;
 import org.icedAmericanoMall.mapper.UserMapper;
 import org.icedAmericanoMall.service.AuthService;
 import org.icedAmericanoMall.service.SmsService;
@@ -34,12 +37,14 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
     private final SmsService smsService;
     private final RedisTemplate<String, String> redisTemplate;
     private final PasswordEncoder passwordEncoder;
+    private final WechatOAuthClient wechatOAuthClient;
 
     public AuthServiceImpl(SmsService smsService, RedisTemplate<String, String> redisTemplate,
-                           PasswordEncoder passwordEncoder) {
+                           PasswordEncoder passwordEncoder, WechatOAuthClient wechatOAuthClient) {
         this.smsService = smsService;
         this.redisTemplate = redisTemplate;
         this.passwordEncoder = passwordEncoder;
+        this.wechatOAuthClient = wechatOAuthClient;
     }
 
     @Override
@@ -86,6 +91,28 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         // New user auto-register
         user = new UserEntity();
         user.setPhone(phone);
+        registerUser(user);
+        return toLoginResp(user);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public LoginRespDTO loginByWechat(WechatLoginReqDTO req) {
+        WechatUserInfo wxUser = wechatOAuthClient.getUserInfoByCode(req.getCode());
+        String openid = wxUser.getOpenid();
+
+        UserEntity user = lambdaQuery().eq(UserEntity::getWxOpenid, openid).one();
+        if (user != null) {
+            if (user.getStatus() == UserStatusEnum.FROZEN) {
+                throw new BizException(ErrorCode.USER_STATUS_ABNORMAL, "账号已被禁用");
+            }
+            return toLoginResp(user);
+        }
+        // 新用户：以微信身份自动注册（无手机号/密码）
+        user = new UserEntity();
+        user.setWxOpenid(openid);
+        if (StrUtil.isNotBlank(wxUser.getNickname())) user.setUsername(wxUser.getNickname());
+        user.setAvatar(wxUser.getAvatarUrl());
         registerUser(user);
         return toLoginResp(user);
     }

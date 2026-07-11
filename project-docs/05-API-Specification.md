@@ -94,6 +94,7 @@ Authorization: Bearer <JWT>
 | 3   | POST | `/api/auth/refresh`        | Query: `refresh_token`                                                                                                        | `OAuth2TokenResp`                                                                                                  | ✅   |
 | 4   | POST | `/api/auth/logout`         | Query: `refresh_token`                                                                                                        | `Void`                                                                                                             | ✅   |
 | —   | POST | `/api/auth/reset-password` | `{ phone, code, newPassword }`                                                                                                | `Void`（找回密码，公开接口，经 UserClient→`/internal/user/reset-password`）                                                     | ✅   |
+| —   | POST | `/api/auth/login/wechat`   | `{ code }`                                                                                                                    | `OAuth2TokenResp`（微信 OAuth 登录，公开；经 `WechatLoginStrategy`→UserClient→`/internal/user/login/wechat`；未配置时走 Mock 虚拟 openid） | ✅   |
 
 #### JwkSetController — `/oauth2/jwks`
 
@@ -188,6 +189,7 @@ AddressResp: `{ id(Long), userId(Long), receiver, phone, province, city, distric
 | 35  | POST | `/internal/user/login/password` | `{ phone?, username?, password }`                | `LoginRespDTO`                | ✅   |
 | 36  | POST | `/internal/user/login/sms`      | `{ phone, code }`                                | `LoginRespDTO`                | ✅   |
 | —   | POST | `/internal/user/reset-password` | `{ phone, code, newPassword }`                   | `void`（找回密码，校验短信码后 BCrypt 重写） | ✅   |
+| —   | POST | `/internal/user/login/wechat`   | `{ code }`                                       | `LoginRespDTO`（微信登录：code→openid→查/建用户） | ✅   |
 | 37  | GET  | `/internal/user/address/{id}`   | Path: `id` (Long)                                | `AddressResp`                 | ✅   |
 | 38  | GET  | `/internal/user/{id}`           | Path: `id` (Long)                                | `UserInfoResp`                | ✅   |
 | 39  | GET  | `/internal/user/count`          | —                                                | `long`                        | ✅   |

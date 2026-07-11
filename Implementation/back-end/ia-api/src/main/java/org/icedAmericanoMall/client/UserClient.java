@@ -17,6 +17,10 @@ public interface UserClient {
     @PostMapping("/login/sms")
     LoginRespDTO loginBySms(@RequestBody SmsLoginReqDTO request);
 
+    /** WeChat OAuth login — called by authorization-service (微信第三方登录) */
+    @PostMapping("/login/wechat")
+    LoginRespDTO loginByWechat(@RequestBody WechatLoginReqDTO request);
+
     /** Get total user count for admin dashboard */
     @GetMapping("/count")
     Long countUsers();

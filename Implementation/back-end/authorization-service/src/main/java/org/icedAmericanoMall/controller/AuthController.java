@@ -10,6 +10,9 @@ import org.icedAmericanoMall.domain.dto.auth.LoginReq;
 import org.icedAmericanoMall.dto.LoginRespDTO;
 import org.icedAmericanoMall.dto.RegisterReqDTO;
 import org.icedAmericanoMall.dto.ResetPasswordReqDTO;
+import org.icedAmericanoMall.dto.WechatLoginReqDTO;
+import org.icedAmericanoMall.domain.enums.CredentialTypeEnum;
+import org.icedAmericanoMall.domain.enums.IdentityTypeEnum;
 import org.icedAmericanoMall.service.auth.login.LoginContext;
 import org.icedAmericanoMall.service.auth.login.LoginTokenService;
 import org.icedAmericanoMall.utils.RefreshTokenUtils;
@@ -36,6 +39,17 @@ public class AuthController {
     @PostMapping("/login")
     public Result<OAuth2TokenResp> login(@Validated @RequestBody LoginReq request) {
         return Result.ok(loginContext.login(request));
+    }
+
+    /** 微信 OAuth 登录：前端传授权 code，复用登录锁/失败计数与策略分发。 */
+    @PostMapping("/login/wechat")
+    public Result<OAuth2TokenResp> loginByWechat(@Validated @RequestBody WechatLoginReqDTO request) {
+        LoginReq loginReq = new LoginReq();
+        loginReq.setIdentityType(IdentityTypeEnum.WECHAT);
+        loginReq.setCredentialType(CredentialTypeEnum.OAUTH_TOKEN);
+        loginReq.setAccount(request.getCode());
+        loginReq.setCredential(request.getCode());
+        return Result.ok(loginContext.login(loginReq));
     }
 
     @PostMapping("/register")

@@ -34,6 +34,7 @@ class AuthServiceImplH2Test {
 
     private AuthServiceImpl authService;
     private SmsService smsService;
+    private org.icedAmericanoMall.integration.wechat.WechatOAuthClient wechatOAuthClient;
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @BeforeEach
@@ -49,6 +50,7 @@ class AuthServiceImplH2Test {
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     user_id VARCHAR(64), username VARCHAR(50), phone VARCHAR(20),
                     password VARCHAR(100), avatar VARCHAR(255),
+                    wx_openid VARCHAR(128),
                     register_time TIMESTAMP, status INT DEFAULT 1, balance INT DEFAULT 0,
                     role_type INT DEFAULT 0,
                     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -71,8 +73,9 @@ class AuthServiceImplH2Test {
         SqlSessionFactory sqlSessionFactory = factoryBean.getObject();
 
         smsService = mock(SmsService.class);
+        wechatOAuthClient = mock(org.icedAmericanoMall.integration.wechat.WechatOAuthClient.class);
         RedisTemplate<String, String> redisTemplate = mock(RedisTemplate.class);
-        authService = new AuthServiceImpl(smsService, redisTemplate, passwordEncoder);
+        authService = new AuthServiceImpl(smsService, redisTemplate, passwordEncoder, wechatOAuthClient);
         ReflectionTestUtils.setField(authService, "baseMapper",
                 sqlSessionFactory.openSession().getMapper(UserMapper.class));
     }
@@ -102,5 +105,45 @@ class AuthServiceImplH2Test {
         doNothing().when(smsService).verifyCode(anyString(), anyString());
         assertThrows(RuntimeException.class,
                 () -> authService.resetPassword(req("13900000000", "123456", "new_pw_2")));
+    }
+
+    private org.icedAmericanoMall.integration.wechat.WechatUserInfo wxUser(String openid, String nickname) {
+        var u = new org.icedAmericanoMall.integration.wechat.WechatUserInfo();
+        u.setOpenid(openid); u.setNickname(nickname); u.setAvatarUrl("http://x/" + openid);
+        return u;
+    }
+
+    private org.icedAmericanoMall.dto.WechatLoginReqDTO wxReq(String code) {
+        var r = new org.icedAmericanoMall.dto.WechatLoginReqDTO();
+        r.setCode(code);
+        return r;
+    }
+
+    @Test
+    @DisplayName("loginByWechat — 新 openid：自动注册并写入 openid/昵称")
+    void shouldAutoRegister_whenNewOpenid() {
+        when(wechatOAuthClient.getUserInfoByCode("wxcode-1")).thenReturn(wxUser("wxopenid-1", "小明"));
+
+        var resp = authService.loginByWechat(wxReq("wxcode-1"));
+
+        assertNotNull(resp);
+        assertEquals("小明", resp.getUsername());
+        UserEntity user = authService.lambdaQuery().eq(UserEntity::getWxOpenid, "wxopenid-1").one();
+        assertNotNull(user, "应自动注册微信用户");
+        assertNull(user.getPhone(), "微信-only 用户无手机号");
+        assertNull(user.getPassword(), "微信-only 用户无密码");
+    }
+
+    @Test
+    @DisplayName("loginByWechat — 已存在 openid：直接登录不重复注册")
+    void shouldLoginExisting_whenSameOpenid() {
+        when(wechatOAuthClient.getUserInfoByCode("wxcode-2")).thenReturn(wxUser("wxopenid-2", "小红"));
+
+        var first = authService.loginByWechat(wxReq("wxcode-2"));
+        var second = authService.loginByWechat(wxReq("wxcode-2"));
+
+        assertEquals(first.getUserId(), second.getUserId(), "同一 openid 应命中同一用户");
+        long count = authService.lambdaQuery().eq(UserEntity::getWxOpenid, "wxopenid-2").count();
+        assertEquals(1, count, "不应重复注册");
     }
 }

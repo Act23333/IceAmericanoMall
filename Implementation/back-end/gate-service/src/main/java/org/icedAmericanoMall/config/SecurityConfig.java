@@ -39,6 +39,7 @@ public class SecurityConfig {
                         .pathMatchers(
                                 "/api/auth/login",
                                 "/api/auth/login/phone",
+                                "/api/auth/login/wechat",
                                 "/api/auth/register",
                                 "/api/auth/refresh",
                                 "/api/auth/logout",

@@ -44,6 +44,12 @@ public class UserClientFallback implements FallbackFactory<UserClient> {
             }
 
             @Override
+            public LoginRespDTO loginByWechat(org.icedAmericanoMall.dto.WechatLoginReqDTO request) {
+                log.error("微信登录失败", cause);
+                return null;
+            }
+
+            @Override
             public Long countUsers() {
                 log.error("获取用户总数失败", cause);
                 return 0L;

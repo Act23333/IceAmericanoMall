@@ -145,7 +145,7 @@ Phase 4: 后台管理
   - [x] 人机验证（Geetest 集成）
 - **V1.1 待完善**:
   - [ ] 多密钥无缝切换机制
-  - [ ] 第三方登录（微信 OAuth）
+  - [x] 第三方登录（微信 OAuth）—— WechatLoginStrategy + `POST /api/auth/login/wechat`；user-service `loginByWechat`（code→openid→查/建）；ia-integration `WechatOAuthClient`（Real/Mock 开关，默认 Mock 虚拟 openid）
 
 **BDD 验收场景**:
 

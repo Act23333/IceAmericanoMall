@@ -52,6 +52,14 @@ public class InternalUserController {
     }
 
     /**
+     * 微信 OAuth 登录 — 内部 Feign 调用。
+     */
+    @PostMapping("/login/wechat")
+    public LoginRespDTO loginByWechat(@RequestBody org.icedAmericanoMall.dto.WechatLoginReqDTO request) {
+        return authService.loginByWechat(request);
+    }
+
+    /**
      * 找回密码：短信验证码重置密码 — 内部 Feign 调用。
      */
     @PostMapping("/reset-password")

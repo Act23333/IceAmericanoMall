@@ -46,6 +46,12 @@ aliyun:
     access-key-secret: ${ALIYUN_ACCESS_KEY_SECRET:}
     sign-name: ${ALIYUN_SMS_SIGN_NAME:冰美式商城}
     template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}
+# 微信 OAuth：enabled=false（默认）走 Mock 客户端（虚拟 openid）；接入微信开放平台后置 true 并填 app-id/secret
+wechat:
+  oauth:
+    enabled: ${WECHAT_OAUTH_ENABLED:false}
+    app-id: ${WECHAT_OAUTH_APP_ID:}
+    app-secret: ${WECHAT_OAUTH_APP_SECRET:}
 logging:
   level:
     org.icedAmericanoMall: DEBUG

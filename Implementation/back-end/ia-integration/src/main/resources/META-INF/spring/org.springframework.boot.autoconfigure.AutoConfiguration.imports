@@ -5,3 +5,5 @@ org.icedAmericanoMall.integration.payment.WechatPaymentClient.MockWechatPaymentC
 org.icedAmericanoMall.integration.storage.MockStorageClient
 org.icedAmericanoMall.integration.storage.MinioStorageClient
 org.icedAmericanoMall.integration.captcha.GeetestCaptchaClient
+org.icedAmericanoMall.integration.wechat.MockWechatOAuthClient
+org.icedAmericanoMall.integration.wechat.RealWechatOAuthClient
