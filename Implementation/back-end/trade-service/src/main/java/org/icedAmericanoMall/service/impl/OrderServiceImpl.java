@@ -4,14 +4,10 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.icedAmericanoMall.client.LogisticsClient;
-import org.icedAmericanoMall.client.SkuClient;
-import org.icedAmericanoMall.client.UserClient;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
 import org.icedAmericanoMall.domain.entity.OrderItemEntity;
-import org.icedAmericanoMall.dto.CreateLogisticsDTO;
-import org.icedAmericanoMall.dto.StockOpDTO;
 import org.icedAmericanoMall.enums.OrderStatusEnum;
 import org.icedAmericanoMall.mapper.OrderItemMapper;
 import org.icedAmericanoMall.mapper.OrderMapper;
@@ -24,36 +20,17 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.stream.Collectors;
 
+/**
+ * 订单领域服务实现 —— 单域原子操作与状态流转，不含 Feign 调用。
+ */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> implements OrderService {
 
     private final OrderItemMapper orderItemMapper;
-    private final SkuClient skuClient;
-    private final LogisticsClient logisticsClient;
-    private final UserClient userClient;
 
-    public OrderServiceImpl(OrderItemMapper orderItemMapper,
-                            SkuClient skuClient,
-                            LogisticsClient logisticsClient,
-                            UserClient userClient) {
-        this.orderItemMapper = orderItemMapper;
-        this.skuClient = skuClient;
-        this.logisticsClient = logisticsClient;
-        this.userClient = userClient;
-    }
-
-    /**
-     * <pre>
-     * Scenario: 原子创建订单及订单项
-     *   Given 订单实体和订单项列表已由 OrderManager 组装完毕
-     *   When 调用 createOrderWithItems
-     *   Then 在同一事务中保存订单和所有订单项
-     *   And 订单项关联订单ID
-     * </pre>
-     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void createOrderWithItems(OrderEntity order, List<OrderItemEntity> items) {
@@ -68,6 +45,12 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
     @Override
     public OrderEntity getByOrderNo(String orderNo) {
         return lambdaQuery().eq(OrderEntity::getOrderNo, orderNo).one();
+    }
+
+    @Override
+    public List<OrderItemEntity> listItems(Long orderId) {
+        return orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItemEntity>().eq(OrderItemEntity::getOrderId, orderId));
     }
 
     @Override
@@ -93,34 +76,16 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
     /**
      * <pre>
      * Scenario: 用户取消待付款订单
-     *   Given 订单状态为"待付款"
-     *   And 当前用户是订单所属人
+     *   Given 订单状态为"待付款"且当前用户是订单所属人
      *   When 用户请求取消订单
-     *   Then 订单状态变更为"已取消"
-     *   And 记录关闭时间
-     *   And 回滚已扣减的 SKU 库存
-     *
-     * Scenario: 非待付款状态拒绝取消
-     *   Given 订单状态不是"待付款"
-     *   When 用户请求取消订单
-     *   Then 抛出 BizException "仅待付款订单可取消"
-     *
-     * Scenario: 非订单所属人无权操作
-     *   Given 订单属于用户A
-     *   When 用户B请求取消订单
-     *   Then 抛出 ForbiddenException "无权操作该订单"
+     *   Then 订单状态变更为"已取消"并记录关闭时间（库存回滚由 Manager 处理）
+     * Scenario: 非待付款状态拒绝取消 / 非订单所属人无权操作 → 抛出异常
      * </pre>
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void cancelOrder(String orderNo, Long userId) {
-        OrderEntity order = getByOrderNo(orderNo);
-        if (order == null) {
-            throw new BizException(ErrorCode.USER_NOT_FOUND, "订单不存在");
-        }
-        if (!order.getUserId().equals(userId)) {
-            throw new ForbiddenException(ErrorCode.FORBIDDEN, "无权操作该订单");
-        }
+        OrderEntity order = requireOwnedOrder(orderNo, userId);
         if (order.getStatus() != OrderStatusEnum.PENDING_PAYMENT.getCode()) {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "仅待付款订单可取消");
         }
@@ -129,31 +94,12 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
                 .set(OrderEntity::getStatus, OrderStatusEnum.CANCELLED.getCode())
                 .set(OrderEntity::getCloseTime, LocalDateTime.now())
                 .update();
-
-        // 释放被锁定的库存
-        restoreOrderStock(order.getId());
     }
 
-    /**
-     * <pre>
-     * Scenario: 用户确认收货
-     *   Given 订单状态为"待收货"
-     *   And 当前用户是订单所属人
-     *   When 用户点击确认收货
-     *   Then 订单状态变更为"已完成"
-     *   And 记录完成时间
-     * </pre>
-     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void confirmReceipt(String orderNo, Long userId) {
-        OrderEntity order = getByOrderNo(orderNo);
-        if (order == null) {
-            throw new BizException(ErrorCode.USER_NOT_FOUND, "订单不存在");
-        }
-        if (!order.getUserId().equals(userId)) {
-            throw new ForbiddenException(ErrorCode.FORBIDDEN, "无权操作该订单");
-        }
+        OrderEntity order = requireOwnedOrder(orderNo, userId);
         if (order.getStatus() != OrderStatusEnum.PENDING_RECEIPT.getCode()) {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "仅待收货订单可确认收货");
         }
@@ -162,26 +108,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
                 .set(OrderEntity::getStatus, OrderStatusEnum.COMPLETED.getCode())
                 .set(OrderEntity::getEndTime, LocalDateTime.now())
                 .update();
-
-        // Award points: 1% of pay_amount (e.g., 10000分 → 100积分)
-        try {
-            int points = order.getPayAmount() / 100;
-            if (points > 0) userClient.addPoints(order.getUserId(), points, 2, "下单奖励");
-        } catch (Exception e) {
-            log.error("下单奖励积分发放失败: orderNo={}", order.getOrderNo(), e);
-        }
     }
 
-    /**
-     * <pre>
-     * Scenario: 商家发货
-     *   Given 订单状态为"待发货"
-     *   And 当前商家是订单所属商家
-     *   When 商家填写物流单号和物流公司并提交发货
-     *   Then 订单状态变更为"待收货"
-     *   And 通过 Feign 调用 logistics-service 创建物流记录
-     * </pre>
-     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void shipOrder(String orderNo, Long sellerId, String logisticsNumber, String logisticsCompany) {
@@ -200,21 +128,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
                 .set(OrderEntity::getStatus, OrderStatusEnum.PENDING_RECEIPT.getCode())
                 .set(OrderEntity::getConsignTime, LocalDateTime.now())
                 .update();
-
-        // 通过 Feign 调用 logistics-service 创建物流记录（修复数据所有权）
-        CreateLogisticsDTO logisticsDTO = new CreateLogisticsDTO();
-        logisticsDTO.setOrderId(order.getId());
-        logisticsDTO.setLogisticsNumber(logisticsNumber);
-        logisticsDTO.setLogisticsCompany(logisticsCompany);
-        logisticsDTO.setContact(order.getReceiverName());
-        logisticsDTO.setMobile(order.getReceiverPhone());
-        try {
-            logisticsClient.createLogistics(logisticsDTO);
-            log.info("物流记录创建成功: orderId={}", order.getId());
-        } catch (Exception e) {
-            log.error("物流记录创建失败，需人工处理: orderId={}", order.getId(), e);
-            // 不阻断主流程：订单状态已更新，物流记录可后续补录
-        }
     }
 
     @Override
@@ -227,29 +140,33 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
         return page(new Page<>(page, size), wrapper);
     }
 
-    /**
-     * 恢复订单关联的SKU库存 —— 用户取消 / 超时取消共用。
-     * 通过 Feign 调用 item-service 的 restoreStock 接口批量恢复。
-     */
-    private void restoreOrderStock(Long orderId) {
-        List<OrderItemEntity> items = orderItemMapper.selectList(
-                new LambdaQueryWrapper<OrderItemEntity>()
-                        .eq(OrderItemEntity::getOrderId, orderId));
-        if (items.isEmpty()) {
-            return;
-        }
-        List<StockOpDTO> stockOps = items.stream().map(item -> {
-            StockOpDTO op = new StockOpDTO();
-            op.setSkuId(item.getSkuId());
-            op.setQuantity(item.getQuantity());
-            return op;
-        }).collect(Collectors.toList());
+    @Override
+    public List<OrderEntity> listTimeoutPending(LocalDateTime cutoff) {
+        return lambdaQuery()
+                .eq(OrderEntity::getStatus, OrderStatusEnum.PENDING_PAYMENT.getCode())
+                .lt(OrderEntity::getCreateTime, cutoff)
+                .list();
+    }
 
-        try {
-            skuClient.restoreStock(stockOps);
-            log.info("订单取消，库存已恢复: orderId={}", orderId);
-        } catch (Exception e) {
-            log.error("库存恢复失败，需人工处理: orderId={}", orderId, e);
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void closeTimeoutOrder(Long orderId) {
+        lambdaUpdate()
+                .eq(OrderEntity::getId, orderId)
+                .set(OrderEntity::getStatus, OrderStatusEnum.CANCELLED.getCode())
+                .set(OrderEntity::getCloseTime, LocalDateTime.now())
+                .update();
+    }
+
+    /** 查询订单并校验归属，供 cancel/confirm 共用。 */
+    private OrderEntity requireOwnedOrder(String orderNo, Long userId) {
+        OrderEntity order = getByOrderNo(orderNo);
+        if (order == null) {
+            throw new BizException(ErrorCode.USER_NOT_FOUND, "订单不存在");
         }
+        if (!order.getUserId().equals(userId)) {
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "无权操作该订单");
+        }
+        return order;
     }
 }

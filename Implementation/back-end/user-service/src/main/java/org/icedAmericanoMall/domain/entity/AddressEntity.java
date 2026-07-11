@@ -18,8 +18,8 @@ import java.time.LocalDateTime;
 @Data
 @TableName("address")
 public class AddressEntity {
-    @TableId(type = IdType.ASSIGN_ID)
-    private Long id;                     // 技术主键(雪花算法）
+    @TableId(type = IdType.AUTO)
+    private Long id;                     // 技术主键(自增)
 
     private Long userId;                 // 所属用户ID
 

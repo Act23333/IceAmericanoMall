@@ -2,7 +2,7 @@ package org.icedAmericanoMall.listener;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.icedAmericanoMall.service.PayOrderService;
+import org.icedAmericanoMall.manager.PayManager;
 import org.noLazy.common.config.RabbitMqConfig;
 import org.noLazy.common.event.OrderCreatedEvent;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -21,14 +21,14 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "rabbitmq.enabled", havingValue = "true")
 public class PaymentEventListener {
 
-    private final PayOrderService payOrderService;
+    private final PayManager payManager;
 
     @RabbitListener(queues = RabbitMqConfig.QUEUE_ORDER_CREATED)
     public void onOrderCreated(OrderCreatedEvent event) {
         log.info("Received OrderCreatedEvent: orderNo={}, userId={}, amount={}",
                 event.getOrderNo(), event.getUserId(), event.getTotalAmount());
         try {
-            payOrderService.initiatePayment(event.getOrderNo(), event.getUserId());
+            payManager.initiatePayment(event.getOrderNo(), event.getUserId());
         } catch (Exception e) {
             log.error("Failed to auto-create payment for order: {}", event.getOrderNo(), e);
         }

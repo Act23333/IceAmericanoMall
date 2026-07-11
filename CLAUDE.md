@@ -45,7 +45,7 @@ mvn -f Implementation/back-end/pom.xml clean install -DskipTests
 # Build a single service (and its dependencies)
 mvn -f Implementation/back-end/pom.xml -pl user-service -am clean install
 
-# Run tests (77 tests across 7 modules, 0 failures)
+# Run tests (unit + H2 integration tests across the module tree, 0 failures)
 mvn -f Implementation/back-end/pom.xml test
 
 # Run tests for a specific module
@@ -95,18 +95,23 @@ IceAmericanoMall is a B2B2C e-commerce platform (similar to Taobao/JD) built as 
 ```
 gate-service (API Gateway — Spring Cloud Gateway + Nacos)             ✅ COMPLETE
   ├── authorization-service (OAuth2 auth server, login/register, JWT) ✅ COMPLETE
-  ├── user-service (user CRUD, addresses, sign-in, seller, admin)     ✅ COMPLETE
+  ├── user-service (user CRUD, addresses, sign-in, points, favorite, seller, admin) ✅ COMPLETE
   ├── ia-api (shared Feign client interfaces + DTOs)                  ✅ COMPLETE
   ├── ia-common (shared lib: exceptions, Result, utils, config)       ✅ COMPLETE
-  ├── item-service (products/SKUs/categories, stock)                  ✅ COMPLETE
+  ├── ia-integration (WeChat Pay, Aliyun SMS, Geetest, MinIO clients) ✅ COMPLETE
+  ├── item-service (products/SKUs/categories, stock, reviews, home)   ✅ COMPLETE
   ├── cart-service (shopping cart, dedup merge)                       ✅ COMPLETE
-  ├── trade-service (orders, Saga compensation, OrderManager)         ✅ COMPLETE
+  ├── trade-service (orders, Saga, OrderManager, after-sale, settle)  ✅ COMPLETE
   ├── pay-service (WeChat Pay, callback, timeout)                     ✅ COMPLETE
   ├── logistics-service (shipping records, status tracking)           ✅ COMPLETE (V1.1: courier API)
-  └── search-service (ElasticSearch search)                           🟡 SKELETON (V1.1)
+  ├── marketing-service (coupons platform+shop, flash sale)           ✅ COMPLETE
+  ├── search-service (ES full-text + MySQL fallback, dual impl)       ✅ COMPLETE (ES opt-in via config)
+  └── ai-service (LangChain4j shopping/CS agents, DeepSeek)           🟡 GATED (ai.enabled=false by default)
 ```
 
-**Status legend**: ✅ COMPLETE = business logic fully implemented, compiles, tested | 🟡 SKELETON = minimal scaffold only, no business logic
+**Status legend**: ✅ COMPLETE = business logic fully implemented, compiles, tested | 🟡 GATED = implemented but disabled behind a feature flag (requires config/API key to activate)
+
+> **Note**: This project has grown to **14 modules** (12 services + `ia-common`/`ia-api` shared libs, plus `ia-integration` and the `database` module). Earlier revisions of this file listed only 11 and marked `search-service` as a skeleton — that is outdated. As of the current audit, `search-service`, `marketing-service`, and `ia-integration` are fully implemented; `ai-service` is implemented but disabled by default.
 
 `ia-common` is the shared kernel — it defines `Result<T>`, `ErrorCode` enum, exception hierarchy (`CommonException`, `BadRequestException`, `BizException`, `DBException`, `ForbiddenException`, `UnauthorizedException`), `@RateLimit` annotation + `RateLimitAspect`, `GlobalExceptionHandler`, Lua scripts (`rate_limit.lua`, `check_limit.lua`, `login_rate_limit.lua`, `del_redisKey.lua`), SMS utilities, Geetest captcha integration, MyBatis-Plus config, Json config.
 
@@ -212,35 +217,34 @@ throw new BadRequestException(ErrorCode.USER_NOT_FOUND);
 
 ### What's Already Implemented
 
-#### ✅ 完全实现 (11 modules — business logic complete, compiles, tested)
+#### ✅ 完全实现 (14 modules — business logic complete, compiles, tested)
 
 | Module | Key Features | Test Count |
 |--------|-------------|------------|
-| `ia-common` | `Result<T>`, `ErrorCode` enum, 6 exception types, `GlobalExceptionHandler`, `@RateLimit` + AOP, Lua scripts (rate_limit/check_limit/login_rate_limit), Aliyun SMS SDK (`@ConditionalOnProperty` switch), Geetest captcha, JWT utils, MyBatis-Plus config | 8 |
-| `ia-api` | Feign clients: `UserClient`, `SkuClient`, `LogisticsClient`, `OrderClient`; shared DTOs; fallback factories | 0 |
-| `gate-service` | Spring Cloud Gateway routes (all services), `JwtAuthenticationFilter` (userId/username header forwarding), `SecurityConfig` (public path whitelist), rate limiting | 0 |
-| `authorization-service` | Password + SMS login (single endpoint, `loginType` param), registration, JWT HS256/RS256 issuance, JWKS endpoint, refresh token rotation, logout (Token blacklist), rate limiting, distributed lock (Redisson) | 0 |
-| `user-service` | Registration (password+SMS), login validation, profile update (null-safe partial), address CRUD + default management, daily sign-in (Redis Bitmap), seller registration + shop management, admin user/role/status management, Aliyun SMS + Geetest captcha | 9 |
-| `item-service` | Product CRUD + paginated list (search/sort/filter), category tree (level-1), SKU management, stock deduction/restore with **optimistic locking** (`@Version`), internal Feign endpoints for stock operations | 5 |
+| `ia-common` | `Result<T>`, `ErrorCode` enum, 6 exception types, `GlobalExceptionHandler`, `@RateLimit` + AOP, `@OperationLog` + `OperationLogAspect`, domain events + `EventPublisher` (RabbitMQ), Lua scripts, MyBatis-Plus/Redis/I18n/Seata config | 8 |
+| `ia-api` | Feign clients: `UserClient`, `SkuClient`, `LogisticsClient`, `OrderClient`, `CartClient`, `AddressClient`; shared DTOs; fallback factories | 0 |
+| `ia-integration` | External integrations with mock fallbacks: WeChat Pay v3 (`WechatPaymentClient`), Aliyun SMS, Geetest v4 captcha, MinIO storage — all `@ConditionalOnProperty`-gated | 0 |
+| `gate-service` | Spring Cloud Gateway routes (all services), `UserContextHeaderFilter` (userId/username header forwarding), `SecurityConfig` (public path whitelist), rate limiting, Sentinel config, WebSocket placeholder | 0 |
+| `authorization-service` | Password + SMS login (strategy pattern), registration, JWT HS256/RS256 issuance, JWKS endpoint, refresh token rotation, logout (Token blacklist), rate limiting, distributed lock (Redisson) | 0 |
+| `user-service` | Registration (password+SMS), login validation, profile update, address CRUD + default, daily sign-in (Redis Bitmap), **points** (log + balance), **favorite**, **browse history**, seller registration + shop management, admin user/role/status/log management, Aliyun SMS + Geetest | 9 |
+| `item-service` | Product CRUD + paginated list (search/sort/filter), category tree (level-1), SKU management, stock deduction/restore with **optimistic locking** (`@Version`), **reviews**, **home config**, internal Feign endpoints | 5 |
 | `cart-service` | Add to cart (SKU dedup merge), quantity update (≤0 → delete), select/deselect toggle, clear cart, total/selected-price calculation, internal endpoints for order creation | 12 |
-| `trade-service` | **OrderManager** (Saga orchestration: cart→SKU→address→stock→order), order CRUD, cancel (stock restore), confirm receipt, ship (→logistics Feign), seller dashboard, admin dashboard/order-list, `OrderTimeoutJob` (`@Scheduled`) | 16 |
-| `pay-service` | WeChat Pay API v3 Native payment, callback with signature verification, idempotent processing, payment timeout (`PayTimeoutJob`), order status sync via Feign | 14 |
-| `logistics-service` | Logistics record creation (via Feign from trade-service), status tracking (PENDING→SHIPPED→DELIVERED→RETURNED), internal status update endpoint, DB migration SQL | 13 |
-| `database` | Full MySQL schema (`Initialize.sql`) with 11 tables; migration SQL for logistics status | 0 |
+| `trade-service` | **OrderManager** (Saga orchestration: cart→SKU→address→stock→order), order CRUD, cancel (stock restore), confirm receipt, ship, **after-sale**, **seller/settlement/withdrawal**, **seller application**, admin dashboards, `OrderTimeoutJob` (XXL-Job + `@Scheduled`) | 16 |
+| `pay-service` | WeChat Pay API v3 Native payment, callback with signature verification, idempotent processing, payment timeout (`PayTimeoutJob`), MQ listener (`order.created`), order status sync via Feign | 14 |
+| `logistics-service` | Logistics record creation (via Feign/MQ from trade-service), status tracking (PENDING→SHIPPED→DELIVERED→RETURNED), internal status update endpoint, DB migration SQL | 13 |
+| `marketing-service` | **Coupons** (platform + shop): claim/use (fixed & percentage discount)/rollback/history, admin + merchant coupon mgmt, **flash sale** (atomic conditional-update stock, oversell-safe) | 2 |
+| `search-service` | Dual impl: `EsSearchServiceImpl` (Elasticsearch 7.17, opt-in via `search.elasticsearch.enabled`) + `DbSearchServiceImpl` (MySQL LIKE fallback, `@Primary`), hot keywords + search history (Redis) | 0 |
+| `database` | Full MySQL schema (`Initialize.sql`) + migrations: coupon, user_coupon, points_log, review, favorite, flash_sale, home_config, operation_log, after_sale, seller_application, settlement, withdrawal | 0 |
 
-#### 🟡 骨架 (1 module — scaffold only, no business logic)
+#### 🟡 Gated (1 module — implemented but disabled by default)
 
-| Module | Status | Plan |
-|--------|--------|------|
-| `search-service` | Correct `SearchApplication` main class, `application.yml` configured, dependencies added. No controllers, services, or mappers. | V1.1 — ElasticSearch integration |
+| Module | Status | Activation |
+|--------|--------|------------|
+| `ai-service` | LangChain4j shopping assistant + customer-service agents, `@Tool`-based search/order lookup, DeepSeek (OpenAI-compatible) config. Returns a static message when disabled. | Set `ai.enabled=true` + provide `DEEPSEEK_API_KEY`. Out of MVP scope; excluded from feature work. |
 
-#### 🔵 V1.1 规划但未实现
+#### 🔵 规划但未实现 (V3.0+)
 
-Docker Compose, XXL-Job, SkyWalking, Prometheus/Grafana, ELK, RabbitMQ, Sentinel, MinIO, Canal, ShardingSphere, GitHub Actions CI/CD, WebSocket.
-
-#### ⚪ V2.0+ 规划但未实现
-
-Coupons, flash sales, after-sales, AI customer service, knowledge graph, multi-level categories, store decoration, reconciliation, invoices, mini-program.
+Knowledge graph (product entity graph, RAG+KG hybrid retrieval), personalized recommendation, multi-level categories, store decoration, invoices, mini-program/app rich implementation, production observability (SkyWalking, ELK, Prometheus/Grafana).
 
 ### Hard Constraints (from `project-docs/09-constraints.md`)
 
@@ -286,7 +290,7 @@ void shouldReturnToken_whenNewPhoneAndValidCode() { ... }
 - Service/Domain unit tests use JUnit 5 + Mockito (`@ExtendWith(MockitoExtension.class)`)
 - Controller integration tests use `@SpringBootTest` + Testcontainers
 
-**Current test coverage**: 77 unit tests across 7 modules (0 failures). Modules with zero tests: authorization-service, gate-service, ia-api, search-service, database. All existing tests are entity/enum/DTO validation or Mockito-based service tests. No `@SpringBootTest` integration tests exist yet.
+**Current test coverage**: unit + H2 integration tests concentrated in `user-service`, `item-service`, `cart-service`, `trade-service`, `pay-service`, `logistics-service`, `authorization-service`, `marketing-service`, `ia-common`. Modules with zero tests: `gate-service`, `ia-api`, `ia-integration`, `search-service`, `ai-service`, `database`. Tests are entity/enum/DTO validation, Mockito-based service tests, and self-contained H2 integration tests (e.g. `OrderServiceImplH2Test`, `FlashSaleServiceImplH2Test`) that build MyBatis-Plus + H2 without a Spring context. Coverage of `lambdaQuery`/`lambdaUpdate` chains uses the H2 pattern rather than Mockito.
 
 **MyBatis-Plus testing limitation**: Methods using `lambdaQuery()`/`lambdaUpdate()` chains cannot be unit-tested with Mockito mocks (the mapper proxy's `currentModelClass()` reads generic type info lost on Mockito proxies). These methods require `@SpringBootTest` with H2 or Testcontainers. Methods using only standard `BaseMapper` methods (`save()`, `getById()`, `updateById()`) are fully testable with Mockito.
 

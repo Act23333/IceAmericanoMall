@@ -2,8 +2,8 @@ package org.icedAmericanoMall.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.icedAmericanoMall.domain.entity.PayOrderEntity;
-import org.icedAmericanoMall.service.PayOrderService;
+import org.icedAmericanoMall.domain.vo.PayOrderVO;
+import org.icedAmericanoMall.manager.PayManager;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.utils.UserContext;
 import org.springframework.web.bind.annotation.*;
@@ -17,18 +17,17 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PayController {
 
-    private final PayOrderService payOrderService;
+    private final PayManager payManager;
 
     @PostMapping("/order/{orderNo}")
-    public Result<PayOrderEntity> initiate(@PathVariable String orderNo) {
+    public Result<PayOrderVO> initiate(@PathVariable String orderNo) {
         Long userId = UserContext.getUser();
-        PayOrderEntity payOrder = payOrderService.initiatePayment(orderNo, userId);
-        return Result.ok(payOrder);
+        return Result.ok(payManager.initiatePayment(orderNo, userId));
     }
 
     /**
      * 微信支付回调通知。
-     * 提取 HTTP 请求头中的微信签名参数 + 原始请求体，传递给 PaymentClient 验签。
+     * 提取 HTTP 请求头中的微信签名参数 + 原始请求体，传递给 PayManager 验签处理。
      */
     @PostMapping("/callback/wechat")
     public Result<String> wechatCallback(HttpServletRequest request) {
@@ -51,13 +50,12 @@ public class PayController {
             return Result.error(400, "无法读取回调请求体");
         }
 
-        payOrderService.handleCallback(params);
+        payManager.handleCallback(params);
         return Result.ok("success", "SUCCESS");
     }
 
     @GetMapping("/order/{orderNo}/status")
-    public Result<PayOrderEntity> status(@PathVariable String orderNo) {
-        PayOrderEntity payOrder = payOrderService.queryStatus(orderNo);
-        return Result.ok(payOrder);
+    public Result<PayOrderVO> status(@PathVariable String orderNo) {
+        return Result.ok(payManager.queryStatus(orderNo));
     }
 }

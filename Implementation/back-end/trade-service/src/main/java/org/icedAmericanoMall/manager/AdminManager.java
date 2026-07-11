@@ -1,0 +1,86 @@
+package org.icedAmericanoMall.manager;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.icedAmericanoMall.client.UserClient;
+import org.icedAmericanoMall.domain.entity.OrderEntity;
+import org.icedAmericanoMall.enums.OrderStatusEnum;
+import org.icedAmericanoMall.service.OrderService;
+import org.springframework.stereotype.Component;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 管理后台统计编排 Manager —— 聚合订单指标与跨服务用户数（Feign），供仪表盘/趋势图使用。
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class AdminManager {
+
+    private final OrderService orderService;
+    private final UserClient userClient;
+
+    /** 仪表盘：用户数、订单数、营收（分）。 */
+    public Map<String, Object> dashboard() {
+        long totalUsers = 0;
+        try {
+            Long count = userClient.countUsers();
+            totalUsers = count != null ? count : 0;
+        } catch (Exception e) {
+            log.warn("获取用户总数失败（user-service 不可用）: {}", e.getMessage());
+        }
+
+        long totalOrders = orderService.lambdaQuery().count();
+        int completedCode = OrderStatusEnum.COMPLETED.getCode();
+        long completedOrders = orderService.lambdaQuery().eq(OrderEntity::getStatus, completedCode).count();
+        int totalRevenue = sumRevenue(orderService.lambdaQuery()
+                .eq(OrderEntity::getStatus, completedCode).list());
+
+        LocalDateTime todayStart = LocalDate.now().atStartOfDay();
+        long todayOrders = orderService.lambdaQuery().ge(OrderEntity::getCreateTime, todayStart).count();
+        int todayRevenue = sumRevenue(orderService.lambdaQuery()
+                .eq(OrderEntity::getStatus, completedCode)
+                .ge(OrderEntity::getCreateTime, todayStart).list());
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("totalUsers", totalUsers);
+        result.put("totalOrders", totalOrders);
+        result.put("completedOrders", completedOrders);
+        result.put("totalRevenue", totalRevenue);
+        result.put("todayOrders", todayOrders);
+        result.put("todayRevenue", todayRevenue);
+        return result;
+    }
+
+    /** 近 N 天订单趋势：每日订单数 + 营收。 */
+    public List<Map<String, Object>> orderTrend(int days) {
+        int completedCode = OrderStatusEnum.COMPLETED.getCode();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int i = days - 1; i >= 0; i--) {
+            LocalDate date = LocalDate.now().minusDays(i);
+            LocalDateTime start = date.atStartOfDay();
+            LocalDateTime end = date.plusDays(1).atStartOfDay();
+
+            long count = orderService.lambdaQuery()
+                    .ge(OrderEntity::getCreateTime, start)
+                    .lt(OrderEntity::getCreateTime, end).count();
+            int revenue = sumRevenue(orderService.lambdaQuery()
+                    .eq(OrderEntity::getStatus, completedCode)
+                    .ge(OrderEntity::getCreateTime, start)
+                    .lt(OrderEntity::getCreateTime, end).list());
+
+            rows.add(Map.of("date", date.toString(), "orders", count, "revenue", revenue));
+        }
+        return rows;
+    }
+
+    private int sumRevenue(List<OrderEntity> orders) {
+        return orders.stream().mapToInt(o -> o.getTotalAmount() != null ? o.getTotalAmount() : 0).sum();
+    }
+}

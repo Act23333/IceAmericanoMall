@@ -433,6 +433,16 @@ ProductSearchVO: `{ id(Long), productId(String), categoryId(Long), name, descrip
 | 111 | GET | `/api/coupon/used` | — (JWT) | `List<UserCouponEntity>` | 🔵 |
 | 112 | GET | `/api/coupon/template` | — | `List<CouponEntity>` | 🔵 |
 
+#### InternalCouponController — `/internal/coupon`（供 trade-service 下单抵扣，Feign 内部调用，异常透传不包 Result）
+
+| # | 方法 | 路径 | 请求 | 响应 | 阶段 |
+|---|------|------|------|------|------|
+| — | POST | `/internal/coupon/use` | Query: `userId`(Long), `userCouponId`(Long), `orderNo`(String), `orderAmount`(Integer) | `int`（抵扣金额，分） | ✅ |
+| — | POST | `/internal/coupon/rollback` | Query: `orderNo`(String) | `void` | ✅ |
+
+> 下单接口 `POST /api/trade/order` 的 `CreateOrderReq` 新增可选字段 `userCouponId`(Long)：传入则由 `OrderManager` 通过 `CouponClient` 抵扣，`payAmount = totalAmount - discountAmount`；下单失败/取消/超时按订单号回滚优惠券。
+
+
 #### AdminCouponController — `/api/admin/coupon`
 
 | # | 方法 | 路径 | 请求 | 响应 | 阶段 |

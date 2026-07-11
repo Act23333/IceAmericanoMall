@@ -16,5 +16,8 @@ public class CreateOrderReq implements Serializable {
     @NotEmpty(message = "购物车项不能为空")
     private List<Long> cartItemIds;
 
+    /** 可选：使用的用户优惠券ID（user_coupon.id），为空则不抵扣。 */
+    private Long userCouponId;
+
     private String remark;
 }

@@ -191,8 +191,8 @@ Scenario: 注册幂等保护
   - [x] 管理员用户分页/角色修改/状态管理
   - [x] Aliyun SMS SDK 集成（@ConditionalOnProperty 可切换 Mock/Real）
   - [x] 内部 Feign 接口（register/login/address/user/count）
+  - [x] 签到积分递增加速策略（SignManager 编排：连续第 n 天 10/15/20 封顶，首签发放）
 - **V1.1 待完善**:
-  - [ ] 签到积分递增加速策略
   - [ ] SM2 加密传输（高安全模式）
 
 **BDD 验收场景**:
@@ -296,6 +296,7 @@ Scenario: 查看商品详情
 - **已完成**:
   - [x] OrderManager Saga 编排（cart→SKU→address→stock→order）
   - [x] 创建订单（库存扣减 + 地址/商品快照 + 清购物车）
+  - [x] 下单优惠券抵扣（OrderManager→CouponClient，payAmount=total-discount；失败/取消/超时按订单号回滚券）
   - [x] 取消订单（库存回滚 + 优惠券回滚）
   - [x] 确认收货（→已完成 + 积分奖励）
   - [x] 商家发货（→Feign 创建物流记录）
@@ -547,7 +548,7 @@ Scenario: 查看商品详情
 | V2.0 平台化    | 🟢 100% | 14 | 106 | 82  | 商家入驻, 售后, AI客服, Seata |
 | V2.1 财务+国际化 | 🟢 100% | 14 | 115 | 82  | 财务结算, 多语言 |
 | V2.2 架构治理   | 🟢 100% | 14 | 115+ | 89  | 路由修复, 模块拆分, 合规 9.4/10 |
-| Phase 5 前端  | 🔵 0%   | —   | —   | —   | Vue3 + Vant UI / Element Plus    |
+| Phase 5 前端  | 🔵 进行中   | —   | —   | —   | React 19 + Next.js 15 + Tailwind + Shadcn/ui（storefront）/ Ant Design 5（admin·seller），详见 15-Front-End-Technology-Selection |
 | V3.0 知识驱动   | ⚪ 0%    | —   | —   | —   | 知识图谱 + RAG+KG 混合检索               |
 
 **已实现的核心链路**: 注册/登录 → 浏览商品 → 加入购物车 → 下单（库存扣减+地址快照+商品快照）→ 微信支付 → 商家发货 → 确认收货 → 售后 → 财务结算。

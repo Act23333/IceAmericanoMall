@@ -96,8 +96,7 @@ class OrderServiceImplH2Test {
         SqlSessionFactory sqlSessionFactory = factoryBean.getObject();
 
         OrderItemMapper orderItemMapper = sqlSessionFactory.openSession().getMapper(OrderItemMapper.class);
-        OrderServiceImpl impl = new OrderServiceImpl(
-                orderItemMapper, mock(SkuClient.class), mock(LogisticsClient.class), mock(UserClient.class));
+        OrderServiceImpl impl = new OrderServiceImpl(orderItemMapper);
         ReflectionTestUtils.setField(impl, "baseMapper",
                 sqlSessionFactory.openSession().getMapper(OrderMapper.class));
 
