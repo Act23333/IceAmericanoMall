@@ -42,6 +42,7 @@ public class SecurityConfig {
                                 "/api/auth/register",
                                 "/api/auth/refresh",
                                 "/api/auth/logout",
+                                "/api/auth/reset-password",
                                 "/api/auth/captcha/sms",
                                 "/api/pay/callback/wechat",
                                 "/api/pay/callback/**"

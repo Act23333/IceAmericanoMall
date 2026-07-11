@@ -9,6 +9,7 @@ import org.icedAmericanoMall.domain.dto.RegisterReq;
 import org.icedAmericanoMall.domain.dto.auth.LoginReq;
 import org.icedAmericanoMall.dto.LoginRespDTO;
 import org.icedAmericanoMall.dto.RegisterReqDTO;
+import org.icedAmericanoMall.dto.ResetPasswordReqDTO;
 import org.icedAmericanoMall.service.auth.login.LoginContext;
 import org.icedAmericanoMall.service.auth.login.LoginTokenService;
 import org.icedAmericanoMall.utils.RefreshTokenUtils;
@@ -42,6 +43,13 @@ public class AuthController {
         RegisterReqDTO registerReqDTO = BeanUtils.copyBean(request, RegisterReqDTO.class);
         LoginRespDTO userResp = userClient.register(registerReqDTO);
         return Result.ok(loginTokenService.createLoginResponse(userResp));
+    }
+
+    /** 找回密码：短信验证码重置密码（公开接口）。 */
+    @PostMapping("/reset-password")
+    public Result<Void> resetPassword(@Validated @RequestBody ResetPasswordReqDTO request) {
+        userClient.resetPassword(request);
+        return Result.ok("密码重置成功");
     }
 
     @PostMapping("/refresh")

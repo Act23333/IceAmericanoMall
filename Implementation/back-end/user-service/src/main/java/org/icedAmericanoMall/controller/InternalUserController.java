@@ -52,6 +52,14 @@ public class InternalUserController {
     }
 
     /**
+     * 找回密码：短信验证码重置密码 — 内部 Feign 调用。
+     */
+    @PostMapping("/reset-password")
+    public void resetPassword(@RequestBody org.icedAmericanoMall.dto.ResetPasswordReqDTO request) {
+        authService.resetPassword(request);
+    }
+
+    /**
      * Get address by ID for order address snapshot — internal Feign use.
      */
     @GetMapping("/address/{id}")

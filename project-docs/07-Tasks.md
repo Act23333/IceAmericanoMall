@@ -192,6 +192,7 @@ Scenario: 注册幂等保护
   - [x] Aliyun SMS SDK 集成（@ConditionalOnProperty 可切换 Mock/Real）
   - [x] 内部 Feign 接口（register/login/address/user/count）
   - [x] 签到积分递增加速策略（SignManager 编排：连续第 n 天 10/15/20 封顶，首签发放）
+  - [x] 找回密码（authorization `/api/auth/reset-password` → Feign → user `/internal/user/reset-password`，短信码校验 + BCrypt 重写）
 - **V1.1 待完善**:
   - [ ] SM2 加密传输（高安全模式）
 

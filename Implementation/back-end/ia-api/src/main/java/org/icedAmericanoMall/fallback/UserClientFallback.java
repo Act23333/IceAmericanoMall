@@ -5,6 +5,7 @@ import org.icedAmericanoMall.client.UserClient;
 import org.icedAmericanoMall.dto.LoginRespDTO;
 import org.icedAmericanoMall.dto.PasswordLoginReqDTO;
 import org.icedAmericanoMall.dto.RegisterReqDTO;
+import org.icedAmericanoMall.dto.ResetPasswordReqDTO;
 import org.icedAmericanoMall.dto.SmsLoginReqDTO;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;
@@ -52,6 +53,11 @@ public class UserClientFallback implements FallbackFactory<UserClient> {
             public Long addPoints(Long userId, int points, int type, String source) {
                 log.error("积分发放失败: userId={}, points={}", userId, points, cause);
                 return 0L;
+            }
+
+            @Override
+            public void resetPassword(ResetPasswordReqDTO request) {
+                log.error("密码重置失败: phone={}", request != null ? request.getPhone() : null, cause);
             }
         };
     }

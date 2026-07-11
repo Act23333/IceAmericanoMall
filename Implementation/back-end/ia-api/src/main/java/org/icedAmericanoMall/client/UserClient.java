@@ -26,4 +26,8 @@ public interface UserClient {
     Long addPoints(@RequestParam Long userId, @RequestParam int points,
                    @RequestParam(defaultValue = "2") int type,
                    @RequestParam(defaultValue = "下单奖励") String source);
+
+    /** Reset password via SMS code — called by authorization-service (找回密码) */
+    @PostMapping("/reset-password")
+    void resetPassword(@RequestBody ResetPasswordReqDTO request);
 }

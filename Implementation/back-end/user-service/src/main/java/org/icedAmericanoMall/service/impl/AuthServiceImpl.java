@@ -9,6 +9,7 @@ import org.icedAmericanoMall.domain.entity.UserEntity;
 import org.icedAmericanoMall.dto.LoginRespDTO;
 import org.icedAmericanoMall.dto.PasswordLoginReqDTO;
 import org.icedAmericanoMall.dto.RegisterReqDTO;
+import org.icedAmericanoMall.dto.ResetPasswordReqDTO;
 import org.icedAmericanoMall.dto.SmsLoginReqDTO;
 import org.icedAmericanoMall.mapper.UserMapper;
 import org.icedAmericanoMall.service.AuthService;
@@ -87,6 +88,22 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         user.setPhone(phone);
         registerUser(user);
         return toLoginResp(user);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void resetPassword(ResetPasswordReqDTO request) {
+        String phone = request.getPhone();
+        smsService.verifyCode(phone, request.getCode());
+        UserEntity user = lambdaQuery().eq(UserEntity::getPhone, phone).one();
+        if (user == null) {
+            throw new BizException(ErrorCode.USER_NOT_FOUND, "该手机号未注册");
+        }
+        lambdaUpdate()
+                .eq(UserEntity::getId, user.getId())
+                .set(UserEntity::getPassword, passwordEncoder.encode(request.getNewPassword()))
+                .update();
+        redisTemplate.delete(SMS_CODE_PREFIX + phone);
     }
 
     private void registerUser(UserEntity user) {
