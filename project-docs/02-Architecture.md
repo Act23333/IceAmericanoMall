@@ -22,119 +22,119 @@
 
 ### 2.1 核心框架与基础设施
 
-| 层级 | 技术 | 版本 | 使用场景 |
-|------|------|------|---------|
-| **语言** | Java | 21 LTS | 所有后端服务 |
-| **框架** | Spring Boot | 3.5.4 | 微服务基础框架 |
-| **云原生** | Spring Cloud | 2025.0.1 | 服务治理（注册/配置/网关/负载均衡） |
-| | Spring Cloud Alibaba | 2025.0.0.0 | Nacos 注册中心 + 配置中心 |
-| **网关** | Spring Cloud Gateway | — | API 网关：统一入口、路由转发、Token 校验、CORS |
-| | Nginx | 1.25+ | 反向代理、静态资源、TLS 终结 |
+| 层级      | 技术                   | 版本         | 使用场景                           |
+| ------- | -------------------- | ---------- | ------------------------------ |
+| **语言**  | Java                 | 21 LTS     | 所有后端服务                         |
+| **框架**  | Spring Boot          | 3.5.4      | 微服务基础框架                        |
+| **云原生** | Spring Cloud         | 2025.0.1   | 服务治理（注册/配置/网关/负载均衡）            |
+|         | Spring Cloud Alibaba | 2025.0.0.0 | Nacos 注册中心 + 配置中心              |
+| **网关**  | Spring Cloud Gateway | —          | API 网关：统一入口、路由转发、Token 校验、CORS |
+|         | Nginx                | 1.25+      | 反向代理、静态资源、TLS 终结               |
 
 ### 2.2 认证与安全
 
-| 层级 | 技术 | 版本 | 使用场景 |
-|------|------|------|---------|
-| **认证框架** | Spring Security + OAuth2 Authorization Server | 1.3.0 | 认证授权：OAuth2 Resource Server (JWT 验签) + JWKS 端点 + Strategy 模式登录（密码/验证码/邮箱） |
-| **令牌** | JWT (JJWT) | 0.13.0 | HS256（内部服务）+ RS256（外部客户端）双模式 |
-| **密码加密** | BCrypt | — | 用户密码哈希（`PasswordEncoder`） |
-| **数据加密** | AES-256-CBC | — | PII 字段静态加密（手机号/地址/收货人姓名）（⚠️ V1.1 计划，当前未实现） |
-| **密钥管理** | Vault / K8s Secret | — | 生产环境密钥存储（计划中，详见 §五安全架构 + 12-Security-Model §五） |
-| **人机验证** | 极验 Geetest | — | 注册/登录防止机器人自动化攻击 |
-| **限流熔断** | Sentinel | — | 流量控制 + 熔断降级（Spring Cloud Alibaba 自带，计划 V1.1 配置） |
-| | `@RateLimit` (Redis Lua) | — | 接口级限流：短信/登录/注册（已在 ia-common 实现） |
+| 层级       | 技术                                            | 版本     | 使用场景                                                                      |
+| -------- | --------------------------------------------- | ------ | ------------------------------------------------------------------------- |
+| **认证框架** | Spring Security + OAuth2 Authorization Server | 1.3.0  | 认证授权：OAuth2 Resource Server (JWT 验签) + JWKS 端点 + Strategy 模式登录（密码/验证码/邮箱） |
+| **令牌**   | JWT (JJWT)                                    | 0.13.0 | HS256（内部服务）+ RS256（外部客户端）双模式                                              |
+| **密码加密** | BCrypt                                        | —      | 用户密码哈希（`PasswordEncoder`）                                                 |
+| **数据加密** | AES-256-CBC                                   | —      | PII 字段静态加密（手机号/地址/收货人姓名）（⚠️ V1.1 计划，当前未实现）                                |
+| **密钥管理** | Vault / K8s Secret                            | —      | 生产环境密钥存储（计划中，详见 §五安全架构 + 12-Security-Model §五）                            |
+| **人机验证** | 极验 Geetest                                    | —      | 注册/登录防止机器人自动化攻击                                                           |
+| **限流熔断** | Sentinel                                      | —      | 流量控制 + 熔断降级（Spring Cloud Alibaba 自带，计划 V1.1 配置）                           |
+|          | `@RateLimit` (Redis Lua)                      | —      | 接口级限流：短信/登录/注册（已在 ia-common 实现）                                           |
 
 ### 2.3 数据存储
 
-| 层级 | 技术 | 版本 | 使用场景 |
-|------|------|------|---------|
-| **关系型数据库** | MySQL (InnoDB) | 9.3.0 | 所有业务数据：用户/商品/订单/购物车/支付 |
-| **ORM** | MyBatis-Plus | 3.5.11 | 数据访问：LambdaQueryWrapper 参数化查询，`@Version` 乐观锁 |
-| **缓存** | Redis | 7.x | 缓存（Token/验证码/用户会话）、分布式锁（Redisson）、限流计数器（Lua） |
-| **Redis 客户端** | Redisson | 3.26.0 | 分布式锁（`authorization-service`，登录并发控制） |
-| **搜索引擎** | ElasticSearch | 7.17.25 | 商品全文检索 + 向量检索（V1.1 上线 search-service，当前为骨架） |
-| **对象存储** | MinIO / 阿里云 OSS | — | 商品图片、用户头像、商家 Logo（计划 V1.1） |
-| **分库分表** | Apache ShardingSphere | — | 分库分表中间件（计划 V2.0，触发条件：单表 > 500 万行） |
+| 层级            | 技术                    | 版本      | 使用场景                                         |
+| ------------- | --------------------- | ------- | -------------------------------------------- |
+| **关系型数据库**    | MySQL (InnoDB)        | 9.3.0   | 所有业务数据：用户/商品/订单/购物车/支付                       |
+| **ORM**       | MyBatis-Plus          | 3.5.11  | 数据访问：LambdaQueryWrapper 参数化查询，`@Version` 乐观锁 |
+| **缓存**        | Redis                 | 7.x     | 缓存（Token/验证码/用户会话）、分布式锁（Redisson）、限流计数器（Lua） |
+| **Redis 客户端** | Redisson              | 3.26.0  | 分布式锁（`authorization-service`，登录并发控制）         |
+| **搜索引擎**      | ElasticSearch         | 7.17.25 | 商品全文检索 + 向量检索（V1.1 上线 search-service，当前为骨架）  |
+| **对象存储**      | MinIO / 阿里云 OSS       | —       | 商品图片、用户头像、商家 Logo（计划 V1.1）                   |
+| **分库分表**      | Apache ShardingSphere | —       | 分库分表中间件（计划 V2.0，触发条件：单表 > 500 万行）            |
 
 ### 2.4 消息与异步
 
-| 层级 | 技术 | 版本 | 使用场景 |
-|------|------|------|---------|
-| **消息队列** | RabbitMQ | 3.13+ | 异步解耦：订单创建→支付发起、支付成功→物流准备、用户注册→新用户奖励（计划 V1.1） |
-| | RocketMQ | 5.x | 高吞吐场景备选：秒杀/大促削峰（计划 V2.0） |
-| **CDC** | Canal | — | MySQL binlog → ES 索引同步 / Redis 缓存刷新（计划 V1.2，配合 ES 上线） |
-| **实时推送** | WebSocket (Spring) | — | 订单状态变更实时通知、商家新订单提醒（计划 V1.2） |
+| 层级       | 技术                 | 版本    | 使用场景                                                  |
+| -------- | ------------------ | ----- | ----------------------------------------------------- |
+| **消息队列** | RabbitMQ           | 3.13+ | 异步解耦：订单创建→支付发起、支付成功→物流准备、用户注册→新用户奖励（计划 V1.1）          |
+|          | RocketMQ           | 5.x   | 高吞吐场景备选：秒杀/大促削峰（计划 V2.0）                              |
+| **CDC**  | Canal              | —     | MySQL binlog → ES 索引同步 / Redis 缓存刷新（计划 V1.2，配合 ES 上线） |
+| **实时推送** | WebSocket (Spring) | —     | 订单状态变更实时通知、商家新订单提醒（计划 V1.2）                           |
 
 ### 2.5 分布式协调
 
-| 层级 | 技术 | 版本 | 使用场景 |
-|------|------|------|---------|
-| **分布式事务** | Apache Seata | 2.x | AT 模式（强一致）用于支付回调；TCC 模式用于库存扣减；Saga 模式用于下单全链路（计划 V1.1，当前 MVP 手动 Saga 补偿） |
-| **分布式调度** | XXL-Job | 2.4+ | 订单超时取消、支付超时关闭、每日签到重置、定时报表（计划 V1.1；当前 `@Scheduled` 单机，多实例会重复执行） |
-| **分布式追踪** | Apache SkyWalking | 9.x | 跨 11 个微服务的调用链追踪、性能瓶颈定位、服务拓扑图（计划 V1.1，Agent 无侵入） |
+| 层级        | 技术                | 版本   | 使用场景                                                                    |
+| --------- | ----------------- | ---- | ----------------------------------------------------------------------- |
+| **分布式事务** | Apache Seata      | 2.x  | AT 模式（强一致）用于支付回调；TCC 模式用于库存扣减；Saga 模式用于下单全链路（计划 V1.1，当前 MVP 手动 Saga 补偿） |
+| **分布式调度** | XXL-Job           | 2.4+ | 订单超时取消、支付超时关闭、每日签到重置、定时报表（计划 V1.1；当前 `@Scheduled` 单机，多实例会重复执行）          |
+| **分布式追踪** | Apache SkyWalking | 9.x  | 跨 11 个微服务的调用链追踪、性能瓶颈定位、服务拓扑图（计划 V1.1，Agent 无侵入）                         |
 
 ### 2.6 AI 平台
 
-| 层级 | 技术 | 版本 | 使用场景 |
-|------|------|------|---------|
-| **LLM** | DeepSeek V3 / 通义千问 Qwen-Max | — | AI 商品助手（多步推理）、AI 客服（FAQ 生成）（计划 V1.2/V2.0） |
-| **AI 框架** | Spring AI / 自研轻量 Agent | — | ReAct Agent 编排 + 工具链调用（计划 V1.2） |
-| **向量数据库** | Milvus | 2.4+ | RAG 向量检索（V2.0；MVP 阶段先用 ES 向量检索） |
-| **Embedding** | DeepSeek/通义千问 Embedding API | — | 商品描述向量化（MVP 用 API；日调用超百万次后自建 bge-large-zh） |
-| **Reranker** | bge-reranker-v2-base | — | 召回结果重排序，提升 Top-3 准确率 |
+| 层级            | 技术                          | 版本   | 使用场景                                       |
+| ------------- | --------------------------- | ---- | ------------------------------------------ |
+| **LLM**       | DeepSeek V3 / 通义千问 Qwen-Max | —    | AI 商品助手（多步推理）、AI 客服（FAQ 生成）（计划 V1.2/V2.0）  |
+| **AI 框架**     | Spring AI / 自研轻量 Agent      | —    | ReAct Agent 编排 + 工具链调用（计划 V1.2）            |
+| **向量数据库**     | Milvus                      | 2.4+ | RAG 向量检索（V2.0；MVP 阶段先用 ES 向量检索）            |
+| **Embedding** | DeepSeek/通义千问 Embedding API | —    | 商品描述向量化（MVP 用 API；日调用超百万次后自建 bge-large-zh） |
+| **Reranker**  | bge-reranker-v2-base        | —    | 召回结果重排序，提升 Top-3 准确率                       |
 
 ### 2.7 开发与测试
 
-| 层级 | 技术 | 版本 | 使用场景 |
-|------|------|------|---------|
-| **对象映射** | MapStruct | 1.5.5 | Entity ↔ DTO ↔ VO 编译期转换（零反射，性能最优） |
-| **代码简化** | Lombok | 1.18.42 | `@Data`/`@Slf4j`/`@RequiredArgsConstructor` |
-| **工具库** | Hutool | 5.8.43 | 通用工具：日期/字符串/加密/HTTP |
-| **API 文档** | Knife4j (OpenAPI 3) | 4.5.0 | Swagger 增强：接口调试 + 文档导出 |
-| **单元测试** | JUnit 5 + Mockito | — | Service/Domain 层单元测试（详见 11-Test-Strategy） |
-| **集成测试** | Spring Boot Test + Testcontainers | — | Controller → DB 全链路集成测试，MySQL/Redis 容器化 |
-| **契约测试** | Pact | — | Feign 接口 Consumer-Driven Contract（详见 11-Test-Strategy §3） |
+| 层级         | 技术                                | 版本      | 使用场景                                                      |
+| ---------- | --------------------------------- | ------- | --------------------------------------------------------- |
+| **对象映射**   | MapStruct                         | 1.5.5   | Entity ↔ DTO ↔ VO 编译期转换（零反射，性能最优）                         |
+| **代码简化**   | Lombok                            | 1.18.42 | `@Data`/`@Slf4j`/`@RequiredArgsConstructor`               |
+| **工具库**    | Hutool                            | 5.8.43  | 通用工具：日期/字符串/加密/HTTP                                       |
+| **API 文档** | Knife4j (OpenAPI 3)               | 4.5.0   | Swagger 增强：接口调试 + 文档导出                                    |
+| **单元测试**   | JUnit 5 + Mockito                 | —       | Service/Domain 层单元测试（详见 11-Test-Strategy）                 |
+| **集成测试**   | Spring Boot Test + Testcontainers | —       | Controller → DB 全链路集成测试，MySQL/Redis 容器化                   |
+| **契约测试**   | Pact                              | —       | Feign 接口 Consumer-Driven Contract（详见 11-Test-Strategy §3） |
 
 ### 2.8 可观测性
 
-| 层级 | 技术 | 版本 | 使用场景 |
-|------|------|------|---------|
-| **指标监控** | Prometheus + Grafana | — | JVM 指标、接口 QPS/RT、业务指标大盘（计划 V1.1） |
-| **日志采集** | ELK (ElasticSearch + Logstash + Kibana) | — | 集中日志查询、错误告警（计划 V1.1） |
-| **链路追踪** | Apache SkyWalking | 9.x | 同 §2.5 — 调用链拓扑 + 性能瓶颈定位 |
+| 层级       | 技术                                      | 版本  | 使用场景                             |
+| -------- | --------------------------------------- | --- | -------------------------------- |
+| **指标监控** | Prometheus + Grafana                    | —   | JVM 指标、接口 QPS/RT、业务指标大盘（V2.4 已接入：Actuator + Micrometer 暴露 `/actuator/prometheus`，compose 含 Prometheus/Grafana） |
+| **日志采集** | ELK (ElasticSearch + Logstash + Kibana) | —   | 集中日志查询、错误告警（V2.4 配置就绪：logback 带 traceId + Logstash grok 管道 + Kibana） |
+| **链路追踪** | Apache SkyWalking                       | 9.x | 同 §2.5 — 调用链拓扑 + 性能瓶颈定位（V2.4 配置就绪：compose 含 OAP/UI，Agent 以 -javaagent 附加） |
 
 ### 2.9 服务调用与部署
 
-| 层级 | 技术 | 版本 | 使用场景 |
-|------|------|------|---------|
-| **内部 RPC** | OpenFeign + Spring Cloud LoadBalancer | — | 微服务间声明式调用（Feign 接口定义在 `ia-api` 模块） |
-| **本地开发** | Docker Compose | — | 一键启动 MySQL + Redis + Nacos 开发环境（已完成） |
-| **生产部署** | Docker | — | 容器化部署，单机 MVP |
-| | Kubernetes | — | 容器编排、滚动更新、自动伸缩（计划 V2.0） |
-| **CI/CD** | GitHub Actions | — | 自动化构建 + 测试 + 镜像推送（计划 V1.1） |
+| 层级         | 技术                                    | 版本  | 使用场景                                 |
+| ---------- | ------------------------------------- | --- | ------------------------------------ |
+| **内部 RPC** | OpenFeign + Spring Cloud LoadBalancer | —   | 微服务间声明式调用（Feign 接口定义在 `ia-api` 模块）   |
+| **本地开发**   | Docker Compose                        | —   | 一键启动 MySQL + Redis + Nacos 开发环境（已完成） |
+| **生产部署**   | Docker                                | —   | 容器化部署，单机 MVP                         |
+|            | Kubernetes                            | —   | 容器编排、滚动更新、自动伸缩（计划 V2.0）              |
+| **CI/CD**  | GitHub Actions                        | —   | 自动化构建 + 测试 + 镜像推送（计划 V1.1）           |
 
 ### 2.10 前端
 
 > 完整选型分析见 [15-Front-End-Technology-Selection.md](./15-Front-End-Technology-Selection.md)
 
-| 层级 | 技术 | 版本 | 使用场景 |
-|------|------|------|---------|
-| **全栈框架** | Next.js (App Router) | 15+ | SSR/ISG/SSG 混合渲染，React Server Components 默认开启 |
-| **UI 库** | React | 19 | Server Components + `use()` hook + actions |
-| **类型系统** | TypeScript | 5.x | strict 模式，前后端共享 DTO 类型 |
-| **样式方案** | Tailwind CSS | 4 | 原子化 CSS，design tokens 约束设计系统 |
-| **通用组件** | Shadcn/ui | latest | 代码拥有式组件库，移动端适配，基于 Radix 原语 |
-| **后台组件** | Ant Design 5 + ProComponents | 5.20+ | Table/Form/ProTable 开箱即用，仅用于 PC 后台 |
-| **服务端状态** | TanStack Query | v5 | 缓存/去重/乐观更新/无限滚动，与 RSC 完美配合 |
-| **客户端状态** | Zustand | v5 | 购物车/认证/UI 状态，极简 API |
-| **表单校验** | React Hook Form + Zod | 7.x / 3.x | 非受控高性能表单 + 类型安全校验 |
-| **构建工具** | Turbopack (Rust) | — | Next.js 内置，比 Webpack 快 10x |
-| **包管理** | pnpm (Monorepo) | 9+ | 严格依赖解析 + workspace 原生支持 |
-| **移动端** | PWA → Taro 4 | — | Service Worker 离线优先；后期用 Taro 编译小程序 |
-| **E2E 测试** | Playwright | latest | 多浏览器并行，trace viewer 调试 |
-| **单元/组件测试** | Vitest + React Testing Library | latest | Vite 原生速度，用户视角测试 |
-| **错误追踪** | Sentry | latest | React Error Boundary + Session Replay |
-| **代码检查** | ESLint 9 + Prettier 3 | latest | Flat config + Tailwind class 自动排序 |
+| 层级          | 技术                             | 版本        | 使用场景                                          |
+| ----------- | ------------------------------ | --------- | --------------------------------------------- |
+| **全栈框架**    | Next.js (App Router)           | 15+       | SSR/ISG/SSG 混合渲染，React Server Components 默认开启 |
+| **UI 库**    | React                          | 19        | Server Components + `use()` hook + actions    |
+| **类型系统**    | TypeScript                     | 5.x       | strict 模式，前后端共享 DTO 类型                        |
+| **样式方案**    | Tailwind CSS                   | 4         | 原子化 CSS，design tokens 约束设计系统                  |
+| **通用组件**    | Shadcn/ui                      | latest    | 代码拥有式组件库，移动端适配，基于 Radix 原语                    |
+| **后台组件**    | Ant Design 5 + ProComponents   | 5.20+     | Table/Form/ProTable 开箱即用，仅用于 PC 后台            |
+| **服务端状态**   | TanStack Query                 | v5        | 缓存/去重/乐观更新/无限滚动，与 RSC 完美配合                    |
+| **客户端状态**   | Zustand                        | v5        | 购物车/认证/UI 状态，极简 API                           |
+| **表单校验**    | React Hook Form + Zod          | 7.x / 3.x | 非受控高性能表单 + 类型安全校验                             |
+| **构建工具**    | Turbopack (Rust)               | —         | Next.js 内置，比 Webpack 快 10x                    |
+| **包管理**     | pnpm (Monorepo)                | 9+        | 严格依赖解析 + workspace 原生支持                       |
+| **移动端**     | PWA → Taro 4                   | —         | Service Worker 离线优先；后期用 Taro 编译小程序            |
+| **E2E 测试**  | Playwright                     | latest    | 多浏览器并行，trace viewer 调试                        |
+| **单元/组件测试** | Vitest + React Testing Library | latest    | Vite 原生速度，用户视角测试                              |
+| **错误追踪**    | Sentry                         | latest    | React Error Boundary + Session Replay         |
+| **代码检查**    | ESLint 9 + Prettier 3          | latest    | Flat config + Tailwind class 自动排序             |
 
 ---
 
@@ -142,23 +142,23 @@
 
 ### 3.1 服务清单
 
-| 服务                      | 职责                        | MVP 优先级 | 数据源           |
-| ----------------------- | ------------------------- | ------- | ------------- |
-| 服务 | 职责 | MVP 优先级 | 关键依赖技术 |
-|------|------|----------|-------------|
-| `gate-service` | API 网关，路由转发，统一入口 | P0 | Spring Cloud Gateway + Nginx + Sentinel |
-| `authorization-service` | OAuth2 认证授权，登录注册，Token 签发 | P0 | Spring Security + JWT + Redis + Geetest |
-| `user-service` | 用户 CRUD，收货地址，签到，Geetest 人机验证，阿里云短信 | P0 | MySQL + Redis (BitMap 签到) + dysmsapi20170525 (阿里云短信) |
-| `item-service` | 商品 (SPU)、规格 (SKU)、类目管理，库存乐观锁 | P1 | MySQL + MinIO/OSS (商品图片，计划 V1.1) |
-| `cart-service` | 购物车 | P1 | MySQL |
-| `trade-service` | 订单管理，Saga 补偿，OrderManager 编排 | P1 | MySQL + Seata (分布式事务，计划 V1.1) + XXL-Job (超时取消，计划 V1.1) |
-| `pay-service` | 支付处理，微信支付 API v3 | P1 | MySQL + wechatpay-java 0.2.17 + XXL-Job (超时关闭，计划 V1.1) |
-| `logistics-service` | 物流信息管理，状态追踪 | P1 | MySQL + WebSocket (物流状态推送，计划 V1.2) |
-| `search-service` | 商品全文检索（V1.1 正式启用 ES） | P1 | ElasticSearch + Canal (MySQL→ES 同步，计划 V1.1) |
-| `ai-service` | AI客服、AI商品助手、智能搜索 | P2 | Spring AI + LangChain4j + DeepSeek V3 |
-| `marketing-service` | 优惠券（平台/店铺）+ 秒杀活动 | P1 | MySQL + Redis |
-| `ia-common` | 共享库：异常、Result、工具、注解、SMS SDK、i18n | 基础模块 | Hutool + Knife4j |
-| `ia-api` | 共享 Feign 接口定义 | 基础模块 | OpenFeign + LoadBalancer |
+| 服务                      | 职责                                 | MVP 优先级    | 数据源                                                    |
+| ----------------------- | ---------------------------------- | ---------- | ------------------------------------------------------ |
+| 服务                      | 职责                                 | MVP 优先级    | 关键依赖技术                                                 |
+| ------                  | ------                             | ---------- | -------------                                          |
+| `gate-service`          | API 网关，路由转发，统一入口                   | P0         | Spring Cloud Gateway + Nginx + Sentinel                |
+| `authorization-service` | OAuth2 认证授权，登录注册，Token 签发          | P0         | Spring Security + JWT + Redis + Geetest                |
+| `user-service`          | 用户 CRUD，收货地址，签到，Geetest 人机验证，阿里云短信 | P0         | MySQL + Redis (BitMap 签到) + dysmsapi20170525 (阿里云短信)   |
+| `item-service`          | 商品 (SPU)、规格 (SKU)、类目管理，库存乐观锁       | P1         | MySQL + MinIO/OSS (商品图片，计划 V1.1)                       |
+| `cart-service`          | 购物车                                | P1         | MySQL                                                  |
+| `trade-service`         | 订单管理，Saga 补偿，OrderManager 编排       | P1         | MySQL + Seata (分布式事务，计划 V1.1) + XXL-Job (超时取消，计划 V1.1) |
+| `pay-service`           | 支付处理，微信支付 API v3                   | P1         | MySQL + wechatpay-java 0.2.17 + XXL-Job (超时关闭，计划 V1.1) |
+| `logistics-service`     | 物流信息管理，状态追踪                        | P1         | MySQL + WebSocket (物流状态推送，计划 V1.2)                     |
+| `search-service`        | 商品全文检索（V1.1 正式启用 ES）               | P1         | ElasticSearch + Canal (MySQL→ES 同步，计划 V1.1)            |
+| `ai-service`            | AI客服、AI商品助手、智能搜索                   | P2         | Spring AI + LangChain4j + DeepSeek V3                  |
+| `marketing-service`     | 优惠券（平台/店铺）+ 秒杀活动                   | P1         | MySQL + Redis                                          |
+| `ia-common`             | 共享库：异常、Result、工具、注解、SMS SDK、i18n   | 基础模块       | Hutool + Knife4j                                       |
+| `ia-api`                | 共享 Feign 接口定义                      | 基础模块       | OpenFeign + LoadBalancer                               |
 
 ### 3.2 服务关系图
 
@@ -407,25 +407,25 @@ Docker Compose 单机部署 (本地开发)
 
 ### 9.1 服务划分评估
 
-| 维度 | 评估 | 对标 |
-|------|------|------|
-| 服务拆分粒度 | 13 个服务按业务域划分，粒度合理 | 阿里中台标准（用户/商品/交易/支付/物流/搜索） |
-| 共享库抽离 | ia-common（基础设施）+ ia-api（契约） | 阿里 MAR (Middleware Asset Repository) |
-| 网关统一入口 | Spring Cloud Gateway + JWT 鉴权 + 限流 | 阿里 API Gateway |
-| 注册中心 | Nacos 服务发现+配置中心 | 阿里 Diamond + ConfigServer |
-| 负载均衡 | Spring Cloud LoadBalancer | Ribbon 替代方案 |
+| 维度     | 评估                                 | 对标                                   |
+| ------ | ---------------------------------- | ------------------------------------ |
+| 服务拆分粒度 | 13 个服务按业务域划分，粒度合理                  | 阿里中台标准（用户/商品/交易/支付/物流/搜索）            |
+| 共享库抽离  | ia-common（基础设施）+ ia-api（契约）        | 阿里 MAR (Middleware Asset Repository) |
+| 网关统一入口 | Spring Cloud Gateway + JWT 鉴权 + 限流 | 阿里 API Gateway                       |
+| 注册中心   | Nacos 服务发现+配置中心                    | 阿里 Diamond + ConfigServer            |
+| 负载均衡   | Spring Cloud LoadBalancer          | Ribbon 替代方案                          |
 
 ### 9.2 分层合规状态
 
-| 规则 | 状态 | 详情 |
-|------|------|------|
-| Controller→Mapper 禁止 | ✅ 已修复 | History/HomeConfig/FlashSale 已抽取 Service 层 |
-| Controller→Redis 禁止 | ✅ 已修复 | HistoryService 封装 Redis 操作 |
-| Service→Feign 禁止 | 🟡 已知豁免 | OrderServiceImpl 调 Feign（Saga 回滚需在事务内），标记为架构债 |
-| Entity 不泄露至 Controller | 🟡 已知例外 | Admin/Internal 接口直接使用 Entity（无前端展示需求），外部接口已使用 VO/DTO |
-| 类不超过 300 行 | ✅ | UserServiceImpl 已拆分为 AuthService + SmsService + UserService |
-| 方法不超过 50 行 | ✅ | 所有方法 ≥ 50 行已拆分 |
-| 服务 Controller 上限 (≤8) | ✅ | 拆入 marketing-service 后，trade-service 11→降至阈值内 |
+| 规则                     | 状态      | 详情                                                          |
+| ---------------------- | ------- | ----------------------------------------------------------- |
+| Controller→Mapper 禁止   | ✅ 已修复   | History/HomeConfig/FlashSale 已抽取 Service 层                  |
+| Controller→Redis 禁止    | ✅ 已修复   | HistoryService 封装 Redis 操作                                  |
+| Service→Feign 禁止       | 🟡 已知豁免 | OrderServiceImpl 调 Feign（Saga 回滚需在事务内），标记为架构债               |
+| Entity 不泄露至 Controller | 🟡 已知例外 | Admin/Internal 接口直接使用 Entity（无前端展示需求），外部接口已使用 VO/DTO        |
+| 类不超过 300 行             | ✅       | UserServiceImpl 已拆分为 AuthService + SmsService + UserService |
+| 方法不超过 50 行             | ✅       | 所有方法 ≥ 50 行已拆分                                              |
+| 服务 Controller 上限 (≤8)  | ✅       | 拆入 marketing-service 后，trade-service 11→降至阈值内               |
 
 ### 9.3 Gateway 路由架构
 
@@ -449,15 +449,15 @@ Docker Compose 单机部署 (本地开发)
 
 ### 9.4 当前合规评分
 
-| 维度 | 得分 | 说明 |
-|------|------|------|
-| 服务拆分 | 10/10 | 14 模块，trade-service 拆分出 marketing-service，单服务 Controller ≤11 |
-| DDD 分层 | 9/10 | 核心链路合规，边缘接口有已知例外 |
-| 网关路由 | 10/10 | 精确路由分发，13 条路由覆盖全部服务 |
-| 异常处理 | 10/10 | 统一 GlobalExceptionHandler + ErrorCode 体系 |
-| Feign 契约 | 10/10 | ia-api 集中管理，fallback 全覆盖 |
-| 测试覆盖 | 5/10 | 82 单元测试，0 集成测试，6 模块零测试 |
-| **综合** | **9.4/10** | 生产就绪，测试覆盖待提升 |
+| 维度       | 得分         | 说明                                                           |
+| -------- | ---------- | ------------------------------------------------------------ |
+| 服务拆分     | 10/10      | 14 模块，trade-service 拆分出 marketing-service，单服务 Controller ≤11 |
+| DDD 分层   | 9/10       | 核心链路合规，边缘接口有已知例外                                             |
+| 网关路由     | 10/10      | 精确路由分发，13 条路由覆盖全部服务                                          |
+| 异常处理     | 10/10      | 统一 GlobalExceptionHandler + ErrorCode 体系                     |
+| Feign 契约 | 10/10      | ia-api 集中管理，fallback 全覆盖                                     |
+| 测试覆盖     | 5/10       | 82 单元测试，0 集成测试，6 模块零测试                                       |
+| **综合**   | **9.4/10** | 生产就绪，测试覆盖待提升                                                 |
 
 ---
 
@@ -465,25 +465,25 @@ Docker Compose 单机部署 (本地开发)
 
 ### 10.1 模块拆分原则（阿里中台标准）
 
-| 原则 | 阿里标准 | 本项目实施 |
-|------|---------|-----------|
-| **单一职责** | 每个服务一个限界上下文，不超过 3 个子域 | ✅ 拆分 marketing-service 后全部合规 |
-| **Controller 上限** | P0 核心服务 ≤ 8 controllers，P1 服务 ≤ 5 | ✅ trade-service 11 个但属同一聚合根（订单域），豁免 |
-| **共享库抽离** | 公共组件抽离为 MAR (Middleware Asset Repository) | ✅ ia-common（基础设施）+ ia-api（契约） |
-| **网关统一入口** | API Gateway 统一鉴权/限流/路由 | ✅ gate-service: JWT + @RateLimit + 精确路由 |
-| **内部接口隔离** | `/internal/**` 路径禁止外网访问，不包装 Result | ✅ Gateway 拦截 + Controller 返回原始类型 |
-| **Feign 契约集中管理** | Feign 接口定义在独立模块，内置 fallback | ✅ ia-api 模块：UserClient/SkuClient/LogisticsClient/OrderClient |
-| **双主键策略** | 技术主键 (自增ID) + 业务主键 (UUID) | ✅ 全部表：id BIGINT + xxx_id/no VARCHAR UNIQUE |
+| 原则                | 阿里标准                                      | 本项目实施                                                        |
+| ----------------- | ----------------------------------------- | ------------------------------------------------------------ |
+| **单一职责**          | 每个服务一个限界上下文，不超过 3 个子域                     | ✅ 拆分 marketing-service 后全部合规                                 |
+| **Controller 上限** | P0 核心服务 ≤ 8 controllers，P1 服务 ≤ 5         | ✅ trade-service 11 个但属同一聚合根（订单域），豁免                          |
+| **共享库抽离**         | 公共组件抽离为 MAR (Middleware Asset Repository) | ✅ ia-common（基础设施）+ ia-api（契约）                                |
+| **网关统一入口**        | API Gateway 统一鉴权/限流/路由                    | ✅ gate-service: JWT + @RateLimit + 精确路由                      |
+| **内部接口隔离**        | `/internal/**` 路径禁止外网访问，不包装 Result        | ✅ Gateway 拦截 + Controller 返回原始类型                             |
+| **Feign 契约集中管理**  | Feign 接口定义在独立模块，内置 fallback               | ✅ ia-api 模块：UserClient/SkuClient/LogisticsClient/OrderClient |
+| **双主键策略**         | 技术主键 (自增ID) + 业务主键 (UUID)                 | ✅ 全部表：id BIGINT + xxx_id/no VARCHAR UNIQUE                   |
 
 ### 10.2 模块拆分决策记录
 
-| 决策 | 理由 | 结果 |
-|------|------|------|
-| 拆分 marketing-service | 优惠券+秒杀是独立营销域，非交易核心 | ✅ V2.2 完成 |
-| **不拆分** after-sale-service | 售后与订单强耦合，取消→退款需同一事务 | 保留在 trade-service |
-| **不拆分** settlement-service | 结算依赖订单完成状态，跨服务会导致分布式事务 | 保留在 trade-service |
-| **不拆分** points-service | 签到/积分系统 < 3 controllers，拆分引入 Feign 开销 > 收益 | 保留在 user-service（V3.0 重新评估） |
-| **不拆分** notification-service | WebSocket 当前仅 1 个内部接口 | 保留在 gate-service |
+| 决策                           | 理由                                         | 结果                          |
+| ---------------------------- | ------------------------------------------ | --------------------------- |
+| 拆分 marketing-service         | 优惠券+秒杀是独立营销域，非交易核心                         | ✅ V2.2 完成                   |
+| **不拆分** after-sale-service   | 售后与订单强耦合，取消→退款需同一事务                        | 保留在 trade-service           |
+| **不拆分** settlement-service   | 结算依赖订单完成状态，跨服务会导致分布式事务                     | 保留在 trade-service           |
+| **不拆分** points-service       | 签到/积分系统 < 3 controllers，拆分引入 Feign 开销 > 收益 | 保留在 user-service（V3.0 重新评估） |
+| **不拆分** notification-service | WebSocket 当前仅 1 个内部接口                      | 保留在 gate-service            |
 
 ### 10.3 服务清单（最终）
 

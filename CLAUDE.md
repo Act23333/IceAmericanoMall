@@ -48,6 +48,9 @@ mvn -f Implementation/back-end/pom.xml -pl user-service -am clean install
 # Run tests (unit + H2 integration tests across the module tree, 0 failures)
 mvn -f Implementation/back-end/pom.xml test
 
+# Coverage report (JaCoCo, advisory 30% gate — non-blocking): per-module target/site/jacoco/index.html
+mvn -f Implementation/back-end/pom.xml test   # report generated on the test phase
+
 # Run tests for a specific module
 mvn -f Implementation/back-end/pom.xml -pl trade-service test
 
@@ -167,6 +170,7 @@ org.icedAmericanoMall
 - **Rate limiting**: `@RateLimit` annotation + `RateLimitAspect` in `ia-common` using Lua scripts on Redis. Gateway-level rate limiting also configured via `RequestRateLimiter` filter.
 - **JWT**: authorization-service supports both HS256 and RS256; public keys exposed via JWKS endpoint at `/oauth2/jwks`.
 - **Password encoding**: BCrypt via Spring Security's `PasswordEncoder`.
+- **Observability (V2.4)**: all services expose Actuator + Micrometer at `/actuator/health` and `/actuator/prometheus` (deps in `ia-common`). Shared `ia-common/logback-spring.xml` prints `[tid:%X{traceId}]`; `TraceIdFilter` (ia-common, servlet-only) populates the MDC traceId per request. Observability stack (SkyWalking/Prometheus/Grafana/ELK) ships as `docker compose --profile observability` + `docker/{prometheus,grafana,logstash}` configs.
 - **Annotation processing order**: Lombok must precede MapStruct in the compiler annotation processor chain (configured in parent POM).
 - **DTO validation groups**: `CreateGroup`/`UpdateGroup` marker interfaces in `group/` package for conditional `@Validated` checks.
 

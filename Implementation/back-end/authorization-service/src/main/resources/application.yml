@@ -46,3 +46,16 @@ logging:
     org.springframework.security: DEBUG
     org.icedAmericanoMall: DEBUG
     org.nolazy: DEBUG
+
+# 可观测性：Actuator 健康检查 + Prometheus 指标端点（V2.4）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}

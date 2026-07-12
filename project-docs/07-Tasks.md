@@ -564,6 +564,7 @@ Scenario: 查看商品详情
 | V2.1 财务+国际化 | 🟢 100% | 14 | 115 | 82  | 财务结算, 多语言 |
 | V2.2 架构治理   | 🟢 100% | 14 | 115+ | 89  | 路由修复, 模块拆分, 合规 9.4/10 |
 | V2.3 支付补齐   | 🟢 100% | 14 | 125+ | 130+ | DDD分层, 优惠券抵扣/找回密码/签到积分/微信OAuth, 支付宝(Mock)/余额支付/充值 |
+| V2.4 观测+测试   | 🟢 100% | 14 | 127+ | 140+ | JaCoCo 覆盖率, 补 H2 集成测试(search/cart), Actuator/Prometheus 指标, TraceId 日志, 观测栈(SkyWalking/Grafana/ELK)配置就绪 |
 | Phase 5 前端  | 🔵 进行中   | —   | —   | —   | React 19 + Next.js 15 + Tailwind + Shadcn/ui（storefront）/ Ant Design 5（admin·seller），详见 15-Front-End-Technology-Selection |
 | V3.0 知识驱动   | ⚪ 0%    | —   | —   | —   | 知识图谱 + RAG+KG（并入延期 backlog：RBAC/积分商城/任务中心/店铺装修/多币种） |
 
@@ -597,7 +598,8 @@ Scenario: 查看商品详情
 - **为什么需要**: 11 个微服务无追踪，排查一次跨服务异常需要 grep 所有服务日志，效率极低
 - **优先级**: 🟡 P1
 - **依赖**: T0.5
-- **验收**: SkyWalking UI 能看到完整调用链拓扑和 Trace 详情
+- **状态**: 🟢 配置就绪（V2.4）—— docker-compose `observability` profile 含 OAP(存储接 ES)+UI；日志 TraceId 已接入（TraceIdFilter + logback %tid 占位）；Agent 以 `-javaagent` 附加（见 14-Service-Config-Guide）
+- **验收**: SkyWalking UI 能看到完整调用链拓扑和 Trace 详情（需运行栈 + 附加 Agent）
 
 ### T5.4 Prometheus + Grafana 监控
 
@@ -605,7 +607,8 @@ Scenario: 查看商品详情
 - **为什么需要**: 不知道服务 QPS、RT、错误率，故障发现靠用户投诉
 - **优先级**: 🟡 P1
 - **依赖**: T0.5
-- **验收**: Grafana 仪表盘显示各服务 QPS、P99 延迟、错误率
+- **状态**: 🟢 配置就绪（V2.4）—— 各服务已加 actuator + micrometer-prometheus 暴露 `/actuator/prometheus`；docker-compose 含 Prometheus(`docker/prometheus/prometheus.yml`)+Grafana(datasource 自动配置)
+- **验收**: Grafana 仪表盘显示各服务 QPS、P99 延迟、错误率（需运行栈）
 
 ### T5.5 ELK 日志平台
 
@@ -613,7 +616,8 @@ Scenario: 查看商品详情
 - **为什么需要**: 查日志需要登录多台机器，无法按 TraceId 串联
 - **优先级**: 🟡 P1
 - **依赖**: T5.3 (TraceId 需要 SkyWalking)
-- **验收**: Kibana 中可按 TraceId 查看一次请求的完整日志
+- **状态**: 🟢 配置就绪（V2.4）—— docker-compose 含 Logstash(`docker/logstash/logstash.conf` grok 解析 traceId)+Kibana(接现有 ES)；应用侧日志已带 `[tid:...]`，接入 Filebeat/TCP 即可入库
+- **验收**: Kibana 中可按 traceId 查看一次请求的完整日志（需运行栈 + 日志转发）
 
 ### T5.6 RabbitMQ 消息队列
 

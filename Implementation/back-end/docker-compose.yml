@@ -474,6 +474,104 @@ services:
       timeout: 5s
       retries: 3
 
+  # ==================== 可观测性 (--profile observability；依赖 ES，可同时 --profile v1.1) ====================
+
+  # ---------- Prometheus (指标采集，抓各服务 /actuator/prometheus) ----------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: ia-prometheus
+    profiles: ["observability"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+
+  # ---------- Grafana (指标面板) ----------
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: ia-grafana
+    profiles: ["observability"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+
+  # ---------- SkyWalking OAP (链路追踪后端，存储接现有 ES) ----------
+  skywalking-oap:
+    image: apache/skywalking-oap-server:9.7.0
+    container_name: ia-skywalking-oap
+    profiles: ["observability"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      SW_STORAGE: elasticsearch
+      SW_STORAGE_ES_CLUSTER_NODES: elasticsearch:9200
+      JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "11800:11800"   # gRPC（Agent 上报）
+      - "12800:12800"   # HTTP（UI 查询）
+
+  # ---------- SkyWalking UI (链路拓扑界面) ----------
+  skywalking-ui:
+    image: apache/skywalking-ui:9.7.0
+    container_name: ia-skywalking-ui
+    profiles: ["observability"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      SW_OAP_ADDRESS: http://skywalking-oap:12800
+    ports:
+      - "${SKYWALKING_UI_PORT:-8090}:8080"
+    depends_on:
+      - skywalking-oap
+
+  # ---------- Logstash (日志管道 → ES) ----------
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.17.25
+    container_name: ia-logstash
+    profiles: ["observability"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    volumes:
+      - ./docker/logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    ports:
+      - "5044:5044"   # beats
+      - "5000:5000"   # tcp json
+
+  # ---------- Kibana (日志检索界面) ----------
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.25
+    container_name: ia-kibana
+    profiles: ["observability"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"
+
 volumes:
   nginx-cache:
     driver: local
@@ -498,5 +596,9 @@ volumes:
   seata-logs:
     driver: local
   nginx-logs:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
     driver: local
 

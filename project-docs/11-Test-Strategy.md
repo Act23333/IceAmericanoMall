@@ -11,13 +11,13 @@
 
 | 测试层级 | 目标占比 | 当前实际 | 状态 |
 |---------|---------|---------|------|
-| Unit (Entity/Enum/DTO) | 70% | **89 tests** (8/14 模块) | ✅ 部分覆盖 |
-| Unit (Mockito 业务逻辑) | 70% | **~22 tests** (auth/logistics/trade/cart/pay) | 🟡 起步 |
-| API / Integration | 20% | **0 tests** | ❌ 未开始 |
-| Contract (Pact) | — | **0 tests** | ❌ 未开始 |
+| Unit (Entity/Enum/DTO) | 70% | **多模块覆盖** | ✅ 部分覆盖 |
+| Unit (Mockito 业务逻辑) | 70% | **多 Manager/Service** (PayManager/OrderManager/SignManager 等) | 🟡 起步→提升 |
+| API / Integration | 20% | **~30 H2 集成测试**（OrderManager/AuthService/Balance/FlashSale/DbSearch/Cart 等，MyBatis-Plus+H2 无 Spring 上下文） | 🟡 起步（替代重量级 @SpringBootTest） |
+| Contract (Pact) | — | **0**（以内部端点 H2 集成 + Feign fallback 单测替代） | 🟡 后续 |
 | E2E | 5% | **0 tests** | ❌ 未开始 |
 | Performance (JMeter) | — | **0 tests** | ❌ 未开始 |
-| JaCoCo 覆盖率 | — | **未配置** | ❌ 未开始 |
+| JaCoCo 覆盖率 | 70%(目标) | **V2.4 已接入**：父 POM `jacoco-maven-plugin`（report 随 test 生成；排除 POJO/config/生成代码）；`check` 门禁 30% **advisory(不阻断)**，随测试补齐逐步抬高至 70% | 🟡 已接入(advisory) |
 
 **已覆盖模块**: ia-common (8), user-service (9), cart-service (12), pay-service (14), trade-service (16), item-service (5), logistics-service (13)  
 **零测试模块**: authorization-service, gate-service, ia-api, search-service, database

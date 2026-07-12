@@ -516,3 +516,38 @@ curl http://localhost:9000/minio/health/live                          # MinIO
 # 微服务健康 (需要 actuator)
 curl http://localhost:8084/actuator/health                            # Trade Service
 ```
+
+---
+
+## 可观测性栈（V2.4，观测 + 指标 + 日志）
+
+三件套以 docker-compose `observability` profile 交付（需 ES，建议同时启用 `v1.1`）：
+
+```bash
+# 启动观测栈（含 SkyWalking OAP/UI、Prometheus、Grafana、Logstash、Kibana）
+docker compose --profile v1.1 --profile observability up -d
+```
+
+### 指标（Prometheus + Grafana）
+- 各服务已内置 Actuator + Micrometer，暴露 `GET /actuator/prometheus`。
+- Prometheus 抓取配置：`docker/prometheus/prometheus.yml`（宿主机运行的服务用 `host.docker.internal:<port>`，端口按各服务 `server.port` 调整）。
+- Grafana：`http://localhost:3000`（admin/admin），数据源已自动指向 Prometheus；JVM 面板建议导入 Grafana Dashboard ID `4701`。
+- 验证：`curl http://localhost:8080/actuator/prometheus`（gate）应返回指标；`curl http://localhost:8080/actuator/health` 健康检查。
+
+### 链路追踪（SkyWalking）
+- OAP 存储接现有 ES；UI：`http://localhost:8090`。
+- 服务接入 Agent（非侵入，下载 `skywalking-agent` 后）：
+  ```bash
+  export JAVA_TOOL_OPTIONS="-javaagent:/path/skywalking-agent/skywalking-agent.jar \
+    -Dskywalking.agent.service_name=user-service \
+    -Dskywalking.collector.backend_service=127.0.0.1:11800"
+  mvn -f Implementation/back-end/user-service -DskipTests spring-boot:run
+  ```
+- 应用日志已带 `[tid:...]`（`ia-common/logback-spring.xml` + `TraceIdFilter` 写 MDC），便于跨服务串联。
+
+### 日志（ELK）
+- 各服务统一日志格式（含 traceId）见 `ia-common/src/main/resources/logback-spring.xml`，落 `logs/<app>/app.log`。
+- Logstash 管道 `docker/logstash/logstash.conf`（grok 解析 traceId → ES 索引 `ia-logs-*`）；Kibana：`http://localhost:5601`。
+- 日志转发二选一：Filebeat 采集日志文件 → `beats:5044`；或应用侧加 TCP JSON appender → `tcp:5000`。
+
+> 说明：观测栈为基础设施，构建（`mvn`）不校验其运行；上述为可运行的 compose + 配置交付，按需 `up` 即用。
