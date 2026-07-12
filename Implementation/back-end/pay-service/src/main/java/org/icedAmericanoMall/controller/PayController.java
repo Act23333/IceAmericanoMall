@@ -3,6 +3,7 @@ package org.icedAmericanoMall.controller;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.icedAmericanoMall.domain.vo.PayOrderVO;
+import org.icedAmericanoMall.enums.PayChannelEnum;
 import org.icedAmericanoMall.manager.PayManager;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.utils.UserContext;
@@ -19,10 +20,15 @@ public class PayController {
 
     private final PayManager payManager;
 
+    /**
+     * 发起支付。channel 可选 WECHAT（默认）/ALIPAY/BALANCE。
+     * 余额支付即时完成（无二维码）；微信/支付宝返回支付链接。
+     */
     @PostMapping("/order/{orderNo}")
-    public Result<PayOrderVO> initiate(@PathVariable String orderNo) {
+    public Result<PayOrderVO> initiate(@PathVariable String orderNo,
+                                       @RequestParam(defaultValue = "WECHAT") String channel) {
         Long userId = UserContext.getUser();
-        return Result.ok(payManager.initiatePayment(orderNo, userId));
+        return Result.ok(payManager.initiatePayment(orderNo, userId, PayChannelEnum.of(channel)));
     }
 
     /**
@@ -50,8 +56,17 @@ public class PayController {
             return Result.error(400, "无法读取回调请求体");
         }
 
-        payManager.handleCallback(params);
+        payManager.handleCallback(params, PayChannelEnum.WECHAT);
         return Result.ok("success", "SUCCESS");
+    }
+
+    /**
+     * 支付宝支付回调（表单参数，含 out_trade_no）。Mock 环境验签恒通过。
+     */
+    @PostMapping("/callback/alipay")
+    public String alipayCallback(@RequestParam Map<String, String> params) {
+        payManager.handleCallback(params, PayChannelEnum.ALIPAY);
+        return "success";
     }
 
     @GetMapping("/order/{orderNo}/status")

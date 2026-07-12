@@ -74,7 +74,7 @@ There are currently no Docker Compose or infra-as-code files. Each developer set
 
 ## Architecture Overview
 
-IceAmericanoMall is a B2B2C e-commerce platform (similar to Taobao/JD) built as a distributed microservices system. **Backend MVP is 100% complete** (35/35 PRD features, 62 API endpoints). The core transaction flow (register → browse → cart → order → pay → ship → confirm) is fully implemented end-to-end.
+IceAmericanoMall is a B2B2C e-commerce platform (similar to Taobao/JD) built as a distributed microservices system. **Backend is complete through V2.3** (core交易闭环 + DDD 分层治理 + 支付渠道补齐). The core transaction flow (register → browse → cart → order → pay → ship → confirm) is fully implemented end-to-end. V2.3 adds: 下单优惠券抵扣, 找回密码, 签到积分递增, 微信 OAuth 登录 (Mock), and multi-channel payment (WeChat / Alipay-Mock / 余额支付 + 充值). Payment channel is chosen at pay time via `POST /api/pay/order/{orderNo}?channel=WECHAT|ALIPAY|BALANCE` (default WECHAT).
 
 ### Technical Stack
 
@@ -242,9 +242,11 @@ throw new BadRequestException(ErrorCode.USER_NOT_FOUND);
 |--------|--------|------------|
 | `ai-service` | LangChain4j shopping assistant + customer-service agents, `@Tool`-based search/order lookup, DeepSeek (OpenAI-compatible) config. Returns a static message when disabled. | Set `ai.enabled=true` + provide `DEEPSEEK_API_KEY`. Out of MVP scope; excluded from feature work. |
 
-#### 🔵 规划但未实现 (V3.0+)
+#### 🔵 规划但未实现 (V3.0+ / 延期 backlog)
 
 Knowledge graph (product entity graph, RAG+KG hybrid retrieval), personalized recommendation, multi-level categories, store decoration, invoices, mini-program/app rich implementation, production observability (SkyWalking, ELK, Prometheus/Grafana).
+
+**需求评审明确延期至 V3.0+（不在 V2.x 范围，当前不实现）**：RBAC 资源级权限管理、积分商城（积分兑换）、任务中心、店铺装修、多币种。这些在 PRD 中曾标 🔵 但无对应任务；如需实现须先在需求评审重新排期。
 
 ### Hard Constraints (from `project-docs/09-constraints.md`)
 

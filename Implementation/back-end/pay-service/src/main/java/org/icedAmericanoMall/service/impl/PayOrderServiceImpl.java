@@ -22,7 +22,7 @@ import java.util.List;
 public class PayOrderServiceImpl extends ServiceImpl<PayOrderMapper, PayOrderEntity> implements PayOrderService {
 
     private static final int PAY_TIMEOUT_MINUTES = 30;
-    private static final String CHANNEL_WECHAT = "WECHAT";
+    private static final String CHANNEL_BALANCE = "BALANCE";
 
     @Override
     public PayOrderEntity getByBizOrderNo(String bizOrderNo) {
@@ -36,17 +36,34 @@ public class PayOrderServiceImpl extends ServiceImpl<PayOrderMapper, PayOrderEnt
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public PayOrderEntity createPending(String bizOrderNo, Long userId, int amount, String qrCodeUrl) {
+    public PayOrderEntity createPending(String bizOrderNo, Long userId, int amount, String payUrl,
+                                        String channelCode, int payType) {
         PayOrderEntity payOrder = new PayOrderEntity();
         payOrder.setBizOrderNo(bizOrderNo);
         payOrder.setPayOrderNo(IdUtil.fastSimpleUUID());
         payOrder.setBizUserId(userId);
-        payOrder.setPayChannelCode(CHANNEL_WECHAT);
+        payOrder.setPayChannelCode(channelCode);
         payOrder.setAmount(amount);
-        payOrder.setPayType(PayTypeEnum.NATIVE.getCode());
+        payOrder.setPayType(payType);
         payOrder.setStatus(PayStatusEnum.PENDING_PAY.getCode());
         payOrder.setPayOverTime(LocalDateTime.now().plusMinutes(PAY_TIMEOUT_MINUTES));
-        payOrder.setQrCodeUrl(qrCodeUrl);
+        payOrder.setQrCodeUrl(payUrl);
+        save(payOrder);
+        return payOrder;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public PayOrderEntity createPaidByBalance(String bizOrderNo, Long userId, int amount) {
+        PayOrderEntity payOrder = new PayOrderEntity();
+        payOrder.setBizOrderNo(bizOrderNo);
+        payOrder.setPayOrderNo(IdUtil.fastSimpleUUID());
+        payOrder.setBizUserId(userId);
+        payOrder.setPayChannelCode(CHANNEL_BALANCE);
+        payOrder.setAmount(amount);
+        payOrder.setPayType(PayTypeEnum.BALANCE.getCode());
+        payOrder.setStatus(PayStatusEnum.SUCCESS.getCode());
+        payOrder.setPaySuccessTime(LocalDateTime.now());
         save(payOrder);
         return payOrder;
     }

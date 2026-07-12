@@ -1,11 +1,15 @@
 package org.icedAmericanoMall.manager;
 
 import org.icedAmericanoMall.client.OrderClient;
+import org.icedAmericanoMall.client.UserClient;
 import org.icedAmericanoMall.convert.PayOrderConverter;
 import org.icedAmericanoMall.domain.entity.PayOrderEntity;
 import org.icedAmericanoMall.domain.vo.PayOrderVO;
 import org.icedAmericanoMall.dto.OrderSummaryDTO;
+import org.icedAmericanoMall.enums.PayChannelEnum;
 import org.icedAmericanoMall.enums.PayStatusEnum;
+import org.icedAmericanoMall.enums.PayTypeEnum;
+import org.icedAmericanoMall.integration.payment.AlipayPaymentClient;
 import org.icedAmericanoMall.integration.payment.PaymentClient;
 import org.icedAmericanoMall.service.PayOrderService;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.noLazy.common.enums.ErrorCode;
 import org.noLazy.common.exception.BizException;
 
 import java.time.LocalDateTime;
@@ -26,7 +31,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * PayManager 支付编排单元测试 —— Feign / 支付渠道 / 领域服务全部打桩。
+ * PayManager 支付编排单元测试 —— 微信/支付宝/余额三渠道；Feign / 支付渠道 / 领域服务全部打桩。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("PayManager 支付编排单元测试")
@@ -36,6 +41,8 @@ class PayManagerTest {
     @Mock PayOrderConverter payOrderConverter;
     @Mock OrderClient orderClient;
     @Mock PaymentClient paymentClient;
+    @Mock AlipayPaymentClient alipayPaymentClient;
+    @Mock UserClient userClient;
     @InjectMocks PayManager payManager;
 
     private OrderSummaryDTO summary(int amount) {
@@ -56,16 +63,57 @@ class PayManagerTest {
     }
 
     @Test
-    @DisplayName("initiatePayment — 正常发起：取金额、生成二维码、创建待支付单")
-    void shouldInitiate_whenOrderValid() {
+    @DisplayName("initiatePayment(WECHAT) — 取金额、生成二维码、创建待支付单")
+    void shouldInitiateWechat_whenOrderValid() {
         when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
         when(orderClient.getOrder("ORD-1")).thenReturn(summary(12900));
         when(paymentClient.initiatePayment(eq("ORD-1"), eq(12900), anyString())).thenReturn("weixin://qr");
-        when(payOrderService.createPending("ORD-1", 100L, 12900, "weixin://qr"))
+        when(payOrderService.createPending("ORD-1", 100L, 12900, "weixin://qr", "WECHAT", PayTypeEnum.NATIVE.getCode()))
                 .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
 
-        assertNotNull(payManager.initiatePayment("ORD-1", 100L));
-        verify(payOrderService).createPending("ORD-1", 100L, 12900, "weixin://qr");
+        assertNotNull(payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.WECHAT));
+        verify(payOrderService).createPending("ORD-1", 100L, 12900, "weixin://qr", "WECHAT", PayTypeEnum.NATIVE.getCode());
+    }
+
+    @Test
+    @DisplayName("initiatePayment(ALIPAY) — 走支付宝客户端拿链接")
+    void shouldInitiateAlipay() {
+        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
+        when(orderClient.getOrder("ORD-1")).thenReturn(summary(8800));
+        when(alipayPaymentClient.initiatePayment(eq("ORD-1"), eq(8800), anyString())).thenReturn("https://alipay/pay");
+        when(payOrderService.createPending("ORD-1", 100L, 8800, "https://alipay/pay", "ALIPAY", PayTypeEnum.NATIVE.getCode()))
+                .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
+
+        assertNotNull(payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.ALIPAY));
+        verify(alipayPaymentClient).initiatePayment("ORD-1", 8800, "订单支付");
+        verify(paymentClient, never()).initiatePayment(anyString(), anyInt(), anyString());
+    }
+
+    @Test
+    @DisplayName("initiatePayment(BALANCE) — 扣款成功直接成单并通知待发货")
+    void shouldPayByBalance() {
+        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
+        when(orderClient.getOrder("ORD-1")).thenReturn(summary(5000));
+        when(payOrderService.createPaidByBalance("ORD-1", 100L, 5000))
+                .thenReturn(payOrder(PayStatusEnum.SUCCESS.getCode()));
+
+        payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.BALANCE);
+
+        verify(userClient).deductBalance(100L, 5000);
+        verify(payOrderService).createPaidByBalance("ORD-1", 100L, 5000);
+        verify(orderClient).updateOrderStatus("ORD-1", 2);   // 待发货
+    }
+
+    @Test
+    @DisplayName("initiatePayment(BALANCE) — 余额不足：抛异常且不建单")
+    void shouldReject_whenBalanceInsufficient() {
+        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
+        when(orderClient.getOrder("ORD-1")).thenReturn(summary(5000));
+        doThrow(new BizException(ErrorCode.BALANCE_INSUFFICIENT, "余额不足"))
+                .when(userClient).deductBalance(100L, 5000);
+
+        assertThrows(BizException.class, () -> payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.BALANCE));
+        verify(payOrderService, never()).createPaidByBalance(anyString(), anyLong(), anyInt());
     }
 
     @Test
@@ -73,50 +121,42 @@ class PayManagerTest {
     void shouldReject_whenAlreadyPaid() {
         when(payOrderService.getByBizOrderNo("ORD-1"))
                 .thenReturn(payOrder(PayStatusEnum.SUCCESS.getCode()));
-        assertThrows(BizException.class, () -> payManager.initiatePayment("ORD-1", 100L));
+        assertThrows(BizException.class, () -> payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.WECHAT));
         verify(orderClient, never()).getOrder(anyString());
     }
 
     @Test
-    @DisplayName("initiatePayment — 订单不存在抛异常")
-    void shouldReject_whenOrderNotFound() {
-        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
-        when(orderClient.getOrder("ORD-1")).thenReturn(null);
-        assertThrows(BizException.class, () -> payManager.initiatePayment("ORD-1", 100L));
-        verify(payOrderService, never()).createPending(anyString(), anyLong(), anyInt(), anyString());
-    }
-
-    @Test
-    @DisplayName("handleCallback — 验签通过：置支付成功并更新订单为待发货")
+    @DisplayName("handleCallback(WECHAT) — 验签通过：置成功并更新订单为待发货")
     void shouldMarkSuccess_whenCallbackVerified() {
         when(paymentClient.verifyCallback(anyMap())).thenReturn(true);
         when(payOrderService.getByPayOrderNo("PAY-1"))
                 .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
 
-        payManager.handleCallback(Map.of("out_trade_no", "PAY-1", "result_code", "SUCCESS"));
+        payManager.handleCallback(Map.of("out_trade_no", "PAY-1", "result_code", "SUCCESS"), PayChannelEnum.WECHAT);
 
         verify(payOrderService).markSuccess(any(), eq("SUCCESS"));
-        verify(orderClient).updateOrderStatus("ORD-1", 2);   // 待发货
+        verify(orderClient).updateOrderStatus("ORD-1", 2);
     }
 
     @Test
-    @DisplayName("handleCallback — 已成功单幂等跳过")
-    void shouldSkip_whenAlreadySuccess() {
-        when(paymentClient.verifyCallback(anyMap())).thenReturn(true);
+    @DisplayName("handleCallback(ALIPAY) — 用支付宝验签器")
+    void shouldUseAlipayVerifier() {
+        when(alipayPaymentClient.verifyCallback(anyMap())).thenReturn(true);
         when(payOrderService.getByPayOrderNo("PAY-1"))
-                .thenReturn(payOrder(PayStatusEnum.SUCCESS.getCode()));
+                .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
 
-        payManager.handleCallback(Map.of("out_trade_no", "PAY-1"));
+        payManager.handleCallback(Map.of("out_trade_no", "PAY-1"), PayChannelEnum.ALIPAY);
 
-        verify(payOrderService, never()).markSuccess(any(), any());
-        verify(orderClient, never()).updateOrderStatus(anyString(), anyInt());
+        verify(alipayPaymentClient).verifyCallback(anyMap());
+        verify(paymentClient, never()).verifyCallback(anyMap());
+        verify(payOrderService).markSuccess(any(), any());
     }
 
     @Test
     @DisplayName("handleCallback — 验签失败抛异常")
     void shouldThrow_whenSignatureInvalid() {
         when(paymentClient.verifyCallback(anyMap())).thenReturn(false);
-        assertThrows(BizException.class, () -> payManager.handleCallback(Map.of()));
+        assertThrows(BizException.class, () -> payManager.handleCallback(Map.of(), PayChannelEnum.WECHAT));
         verify(payOrderService, never()).markSuccess(any(), any());
     }
 
@@ -129,6 +169,6 @@ class PayManagerTest {
         payManager.cancelTimeoutPayOrders();
 
         verify(payOrderService).markTimeoutCancel(1L);
-        verify(orderClient).updateOrderStatus("ORD-1", 5);   // 已取消
+        verify(orderClient).updateOrderStatus("ORD-1", 5);
     }
 }

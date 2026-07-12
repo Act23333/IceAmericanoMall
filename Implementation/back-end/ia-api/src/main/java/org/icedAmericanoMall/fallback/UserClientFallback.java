@@ -62,6 +62,14 @@ public class UserClientFallback implements FallbackFactory<UserClient> {
             }
 
             @Override
+            public void deductBalance(Long userId, Integer amount) {
+                // fail-closed：余额服务不可用时必须抛出，绝不能静默"扣款成功"
+                log.error("余额扣减失败（服务不可用）: userId={}, amount={}", userId, amount, cause);
+                throw new org.noLazy.common.exception.BizException(
+                        org.noLazy.common.enums.ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "余额服务暂不可用，请稍后重试");
+            }
+
+            @Override
             public void resetPassword(ResetPasswordReqDTO request) {
                 log.error("密码重置失败: phone={}", request != null ? request.getPhone() : null, cause);
             }

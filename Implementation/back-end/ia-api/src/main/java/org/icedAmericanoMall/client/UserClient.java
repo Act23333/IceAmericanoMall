@@ -31,6 +31,10 @@ public interface UserClient {
                    @RequestParam(defaultValue = "2") int type,
                    @RequestParam(defaultValue = "下单奖励") String source);
 
+    /** Deduct balance for balance payment — called by pay-service (余额支付；余额不足抛异常) */
+    @PostMapping("/balance/deduct")
+    void deductBalance(@RequestParam Long userId, @RequestParam Integer amount);
+
     /** Reset password via SMS code — called by authorization-service (找回密码) */
     @PostMapping("/reset-password")
     void resetPassword(@RequestBody ResetPasswordReqDTO request);

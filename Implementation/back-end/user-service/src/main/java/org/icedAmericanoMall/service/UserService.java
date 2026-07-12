@@ -19,4 +19,13 @@ public interface UserService extends IService<UserEntity> {
 
     /** 管理后台：设置用户角色（0=USER,1=SELLER,2=ADMIN）。 */
     void updateRole(Long id, Integer roleType);
+
+    /** 查询账户余额（单位：分）。 */
+    int getBalance(Long userId);
+
+    /** 原子扣减余额（余额支付）；余额不足抛 BALANCE_INSUFFICIENT。 */
+    void deductBalance(Long userId, int amount);
+
+    /** 增加余额（充值/退款）。 */
+    void addBalance(Long userId, int amount);
 }

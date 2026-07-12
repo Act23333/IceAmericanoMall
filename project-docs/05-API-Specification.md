@@ -134,6 +134,14 @@ AddressResp: `{ id(Long), userId(Long), receiver, phone, province, city, distric
 | 15  | POST | `/user/sign`        | — (JWT) | `SignResultVO { signed(boolean), earnedPoints(long), monthCount(long), continuousDays(long) }` | ✅   |
 | 16  | GET  | `/user/sign/status` | — (JWT) | `SignResultVO` | ✅   |
 
+#### BalanceController — `/user/balance`（V2.3 余额支付）
+
+| #   | 方法   | 路径                       | 请求                     | 响应                | 阶段  |
+| --- | ---- | ------------------------ | ---------------------- | ----------------- | --- |
+| —   | GET  | `/user/balance`          | — (JWT)                | `Integer`（余额，分）   | ✅ V2.3 |
+| —   | POST | `/user/balance/recharge` | Query: `amount` (int，分) | `Integer`（最新余额）；简易充值/Mock | ✅ V2.3 |
+
+
 #### FavoriteController — `/user/favorite`
 
 | #   | 方法     | 路径               | 请求                           | 响应                      | 阶段  |
@@ -190,6 +198,7 @@ AddressResp: `{ id(Long), userId(Long), receiver, phone, province, city, distric
 | 36  | POST | `/internal/user/login/sms`      | `{ phone, code }`                                | `LoginRespDTO`                | ✅   |
 | —   | POST | `/internal/user/reset-password` | `{ phone, code, newPassword }`                   | `void`（找回密码，校验短信码后 BCrypt 重写） | ✅   |
 | —   | POST | `/internal/user/login/wechat`   | `{ code }`                                       | `LoginRespDTO`（微信登录：code→openid→查/建用户） | ✅   |
+| —   | POST | `/internal/user/balance/deduct` | Query: `userId`(Long), `amount`(Integer)         | `void`（余额支付原子扣减；余额不足抛异常透传） | ✅ V2.3 |
 | 37  | GET  | `/internal/user/address/{id}`   | Path: `id` (Long)                                | `AddressResp`                 | ✅   |
 | 38  | GET  | `/internal/user/{id}`           | Path: `id` (Long)                                | `UserInfoResp`                | ✅   |
 | 39  | GET  | `/internal/user/count`          | —                                                | `long`                        | ✅   |
@@ -383,9 +392,10 @@ OrderItemVO: `{ id(Long), skuId(Long), productName, skuSpec, price(Integer), qua
 
 | #   | 方法   | 路径                                | 请求                                                                        | 响应               | 阶段  |
 | --- | ---- | --------------------------------- | ------------------------------------------------------------------------- | ---------------- | --- |
-| 99  | POST | `/api/pay/order/{orderNo}`        | Path: `orderNo` (String)                                                  | `PayOrderEntity` | ✅   |
+| 99  | POST | `/api/pay/order/{orderNo}`        | Path: `orderNo` (String); Query: `channel`=`WECHAT`(默认)`\|ALIPAY\|BALANCE` | `PayOrderVO`（余额支付即时 SUCCESS 无二维码；微信/支付宝返回支付链接） | ✅ V2.3 |
 | 100 | POST | `/api/pay/callback/wechat`        | Headers: `Wechatpay-Signature/Nonce/Timestamp/Serial`, Body: raw XML/JSON | `String`         | ✅   |
-| 101 | GET  | `/api/pay/order/{orderNo}/status` | Path: `orderNo` (String)                                                  | `PayOrderEntity` | ✅   |
+| —   | POST | `/api/pay/callback/alipay`        | Form params（含 `out_trade_no`）                                            | `String`（"success"，Mock 验签恒通过） | ✅ V2.3 |
+| 101 | GET  | `/api/pay/order/{orderNo}/status` | Path: `orderNo` (String)                                                  | `PayOrderVO` | ✅   |
 
 ---
 

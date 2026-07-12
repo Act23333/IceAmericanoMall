@@ -15,8 +15,12 @@ public interface PayOrderService extends IService<PayOrderEntity> {
 
     PayOrderEntity getByPayOrderNo(String payOrderNo);
 
-    /** 创建"待支付"支付单并落库。 */
-    PayOrderEntity createPending(String bizOrderNo, Long userId, int amount, String qrCodeUrl);
+    /** 创建"待支付"支付单并落库（第三方渠道：微信/支付宝）。 */
+    PayOrderEntity createPending(String bizOrderNo, Long userId, int amount, String payUrl,
+                                 String channelCode, int payType);
+
+    /** 余额支付：直接创建"已支付"支付单（无外部网关）。 */
+    PayOrderEntity createPaidByBalance(String bizOrderNo, Long userId, int amount);
 
     /** 标记支付成功（幂等由调用方保证）。 */
     void markSuccess(PayOrderEntity payOrder, String resultCode);

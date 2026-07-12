@@ -28,7 +28,9 @@ public class PaymentEventListener {
         log.info("Received OrderCreatedEvent: orderNo={}, userId={}, amount={}",
                 event.getOrderNo(), event.getUserId(), event.getTotalAmount());
         try {
-            payManager.initiatePayment(event.getOrderNo(), event.getUserId());
+            // 事件驱动自动建单默认走微信渠道；用户可在支付时改选其他渠道
+            payManager.initiatePayment(event.getOrderNo(), event.getUserId(),
+                    org.icedAmericanoMall.enums.PayChannelEnum.WECHAT);
         } catch (Exception e) {
             log.error("Failed to auto-create payment for order: {}", event.getOrderNo(), e);
         }

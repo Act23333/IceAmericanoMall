@@ -3,12 +3,16 @@ package org.icedAmericanoMall.manager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.client.OrderClient;
+import org.icedAmericanoMall.client.UserClient;
 import org.icedAmericanoMall.convert.PayOrderConverter;
 import org.icedAmericanoMall.domain.entity.PayOrderEntity;
 import org.icedAmericanoMall.domain.vo.PayOrderVO;
 import org.icedAmericanoMall.dto.OrderSummaryDTO;
+import org.icedAmericanoMall.enums.PayChannelEnum;
 import org.icedAmericanoMall.enums.PayStatusEnum;
+import org.icedAmericanoMall.enums.PayTypeEnum;
 import org.icedAmericanoMall.enums.TradeOrderStatus;
+import org.icedAmericanoMall.integration.payment.AlipayPaymentClient;
 import org.icedAmericanoMall.integration.payment.PaymentClient;
 import org.icedAmericanoMall.service.PayOrderService;
 import org.noLazy.common.enums.ErrorCode;
@@ -21,24 +25,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 支付编排 Manager —— 承接跨服务 Feign（trade-service OrderClient）与支付渠道集成（PaymentClient），
- * 编排支付发起、回调、超时取消。领域内的支付单读写下沉至 {@link PayOrderService}。
+ * 支付编排 Manager —— 按渠道（微信/支付宝/余额）路由发起支付与回调，编排跨服务 Feign。
+ * 领域内的支付单读写下沉至 {@link PayOrderService}。
  *
  * <pre>
- * Scenario: 微信支付发起
- *   Given 订单状态为"待付款"且存在于 trade-service
- *   When 用户请求发起支付
- *   Then 通过 Feign 获取订单金额，创建"待支付"支付单，返回二维码链接
- *
- * Scenario: 支付成功回调（幂等）
- *   Given 回调签名校验通过且支付单为"待支付"
- *   When 收到回调
- *   Then 支付单置为"已支付"，并通过 Feign 将订单更新为"待发货"
- *
- * Scenario: 支付超时自动取消
- *   Given 支付单"待支付"且已过期
- *   When 定时任务触发
- *   Then 支付单置为"超时取消"，并通过 Feign 将订单更新为"已取消"
+ * Scenario: 微信/支付宝发起
+ *   Then 调对应渠道客户端拿支付链接，创建"待支付"支付单，返回链接
+ * Scenario: 余额支付
+ *   Then Feign 原子扣减用户余额（不足则失败不建单）→ 直接创建"已支付"支付单 → 通知订单待发货
+ * Scenario: 回调/超时
+ *   Then 按渠道验签置"已支付"通知待发货；超时置"取消"通知已取消
  * </pre>
  */
 @Slf4j
@@ -46,33 +42,65 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PayManager {
 
+    private static final String PAY_DESC = "订单支付";
+
     private final PayOrderService payOrderService;
     private final PayOrderConverter payOrderConverter;
     private final OrderClient orderClient;
     private final PaymentClient paymentClient;
+    private final AlipayPaymentClient alipayPaymentClient;
+    private final UserClient userClient;
 
     @Transactional(rollbackFor = Exception.class)
-    public PayOrderVO initiatePayment(String orderNo, Long userId) {
+    public PayOrderVO initiatePayment(String orderNo, Long userId, PayChannelEnum channel) {
         PayOrderEntity existing = payOrderService.getByBizOrderNo(orderNo);
         if (existing != null && existing.getStatus() == PayStatusEnum.SUCCESS.getCode()) {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "订单已支付");
         }
-        // Feign：从 trade-service 获取订单实际金额
         OrderSummaryDTO summary = orderClient.getOrder(orderNo);
         if (summary == null) {
             throw new BizException(ErrorCode.USER_NOT_FOUND, "订单不存在: " + orderNo);
         }
-        // 支付渠道集成：获取二维码链接
-        String qrCodeUrl = paymentClient.initiatePayment(orderNo, summary.getTotalAmount(), "订单支付");
-        PayOrderEntity payOrder = payOrderService.createPending(
-                orderNo, userId, summary.getTotalAmount(), qrCodeUrl);
+        int amount = summary.getTotalAmount();
+        PayOrderEntity payOrder = switch (channel) {
+            case WECHAT -> initiateThirdParty(orderNo, userId, amount,
+                    paymentClient.initiatePayment(orderNo, amount, PAY_DESC), PayChannelEnum.WECHAT);
+            case ALIPAY -> initiateThirdParty(orderNo, userId, amount,
+                    alipayPaymentClient.initiatePayment(orderNo, amount, PAY_DESC), PayChannelEnum.ALIPAY);
+            case BALANCE -> payByBalance(orderNo, userId, amount);
+        };
         return payOrderConverter.toVO(payOrder);
     }
 
+    /** 微信/支付宝：创建待支付单，附带支付链接。 */
+    private PayOrderEntity initiateThirdParty(String orderNo, Long userId, int amount,
+                                              String payUrl, PayChannelEnum channel) {
+        return payOrderService.createPending(
+                orderNo, userId, amount, payUrl, channel.getCode(), PayTypeEnum.NATIVE.getCode());
+    }
+
+    /** 余额支付：Feign 扣款成功后直接成单，并通知订单待发货。 */
+    private PayOrderEntity payByBalance(String orderNo, Long userId, int amount) {
+        userClient.deductBalance(userId, amount); // 余额不足抛异常 → 事务回滚，不建单
+        PayOrderEntity payOrder;
+        try {
+            payOrder = payOrderService.createPaidByBalance(orderNo, userId, amount);
+        } catch (Exception e) {
+            log.error("余额已扣但支付单创建失败，需人工退款: userId={}, amount={}, orderNo={}",
+                    userId, amount, orderNo, e);
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "支付处理失败");
+        }
+        notifyOrderPaid(orderNo);
+        return payOrder;
+    }
+
     @Transactional(rollbackFor = Exception.class)
-    public void handleCallback(Map<String, String> params) {
-        if (!paymentClient.verifyCallback(params)) {
-            log.error("支付回调签名验证失败: {}", params);
+    public void handleCallback(Map<String, String> params, PayChannelEnum channel) {
+        boolean verified = channel == PayChannelEnum.ALIPAY
+                ? alipayPaymentClient.verifyCallback(params)
+                : paymentClient.verifyCallback(params);
+        if (!verified) {
+            log.error("支付回调签名验证失败: channel={}, {}", channel, params);
             throw new BizException(ErrorCode.ILLEGAL_REQUEST, "支付回调验证失败");
         }
         String payOrderNo = params.get("out_trade_no");
@@ -85,12 +113,16 @@ public class PayManager {
             return; // 幂等：已处理直接返回
         }
         payOrderService.markSuccess(payOrder, params.get("result_code"));
-        // Feign：支付成功后将订单状态更新为待发货（非致命，失败可对账修复）
+        notifyOrderPaid(payOrder.getBizOrderNo());
+    }
+
+    /** Feign：通知 trade-service 订单进入待发货（非致命，失败可对账修复）。 */
+    private void notifyOrderPaid(String orderNo) {
         try {
-            orderClient.updateOrderStatus(payOrder.getBizOrderNo(), TradeOrderStatus.PENDING_SHIPMENT.getCode());
-            log.info("支付成功，订单状态已更新: payOrderNo={}, orderNo={}", payOrderNo, payOrder.getBizOrderNo());
+            orderClient.updateOrderStatus(orderNo, TradeOrderStatus.PENDING_SHIPMENT.getCode());
+            log.info("支付成功，订单状态已更新: orderNo={}", orderNo);
         } catch (Exception e) {
-            log.error("支付成功但订单状态更新失败: orderNo={}", payOrder.getBizOrderNo(), e);
+            log.error("支付成功但订单状态更新失败: orderNo={}", orderNo, e);
         }
     }
 

@@ -528,12 +528,26 @@ Scenario: 查看商品详情
 - **UserServiceImpl 拆分**：447 行拆为 AuthService + SmsService + UserService（SRP 单一职责）
 - **`02-Architecture.md §9`**：架构合规审计报告，综合评分 9.2/10
 
+### V2.3 — 支付补齐 + V1.1 遗留缺口回填
+
+- **DDD 分层治理**（Tier 1）：Entity→VO、Service 直连 Feign 上移 Manager（OrderManager/PayManager/AdminManager/SignManager）、Controller 去 Mapper/JdbcTemplate、魔法值→枚举
+- **真实 Bug 修复**：AddressClient Feign 路径（下单打通）、秒杀超卖原子化、IdType 对齐
+- **V1.1 遗留缺口**：下单优惠券抵扣（CouponClient + Saga 回滚）、找回密码（短信码重置）、签到积分递增（10/15/20）、微信 OAuth 登录（Mock）
+- **支付补齐**：支付渠道选择（`?channel=WECHAT|ALIPAY|BALANCE`）、支付宝(Mock)、余额支付 + 简易充值（原子扣减，余额不足拒付）
+- 测试新增 OrderManager/PayManager/SignManager/Balance/Alipay 等单测与 H2 集成测试
+
+### V3.0+ — 延期 backlog（需求评审移出当前范围）
+
+> 以下功能经需求评审明确**移出 V2.x，延期至 V3.0+ 大版本**，当前不实现：
+> **RBAC 资源级权限管理、积分商城、任务中心、店铺装修、多币种**（PRD 曾标 🔵，但无对应任务，评估工作量大且非当前交易闭环所需）。
+
 ### V3.0 — 知识驱动
 
 - **知识图谱引擎**：商品实体关系抽取、图谱构建、多跳推理（详见 13-AI-Technology-Selection §6 Phase 4）
 - RAG + KG 混合检索：模糊语义匹配 + 精确关系推理双引擎
 - 场景化搭配推荐：基于知识图谱的"主商品→配件→兼容性校验"推荐链路
 - 知识图谱可视化后台：运营/商家查看和修正实体关系
+- **（并入）延期 backlog**：RBAC、积分商城、任务中心、店铺装修、多币种
 
 ---
 
@@ -549,8 +563,9 @@ Scenario: 查看商品详情
 | V2.0 平台化    | 🟢 100% | 14 | 106 | 82  | 商家入驻, 售后, AI客服, Seata |
 | V2.1 财务+国际化 | 🟢 100% | 14 | 115 | 82  | 财务结算, 多语言 |
 | V2.2 架构治理   | 🟢 100% | 14 | 115+ | 89  | 路由修复, 模块拆分, 合规 9.4/10 |
+| V2.3 支付补齐   | 🟢 100% | 14 | 125+ | 130+ | DDD分层, 优惠券抵扣/找回密码/签到积分/微信OAuth, 支付宝(Mock)/余额支付/充值 |
 | Phase 5 前端  | 🔵 进行中   | —   | —   | —   | React 19 + Next.js 15 + Tailwind + Shadcn/ui（storefront）/ Ant Design 5（admin·seller），详见 15-Front-End-Technology-Selection |
-| V3.0 知识驱动   | ⚪ 0%    | —   | —   | —   | 知识图谱 + RAG+KG 混合检索               |
+| V3.0 知识驱动   | ⚪ 0%    | —   | —   | —   | 知识图谱 + RAG+KG（并入延期 backlog：RBAC/积分商城/任务中心/店铺装修/多币种） |
 
 **已实现的核心链路**: 注册/登录 → 浏览商品 → 加入购物车 → 下单（库存扣减+地址快照+商品快照）→ 微信支付 → 商家发货 → 确认收货 → 售后 → 财务结算。
 

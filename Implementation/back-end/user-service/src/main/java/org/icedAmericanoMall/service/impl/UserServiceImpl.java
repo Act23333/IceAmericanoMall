@@ -78,4 +78,45 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         }
         lambdaUpdate().eq(UserEntity::getId, id).set(UserEntity::getRoleType, roleType).update();
     }
+
+    @Override
+    public int getBalance(Long userId) {
+        UserEntity user = getById(userId);
+        if (user == null) {
+            throw new BizException(ErrorCode.USER_NOT_FOUND);
+        }
+        return user.getBalance() == null ? 0 : user.getBalance();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deductBalance(Long userId, int amount) {
+        if (amount <= 0) {
+            throw new BadRequestException(ErrorCode.PARAM_ERROR, "扣减金额必须大于0");
+        }
+        // 原子条件扣减：仅当余额充足才更新，影响行数为 0 即余额不足
+        boolean ok = lambdaUpdate()
+                .eq(UserEntity::getId, userId)
+                .ge(UserEntity::getBalance, amount)
+                .setSql("balance = balance - " + amount)
+                .update();
+        if (!ok) {
+            throw new BizException(ErrorCode.BALANCE_INSUFFICIENT, "余额不足");
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void addBalance(Long userId, int amount) {
+        if (amount <= 0) {
+            throw new BadRequestException(ErrorCode.PARAM_ERROR, "金额必须大于0");
+        }
+        boolean ok = lambdaUpdate()
+                .eq(UserEntity::getId, userId)
+                .setSql("balance = balance + " + amount)
+                .update();
+        if (!ok) {
+            throw new BizException(ErrorCode.USER_NOT_FOUND, "用户不存在");
+        }
+    }
 }

@@ -11,7 +11,8 @@ public enum PayTypeEnum {
     H5(1, "H5支付"),
     JSAPI(2, "公众号支付"),
     MINI(3, "小程序支付"),
-    NATIVE(4, "扫码支付");
+    NATIVE(4, "扫码支付"),
+    BALANCE(5, "余额支付");
 
     @EnumValue
     private final int code;
