@@ -5,5 +5,6 @@ export * from './types';
 export * from './hooks';
 export * from './queries';
 export { apiClient, ApiError } from './client';
+export { getAccessToken, getRefreshToken, setTokens, clearTokens } from './token';
 export { getUserMessage } from './error-codes';
 export { getProducts, getProduct, getCategories } from './server';

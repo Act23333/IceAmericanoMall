@@ -10,3 +10,5 @@ export { useAddresses, useAddAddress, useUpdateAddress, useDeleteAddress } from 
 export { useSearch, useHotKeywords, useSearchHistory } from './use-search';
 export { useHomeConfig } from './use-home-config';
 export type { HomeConfigItem } from './use-home-config';
+export { useInitiatePay, usePayStatus } from './use-pay';
+export { useBalance, useRecharge } from './use-balance';

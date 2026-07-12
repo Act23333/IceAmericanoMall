@@ -35,7 +35,7 @@ export default function CheckoutPage() {
         cartItemIds: selected.map((i) => i.skuId),
         remark: remark || undefined,
       });
-      router.push(`/shop/orders/${order.orderNo}`);
+      router.push(`/shop/pay/${order.orderNo}`);
     } catch (e: any) {
       alert(e?.message ?? '下单失败');
     } finally {

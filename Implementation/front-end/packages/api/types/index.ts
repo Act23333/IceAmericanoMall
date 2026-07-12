@@ -241,3 +241,29 @@ export interface FlashSaleEntity {
   endTime: string;
   status: number;
 }
+
+// ===== 支付 (V2.3 多渠道) =====
+
+export type PayChannel = 'WECHAT' | 'ALIPAY' | 'BALANCE';
+
+/** 支付渠道枚举值 → 展示名 */
+export const PAY_CHANNEL_TEXT: Record<PayChannel, string> = {
+  WECHAT: '微信支付',
+  ALIPAY: '支付宝',
+  BALANCE: '余额支付',
+};
+
+/** PayOrderVO — 后端支付单视图 */
+export interface PayOrderVO {
+  payOrderNo: string;
+  bizOrderNo: string;
+  bizUserId: number;
+  payChannelCode: string;
+  amount: number;
+  payType: number;
+  /** 0-待提交 1-待支付 2-超时取消 3-成功 */
+  status: number;
+  qrCodeUrl?: string;
+  payOverTime?: string;
+  paySuccessTime?: string;
+}
