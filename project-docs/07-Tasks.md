@@ -144,7 +144,7 @@ Phase 4: 后台管理
   - [x] 退出登录（Token 黑名单）
   - [x] 人机验证（Geetest 集成）
 - **V1.1 待完善**:
-  - [ ] 多密钥无缝切换机制
+  - [x] 多密钥无缝切换机制—— RotationScheduler（@Scheduled cron, jwt.rotation.enabled=true）+ JwkSourceConfig 双 keystore
   - [x] 第三方登录（微信 OAuth）—— WechatLoginStrategy + `POST /api/auth/login/wechat`；user-service `loginByWechat`（code→openid→查/建）；ia-integration `WechatOAuthClient`（Real/Mock 开关，默认 Mock 虚拟 openid）
 
 **BDD 验收场景**:
@@ -194,7 +194,7 @@ Scenario: 注册幂等保护
   - [x] 签到积分递增加速策略（SignManager 编排：连续第 n 天 10/15/20 封顶，首签发放）
   - [x] 找回密码（authorization `/api/auth/reset-password` → Feign → user `/internal/user/reset-password`，短信码校验 + BCrypt 重写）
 - **V1.1 待完善**:
-  - [ ] SM2 加密传输（高安全模式）
+  - [x] SM2 加密传输（高安全模式）—— Sm2Utils（hutool，@ConditionalOnProperty sm2.enabled=true, 默认关闭）
 
 **BDD 验收场景**:
 
@@ -565,6 +565,7 @@ Scenario: 查看商品详情
 | V2.2 架构治理   | 🟢 100% | 14 | 115+ | 89  | 路由修复, 模块拆分, 合规 9.4/10 |
 | V2.3 支付补齐   | 🟢 100% | 14 | 125+ | 130+ | DDD分层, 优惠券抵扣/找回密码/签到积分/微信OAuth, 支付宝(Mock)/余额支付/充值 |
 | V2.4 观测+测试   | 🟢 100% | 14 | 127+ | 140+ | JaCoCo 覆盖率, 补 H2 集成测试(search/cart), Actuator/Prometheus 指标, TraceId 日志, 观测栈(SkyWalking/Grafana/ELK)配置就绪 |
+| V2.5 安全+CI+功能 | 🟢 100% | 14 | 133+ | 150+ | 安全加固(SM2/JWT轮换/keystore-git/PII/空闲超时/RabbitMQ TLS/MinIO presigned)、CI/CD Stage2/3+Checkstyle、登录奖励/管理员统计/商家分析 |
 | Phase 5 前端  | 🔵 进行中   | —   | —   | —   | React 19 + Next.js 15 + Tailwind + Shadcn/ui（storefront）/ Ant Design 5（admin·seller），详见 15-Front-End-Technology-Selection |
 | V3.0 知识驱动   | ⚪ 0%    | —   | —   | —   | 知识图谱 + RAG+KG（并入延期 backlog：RBAC/积分商城/任务中心/店铺装修/多币种） |
 

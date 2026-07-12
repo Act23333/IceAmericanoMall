@@ -4,12 +4,12 @@ Spring 提供了多种方式定义 Bean 的作用域，其中 `@RequestScope`、
 
 ## 1. 注解来源与默认行为
 
-| 注解 | 来源模块 | 默认 `proxyMode` | 等价写法 |
-|------|----------|------------------|----------|
-| `@RequestScope` | `spring-web` | `ScopedProxyMode.TARGET_CLASS` | `@Scope(value = "request", proxyMode = TARGET_CLASS)` |
-| `@SessionScope` | `spring-web` | `ScopedProxyMode.TARGET_CLASS` | `@Scope(value = "session", proxyMode = TARGET_CLASS)` |
-| `@Scope("request")` | `spring-context` | `ScopedProxyMode.NO` | 仅指定作用域，不启用代理 |
-| `@Scope("session")` | `spring-context` | `ScopedProxyMode.NO` | 仅指定作用域，不启用代理 |
+| 注解                  | 来源模块             | 默认 `proxyMode`                 | 等价写法                                                  |
+| ------------------- | ---------------- | ------------------------------ | ----------------------------------------------------- |
+| `@RequestScope`     | `spring-web`     | `ScopedProxyMode.TARGET_CLASS` | `@Scope(value = "request", proxyMode = TARGET_CLASS)` |
+| `@SessionScope`     | `spring-web`     | `ScopedProxyMode.TARGET_CLASS` | `@Scope(value = "session", proxyMode = TARGET_CLASS)` |
+| `@Scope("request")` | `spring-context` | `ScopedProxyMode.NO`           | 仅指定作用域，不启用代理                                          |
+| `@Scope("session")` | `spring-context` | `ScopedProxyMode.NO`           | 仅指定作用域，不启用代理                                          |
 
 ---
 
@@ -20,10 +20,12 @@ Spring 提供了多种方式定义 Bean 的作用域，其中 `@RequestScope`、
 **作用**：将 Bean 的作用域定义为当前 HTTP 请求（`request`）或 HTTP 会话（`session`），并**自动启用作用域代理**。
 
 **适用场景**：  
+
 - 当这个短生命周期的 Bean **可能被注入到长生命周期 Bean**（如单例 `@Service`、`@Component`）中时，代理是必需的。
 - 例如，一个 `UserContext` 需要在多个单例 Service 中使用，且每个请求/会话的用户信息不同。
 
 **示例**：
+
 ```java
 @RequestScope
 @Component
@@ -47,10 +49,12 @@ public class UserService {
 **作用**：仅定义 Bean 的作用域，不自动创建代理。Bean 就是一个普通的 `request`/`session` 作用域对象。
 
 **适用场景**：  
+
 - 当该 Bean **只在同作用域内被使用**（例如一个 `@Controller` 注入另一个 `request` 作用域的 Bean），或者你希望手动控制代理的开启。
 - 如果将此 Bean 注入到单例中，会因为作用域不匹配导致运行时异常（如 `IllegalStateException`），因为单例初始化时无法获取当前请求的实例。
 
 **示例**：
+
 ```java
 @Component
 @Scope("request")  // 无代理
@@ -65,6 +69,7 @@ public class MyController {
 ```
 
 如果错误地将 `RequestScopedData` 注入到单例 Service：
+
 ```java
 @Service
 public class SingletonService {
@@ -78,7 +83,9 @@ public class SingletonService {
 ## 3. 如何手动控制代理？
 
 ### 3.1 让 `@Scope` 启用代理
+
 如果你希望使用 `@Scope("request")` 但需要代理，可以显式设置 `proxyMode`：
+
 ```java
 @Component
 @Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS)
@@ -86,7 +93,9 @@ public class MyBean { ... }
 ```
 
 ### 3.2 让快捷注解关闭代理
+
 如果你确定只在同作用域内使用，可以关闭代理以提升性能：
+
 ```java
 @RequestScope(proxyMode = ScopedProxyMode.NO)
 @Component

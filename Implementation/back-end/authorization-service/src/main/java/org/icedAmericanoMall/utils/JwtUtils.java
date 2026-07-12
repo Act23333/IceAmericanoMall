@@ -12,7 +12,9 @@ package org.icedAmericanoMall.utils;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.JWSSigner;
+import com.nimbusds.jose.JWSVerifier;
 import com.nimbusds.jose.crypto.RSASSASigner;
+import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.cert.X509Certificate;
 import java.util.Date;
 import java.util.Map;
 
@@ -29,7 +33,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class JwtUtils {
 
-    private final PrivateKey privateKey;   // 从 JwtConfig 注入
+    private final PrivateKey privateKey;
+    private final PublicKey publicKey;
 
     @Value("${jwt.access-token-ttl:3600}")
     private Long accessTokenTtl;
@@ -55,5 +60,13 @@ public class JwtUtils {
         }
     }
 
-    // 如果需要解码和验证，可增加方法，但网关将使用公钥验证，此处不需要
+    /** 验证 token 签名并返回解析后的 SignedJWT（供 checkSession 等使用）。 */
+    public SignedJWT verifyToken(String tokenString) throws Exception {
+        SignedJWT jwt = SignedJWT.parse(tokenString);
+        JWSVerifier verifier = new RSASSAVerifier((java.security.interfaces.RSAPublicKey) publicKey);
+        if (!jwt.verify(verifier)) throw new RuntimeException("JWT 签名验证失败");
+        Date exp = jwt.getJWTClaimsSet().getExpirationTime();
+        if (exp != null && exp.before(new Date())) throw new RuntimeException("JWT 已过期");
+        return jwt;
+    }
 }

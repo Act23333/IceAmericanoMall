@@ -32,13 +32,14 @@ jwt:
   access-token-ttl: 3600
   refresh-token-ttl: 604800
   keystore:
-#    JwkSourceConfig 使用了 ClassPathResource 来加载文件，而文件路径为 classpath:keystore/keystore.p12。但需要注意的是：
-    #ClassPathResource 的构造函数不需要 classpath: 前缀，它默认从类路径根目录查找。
-    key-store-path: keystore/keystore.p12
-    key-password: ${KEYSTORE_PASSWORD:nolazy}
-    keystore-password: ${KEYSTORE_PASSWORD:nolazy}
-    key-alias: jwt
-  #  key-password: ${KEY_PASSWORD:changeit}     # key password (可选，如果和 storepass 相同可省略)[reference:21]
+    # V2.5: 生产通过 JWT_KEYSTORE_PATH/PASSWORD 环境变量注入；dev 用本地 dev.p12（不提交 Git）
+    key-store-path: keystore/dev.p12
+    key-password: ${JWT_KEYSTORE_PASSWORD:devpassDev1}
+    keystore-password: ${JWT_KEYSTORE_PASSWORD:devpassDev1}
+    key-alias: dev-jwt-rsa
+  rotation:
+    enabled: false  # dev 默认关闭，生产打开
+    cron: "0 0 2 * * ?"
 
 
 logging:

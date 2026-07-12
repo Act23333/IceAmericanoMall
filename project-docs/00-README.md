@@ -49,7 +49,7 @@ MVP (Phase 1)          精细化运营 (Phase 2)        平台化 (Phase 3)     
                        AI商品助手
 ```
 
-当前阶段：**V2.3 支付补齐完成**（14 模块含 database / 125+ 端点 / 130+ 测试）—— 在 V2.2 架构治理基础上补齐 DDD 分层、V1.1 遗留缺口（优惠券抵扣/找回密码/签到积分/微信 OAuth）与支付渠道（支付宝 Mock/余额支付/充值）。下一阶段：Phase 5 前端 / V3.0 知识驱动。**RBAC、积分商城、任务中心、店铺装修、多币种已延期至 V3.0+ backlog。**
+当前阶段：**V2.5 安全+CI+功能收尾**（14 模块含 database / 133+ 端点 / 150+ 测试）—— 在 V2.4 观测+测试基础上完成安全加固（keystore-git 修复 / JWT 密钥轮换 / SM2 / 空闲超时 / PII 加密 / RabbitMQ TLS / MinIO presigned）、CI/CD Pipeline（Stage 2 Docker / Stage 3 CD + smoke / Checkstyle）、功能收尾（首次/回归登录奖励 / 管理员详细统计 / 商家浏览分析）。下一阶段：Phase 5 前端 / V3.0 知识驱动。**RBAC、积分商城、任务中心、店铺装修、多币种已延期至 V3.0+ backlog。**
 
 ## 原始文档位置
 

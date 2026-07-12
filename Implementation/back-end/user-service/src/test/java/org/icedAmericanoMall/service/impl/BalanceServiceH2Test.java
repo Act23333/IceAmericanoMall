@@ -41,7 +41,7 @@ class BalanceServiceH2Test {
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     user_id VARCHAR(64), username VARCHAR(50), phone VARCHAR(20),
                     password VARCHAR(100), avatar VARCHAR(255), wx_openid VARCHAR(128),
-                    register_time TIMESTAMP, status INT DEFAULT 1, balance INT DEFAULT 0,
+                    register_time TIMESTAMP, last_login_time TIMESTAMP NULL, status INT DEFAULT 1, balance INT DEFAULT 0,
                     role_type INT DEFAULT 0,
                     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP

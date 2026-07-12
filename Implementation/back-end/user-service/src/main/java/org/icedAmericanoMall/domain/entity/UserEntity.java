@@ -37,6 +37,8 @@ public class UserEntity {
 
     private LocalDateTime registerTime;  // 注册时间（业务时间）
 
+    private LocalDateTime lastLoginTime; // 最近登录时间（首次/回归奖励判断，V2.5）
+
     private UserStatusEnum status;              // 状态：1-正常，0-禁用
 
     private Integer balance;             // 余额（单位：分）

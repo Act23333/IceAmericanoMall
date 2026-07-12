@@ -73,7 +73,7 @@ Running services locally requires these to be up:
 | Redis      | `application.yml` — `spring.data.redis.host`         | Used for token caching, rate limiting (Lua scripts)       |
 | MySQL      | `application.yml` — `spring.datasource.url`          | Schema: `Implementation/back-end/database/Initialize.sql` |
 
-There are currently no Docker Compose or infra-as-code files. Each developer sets these up manually.
+Docker Compose exists at `Implementation/back-end/docker-compose.yml`（19 服务含 MySQL/Redis/Nacos/ES/RabbitMQ/XXL-Job/MinIO/Sentinel/Seata/NGINX，observability profile 含 SkyWalking/Prometheus/Grafana/Logstash/Kibana）
 
 ## Architecture Overview
 
@@ -227,7 +227,7 @@ throw new BadRequestException(ErrorCode.USER_NOT_FOUND);
 |--------|-------------|------------|
 | `ia-common` | `Result<T>`, `ErrorCode` enum, 6 exception types, `GlobalExceptionHandler`, `@RateLimit` + AOP, `@OperationLog` + `OperationLogAspect`, domain events + `EventPublisher` (RabbitMQ), Lua scripts, MyBatis-Plus/Redis/I18n/Seata config | 8 |
 | `ia-api` | Feign clients: `UserClient`, `SkuClient`, `LogisticsClient`, `OrderClient`, `CartClient`, `AddressClient`; shared DTOs; fallback factories | 0 |
-| `ia-integration` | External integrations with mock fallbacks: WeChat Pay v3 (`WechatPaymentClient`), Aliyun SMS, Geetest v4 captcha, MinIO storage — all `@ConditionalOnProperty`-gated | 0 |
+| `ia-integration` | External integrations with mock fallbacks: WeChat Pay v3 (`WechatPaymentClient`), Aliyun SMS, Geetest v4 captcha, MinIO storage, WeChat OAuth (`WechatOAuthClient`) — all `@ConditionalOnProperty`-gated | 2 |
 | `gate-service` | Spring Cloud Gateway routes (all services), `UserContextHeaderFilter` (userId/username header forwarding), `SecurityConfig` (public path whitelist), rate limiting, Sentinel config, WebSocket placeholder | 0 |
 | `authorization-service` | Password + SMS login (strategy pattern), registration, JWT HS256/RS256 issuance, JWKS endpoint, refresh token rotation, logout (Token blacklist), rate limiting, distributed lock (Redisson) | 0 |
 | `user-service` | Registration (password+SMS), login validation, profile update, address CRUD + default, daily sign-in (Redis Bitmap), **points** (log + balance), **favorite**, **browse history**, seller registration + shop management, admin user/role/status/log management, Aliyun SMS + Geetest | 9 |
@@ -237,7 +237,7 @@ throw new BadRequestException(ErrorCode.USER_NOT_FOUND);
 | `pay-service` | WeChat Pay API v3 Native payment, callback with signature verification, idempotent processing, payment timeout (`PayTimeoutJob`), MQ listener (`order.created`), order status sync via Feign | 14 |
 | `logistics-service` | Logistics record creation (via Feign/MQ from trade-service), status tracking (PENDING→SHIPPED→DELIVERED→RETURNED), internal status update endpoint, DB migration SQL | 13 |
 | `marketing-service` | **Coupons** (platform + shop): claim/use (fixed & percentage discount)/rollback/history, admin + merchant coupon mgmt, **flash sale** (atomic conditional-update stock, oversell-safe) | 2 |
-| `search-service` | Dual impl: `EsSearchServiceImpl` (Elasticsearch 7.17, opt-in via `search.elasticsearch.enabled`) + `DbSearchServiceImpl` (MySQL LIKE fallback, `@Primary`), hot keywords + search history (Redis) | 0 |
+| `search-service` | Dual impl: `EsSearchServiceImpl` (Elasticsearch 7.17, opt-in via `search.elasticsearch.enabled`) + `DbSearchServiceImpl` (MySQL LIKE fallback, `@Primary`), hot keywords + search history (Redis) | 1 |
 | `database` | Full MySQL schema (`Initialize.sql`) + migrations: coupon, user_coupon, points_log, review, favorite, flash_sale, home_config, operation_log, after_sale, seller_application, settlement, withdrawal | 0 |
 
 #### 🟡 Gated (1 module — implemented but disabled by default)
@@ -248,7 +248,7 @@ throw new BadRequestException(ErrorCode.USER_NOT_FOUND);
 
 #### 🔵 规划但未实现 (V3.0+ / 延期 backlog)
 
-Knowledge graph (product entity graph, RAG+KG hybrid retrieval), personalized recommendation, multi-level categories, store decoration, invoices, mini-program/app rich implementation, production observability (SkyWalking, ELK, Prometheus/Grafana).
+Knowledge graph (product entity graph, RAG+KG hybrid retrieval), personalized recommendation, store decoration, invoices, mini-program/app rich implementation, production observability (SkyWalking, ELK, Prometheus/Grafana).
 
 **需求评审明确延期至 V3.0+（不在 V2.x 范围，当前不实现）**：RBAC 资源级权限管理、积分商城（积分兑换）、任务中心、店铺装修、多币种。这些在 PRD 中曾标 🔵 但无对应任务；如需实现须先在需求评审重新排期。
 

@@ -1,5 +1,6 @@
 package org.icedAmericanoMall.controller;
 
+import com.nimbusds.jwt.SignedJWT;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.client.UserClient;
@@ -7,23 +8,23 @@ import org.icedAmericanoMall.domain.dto.OAuth2TokenResp;
 import org.icedAmericanoMall.domain.dto.RefreshTokenInfo;
 import org.icedAmericanoMall.domain.dto.RegisterReq;
 import org.icedAmericanoMall.domain.dto.auth.LoginReq;
+import org.icedAmericanoMall.domain.enums.CredentialTypeEnum;
+import org.icedAmericanoMall.domain.enums.IdentityTypeEnum;
 import org.icedAmericanoMall.dto.LoginRespDTO;
 import org.icedAmericanoMall.dto.RegisterReqDTO;
 import org.icedAmericanoMall.dto.ResetPasswordReqDTO;
 import org.icedAmericanoMall.dto.WechatLoginReqDTO;
-import org.icedAmericanoMall.domain.enums.CredentialTypeEnum;
-import org.icedAmericanoMall.domain.enums.IdentityTypeEnum;
 import org.icedAmericanoMall.service.auth.login.LoginContext;
 import org.icedAmericanoMall.service.auth.login.LoginTokenService;
+import org.icedAmericanoMall.utils.JwtUtils;
 import org.icedAmericanoMall.utils.RefreshTokenUtils;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.utils.BeanUtils;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Date;
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -35,6 +36,7 @@ public class AuthController {
     private final LoginContext loginContext;
     private final LoginTokenService loginTokenService;
     private final RefreshTokenUtils refreshTokenUtils;
+    private final JwtUtils jwtUtils;
 
     @PostMapping("/login")
     public Result<OAuth2TokenResp> login(@Validated @RequestBody LoginReq request) {
@@ -77,5 +79,26 @@ public class AuthController {
     public Result<Void> logout(@RequestParam("refresh_token") String refreshToken) {
         refreshTokenUtils.revokeRefreshToken(refreshToken);
         return Result.ok("登出成功");
+    }
+
+    /**
+     * 检查会话（空闲超时）— 验证 access_token 有效性，返回剩余 TTL。
+     * 前端用来判断空闲超时（30 分钟无操作后 token 过期 → 需重新登录）。
+     */
+    @GetMapping("/check-session")
+    public Result<Map<String, Object>> checkSession(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+        long ttl = 0;
+        boolean valid = false;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            try {
+                String token = authHeader.substring(7);
+                SignedJWT jwt = jwtUtils.verifyToken(token);
+                valid = true;
+                Date exp = jwt.getJWTClaimsSet().getExpirationTime();
+                ttl = Math.max(0, (exp.getTime() - System.currentTimeMillis()) / 1000);
+            } catch (Exception ignored) { /* token 无效或过期 */ }
+        }
+        return Result.ok(Map.of("valid", valid, "ttlSeconds", ttl,
+                "idleTimeoutMinutes", 30));
     }
 }

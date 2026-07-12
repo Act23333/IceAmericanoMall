@@ -15,10 +15,32 @@ import org.springframework.stereotype.Component;
  */
 
 @Data
-@ConfigurationProperties(prefix = "jwt.keystore")
+@ConfigurationProperties(prefix = "jwt")
 public class JwtProperties {
-    private String keyStorePath;
-    private String keystorePassword;
-    private String keyPassword;
-    private String keyAlias;
+    /** Keystore 配置（@ConfigurationProperties 自动注入 sub-key） */
+    private Keystore keystore = new Keystore();
+
+    /** 密钥轮换配置 */
+    private Rotation rotation = new Rotation();
+
+    @Data
+    public static class Keystore {
+        private String keyStorePath;
+        private String keystorePassword;
+        private String keyPassword;
+        private String keyAlias;
+    }
+
+    @Data
+    public static class Rotation {
+        /** 轮换 cron（默认每天凌晨2点）。 */
+        private String cron = "0 0 2 * * ?";
+        /** 是否启用密钥轮换（dev 默认关）。 */
+        private boolean enabled = false;
+        /** next keystore path（与 current 不同文件）。 */
+        private String nextKeyStorePath;
+        private String nextKeystorePassword;
+        private String nextKeyPassword;
+        private String nextKeyAlias;
+    }
 }

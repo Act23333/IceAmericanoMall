@@ -46,4 +46,17 @@ public class AdminController {
     public Result<List<Map<String, Object>>> trend(@RequestParam(defaultValue = "30") int days) {
         return Result.ok(adminManager.orderTrend(days));
     }
+
+    /** 销量 Top N 商品（V2.5 详细统计）。 */
+    @GetMapping("/stats/top-products")
+    public Result<List<Map<String, Object>>> topProducts(@RequestParam(defaultValue = "10") int limit) {
+        return Result.ok(adminManager.topProducts(limit));
+    }
+
+    /** 指定日期区间分日销售额（V2.5 详细统计）。 */
+    @GetMapping("/stats/sales")
+    public Result<List<Map<String, Object>>> salesByDateRange(
+            @RequestParam String from, @RequestParam String to) {
+        return Result.ok(adminManager.saleByDateRange(java.time.LocalDate.parse(from), java.time.LocalDate.parse(to)));
+    }
 }

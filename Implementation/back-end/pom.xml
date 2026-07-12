@@ -285,12 +285,17 @@
                     </configuration>
                 </plugin>
 
-                <!-- 可选：管理 Spring Boot Maven 插件版本 -->
-<!--                <plugin>-->
-<!--                    <groupId>org.springframework.boot</groupId>-->
-<!--                    <artifactId>spring-boot-maven-plugin</artifactId>-->
-<!--                    <version>${spring-boot.version}</version>-->
-<!--                </plugin>-->
+                <!-- Spring Boot Maven 插件：repackage 生成可执行 fat jar（V2.5 Docker 构建用） -->
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>3.5.4</version>
+                    <executions>
+                        <execution>
+                            <goals><goal>repackage</goal></goals>
+                        </execution>
+                    </executions>
+                </plugin>
 
             </plugins>
         </pluginManagement>
