@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit;
  * @Package: org.icedAmericanoMall.controller
  */
 
-@RequestMapping("/user")
+@RequestMapping("/api/user")
 @RestController
 @Slf4j
 public class UserController {

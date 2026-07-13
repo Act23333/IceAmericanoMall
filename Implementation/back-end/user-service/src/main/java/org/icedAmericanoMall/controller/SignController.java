@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.*;
  * </pre>
  */
 @RestController
-@RequestMapping("/user/sign")
+@RequestMapping("/api/user/sign")
 @RequiredArgsConstructor
 public class SignController {
 

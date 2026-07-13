@@ -9,7 +9,7 @@ import org.noLazy.common.utils.UserContext;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/user/favorite")
+@RequestMapping("/api/user/favorite")
 @RequiredArgsConstructor
 public class FavoriteController {
 

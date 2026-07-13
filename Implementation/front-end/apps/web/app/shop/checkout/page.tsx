@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useCartStore } from '@/app/stores/cart-store';
 import { useAddresses, useCreateOrder } from '@icedmall/api';
 import { Button, GlassCard, PriceDisplay } from '@icedmall/ui';
-import { formatPrice } from '@icedmall/utils';
 import Link from 'next/link';
 
 export default function CheckoutPage() {

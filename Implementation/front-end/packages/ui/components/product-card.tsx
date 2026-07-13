@@ -25,7 +25,7 @@ const cardClasses =
   'group cursor-pointer overflow-hidden rounded-2xl transition-all duration-300 block ' +
   'hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-green/40';
 
-function CardContent({ product, variant = 'default', className }: Omit<ProductCardProps, 'href' | 'onClick'>) {
+function CardContent({ product, variant = 'default' }: Omit<ProductCardProps, 'href' | 'onClick' | 'className'>) {
   return (
     <>
       <div className={cn('overflow-hidden bg-warm-100', variant === 'horizontal' ? 'w-1/3 shrink-0' : 'aspect-square w-full')}>

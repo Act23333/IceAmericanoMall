@@ -3,7 +3,7 @@
 import { Button, GlassCard } from '@icedmall/ui';
 
 export default function MarketplaceError({
-  error,
+  error: _error,
   reset,
 }: {
   error: Error & { digest?: string };

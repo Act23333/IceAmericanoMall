@@ -32,6 +32,7 @@ export interface RegisterReq {
   password: string;
   code: string;
   username?: string;
+  deviceId?: string;
 }
 
 /** OAuth2TokenResp — 后端 @JsonProperty snake_case 序列化 */

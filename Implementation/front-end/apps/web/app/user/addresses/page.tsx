@@ -1,9 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useAddresses, useAddAddress, useUpdateAddress, useDeleteAddress, type AddressReq } from '@icedmall/api';
+import { useAddresses, useDeleteAddress, type AddressReq } from '@icedmall/api';
 import { Button, GlassCard } from '@icedmall/ui';
-import { phoneSchema } from '@icedmall/utils';
 
 const EMPTY_ADDR: AddressReq = {
   receiver: '', phone: '', province: '', city: '', district: '', street: '', detail: '',
@@ -11,31 +10,11 @@ const EMPTY_ADDR: AddressReq = {
 };
 
 export default function AddressesPage() {
-  const { data: addresses, isLoading } = useAddresses();
-  const addAddress = useAddAddress();
-  const updateAddress = useUpdateAddress();
+  const { data: addresses } = useAddresses();
   const deleteAddress = useDeleteAddress();
 
   const [editing, setEditing] = useState<(AddressReq & { id?: number }) | null>(null);
   const [form, setForm] = useState<AddressReq>({ ...EMPTY_ADDR });
-
-  const handleSave = async () => {
-    if (!form.receiver || !phoneSchema.safeParse(form.phone).success || !form.province || !form.detail) {
-      alert('请填写完整信息');
-      return;
-    }
-    try {
-      if (editing?.id) {
-        await updateAddress.mutateAsync({ ...form, id: editing.id });
-      } else {
-        await addAddress.mutateAsync(form);
-      }
-      setEditing(null);
-      setForm({ ...EMPTY_ADDR });
-    } catch (e: any) {
-      alert(e?.message ?? '保存失败');
-    }
-  };
 
   const startEdit = (addr: any) => {
     setEditing({ id: addr.id, receiver: addr.receiver, phone: addr.phone, province: addr.province,

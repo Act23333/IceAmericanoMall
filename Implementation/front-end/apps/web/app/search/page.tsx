@@ -3,11 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ProductCard, SearchBar } from '@icedmall/ui';
+import type { ProductVO } from '@icedmall/api';
 
 const API = process.env.NEXT_PUBLIC_API_URL || '';
 
-interface Product { id: number; productId: string; categoryId: number; name: string; brand: string; mainImage: string; price: number; soldCount: number; }
-interface PageData { records: Product[]; total: number; pages: number; }
+interface PageData { records: ProductVO[]; total: number; pages: number; }
 
 /** 关键词高亮 — 将搜索词拆分为单个字符和词组，红色标出 */
 function HighlightName({ name, keyword }: { name: string; keyword: string }) {
@@ -76,7 +76,7 @@ export default function SearchPage() {
   const [data, setData] = useState<PageData | null>(null);
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   const [hotKeywords, setHotKeywords] = useState<string[]>([]);
-  const [recommend, setRecommend] = useState<Product[]>([]);
+  const [recommend, setRecommend] = useState<ProductVO[]>([]);
   const [loading, setLoading] = useState(false);
 
   // 初始加载：热门词 + 推荐商品 + 分类 (仅一次)

@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.*;
  * </pre>
  */
 @RestController
-@RequestMapping("/user/balance")
+@RequestMapping("/api/user/balance")
 @RequiredArgsConstructor
 public class BalanceController {
 

@@ -20,7 +20,10 @@ export async function login(req: LoginReq): Promise<LoginResp> {
 export async function register(req: RegisterReq): Promise<LoginResp> {
   const resp = await apiClient<LoginResp>('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify(req),
+    body: JSON.stringify({
+      ...req,
+      deviceId: req.deviceId || 'web',
+    }),
   });
   setTokens(resp.access_token, resp.refresh_token);
   return resp;

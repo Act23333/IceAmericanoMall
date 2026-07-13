@@ -2,7 +2,6 @@
 
 import { useCartStore } from '@/app/stores/cart-store';
 import { Button, GlassCard, PriceDisplay } from '@icedmall/ui';
-import { formatPrice } from '@icedmall/utils';
 import { Trash2, Minus, Plus, ShoppingBag } from 'lucide-react';
 import Link from 'next/link';
 
