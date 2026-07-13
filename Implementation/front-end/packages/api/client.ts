@@ -53,13 +53,15 @@ async function tryRefresh(): Promise<string | undefined> {
 }
 
 export async function apiClient<T>(path: string, options?: RequestInit): Promise<T> {
-  let res = await request(path, options, getAccessToken());
+  // 防御：确保 POST/PUT/PATCH 的 body 不丢失（尤其是 401 重试路径）
+  const opts = options ? { ...options } : undefined;
+  let res = await request(path, opts, getAccessToken());
 
   // access token 过期 → 刷新一次后重试
   if (res.status === 401) {
     const newToken = await tryRefresh();
     if (newToken) {
-      res = await request(path, options, newToken);
+      res = await request(path, opts, newToken);
     } else {
       clearTokens();
     }
