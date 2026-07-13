@@ -20,7 +20,9 @@
     ],
     "allowJs": true,
     "noEmit": true,
-    "jsx": "preserve"
+    "jsx": "preserve",
+    "skipLibCheck": true,
+    "types": ["node"]
   },
   "include": [
     "next-env.d.ts",

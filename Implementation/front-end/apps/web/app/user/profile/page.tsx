@@ -6,7 +6,7 @@ import { formatPrice } from '@icedmall/utils';
 import Link from 'next/link';
 
 export default function ProfilePage() {
-  const { data: user, isLoading } = useUserInfo();
+  const { data: user } = useUserInfo();
 
   return (
     <div className="mx-auto max-w-2xl px-4 pt-24 pb-20">
