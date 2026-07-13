@@ -1,12 +1,11 @@
 package org.icedAmericanoMall.controller;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
+import org.icedAmericanoMall.domain.vo.OperationLogVO;
+import org.icedAmericanoMall.service.OperationLogService;
 import org.noLazy.common.domain.Result;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.Map;
 
 /**
  * 操作日志查询 — 管理后台。
@@ -16,13 +15,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AdminLogController {
 
-    private final JdbcTemplate jdbcTemplate;
+    private final OperationLogService operationLogService;
 
     @GetMapping
-    public Result<List<Map<String, Object>>> list(@RequestParam(defaultValue = "1") int page,
-                                                   @RequestParam(defaultValue = "20") int size) {
-        int offset = (page - 1) * size;
-        return Result.ok(jdbcTemplate.queryForList(
-                "SELECT * FROM operation_log ORDER BY create_time DESC LIMIT ? OFFSET ?", size, offset));
+    public Result<IPage<OperationLogVO>> list(@RequestParam(defaultValue = "1") int page,
+                                              @RequestParam(defaultValue = "20") int size) {
+        return Result.ok(operationLogService.pageLogs(page, size));
     }
 }

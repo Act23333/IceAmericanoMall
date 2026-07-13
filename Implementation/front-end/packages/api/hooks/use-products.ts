@@ -21,7 +21,7 @@ interface ProductFilters {
  */
 export function useProducts(filters: ProductFilters = {}) {
   return useQuery<PageResult<ProductVO>>({
-    queryKey: queryKeys.products.list(filters),
+    queryKey: queryKeys.products.list(filters as Record<string, unknown>),
     queryFn: async () => {
       const params = new URLSearchParams();
       if (filters.categoryId) params.set('categoryId', String(filters.categoryId));

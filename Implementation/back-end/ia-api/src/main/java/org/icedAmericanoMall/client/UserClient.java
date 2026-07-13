@@ -17,6 +17,10 @@ public interface UserClient {
     @PostMapping("/login/sms")
     LoginRespDTO loginBySms(@RequestBody SmsLoginReqDTO request);
 
+    /** WeChat OAuth login — called by authorization-service (微信第三方登录) */
+    @PostMapping("/login/wechat")
+    LoginRespDTO loginByWechat(@RequestBody WechatLoginReqDTO request);
+
     /** Get total user count for admin dashboard */
     @GetMapping("/count")
     Long countUsers();
@@ -26,4 +30,12 @@ public interface UserClient {
     Long addPoints(@RequestParam Long userId, @RequestParam int points,
                    @RequestParam(defaultValue = "2") int type,
                    @RequestParam(defaultValue = "下单奖励") String source);
+
+    /** Deduct balance for balance payment — called by pay-service (余额支付；余额不足抛异常) */
+    @PostMapping("/balance/deduct")
+    void deductBalance(@RequestParam Long userId, @RequestParam Integer amount);
+
+    /** Reset password via SMS code — called by authorization-service (找回密码) */
+    @PostMapping("/reset-password")
+    void resetPassword(@RequestBody ResetPasswordReqDTO request);
 }

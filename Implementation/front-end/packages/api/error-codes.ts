@@ -19,7 +19,8 @@ const ERROR_MAP: Record<number, string> = {
 
 /** 将 ApiError 转为用户可读消息 */
 export function getUserMessage(err: { code?: number; message?: string }): string {
-  if (err.code && ERROR_MAP[err.code]) return ERROR_MAP[err.code];
+  const mapped = err.code !== undefined ? ERROR_MAP[err.code] : undefined;
+  if (mapped) return mapped;
   // 后端返回的 msg 优先 (如 "登录密码错误" 等动态消息)
   if (err.message && !/^HTTP\s\d{3}$/.test(err.message)) return err.message;
   return '网络异常，请检查连接后重试';

@@ -1,11 +1,12 @@
 package org.icedAmericanoMall.controller;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
-import org.icedAmericanoMall.domain.entity.AfterSaleEntity;
+import org.icedAmericanoMall.convert.TradeConverter;
+import org.icedAmericanoMall.domain.dto.AfterSaleApplyReq;
+import org.icedAmericanoMall.domain.vo.AfterSaleVO;
 import org.icedAmericanoMall.service.AfterSaleService;
 import org.noLazy.common.domain.Result;
-import org.noLazy.common.enums.ErrorCode;
-import org.noLazy.common.exception.BizException;
 import org.noLazy.common.utils.UserContext;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,22 +16,17 @@ import org.springframework.web.bind.annotation.*;
 public class AfterSaleController {
 
     private final AfterSaleService afterSaleService;
+    private final TradeConverter tradeConverter;
 
     @PostMapping
-    public Result<AfterSaleEntity> apply(@RequestBody AfterSaleEntity entity) {
-        Long userId = UserContext.getUser();
-        entity.setUserId(userId);
-        entity.setStatus(1);
-        if (afterSaleService.existsByOrderAndUser(entity.getOrderNo(), userId)) {
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "已有售后申请");
-        }
-        afterSaleService.save(entity);
-        return Result.ok(entity);
+    public Result<AfterSaleVO> apply(@RequestBody AfterSaleApplyReq req) {
+        return Result.ok(tradeConverter.toVO(afterSaleService.applyAfterSale(UserContext.getUser(), req)));
     }
 
     @GetMapping
-    public Result<?> myList(@RequestParam(defaultValue = "1") int page,
-                             @RequestParam(defaultValue = "20") int size) {
-        return Result.ok(afterSaleService.pageByUserId(UserContext.getUser(), page, size));
+    public Result<IPage<AfterSaleVO>> myList(@RequestParam(defaultValue = "1") int page,
+                                             @RequestParam(defaultValue = "20") int size) {
+        return Result.ok(afterSaleService.pageByUserId(UserContext.getUser(), page, size)
+                .convert(tradeConverter::toVO));
     }
 }

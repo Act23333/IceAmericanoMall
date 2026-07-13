@@ -113,4 +113,19 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
             userCouponMapper.updateById(uc);
         }
     }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void rollbackByOrderNo(String orderNo) {
+        UserCouponEntity uc = userCouponMapper.selectOne(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<UserCouponEntity>()
+                        .eq(UserCouponEntity::getUsedOrderNo, orderNo)
+                        .eq(UserCouponEntity::getStatus, 2));
+        if (uc != null) {
+            uc.setStatus(1);
+            uc.setUsedOrderNo(null);
+            uc.setUseTime(null);
+            userCouponMapper.updateById(uc);
+        }
+    }
 }

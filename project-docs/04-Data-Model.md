@@ -105,16 +105,17 @@ cart ───N:1─── sku
 | id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
 | user_id | VARCHAR(32) | UNIQUE, NOT NULL | 业务唯一标识（UUID） |
 | username | VARCHAR(50) | NULL | 用户名（可选） |
-| phone | VARCHAR(20) | UNIQUE, NOT NULL | 手机号（登录账号） |
-| password | VARCHAR(100) | NOT NULL | BCrypt 加密密码 |
+| phone | VARCHAR(20) | UNIQUE, NULL | 手机号（登录账号；微信-only 用户可空） |
+| password | VARCHAR(100) | NULL | BCrypt 加密密码（微信-only 用户可空） |
 | avatar | VARCHAR(255) | NULL | 头像 URL |
+| wx_openid | VARCHAR(128) | UNIQUE, NULL | 微信 openid（第三方登录，V2.2） |
 | register_time | DATETIME | NOT NULL | 注册时间（业务时间） |
 | status | TINYINT | NOT NULL, DEFAULT 1 | 1-正常，0-禁用 |
 | balance | INT | NOT NULL, DEFAULT 0 | 余额（分） |
 | create_time | DATETIME | NOT NULL | 创建时间 |
 | update_time | DATETIME | NOT NULL | 更新时间 |
 
-索引：`uk_user_id`, `uk_phone`
+索引：`uk_user_id`, `uk_phone`, `uk_wx_openid`
 
 ### 3.2 address（收货地址表）
 

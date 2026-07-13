@@ -10,8 +10,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Seller dashboard — simple statistics for the seller view.
@@ -53,5 +53,27 @@ public class SellerDashboardController {
         result.put("pendingShipCount", pendingShipCount);
         result.put("monthlyRevenue", monthlyRevenue); // in cents
         return Result.ok(result);
+    }
+
+    /** V2.5 商品维度销量/金额统计（最近 N 天）。 */
+    @GetMapping("/product-stats")
+    public Result<List<Map<String, Object>>> productStats(@RequestParam(defaultValue = "30") int days) {
+        Long sellerId = UserContext.getUser();
+        LocalDateTime since = LocalDate.now().minusDays(days).atStartOfDay();
+        List<OrderEntity> orders = orderService.lambdaQuery()
+                .eq(OrderEntity::getSellerId, sellerId)
+                .ge(OrderEntity::getCreateTime, since).list();
+        Map<String, int[]> agg = new LinkedHashMap<>();
+        for (OrderEntity o : orders) {
+            orderService.listItems(o.getId()).forEach(i -> agg.merge(
+                    i.getProductName(),
+                    new int[]{i.getQuantity(), i.getSubTotal()},
+                    (a, b) -> new int[]{a[0] + b[0], a[1] + b[1]}));
+        }
+        return Result.ok(agg.entrySet().stream()
+                .sorted((a, b) -> Integer.compare(b.getValue()[1], a.getValue()[1]))
+                .map(e -> Map.<String, Object>of("productName", e.getKey(),
+                        "quantity", e.getValue()[0], "revenue", e.getValue()[1]))
+                .collect(Collectors.toList()));
     }
 }

@@ -33,9 +33,23 @@ mybatis-plus:
       update-strategy: not_null
       id-type: auto
 
-# ElasticSearch 暂不启用（V1.1 正式上线）
+# ElasticSearch 默认关闭：本地/无 ES 环境走 DbSearchServiceImpl（@Primary 兜底，基于 MySQL LIKE）。
+# 需要全文检索时，先启动 ES(9200) 再将 enabled 置为 true 以激活 EsSearchServiceImpl。
 search:
   elasticsearch:
-    enabled: true
+    enabled: false
     host: 192.168.10.128
     port: 9200
+
+# 可观测性：Actuator 健康检查 + Prometheus 指标端点（V2.4）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}

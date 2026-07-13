@@ -26,13 +26,7 @@ public class PointsServiceImpl extends ServiceImpl<PointsLogMapper, PointsLogEnt
 
     @Override
     public long getBalance(Long userId) {
-        Long sum = lambdaQuery()
-                .eq(PointsLogEntity::getUserId, userId)
-                .list()
-                .stream()
-                .mapToLong(PointsLogEntity::getPoints)
-                .sum();
-        return sum;
+        return baseMapper.sumPointsByUserId(userId);
     }
 
     @Override

@@ -66,7 +66,7 @@ export default async function ProductDetailPage({ params }: Props) {
   }
 
   // 相关推荐 — 同类目商品
-  let relatedProducts;
+  let relatedProducts: Awaited<ReturnType<typeof getProducts>>['records'] = [];
   try {
     const related = await getProducts({
       categoryId: product.categoryId,

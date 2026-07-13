@@ -113,11 +113,10 @@
             <optional>true</optional>
         </dependency>
 
-<!--        导入jackson2依赖-->
+<!--        导入jackson2依赖（compile 作用域：引入 actuator 后确保 jackson-core/annotations 编译期可见） -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <scope>provided</scope>
         </dependency>
 <!--        <dependency>-->
 <!--            <groupId>com.alibaba</groupId>-->
@@ -154,6 +153,22 @@
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-seata</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!-- 可观测性：Actuator 健康检查 + Prometheus 指标（所有依赖 ia-common 的服务自动获得） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <!-- SM2 国产密码 → hutool SmUtil 需要 Bouncy Castle -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>1.78.1</version>
         </dependency>
     </dependencies>
 

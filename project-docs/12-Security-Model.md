@@ -171,7 +171,7 @@ jwt:
 
 ## 六、数据静态加密
 
-> ⚠️ **当前状态：V1.1 计划，未实现。** MVP 阶段 PII 字段（手机号/地址/姓名）以明文 VARCHAR 存储。以下方案为 V1.1 目标架构，实施前需完成：Key Management（Vault/K8s Secret）、AES 加解密工具类、phone_hash 辅助列迁移。
+> ⚠️ **当前状态：V2.5 代码就绪，待激活迁移。** PII 字段仍以明文 VARCHAR 存储（保持向后兼容）。AES-256-CBC 工具类（`ia-common/security/AesEncryptor`）与 phone_hash 辅助列（`V2.5__add_security_columns.sql`）已交付，生产激活需：1) 设置 `PII_AES_KEY` 环境变量 2) 启用 `pii.encryption.enabled=true` 3) 执行全量数据加密迁移。V1.1 目标架构已完成代码侧。
 
 ### 6.1 PII 敏感字段加密（V1.1 目标）
 

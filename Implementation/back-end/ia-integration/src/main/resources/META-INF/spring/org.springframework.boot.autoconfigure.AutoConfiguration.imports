@@ -2,6 +2,9 @@ org.icedAmericanoMall.integration.sms.MockSmsClient
 org.icedAmericanoMall.integration.sms.AliyunSmsClient
 org.icedAmericanoMall.integration.payment.WechatPaymentClient
 org.icedAmericanoMall.integration.payment.WechatPaymentClient.MockWechatPaymentClient
+org.icedAmericanoMall.integration.payment.MockAlipayPaymentClient
 org.icedAmericanoMall.integration.storage.MockStorageClient
 org.icedAmericanoMall.integration.storage.MinioStorageClient
 org.icedAmericanoMall.integration.captcha.GeetestCaptchaClient
+org.icedAmericanoMall.integration.wechat.MockWechatOAuthClient
+org.icedAmericanoMall.integration.wechat.RealWechatOAuthClient

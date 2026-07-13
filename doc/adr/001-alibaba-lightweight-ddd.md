@@ -13,6 +13,7 @@ Controller → Manager → Service → Domain → Mapper
 ```
 
 精简版包结构（中小服务）：
+
 ```
 controller / manager / domain(dto+entity+vo) / mapper / config / exception / util
 ```
@@ -21,11 +22,11 @@ controller / manager / domain(dto+entity+vo) / mapper / config / exception / uti
 
 ## 备选方案
 
-| 方案 | 优点 | 缺点 |
-|------|------|------|
-| 传统 MVC 三层 | 简单，上手快 | Service 层臃肿，分布式逻辑无处安放 |
-| 完整 DDD | 架构严谨，适合复杂业务 | 过度设计，学习成本高，代码量大 |
-| **Alibaba 轻量 DDD** | 够用不臃肿，预留扩展点 | Manager 层需要团队理解其职责 |
+| 方案                 | 优点          | 缺点                    |
+| ------------------ | ----------- | --------------------- |
+| 传统 MVC 三层          | 简单，上手快      | Service 层臃肿，分布式逻辑无处安放 |
+| 完整 DDD             | 架构严谨，适合复杂业务 | 过度设计，学习成本高，代码量大       |
+| **Alibaba 轻量 DDD** | 够用不臃肿，预留扩展点 | Manager 层需要团队理解其职责    |
 
 ## 后果
 

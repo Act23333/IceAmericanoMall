@@ -5,7 +5,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.client.AddressClient;
 import org.icedAmericanoMall.client.CartClient;
+import org.icedAmericanoMall.client.CouponClient;
+import org.icedAmericanoMall.client.LogisticsClient;
 import org.icedAmericanoMall.client.SkuClient;
+import org.icedAmericanoMall.client.UserClient;
 import org.icedAmericanoMall.convert.OrderConverter;
 import org.icedAmericanoMall.domain.dto.CreateOrderReq;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
@@ -13,6 +16,7 @@ import org.icedAmericanoMall.domain.entity.OrderItemEntity;
 import org.icedAmericanoMall.domain.vo.OrderVO;
 import org.icedAmericanoMall.dto.AddressDTO;
 import org.icedAmericanoMall.dto.CartItemDTO;
+import org.icedAmericanoMall.dto.CreateLogisticsDTO;
 import org.icedAmericanoMall.dto.SkuDTO;
 import org.icedAmericanoMall.dto.StockOpDTO;
 import org.icedAmericanoMall.enums.OrderStatusEnum;
@@ -28,18 +32,27 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * OrderManager — orchestrates the order creation flow with real Feign integration.
+ * OrderManager — orchestrates cross-service order flows (create / cancel / confirm / ship / timeout)
+ * with real Feign integration. 领域内的订单状态流转下沉至 {@link OrderService}。
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class OrderManager {
 
+    /** 确认收货奖励积分比例：支付金额（分）的 1%，即每 100 分得 1 积分。 */
+    private static final int POINTS_RATE_DIVISOR = 100;
+    private static final int POINTS_TYPE_ORDER_REWARD = 2;
+    private static final int ORDER_TIMEOUT_MINUTES = 30;
+
     private final OrderService orderService;
     private final OrderConverter orderConverter;
     private final CartClient cartClient;
     private final AddressClient addressClient;
     private final SkuClient skuClient;
+    private final LogisticsClient logisticsClient;
+    private final UserClient userClient;
+    private final CouponClient couponClient;
 
     /**
      * 创建订单 —— 从购物车到生成订单的完整编排。
@@ -134,7 +147,6 @@ public class OrderManager {
         order.setUserId(userId);
         order.setSellerId(sellerId);
         order.setStatus(OrderStatusEnum.PENDING_PAYMENT.getCode());
-        order.setDiscountAmount(0);
 
         // Then: 订单总金额 = 各订单项小计之和
         int totalAmount = 0;
@@ -159,8 +171,16 @@ public class OrderManager {
             stockOps.add(stockOp);
         }
 
+        // When: 若使用优惠券，通过 Feign 调用 marketing-service 抵扣（返回抵扣金额，分）
+        int discount = 0;
+        if (req.getUserCouponId() != null) {
+            Integer applied = couponClient.useCoupon(
+                    userId, req.getUserCouponId(), order.getOrderNo(), totalAmount);
+            discount = applied != null ? Math.min(applied, totalAmount) : 0;
+        }
         order.setTotalAmount(totalAmount);
-        order.setPayAmount(totalAmount);
+        order.setDiscountAmount(discount);
+        order.setPayAmount(totalAmount - discount);
 
         // 收货信息为下单时地址快照
         order.setReceiverName(address.getReceiver());
@@ -181,12 +201,19 @@ public class OrderManager {
         try {
             orderService.createOrderWithItems(order, items);
         } catch (Exception e) {
-            // Then: 订单创建失败时补偿回滚库存（Saga模式）
+            // Then: 订单创建失败时补偿回滚库存 + 优惠券（Saga模式）
             log.error("订单创建失败，回滚库存", e);
             try {
                 skuClient.restoreStock(stockOps);
             } catch (Exception restoreEx) {
                 log.error("库存回滚失败！需人工处理: stockOps={}", stockOps, restoreEx);
+            }
+            if (discount > 0) {
+                try {
+                    couponClient.rollbackByOrderNo(order.getOrderNo());
+                } catch (Exception couponEx) {
+                    log.error("优惠券回滚失败！需人工处理: orderNo={}", order.getOrderNo(), couponEx);
+                }
             }
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "订单创建失败");
         }
@@ -203,6 +230,115 @@ public class OrderManager {
         OrderVO vo = orderConverter.entityToVO(order);
         vo.setItems(orderConverter.itemEntitiesToVOs(items));
         return vo;
+    }
+
+    /**
+     * 用户取消订单 —— 状态流转下沉领域服务，随后 Feign 回滚已扣减库存 + 已用优惠券（Saga 补偿）。
+     */
+    public void cancelOrder(String orderNo, Long userId) {
+        orderService.cancelOrder(orderNo, userId);
+        OrderEntity order = orderService.getByOrderNo(orderNo);
+        if (order != null) {
+            restoreStock(order.getId());
+            rollbackCoupon(order);
+        }
+    }
+
+    /**
+     * 用户确认收货 —— 状态流转下沉领域服务，随后 Feign 发放下单奖励积分（非致命）。
+     */
+    public void confirmReceipt(String orderNo, Long userId) {
+        orderService.confirmReceipt(orderNo, userId);
+        OrderEntity order = orderService.getByOrderNo(orderNo);
+        if (order == null || order.getPayAmount() == null) {
+            return;
+        }
+        int points = order.getPayAmount() / POINTS_RATE_DIVISOR;
+        if (points <= 0) {
+            return;
+        }
+        try {
+            userClient.addPoints(order.getUserId(), points, POINTS_TYPE_ORDER_REWARD, "下单奖励");
+        } catch (Exception e) {
+            log.error("下单奖励积分发放失败: orderNo={}", orderNo, e);
+        }
+    }
+
+    /**
+     * 商家发货 —— 状态流转下沉领域服务，随后 Feign 调用 logistics-service 创建物流记录（非致命）。
+     */
+    public void shipOrder(String orderNo, Long sellerId, String logisticsNumber, String logisticsCompany) {
+        orderService.shipOrder(orderNo, sellerId, logisticsNumber, logisticsCompany);
+        OrderEntity order = orderService.getByOrderNo(orderNo);
+        if (order == null) {
+            return;
+        }
+        CreateLogisticsDTO logisticsDTO = new CreateLogisticsDTO();
+        logisticsDTO.setOrderId(order.getId());
+        logisticsDTO.setLogisticsNumber(logisticsNumber);
+        logisticsDTO.setLogisticsCompany(logisticsCompany);
+        logisticsDTO.setContact(order.getReceiverName());
+        logisticsDTO.setMobile(order.getReceiverPhone());
+        try {
+            logisticsClient.createLogistics(logisticsDTO);
+            log.info("物流记录创建成功: orderId={}", order.getId());
+        } catch (Exception e) {
+            log.error("物流记录创建失败，需人工处理: orderId={}", order.getId(), e);
+        }
+    }
+
+    /**
+     * 超时未支付订单自动取消 —— 逐单关闭并回滚库存（供 OrderTimeoutJob 调用）。
+     */
+    public void cancelTimeoutOrders() {
+        LocalDateTime cutoff = LocalDateTime.now().minusMinutes(ORDER_TIMEOUT_MINUTES);
+        List<OrderEntity> timeoutOrders = orderService.listTimeoutPending(cutoff);
+        for (OrderEntity order : timeoutOrders) {
+            try {
+                orderService.closeTimeoutOrder(order.getId());
+                restoreStock(order.getId());
+                rollbackCoupon(order);
+                log.info("自动取消超时订单: {}", order.getOrderNo());
+            } catch (Exception e) {
+                log.error("自动取消订单失败: {}", order.getOrderNo(), e);
+            }
+        }
+    }
+
+    /**
+     * 通过 Feign 回滚订单使用的优惠券（有抵扣才回滚，best-effort，幂等）。
+     */
+    private void rollbackCoupon(OrderEntity order) {
+        if (order.getDiscountAmount() == null || order.getDiscountAmount() <= 0) {
+            return;
+        }
+        try {
+            couponClient.rollbackByOrderNo(order.getOrderNo());
+        } catch (Exception e) {
+            log.error("优惠券回滚失败，需人工处理: orderNo={}", order.getOrderNo(), e);
+        }
+    }
+
+    /**
+     * 通过 Feign 恢复订单关联的 SKU 库存（用户取消 / 超时取消共用，best-effort）。
+     */
+    private void restoreStock(Long orderId) {
+        List<OrderItemEntity> items = orderService.listItems(orderId);
+        if (items.isEmpty()) {
+            return;
+        }
+        List<StockOpDTO> stockOps = items.stream().map(item -> {
+            StockOpDTO op = new StockOpDTO();
+            op.setSkuId(item.getSkuId());
+            op.setQuantity(item.getQuantity());
+            return op;
+        }).collect(Collectors.toList());
+        try {
+            skuClient.restoreStock(stockOps);
+            log.info("库存已恢复: orderId={}", orderId);
+        } catch (Exception e) {
+            log.error("库存恢复失败，需人工处理: orderId={}", orderId, e);
+        }
     }
 
     /**

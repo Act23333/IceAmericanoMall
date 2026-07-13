@@ -33,7 +33,11 @@ public class UserEntity {
 
     private String avatar;               // 头像URL
 
+    private String wxOpenid;             // 微信 openid（第三方登录，可空）
+
     private LocalDateTime registerTime;  // 注册时间（业务时间）
+
+    private LocalDateTime lastLoginTime; // 最近登录时间（首次/回归奖励判断，V2.5）
 
     private UserStatusEnum status;              // 状态：1-正常，0-禁用
 

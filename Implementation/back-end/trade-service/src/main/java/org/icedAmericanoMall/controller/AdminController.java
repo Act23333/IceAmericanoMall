@@ -2,125 +2,61 @@ package org.icedAmericanoMall.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
-import org.icedAmericanoMall.client.UserClient;
+import org.icedAmericanoMall.convert.OrderConverter;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
-import org.icedAmericanoMall.enums.OrderStatusEnum;
+import org.icedAmericanoMall.domain.vo.OrderVO;
+import org.icedAmericanoMall.manager.AdminManager;
 import org.icedAmericanoMall.service.OrderService;
 import org.noLazy.common.domain.Result;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
- * 管理员后台 — 仪表盘 & 订单管理
- *
- * <pre>
- * Scenario: 管理员查看仪表盘
- *   Given 管理员已登录
- *   When GET /api/trade/admin/dashboard
- *   Then 返回 { totalUsers, totalOrders, totalRevenue, todayOrders, todayRevenue }
- *
- * Scenario: 管理员查看所有订单
- *   Given 管理员已登录
- *   When GET /api/trade/admin/orders/page?page=1&size=20&status=1
- *   Then 返回分页订单列表（不限用户/商家）
- * </pre>
+ * 管理员后台 — 仪表盘 & 订单管理。统计聚合与跨服务调用下沉至 {@link AdminManager}。
  */
 @RestController
 @RequestMapping("/api/trade/admin")
 @RequiredArgsConstructor
 public class AdminController {
 
+    private final AdminManager adminManager;
     private final OrderService orderService;
-    private final UserClient userClient;
+    private final OrderConverter orderConverter;
 
-    /**
-     * Admin dashboard: user count, order count, revenue stats.
-     */
+    /** 仪表盘：用户数、订单数、营收统计。 */
     @GetMapping("/dashboard")
     public Result<Map<String, Object>> dashboard() {
-        // Total metrics
-        long totalUsers = 0;
-        try {
-            Long count = userClient.countUsers();
-            totalUsers = count != null ? count : 0;
-        } catch (Exception e) {
-            // Fallback if user-service unavailable
-        }
-
-        long totalOrders = orderService.lambdaQuery().count();
-        long completedOrders = orderService.lambdaQuery()
-                .eq(OrderEntity::getStatus, OrderStatusEnum.COMPLETED.getCode())
-                .count();
-
-        // Total revenue (completed orders, in cents)
-        var completedList = orderService.lambdaQuery()
-                .eq(OrderEntity::getStatus, OrderStatusEnum.COMPLETED.getCode())
-                .list();
-        int totalRevenue = completedList.stream()
-                .mapToInt(o -> o.getTotalAmount() != null ? o.getTotalAmount() : 0)
-                .sum();
-
-        // Today's stats
-        LocalDateTime todayStart = LocalDate.now().atStartOfDay();
-        long todayOrders = orderService.lambdaQuery()
-                .ge(OrderEntity::getCreateTime, todayStart)
-                .count();
-        var todayList = orderService.lambdaQuery()
-                .eq(OrderEntity::getStatus, OrderStatusEnum.COMPLETED.getCode())
-                .ge(OrderEntity::getCreateTime, todayStart)
-                .list();
-        int todayRevenue = todayList.stream()
-                .mapToInt(o -> o.getTotalAmount() != null ? o.getTotalAmount() : 0)
-                .sum();
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("totalUsers", totalUsers);
-        result.put("totalOrders", totalOrders);
-        result.put("completedOrders", completedOrders);
-        result.put("totalRevenue", totalRevenue);       // in cents
-        result.put("todayOrders", todayOrders);
-        result.put("todayRevenue", todayRevenue);       // in cents
-        return Result.ok(result);
+        return Result.ok(adminManager.dashboard());
     }
 
-    /**
-     * Admin: paginated list of all orders across all users/sellers.
-     */
+    /** 全部订单分页（不限用户/商家）。 */
     @GetMapping("/orders/page")
-    public Result<IPage<OrderEntity>> pageAllOrders(
+    public Result<IPage<OrderVO>> pageAllOrders(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) Integer status) {
-        return Result.ok(orderService.pageAllOrders(status, page, size));
+        IPage<OrderEntity> entityPage = orderService.pageAllOrders(status, page, size);
+        return Result.ok(entityPage.convert(orderConverter::entityToVO));
     }
 
-    /**
-     * V1.2: 30-day order trend — daily count + revenue for chart.
-     */
+    /** 近 N 天订单趋势（图表数据）。 */
     @GetMapping("/stats/trend")
-    public Result<?> trend(@RequestParam(defaultValue = "30") int days) {
-        var rows = new java.util.ArrayList<Map<String, Object>>();
-        for (int i = days - 1; i >= 0; i--) {
-            LocalDate date = LocalDate.now().minusDays(i);
-            LocalDateTime start = date.atStartOfDay();
-            LocalDateTime end = date.plusDays(1).atStartOfDay();
+    public Result<List<Map<String, Object>>> trend(@RequestParam(defaultValue = "30") int days) {
+        return Result.ok(adminManager.orderTrend(days));
+    }
 
-            long count = orderService.lambdaQuery()
-                    .ge(OrderEntity::getCreateTime, start)
-                    .lt(OrderEntity::getCreateTime, end).count();
+    /** 销量 Top N 商品（V2.5 详细统计）。 */
+    @GetMapping("/stats/top-products")
+    public Result<List<Map<String, Object>>> topProducts(@RequestParam(defaultValue = "10") int limit) {
+        return Result.ok(adminManager.topProducts(limit));
+    }
 
-            var list = orderService.lambdaQuery()
-                    .eq(OrderEntity::getStatus, OrderStatusEnum.COMPLETED.getCode())
-                    .ge(OrderEntity::getCreateTime, start)
-                    .lt(OrderEntity::getCreateTime, end).list();
-            int revenue = list.stream().mapToInt(o -> o.getTotalAmount() != null ? o.getTotalAmount() : 0).sum();
-
-            rows.add(Map.of("date", date.toString(), "orders", count, "revenue", revenue));
-        }
-        return Result.ok(rows);
+    /** 指定日期区间分日销售额（V2.5 详细统计）。 */
+    @GetMapping("/stats/sales")
+    public Result<List<Map<String, Object>>> salesByDateRange(
+            @RequestParam String from, @RequestParam String to) {
+        return Result.ok(adminManager.saleByDateRange(java.time.LocalDate.parse(from), java.time.LocalDate.parse(to)));
     }
 }

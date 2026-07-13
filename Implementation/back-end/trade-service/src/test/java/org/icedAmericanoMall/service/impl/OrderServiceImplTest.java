@@ -42,19 +42,13 @@ class OrderServiceImplTest {
     private OrderMapper mockOrderMapper;
     @Mock
     private OrderItemMapper mockOrderItemMapper;
-    @Mock
-    private SkuClient mockSkuClient;
-    @Mock
-    private LogisticsClient mockLogisticsClient;
-    @Mock
-    private UserClient mockUserClient;
 
     private OrderServiceImpl service;
 
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
-        service = new OrderServiceImpl(mockOrderItemMapper, mockSkuClient, mockLogisticsClient, mockUserClient);
+        service = new OrderServiceImpl(mockOrderItemMapper);
         ReflectionTestUtils.setField(service, "baseMapper", (BaseMapper<OrderEntity>) mockOrderMapper);
     }
 

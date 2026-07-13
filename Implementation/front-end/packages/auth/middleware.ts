@@ -6,8 +6,8 @@ import { NextRequest, NextResponse } from 'next/server';
  * 配置在 apps/web/middleware.ts 中引入：
  *   export { authMiddleware as middleware } from '@icedmall/auth';
  *
- * 保护路径：
- *   /cart, /checkout, /orders, /profile, /seller, /admin
+ * 保护路径（与实际 App Router 路由对齐）：
+ *   /shop（cart/checkout/orders/pay）, /user（profile/addresses/...）, /seller, /admin
  *
  * Token 逻辑：
  *   1. 从 Cookie 读取 access_token
@@ -18,11 +18,8 @@ import { NextRequest, NextResponse } from 'next/server';
  */
 
 const PROTECTED_PATHS = [
-  '/cart',
-  '/checkout',
-  '/orders',
-  '/profile',
-  '/addresses',
+  '/shop',
+  '/user',
   '/seller',
   '/admin',
 ];

@@ -44,4 +44,15 @@ export const queryKeys = {
     all: ['categories'] as const,
     tree: () => [...queryKeys.categories.all, 'tree'] as const,
   },
+
+  // 余额
+  balance: {
+    all: ['balance'] as const,
+  },
+
+  // 支付
+  pay: {
+    all: ['pay'] as const,
+    status: (payOrderNo: string) => [...queryKeys.pay.all, 'status', payOrderNo] as const,
+  },
 };

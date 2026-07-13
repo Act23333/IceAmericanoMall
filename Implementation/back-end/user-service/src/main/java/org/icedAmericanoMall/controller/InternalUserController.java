@@ -51,6 +51,30 @@ public class InternalUserController {
     }
 
     /**
+     * 微信 OAuth 登录 — 内部 Feign 调用。
+     */
+    @PostMapping("/login/wechat")
+    public LoginRespDTO loginByWechat(@RequestBody org.icedAmericanoMall.dto.WechatLoginReqDTO request) {
+        return authService.loginByWechat(request);
+    }
+
+    /**
+     * 原子扣减用户余额（余额支付）— 内部 Feign 调用；余额不足抛异常透传。
+     */
+    @PostMapping("/balance/deduct")
+    public void deductBalance(@RequestParam Long userId, @RequestParam Integer amount) {
+        userService.deductBalance(userId, amount);
+    }
+
+    /**
+     * 找回密码：短信验证码重置密码 — 内部 Feign 调用。
+     */
+    @PostMapping("/reset-password")
+    public void resetPassword(@RequestBody org.icedAmericanoMall.dto.ResetPasswordReqDTO request) {
+        authService.resetPassword(request);
+    }
+
+    /**
      * Get address by ID for order address snapshot — internal Feign use.
      */
     @GetMapping("/address/{id}")

@@ -21,4 +21,7 @@ public interface CouponService extends IService<CouponEntity> {
 
     /** 回滚优惠券（取消订单时调用） */
     void rollbackCoupon(Long userCouponId);
+
+    /** 按订单号回滚优惠券（下单失败/取消/超时补偿，幂等）。 */
+    void rollbackByOrderNo(String orderNo);
 }

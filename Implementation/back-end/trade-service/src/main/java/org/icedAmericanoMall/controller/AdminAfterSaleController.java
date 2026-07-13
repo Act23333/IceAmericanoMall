@@ -1,11 +1,11 @@
 package org.icedAmericanoMall.controller;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
-import org.icedAmericanoMall.domain.entity.AfterSaleEntity;
+import org.icedAmericanoMall.convert.TradeConverter;
+import org.icedAmericanoMall.domain.vo.AfterSaleVO;
 import org.icedAmericanoMall.service.AfterSaleService;
 import org.noLazy.common.domain.Result;
-import org.noLazy.common.enums.ErrorCode;
-import org.noLazy.common.exception.BizException;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -14,22 +14,19 @@ import org.springframework.web.bind.annotation.*;
 public class AdminAfterSaleController {
 
     private final AfterSaleService afterSaleService;
+    private final TradeConverter tradeConverter;
 
     @GetMapping
-    public Result<?> list(@RequestParam(required = false) Integer status,
-                           @RequestParam(defaultValue = "1") int page,
-                           @RequestParam(defaultValue = "20") int size) {
-        return Result.ok(afterSaleService.pageByStatus(status, page, size));
+    public Result<IPage<AfterSaleVO>> list(@RequestParam(required = false) Integer status,
+                                           @RequestParam(defaultValue = "1") int page,
+                                           @RequestParam(defaultValue = "20") int size) {
+        return Result.ok(afterSaleService.pageByStatus(status, page, size).convert(tradeConverter::toVO));
     }
 
     @PutMapping("/{id}/review")
-    public Result<?> review(@PathVariable Long id, @RequestParam Integer status,
-                             @RequestParam(required = false) String remark) {
-        AfterSaleEntity entity = afterSaleService.getById(id);
-        if (entity == null) throw new BizException(ErrorCode.USER_NOT_FOUND, "售后申请不存在");
-        entity.setStatus(status);
-        entity.setAdminRemark(remark);
-        afterSaleService.updateById(entity);
+    public Result<Void> review(@PathVariable Long id, @RequestParam Integer status,
+                               @RequestParam(required = false) String remark) {
+        afterSaleService.review(id, status, remark);
         return Result.ok();
     }
 }

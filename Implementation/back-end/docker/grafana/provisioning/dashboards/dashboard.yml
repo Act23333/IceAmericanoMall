@@ -1,0 +1,13 @@
+# Grafana 仪表盘 provider —— 加载 /var/lib/grafana/dashboards 下的 JSON。
+# 建议导入官方 JVM (Micrometer) 面板：Grafana.com Dashboard ID 4701。
+apiVersion: 1
+
+providers:
+  - name: 'IceAmericanoMall'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

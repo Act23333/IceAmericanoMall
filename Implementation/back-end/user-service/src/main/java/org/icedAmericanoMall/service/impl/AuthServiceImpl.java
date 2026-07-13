@@ -9,7 +9,12 @@ import org.icedAmericanoMall.domain.entity.UserEntity;
 import org.icedAmericanoMall.dto.LoginRespDTO;
 import org.icedAmericanoMall.dto.PasswordLoginReqDTO;
 import org.icedAmericanoMall.dto.RegisterReqDTO;
+import org.icedAmericanoMall.dto.ResetPasswordReqDTO;
 import org.icedAmericanoMall.dto.SmsLoginReqDTO;
+import org.icedAmericanoMall.dto.WechatLoginReqDTO;
+import org.icedAmericanoMall.integration.wechat.WechatOAuthClient;
+import org.icedAmericanoMall.integration.wechat.WechatUserInfo;
+import org.icedAmericanoMall.service.PointsService;
 import org.icedAmericanoMall.mapper.UserMapper;
 import org.icedAmericanoMall.service.AuthService;
 import org.icedAmericanoMall.service.SmsService;
@@ -33,12 +38,17 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
     private final SmsService smsService;
     private final RedisTemplate<String, String> redisTemplate;
     private final PasswordEncoder passwordEncoder;
+    private final WechatOAuthClient wechatOAuthClient;
+    private final PointsService pointsService;
 
     public AuthServiceImpl(SmsService smsService, RedisTemplate<String, String> redisTemplate,
-                           PasswordEncoder passwordEncoder) {
+                           PasswordEncoder passwordEncoder, WechatOAuthClient wechatOAuthClient,
+                           PointsService pointsService) {
         this.smsService = smsService;
         this.redisTemplate = redisTemplate;
         this.passwordEncoder = passwordEncoder;
+        this.wechatOAuthClient = wechatOAuthClient;
+        this.pointsService = pointsService;
     }
 
     @Override
@@ -77,16 +87,92 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         smsService.verifyCode(phone, req.getCode());
 
         UserEntity user = lambdaQuery().eq(UserEntity::getPhone, phone).one();
+        LoginRespDTO r; boolean isNew = false;
         if (user != null) {
             if (user.getStatus() == UserStatusEnum.FROZEN)
                 throw new BizException(ErrorCode.USER_STATUS_ABNORMAL, "账号已被禁用");
+            r = toLoginResp(user);
+        } else {
+            user = new UserEntity();
+            user.setPhone(phone);
+            registerUser(user);
+            r = toLoginResp(user);
+            isNew = true;
+        }
+        awardLoginBonus(user, isNew);
+        return r;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public LoginRespDTO loginByWechat(WechatLoginReqDTO req) {
+        WechatUserInfo wxUser = wechatOAuthClient.getUserInfoByCode(req.getCode());
+        String openid = wxUser.getOpenid();
+
+        UserEntity user = lambdaQuery().eq(UserEntity::getWxOpenid, openid).one();
+        if (user != null) {
+            if (user.getStatus() == UserStatusEnum.FROZEN) {
+                throw new BizException(ErrorCode.USER_STATUS_ABNORMAL, "账号已被禁用");
+            }
             return toLoginResp(user);
         }
-        // New user auto-register
-        user = new UserEntity();
-        user.setPhone(phone);
-        registerUser(user);
-        return toLoginResp(user);
+        // 新用户：以微信身份自动注册（无手机号/密码）
+        LoginRespDTO r;
+        boolean isNew = false;
+        if (user != null) {
+            if (user.getStatus() == UserStatusEnum.FROZEN)
+                throw new BizException(ErrorCode.USER_STATUS_ABNORMAL, "账号已被禁用");
+            r = toLoginResp(user);
+        } else {
+            user = new UserEntity();
+            user.setWxOpenid(openid);
+            if (StrUtil.isNotBlank(wxUser.getNickname())) user.setUsername(wxUser.getNickname());
+            user.setAvatar(wxUser.getAvatarUrl());
+            registerUser(user);
+            r = toLoginResp(user);
+            isNew = true;
+        }
+        awardLoginBonus(user, isNew);
+        return r;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void resetPassword(ResetPasswordReqDTO request) {
+        String phone = request.getPhone();
+        smsService.verifyCode(phone, request.getCode());
+        UserEntity user = lambdaQuery().eq(UserEntity::getPhone, phone).one();
+        if (user == null) {
+            throw new BizException(ErrorCode.USER_NOT_FOUND, "该手机号未注册");
+        }
+        lambdaUpdate()
+                .eq(UserEntity::getId, user.getId())
+                .set(UserEntity::getPassword, passwordEncoder.encode(request.getNewPassword()))
+                .update();
+        redisTemplate.delete(SMS_CODE_PREFIX + phone);
+    }
+
+    /** 首次/回归登录奖励（V2.5）：首次 200 分，回归（距上次登录 >30天）100 分。 */
+    private void awardLoginBonus(UserEntity user, boolean isNew) {
+        LocalDateTime now = LocalDateTime.now();
+        int points = 0;
+        if (isNew) {
+            points = 200;
+        } else if (user.getLastLoginTime() != null &&
+                user.getLastLoginTime().plusDays(30).isBefore(now)) {
+            points = 100;
+        }
+        if (points > 0) {
+            try {
+                pointsService.addPoints(user.getId(), points, 2,
+                        isNew ? "首次登录奖励" : "回归登录奖励");
+            } catch (Exception e) {
+                log.warn("登录奖励发放失败: userId={}", user.getId(), e);
+            }
+        }
+        // 更新最近登录时间
+        lambdaUpdate().eq(UserEntity::getId, user.getId())
+                .set(UserEntity::getLastLoginTime, now).update();
     }
 
 

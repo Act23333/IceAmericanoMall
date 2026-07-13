@@ -30,7 +30,15 @@ public class FlashSaleServiceImpl extends ServiceImpl<FlashSaleMapper, FlashSale
         if (fs == null) throw new BizException(ErrorCode.USER_NOT_FOUND, "秒杀活动不存在");
         if (fs.getStatus() != 2) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "秒杀未开始或已结束");
         if (fs.getSoldCount() >= fs.getStock()) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "已售罄");
-        fs.setSoldCount(fs.getSoldCount() + 1);
-        return updateById(fs);
+        // 原子条件扣减：UPDATE ... SET sold_count = sold_count + 1 WHERE id=? AND status=2 AND sold_count < stock
+        // 以数据库单条 UPDATE 的行级锁保证并发下不超卖，影响行数为 0 即表示已售罄
+        boolean ok = lambdaUpdate()
+                .eq(FlashSaleEntity::getId, flashId)
+                .eq(FlashSaleEntity::getStatus, 2)
+                .apply("sold_count < stock")
+                .setIncrBy(FlashSaleEntity::getSoldCount, 1)
+                .update();
+        if (!ok) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "已售罄");
+        return true;
     }
 }

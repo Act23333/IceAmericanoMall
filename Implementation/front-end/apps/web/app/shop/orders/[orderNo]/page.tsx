@@ -78,7 +78,12 @@ export default function OrderDetailPage() {
       {/* 操作 */}
       <div className="flex gap-3">
         {order.status === 1 && (
-          <Button variant="secondary" size="md" onClick={() => cancelOrder.mutate(order.orderNo)}>取消订单</Button>
+          <>
+            <Link href={`/shop/pay/${order.orderNo}`} className="flex-1">
+              <Button variant="primary" size="md" className="w-full">去支付</Button>
+            </Link>
+            <Button variant="secondary" size="md" onClick={() => cancelOrder.mutate(order.orderNo)}>取消订单</Button>
+          </>
         )}
         {order.status === 3 && (
           <Button variant="primary" size="md" onClick={() => confirmOrder.mutate(order.orderNo)}>确认收货</Button>

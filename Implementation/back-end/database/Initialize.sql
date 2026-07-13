@@ -33,9 +33,10 @@ CREATE TABLE `user` (
                         `id` BIGINT AUTO_INCREMENT COMMENT '技术主键',
                         `user_id` VARCHAR(32) NOT NULL COMMENT '业务唯一标识（UUID）',
                         `username` VARCHAR(50) DEFAULT NULL COMMENT '用户名（可选）',
-                        `phone` VARCHAR(20) NOT NULL COMMENT '手机号（登录账号）',
-                        `password` VARCHAR(100) NOT NULL COMMENT '加密密码',
+                        `phone` VARCHAR(20) DEFAULT NULL COMMENT '手机号（登录账号，微信-only 用户可空）',
+                        `password` VARCHAR(100) DEFAULT NULL COMMENT '加密密码（微信-only 用户可空）',
                         `avatar` VARCHAR(255) DEFAULT NULL COMMENT '头像URL',
+                        `wx_openid` VARCHAR(128) DEFAULT NULL COMMENT '微信 openid（第三方登录）',
                         `register_time` DATETIME NOT NULL COMMENT '注册时间（业务时间）',
                         `status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：1-正常，0-禁用',
                         `balance` INT NOT NULL DEFAULT 0 COMMENT '余额（单位：分）',
@@ -44,7 +45,8 @@ CREATE TABLE `user` (
                         `update_time` DATETIME NOT NULL COMMENT '最后更新时间',
                         PRIMARY KEY (`id`),
                         UNIQUE KEY `uk_user_id` (`user_id`),
-                        UNIQUE KEY `uk_phone` (`phone`)
+                        UNIQUE KEY `uk_phone` (`phone`),
+                        UNIQUE KEY `uk_wx_openid` (`wx_openid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
 -- ======================================================
