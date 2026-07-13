@@ -32,11 +32,25 @@ public class AuthController {
     private final LoginTokenService loginTokenService;
     private final RefreshTokenUtils refreshTokenUtils;
 
+    /**
+     * 用户登录接口。
+     * <p>
+     * 根据登录类型（密码登录、短信验证码登录等）自动匹配策略，完成认证后返回双 Token（access_token + refresh_token）。
+     *
+     * @param request 登录请求体，包含账号标识、凭证及登录类型
+     * @return 包含 {@link OAuth2TokenResp} 的 {@link Result}，其中 accessToken 用于接口访问，refreshToken 用于续期
+     * @throws  org.noLazy.common.exception.BizException 账号不存在、密码错误或账号被禁用时抛出系统内部异常
+     */
     @PostMapping("/login")
     public Result<OAuth2TokenResp> login(@Validated @RequestBody LoginReq request) {
         return Result.ok(loginContext.login(request));
     }
 
+    /**
+     *
+     * @param request
+     * @return
+     */
     @PostMapping("/register")
     public Result<OAuth2TokenResp> register(@Validated @RequestBody RegisterReq request) {
         RegisterReqDTO registerReqDTO = BeanUtils.copyBean(request, RegisterReqDTO.class);

@@ -31,6 +31,9 @@ public class RegisterReq {
     @NotBlank(message = "验证码不能为空")
     private String code;
 
-//     可选：幂等令牌（用于防止重复提交）
+    @NotBlank(message = "设备id不能为空")
+    private String deviceId;
+
+//     可选：幂等令牌（用于防止重复提交，可使用状态机处理幂等）
 //    private String requestId;
 }

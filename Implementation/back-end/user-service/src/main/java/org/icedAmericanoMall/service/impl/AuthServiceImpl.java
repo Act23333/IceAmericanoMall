@@ -22,7 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.Objects;
+
 
 import static org.icedAmericanoMall.constants.RedisKeyConstants.SMS_CODE_PREFIX;
 
@@ -88,6 +88,7 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         registerUser(user);
         return toLoginResp(user);
     }
+
 
     private void registerUser(UserEntity user) {
         String userId = UUID.fastUUID().toString();
