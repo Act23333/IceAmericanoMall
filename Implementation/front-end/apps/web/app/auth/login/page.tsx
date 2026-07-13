@@ -38,7 +38,15 @@ export default function LoginPage() {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/user/code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({
+          phone,
+          requestId: crypto.randomUUID?.() ?? `${Date.now()}`,
+          captchaTicket: 'mock_ticket',
+          lotNumber: 'mock_lot',
+          captchaOutput: 'mock_output',
+          passToken: 'mock_token',
+          genTime: String(Math.floor(Date.now() / 1000)),
+        }),
       });
       setSmsCountdown(60);
       const timer = setInterval(() => setSmsCountdown((c) => { if (c <= 1) { clearInterval(timer); return 0; } return c - 1; }), 1000);

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { apiClient, type PageResult, type ProductVO } from '@icedmall/api';
 import { ProductCard } from '@icedmall/ui';
 

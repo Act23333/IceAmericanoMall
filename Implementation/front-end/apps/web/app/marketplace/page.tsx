@@ -4,7 +4,7 @@
  */
 
 import { getCategories, getProducts } from '@icedmall/api';
-import { ProductCard, SectionReveal } from '@icedmall/ui';
+import { SectionReveal, ProductCard } from '@icedmall/ui';
 import { MarketplaceInfinite } from './infinite-client';
 
 export const revalidate = 60;

@@ -5,9 +5,11 @@ import { apiClient } from '../client';
 
 export interface HomeConfigItem {
   id: number;
-  type: string;
+  /** 后端发 Integer，对应 HomeConfigEntity.type */
+  type: number;
   title: string;
-  imageUrl: string;
+  /** 后端字段名 image，对应 HomeConfigEntity.image */
+  image: string;
   linkUrl: string;
   sortOrder: number;
 }

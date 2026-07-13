@@ -24,13 +24,6 @@ const PROTECTED_PATHS = [
   '/admin',
 ];
 
-const PUBLIC_PATHS = [
-  '/auth/login',
-  '/auth/register',
-  '/',
-  '/products',
-  '/categories',
-];
 
 export function authMiddleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -46,7 +39,6 @@ export function authMiddleware(request: NextRequest) {
   }
 
   const isProtected = PROTECTED_PATHS.some((p) => pathname.startsWith(p));
-  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 
   // 公开路径直接放行
   if (!isProtected) {
