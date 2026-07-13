@@ -37,7 +37,7 @@ public class AdminController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) Integer status) {
-        IPage<OrderEntity> entityPage = orderService.pageAllOrders(status, page, size);
+        IPage<OrderEntity> entityPage = orderService.pageOrders(null, null, status, page, size);
         return Result.ok(entityPage.convert(orderConverter::entityToVO));
     }
 

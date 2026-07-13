@@ -3,7 +3,7 @@ package org.icedAmericanoMall.job;
 import com.xxl.job.core.handler.annotation.XxlJob;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.icedAmericanoMall.manager.OrderManager;
+import org.icedAmericanoMall.manager.OrderLifecycleManager;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -22,16 +22,16 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class OrderTimeoutJob {
 
-    private final OrderManager orderManager;
+    private final OrderLifecycleManager orderLifecycleManager;
 
     @Scheduled(fixedRate = 60_000)
     public void cancelTimeoutOrdersScheduled() {
-        orderManager.cancelTimeoutOrders();
+        orderLifecycleManager.cancelTimeoutOrders();
     }
 
     @XxlJob("cancelTimeoutOrders")
     public void cancelTimeoutOrdersXxlJob() {
         log.info("XXL-Job: cancelTimeoutOrders triggered");
-        orderManager.cancelTimeoutOrders();
+        orderLifecycleManager.cancelTimeoutOrders();
     }
 }

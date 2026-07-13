@@ -1,6 +1,6 @@
 package org.icedAmericanoMall.service.auth.login;
 
-import org.icedAmericanoMall.client.UserClient;
+import org.icedAmericanoMall.client.AuthClient;
 import org.icedAmericanoMall.domain.dto.auth.LoginReq;
 import org.icedAmericanoMall.domain.enums.CredentialTypeEnum;
 import org.icedAmericanoMall.domain.enums.IdentityTypeEnum;
@@ -25,7 +25,7 @@ import static org.mockito.Mockito.when;
 class SmsLoginStrategyTest {
 
     @Mock
-    private UserClient userClient;
+    private AuthClient authClient;
 
     @Mock
     private LoginTokenService loginTokenService;
@@ -41,12 +41,12 @@ class SmsLoginStrategyTest {
         request.setAccount("13888888888");
         request.setCredentialType(CredentialTypeEnum.SMS_CODE);
         request.setCredential("123456");
-        when(userClient.loginBySms(any(SmsLoginReqDTO.class))).thenReturn(new LoginRespDTO());
+        when(authClient.loginBySms(any(SmsLoginReqDTO.class))).thenReturn(new LoginRespDTO());
 
         strategy.login(request);
 
         ArgumentCaptor<SmsLoginReqDTO> captor = ArgumentCaptor.forClass(SmsLoginReqDTO.class);
-        verify(userClient).loginBySms(captor.capture());
+        verify(authClient).loginBySms(captor.capture());
         assertEquals("13888888888", captor.getValue().getPhone());
         assertEquals("123456", captor.getValue().getCode());
     }

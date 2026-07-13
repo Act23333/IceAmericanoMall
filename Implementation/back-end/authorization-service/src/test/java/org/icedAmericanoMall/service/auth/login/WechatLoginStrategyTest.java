@@ -1,6 +1,6 @@
 package org.icedAmericanoMall.service.auth.login;
 
-import org.icedAmericanoMall.client.UserClient;
+import org.icedAmericanoMall.client.AuthClient;
 import org.icedAmericanoMall.domain.dto.auth.LoginReq;
 import org.icedAmericanoMall.domain.enums.CredentialTypeEnum;
 import org.icedAmericanoMall.domain.enums.IdentityTypeEnum;
@@ -18,7 +18,7 @@ import static org.mockito.Mockito.mock;
 class WechatLoginStrategyTest {
 
     private final WechatLoginStrategy strategy =
-            new WechatLoginStrategy(mock(UserClient.class), mock(LoginTokenService.class));
+            new WechatLoginStrategy(mock(AuthClient.class), mock(LoginTokenService.class));
 
     @Test
     @DisplayName("support — 仅匹配 WECHAT + OAUTH_TOKEN")

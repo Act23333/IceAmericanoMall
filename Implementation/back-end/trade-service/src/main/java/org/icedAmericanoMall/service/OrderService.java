@@ -21,9 +21,8 @@ public interface OrderService extends IService<OrderEntity> {
     /** 查询订单项列表（下单快照）。 */
     List<OrderItemEntity> listItems(Long orderId);
 
-    IPage<OrderEntity> pageMyOrders(Long userId, Integer status, int page, int size);
-
-    IPage<OrderEntity> pageSellerOrders(Long sellerId, Integer status, int page, int size);
+    /** 通用订单分页：userId/sellerId 可同时传（互斥）；均为 null 时查所有。 */
+    IPage<OrderEntity> pageOrders(Long userId, Long sellerId, Integer status, int page, int size);
 
     /** 用户取消待付款订单（纯状态流转，库存回滚由 Manager 处理）。 */
     void cancelOrder(String orderNo, Long userId);
@@ -33,9 +32,6 @@ public interface OrderService extends IService<OrderEntity> {
 
     /** 商家发货（纯状态流转，物流创建由 Manager 处理）。 */
     void shipOrder(String orderNo, Long sellerId, String logisticsNumber, String logisticsCompany);
-
-    /** Admin: 查看所有订单（不限用户/商家）。 */
-    IPage<OrderEntity> pageAllOrders(Integer status, int page, int size);
 
     /** 查询超时未支付订单（供超时任务使用）。 */
     List<OrderEntity> listTimeoutPending(LocalDateTime cutoff);
