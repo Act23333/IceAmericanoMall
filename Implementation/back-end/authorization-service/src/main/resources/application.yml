@@ -16,7 +16,6 @@ spring:
           enabled: false
         #关闭 Nacos 服务端认证（仅限开发环境）
         #如果仅在本地开发，且不介意安全问题，可修改 Nacos 服务端配置文件（conf/application.properties）：
-        #
         #properties
         #nacos.core.auth.enabled=false
 #      config:
@@ -33,10 +32,10 @@ jwt:
   refresh-token-ttl: 604800
   keystore:
     # V2.5: 生产通过 JWT_KEYSTORE_PATH/PASSWORD 环境变量注入；dev 用本地 dev.p12（不提交 Git）
-    key-store-path: keystore/dev.p12
-    key-password: ${JWT_KEYSTORE_PASSWORD:devpassDev1}
-    keystore-password: ${JWT_KEYSTORE_PASSWORD:devpassDev1}
-    key-alias: dev-jwt-rsa
+    key-store-path: keystore/dev-keystore.p12
+    key-password: ${JWT_KEYSTORE_PASSWORD:pkcs12}
+    keystore-password: ${JWT_KEYSTORE_PASSWORD:pkcs12}
+    key-alias: dev-pkcs
   rotation:
     enabled: false  # dev 默认关闭，生产打开
     cron: "0 0 2 * * ?"
