@@ -1,7 +1,7 @@
 package org.icedAmericanoMall.service.auth.login;
 
 import lombok.RequiredArgsConstructor;
-import org.icedAmericanoMall.client.UserClient;
+import org.icedAmericanoMall.client.AuthClient;
 import org.icedAmericanoMall.domain.dto.OAuth2TokenResp;
 import org.icedAmericanoMall.domain.dto.auth.LoginReq;
 import org.icedAmericanoMall.domain.enums.CredentialTypeEnum;
@@ -21,7 +21,7 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class WechatLoginStrategy implements LoginStrategy {
 
-    private final UserClient userClient;
+    private final AuthClient authClient;
     private final LoginTokenService loginTokenService;
 
     @Override
@@ -37,7 +37,7 @@ public class WechatLoginStrategy implements LoginStrategy {
         }
         WechatLoginReqDTO wxReq = new WechatLoginReqDTO();
         wxReq.setCode(code);
-        LoginRespDTO userResp = userClient.loginByWechat(wxReq);
+        LoginRespDTO userResp = authClient.loginByWechat(wxReq);
         return loginTokenService.createLoginResponse(userResp);
     }
 }

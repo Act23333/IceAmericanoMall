@@ -1,7 +1,7 @@
 package org.icedAmericanoMall.service.auth.login;
 
 import lombok.RequiredArgsConstructor;
-import org.icedAmericanoMall.client.UserClient;
+import org.icedAmericanoMall.client.AuthClient;
 import org.icedAmericanoMall.domain.dto.OAuth2TokenResp;
 import org.icedAmericanoMall.domain.dto.auth.LoginReq;
 import org.icedAmericanoMall.domain.enums.CredentialTypeEnum;
@@ -21,7 +21,7 @@ public class PasswordLoginStrategy implements LoginStrategy {
     private static final String PASSWORD_PATTERN =
             "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*])[0-9a-zA-Z!@#$%^&*]{8,20}$";
 
-    private final UserClient userClient;
+    private final AuthClient authClient;
     private final LoginTokenService loginTokenService;
 
     @Override
@@ -33,7 +33,7 @@ public class PasswordLoginStrategy implements LoginStrategy {
     @Override
     public OAuth2TokenResp login(LoginReq request) {
         PasswordLoginReqDTO passwordReq = buildPasswordRequest(request);
-        LoginRespDTO userResp = userClient.loginByPassword(passwordReq);
+        LoginRespDTO userResp = authClient.loginByPassword(passwordReq);
         return loginTokenService.createLoginResponse(userResp);
     }
 

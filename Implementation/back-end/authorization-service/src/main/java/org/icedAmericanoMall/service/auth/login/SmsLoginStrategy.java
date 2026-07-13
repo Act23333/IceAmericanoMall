@@ -1,7 +1,7 @@
 package org.icedAmericanoMall.service.auth.login;
 
 import lombok.RequiredArgsConstructor;
-import org.icedAmericanoMall.client.UserClient;
+import org.icedAmericanoMall.client.AuthClient;
 import org.icedAmericanoMall.domain.dto.OAuth2TokenResp;
 import org.icedAmericanoMall.domain.dto.auth.LoginReq;
 import org.icedAmericanoMall.domain.enums.CredentialTypeEnum;
@@ -19,7 +19,7 @@ public class SmsLoginStrategy implements LoginStrategy {
     private static final String PHONE_PATTERN = "^1[3-9]\\d{9}$";
     private static final String SMS_CODE_PATTERN = "^\\d{6}$";
 
-    private final UserClient userClient;
+    private final AuthClient authClient;
     private final LoginTokenService loginTokenService;
 
     @Override
@@ -33,7 +33,7 @@ public class SmsLoginStrategy implements LoginStrategy {
         SmsLoginReqDTO smsReq = new SmsLoginReqDTO();
         smsReq.setPhone(request.getAccount());
         smsReq.setCode(request.getCredential());
-        LoginRespDTO userResp = userClient.loginBySms(smsReq);
+        LoginRespDTO userResp = authClient.loginBySms(smsReq);
         return loginTokenService.createLoginResponse(userResp);
     }
 

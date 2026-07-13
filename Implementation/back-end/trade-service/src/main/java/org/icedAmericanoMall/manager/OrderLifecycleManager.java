@@ -5,7 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.client.CouponClient;
 import org.icedAmericanoMall.client.LogisticsClient;
 import org.icedAmericanoMall.client.SkuClient;
-import org.icedAmericanoMall.client.UserClient;
+import org.icedAmericanoMall.client.PointsClient;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
 import org.icedAmericanoMall.domain.entity.OrderItemEntity;
 import org.icedAmericanoMall.dto.CreateLogisticsDTO;
@@ -42,7 +42,7 @@ public class OrderLifecycleManager {
     private final SkuClient skuClient;
     private final CouponClient couponClient;
     private final LogisticsClient logisticsClient;
-    private final UserClient userClient;
+    private final PointsClient pointsClient;
 
     public void cancelOrder(String orderNo, Long userId) {
         orderService.cancelOrder(orderNo, userId);
@@ -60,7 +60,7 @@ public class OrderLifecycleManager {
         int points = order.getPayAmount() / POINTS_RATE_DIVISOR;
         if (points <= 0) return;
         try {
-            userClient.addPoints(order.getUserId(), points, POINTS_TYPE_ORDER_REWARD, "下单奖励");
+            pointsClient.addPoints(order.getUserId(), points, POINTS_TYPE_ORDER_REWARD, "下单奖励");
         } catch (Exception e) {
             log.error("下单奖励积分发放失败: orderNo={}", orderNo, e);
         }

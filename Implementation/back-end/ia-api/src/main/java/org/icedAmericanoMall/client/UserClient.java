@@ -1,41 +1,15 @@
 package org.icedAmericanoMall.client;
 
-import org.icedAmericanoMall.dto.*;
 import org.icedAmericanoMall.fallback.UserClientFallback;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * 纯用户域 Feign Client（V2.5 拆分：auth→AuthClient, points→PointsClient, balance→BalanceClient）。
+ */
 @FeignClient(name = "user-service", path = "/internal/user", contextId = "internal", fallbackFactory = UserClientFallback.class)
 public interface UserClient {
 
-    @PostMapping("/register")
-    LoginRespDTO register(@RequestBody RegisterReqDTO request);
-
-    @PostMapping("/login/password")
-    LoginRespDTO loginByPassword(@RequestBody PasswordLoginReqDTO request);
-
-    @PostMapping("/login/sms")
-    LoginRespDTO loginBySms(@RequestBody SmsLoginReqDTO request);
-
-    /** WeChat OAuth login — called by authorization-service (微信第三方登录) */
-    @PostMapping("/login/wechat")
-    LoginRespDTO loginByWechat(@RequestBody WechatLoginReqDTO request);
-
-    /** Get total user count for admin dashboard */
     @GetMapping("/count")
     Long countUsers();
-
-    /** Award points — called by trade-service on order completion */
-    @PostMapping("/points/add")
-    Long addPoints(@RequestParam Long userId, @RequestParam int points,
-                   @RequestParam(defaultValue = "2") int type,
-                   @RequestParam(defaultValue = "下单奖励") String source);
-
-    /** Deduct balance for balance payment — called by pay-service (余额支付；余额不足抛异常) */
-    @PostMapping("/balance/deduct")
-    void deductBalance(@RequestParam Long userId, @RequestParam Integer amount);
-
-    /** Reset password via SMS code — called by authorization-service (找回密码) */
-    @PostMapping("/reset-password")
-    void resetPassword(@RequestBody ResetPasswordReqDTO request);
 }

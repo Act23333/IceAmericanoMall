@@ -3,6 +3,7 @@ package org.icedAmericanoMall.controller;
 import com.nimbusds.jwt.SignedJWT;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.icedAmericanoMall.client.AuthClient;
 import org.icedAmericanoMall.client.UserClient;
 import org.icedAmericanoMall.domain.dto.OAuth2TokenResp;
 import org.icedAmericanoMall.domain.dto.RefreshTokenInfo;
@@ -32,6 +33,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AuthController {
 
+    private final AuthClient authClient;
     private final UserClient userClient;
     private final LoginContext loginContext;
     private final LoginTokenService loginTokenService;
@@ -57,14 +59,14 @@ public class AuthController {
     @PostMapping("/register")
     public Result<OAuth2TokenResp> register(@Validated @RequestBody RegisterReq request) {
         RegisterReqDTO registerReqDTO = BeanUtils.copyBean(request, RegisterReqDTO.class);
-        LoginRespDTO userResp = userClient.register(registerReqDTO);
+        LoginRespDTO userResp = authClient.register(registerReqDTO);
         return Result.ok(loginTokenService.createLoginResponse(userResp));
     }
 
     /** 找回密码：短信验证码重置密码（公开接口）。 */
     @PostMapping("/reset-password")
     public Result<Void> resetPassword(@Validated @RequestBody ResetPasswordReqDTO request) {
-        userClient.resetPassword(request);
+        authClient.resetPassword(request);
         return Result.ok("密码重置成功");
     }
 

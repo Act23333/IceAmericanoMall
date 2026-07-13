@@ -1,6 +1,6 @@
 package org.icedAmericanoMall.service.auth.login;
 
-import org.icedAmericanoMall.client.UserClient;
+import org.icedAmericanoMall.client.AuthClient;
 import org.icedAmericanoMall.domain.dto.OAuth2TokenResp;
 import org.icedAmericanoMall.domain.dto.auth.LoginReq;
 import org.icedAmericanoMall.domain.enums.CredentialTypeEnum;
@@ -27,7 +27,7 @@ import static org.mockito.Mockito.when;
 class PasswordLoginStrategyTest {
 
     @Mock
-    private UserClient userClient;
+    private AuthClient userClient;
 
     @Mock
     private LoginTokenService loginTokenService;

@@ -1,7 +1,7 @@
 package org.icedAmericanoMall.manager;
 
 import lombok.RequiredArgsConstructor;
-import org.icedAmericanoMall.client.UserClient;
+import org.icedAmericanoMall.client.BalanceClient;
 import org.icedAmericanoMall.enums.PayChannelEnum;
 import org.icedAmericanoMall.integration.payment.AlipayPaymentClient;
 import org.icedAmericanoMall.integration.payment.PaymentClient;
@@ -26,7 +26,7 @@ public class PaymentChannelRouter {
 
     private final PaymentClient wechatClient;
     private final AlipayPaymentClient alipayClient;
-    private final UserClient userClient;
+    private final BalanceClient balanceClient;
 
     /** 微信/支付宝：返回支付链接；余额不在此路由（扣款在 PayManager 直接处理）。 */
     public String initiatePayment(String orderNo, int amount, String description, PayChannelEnum channel) {
@@ -38,9 +38,9 @@ public class PaymentChannelRouter {
         };
     }
 
-    /** 余额扣款（代理 UserClient）。 */
+    /** 余额扣款（代理 BalanceClient）。 */
     public void deductBalance(Long userId, int amount) {
-        userClient.deductBalance(userId, amount);
+        balanceClient.deductBalance(userId, amount);
     }
 
     /** 按渠道验签回调。 */

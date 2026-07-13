@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  *
  * <p>Server endpoint: {@code GET /internal/user/address/{id}} in InternalUserController.
  */
-@FeignClient(name = "user-service", path = "/internal/user", contextId = "address",
+@FeignClient(name = "user-service", path = "/internal/address", contextId = "address",
         fallbackFactory = AddressClientFallback.class)
 public interface AddressClient {
 
