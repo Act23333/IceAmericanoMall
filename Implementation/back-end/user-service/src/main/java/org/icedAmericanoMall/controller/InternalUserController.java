@@ -18,7 +18,6 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/internal/user")
 public class InternalUserController {
-
     private final AuthService authService;
     private final UserService userService;
     private final AddressService addressService;
