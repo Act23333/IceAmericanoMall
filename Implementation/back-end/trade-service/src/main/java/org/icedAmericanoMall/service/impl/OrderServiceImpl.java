@@ -54,21 +54,11 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
     }
 
     @Override
-    public IPage<OrderEntity> pageMyOrders(Long userId, Integer status, int page, int size) {
-        var wrapper = lambdaQuery().eq(OrderEntity::getUserId, userId);
-        if (status != null) {
-            wrapper.eq(OrderEntity::getStatus, status);
-        }
-        wrapper.orderByDesc(OrderEntity::getCreateTime);
-        return page(new Page<>(page, size), wrapper);
-    }
-
-    @Override
-    public IPage<OrderEntity> pageSellerOrders(Long sellerId, Integer status, int page, int size) {
-        var wrapper = lambdaQuery().eq(OrderEntity::getSellerId, sellerId);
-        if (status != null) {
-            wrapper.eq(OrderEntity::getStatus, status);
-        }
+    public IPage<OrderEntity> pageOrders(Long userId, Long sellerId, Integer status, int page, int size) {
+        var wrapper = new LambdaQueryWrapper<OrderEntity>();
+        if (userId != null) wrapper.eq(OrderEntity::getUserId, userId);
+        if (sellerId != null) wrapper.eq(OrderEntity::getSellerId, sellerId);
+        if (status != null) wrapper.eq(OrderEntity::getStatus, status);
         wrapper.orderByDesc(OrderEntity::getCreateTime);
         return page(new Page<>(page, size), wrapper);
     }
@@ -128,16 +118,6 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
                 .set(OrderEntity::getStatus, OrderStatusEnum.PENDING_RECEIPT.getCode())
                 .set(OrderEntity::getConsignTime, LocalDateTime.now())
                 .update();
-    }
-
-    @Override
-    public IPage<OrderEntity> pageAllOrders(Integer status, int page, int size) {
-        var wrapper = new LambdaQueryWrapper<OrderEntity>();
-        if (status != null) {
-            wrapper.eq(OrderEntity::getStatus, status);
-        }
-        wrapper.orderByDesc(OrderEntity::getCreateTime);
-        return page(new Page<>(page, size), wrapper);
     }
 
     @Override

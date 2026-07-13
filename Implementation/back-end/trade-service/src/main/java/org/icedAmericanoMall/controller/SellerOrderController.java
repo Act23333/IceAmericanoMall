@@ -6,7 +6,7 @@ import org.icedAmericanoMall.convert.OrderConverter;
 import org.icedAmericanoMall.domain.dto.ShipOrderReq;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
 import org.icedAmericanoMall.domain.vo.OrderVO;
-import org.icedAmericanoMall.manager.OrderManager;
+import org.icedAmericanoMall.manager.OrderLifecycleManager;
 import org.icedAmericanoMall.service.OrderService;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.enums.ErrorCode;
@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class SellerOrderController {
 
-    private final OrderManager orderManager;
+    private final OrderLifecycleManager orderLifecycleManager;
     private final OrderService orderService;
     private final OrderConverter orderConverter;
 
@@ -29,7 +29,7 @@ public class SellerOrderController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         Long sellerId = UserContext.getUser();
-        IPage<OrderEntity> entityPage = orderService.pageSellerOrders(sellerId, status, page, size);
+        IPage<OrderEntity> entityPage = orderService.pageOrders(null, sellerId, status, page, size);
         return Result.ok(entityPage.convert(orderConverter::entityToVO));
     }
 
@@ -49,7 +49,7 @@ public class SellerOrderController {
     @PostMapping("/{orderNo}/ship")
     public Result<Void> ship(@PathVariable String orderNo, @RequestBody ShipOrderReq req) {
         Long sellerId = UserContext.getUser();
-        orderManager.shipOrder(orderNo, sellerId, req.getLogisticsNumber(), req.getLogisticsCompany());
+        orderLifecycleManager.shipOrder(orderNo, sellerId, req.getLogisticsNumber(), req.getLogisticsCompany());
         return Result.ok();
     }
 }

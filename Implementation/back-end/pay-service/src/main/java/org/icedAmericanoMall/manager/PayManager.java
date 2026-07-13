@@ -3,7 +3,6 @@ package org.icedAmericanoMall.manager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.client.OrderClient;
-import org.icedAmericanoMall.client.UserClient;
 import org.icedAmericanoMall.convert.PayOrderConverter;
 import org.icedAmericanoMall.domain.entity.PayOrderEntity;
 import org.icedAmericanoMall.domain.vo.PayOrderVO;
@@ -12,8 +11,6 @@ import org.icedAmericanoMall.enums.PayChannelEnum;
 import org.icedAmericanoMall.enums.PayStatusEnum;
 import org.icedAmericanoMall.enums.PayTypeEnum;
 import org.icedAmericanoMall.enums.TradeOrderStatus;
-import org.icedAmericanoMall.integration.payment.AlipayPaymentClient;
-import org.icedAmericanoMall.integration.payment.PaymentClient;
 import org.icedAmericanoMall.service.PayOrderService;
 import org.noLazy.common.enums.ErrorCode;
 import org.noLazy.common.exception.BizException;
@@ -47,9 +44,7 @@ public class PayManager {
     private final PayOrderService payOrderService;
     private final PayOrderConverter payOrderConverter;
     private final OrderClient orderClient;
-    private final PaymentClient paymentClient;
-    private final AlipayPaymentClient alipayPaymentClient;
-    private final UserClient userClient;
+    private final PaymentChannelRouter channelRouter;
 
     @Transactional(rollbackFor = Exception.class)
     public PayOrderVO initiatePayment(String orderNo, Long userId, PayChannelEnum channel) {
@@ -63,10 +58,8 @@ public class PayManager {
         }
         int amount = summary.getTotalAmount();
         PayOrderEntity payOrder = switch (channel) {
-            case WECHAT -> initiateThirdParty(orderNo, userId, amount,
-                    paymentClient.initiatePayment(orderNo, amount, PAY_DESC), PayChannelEnum.WECHAT);
-            case ALIPAY -> initiateThirdParty(orderNo, userId, amount,
-                    alipayPaymentClient.initiatePayment(orderNo, amount, PAY_DESC), PayChannelEnum.ALIPAY);
+            case WECHAT, ALIPAY -> initiateThirdParty(orderNo, userId, amount,
+                    channelRouter.initiatePayment(orderNo, amount, PAY_DESC, channel), channel);
             case BALANCE -> payByBalance(orderNo, userId, amount);
         };
         return payOrderConverter.toVO(payOrder);
@@ -81,7 +74,7 @@ public class PayManager {
 
     /** 余额支付：Feign 扣款成功后直接成单，并通知订单待发货。 */
     private PayOrderEntity payByBalance(String orderNo, Long userId, int amount) {
-        userClient.deductBalance(userId, amount); // 余额不足抛异常 → 事务回滚，不建单
+        channelRouter.deductBalance(userId, amount);
         PayOrderEntity payOrder;
         try {
             payOrder = payOrderService.createPaidByBalance(orderNo, userId, amount);
@@ -96,9 +89,7 @@ public class PayManager {
 
     @Transactional(rollbackFor = Exception.class)
     public void handleCallback(Map<String, String> params, PayChannelEnum channel) {
-        boolean verified = channel == PayChannelEnum.ALIPAY
-                ? alipayPaymentClient.verifyCallback(params)
-                : paymentClient.verifyCallback(params);
+        boolean verified = channelRouter.verifyCallback(params, channel);
         if (!verified) {
             log.error("支付回调签名验证失败: channel={}, {}", channel, params);
             throw new BizException(ErrorCode.ILLEGAL_REQUEST, "支付回调验证失败");

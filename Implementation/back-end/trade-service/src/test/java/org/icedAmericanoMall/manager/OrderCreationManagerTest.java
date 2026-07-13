@@ -42,19 +42,19 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
- * OrderManager 下单编排集成测试 —— H2 承接真实 OrderService，Feign 客户端用 Mockito 打桩。
+ * OrderCreationManager 下单编排集成测试 —— H2 承接真实 OrderService，Feign 客户端用 Mockito 打桩。
  * 锁定"购物车→SKU→地址快照→库存扣减→建单→清车"链路与 Saga 回滚，保护后续规范重构不回归。
  * <p>注：Feign 路径正确性由契约测试（Phase E）覆盖；此处聚焦编排行为。
  */
-@DisplayName("OrderManager 下单编排集成测试")
-class OrderManagerTest {
+@DisplayName("OrderCreationManager 下单编排集成测试")
+class OrderCreationManagerTest {
 
     private OrderService orderService;      // 真实实现 + H2
     private CartClient cartClient;
     private AddressClient addressClient;
     private SkuClient skuClient;
     private CouponClient couponClient;
-    private OrderManager orderManager;
+    private OrderCreationManager orderManager;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -107,9 +107,8 @@ class OrderManagerTest {
         this.addressClient = mock(AddressClient.class);
         this.skuClient = mock(SkuClient.class);
         this.couponClient = mock(CouponClient.class);
-        this.orderManager = new OrderManager(orderService, new OrderConverterImpl(),
-                cartClient, addressClient, skuClient,
-                mock(LogisticsClient.class), mock(UserClient.class), couponClient);
+        this.orderManager = new OrderCreationManager(orderService, new OrderConverterImpl(),
+                cartClient, addressClient, skuClient, couponClient);
     }
 
     private CartItemDTO cartItem(Long skuId, int qty) {
@@ -220,9 +219,8 @@ class OrderManagerTest {
         OrderService failingService = mock(OrderService.class);
         doThrow(new RuntimeException("DB down")).when(failingService)
                 .createOrderWithItems(any(), anyList());
-        OrderManager mgr = new OrderManager(failingService, new OrderConverterImpl(),
-                cartClient, addressClient, skuClient,
-                mock(LogisticsClient.class), mock(UserClient.class), couponClient);
+        OrderCreationManager mgr = new OrderCreationManager(failingService, new OrderConverterImpl(),
+                cartClient, addressClient, skuClient, couponClient);
 
         when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1000L, 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));

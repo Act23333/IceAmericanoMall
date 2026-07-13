@@ -40,9 +40,7 @@ class PayManagerTest {
     @Mock PayOrderService payOrderService;
     @Mock PayOrderConverter payOrderConverter;
     @Mock OrderClient orderClient;
-    @Mock PaymentClient paymentClient;
-    @Mock AlipayPaymentClient alipayPaymentClient;
-    @Mock UserClient userClient;
+    @Mock PaymentChannelRouter channelRouter;
     @InjectMocks PayManager payManager;
 
     private OrderSummaryDTO summary(int amount) {
@@ -67,7 +65,8 @@ class PayManagerTest {
     void shouldInitiateWechat_whenOrderValid() {
         when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
         when(orderClient.getOrder("ORD-1")).thenReturn(summary(12900));
-        when(paymentClient.initiatePayment(eq("ORD-1"), eq(12900), anyString())).thenReturn("weixin://qr");
+        when(channelRouter.initiatePayment(eq("ORD-1"), eq(12900), anyString(), eq(PayChannelEnum.WECHAT)))
+                .thenReturn("weixin://qr");
         when(payOrderService.createPending("ORD-1", 100L, 12900, "weixin://qr", "WECHAT", PayTypeEnum.NATIVE.getCode()))
                 .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
 
@@ -80,13 +79,13 @@ class PayManagerTest {
     void shouldInitiateAlipay() {
         when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
         when(orderClient.getOrder("ORD-1")).thenReturn(summary(8800));
-        when(alipayPaymentClient.initiatePayment(eq("ORD-1"), eq(8800), anyString())).thenReturn("https://alipay/pay");
+        when(channelRouter.initiatePayment(eq("ORD-1"), eq(8800), anyString(), eq(PayChannelEnum.ALIPAY)))
+                .thenReturn("https://alipay/pay");
         when(payOrderService.createPending("ORD-1", 100L, 8800, "https://alipay/pay", "ALIPAY", PayTypeEnum.NATIVE.getCode()))
                 .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
 
         assertNotNull(payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.ALIPAY));
-        verify(alipayPaymentClient).initiatePayment("ORD-1", 8800, "订单支付");
-        verify(paymentClient, never()).initiatePayment(anyString(), anyInt(), anyString());
+        verify(channelRouter).initiatePayment(eq("ORD-1"), eq(8800), anyString(), eq(PayChannelEnum.ALIPAY));
     }
 
     @Test
@@ -99,7 +98,7 @@ class PayManagerTest {
 
         payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.BALANCE);
 
-        verify(userClient).deductBalance(100L, 5000);
+        verify(channelRouter).deductBalance(100L, 5000);
         verify(payOrderService).createPaidByBalance("ORD-1", 100L, 5000);
         verify(orderClient).updateOrderStatus("ORD-1", 2);   // 待发货
     }
@@ -110,7 +109,7 @@ class PayManagerTest {
         when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
         when(orderClient.getOrder("ORD-1")).thenReturn(summary(5000));
         doThrow(new BizException(ErrorCode.BALANCE_INSUFFICIENT, "余额不足"))
-                .when(userClient).deductBalance(100L, 5000);
+                .when(channelRouter).deductBalance(100L, 5000);
 
         assertThrows(BizException.class, () -> payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.BALANCE));
         verify(payOrderService, never()).createPaidByBalance(anyString(), anyLong(), anyInt());
@@ -128,7 +127,7 @@ class PayManagerTest {
     @Test
     @DisplayName("handleCallback(WECHAT) — 验签通过：置成功并更新订单为待发货")
     void shouldMarkSuccess_whenCallbackVerified() {
-        when(paymentClient.verifyCallback(anyMap())).thenReturn(true);
+        when(channelRouter.verifyCallback(anyMap(), eq(PayChannelEnum.WECHAT))).thenReturn(true);
         when(payOrderService.getByPayOrderNo("PAY-1"))
                 .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
 
@@ -141,21 +140,20 @@ class PayManagerTest {
     @Test
     @DisplayName("handleCallback(ALIPAY) — 用支付宝验签器")
     void shouldUseAlipayVerifier() {
-        when(alipayPaymentClient.verifyCallback(anyMap())).thenReturn(true);
+        when(channelRouter.verifyCallback(anyMap(), eq(PayChannelEnum.ALIPAY))).thenReturn(true);
         when(payOrderService.getByPayOrderNo("PAY-1"))
                 .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
 
         payManager.handleCallback(Map.of("out_trade_no", "PAY-1"), PayChannelEnum.ALIPAY);
 
-        verify(alipayPaymentClient).verifyCallback(anyMap());
-        verify(paymentClient, never()).verifyCallback(anyMap());
+        verify(channelRouter).verifyCallback(anyMap(), eq(PayChannelEnum.ALIPAY));
         verify(payOrderService).markSuccess(any(), any());
     }
 
     @Test
     @DisplayName("handleCallback — 验签失败抛异常")
     void shouldThrow_whenSignatureInvalid() {
-        when(paymentClient.verifyCallback(anyMap())).thenReturn(false);
+        when(channelRouter.verifyCallback(anyMap(), eq(PayChannelEnum.WECHAT))).thenReturn(false);
         assertThrows(BizException.class, () -> payManager.handleCallback(Map.of(), PayChannelEnum.WECHAT));
         verify(payOrderService, never()).markSuccess(any(), any());
     }

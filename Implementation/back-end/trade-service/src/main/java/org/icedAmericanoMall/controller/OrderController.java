@@ -7,7 +7,8 @@ import org.icedAmericanoMall.convert.OrderConverter;
 import org.icedAmericanoMall.domain.dto.CreateOrderReq;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
 import org.icedAmericanoMall.domain.vo.OrderVO;
-import org.icedAmericanoMall.manager.OrderManager;
+import org.icedAmericanoMall.manager.OrderCreationManager;
+import org.icedAmericanoMall.manager.OrderLifecycleManager;
 import org.icedAmericanoMall.service.OrderService;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.utils.UserContext;
@@ -18,13 +19,14 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class OrderController {
 
-    private final OrderManager orderManager;
+    private final OrderCreationManager orderCreationManager;
+    private final OrderLifecycleManager orderLifecycleManager;
     private final OrderService orderService;
     private final OrderConverter orderConverter;
 
     @PostMapping
     public Result<OrderVO> create(@Valid @RequestBody CreateOrderReq req) {
-        return Result.ok(orderManager.createOrder(UserContext.getUser(), req));
+        return Result.ok(orderCreationManager.createOrder(UserContext.getUser(), req));
     }
 
     @GetMapping("/{orderNo}")
@@ -43,19 +45,19 @@ public class OrderController {
             @RequestParam(required = false) Integer status,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        IPage<OrderEntity> entityPage = orderService.pageMyOrders(UserContext.getUser(), status, page, size);
+        IPage<OrderEntity> entityPage = orderService.pageOrders(UserContext.getUser(), null, status, page, size);
         return Result.ok(entityPage.convert(orderConverter::entityToVO));
     }
 
     @PostMapping("/{orderNo}/cancel")
     public Result<Void> cancel(@PathVariable String orderNo) {
-        orderManager.cancelOrder(orderNo, UserContext.getUser());
+        orderLifecycleManager.cancelOrder(orderNo, UserContext.getUser());
         return Result.ok();
     }
 
     @PostMapping("/{orderNo}/confirm")
     public Result<Void> confirm(@PathVariable String orderNo) {
-        orderManager.confirmReceipt(orderNo, UserContext.getUser());
+        orderLifecycleManager.confirmReceipt(orderNo, UserContext.getUser());
         return Result.ok();
     }
 }
