@@ -20,7 +20,16 @@ public class RefreshTokenUtils {
 
     private final RedisTemplate<String, Object> redisTemplate;
 
+    /** 一个用户同一时刻仅保留一个活跃 refresh token（防止 Redis 泄漏）。 */
+    private static final String USER_TOKEN_KEY_PREFIX = "refresh_token_user:";
+
     public String createRefreshToken(Long userId, String username, long ttlSeconds) {
+        // 吊销该用户上一个活跃 token
+        String prevTokenId = (String) redisTemplate.opsForValue()
+                .get(USER_TOKEN_KEY_PREFIX + userId);
+        if (prevTokenId != null) {
+            revokeRefreshToken(prevTokenId);
+        }
         long now = System.currentTimeMillis();
         long maxExpireAt = now + ttlSeconds * 1000;
         String tokenId = UUID.randomUUID().toString().replace("-", "");
@@ -28,6 +37,8 @@ public class RefreshTokenUtils {
                 now, maxExpireAt);
         String key = RedisKeyConstants.REFRESH_TOKEN_PREFIX + tokenId;
         redisTemplate.opsForValue().set(key, info, ttlSeconds, TimeUnit.SECONDS);
+        // 记录该用户当前活跃 tokenId
+        redisTemplate.opsForValue().set(USER_TOKEN_KEY_PREFIX + userId, tokenId, ttlSeconds, TimeUnit.SECONDS);
         log.info("创建 Refresh Token: {} for user {}", tokenId, userId);
         return tokenId;
     }
