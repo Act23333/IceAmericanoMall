@@ -182,8 +182,7 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         String userId = UUID.fastUUID().toString(true); // true=无连字符，固定32位
         if (StrUtil.isBlankIfStr(user.getUsername())) user.setUsername("ice_" + userId);
         user.setUserId(userId);
-        user.setCreateTime(LocalDateTime.now());
-        user.setUpdateTime(LocalDateTime.now());
+        // createTime/updateTime/registerTime → @TableField + MyMetaObjectHandler 自动填充
         if (!save(user)) throw new BizException(ErrorCode.FREQUENT_ERROR, "注册失败");
     }
 

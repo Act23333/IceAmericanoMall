@@ -35,6 +35,7 @@ public class UserEntity {
 
     private String wxOpenid;             // 微信 openid（第三方登录，可空）
 
+    @TableField(fill = FieldFill.INSERT)
     private LocalDateTime registerTime;  // 注册时间（业务时间）
 
     private LocalDateTime lastLoginTime; // 最近登录时间（首次/回归奖励判断，V2.5）
