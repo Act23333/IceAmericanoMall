@@ -35,7 +35,7 @@ public class RedisLuaScriptConfig {
     public RedisScript<Long> rateLimitRedisScript() {
         DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
         // 指定lua脚本路径
-        redisScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("classpath:lua/rate_limit.lua")));
+        redisScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/rate_limit.lua")));
         // 设置返回值类型：脚本返回1/0，对应Long
         redisScript.setResultType(Long.class);
         return redisScript;
