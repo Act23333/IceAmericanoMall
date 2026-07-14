@@ -1,10 +1,14 @@
 'use client';
 
 import { create } from 'zustand';
+import { apiClient, getAccessToken, type UserInfoResp } from '@icedmall/api';
 
 interface User {
   userId: string;
   username: string;
+  phone?: string;
+  avatar?: string;
+  balance?: number;
 }
 
 interface AuthState {
@@ -12,12 +16,35 @@ interface AuthState {
   isLoading: boolean;
   setUser: (user: User | null) => void;
   logout: () => void;
+  /** 从 token cookie 恢复用户信息（页面刷新 / 首次加载时调用） */
+  hydrate: () => Promise<void>;
 }
 
-/** 客户端认证状态 — Token 在 httpOnly Cookie，此 Store 仅缓存用户信息 */
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isLoading: true,
   setUser: (user) => set({ user, isLoading: false }),
   logout: () => set({ user: null, isLoading: false }),
+  hydrate: async () => {
+    const token = getAccessToken();
+    if (!token) {
+      set({ user: null, isLoading: false });
+      return;
+    }
+    try {
+      const info = await apiClient<UserInfoResp>('/api/user/info');
+      set({
+        user: {
+          userId: String(info.userId ?? ''),
+          username: info.username ?? '',
+          phone: info.phone,
+          avatar: info.avatar,
+          balance: info.balance,
+        },
+        isLoading: false,
+      });
+    } catch {
+      set({ user: null, isLoading: false });
+    }
+  },
 }));

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button, GlassCard } from '@icedmall/ui';
 import { login } from '@icedmall/auth';
 import { useAuthStore } from '@icedmall/auth';
+import { apiClient } from '@icedmall/api';
 import { phoneSchema, passwordSchema, smsCodeSchema } from '@icedmall/utils';
 import { getUserMessage } from '@icedmall/api';
 import Link from 'next/link';
@@ -31,9 +32,12 @@ export default function LoginPage() {
   const [failCount, setFailCount] = useState(0);
   const [cooldown, setCooldown] = useState(0); // 连续失败N次后冷却秒数
   const [smsCountdown, setSmsCountdown] = useState(0);
+  const [smsSending, setSmsSending] = useState(false);
+  const [smsSent, setSmsSent] = useState(false);
 
   const sendSms = async () => {
-    if (smsCountdown > 0) return;
+    if (smsCountdown > 0 || smsSending) return;
+    setSmsSent(false); setSmsSending(true);
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/user/code`, {
         method: 'POST',
@@ -49,8 +53,23 @@ export default function LoginPage() {
         }),
       });
       setSmsCountdown(60);
+      setSmsSent(true);
       const timer = setInterval(() => setSmsCountdown((c) => { if (c <= 1) { clearInterval(timer); return 0; } return c - 1; }), 1000);
     } catch { /* ignore */ }
+    setSmsSending(false);
+  };
+
+  /** 微信 OAuth 登录（Mock: code 固定为 mock_code_web） */
+  const handleWechatLogin = async () => {
+    setError(''); setLoading(true);
+    try {
+      const result = await apiClient<{ access_token: string; refresh_token: string; user_id: number; username: string }>(
+        '/api/auth/login/wechat', { method: 'POST', body: JSON.stringify({ code: 'mock_code_web' }) });
+      setUser({ userId: String(result.user_id ?? ''), username: result.username ?? '' });
+      router.push('/marketplace');
+    } catch (err: unknown) {
+      setError(getUserMessage(err as { code?: number; message?: string }));
+    } finally { setLoading(false); }
   };
 
   /** 判断账号类型: 纯数字11位→PHONE, 否则→USERNAME */
@@ -172,10 +191,12 @@ export default function LoginPage() {
                   placeholder="6位验证码" maxLength={6}
                   className="flex-1 rounded-xl border border-warm-200 bg-white px-4 py-2.5 text-sm outline-none transition-colors focus:border-accent-green focus:ring-2 focus:ring-accent-green/20 placeholder:text-warm-400"
                 />
-                <button type="button" onClick={sendSms} disabled={smsCountdown > 0}
-                  className="shrink-0 rounded-xl bg-warm-100 px-4 py-2.5 text-sm text-ink-soft hover:bg-warm-200 transition-colors disabled:opacity-50"
+                <button type="button" onClick={sendSms} disabled={smsCountdown > 0 || smsSending}
+                  className={`shrink-0 rounded-xl px-4 py-2.5 text-sm transition-colors disabled:opacity-50 ${
+                    smsSent ? 'bg-accent-green/10 text-accent-green' : 'bg-warm-100 text-ink-soft hover:bg-warm-200'
+                  }`}
                 >
-                  {smsCountdown > 0 ? `${smsCountdown}s` : '获取验证码'}
+                  {smsSending ? '发送中...' : smsSent ? '已发送 ✓' : smsCountdown > 0 ? `${smsCountdown}s` : '获取验证码'}
                 </button>
               </div>
             </div>
@@ -201,6 +222,15 @@ export default function LoginPage() {
             {cooldown > 0 ? `请${cooldown}秒后重试` : '登录'}
           </Button>
         </form>
+
+        {/* 微信登录 */}
+        <div className="mt-4">
+          <button type="button" onClick={handleWechatLogin} disabled={loading}
+            className="w-full rounded-xl border border-green-400 bg-green-50 px-4 py-2.5 text-sm text-green-700 hover:bg-green-100 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            <span className="text-lg">💚</span> 微信登录（Mock）
+          </button>
+        </div>
 
         <p className="mt-6 text-center text-sm text-warm-600">
           还没有账号？
