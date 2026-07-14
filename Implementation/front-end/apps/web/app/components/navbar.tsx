@@ -5,17 +5,15 @@ import Link from 'next/link';
 import { Search, ShoppingBag, User, Menu, X } from 'lucide-react';
 import { cn } from '@icedmall/ui';
 import { useAuthStore } from '@icedmall/auth';
+import { getAccessToken } from '@icedmall/api';
 
-/**
- * 商城顶部导航
- *
- * Scroll-aware: 顶部透明 → 滚动后毛玻璃
- * 品牌风格：极简，只保留核心入口
- */
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const user = useAuthStore((s) => s.user);
+  const storeUser = useAuthStore((s) => s.user);
+  // hydrate 失败时，token cookie 存在就认为已登录（降级展示）
+  const hasToken = typeof window !== 'undefined' && !!getAccessToken();
+  const user = storeUser || (hasToken ? { userId: '', username: '' } : null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
