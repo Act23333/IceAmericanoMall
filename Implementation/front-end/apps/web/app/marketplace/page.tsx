@@ -3,6 +3,7 @@
  * Server Component: SEO 友好, 每个分类独立缓存 60s
  */
 
+import Link from 'next/link';
 import { getCategories, getProducts } from '@icedmall/api';
 import { SectionReveal } from '@icedmall/ui';
 import { MarketplaceInfinite } from './infinite-client';
@@ -70,7 +71,7 @@ export default async function MarketplacePage({ searchParams }: Props) {
         <div className="text-center py-20">
           <div className="text-6xl select-none">🍃</div>
           <p className="mt-4 text-warm-600">该分类暂无商品</p>
-          <a href="/marketplace" className="mt-3 inline-block text-sm text-accent-green">查看全部商品 →</a>
+          <Link href="/marketplace" className="mt-3 inline-block text-sm text-accent-green">查看全部商品 →</Link>
         </div>
       )}
     </div>
