@@ -6,6 +6,12 @@
  */
 import { getAccessToken, getRefreshToken, setTokens, clearTokens } from './token';
 
+// 刷新互斥锁：防止并发 401 同时触发多次 refresh
+let refreshMutex: Promise<string | undefined> | null = null;
+
+/** 显式登出时重置互斥锁。 */
+export function resetRefreshMutex() { refreshMutex = null; }
+
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.icedmall.com';
 
 interface ApiResult<T> {
@@ -36,20 +42,27 @@ function request(path: string, options?: RequestInit, token?: string): Promise<R
   });
 }
 
-/** 用 refresh_token 换新 access_token；成功返回新 token 并写入 cookie，失败返回 undefined。 */
 async function tryRefresh(): Promise<string | undefined> {
-  const rt = getRefreshToken();
-  if (!rt) return undefined;
-  try {
-    const res = await request(`/api/auth/refresh?refresh_token=${encodeURIComponent(rt)}`, { method: 'POST' });
-    if (!res.ok) return undefined;
-    const body = await res.json().catch(() => null);
-    if (!body || body.code !== 200 || !body.data?.access_token) return undefined;
-    setTokens(body.data.access_token, body.data.refresh_token);
-    return body.data.access_token as string;
-  } catch {
-    return undefined;
-  }
+  if (refreshMutex) return refreshMutex; // 已有刷新进行中，复用等待
+
+  refreshMutex = (async () => {
+    const rt = getRefreshToken();
+    if (!rt) return undefined;
+    try {
+      const res = await request(`/api/auth/refresh?refresh_token=${encodeURIComponent(rt)}`, { method: 'POST' });
+      if (!res.ok) return undefined;
+      const body = await res.json().catch(() => null);
+      if (!body || body.code !== 200 || !body.data?.access_token) return undefined;
+      setTokens(body.data.access_token, body.data.refresh_token);
+      return body.data.access_token as string;
+    } catch {
+      return undefined;
+    } finally {
+      refreshMutex = null; // 释放锁
+    }
+  })();
+
+  return refreshMutex;
 }
 
 export async function apiClient<T>(path: string, options?: RequestInit): Promise<T> {
