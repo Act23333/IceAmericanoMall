@@ -8,6 +8,7 @@ import { getCategories, getProducts } from '@icedmall/api';
 import { SectionReveal } from '@icedmall/ui';
 import { MarketplaceInfinite } from './infinite-client';
 import { CategoryTabs } from './category-tabs';
+import { CategoryScroll } from './category-scroll';
 
 export const revalidate = 60;
 
@@ -47,6 +48,9 @@ export default async function MarketplacePage({ searchParams }: Props) {
           </div>
         </SectionReveal>
       )}
+
+      {/* 横向滚动分类推荐 — 仿京东首页 */}
+      {categories && <CategoryScroll categories={categories} />}
 
       {/* 标题 */}
       <SectionReveal delay={50}>
