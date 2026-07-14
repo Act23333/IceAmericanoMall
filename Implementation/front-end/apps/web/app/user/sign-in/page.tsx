@@ -7,6 +7,7 @@ import { Button, GlassCard } from '@icedmall/ui';
 
 export default function SignInPage() {
   const [signed, setSigned] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
 
   const { data: status, refetch } = useQuery({
     queryKey: ['sign', 'status'],
@@ -15,7 +16,8 @@ export default function SignInPage() {
 
   const signMutation = useMutation({
     mutationFn: () => apiClient<{ points: number }>('/api/user/sign', { method: 'POST' }),
-    onSuccess: () => { setSigned(true); refetch(); },
+    onSuccess: () => { setSigned(true); setErrMsg(''); refetch(); },
+    onError: (e: any) => setErrMsg(e?.message ?? '签到失败'),
   });
 
   return (
@@ -38,6 +40,7 @@ export default function SignInPage() {
             签到领积分
           </Button>
         )}
+        {errMsg && <p className="mt-3 text-sm text-danger text-center">{errMsg}</p>}
 
         {/* 模拟连续签到日历 */}
         <div className="mt-8 grid grid-cols-7 gap-2">

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
+import { Navbar } from './components/navbar';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -62,7 +63,10 @@ export default function RootLayout({
         <link rel="preconnect" href="https://img.icedmall.com" crossOrigin="anonymous" />
       </head>
       <body className={`${inter.variable} font-sans antialiased bg-mist-white text-ink-black`}>
-        <Providers>{children}</Providers>
+        <Providers>
+          <Navbar />
+          <main className="min-h-screen pt-16">{children}</main>
+        </Providers>
       </body>
     </html>
   );
