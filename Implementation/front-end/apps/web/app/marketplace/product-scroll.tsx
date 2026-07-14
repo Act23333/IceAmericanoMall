@@ -28,7 +28,7 @@ export function ProductScroll({ products }: { products: ProductVO[] }) {
   if (total === 0) return null;
 
   return (
-    <section className="py-12">
+    <section className="py-12" suppressHydrationWarning>
       <div className="mb-6">
         <h2 className="text-xl font-light text-ink-black">🔥 热卖推荐</h2>
         <p className="text-xs text-warm-400 mt-1">大家都在买</p>
