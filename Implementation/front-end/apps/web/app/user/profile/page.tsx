@@ -63,6 +63,7 @@ export default function ProfilePage() {
           { icon: '📍', label: '收货地址', href: '/user/addresses' },
           { icon: '⭐', label: '我的收藏', href: '/user/favorites' },
           { icon: '🕐', label: '浏览历史', href: '/user/history' },
+          { icon: '🎟️', label: '优惠券', href: '/user/coupons' },
           { icon: '🎁', label: '每日签到', href: '/user/sign-in' },
         ].map((item) => (
           <Link key={item.href} href={item.href}>

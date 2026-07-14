@@ -12,3 +12,7 @@ export { useHomeConfig } from './use-home-config';
 export type { HomeConfigItem } from './use-home-config';
 export { useInitiatePay, usePayStatus } from './use-pay';
 export { useBalance, useRecharge } from './use-balance';
+export { useAvailableCoupons, useUsedCoupons, useCouponTemplates, useClaimCoupon } from './use-coupons';
+export { useProductReviews, useCreateReview } from './use-reviews';
+export { useActiveFlashSales } from './use-flash-sale';
+export { useMyAfterSales, useCreateAfterSale } from './use-after-sale';

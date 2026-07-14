@@ -10,6 +10,7 @@
 import { getProduct, getProducts } from '@icedmall/api';
 import { ProductCard, ImageGallery, SectionReveal } from '@icedmall/ui';
 import { AddToCart } from './add-to-cart';
+import { ReviewsSection } from './reviews-section';
 import type { Metadata } from 'next';
 
 export const revalidate = 120;
@@ -112,6 +113,8 @@ export default async function ProductDetailPage({ params }: Props) {
 
       {/* ── 相关推荐 ── */}
       {relatedProducts.length > 0 && (
+        <ReviewsSection productId={Number(id)} />
+
         <SectionReveal>
           <div className="mt-24 border-t border-warm-200 pt-16">
             <h2 className="text-xl font-medium text-ink-black">你可能也喜欢</h2>
