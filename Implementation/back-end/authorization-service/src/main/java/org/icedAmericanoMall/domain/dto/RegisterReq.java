@@ -24,8 +24,8 @@ public class RegisterReq {
     private String phone;
 
     @NotBlank(message = "密码不能为空")
-    @Pattern(regexp = "^(?![0-9]+$)(?![a-zA-Z]+$)[0-9A-Za-z]{6,20}$",
-            message = "密码必须为6-20位字母和数字组合")
+    @Pattern(regexp = "^(?![0-9]+$)(?![a-zA-Z]+$)[0-9a-zA-Z!@#$%^&*]{6,20}$",
+            message = "密码必须为6-20位字母和数字组合（可含!@#$%^&*）")
     private String password;
 
     @NotBlank(message = "验证码不能为空")
