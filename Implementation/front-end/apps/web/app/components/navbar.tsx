@@ -53,37 +53,29 @@ export function Navbar() {
         {/* 右侧操作区 */}
         <div className="flex items-center gap-2">
           {/* 搜索 */}
-          <a
-            href="/search"
+          <Link href="/search"
             className="p-2 text-ink-soft hover:text-ink-black transition-colors rounded-full hover:bg-warm-100"
-            aria-label="搜索"
-          >
+            aria-label="搜索">
             <Search className="h-5 w-5" />
           </Link>
 
           {/* 购物车 */}
-          <a
-            href="/shop/cart"
+          <Link href="/shop/cart"
             className="p-2 text-ink-soft hover:text-ink-black transition-colors rounded-full hover:bg-warm-100 relative"
-            aria-label="购物车"
-          >
+            aria-label="购物车">
             <ShoppingBag className="h-5 w-5" />
           </Link>
 
           {/* 用户 */}
           {user ? (
-            <a
-              href="/user/profile"
+            <Link href="/user/profile"
               className="p-2 text-ink-soft hover:text-ink-black transition-colors rounded-full hover:bg-warm-100"
-              aria-label="个人中心"
-            >
+              aria-label="个人中心">
               <User className="h-5 w-5" />
             </Link>
           ) : (
-            <a
-              href="/auth/login"
-              className="ml-2 rounded-xl bg-accent-green px-4 py-1.5 text-sm font-medium text-white transition-all hover:bg-accent-green-light active:scale-[0.98]"
-            >
+            <Link href="/auth/login"
+              className="ml-2 rounded-xl bg-accent-green px-4 py-1.5 text-sm font-medium text-white transition-all hover:bg-accent-green-light active:scale-[0.98]">
               登录
             </Link>
           )}
@@ -103,28 +95,13 @@ export function Navbar() {
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-warm-200 bg-white/95 backdrop-blur-xl animate-fade-up">
           <div className="px-4 py-4 space-y-3">
-            <a
-              href="/marketplace"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block py-2 text-sm text-ink-black"
-            >
-              商城
-            </Link>
-            <a
-              href="/shop/cart"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block py-2 text-sm text-ink-black"
-            >
-              购物车
-            </Link>
+            <Link href="/marketplace" onClick={() => setMobileMenuOpen(false)}
+              className="block py-2 text-sm text-ink-black">商城</Link>
+            <Link href="/shop/cart" onClick={() => setMobileMenuOpen(false)}
+              className="block py-2 text-sm text-ink-black">购物车</Link>
             {!user && (
-              <a
-                href="/auth/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="block py-2 text-sm text-accent-green font-medium"
-              >
-                登录 / 注册
-              </Link>
+              <Link href="/auth/login" onClick={() => setMobileMenuOpen(false)}
+                className="block py-2 text-sm text-accent-green font-medium">登录 / 注册</Link>
             )}
           </div>
         </div>
