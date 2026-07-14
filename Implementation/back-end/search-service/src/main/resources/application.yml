@@ -5,7 +5,7 @@ spring:
   application:
     name: search-service
   datasource:
-    url: jdbc:mysql://${ia.db.host}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: root
     password: ${hm.db.pw:root}
@@ -23,7 +23,8 @@ spring:
       host: 192.168.10.128
       password: redis
       client-name: search-service
-
+  elasticsearch:
+    uris: http://192.168.10.128:9200
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
@@ -37,7 +38,7 @@ mybatis-plus:
 # 需要全文检索时，先启动 ES(9200) 再将 enabled 置为 true 以激活 EsSearchServiceImpl。
 search:
   elasticsearch:
-    enabled: false
+    enabled: true
     host: 192.168.10.128
     port: 9200
 

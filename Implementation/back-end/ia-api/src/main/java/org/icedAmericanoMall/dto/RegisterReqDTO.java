@@ -31,7 +31,7 @@ public class RegisterReqDTO {
     @NotBlank(message = "验证码不能为空")
     private String code;
 
-    @NotBlank
+//    @NotBlank
     private String deviceId;
 
 //     可选：幂等令牌（用于防止重复提交）

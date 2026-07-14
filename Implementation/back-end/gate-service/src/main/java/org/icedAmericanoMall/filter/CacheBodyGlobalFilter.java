@@ -8,6 +8,7 @@ import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.server.reactive.ServerHttpRequestDecorator;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Flux;
@@ -22,9 +23,9 @@ import reactor.core.publisher.Mono;
 public class CacheBodyGlobalFilter implements GlobalFilter, Ordered {
 
     @Override
-    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+    public Mono<Void> filter(ServerWebExchange exchange, @NonNull GatewayFilterChain chain) {
         HttpMethod method = exchange.getRequest().getMethod();
-        if (method == null || (!HttpMethod.POST.equals(method) && !HttpMethod.PUT.equals(method) && !HttpMethod.PATCH.equals(method))) {
+        if (!HttpMethod.POST.equals(method) && !HttpMethod.PUT.equals(method) && !HttpMethod.PATCH.equals(method)) {
             return chain.filter(exchange);
         }
 

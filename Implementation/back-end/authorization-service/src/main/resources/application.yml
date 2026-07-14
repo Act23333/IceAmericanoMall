@@ -14,7 +14,7 @@ spring:
       config:
         import-check:
           enabled: false
-        #关闭 Nacos 服务端认证（仅限开发环境）
+        #关闭 Nacos 服务端认证（仅限开发环境）无需提供用户名和密码，直接连接
         #如果仅在本地开发，且不介意安全问题，可修改 Nacos 服务端配置文件（conf/application.properties）：
         #properties
         #nacos.core.auth.enabled=false
