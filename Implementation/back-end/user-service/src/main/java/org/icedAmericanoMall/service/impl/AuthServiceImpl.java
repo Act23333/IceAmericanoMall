@@ -95,6 +95,7 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         } else {
             user = new UserEntity();
             user.setPhone(phone);
+            user.setPassword(passwordEncoder.encode(UUID.fastUUID().toString())); // DB NOT NULL 兼容
             registerUser(user);
             r = toLoginResp(user);
             isNew = true;
@@ -128,6 +129,7 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
             user.setWxOpenid(openid);
             if (StrUtil.isNotBlank(wxUser.getNickname())) user.setUsername(wxUser.getNickname());
             user.setAvatar(wxUser.getAvatarUrl());
+            user.setPassword(passwordEncoder.encode(UUID.fastUUID().toString())); // DB NOT NULL 兼容
             registerUser(user);
             r = toLoginResp(user);
             isNew = true;
