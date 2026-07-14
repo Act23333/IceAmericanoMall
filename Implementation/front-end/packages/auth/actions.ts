@@ -3,7 +3,7 @@
  * 与后端 AuthController + OAuth2TokenResp (@JsonProperty snake_case) 对齐
  */
 
-import { apiClient, setTokens, clearTokens } from '@icedmall/api';
+import { apiClient, setTokens, clearTokens, scheduleProactiveRefresh } from '@icedmall/api';
 import type { LoginReq, RegisterReq, LoginResp } from '@icedmall/api';
 
 /** 登录 — POST /api/auth/login */
@@ -13,6 +13,7 @@ export async function login(req: LoginReq): Promise<LoginResp> {
     body: JSON.stringify(req),
   });
   setTokens(resp.access_token, resp.refresh_token);
+  scheduleProactiveRefresh(resp.access_token);
   return resp;
 }
 
@@ -26,6 +27,7 @@ export async function register(req: RegisterReq): Promise<LoginResp> {
     }),
   });
   setTokens(resp.access_token, resp.refresh_token);
+  scheduleProactiveRefresh(resp.access_token);
   return resp;
 }
 
@@ -35,6 +37,7 @@ export async function refreshToken(token: string): Promise<LoginResp> {
     method: 'POST',
   });
   setTokens(resp.access_token, resp.refresh_token);
+  scheduleProactiveRefresh(resp.access_token);
   return resp;
 }
 

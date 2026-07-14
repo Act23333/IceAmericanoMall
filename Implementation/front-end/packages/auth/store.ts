@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { apiClient, getAccessToken, type UserInfoResp } from '@icedmall/api';
+import { apiClient, getAccessToken, scheduleProactiveRefresh, clearProactiveRefresh, type UserInfoResp } from '@icedmall/api';
 
 interface User {
   userId: string;
@@ -24,9 +24,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isLoading: true,
   setUser: (user) => set({ user, isLoading: false }),
-  logout: () => set({ user: null, isLoading: false }),
+  logout: () => { clearProactiveRefresh(); set({ user: null, isLoading: false }); },
   hydrate: async () => {
     const token = getAccessToken();
+    if (token) scheduleProactiveRefresh(token);
     if (!token) {
       set({ user: null, isLoading: false });
       return;
