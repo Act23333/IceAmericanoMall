@@ -36,6 +36,7 @@ export default function ProfilePage() {
         </div>
         <div>
           <h2 className="text-lg font-medium text-ink-black" suppressHydrationWarning>{user?.username ?? '用户'}</h2>
+          {user?.userId && <p className="text-xs text-warm-400">ID: {user.userId}</p>}
           <p className="text-sm text-warm-600 mt-1">{user?.phone}</p>
         </div>
       </GlassCard>
