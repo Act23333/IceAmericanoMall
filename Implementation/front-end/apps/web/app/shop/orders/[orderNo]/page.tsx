@@ -88,6 +88,11 @@ export default function OrderDetailPage() {
         {order.status === 3 && (
           <Button variant="primary" size="md" onClick={() => confirmOrder.mutate(order.orderNo)}>确认收货</Button>
         )}
+        {order.status === 4 && (
+          <Link href={`/shop/after-sale?orderNo=${order.orderNo}`} className="flex-1">
+            <Button variant="secondary" size="md" className="w-full">申请售后</Button>
+          </Link>
+        )}
       </div>
     </div>
   );

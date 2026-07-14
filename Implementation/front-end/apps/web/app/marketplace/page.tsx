@@ -9,6 +9,7 @@ import { SectionReveal } from '@icedmall/ui';
 import { MarketplaceInfinite } from './infinite-client';
 import { CategoryTabs } from './category-tabs';
 import { ProductScroll } from './product-scroll';
+import { FlashSaleBanner } from './flash-sale-banner';
 
 export const revalidate = 60;
 
@@ -42,6 +43,9 @@ export default async function MarketplacePage({ searchParams }: Props) {
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-20">
+      {/* 秒杀横幅 */}
+      <FlashSaleBanner />
+
       {/* 分类 Tab 栏 — 客户端路由，不重载页面 */}
       {categories && (
         <SectionReveal>
