@@ -5,7 +5,7 @@
  *   1. 主动刷新：解 JWT exp，提前 2 分钟定时续期（setTimeout 调度）
  *   2. 被动刷新：401 拦截器 + 互斥锁（兜底）
  */
-import { getAccessToken, getRefreshToken, setTokens, clearTokens } from './token';
+import { getAccessToken, getRefreshToken, setTokens } from './token';
 
 // ==================== 刷新互斥锁 ====================
 let refreshMutex: Promise<string | undefined> | null = null;

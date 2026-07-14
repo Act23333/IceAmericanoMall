@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { CategoryVO } from '@icedmall/api';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -21,7 +20,6 @@ const CATEGORY_ICONS = ['📱', '💻', '👗', '🍜', '🏠', '🎮', '📚', 
 
 export function CategoryScroll({ categories }: { categories: CategoryVO[] }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
 
   const scroll = (dir: 'left' | 'right') => {
     if (!scrollRef.current) return;

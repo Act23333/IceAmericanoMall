@@ -111,10 +111,11 @@ export default async function ProductDetailPage({ params }: Props) {
         </div>
       </div>
 
+      {/* ── 商品评价 ── */}
+      <ReviewsSection productId={Number(id)} />
+
       {/* ── 相关推荐 ── */}
       {relatedProducts.length > 0 && (
-        <ReviewsSection productId={Number(id)} />
-
         <SectionReveal>
           <div className="mt-24 border-t border-warm-200 pt-16">
             <h2 className="text-xl font-medium text-ink-black">你可能也喜欢</h2>

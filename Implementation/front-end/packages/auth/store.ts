@@ -20,7 +20,7 @@ interface AuthState {
   hydrate: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set, _get) => ({
   user: null,
   isLoading: true,
   setUser: (user) => set({ user, isLoading: false }),

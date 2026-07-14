@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import type { ProductVO } from '@icedmall/api';
-import { PriceDisplay } from '@icedmall/ui';
 
 function useCarousel(total: number, intervalMs = 3000) {
   const [idx, setIdx] = useState(0);

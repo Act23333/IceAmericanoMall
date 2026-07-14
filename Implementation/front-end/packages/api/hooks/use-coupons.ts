@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, type CouponEntity, type UserCouponEntity } from '@icedmall/api';
 
-export function useAvailableCoupons(userId?: number) {
+export function useAvailableCoupons(_userId?: number) {
   return useQuery<UserCouponEntity[]>({
     queryKey: ['coupons', 'available'],
     queryFn: () => apiClient<UserCouponEntity[]>('/api/coupon/available'),

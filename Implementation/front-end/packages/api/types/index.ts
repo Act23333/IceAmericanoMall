@@ -236,8 +236,11 @@ export interface UserCouponEntity {
 export interface FlashSaleEntity {
   id: number;
   productId: number;
+  skuId?: number;
+  flashPrice?: number;
   price: number;
   stock: number;
+  soldCount: number;
   startTime: string;
   endTime: string;
   status: number;
