@@ -8,7 +8,7 @@ import { getCategories, getProducts } from '@icedmall/api';
 import { SectionReveal } from '@icedmall/ui';
 import { MarketplaceInfinite } from './infinite-client';
 import { CategoryTabs } from './category-tabs';
-import { CategoryScroll } from './category-scroll';
+import { ProductScroll } from './product-scroll';
 
 export const revalidate = 60;
 
@@ -22,15 +22,17 @@ export default async function MarketplacePage({ searchParams }: Props) {
   const sort = params.sort || 'sales';
   const initialPage = Number(params.page || 1);
 
-  let categories, products;
+  let categories, products, hotProducts;
   try {
-    [categories, products] = await Promise.all([
+    [categories, products, hotProducts] = await Promise.all([
       getCategories(),
       getProducts({ categoryId, sort, order: 'desc', size: 12, page: initialPage }),
+      getProducts({ sort: 'sales', order: 'desc', size: 12 }),
     ]);
   } catch {
     categories = null;
     products = null;
+    hotProducts = null;
   }
 
   const records = products?.records ?? [];
@@ -49,8 +51,10 @@ export default async function MarketplacePage({ searchParams }: Props) {
         </SectionReveal>
       )}
 
-      {/* 横向滚动分类推荐 — 仿京东首页 */}
-      {categories && <CategoryScroll categories={categories} />}
+      {/* 横向滚动热卖商品 — 仿京东首页 */}
+      {hotProducts?.records && hotProducts.records.length > 0 && (
+        <ProductScroll products={hotProducts.records} />
+      )}
 
       {/* 标题 */}
       <SectionReveal delay={50}>
