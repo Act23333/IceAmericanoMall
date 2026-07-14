@@ -44,7 +44,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
       });
     } catch {
-      set({ user: null, isLoading: false });
+      // API 不可用时以 token 存在为据，设置最小用户态（Navbar 据此显示已登录）
+      set({ user: { userId: '', username: '' }, isLoading: false });
     }
   },
 }));

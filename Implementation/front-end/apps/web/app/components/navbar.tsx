@@ -5,15 +5,11 @@ import Link from 'next/link';
 import { Search, ShoppingBag, User, Menu, X } from 'lucide-react';
 import { cn } from '@icedmall/ui';
 import { useAuthStore } from '@icedmall/auth';
-import { getAccessToken } from '@icedmall/api';
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const storeUser = useAuthStore((s) => s.user);
-  // hydrate 失败时，token cookie 存在就认为已登录（降级展示）
-  const hasToken = typeof window !== 'undefined' && !!getAccessToken();
-  const user = storeUser || (hasToken ? { userId: '', username: '' } : null);
+  const user = useAuthStore((s) => s.user);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
