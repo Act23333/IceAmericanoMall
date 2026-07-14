@@ -45,6 +45,7 @@ public class SecurityConfig {
                                 "/api/auth/logout",
                                 "/api/auth/reset-password",
                                 "/api/auth/captcha/sms",
+                                "/api/user/code",
                                 "/api/pay/callback/wechat",
                                 "/api/pay/callback/**"
                         ).permitAll()
