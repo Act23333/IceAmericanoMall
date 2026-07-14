@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useUserInfo, useRecharge, useBalance } from '@icedmall/api';
+import { useUserInfo, useRecharge } from '@icedmall/api';
 import { useAuthStore } from '@icedmall/auth';
 import { Button, GlassCard } from '@icedmall/ui';
 import { formatPrice, yuanToCents } from '@icedmall/utils';
@@ -10,9 +10,10 @@ import Link from 'next/link';
 export default function ProfilePage() {
   const authUser = useAuthStore((s) => s.user);
   const { data: apiUser } = useUserInfo();
-  const { data: balance } = useBalance();
   const recharge = useRecharge();
   const user = apiUser ?? authUser;
+  // balance 从 userInfo 中读取（useUserInfo 返回含 balance），避免额外 API 调用的时序问题
+  const balance = apiUser?.balance ?? authUser?.balance;
 
   const [rechargeYuan, setRechargeYuan] = useState('');
   const [rechargeMsg, setRechargeMsg] = useState('');
