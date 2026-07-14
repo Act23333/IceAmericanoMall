@@ -6,6 +6,7 @@
 import { getCategories, getProducts } from '@icedmall/api';
 import { SectionReveal } from '@icedmall/ui';
 import { MarketplaceInfinite } from './infinite-client';
+import { CategoryTabs } from './category-tabs';
 
 export const revalidate = 60;
 
@@ -37,20 +38,11 @@ export default async function MarketplacePage({ searchParams }: Props) {
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-20">
-      {/* 分类 Tab 栏 */}
+      {/* 分类 Tab 栏 — 客户端路由，不重载页面 */}
       {categories && (
         <SectionReveal>
-          <div className="mt-8 flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            <a href="/marketplace"
-              className={`shrink-0 px-4 py-2 text-sm rounded-full border transition-all ${
-                !categoryId ? 'border-accent-green bg-accent-green text-white' : 'border-warm-200 text-warm-600 hover:border-warm-400 bg-white'
-              }`}>全部</a>
-            {categories.map((cat) => (
-              <a key={cat.id} href={`/marketplace?categoryId=${cat.id}`}
-                className={`shrink-0 px-4 py-2 text-sm rounded-full border transition-all ${
-                  categoryId === cat.id ? 'border-accent-green bg-accent-green text-white' : 'border-warm-200 text-warm-600 hover:border-warm-400 bg-white/80 backdrop-blur-sm hover:shadow-sm'
-                }`}>{cat.name}</a>
-            ))}
+          <div className="mt-8">
+            <CategoryTabs categories={categories} />
           </div>
         </SectionReveal>
       )}
