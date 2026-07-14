@@ -6,7 +6,6 @@ import org.icedAmericanoMall.dto.PasswordLoginReqDTO;
 import org.icedAmericanoMall.dto.RegisterReqDTO;
 import org.icedAmericanoMall.dto.SmsLoginReqDTO;
 import org.icedAmericanoMall.service.AuthService;
-import org.noLazy.common.annotation.RateLimit;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -20,7 +19,6 @@ public class InternalAuthController {
     private final AuthService authService;
 
     @PostMapping("/register")
-    @RateLimit(key = "#registerReqDTO.deviceId", limit = 3, duration = 3600)
     public LoginRespDTO register(@RequestBody RegisterReqDTO registerReqDTO) {
         return authService.register(registerReqDTO);
     }
