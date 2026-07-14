@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Search, ShoppingBag, User, Menu, X } from 'lucide-react';
 import { cn } from '@icedmall/ui';
 import { useAuthStore } from '@icedmall/auth';
@@ -34,19 +35,19 @@ export function Navbar() {
     >
       <nav className="mx-auto max-w-7xl px-4 h-16 flex items-center justify-between">
         {/* Logo */}
-        <a href="/" className="flex items-center gap-2 text-ink-black font-medium text-lg select-none">
+        <Link href="/" className="flex items-center gap-2 text-ink-black font-medium text-lg select-none">
           <span className="text-accent-green">◆</span>
           冰美
-        </a>
+        </Link>
 
         {/* 桌面导航链接 */}
         <div className="hidden md:flex items-center gap-8">
-          <a href="/marketplace" className="text-sm text-ink-soft hover:text-ink-black transition-colors">
+          <Link href="/marketplace" className="text-sm text-ink-soft hover:text-ink-black transition-colors">
             商城
-          </a>
-          <a href="/marketplace?sort=newest" className="text-sm text-ink-soft hover:text-ink-black transition-colors">
+          </Link>
+          <Link href="/marketplace?sort=newest" className="text-sm text-ink-soft hover:text-ink-black transition-colors">
             新品
-          </a>
+          </Link>
         </div>
 
         {/* 右侧操作区 */}
@@ -58,7 +59,7 @@ export function Navbar() {
             aria-label="搜索"
           >
             <Search className="h-5 w-5" />
-          </a>
+          </Link>
 
           {/* 购物车 */}
           <a
@@ -67,7 +68,7 @@ export function Navbar() {
             aria-label="购物车"
           >
             <ShoppingBag className="h-5 w-5" />
-          </a>
+          </Link>
 
           {/* 用户 */}
           {user ? (
@@ -77,14 +78,14 @@ export function Navbar() {
               aria-label="个人中心"
             >
               <User className="h-5 w-5" />
-            </a>
+            </Link>
           ) : (
             <a
               href="/auth/login"
               className="ml-2 rounded-xl bg-accent-green px-4 py-1.5 text-sm font-medium text-white transition-all hover:bg-accent-green-light active:scale-[0.98]"
             >
               登录
-            </a>
+            </Link>
           )}
 
           {/* 移动端菜单按钮 */}
@@ -108,14 +109,14 @@ export function Navbar() {
               className="block py-2 text-sm text-ink-black"
             >
               商城
-            </a>
+            </Link>
             <a
               href="/shop/cart"
               onClick={() => setMobileMenuOpen(false)}
               className="block py-2 text-sm text-ink-black"
             >
               购物车
-            </a>
+            </Link>
             {!user && (
               <a
                 href="/auth/login"
@@ -123,7 +124,7 @@ export function Navbar() {
                 className="block py-2 text-sm text-accent-green font-medium"
               >
                 登录 / 注册
-              </a>
+              </Link>
             )}
           </div>
         </div>

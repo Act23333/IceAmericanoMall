@@ -35,7 +35,7 @@ export default function ProfilePage() {
           {user?.avatar ? <img src={user.avatar} alt="" className="h-full w-full rounded-full object-cover" /> : '👤'}
         </div>
         <div>
-          <h2 className="text-lg font-medium text-ink-black">{user?.username ?? '用户'}</h2>
+          <h2 className="text-lg font-medium text-ink-black" suppressHydrationWarning>{user?.username ?? '用户'}</h2>
           <p className="text-sm text-warm-600 mt-1">{user?.phone}</p>
         </div>
       </GlassCard>
