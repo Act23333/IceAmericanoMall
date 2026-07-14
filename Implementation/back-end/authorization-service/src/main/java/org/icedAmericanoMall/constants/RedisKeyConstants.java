@@ -11,4 +11,6 @@ package org.icedAmericanoMall.constants;
  */
 public class RedisKeyConstants {
     public static final String REFRESH_TOKEN_PREFIX = "refresh:token:";
+    /** 用户→活跃 tokenId 索引（一用户一 token）。 */
+    public static final String REFRESH_TOKEN_USER_PREFIX = "refresh:token:user:";
 }

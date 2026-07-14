@@ -13,6 +13,15 @@ import org.springframework.stereotype.Service;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Refresh Token 双 key 设计：
+ * <pre>
+ *   refresh:token:{tokenId}       → RefreshTokenInfo
+ *   refresh:token:user:{userId}    → String (当前活跃 tokenId)
+ * </pre>
+ * 登录时若已有活跃 token → 刷新 TTL 复用（不创建新的）；
+ * 轮换时创建新 token → 同步更新用户索引 key。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -20,70 +29,68 @@ public class RefreshTokenUtils {
 
     private final RedisTemplate<String, Object> redisTemplate;
 
-    /** 一个用户同一时刻仅保留一个活跃 refresh token（防止 Redis 泄漏）。 */
-    private static final String USER_TOKEN_KEY_PREFIX = "refresh_token_user:";
+    private static String userKey(Long userId) {
+        return RedisKeyConstants.REFRESH_TOKEN_USER_PREFIX + userId;
+    }
 
+    private static String tokenKey(String tokenId) {
+        return RedisKeyConstants.REFRESH_TOKEN_PREFIX + tokenId;
+    }
+
+    /** 登录：已有活跃 token → 刷新 TTL 复用；否则新建。 */
     public String createRefreshToken(Long userId, String username, long ttlSeconds) {
-        // 吊销该用户上一个活跃 token
-        String prevTokenId = (String) redisTemplate.opsForValue()
-                .get(USER_TOKEN_KEY_PREFIX + userId);
-        if (prevTokenId != null) {
-            revokeRefreshToken(prevTokenId);
+        String prevId = (String) redisTemplate.opsForValue().get(userKey(userId));
+        if (prevId != null) {
+            RefreshTokenInfo prev = (RefreshTokenInfo) redisTemplate.opsForValue().get(tokenKey(prevId));
+            if (prev != null) {
+                redisTemplate.expire(tokenKey(prevId), ttlSeconds, TimeUnit.SECONDS);
+                redisTemplate.expire(userKey(userId), ttlSeconds, TimeUnit.SECONDS);
+                log.info("复用已有 Refresh Token: {} for user {}", prevId, userId);
+                return prevId;
+            }
         }
         long now = System.currentTimeMillis();
         long maxExpireAt = now + ttlSeconds * 1000;
-        String tokenId = UUID.randomUUID().toString().replace("-", "");
-        RefreshTokenInfo info = new RefreshTokenInfo(tokenId, userId, username,
-                now, maxExpireAt);
-        String key = RedisKeyConstants.REFRESH_TOKEN_PREFIX + tokenId;
-        redisTemplate.opsForValue().set(key, info, ttlSeconds, TimeUnit.SECONDS);
-        // 记录该用户当前活跃 tokenId
-        redisTemplate.opsForValue().set(USER_TOKEN_KEY_PREFIX + userId, tokenId, ttlSeconds, TimeUnit.SECONDS);
-        log.info("创建 Refresh Token: {} for user {}", tokenId, userId);
-        return tokenId;
+        String id = UUID.randomUUID().toString().replace("-", "");
+        RefreshTokenInfo info = new RefreshTokenInfo(id, userId, username, now, maxExpireAt);
+        redisTemplate.opsForValue().set(tokenKey(id), info, ttlSeconds, TimeUnit.SECONDS);
+        redisTemplate.opsForValue().set(userKey(userId), id, ttlSeconds, TimeUnit.SECONDS);
+        log.info("创建 Refresh Token: {} for user {}", id, userId);
+        return id;
     }
 
-    public String rotateRefreshToken(String tokenId) {
-        String key = RedisKeyConstants.REFRESH_TOKEN_PREFIX + tokenId;
-        RefreshTokenInfo info = (RefreshTokenInfo) redisTemplate.opsForValue().get(key);
+    /** 轮换：旧 token → 新 token，同步更新用户索引。TTL 维持原绝对过期时间。 */
+    public String rotateRefreshToken(String oldId) {
+        RefreshTokenInfo info = (RefreshTokenInfo) redisTemplate.opsForValue().get(tokenKey(oldId));
         if (info == null) {
             throw new UnauthorizedException(ErrorCode.TOKEN_EXPIRED, "Refresh Token 无效或已过期");
         }
         if (info.getMaxExpireAt() < System.currentTimeMillis()) {
-            revokeRefreshToken(tokenId);
+            revokeRefreshToken(oldId);
             throw new UnauthorizedException(ErrorCode.TOKEN_EXPIRED, "Refresh Token 已过期");
         }
-        String newTokenId = UUID.randomUUID().toString().replace("-", "");
+        String newId = UUID.randomUUID().toString().replace("-", "");
         RefreshTokenInfo newInfo = new RefreshTokenInfo(
-                newTokenId,
-                info.getUserId(),
-                info.getUsername(),
-                System.currentTimeMillis(),
-                info.getMaxExpireAt()
-        );
+                newId, info.getUserId(), info.getUsername(),
+                System.currentTimeMillis(), info.getMaxExpireAt());
         long ttl = (newInfo.getMaxExpireAt() - System.currentTimeMillis()) / 1000;
         if (ttl <= 0) {
             throw new UnauthorizedException(ErrorCode.TOKEN_EXPIRED, "Refresh token 已过绝对有效期");
         }
-        String newKey = RedisKeyConstants.REFRESH_TOKEN_PREFIX + newTokenId;
-        redisTemplate.opsForValue().set(newKey, newInfo, ttl, TimeUnit.SECONDS);
-        // Revoke old token after successful rotation
-        revokeRefreshToken(tokenId);
-        return newTokenId;
+        redisTemplate.opsForValue().set(tokenKey(newId), newInfo, ttl, TimeUnit.SECONDS);
+        // 同步更新用户索引 → 新 tokenId（之前漏了这步）
+        redisTemplate.opsForValue().set(userKey(info.getUserId()), newId, ttl, TimeUnit.SECONDS);
+        revokeRefreshToken(oldId);
+        log.info("轮换 Refresh Token: {} → {} for user {}", oldId, newId, info.getUserId());
+        return newId;
     }
 
     public void revokeRefreshToken(String tokenId) {
-        String redisKey = RedisKeyConstants.REFRESH_TOKEN_PREFIX + tokenId;
-        Boolean result = redisTemplate.delete(redisKey);
-        if (Boolean.FALSE.equals(result)) {
-            log.info("吊销失败 Refresh Token: {}，redisKey: {}", tokenId, redisKey);
-        } else {
-            log.info("吊销成功 Refresh Token: {}，redisKey: {}", tokenId, redisKey);
-        }
+        redisTemplate.delete(tokenKey(tokenId));
+        log.info("吊销 Refresh Token: {}", tokenId);
     }
 
     public RefreshTokenInfo getInfoByToken(String tokenId) {
-        String key = RedisKeyConstants.REFRESH_TOKEN_PREFIX + tokenId;
-        return (RefreshTokenInfo) redisTemplate.opsForValue().get(key);
+        return (RefreshTokenInfo) redisTemplate.opsForValue().get(tokenKey(tokenId));
     }
 }
