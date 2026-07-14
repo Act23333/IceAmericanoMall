@@ -33,6 +33,8 @@ public class SecurityConfig {
         http
                 .cors(Customizer.withDefaults())
                 .authorizeExchange(exchanges -> exchanges
+                        // CORS 预检请求全部放行（浏览器 OPTIONS 不带 JWT）
+                        .pathMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
                         // 内部服务间调用路径 — 网关直接放行（生产环境需网络隔离）
 //                        .pathMatchers("/internal/**").permitAll()
                         // 公开路径：认证、注册、支付回调
