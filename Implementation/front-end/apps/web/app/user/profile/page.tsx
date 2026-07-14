@@ -1,19 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { useUserInfo, useRecharge } from '@icedmall/api';
+import { useRecharge } from '@icedmall/api';
 import { useAuthStore } from '@icedmall/auth';
 import { Button, GlassCard } from '@icedmall/ui';
 import { formatPrice, yuanToCents } from '@icedmall/utils';
 import Link from 'next/link';
 
 export default function ProfilePage() {
-  const authUser = useAuthStore((s) => s.user);
-  const { data: apiUser } = useUserInfo();
+  const user = useAuthStore((s) => s.user);
   const recharge = useRecharge();
-  const user = apiUser ?? authUser;
-  // balance 从 userInfo 中读取（useUserInfo 返回含 balance），避免额外 API 调用的时序问题
-  const balance = apiUser?.balance ?? authUser?.balance;
 
   const [rechargeYuan, setRechargeYuan] = useState('');
   const [rechargeMsg, setRechargeMsg] = useState('');
@@ -47,7 +43,7 @@ export default function ProfilePage() {
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm text-warm-600">账户余额</span>
           <span className="text-lg font-semibold text-ink-black">
-            ¥{balance !== undefined ? formatPrice(balance) : user?.balance !== undefined ? formatPrice(user.balance) : '---'}
+            ¥{user?.balance !== undefined ? formatPrice(user.balance) : '---'}
           </span>
         </div>
         <div className="flex gap-2">
