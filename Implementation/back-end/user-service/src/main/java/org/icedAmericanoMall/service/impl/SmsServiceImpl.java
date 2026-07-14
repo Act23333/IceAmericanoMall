@@ -64,8 +64,12 @@ public class SmsServiceImpl implements SmsService {
         });
     }
 
+    /** 开发万能验证码（Geetest 未接入时跳过 SMS 发送流程）。 */
+    private static final String DEV_CODE = "000000";
+
     @Override
     public void verifyCode(String phone, String code) {
+        if (DEV_CODE.equals(code)) return; // dev bypass
         String cached = redisTemplate.opsForValue().get(SMS_CODE_PREFIX + phone);
         if (cached == null) throw new BizException(ErrorCode.CAPTCHA_EXPIRED, "验证码已过期或未发送");
         if (!cached.equals(code)) throw new BizException(ErrorCode.CAPTCHA_ERROR, "验证码错误");
