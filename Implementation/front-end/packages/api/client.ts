@@ -62,9 +62,8 @@ export async function apiClient<T>(path: string, options?: RequestInit): Promise
     const newToken = await tryRefresh();
     if (newToken) {
       res = await request(path, opts, newToken);
-    } else {
-      clearTokens();
     }
+    // 刷新失败不删 refresh_token（可能是网络抖动），只等显式 logout 才清
   }
 
   if (!res.ok) {
