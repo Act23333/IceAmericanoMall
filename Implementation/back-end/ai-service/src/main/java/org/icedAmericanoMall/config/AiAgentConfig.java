@@ -9,8 +9,10 @@ import org.icedAmericanoMall.agent.ShoppingAssistant;
 import org.icedAmericanoMall.agent.StreamingCustomerServiceAssistant;
 import org.icedAmericanoMall.agent.StreamingShoppingAssistant;
 import org.icedAmericanoMall.tool.OrderLookupTool;
+import org.icedAmericanoMall.tool.ProductDetailTool;
 import org.icedAmericanoMall.tool.RAGSearchTool;
 import org.icedAmericanoMall.tool.SearchTool;
+import org.icedAmericanoMall.tool.UserProfileTool;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -54,6 +56,8 @@ public class AiAgentConfig {
     public ShoppingAssistant shoppingAssistant(
             OpenAiChatModel langchain4jChatModel,
             SearchTool searchTool,
+            ProductDetailTool productDetailTool,
+            UserProfileTool userProfileTool,
             RedisChatMemoryStore memoryStore) {
         return AiServices.builder(ShoppingAssistant.class)
                 .chatModel(langchain4jChatModel)
@@ -62,7 +66,7 @@ public class AiAgentConfig {
                         .maxMessages(SHOPPING_MAX_MESSAGES)
                         .chatMemoryStore(memoryStore)
                         .build())
-                .tools(searchTool)
+                .tools(searchTool, productDetailTool, userProfileTool)
                 .build();
     }
 
@@ -99,6 +103,8 @@ public class AiAgentConfig {
     public StreamingShoppingAssistant streamingShoppingAssistant(
             OpenAiStreamingChatModel streamingChatModel,
             SearchTool searchTool,
+            ProductDetailTool productDetailTool,
+            UserProfileTool userProfileTool,
             RedisChatMemoryStore memoryStore) {
         return AiServices.builder(StreamingShoppingAssistant.class)
                 .streamingChatModel(streamingChatModel)
@@ -107,7 +113,7 @@ public class AiAgentConfig {
                         .maxMessages(SHOPPING_MAX_MESSAGES)
                         .chatMemoryStore(memoryStore)
                         .build())
-                .tools(searchTool)
+                .tools(searchTool, productDetailTool, userProfileTool)
                 .build();
     }
 
