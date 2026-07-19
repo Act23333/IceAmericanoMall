@@ -235,11 +235,6 @@
                 <artifactId>ia-integration</artifactId>
                 <version>${ia-integration.version}</version>
             </dependency>
-            <dependency>
-                <groupId>co.elastic.clients</groupId>
-                <artifactId>elasticsearch-java</artifactId>
-                <version></version>
-            </dependency>
         </dependencies>
     </dependencyManagement>
 
