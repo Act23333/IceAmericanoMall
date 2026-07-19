@@ -1,0 +1,103 @@
+package org.icedAmericanoMall.rag;
+
+import lombok.extern.slf4j.Slf4j;
+import org.icedAmericanoMall.config.AiProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.*;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+import java.util.*;
+
+/**
+ * V3.0.0: BGE-reranker 重排序服务。
+ * <p>
+ * 调用 BGE-reranker-v2-base Docker 服务（FastAPI + sentence-transformers）
+ * 对多路召回结果进行语义重排序，将 Top-50 精排为 Top-5。
+ * <p>
+ * 如果 reranker 未启用，退化为简单的 TF-IDF 启发式排序。
+ */
+@Slf4j
+@Service
+@ConditionalOnProperty(name = "ai.enabled", havingValue = "true")
+public class RerankerService {
+
+    private final RestTemplate restTemplate = new RestTemplate();
+    private final AiProperties aiProperties;
+
+    public RerankerService(AiProperties aiProperties) {
+        this.aiProperties = aiProperties;
+    }
+
+    /**
+     * 对候选文档列表进行重排序。
+     *
+     * @param query      用户原始查询
+     * @param candidates 候选文档（文本列表）
+     * @param topK       返回 Top-K 数量
+     * @return 按相关性降序排列的文档索引（0-based）
+     */
+    @SuppressWarnings("unchecked")
+    public List<Integer> rerank(String query, List<String> candidates, int topK) {
+        if (candidates.isEmpty()) return Collections.emptyList();
+
+        // V3.0: 如果 reranker 未启用，使用启发式排序（关键词匹配度）
+        if (!aiProperties.getRag().getReranker().isEnabled()) {
+            return heuristicRerank(query, candidates, topK);
+        }
+
+        // 调用 BGE-reranker
+        try {
+            String url = aiProperties.getRag().getReranker().getBaseUrl() + "/rerank";
+            Map<String, Object> body = Map.of(
+                    "query", query,
+                    "documents", candidates,
+                    "top_k", topK
+            );
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            ResponseEntity<Map> response = restTemplate.postForEntity(url,
+                    new HttpEntity<>(body, headers), Map.class);
+
+            Map<String, Object> resp = response.getBody();
+            if (resp != null && resp.containsKey("results")) {
+                List<Map<String, Object>> results = (List<Map<String, Object>>) resp.get("results");
+                return results.stream()
+                        .map(r -> ((Number) r.get("index")).intValue())
+                        .limit(topK)
+                        .toList();
+            }
+        } catch (Exception e) {
+            log.warn("BGE-reranker call failed, falling back to heuristic: {}", e.getMessage());
+        }
+        return heuristicRerank(query, candidates, topK);
+    }
+
+    /**
+     * 启发式重排序：按 query 关键词在文档中出现的频率排序。
+     * BGE-reranker 不可用时的降级方案。
+     */
+    private List<Integer> heuristicRerank(String query, List<String> candidates, int topK) {
+        String[] keywords = query.split("\\s+");
+        record ScoredDoc(int index, int score) {}
+        List<ScoredDoc> scored = new ArrayList<>();
+        for (int i = 0; i < candidates.size(); i++) {
+            String doc = candidates.get(i).toLowerCase();
+            int score = 0;
+            for (String kw : keywords) {
+                int idx = 0;
+                while ((idx = doc.indexOf(kw.toLowerCase(), idx)) != -1) {
+                    score++;
+                    idx += kw.length();
+                }
+            }
+            scored.add(new ScoredDoc(i, score));
+        }
+        scored.sort((a, b) -> Integer.compare(b.score, a.score));
+        return scored.stream()
+                .filter(s -> s.score > 0)
+                .limit(topK)
+                .map(ScoredDoc::index)
+                .toList();
+    }
+}
