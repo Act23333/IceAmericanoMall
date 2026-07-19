@@ -8,6 +8,7 @@ import org.icedAmericanoMall.agent.StreamingShoppingAssistant;
 import org.icedAmericanoMall.config.AiProperties;
 import org.icedAmericanoMall.domain.dto.AiChatRequest;
 import org.icedAmericanoMall.domain.dto.AiChatResponse;
+import org.icedAmericanoMall.security.ContentSafetyFilter;
 import org.noLazy.common.annotation.RateLimit;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.utils.UserContext;
@@ -39,9 +40,16 @@ public class AiAssistantController {
     @Autowired(required = false)
     private StreamingShoppingAssistant streamingShoppingAssistant;
 
+    @Autowired
+    private ContentSafetyFilter safetyFilter;
+
     @RateLimit(key = "ip", limit = 20, duration = 60)
     @PostMapping("/chat")
     public Result<AiChatResponse> chat(@Valid @RequestBody AiChatRequest req) {
+        String safetyCheck = safetyFilter.checkInput(req.getMessage());
+        if (safetyCheck != null) {
+            return Result.error(3102, safetyCheck);
+        }
         String conversationId = req.getConversationId() != null
                 ? req.getConversationId()
                 : UUID.randomUUID().toString();

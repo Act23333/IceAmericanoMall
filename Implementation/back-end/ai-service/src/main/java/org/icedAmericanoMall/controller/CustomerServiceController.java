@@ -8,8 +8,10 @@ import org.icedAmericanoMall.agent.StreamingCustomerServiceAssistant;
 import org.icedAmericanoMall.config.AiProperties;
 import org.icedAmericanoMall.domain.dto.AiChatRequest;
 import org.icedAmericanoMall.domain.dto.AiChatResponse;
+import org.icedAmericanoMall.security.ContentSafetyFilter;
 import org.noLazy.common.annotation.RateLimit;
 import org.noLazy.common.domain.Result;
+import org.noLazy.common.enums.ErrorCode;
 import org.noLazy.common.utils.UserContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -40,9 +42,17 @@ public class CustomerServiceController {
     @Autowired(required = false)
     private StreamingCustomerServiceAssistant streamingCustomerServiceAssistant;
 
+    @Autowired
+    private ContentSafetyFilter safetyFilter;
+
     @RateLimit(key = "ip", limit = 20, duration = 60)
     @PostMapping("/chat")
     public Result<AiChatResponse> chat(@Valid @RequestBody AiChatRequest req) {
+        String safetyCheck = safetyFilter.checkInput(req.getMessage());
+        if (safetyCheck != null) {
+            return Result.error(ErrorCode.AI_CONTENT_FILTERED.getCode(),
+                    ErrorCode.AI_CONTENT_FILTERED.getMessage());
+        }
         String conversationId = req.getConversationId() != null
                 ? req.getConversationId()
                 : UUID.randomUUID().toString();
