@@ -51,12 +51,13 @@ public class SecurityConfig {
                                 "/api/pay/callback/wechat",
                                 "/api/pay/callback/**"
                         ).permitAll()
-                        // 商品浏览公开（列表、详情、分类）
+                        // 商品浏览公开（列表、详情、分类）+ AI 助手
                         .pathMatchers(
                                 "/api/item/category/**",
                                 "/api/item/product/page",
                                 "/api/item/product/*",
-                                "/api/search/**"
+                                "/api/search/**",
+                                "/api/ai/**"
                         ).permitAll()
                         // 其他所有请求都需要认证
                         .anyExchange().authenticated()

@@ -29,6 +29,13 @@ public enum ErrorCode {
     USER_ALREADY_EXISTS(3006, "用户已存在", HttpStatus.OK),
     PASSWORD_ERROR(3007, "登录密码错误", HttpStatus.OK),
     USER_STATUS_ABNORMAL(3008, "用户状态异常", HttpStatus.OK),
+
+    // AI 服务错误 (3100-3199)
+    AI_SERVICE_UNAVAILABLE(3100, "AI 服务未启用或 API Key 未配置", HttpStatus.SERVICE_UNAVAILABLE),
+    AI_TIMEOUT(3101, "AI 调用超时，请稍后重试", HttpStatus.GATEWAY_TIMEOUT),
+    AI_CONTENT_FILTERED(3102, "内容未通过安全审核", HttpStatus.BAD_REQUEST),
+    AI_RATE_LIMITED(3103, "AI 助手正在忙碌中，请稍后再试", HttpStatus.TOO_MANY_REQUESTS),
+    AI_CONVERSATION_NOT_FOUND(3104, "会话不存在或无权访问", HttpStatus.NOT_FOUND),
     ;
 
 
