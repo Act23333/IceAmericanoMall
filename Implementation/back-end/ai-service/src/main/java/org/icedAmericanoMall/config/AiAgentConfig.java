@@ -2,11 +2,15 @@ package org.icedAmericanoMall.config;
 
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.service.AiServices;
 import org.icedAmericanoMall.agent.CustomerServiceAssistant;
 import org.icedAmericanoMall.agent.ShoppingAssistant;
+import org.icedAmericanoMall.agent.StreamingCustomerServiceAssistant;
+import org.icedAmericanoMall.agent.StreamingShoppingAssistant;
 import org.icedAmericanoMall.tool.OrderLookupTool;
 import org.icedAmericanoMall.tool.SearchTool;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -74,6 +78,48 @@ public class AiAgentConfig {
             RedisChatMemoryStore memoryStore) {
         return AiServices.builder(CustomerServiceAssistant.class)
                 .chatModel(langchain4jChatModel)
+                .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder()
+                        .id(memoryId)
+                        .maxMessages(CS_MAX_MESSAGES)
+                        .chatMemoryStore(memoryStore)
+                        .build())
+                .tools(orderLookupTool)
+                .build();
+    }
+
+    // ──────────────── V2.5.1 流式 Agent ────────────────
+
+    /**
+     * 流式购物助手 Agent — SSE 打字机效果。
+     */
+    @Bean
+    @ConditionalOnProperty(name = "ai.enabled", havingValue = "true")
+    public StreamingShoppingAssistant streamingShoppingAssistant(
+            OpenAiStreamingChatModel streamingChatModel,
+            SearchTool searchTool,
+            RedisChatMemoryStore memoryStore) {
+        return AiServices.builder(StreamingShoppingAssistant.class)
+                .streamingChatModel(streamingChatModel)
+                .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder()
+                        .id(memoryId)
+                        .maxMessages(SHOPPING_MAX_MESSAGES)
+                        .chatMemoryStore(memoryStore)
+                        .build())
+                .tools(searchTool)
+                .build();
+    }
+
+    /**
+     * 流式客服 Agent — SSE 打字机效果。
+     */
+    @Bean
+    @ConditionalOnProperty(name = "ai.enabled", havingValue = "true")
+    public StreamingCustomerServiceAssistant streamingCustomerServiceAssistant(
+            OpenAiStreamingChatModel streamingChatModel,
+            OrderLookupTool orderLookupTool,
+            RedisChatMemoryStore memoryStore) {
+        return AiServices.builder(StreamingCustomerServiceAssistant.class)
+                .streamingChatModel(streamingChatModel)
                 .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder()
                         .id(memoryId)
                         .maxMessages(CS_MAX_MESSAGES)

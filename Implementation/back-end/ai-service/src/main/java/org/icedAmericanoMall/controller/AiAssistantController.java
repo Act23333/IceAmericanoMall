@@ -1,15 +1,22 @@
 package org.icedAmericanoMall.controller;
 
+import dev.langchain4j.service.TokenStream;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.agent.ShoppingAssistant;
+import org.icedAmericanoMall.agent.StreamingShoppingAssistant;
 import org.icedAmericanoMall.config.AiProperties;
 import org.icedAmericanoMall.domain.dto.AiChatRequest;
 import org.icedAmericanoMall.domain.dto.AiChatResponse;
+import org.noLazy.common.annotation.RateLimit;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.utils.UserContext;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
 import java.util.UUID;
 
@@ -29,6 +36,10 @@ public class AiAssistantController {
     @Autowired(required = false)
     private ShoppingAssistant shoppingAssistant;
 
+    @Autowired(required = false)
+    private StreamingShoppingAssistant streamingShoppingAssistant;
+
+    @RateLimit(key = "ip", limit = 20, duration = 60)
     @PostMapping("/chat")
     public Result<AiChatResponse> chat(@Valid @RequestBody AiChatRequest req) {
         String conversationId = req.getConversationId() != null
@@ -49,5 +60,45 @@ public class AiAssistantController {
                 .reply(reply)
                 .conversationId(conversationId)
                 .build());
+    }
+
+    /**
+     * 流式聊天 — SSE 打字机效果。
+     */
+    @RateLimit(key = "ip", limit = 20, duration = 60)
+    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> chatStream(@Valid @RequestBody AiChatRequest req) {
+        String conversationId = req.getConversationId() != null
+                ? req.getConversationId()
+                : UUID.randomUUID().toString();
+        Long userId = UserContext.getUser();
+        String userKey = userId != null ? userId.toString() : "anonymous";
+        String memoryId = "shopping:" + userKey + ":" + conversationId;
+
+        if (!aiProperties.isEnabled() || streamingShoppingAssistant == null) {
+            return Flux.just(ServerSentEvent.<String>builder()
+                    .data("AI 助手未启用。请设置 ai.enabled=true 并配置 DEEPSEEK_API_KEY。")
+                    .build());
+        }
+
+        Sinks.Many<ServerSentEvent<String>> sink = Sinks.many().unicast().onBackpressureBuffer();
+        TokenStream tokenStream = streamingShoppingAssistant.chat(memoryId, req.getMessage());
+
+        tokenStream.onPartialResponse(token -> sink.tryEmitNext(
+                ServerSentEvent.<String>builder().data(token).build()))
+                .onCompleteResponse(c -> {
+                    sink.tryEmitNext(ServerSentEvent.<String>builder()
+                            .data("[DONE]").build());
+                    sink.tryEmitComplete();
+                })
+                .onError(error -> {
+                    log.warn("StreamingShoppingAssistant error: {}", error.getMessage());
+                    sink.tryEmitNext(ServerSentEvent.<String>builder()
+                            .data("抱歉，生成回复时遇到了问题，请稍后重试。").build());
+                    sink.tryEmitComplete();
+                })
+                .start();
+
+        return sink.asFlux();
     }
 }
