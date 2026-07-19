@@ -486,3 +486,90 @@ public void createOrder(OrderDTO dto) {
 | amount | INT | 提现金额（分） |
 | status | TINYINT | 1=待审核, 2=已打款, 3=拒绝 |
 | bank_account / bank_name | VARCHAR(50)/(100) | |
+
+---
+
+## 八、AI 服务数据模型 (V2.5+)
+
+> AI 数据表为 V2.5 新增，支撑会话管理、消息持久化和知识库功能。完整设计见 [13-AI-Technology-Selection.md](./13-AI-Technology-Selection.md)。
+
+### 8.1 会话与消息
+
+**`ai_conversation`** — AI 对话会话
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | 主键 |
+| conversation_id | VARCHAR(36) UNIQUE NOT NULL | 会话业务ID (UUID) |
+| user_id | BIGINT NOT NULL | 用户ID，FK → `user.id` |
+| agent_type | VARCHAR(20) NOT NULL | Agent 类型: `SHOPPING` / `CUSTOMER_SERVICE` |
+| title | VARCHAR(100) | 会话标题（取首条用户消息截断） |
+| message_count | INT DEFAULT 0 | 消息总数 |
+| status | TINYINT DEFAULT 1 | 1=活跃, 2=已归档, 3=已删除 |
+| create_time | DATETIME DEFAULT CURRENT_TIMESTAMP | 创建时间 |
+| update_time | DATETIME ON UPDATE CURRENT_TIMESTAMP | 最后更新时间 |
+
+索引: `idx_user_agent` (`user_id`, `agent_type`), `idx_create_time` (`create_time`)
+
+**`ai_message`** — 对话消息
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | 主键 |
+| conversation_id | VARCHAR(36) NOT NULL | 会话ID，FK → `ai_conversation.conversation_id` |
+| role | VARCHAR(10) NOT NULL | 角色: `USER` / `ASSISTANT` / `SYSTEM` / `TOOL` |
+| content | TEXT NOT NULL | 消息内容 |
+| tool_calls | JSON | Tool 调用记录: `[{toolName, input, output, latencyMs}]` |
+| token_count | INT | Token 消耗估算 |
+| create_time | DATETIME DEFAULT CURRENT_TIMESTAMP | 消息时间 |
+
+索引: `idx_conversation_id` (`conversation_id`)
+
+### 8.2 知识库 (V2.5)
+
+**`merchant_knowledge_base`** — 商家 AI 知识库
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | 主键 |
+| seller_id | BIGINT NOT NULL | 商家ID，FK → `seller.id` |
+| title | VARCHAR(200) NOT NULL | 知识条目标题 |
+| content | TEXT NOT NULL | 知识内容（FAQ/政策/产品说明） |
+| category | VARCHAR(30) NOT NULL | 分类: `FAQ` / `POLICY` / `PRODUCT` / `ANNOUNCEMENT` |
+| embedding_id | VARCHAR(64) | ES/Milvus 向量ID（用于检索后定位原文） |
+| status | TINYINT DEFAULT 1 | 1=草稿, 2=已发布, 3=已归档 |
+| create_time | DATETIME DEFAULT CURRENT_TIMESTAMP | 创建时间 |
+| update_time | DATETIME ON UPDATE CURRENT_TIMESTAMP | 更新时间 |
+
+索引: `idx_seller_category` (`seller_id`, `category`), `idx_status` (`status`)
+
+### 8.3 评估与统计 (V3.0+)
+
+**`ai_evaluation`** — AI 回答用户反馈
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | 主键 |
+| message_id | BIGINT NOT NULL | 消息ID，FK → `ai_message.id` |
+| user_id | BIGINT NOT NULL | 用户ID |
+| rating | TINYINT | 评分: 1-5 (5=非常满意) |
+| feedback_type | VARCHAR(20) | 反馈类型: `HELPFUL` / `NOT_HELPFUL` / `HARMFUL` |
+| feedback_text | VARCHAR(500) | 文字反馈 |
+| create_time | DATETIME DEFAULT CURRENT_TIMESTAMP | 反馈时间 |
+
+**`ai_token_usage`** — Token 用量统计（按日聚合）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | 主键 |
+| stat_date | DATE NOT NULL | 统计日期 |
+| model | VARCHAR(30) NOT NULL | 模型: `deepseek-chat` / `qwen-max` |
+| provider | VARCHAR(20) NOT NULL | Provider: `DEEPSEEK` / `QWEN` |
+| agent_type | VARCHAR(20) | Agent 类型: `SHOPPING` / `CUSTOMER_SERVICE` |
+| prompt_tokens | BIGINT DEFAULT 0 | 输入 Token 总量 |
+| completion_tokens | BIGINT DEFAULT 0 | 输出 Token 总量 |
+| total_tokens | BIGINT DEFAULT 0 | Token 总量 |
+| request_count | INT DEFAULT 0 | 请求次数 |
+| cost_cents | INT DEFAULT 0 | 预估费用（分） |
+
+索引: `uk_date_model_agent` UNIQUE (`stat_date`, `model`, `agent_type`)

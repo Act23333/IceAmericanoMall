@@ -536,17 +536,37 @@ Scenario: 查看商品详情
 - **支付补齐**：支付渠道选择（`?channel=WECHAT|ALIPAY|BALANCE`）、支付宝(Mock)、余额支付 + 简易充值（原子扣减，余额不足拒付）
 - 测试新增 OrderManager/PayManager/SignManager/Balance/Alipay 等单测与 H2 集成测试
 
+### V2.5 — AI 生产就绪 🔵 当前阶段
+
+> 目标：修复 V2.0 AI MVP 的 7 个已知缺陷，将 AI 功能从"实验演示"提升到"可安全上线"。详见 [13-AI-Technology-Selection.md](./13-AI-Technology-Selection.md) §11.1。
+
+**优先级 P0（阻塞上线）：**
+- [ ] **会话隔离** — Redis `ChatMemoryStore` 实现 Per-User 隔离，修复全局 `MessageWindowChatMemory` 跨用户泄漏
+
+**优先级 P1（核心能力补齐）：**
+- [ ] **Feign 迁移** — `SearchTool` / `OrderLookupTool` 替换 `new RestTemplate()` 为 ia-api FeignClient，走 Nacos 负载均衡 + `X-User-Id` 传播
+- [ ] **SSE 流式响应** — WebFlux + LangChain4j `TokenStream` 实现打字机效果，新增 `POST /api/ai/chat/stream` 和 `POST /api/ai/cs/chat/stream`
+- [ ] **ES 向量索引** — ES 8.x `dense_vector` 映射 + kNN 检索 + 商品 Embedding 写入，建立 RAG 基础管线
+
+**优先级 P2（质量保障）：**
+- [ ] **Langfuse 可观测性** — OpenTelemetry + Langfuse 双轨埋点：Token 消耗、Tool 调用链、延迟分解
+- [ ] **基础测试** — `SearchTool` / `OrderLookupTool` 单元测试 + Agent 集成测试（录制回放 LLM 响应）
+- [ ] **内容安全** — 输入敏感词过滤 + System Prompt 加固 + 输出 PII 脱敏
+
 ### V3.0+ — 延期 backlog（需求评审移出当前范围）
 
 > 以下功能经需求评审明确**移出 V2.x，延期至 V3.0+ 大版本**，当前不实现：
 > **RBAC 资源级权限管理、积分商城、任务中心、店铺装修、多币种**（PRD 曾标 🔵，但无对应任务，评估工作量大且非当前交易闭环所需）。
 
-### V3.0 — 知识驱动
+### V3.0 — 智能升级
 
-- **知识图谱引擎**：商品实体关系抽取、图谱构建、多跳推理（详见 13-AI-Technology-Selection §6 Phase 4）
-- RAG + KG 混合检索：模糊语义匹配 + 精确关系推理双引擎
-- 场景化搭配推荐：基于知识图谱的"主商品→配件→兼容性校验"推荐链路
-- 知识图谱可视化后台：运营/商家查看和修正实体关系
+- **AI 完整 RAG 管线**：BGE-reranker 部署 + 多路召回（向量+关键词+结构化） + 上下文组装
+- **多模型路由**：DeepSeek (80%) + Qwen (20%) 混合路由 + A/B 测试框架
+- **主-子Agent 编排**：Master Agent 拆解任务 → Search/Compare/Recommend/Order/FAQ 专业 Subagent
+- **AI Gateway 生产版**：APISIX AI Plugin 或 Kong AI Gateway，Token 配额、语义缓存、成本归因
+- **离线评测体系**：标注数据集 + LLM-as-Judge + Langfuse 评估报告
+- **商家知识库管理**：FAQ/产品手册上传 → 自动切分 → ES/Milvus 索引
+- **知识图谱引擎**：NebulaGraph 部署 + 实体/关系抽取 + RAG + KG 混合检索
 - **（并入）延期 backlog**：RBAC、积分商城、任务中心、店铺装修、多币种
 
 ---
@@ -567,7 +587,8 @@ Scenario: 查看商品详情
 | V2.4 观测+测试   | 🟢 100% | 14 | 127+ | 140+ | JaCoCo 覆盖率, 补 H2 集成测试(search/cart), Actuator/Prometheus 指标, TraceId 日志, 观测栈(SkyWalking/Grafana/ELK)配置就绪 |
 | V2.5 安全+CI+功能 | 🟢 100% | 14 | 133+ | 150+ | 安全加固(SM2/JWT轮换/keystore-git/PII/空闲超时/RabbitMQ TLS/MinIO presigned)、CI/CD Stage2/3+Checkstyle、登录奖励/管理员统计/商家分析 |
 | Phase 5 前端  | 🔵 进行中   | —   | —   | —   | React 19 + Next.js 15 + Tailwind + Shadcn/ui（storefront）/ Ant Design 5（admin·seller），详见 15-Front-End-Technology-Selection |
-| V3.0 知识驱动   | ⚪ 0%    | —   | —   | —   | 知识图谱 + RAG+KG（并入延期 backlog：RBAC/积分商城/任务中心/店铺装修/多币种） |
+| V2.5 AI 生产就绪 | 🔵 计划中 | 14 | 133+ | 150+ | AI 会话隔离(Redis ChatMemory)、SSE 流式响应、ES向量索引 RAG 基础、Feign迁移、Langfuse可观测性、测试、内容安全 |
+| V3.0 智能升级   | ⚪ 0%    | —   | —   | —   | 完整RAG管线、多模型路由、主-子Agent编排、AI Gateway、知识图谱+RAG+KG（并入延期 backlog：RBAC/积分商城/任务中心/店铺装修/多币种） |
 
 **已实现的核心链路**: 注册/登录 → 浏览商品 → 加入购物车 → 下单（库存扣减+地址快照+商品快照）→ 微信支付 → 商家发货 → 确认收货 → 售后 → 财务结算。
 

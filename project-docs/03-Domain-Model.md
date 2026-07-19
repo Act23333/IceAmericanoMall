@@ -13,7 +13,7 @@
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  ┌──────────────┐  │
 │  │ 用户上下文    │  │ 商品上下文    │  │ 订单上下文     │  │ AI搜索上下文  │  │
 │  │ User Context │  │Product Ctx   │  │ Order Context │  │ AI Search Ctx│  │
-│  │              │  │              │  │               │  │ (V2.0+)      │  │
+│  │              │  │              │  │               │  │ (✅ V2.0)    │  │
 │  │ 用户(User)   │  │ 商品(Product)│  │ 订单(Orders)  │  │              │  │
 │  │ 地址(Addr)   │  │ 规格(SKU)    │  │ 订单项(Item)  │  │ 商品向量索引  │  │
 │  │ 商家(Seller) │  │ 类目(Cat)    │  │ 购物车(Cart)  │  │ Embedding    │  │
@@ -22,7 +22,7 @@
 │  ┌──────┴───────┐  ┌──────┴───────┐  ┌──────┴────────┐  ┌──────┴───────┐  │
 │  │ 认证上下文    │  │ 搜索上下文    │  │ 支付上下文     │  │ AI客服上下文  │  │
 │  │ Auth Context │  │Search Ctx    │  │Payment Ctx    │  │AIService Ctx │  │
-│  │              │  │              │  │               │  │ (V2.0+)      │  │
+│  │              │  │              │  │               │  │ (✅ V2.0)    │  │
 │  │ Token        │  │ 索引商品     │  │ PayOrder      │  │              │  │
 │  │ 凭证         │  │ 搜索结果     │  │ 支付渠道       │  │ RAG知识库    │  │
 │  └──────────────┘  └──────────────┘  └───────────────┘  │ Agent对话    │  │
@@ -61,7 +61,7 @@
 | **核心域** | 订单上下文、支付上下文       | 核心竞争力，交易闭环 |
 | **支撑域** | 用户上下文、商品上下文、AI搜索上下文 | 必不可少但非差异化  |
 | **通用域** | 认证上下文、搜索上下文、物流上下文 | 可用通用方案实现   |
-| **创新域** | AI客服上下文、知识图谱 (V2.0+) | 差异化竞争力，智能体验  |
+| **创新域** | AI客服上下文 (✅ V2.0)、知识图谱 (⚪ V3.x) | 差异化竞争力，智能体验  |
 
 ---
 
@@ -284,10 +284,12 @@
 | `EventPublisher`   | 领域事件投递（RabbitMQ, V1.1） | 全局（ia-common） |
 | `NotificationService` | WebSocket 实时推送（V1.2） | 通知上下文 |
 | `DistributedScheduler` | 分布式定时任务协调（XXL-Job, V1.1） | 全局 |
-| `ProductVectorizer` | 商品信息 → Embedding 向量（V2.0+） | AI搜索上下文 |
-| `RAGRetriever`     | 多路召回 + 重排序（V2.0+）       | AI客服上下文 |
-| `AgentPlanner`     | ReAct 推理 + 工具链编排（V2.0+）  | AI搜索上下文 |
-| `HandoffManager`   | 人机转接决策（V2.0+）           | AI客服上下文 |
+| `ProductVectorizer` | 商品信息 → Embedding 向量（🔵 V2.5） | AI搜索上下文 |
+| `RAGRetriever`     | 多路召回 + 重排序（🔵 V2.5）       | AI客服上下文 |
+| `AgentPlanner`     | ReAct 推理 + 工具链编排（✅ V2.0：LangChain4j AiServices） | AI搜索上下文 |
+| `HandoffManager`   | 人机转接决策（🔵 V2.5）           | AI客服上下文 |
+| `SessionManager`   | Per-User 会话隔离 + Redis 持久化（🔵 V2.5） | AI客服/AI搜索上下文 |
+| `EvaluationCollector` | 用户反馈采集 + Langfuse 上报（⚪ V3.0） | AI客服/AI搜索上下文 |
 
 ---
 
