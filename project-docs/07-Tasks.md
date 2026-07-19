@@ -558,16 +558,27 @@ Scenario: 查看商品详情
 > 以下功能经需求评审明确**移出 V2.x，延期至 V3.0+ 大版本**，当前不实现：
 > **RBAC 资源级权限管理、积分商城、任务中心、店铺装修、多币种**（PRD 曾标 🔵，但无对应任务，评估工作量大且非当前交易闭环所需）。
 
-### V3.0 — 智能升级
+### V3.0 — 智能升级 🔵 当前阶段
 
-- **AI 完整 RAG 管线**：BGE-reranker 部署 + 多路召回（向量+关键词+结构化） + 上下文组装
-- **多模型路由**：DeepSeek (80%) + Qwen (20%) 混合路由 + A/B 测试框架
-- **主-子Agent 编排**：Master Agent 拆解任务 → Search/Compare/Recommend/Order/FAQ 专业 Subagent
-- **AI Gateway 生产版**：APISIX AI Plugin 或 Kong AI Gateway，Token 配额、语义缓存、成本归因
+- **AI 完整 RAG 管线**：BGE-reranker 部署 + 多路召回（向量+关键词+结构化）+ RRF融合 + Query Rewrite + 上下文组装
+- **多模型路由**：DeepSeek (80%) + Qwen (20%) 混合路由 + 故障转移 + A/B 测试框架
+- **主-子Agent 编排**：Master Agent(Qwen-Max) → Search/Compare/Recommend/Order/FAQ 专业 Subagent(DeepSeek) → Synthesizer 汇总
+- **AI Gateway 增强**：Spring Cloud Gateway GlobalFilter — Token 配额、语义缓存、成本归因
 - **离线评测体系**：标注数据集 + LLM-as-Judge + Langfuse 评估报告
-- **商家知识库管理**：FAQ/产品手册上传 → 自动切分 → ES/Milvus 索引
-- **知识图谱引擎**：NebulaGraph 部署 + 实体/关系抽取 + RAG + KG 混合检索
+- **商家知识库管理**：FAQ/产品手册上传 → 自动切分 → ES 索引
+- **人工转接系统**：置信度评分(<0.7触发) + 对话摘要 + 工单创建
 - **（并入）延期 backlog**：RBAC、积分商城、任务中心、店铺装修、多币种
+
+### V3.x — 高级 AI（知识图谱 + 多模态）⚪
+
+> **知识图谱已从 V3.0 移出**。触发条件（SKU>10万 / 关系查询>20%流量 / RAG 关系召回率<80%）均未满足。
+> 详见 [13-AI-Technology-Selection.md §10.1](./13-AI-Technology-Selection.md) 触发条件量化分析。
+
+- **知识图谱引擎**：NebulaGraph 部署 + 实体/关系抽取 + RAG + KG 混合检索（触发条件达标后启动）
+- **多模态搜索**：VLM 微调 (Qwen2-VL 7B) + 以图搜商品
+- **MCP 协议集成**：Spring AI Alibaba MCP Gateway → 零代码暴露已有服务为 MCP Tool
+- **自建 Embedding**：bge-large-zh GPU 服务替代 API（日调用 > 10万次触发）
+- **领域模型微调**：电商对话数据 Fine-tune DeepSeek/Qwen
 
 ---
 
@@ -587,8 +598,9 @@ Scenario: 查看商品详情
 | V2.4 观测+测试   | 🟢 100% | 14 | 127+ | 140+ | JaCoCo 覆盖率, 补 H2 集成测试(search/cart), Actuator/Prometheus 指标, TraceId 日志, 观测栈(SkyWalking/Grafana/ELK)配置就绪 |
 | V2.5 安全+CI+功能 | 🟢 100% | 14 | 133+ | 150+ | 安全加固(SM2/JWT轮换/keystore-git/PII/空闲超时/RabbitMQ TLS/MinIO presigned)、CI/CD Stage2/3+Checkstyle、登录奖励/管理员统计/商家分析 |
 | Phase 5 前端  | 🔵 进行中   | —   | —   | —   | React 19 + Next.js 15 + Tailwind + Shadcn/ui（storefront）/ Ant Design 5（admin·seller），详见 15-Front-End-Technology-Selection |
-| V2.5 AI 生产就绪 | 🔵 计划中 | 14 | 133+ | 150+ | AI 会话隔离(Redis ChatMemory)、SSE 流式响应、ES向量索引 RAG 基础、Feign迁移、Langfuse可观测性、测试、内容安全 |
-| V3.0 智能升级   | ⚪ 0%    | —   | —   | —   | 完整RAG管线、多模型路由、主-子Agent编排、AI Gateway、知识图谱+RAG+KG（并入延期 backlog：RBAC/积分商城/任务中心/店铺装修/多币种） |
+| V2.5 AI 生产就绪 | 🟢 100% | 14 | 137+ | 160+ | AI 会话隔离(Redis ChatMemory)、SSE流式(2端点)、ES向量索引+kNN、Feign迁移(SearchClient/OrderClient)、Conversation API、RAG Pipeline(EmbeddingService+RAGRetriever+RAGSearchTool)、内容安全(3层防御)、单元测试(10用例)、@RateLimit(4端点) |
+| V3.0 智能升级   | 🔵 进行中 | 14 | —   | —   | 完整RAG管线(BGE-reranker+多路召回+RRF)、多模型路由(DeepSeek+Qwen)、主-子Agent编排(7类型)、AI Gateway增强(Token配额+语义缓存)、离线评测(LLM-as-Judge+Langfuse)、商家知识库(CRUD+分块索引)、人工转接(置信度+摘要+工单) |
+| V3.x 高级AI     | ⚪ 0%    | —   | —   | —   | 知识图谱(NebulaGraph)、多模态(VLM)、MCP协议、自建Embedding、领域模型微调（均有触发条件） |
 
 **已实现的核心链路**: 注册/登录 → 浏览商品 → 加入购物车 → 下单（库存扣减+地址快照+商品快照）→ 微信支付 → 商家发货 → 确认收货 → 售后 → 财务结算。
 
