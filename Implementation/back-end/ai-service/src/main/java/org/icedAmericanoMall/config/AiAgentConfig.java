@@ -30,7 +30,7 @@ public class AiAgentConfig {
     public ShoppingAssistant shoppingAssistant(OpenAiChatModel langchain4jChatModel, SearchTool searchTool) {
         ChatMemory memory = MessageWindowChatMemory.withMaxMessages(10);
         return AiServices.builder(ShoppingAssistant.class)
-                .chatLanguageModel(langchain4jChatModel)
+                .chatModel(langchain4jChatModel)
                 .chatMemory(memory)
                 .tools(searchTool)
                 .build();
@@ -45,7 +45,7 @@ public class AiAgentConfig {
             OpenAiChatModel langchain4jChatModel, OrderLookupTool orderLookupTool) {
         ChatMemory memory = MessageWindowChatMemory.withMaxMessages(20);
         return AiServices.builder(CustomerServiceAssistant.class)
-                .chatLanguageModel(langchain4jChatModel)
+                .chatModel(langchain4jChatModel)
                 .chatMemory(memory)
                 .tools(orderLookupTool)
                 .build();
