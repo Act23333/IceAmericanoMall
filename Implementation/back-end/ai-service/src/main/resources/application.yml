@@ -31,6 +31,15 @@ langchain4j:
       temperature: 0.7
       timeout: 60s
 
+# Redis — ChatMemory 会话持久化 + @RateLimit 限流
+spring:
+  data:
+    redis:
+      host: ${ia.redis.host:192.168.10.128}
+      port: 6379
+      password: ${ia.redis.password:}
+      timeout: 3000ms
+
 # AI 服务开关 — 开发环境关闭，生产环境设置 ai.enabled=true
 ai:
   enabled: false

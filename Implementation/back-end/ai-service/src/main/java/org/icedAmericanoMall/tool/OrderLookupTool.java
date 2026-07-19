@@ -1,34 +1,46 @@
 package org.icedAmericanoMall.tool;
 
 import dev.langchain4j.agent.tool.Tool;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.icedAmericanoMall.client.OrderClient;
+import org.icedAmericanoMall.dto.OrderSummaryDTO;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
-import java.util.Map;
 
 /**
- * LangChain4j @Tool — 订单查询。被客服 Agent 调用。
+ * LangChain4j @Tool — 订单查询，通过 Feign Client 调用 trade-service 内部接口。
+ * <p>
+ * V2.5: 使用 {@link OrderClient} (ia-api Feign) 替代 {@code RestTemplate} 直连，
+ * 调用 {@code /internal/trade/order/{orderNo}} 获取订单摘要（含状态和金额）。
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class OrderLookupTool {
-    private final RestTemplate restTemplate = new RestTemplate();
+
+    private final OrderClient orderClient;
 
     @Tool("根据订单号查询订单状态、金额等信息")
     public String lookupOrder(String orderNo) {
         try {
-            String url = "http://trade-service/api/trade/order/" + orderNo;
-            var resp = restTemplate.getForObject(url, Map.class);
-            if (resp != null && resp.get("data") != null) {
-                Map<String, Object> order = (Map<String, Object>) resp.get("data");
-                return String.format("订单 %s: 状态=%s, 金额=¥%.2f",
-                        order.get("orderNo"), order.get("status"),
-                        ((Number) order.getOrDefault("totalAmount", 0)).doubleValue() / 100);
+            OrderSummaryDTO order = orderClient.getOrder(orderNo);
+            if (order == null) {
+                return "未找到订单 " + orderNo + "，请检查订单号是否正确";
             }
-            return "未找到订单 " + orderNo;
+            String statusText = switch (order.getStatus()) {
+                case 1 -> "待付款";
+                case 2 -> "待发货";
+                case 3 -> "待收货";
+                case 4 -> "已完成";
+                case 5 -> "已取消";
+                default -> "状态码:" + order.getStatus();
+            };
+            return String.format("订单 %s: 状态=%s, 金额=¥%.2f",
+                    order.getOrderNo(), statusText,
+                    order.getTotalAmount() / 100.0);
         } catch (Exception e) {
-            log.warn("OrderLookupTool error", e);
-            return "查询失败: " + e.getMessage();
+            log.warn("OrderLookupTool error for orderNo={}: {}", orderNo, e.getMessage());
+            return "查询订单失败，请稍后重试或联系人工客服";
         }
     }
 }
