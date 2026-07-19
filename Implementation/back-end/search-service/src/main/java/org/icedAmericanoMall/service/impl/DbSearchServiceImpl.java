@@ -86,6 +86,12 @@ public class DbSearchServiceImpl extends ServiceImpl<ProductMapper, ProductEntit
         return history != null ? history : Collections.emptyList();
     }
 
+    @Override
+    public List<ProductSearchVO> vectorSearch(double[] embedding, int size) {
+        // DB 不支持向量搜索，返回空列表（降级处理）
+        return Collections.emptyList();
+    }
+
     private void recordKeyword(String keyword) {
         try {
             redisTemplate.opsForZSet().incrementScore(HOT_KEYWORDS_KEY, keyword, 1);

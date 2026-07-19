@@ -9,6 +9,7 @@ import org.icedAmericanoMall.agent.ShoppingAssistant;
 import org.icedAmericanoMall.agent.StreamingCustomerServiceAssistant;
 import org.icedAmericanoMall.agent.StreamingShoppingAssistant;
 import org.icedAmericanoMall.tool.OrderLookupTool;
+import org.icedAmericanoMall.tool.RAGSearchTool;
 import org.icedAmericanoMall.tool.SearchTool;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -75,6 +76,7 @@ public class AiAgentConfig {
     public CustomerServiceAssistant customerServiceAssistant(
             OpenAiChatModel langchain4jChatModel,
             OrderLookupTool orderLookupTool,
+            RAGSearchTool ragSearchTool,
             RedisChatMemoryStore memoryStore) {
         return AiServices.builder(CustomerServiceAssistant.class)
                 .chatModel(langchain4jChatModel)
@@ -83,7 +85,7 @@ public class AiAgentConfig {
                         .maxMessages(CS_MAX_MESSAGES)
                         .chatMemoryStore(memoryStore)
                         .build())
-                .tools(orderLookupTool)
+                .tools(orderLookupTool, ragSearchTool)
                 .build();
     }
 
@@ -117,6 +119,7 @@ public class AiAgentConfig {
     public StreamingCustomerServiceAssistant streamingCustomerServiceAssistant(
             OpenAiStreamingChatModel streamingChatModel,
             OrderLookupTool orderLookupTool,
+            RAGSearchTool ragSearchTool,
             RedisChatMemoryStore memoryStore) {
         return AiServices.builder(StreamingCustomerServiceAssistant.class)
                 .streamingChatModel(streamingChatModel)
@@ -125,7 +128,7 @@ public class AiAgentConfig {
                         .maxMessages(CS_MAX_MESSAGES)
                         .chatMemoryStore(memoryStore)
                         .build())
-                .tools(orderLookupTool)
+                .tools(orderLookupTool, ragSearchTool)
                 .build();
     }
 }

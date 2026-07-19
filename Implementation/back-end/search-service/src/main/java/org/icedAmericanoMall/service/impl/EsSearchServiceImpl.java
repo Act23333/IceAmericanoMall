@@ -1,6 +1,7 @@
 package org.icedAmericanoMall.service.impl;
 
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
+import co.elastic.clients.elasticsearch._types.KnnQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.MatchQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -82,6 +83,39 @@ public class EsSearchServiceImpl implements SearchService {
         String key = HISTORY_KEY_PREFIX + userId;
         List<String> history = redisTemplate.opsForList().range(key, 0, limit - 1);
         return history != null ? history : Collections.emptyList();
+    }
+
+    @Override
+    public List<ProductSearchVO> vectorSearch(double[] embedding, int size) {
+        // Convert double[] to float[] (ES kNN requires float vectors)
+        float[] floatEmbedding = new float[embedding.length];
+        for (int i = 0; i < embedding.length; i++) {
+            floatEmbedding[i] = (float) embedding[i];
+        }
+
+        Query knn = Query.of(q -> q.knn(KnnQuery.of(k -> k
+                .field("embedding")
+                .queryVector(floatToFloatList(floatEmbedding))
+                .k(size)
+                .numCandidates(size * 2))));
+
+        NativeQuery query = NativeQuery.builder()
+                .withQuery(knn)
+                .withPageable(PageRequest.of(0, size))
+                .build();
+
+        SearchHits<ProductSearchVO> hits = esOps.search(query, ProductSearchVO.class);
+        return hits.getSearchHits().stream()
+                .map(SearchHit::getContent)
+                .toList();
+    }
+
+    private static List<Float> floatToFloatList(float[] array) {
+        List<Float> list = new ArrayList<>(array.length);
+        for (float f : array) {
+            list.add(f);
+        }
+        return list;
     }
 
     private void recordKeyword(String keyword) {

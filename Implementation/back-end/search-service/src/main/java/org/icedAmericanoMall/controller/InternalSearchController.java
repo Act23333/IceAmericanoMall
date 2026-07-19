@@ -6,13 +6,13 @@ import co.elastic.clients.elasticsearch.core.bulk.BulkResponseItem;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.domain.entity.ProductEntity;
+import org.icedAmericanoMall.domain.vo.ProductSearchVO;
 import org.icedAmericanoMall.mapper.ProductMapper;
 import org.icedAmericanoMall.mapper.SkuMapper;
 import org.icedAmericanoMall.domain.entity.SkuEntity;
+import org.icedAmericanoMall.service.SearchService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 
@@ -27,6 +27,7 @@ public class InternalSearchController {
 
     private final ProductMapper productMapper;
     private final SkuMapper skuMapper;
+    private final SearchService searchService;
 
     @Autowired(required = false)
     private ElasticsearchClient esClient;
@@ -85,5 +86,23 @@ public class InternalSearchController {
 
         return Map.of("status", "ok", "count", products.size(),
                 "esEnabled", esClient != null);
+    }
+
+    /**
+     * V2.5.2: 向量语义搜索 — 供 ai-service RAG 管线调用。
+     * <p>
+     * 接受查询向量（double[]），返回 Top-K 语义相似商品。
+     * 当 ES 未启用时返回空列表（降级处理）。
+     */
+    @PostMapping("/vector")
+    public List<ProductSearchVO> vectorSearch(@RequestBody Map<String, Object> req) {
+        int size = req.containsKey("size") ? ((Number) req.get("size")).intValue() : 10;
+        @SuppressWarnings("unchecked")
+        List<Number> vectorList = (List<Number>) req.get("embedding");
+        double[] embedding = new double[vectorList.size()];
+        for (int i = 0; i < vectorList.size(); i++) {
+            embedding[i] = vectorList.get(i).doubleValue();
+        }
+        return searchService.vectorSearch(embedding, size);
     }
 }
