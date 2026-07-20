@@ -17,10 +17,16 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  * 大厂标准: 下游服务方法级安全配置。
  * <p>
  * 鉴权 (Authentication) 在网关完成 → 下游服务只做授权 (Authorization)。
- * 通过 {@link UserContextAuthenticationFilter} 将网关传递的 UserInfo
- * 桥接到 Spring Security SecurityContext，使 @PreAuthorize 生效。
+ * 通过 {@link UserContextAuthenticationFilter} 将 {@code UserContext} 中的 UserInfo
+ * 桥接到 Spring Security {@code SecurityContext}，使 @PreAuthorize 生效。
+ *
+ * <pre>
+ * ── 下游 Filter 链 ──
+ * TraceIdFilter → UserContextFilter → UserContextAuthenticationFilter
+ *   → UsernamePasswordAuthenticationFilter(Spring Security) → Controller
+ * </pre>
  * <p>
- * 仅在存在 spring-security 依赖时激活。
+ * 仅在存在 spring-boot-starter-security 依赖时通过 @ConditionalOnClass 激活。
  */
 @Configuration
 @EnableWebSecurity

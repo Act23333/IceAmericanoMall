@@ -27,22 +27,29 @@ import java.util.stream.Collectors;
  * 从网关透传的 Headers 中重建 {@link UserInfo}，写入 ThreadLocal + MDC。
  * 与 gateway-service 的 {@code UserContextHeaderFilter} 配对使用。
  * <p>
- * Headers 约定:
- * <ul>
- *   <li>X-User-Id — 用户ID (网关从JWT提取)</li>
- *   <li>X-Username — 用户名</li>
- *   <li>X-User-Roles — 角色集合 (逗号分隔, 如 "ROLE_USER,ROLE_VIP")</li>
- *   <li>X-User-Permissions — 权限集合 (逗号分隔, 如 "ai:chat,order:read")</li>
- *   <li>X-Trace-Id — 全链路追踪ID</li>
- *   <li>X-Client-Ip — 客户端IP</li>
- *   <li>X-Tenant-Id — 租户ID</li>
- * </ul>
+ * ── 下游 Filter 链 ──
+ * {@link TraceIdFilter}(-1000) → UserContextFilter(-990)
+ *   → UserContextAuthenticationFilter → Controller
+ *
+ * <pre>
+ * Headers 约定 (网关注入，下游消费):
+ *   X-User-Id        — 用户ID
+ *   X-Username       — 用户名
+ *   X-User-Roles     — 角色 (逗号分隔, "ROLE_USER,ROLE_VIP")
+ *   X-User-Permissions — 权限 (逗号分隔, "ai:chat,order:read")
+ *   X-Trace-Id       — 全链路追踪ID
+ *   X-Client-Ip      — 客户端IP
+ *   X-Tenant-Id      — 租户ID
+ * </pre>
  */
 @Slf4j
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE + 10) // 在 TraceIdFilter 之后
+@Order(UserContextFilter.ORDER)
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class UserContextFilter extends OncePerRequestFilter {
+
+    /** Servlet Filter 顺序: 在 TraceIdFilter(HIGHEST_PRECEDENCE) 之后立即执行 */
+    public static final int ORDER = Ordered.HIGHEST_PRECEDENCE + 10;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)

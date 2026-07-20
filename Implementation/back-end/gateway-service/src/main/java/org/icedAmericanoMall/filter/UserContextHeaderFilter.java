@@ -22,13 +22,21 @@ import java.util.stream.Collectors;
 /**
  * 大厂标准: 网关用户上下文过滤器。
  * <p>
- * 职责: JWT校验→Redis查权限→注入Headers→MDC赋值。
- * 认证(网关) + 授权(微服务) 职责分离。
- * <p>
- * Filter链顺序: TraceIdFilter(-1000) → Auth(-800) → UserContextHeaderFilter(-600)
+ * 职责: JWT提取userId → Redis查权限 → 注入Headers → MDC赋值。
+ * 认证(网关) + 授权(微服务) 职责分离 — 网关只验JWT+传身份，不做权限校验。
  *
- * @see TraceIdFilter 上游 traceId 生成
- * @see org.noLazy.common.filter.UserContextFilter 下游服务 UserContext 重建
+ * <pre>
+ * ── 网关 Filter 链 (Reactive) ──
+ * {@link org.icedAmericanoMall.filter.TraceIdFilter}(-1000) → Spring Security Auth
+ *   → UserContextHeaderFilter(-600) → {@link AiTokenQuotaFilter}(-50) → Route
+ *
+ * ── 下游服务 Filter 链 (Servlet) ──
+ * {@link org.noLazy.common.filter.TraceIdFilter} → {@link org.noLazy.common.filter.UserContextFilter}
+ *   → UserContextAuthenticationFilter → Controller
+ * </pre>
+ *
+ * @see org.icedAmericanoMall.filter.TraceIdFilter 网关 traceId 生成/透传
+ * @see org.noLazy.common.filter.UserContextFilter 下游 UserInfo 重建 + MDC
  */
 @Slf4j
 @Component

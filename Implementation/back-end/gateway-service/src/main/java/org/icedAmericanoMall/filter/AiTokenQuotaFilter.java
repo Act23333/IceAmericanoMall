@@ -17,8 +17,11 @@ import java.time.format.DateTimeFormatter;
 /**
  * V3.0.1: AI Token 配额全局过滤器。
  * <p>
- * 对 `/api/ai/**` 请求进行每日 Token 配额检查。
- * 配额用尽返回 HTTP 429 + 降级提示。
+ * 对 `/api/ai/**` 请求进行每日 Token 配额检查，配额用尽返回 HTTP 429。
+ * <p>
+ * ── 网关 Filter 链 ──
+ * TraceIdFilter(-1000) → Spring Security Auth → UserContextHeaderFilter(-600)
+ *   → AiTokenQuotaFilter(-50) → Route
  * <p>
  * 大厂对标: Kong AI Gateway Token-based throttling。
  */
@@ -30,7 +33,7 @@ public class AiTokenQuotaFilter implements GlobalFilter, Ordered {
 
     private static final String QUOTA_KEY = "ai:quota:";
     private static final int DAILY_LIMIT = 50000;
-    private static final int ORDER = -50; // 在 UserContextHeaderFilter (-100) 之后
+    private static final int ORDER = -50; // 在 UserContextHeaderFilter(-600) 之后, Route 之前
 
     public AiTokenQuotaFilter(ReactiveRedisTemplate<String, String> redisTemplate) {
         this.redisTemplate = redisTemplate;
