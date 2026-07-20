@@ -24,19 +24,19 @@ public class CouponController {
     /** 领取优惠券 */
     @PostMapping("/claim")
     public Result<UserCouponEntity> claim(@RequestParam String couponId) {
-        return Result.ok(couponService.claim(UserContext.getUser(), couponId));
+        return Result.ok(couponService.claim(UserContext.getUserId(), couponId));
     }
 
     /** 可用优惠券列表 */
     @GetMapping("/available")
     public Result<List<UserCouponEntity>> available() {
-        return Result.ok(couponService.getUserAvailableCoupons(UserContext.getUser()));
+        return Result.ok(couponService.getUserAvailableCoupons(UserContext.getUserId()));
     }
 
     /** 已使用/已过期 */
     @GetMapping("/used")
     public Result<List<UserCouponEntity>> used() {
-        return Result.ok(couponService.getUserUsedCoupons(UserContext.getUser()));
+        return Result.ok(couponService.getUserUsedCoupons(UserContext.getUserId()));
     }
 
     /** 可用优惠券列表（分页） */

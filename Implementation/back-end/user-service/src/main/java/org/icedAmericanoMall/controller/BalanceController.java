@@ -30,13 +30,13 @@ public class BalanceController {
 
     @GetMapping
     public Result<Integer> getBalance() {
-        return Result.ok(userService.getBalance(UserContext.getUser()));
+        return Result.ok(userService.getBalance(UserContext.getUserId()));
     }
 
     /** 简易充值（Mock）：直接为当前用户增加余额，返回最新余额。 */
     @PostMapping("/recharge")
     public Result<Integer> recharge(@RequestParam int amount) {
-        Long userId = UserContext.getUser();
+        Long userId = UserContext.getUserId();
         userService.addBalance(userId, amount);
         return Result.ok(userService.getBalance(userId));
     }

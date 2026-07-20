@@ -7,6 +7,12 @@ spring:
   cloud:
     nacos:
       server-addr: ${ia.nacos.host:192.168.10.128}:8848
+  data:
+    redis:
+      host: ${ia.redis.host:192.168.10.128}
+      port: 6379
+      password: ${ia.redis.password:}
+      timeout: 3000ms
   ai:
     openai:
       api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
@@ -21,7 +27,7 @@ spring:
         options:
           model: text-embedding-3-small
 
-# LangChain4j — DeepSeek (OpenAI 兼容)
+# LangChain4j — DeepSeek (主力模型, OpenAI 兼容)
 langchain4j:
   open-ai:
     chat-model:
@@ -31,9 +37,29 @@ langchain4j:
       temperature: 0.7
       timeout: 60s
 
-# AI 服务开关 — 开发环境关闭，生产环境设置 ai.enabled=true
+# V3.0: 多模型路由配置 — Qwen (备用模型, 复杂中文场景)
 ai:
   enabled: false
+  models:
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
+      base-url: https://api.deepseek.com/v1
+      model: deepseek-chat
+      weight: 80                       # 默认路由权重
+    qwen:
+      api-key: ${QWEN_API_KEY:sk-placeholder}
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      model: qwen-max
+      weight: 20                       # 复杂中文场景权重
+  routing:
+    complexity-threshold: 3            # 复杂度>=3路由到Qwen
+    daily-token-quota: 50000           # 每用户每日Token配额
+  rag:
+    reranker:
+      enabled: false                   # V3.0.0: BGE-reranker Docker 部署后开启
+      base-url: http://localhost:8001  # BGE-reranker 服务地址
+  memory:
+    ttl: 24h                           # Redis ChatMemory TTL
 
 # 可观测性：Actuator 健康检查 + Prometheus 指标端点（V2.4）
 management:

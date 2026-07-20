@@ -92,8 +92,8 @@
         <ia-api.version>1.0</ia-api.version>
         <ia-integration.version>1.0</ia-integration.version>
         <lombok.version>1.18.42</lombok.version>
-        <spring-ai.version>1.0.0-M5</spring-ai.version>
-        <langchain4j.version>1.0.0-beta1</langchain4j.version>
+        <spring-ai.version>1.0.0-M6</spring-ai.version>
+        <langchain4j.version>1.18.0-beta28</langchain4j.version>
     </properties>
     
     <!-- 对依赖包进行管理 -->
@@ -234,11 +234,6 @@
                 <groupId>org.nolazy</groupId>
                 <artifactId>ia-integration</artifactId>
                 <version>${ia-integration.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>co.elastic.clients</groupId>
-                <artifactId>elasticsearch-java</artifactId>
-                <version></version>
             </dependency>
         </dependencies>
     </dependencyManagement>

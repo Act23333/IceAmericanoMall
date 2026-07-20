@@ -47,11 +47,19 @@ public class UserInfoService {
                 .username(user.getUsername())
                 .roles(roles)
                 .permissions(perms)
-                // ...其他字段
                 .build();
 
-        // 3. 写缓存（设置过期时间，例如30分钟）
+        // 3. 写缓存
+        // (a) UserInfo JSON 缓存 (30分钟)
         redisTemplate.opsForValue().set(cacheKey, JsonUtils.toJson(userInfo), 30, TimeUnit.MINUTES);
+        // (b) 权限 SET 缓存 (网关 SISMEMBER O(1) 查询)
+        String permsKey = "user:perms:" + userId;
+        Set<String> permsSet = new HashSet<>(perms);
+        roles.forEach(role -> permsSet.add(role)); // 角色以 ROLE_ 前缀存入
+        redisTemplate.delete(permsKey);
+        redisTemplate.opsForSet().add(permsKey, permsSet.toArray(new String[0]));
+        redisTemplate.expire(permsKey, 30, TimeUnit.MINUTES);
+
         return userInfo;
     }
 }

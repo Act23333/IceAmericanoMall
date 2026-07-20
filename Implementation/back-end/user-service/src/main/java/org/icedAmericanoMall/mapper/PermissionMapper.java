@@ -17,12 +17,12 @@ import java.util.Set;
  */
 @Mapper
 public interface PermissionMapper {
-    @Select("SELECT p.code FROM permissions p INNER JOIN user_permissions up ON p.id = up.permission_id WHERE up.user_id = #{userId}")
+    @Select("SELECT p.code FROM sys_permission p INNER JOIN sys_user_permission up ON p.id = up.permission_id WHERE up.user_id = #{userId}")
     Set<String> selectDirectPermCodesByUserId(@Param("userId") Long userId);
 
-    @Select("SELECT p.code FROM permissions p " +
-            "INNER JOIN role_permissions rp ON p.id = rp.permission_id " +
-            "INNER JOIN user_roles ur ON rp.role_id = ur.role_id " +
+    @Select("SELECT p.code FROM sys_permission p " +
+            "INNER JOIN sys_role_permission rp ON p.id = rp.permission_id " +
+            "INNER JOIN sys_user_role ur ON rp.role_id = ur.role_id " +
             "WHERE ur.user_id = #{userId}")
     Set<String> selectRolePermCodesByUserId(@Param("userId") Long userId);
 }

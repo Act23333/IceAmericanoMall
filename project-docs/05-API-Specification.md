@@ -1,6 +1,6 @@
 # 05 — 接口规格文档 (API Specification — SDD)
 
-> 最后更新: 2026-07-04 | 端点总数: 122 | 公共: 109 | 内部: 18
+> 最后更新: 2026-07-19 | 端点总数: 128 (含V2.5计划) | 公共: 115 | 内部: 18 | 已实现: 122
 
 ---
 
@@ -482,10 +482,92 @@ ProductSearchVO: `{ id(Long), productId(String), categoryId(Long), name, descrip
 
 ### 4.10 AI 服务 (ai-service)
 
-| #   | 方法   | 路径                | 请求            | 响应                   | 阶段  |
-| --- | ---- | ----------------- | ------------- | -------------------- | --- |
-| 120 | POST | `/api/ai/chat`    | `{ message }` | `Map<String,Object>` | ⚪   |
-| 121 | POST | `/api/ai/cs/chat` | `{ message }` | `Map<String,Object>` | ⚪   |
+> 当前实现: V2.0 MVP ✅ | V2.5 生产就绪 🔵 | 完整选型见 [13-AI-Technology-Selection.md](./13-AI-Technology-Selection.md)
+
+#### 4.10.1 AI 商品助手
+
+| #   | 方法   | 路径                         | 请求                                                    | 响应                          | 阶段  |
+| --- | ---- | --------------------------- | ------------------------------------------------------- | ----------------------------- | --- |
+| 120 | POST | `/api/ai/chat`              | `AiChatRequest { message: String, conversationId?: String }` | `AiChatResponse { reply: String, conversationId: String }` | ✅ V2.0 |
+| 122 | POST | `/api/ai/chat/stream`       | `AiChatRequest { message: String, conversationId?: String }` | SSE `text/event-stream` (逐token返回) | 🔵 V2.5 |
+| 123 | GET  | `/api/ai/conversations`     | —                                                       | `Result<List<ConversationSummary>>` | 🔵 V2.5 |
+| 124 | GET  | `/api/ai/conversations/{id}`| —                                                       | `Result<ConversationDetail>` | 🔵 V2.5 |
+| 125 | DELETE | `/api/ai/conversations/{id}` | —                                                     | `Result<Void>`                | 🔵 V2.5 |
+
+#### 4.10.2 AI 客服
+
+| #   | 方法   | 路径                          | 请求                                                    | 响应                          | 阶段  |
+| --- | ---- | ---------------------------- | ------------------------------------------------------- | ----------------------------- | --- |
+| 121 | POST | `/api/ai/cs/chat`            | `AiChatRequest { message: String, conversationId?: String }` | `AiChatResponse { reply: String, conversationId: String }` | ✅ V2.0 |
+| 126 | POST | `/api/ai/cs/chat/stream`     | `AiChatRequest { message: String, conversationId?: String }` | SSE `text/event-stream` (逐token返回) | 🔵 V2.5 |
+
+#### 4.10.3 DTO 定义
+
+**`AiChatRequest`**:
+```json
+{
+  "message": "500以内适合夏天穿的透气跑鞋",
+  "conversationId": "conv-uuid-xxx"  // 可选，继续已有会话
+}
+```
+
+**`AiChatResponse`**:
+```json
+{
+  "reply": "为您找到以下商品...",
+  "conversationId": "conv-uuid-xxx"
+}
+```
+
+**`ConversationSummary`**（会话列表）:
+```json
+{
+  "conversationId": "conv-uuid-xxx",
+  "agentType": "SHOPPING",
+  "title": "推荐跑鞋",
+  "messageCount": 8,
+  "lastMessage": "还有什么需要帮您的吗？",
+  "createTime": "2026-07-19T10:30:00",
+  "updateTime": "2026-07-19T10:35:00"
+}
+```
+
+**`ConversationDetail`**（会话详情）:
+```json
+{
+  "conversationId": "conv-uuid-xxx",
+  "agentType": "SHOPPING",
+  "messages": [
+    {
+      "role": "USER",
+      "content": "推荐跑鞋",
+      "timestamp": "2026-07-19T10:30:00"
+    },
+    {
+      "role": "ASSISTANT",
+      "content": "为您找到以下商品...",
+      "toolCalls": [
+        {
+          "toolName": "searchProducts",
+          "input": {"keyword": "透气跑鞋 500以内"},
+          "output": "[P001] Nike ZoomX — ¥499.00 (销量:1523)..."
+        }
+      ],
+      "timestamp": "2026-07-19T10:30:05"
+    }
+  ]
+}
+```
+
+#### 4.10.4 AI 错误码
+
+| 错误码 | HTTP状态 | 说明 |
+|--------|---------|------|
+| `AI_SERVICE_UNAVAILABLE` | 503 | AI 服务未启用（`ai.enabled=false`）或 API Key 未配置 |
+| `AI_TIMEOUT` | 504 | LLM 调用超时（当前 60s） |
+| `AI_CONTENT_FILTERED` | 400 | 输入或输出被内容安全策略拦截 |
+| `AI_RATE_LIMITED` | 429 | 用户或全局限流触发 |
+| `AI_CONVERSATION_NOT_FOUND` | 404 | 会话不存在或不属于当前用户 |
 
 ---
 

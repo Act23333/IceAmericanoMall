@@ -598,3 +598,88 @@ npx openapi-typescript http://localhost:8080/v3/api-docs -o packages/api/types/s
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 十三、AI 交互前端 (V2.5+)
+
+> AI Chat UI 为 V2.5 新增。后端 AI 功能（ai-service）已有 V2.0 MVP 实现，前端需补齐对应的交互组件。
+
+### 13.1 AI Chat 组件选型
+
+| 方案 | 适用场景 | 优势 |
+|------|---------|------|
+| **Vercel AI SDK** (`@ai-sdk/react` + `useChat`) | 🟢 **首选** | `useChat` hook 一行代码接入 SSE 流式对话；自动处理 loading/error/重连；支持 tool-call 可视化 |
+| **SSE EventSource + 自建 UI** | 需完全自定义 | 无框架依赖，UI 完全自主 |
+| **shadcn-chat** | 快速原型 | 基于 shadcn/ui 的现成 Chat 组件，与项目 UI 体系一致 |
+
+**推荐组合：Vercel AI SDK (`useChat`) + shadcn-chat 基础样式 + 自定义业务组件。**
+
+```tsx
+// 示例：使用 Vercel AI SDK 接入 AI 商品助手
+'use client';
+import { useChat } from '@ai-sdk/react';
+
+export function ShoppingAssistant() {
+  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
+    api: '/api/ai/chat',  // Next.js API Route → 代理到 ai-service
+    streamProtocol: 'text',
+  });
+
+  return (
+    <div className="chat-container">
+      {messages.map(m => (
+        <div key={m.id} className={`message ${m.role}`}>
+          {m.content}
+          {m.toolInvocations?.map(tool => (
+            <ToolCallCard key={tool.toolName} {...tool} />
+          ))}
+        </div>
+      ))}
+      {isLoading && <TypingIndicator />}
+      <form onSubmit={handleSubmit}>
+        <input value={input} onChange={handleInputChange} placeholder="问我任何关于商品的问题..." />
+        <button type="submit">发送</button>
+      </form>
+    </div>
+  );
+}
+```
+
+### 13.2 架构模式
+
+```
+浏览器 (H5)
+    │
+    ├── POST /api/ai/chat (非流式, V2.0)
+    │   └── 传统 fetch → JSON response
+    │
+    └── POST /api/ai/chat/stream (流式, V2.5)
+        └── EventSource / fetch + ReadableStream
+            └── SSE: data: {"token": "好的"} ...
+```
+
+**关键决策**：
+- **Next.js API Route 作为 BFF**：前端请求先到 Next.js server，由 server 转发到 ai-service，避免 CORS + 隐藏 API Key
+- **流式消费用 `useChat`**：Vercel AI SDK 自动处理 `text/event-stream` 解析、重连、状态同步
+- **会话管理**：`conversationId` 存储在 Zustand store，首次对话自动创建，后续请求携带
+
+### 13.3 交互设计规范
+
+| 状态 | UI 表现 | 说明 |
+|------|--------|------|
+| **空闲** | 输入框 + 欢迎语 + 快捷问题推荐 | 引导用户开始对话 |
+| **等待中** | 发送按钮变 loading + 消息列表末尾显示骨架屏 | 用户发送后，等待首个 token 返回 |
+| **流式输出中** | 打字机效果 + 光标闪烁 | SSE 逐 token 渲染 |
+| **Tool 调用中** | 内联提示："正在搜索商品..." → 完成后展开 Tool 结果卡片 | 透明度提示 AI 在做什么 |
+| **错误** | Toast 提示 + 重试按钮 | 区分：网络错误/超时/AI未启用/限流 |
+| **完成** | 完整回复 + 👍👎反馈按钮 | 收集用户反馈 |
+| **AI 未启用** | 静态提示："AI 助手暂未开启" | `ai.enabled=false` 时的降级 UI |
+
+### 13.4 性能注意事项
+
+- **流式渲染**：`useChat` 返回的 messages 增量更新，避免整列表重渲染（React 19 `useOptimistic` 可选）
+- **长对话虚拟化**：超过 50 条消息时，使用 `react-virtuoso` 虚拟滚动（类似 ChatGPT）
+- **首次加载**：AI Chat 组件懒加载（`next/dynamic` + `ssr: false`），不影响首屏
+- **防抖输入**：用户在快速输入时不重复触发（`useChat` 内置 debounce）
+- **Token 计数**：前端本地估算显示（`input.length * 2 ≈ tokens`），帮助用户了解用量

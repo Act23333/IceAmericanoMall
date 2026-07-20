@@ -21,7 +21,7 @@ public class AddressController {
 
     @GetMapping("/list")
     public Result<List<AddressResp>> getList() {
-        Long currentUserId = UserContext.getUser();
+        Long currentUserId = UserContext.getUserId();
         return Result.ok(addressService.getListByCurrentUser(currentUserId));
     }
 

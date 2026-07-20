@@ -75,13 +75,21 @@
 
 ### 2.6 AI 平台
 
+> 完整选型分析见 [13-AI-Technology-Selection.md](./13-AI-Technology-Selection.md)
+
 | 层级            | 技术                          | 版本   | 使用场景                                       |
 | ------------- | --------------------------- | ---- | ------------------------------------------ |
-| **LLM**       | DeepSeek V3 / 通义千问 Qwen-Max | —    | AI 商品助手（多步推理）、AI 客服（FAQ 生成）（计划 V1.2/V2.0）  |
-| **AI 框架**     | Spring AI / 自研轻量 Agent      | —    | ReAct Agent 编排 + 工具链调用（计划 V1.2）            |
-| **向量数据库**     | Milvus                      | 2.4+ | RAG 向量检索（V2.0；MVP 阶段先用 ES 向量检索）            |
-| **Embedding** | DeepSeek/通义千问 Embedding API | —    | 商品描述向量化（MVP 用 API；日调用超百万次后自建 bge-large-zh） |
-| **Reranker**  | bge-reranker-v2-base        | —    | 召回结果重排序，提升 Top-3 准确率                       |
+| **LLM**       | DeepSeek V3 / 通义千问 Qwen-Max | —    | ✅ AI 商品助手（ReAct多步推理）、AI 客服（FAQ+订单查询）（V1.2/V2.0已实现）；计划 V3.0 混合路由（DeepSeek主力80% / Qwen备选20%） |
+| **AI 框架**     | LangChain4j (Agent编排) / Spring AI (ChatClient+Embedding基建) | LangChain4j 1.0+ / Spring AI 1.0+ | LangChain4j 负责 AiServices Agent + @Tool + ChatMemory；Spring AI 负责自动配置 + VectorStore + MCP Server（V3.0） |
+| **向量数据库**     | ES 8.x dense_vector (V2.5 MVP) → Milvus 2.4+ (V3.0 生产) | —    | MVP 阶段复用已有 ES 做 kNN+BM25 混合检索；V3.0 独立 Milvus 集群（GPU加速，十亿级向量） |
+| **Embedding** | DeepSeek Embedding API (V2.5) → bge-large-zh 自建 (V3.x) | —    | MVP 用 API 按量付费；日调用超 10 万次后 GPU 自建降低成本 |
+| **Reranker**  | bge-reranker-v2-base        | —    | 召回结果重排序，提升 MRR 从 ~0.65 到 ~0.85（V2.5） |
+| **AI Gateway** | Spring Cloud Gateway filter (V2.5) → APISIX AI Plugin (V3.0) | —    | 多Provider路由、Token配额限流、语义缓存、故障转移 |
+| **会话管理**    | Redis ChatMemoryStore       | —    | Per-User ChatMemory 隔离 + TTL 自动过期（V2.5） |
+| **流式协议**    | SSE (Server-Sent Events)     | —    | LangChain4j TokenStream + WebFlux Flux<ServerSentEvent>（V2.5） |
+| **可观测性**    | Langfuse (OSS) + OpenTelemetry | —    | AI 专项 Trace：Token消耗、Tool调用链、用户反馈、质量评估（V2.5） |
+| **内容安全**    | 输入过滤 + System Prompt 加固 + 输出审核 | —    | Prompt Injection 防护、敏感词过滤、PII 脱敏（V2.5） |
+| **知识图谱**    | NebulaGraph (V3.x 前瞻)      | —    | RAG+KG 混合检索；触发条件：SKU>10万 且 关系类查询>20%流量 |
 
 ### 2.7 开发与测试
 
@@ -155,7 +163,7 @@
 | `pay-service`           | 支付处理，微信支付 API v3                   | P1         | MySQL + wechatpay-java 0.2.17 + XXL-Job (超时关闭，计划 V1.1) |
 | `logistics-service`     | 物流信息管理，状态追踪                        | P1         | MySQL + WebSocket (物流状态推送，计划 V1.2)                     |
 | `search-service`        | 商品全文检索（V1.1 正式启用 ES）               | P1         | ElasticSearch + Canal (MySQL→ES 同步，计划 V1.1)            |
-| `ai-service`            | AI客服、AI商品助手、智能搜索                   | P2         | Spring AI + LangChain4j + DeepSeek V3                  |
+| `ai-service`            | AI客服、AI商品助手、智能搜索 🔵 V2.5 生产就绪中     | P2         | LangChain4j(Agent) + Spring AI(基建) + DeepSeek V3 + ES向量(P1) |
 | `marketing-service`     | 优惠券（平台/店铺）+ 秒杀活动                   | P1         | MySQL + Redis                                          |
 | `ia-common`             | 共享库：异常、Result、工具、注解、SMS SDK、i18n   | 基础模块       | Hutool + Knife4j                                       |
 | `ia-api`                | 共享 Feign 接口定义                      | 基础模块       | OpenFeign + LoadBalancer                               |
@@ -373,16 +381,21 @@ Docker Compose 单机部署 (本地开发)
   - Nacos 集群，服务多实例 + 负载均衡
   - ElasticSearch 上线（商品搜索 + 向量检索）
   - Canal CDC MySQL → ES/Redis 同步
-  - AI 商品助手（ReAct Agent + DeepSeek）
+  - ✅ AI 商品助手（ReAct Agent + DeepSeek）
   - WebSocket 实时推送（订单状态通知）
 - **V2.0**：
   - K8s 容器编排，CI/CD 流水线，ElasticSearch 集群
   - Seata 分布式事务（AT/TCC/Saga 三模式）
-  - Milvus 向量数据库集群
-  - AI 客服系统 + 人机转接
+  - ✅ AI 客服系统 + 人机转接
   - ShardingSphere 分库分表（单表 > 500 万行时触发）
+- **V2.5**（AI 生产就绪）：
+  - AI 会话隔离（Per-User Redis ChatMemory）
+  - SSE 流式响应 + ES 向量索引 RAG 基础管线
+  - Langfuse 可观测性 + AI Gateway 初始版
 - **V3.0**：
-  - 知识图谱引擎（NebulaGraph/Neo4j）
+  - Milvus 向量数据库集群 + BGE-reranker 重排序
+  - 多模型路由（DeepSeek/Qwen）+ 主-子Agent 编排
+  - 知识图谱引擎（NebulaGraph）
   - RAG + KG 混合检索
   - RocketMQ 替换 RabbitMQ（高吞吐场景）
 

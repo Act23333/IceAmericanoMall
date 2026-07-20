@@ -37,7 +37,7 @@ public class AddressServiceImpl extends ServiceImpl<AddressMapper, AddressEntity
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void addAddress(AddressReq req) {
-        Long currentUserId = UserContext.getUser();
+        Long currentUserId = UserContext.getUserId();
         AddressEntity addressEntity = BeanUtils.copyBean(req, AddressEntity.class);
         addressEntity.setUserId(currentUserId);
         boolean save = save(addressEntity);
@@ -49,7 +49,7 @@ public class AddressServiceImpl extends ServiceImpl<AddressMapper, AddressEntity
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void setDefault(Long id) {
-        Long currentUserId = UserContext.getUser();
+        Long currentUserId = UserContext.getUserId();
         AddressEntity address = lambdaQuery().eq(AddressEntity::getId, id).one();
         if (address == null || !address.getUserId().equals(currentUserId)) {
             throw new BizException(ErrorCode.ILLEGAL_REQUEST, "无权操作该地址");
@@ -79,7 +79,7 @@ public class AddressServiceImpl extends ServiceImpl<AddressMapper, AddressEntity
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateAddress(Long id, AddressReq req) {
-        Long currentUserId = UserContext.getUser();
+        Long currentUserId = UserContext.getUserId();
         AddressEntity existing = lambdaQuery().eq(AddressEntity::getId, id).one();
         if (existing == null || !existing.getUserId().equals(currentUserId)) {
             throw new BizException(ErrorCode.ILLEGAL_REQUEST, "无权操作该地址");
@@ -95,7 +95,7 @@ public class AddressServiceImpl extends ServiceImpl<AddressMapper, AddressEntity
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteAddress(Long id) {
-        Long currentUserId = UserContext.getUser();
+        Long currentUserId = UserContext.getUserId();
         AddressEntity existing = lambdaQuery().eq(AddressEntity::getId, id).one();
         if (existing == null || !existing.getUserId().equals(currentUserId)) {
             throw new BizException(ErrorCode.ILLEGAL_REQUEST, "无权操作该地址");

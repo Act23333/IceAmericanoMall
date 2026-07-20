@@ -26,4 +26,6 @@ public class ProductSearchVO implements Serializable {
     /** 最低 SKU 价格 (分) */
     private Integer price;
     private Integer soldCount;
+    /** V2.5.2: 商品描述 Embedding 向量 (dense_vector, 1536维) */
+    private double[] embedding;
 }

@@ -15,4 +15,13 @@ public interface SearchService {
     List<String> getHotKeywords(int limit);
 
     List<String> getSearchHistory(Long userId, int limit);
+
+    /**
+     * V2.5.2: 向量语义搜索 — kNN 检索（ES dense_vector）。
+     *
+     * @param embedding 查询向量（维度取决于 Embedding 模型）
+     * @param size      返回 Top-K 数量
+     * @return 向量检索结果
+     */
+    List<ProductSearchVO> vectorSearch(double[] embedding, int size);
 }

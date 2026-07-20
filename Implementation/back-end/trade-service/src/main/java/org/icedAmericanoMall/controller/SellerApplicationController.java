@@ -19,11 +19,11 @@ public class SellerApplicationController {
 
     @PostMapping
     public Result<SellerApplicationVO> apply(@RequestBody SellerApplicationApplyReq req) {
-        return Result.ok(tradeConverter.toVO(applicationService.applyForSeller(UserContext.getUser(), req)));
+        return Result.ok(tradeConverter.toVO(applicationService.applyForSeller(UserContext.getUserId(), req)));
     }
 
     @GetMapping
     public Result<SellerApplicationVO> myApplication() {
-        return Result.ok(tradeConverter.toVO(applicationService.getLatestApplication(UserContext.getUser())));
+        return Result.ok(tradeConverter.toVO(applicationService.getLatestApplication(UserContext.getUserId())));
     }
 }

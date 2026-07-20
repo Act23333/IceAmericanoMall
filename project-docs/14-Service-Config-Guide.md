@@ -386,7 +386,11 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
 
 ---
 
-### 5.4 DeepSeek API（ai-service）
+### 5.4 AI 服务配置（ai-service）
+
+> 完整选型与架构见 [13-AI-Technology-Selection.md](./13-AI-Technology-Selection.md)
+
+#### 5.4.1 DeepSeek API（主模型）
 
 **注册步骤：**
 
@@ -396,6 +400,37 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
 **计费：** 约 ¥1/百万 tokens（deepseek-chat 模型）
 
 **本地开发：** `ai.enabled=false` → AI 服务返回「未启用」提示
+
+#### 5.4.2 通义千问（备用模型，V3.0）
+
+| 配置项 | 说明 |
+|--------|------|
+| `QWEN_API_KEY` | 阿里云 DashScope API Key |
+| `QWEN_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| `QWEN_MODEL` | `qwen-max`（生产）/ `qwen-turbo`（低成本场景） |
+
+**使用场景**：中文复杂电商 query 的 fallback（约占 20% 流量），详见混合路由策略。
+
+#### 5.4.3 Langfuse 可观测性（V2.5）
+
+| 配置项 | 说明 |
+|--------|------|
+| `LANGFUSE_PUBLIC_KEY` | Langfuse 项目公钥 |
+| `LANGFUSE_SECRET_KEY` | Langfuse 项目密钥 |
+| `LANGFUSE_HOST` | 自部署地址（默认 `http://localhost:3000`） |
+| `LANGFUSE_ENABLED` | 是否启用（默认 `true`，`ai.enabled=false` 时自动关闭） |
+
+**部署**：Docker Compose 一键启动 Langfuse（`docker compose --profile observability up langfuse`）
+
+#### 5.4.4 RAG 组件配置（V2.5）
+
+| 组件 | 配置方式 | 说明 |
+|------|---------|------|
+| ES 向量索引 | `spring.elasticsearch.*` | 复用已有 ES，`dense_vector` 字段 dims=1536 |
+| BGE-Reranker | Docker 独立服务 | `bge-reranker-v2-base`, FastAPI + sentence-transformers, ~200MB 显存 |
+| Embedding (API) | `spring.ai.openai.embedding.*` | DeepSeek Embedding API，模型 `text-embedding-3-small`，1536维 |
+
+**V3.0 迁移到 Milvus**：配置 `spring.ai.vectorstore.milvus.*`（host/port/collection），Milvus 容器通过 `docker compose --profile ai up milvus` 启动。
 
 ---
 

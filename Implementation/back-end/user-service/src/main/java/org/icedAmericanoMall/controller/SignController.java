@@ -33,11 +33,11 @@ public class SignController {
 
     @PostMapping
     public Result<SignResultVO> sign() {
-        return Result.ok(signManager.sign(UserContext.getUser()));
+        return Result.ok(signManager.sign(UserContext.getUserId()));
     }
 
     @GetMapping("/status")
     public Result<SignResultVO> status() {
-        return Result.ok(signManager.status(UserContext.getUser()));
+        return Result.ok(signManager.status(UserContext.getUserId()));
     }
 }

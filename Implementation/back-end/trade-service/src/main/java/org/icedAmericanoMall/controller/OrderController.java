@@ -26,7 +26,7 @@ public class OrderController {
 
     @PostMapping
     public Result<OrderVO> create(@Valid @RequestBody CreateOrderReq req) {
-        return Result.ok(orderCreationManager.createOrder(UserContext.getUser(), req));
+        return Result.ok(orderCreationManager.createOrder(UserContext.getUserId(), req));
     }
 
     @GetMapping("/{orderNo}")
@@ -45,19 +45,19 @@ public class OrderController {
             @RequestParam(required = false) Integer status,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        IPage<OrderEntity> entityPage = orderService.pageOrders(UserContext.getUser(), null, status, page, size);
+        IPage<OrderEntity> entityPage = orderService.pageOrders(UserContext.getUserId(), null, status, page, size);
         return Result.ok(entityPage.convert(orderConverter::entityToVO));
     }
 
     @PostMapping("/{orderNo}/cancel")
     public Result<Void> cancel(@PathVariable String orderNo) {
-        orderLifecycleManager.cancelOrder(orderNo, UserContext.getUser());
+        orderLifecycleManager.cancelOrder(orderNo, UserContext.getUserId());
         return Result.ok();
     }
 
     @PostMapping("/{orderNo}/confirm")
     public Result<Void> confirm(@PathVariable String orderNo) {
-        orderLifecycleManager.confirmReceipt(orderNo, UserContext.getUser());
+        orderLifecycleManager.confirmReceipt(orderNo, UserContext.getUserId());
         return Result.ok();
     }
 }

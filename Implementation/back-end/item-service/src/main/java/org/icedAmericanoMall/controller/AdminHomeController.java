@@ -4,11 +4,13 @@ import lombok.RequiredArgsConstructor;
 import org.icedAmericanoMall.domain.entity.HomeConfigEntity;
 import org.icedAmericanoMall.service.HomeConfigService;
 import org.noLazy.common.domain.Result;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.noLazy.common.enums.ErrorCode;
 import org.noLazy.common.exception.BizException;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@PreAuthorize("@ss.hasPermi('user:admin')")
 @RequestMapping("/api/admin/home")
 @RequiredArgsConstructor
 public class AdminHomeController {

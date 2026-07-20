@@ -7,11 +7,13 @@ import org.icedAmericanoMall.domain.vo.UserInfoResp;
 import org.icedAmericanoMall.service.SellerService;
 import org.icedAmericanoMall.service.UserService;
 import org.noLazy.common.domain.Result;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
+@PreAuthorize("@ss.hasPermi('user:admin')")
 public class AdminUserController {
 
     private static final int SELLER_STATUS_APPROVED = 1;

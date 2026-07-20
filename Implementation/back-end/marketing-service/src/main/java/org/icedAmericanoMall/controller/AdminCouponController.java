@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.icedAmericanoMall.domain.entity.CouponEntity;
 import org.icedAmericanoMall.service.CouponService;
 import org.noLazy.common.domain.Result;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.noLazy.common.enums.ErrorCode;
 import org.noLazy.common.exception.BizException;
 import org.springframework.web.bind.annotation.*;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
  * 管理后台优惠券接口。
  */
 @RestController
+@PreAuthorize("@ss.hasPermi('user:admin')")
 @RequestMapping("/api/admin/coupon")
 @RequiredArgsConstructor
 public class AdminCouponController {

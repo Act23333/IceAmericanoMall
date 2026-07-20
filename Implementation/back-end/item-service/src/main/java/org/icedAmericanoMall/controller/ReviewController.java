@@ -18,7 +18,7 @@ public class ReviewController {
 
     @PostMapping
     public Result<ReviewVO> create(@RequestBody ReviewCreateReq req) {
-        return Result.ok(reviewService.createReview(UserContext.getUser(), req));
+        return Result.ok(reviewService.createReview(UserContext.getUserId(), req));
     }
 
     @GetMapping("/product/{productId}")

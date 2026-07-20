@@ -27,7 +27,7 @@ public class PayController {
     @PostMapping("/order/{orderNo}")
     public Result<PayOrderVO> initiate(@PathVariable String orderNo,
                                        @RequestParam(defaultValue = "WECHAT") String channel) {
-        Long userId = UserContext.getUser();
+        Long userId = UserContext.getUserId();
         return Result.ok(payManager.initiatePayment(orderNo, userId, PayChannelEnum.of(channel)));
     }
 

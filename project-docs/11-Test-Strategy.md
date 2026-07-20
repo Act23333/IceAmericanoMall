@@ -175,3 +175,51 @@ PR Merge ← Code Review ← 覆盖率检查 ← E2E测试 (15min) ←───�
 ```
 
 覆盖率不达标 → CI 直接失败，禁止合并。
+
+---
+
+## 六、AI 服务测试策略 (V2.5+)
+
+> AI 服务（ai-service）的测试与传统微服务有本质差异：LLM 输出具有不确定性，Tool 调用链动态变化，传统"给定输入→断言输出"模式不适用。
+
+### 6.1 测试分层
+
+| 层级 | 测试对象 | 策略 | 工具 |
+|------|---------|------|------|
+| **Unit** | Tool 方法（SearchTool, OrderLookupTool） | Mock LLM + 断言 Tool 输入/输出格式化逻辑 | JUnit 5 + Mockito |
+| **Unit** | 会话管理（RedisChatMemoryStore） | Testcontainers Redis → 写入/读取/过期验证 | Testcontainers |
+| **Integration** | Agent 行为（ReAct 循环） | 录制 LLM 响应 → 回放验证 Tool 选择正确性 | 自定义 Record/Replay 或 Spring AI Test |
+| **Integration** | RAG Pipeline（V2.5 ES向量检索） | Testcontainers ES 8.x → 索引测试文档 → 验证召回 | Testcontainers |
+| **Evaluation** | 答案质量（Faithfulness/Relevance） | 标注数据集 + LLM-as-Judge 自动评分 | Langfuse Evaluation |
+| **E2E** | 用户完整对话流程 | 真人验收 / E2E 录制回放（非 CI，周期性执行） | 人工 + 自动化报告 |
+
+### 6.2 LLM 调用的录制/回放模式
+
+```
+录制模式（生成 goldens）:
+  AI请求 → 真实 LLM → 保存 {input → output} 到 test/resources/llm-goldens/
+
+回放模式（CI 中使用）:
+  AI请求 → 拦截器匹配 → 返回录制响应（不调用真实 LLM）
+```
+
+**关键规则**：
+- Golden 文件签入 Git（小体积 JSON，不超过 100 条）
+- CI 必须使用回放模式（`ai.test.record=false`）
+- 新增 Tool 或 Prompt 变更 → 手动重新录制 goldens
+- 回放模式下，断言聚焦于：Tool 是否被正确选择、返回格式是否正确（不评测 LLM 生成质量）
+
+### 6.3 RAG 评估指标
+
+| 指标 | 计算方式 | CI 准入阈值 |
+|------|---------|------------|
+| Context Recall | 检索文档是否覆盖答案所需信息 | > 80% |
+| Context Precision | 检索文档中相关文档的排位 | MRR > 0.85 |
+| Faithfulness | LLM-as-Judge: 回答是否被检索文档支持 | > 90% |
+| Answer Relevance | LLM-as-Judge: 回答是否切题 | > 85% |
+
+### 6.4 特殊约束
+
+- LLM 测试 API Key 独立于生产，设置月度预算上限（$5/月）
+- 不测试 LLM 的"生成质量"（那是 Prompt Engineering 的工作，不是测试的工作）
+- 只测试"确定性行为"：Tool 选择、格式化输出、会话隔离、错误降级
