@@ -272,3 +272,68 @@ UNIQUE KEY `uk_phone_hash` (`phone_hash`)
 | 内容安全拦截 | 拦截类型, 输入/输出片段, 时间 | 90 天 |
 | Tool 调用链 | 调用序列, 每步输入/输出/延迟 | 30 天 |
 | 用户反馈差评 | 对话上下文, 差评原因分类 | 永久（用于评测数据集） |
+
+---
+
+## 七、RBAC 方法级授权 (V3.1)
+
+> 大厂对标: Alibaba/JD/Meituan 标准 `@PreAuthorize` + 集中式 PermissionService 模式
+
+### 7.1 架构
+
+```
+网关(gateway-service)               下游服务(user/trade/item/...)
+─────────────────────              ─────────────────────────────
+JWT验证 → Redis查权限 → Headers → UserContextFilter → UserContext
+                                    ↓
+                           UserContextAuthenticationFilter
+                           (UserInfo → Spring Security Authentication)
+                                    ↓
+                           @PreAuthorize("@ss.hasPermi('user:admin')")
+                                    ↓
+                           PermissionService.hasPermi()
+                           (检查 UserContext.getUser().permissions())
+```
+
+### 7.2 核心组件
+
+| 组件 | 位置 | 职责 |
+|------|------|------|
+| `PermissionService` (`@Service("ss")`) | `ia-common/.../security/` | 集中式权限评估: `hasPermi()`, `hasRole()`, `hasAnyPermi()` |
+| `MethodSecurityConfig` | `ia-common/.../config/` | `@EnableMethodSecurity` + SecurityFilterChain (全部放行) |
+| `UserContextAuthenticationFilter` | `ia-common/.../security/` | UserInfo → Spring Security Authentication 桥接 |
+
+### 7.3 权限编码规范
+
+格式: `domain:action`（如 `order:read`, `user:admin`, `ai:chat`）
+超级管理员: 角色 `ROLE_ADMIN` 或权限 `*:*:*` 自动拥有全部权限
+
+### 7.4 使用方式
+
+```java
+// 类级别 — 所有方法统一权限
+@RestController
+@PreAuthorize("@ss.hasPermi('user:admin')")
+public class AdminUserController { ... }
+
+// 方法级别 — 精确控制
+@PreAuthorize("@ss.hasPermi('order:write')")
+@PostMapping("/orders")
+public Result<OrderVO> createOrder(...) { }
+
+// 多权限满足任一
+@PreAuthorize("@ss.hasAnyPermi('user:admin', 'seller:admin')")
+
+// 角色检查
+@PreAuthorize("@ss.hasRole('ROLE_ADMIN')")
+```
+
+### 7.5 管理员 CRUD API
+
+| 端点 | 说明 | 权限 |
+|------|------|------|
+| `GET /api/admin/roles` | 角色列表 | `user:admin` |
+| `POST /api/admin/roles` | 创建角色 | `user:admin` |
+| `DELETE /api/admin/roles/{id}` | 删除角色 | `user:admin` |
+| `POST /api/admin/roles/{id}/permissions` | 分配权限 | `user:admin` |
+| `GET /api/admin/permissions/tree` | 权限树 | `user:admin` |

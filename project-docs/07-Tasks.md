@@ -558,6 +558,14 @@ Scenario: 查看商品详情
 > 以下功能经需求评审明确**移出 V2.x，延期至 V3.0+ 大版本**，当前不实现：
 > **RBAC 资源级权限管理、积分商城、任务中心、店铺装修、多币种**（PRD 曾标 🔵，但无对应任务，评估工作量大且非当前交易闭环所需）。
 
+### V3.1 — RBAC 授权体系 🔵 当前阶段
+
+- **@PreAuthorize 方法级授权**：`@PreAuthorize("@ss.hasPermi('user:admin')")` + PermissionService（大厂标准）
+- **UserContext→SecurityContext 桥接**：UserContextAuthenticationFilter 自动注入 GrantedAuthority
+- **管理员角色/权限 CRUD**：RoleController + PermissionController REST API
+- **Admin端点权限保护**：4 个 admin controller 已加 `@PreAuthorize`
+- **待完成**：Seller 端点角色细化、数据级权限（行级）、前端权限 UI 条件渲染
+
 ### V3.0 — 智能升级 🔵 当前阶段
 
 - **AI 完整 RAG 管线**：BGE-reranker 部署 + 多路召回（向量+关键词+结构化）+ RRF融合 + Query Rewrite + 上下文组装
