@@ -199,8 +199,8 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         LoginRespDTO resp = new LoginRespDTO();
         resp.setUserId(user.getId());           // Long 技术PK
         resp.setUsername(user.getUsername());
-        resp.setPhone(user.getPhone());
-        resp.setRole(mapRole(user.getRoleType()));
+//        resp.setPhone(user.getPhone());
+//        resp.setRole(mapRole(user.getRoleType()));
         return resp;
     }
 
