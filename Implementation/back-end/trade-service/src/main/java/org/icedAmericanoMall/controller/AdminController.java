@@ -8,6 +8,7 @@ import org.icedAmericanoMall.domain.vo.OrderVO;
 import org.icedAmericanoMall.manager.AdminManager;
 import org.icedAmericanoMall.service.OrderService;
 import org.noLazy.common.domain.Result;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -17,6 +18,7 @@ import java.util.Map;
  * 管理员后台 — 仪表盘 & 订单管理。统计聚合与跨服务调用下沉至 {@link AdminManager}。
  */
 @RestController
+@PreAuthorize("@ss.hasPermi('user:admin')")
 @RequestMapping("/api/trade/admin")
 @RequiredArgsConstructor
 public class AdminController {

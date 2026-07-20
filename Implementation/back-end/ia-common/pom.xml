@@ -170,6 +170,12 @@
             <artifactId>bcprov-jdk18on</artifactId>
             <version>1.78.1</version>
         </dependency>
+        <!-- Spring Security (可选) — MethodSecurityConfig 仅在引入 security 依赖时激活 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 
     <build>

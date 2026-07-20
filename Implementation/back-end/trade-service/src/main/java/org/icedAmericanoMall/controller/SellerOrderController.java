@@ -9,12 +9,14 @@ import org.icedAmericanoMall.domain.vo.OrderVO;
 import org.icedAmericanoMall.manager.OrderLifecycleManager;
 import org.icedAmericanoMall.service.OrderService;
 import org.noLazy.common.domain.Result;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.noLazy.common.enums.ErrorCode;
 import org.noLazy.common.exception.ForbiddenException;
 import org.noLazy.common.utils.UserContext;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@PreAuthorize("@ss.hasPermi('user:admin')")
 @RequestMapping("/api/trade/seller/order")
 @RequiredArgsConstructor
 public class SellerOrderController {
