@@ -56,8 +56,8 @@ public class CustomerServiceController {
         String conversationId = req.getConversationId() != null
                 ? req.getConversationId()
                 : UUID.randomUUID().toString();
-        Long userId = UserContext.getUser();
-        String userKey = userId != null ? userId.toString() : "anonymous";
+        var userInfo = UserContext.getUser();
+        String userKey = userInfo != null ? String.valueOf(userInfo.userId()) : "anonymous";
         String memoryId = "cs:" + userKey + ":" + conversationId;
 
         String reply;
@@ -82,8 +82,8 @@ public class CustomerServiceController {
         String conversationId = req.getConversationId() != null
                 ? req.getConversationId()
                 : UUID.randomUUID().toString();
-        Long userId = UserContext.getUser();
-        String userKey = userId != null ? userId.toString() : "anonymous";
+        var userInfo = UserContext.getUser();
+        String userKey = userInfo != null ? String.valueOf(userInfo.userId()) : "anonymous";
         String memoryId = "cs:" + userKey + ":" + conversationId;
 
         if (!aiProperties.isEnabled() || streamingCustomerServiceAssistant == null) {

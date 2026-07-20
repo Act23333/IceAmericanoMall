@@ -197,10 +197,8 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
     /** 手动构建 LoginRespDTO — 避免 BeanUtils.copyBean 的 String UUID → Long 转换崩溃 */
     private LoginRespDTO toLoginResp(UserEntity user) {
         LoginRespDTO resp = new LoginRespDTO();
-        resp.setUserId(user.getId());           // Long 技术PK
+        resp.setUserId(user.getId());
         resp.setUsername(user.getUsername());
-        resp.setPhone(user.getPhone());
-        resp.setRole(mapRole(user.getRoleType()));
         return resp;
     }
 

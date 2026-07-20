@@ -28,7 +28,8 @@ public class ConversationController {
      */
     @GetMapping("/conversations")
     public Result<List<ConversationSummary>> listConversations() {
-        Long userId = UserContext.getUser();
+        var userInfo = UserContext.getUser();
+        Long userId = userInfo != null ? userInfo.userId() : null;
         if (userId == null) {
             return Result.ok(Collections.emptyList());
         }
@@ -42,7 +43,8 @@ public class ConversationController {
      */
     @GetMapping("/conversations/{id}")
     public Result<ConversationDetail> getConversation(@PathVariable String id) {
-        Long userId = UserContext.getUser();
+        var userInfo = UserContext.getUser();
+        Long userId = userInfo != null ? userInfo.userId() : null;
         if (userId == null) {
             return Result.error(401, "请先登录");
         }
@@ -60,7 +62,8 @@ public class ConversationController {
      */
     @DeleteMapping("/conversations/{id}")
     public Result<Void> deleteConversation(@PathVariable String id) {
-        Long userId = UserContext.getUser();
+        var userInfo = UserContext.getUser();
+        Long userId = userInfo != null ? userInfo.userId() : null;
         if (userId == null) {
             return Result.error(401, "请先登录");
         }

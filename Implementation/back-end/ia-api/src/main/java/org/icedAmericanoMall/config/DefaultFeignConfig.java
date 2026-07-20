@@ -27,9 +27,9 @@ public class DefaultFeignConfig {
     @Bean
     public RequestInterceptor requestInterceptor() {
         return requestTemplate -> {
-            Long userId = UserContext.getUser();
-            if (userId != null) {
-                requestTemplate.header("X-User-Id", String.valueOf(userId));
+            var userInfo = UserContext.getUser();
+            if (userInfo != null) {
+                requestTemplate.header("X-User-Id", String.valueOf(userInfo.userId()));
             }
         };
     }

@@ -20,13 +20,13 @@ public class AfterSaleController {
 
     @PostMapping
     public Result<AfterSaleVO> apply(@RequestBody AfterSaleApplyReq req) {
-        return Result.ok(tradeConverter.toVO(afterSaleService.applyAfterSale(UserContext.getUser(), req)));
+        return Result.ok(tradeConverter.toVO(afterSaleService.applyAfterSale(UserContext.getUserId(), req)));
     }
 
     @GetMapping
     public Result<IPage<AfterSaleVO>> myList(@RequestParam(defaultValue = "1") int page,
                                              @RequestParam(defaultValue = "20") int size) {
-        return Result.ok(afterSaleService.pageByUserId(UserContext.getUser(), page, size)
+        return Result.ok(afterSaleService.pageByUserId(UserContext.getUserId(), page, size)
                 .convert(tradeConverter::toVO));
     }
 }

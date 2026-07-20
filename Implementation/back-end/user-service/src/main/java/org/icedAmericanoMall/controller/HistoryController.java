@@ -17,18 +17,18 @@ public class HistoryController {
 
     @PostMapping
     public Result<?> record(@RequestParam Long productId) {
-        historyService.record(UserContext.getUser(), productId);
+        historyService.record(UserContext.getUserId(), productId);
         return Result.ok();
     }
 
     @GetMapping
     public Result<List<Long>> list(@RequestParam(defaultValue = "20") int size) {
-        return Result.ok(historyService.list(UserContext.getUser(), size));
+        return Result.ok(historyService.list(UserContext.getUserId(), size));
     }
 
     @DeleteMapping
     public Result<?> clear() {
-        historyService.clear(UserContext.getUser());
+        historyService.clear(UserContext.getUserId());
         return Result.ok();
     }
 }

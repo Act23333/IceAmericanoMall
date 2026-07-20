@@ -28,14 +28,14 @@ public class SellerOrderController {
             @RequestParam(required = false) Integer status,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        Long sellerId = UserContext.getUser();
+        Long sellerId = UserContext.getUserId();
         IPage<OrderEntity> entityPage = orderService.pageOrders(null, sellerId, status, page, size);
         return Result.ok(entityPage.convert(orderConverter::entityToVO));
     }
 
     @GetMapping("/{orderNo}")
     public Result<OrderVO> detail(@PathVariable String orderNo) {
-        Long sellerId = UserContext.getUser();
+        Long sellerId = UserContext.getUserId();
         OrderEntity order = orderService.getByOrderNo(orderNo);
         if (order == null) return Result.error(404, "订单不存在");
         if (!order.getSellerId().equals(sellerId)) {
@@ -48,7 +48,7 @@ public class SellerOrderController {
 
     @PostMapping("/{orderNo}/ship")
     public Result<Void> ship(@PathVariable String orderNo, @RequestBody ShipOrderReq req) {
-        Long sellerId = UserContext.getUser();
+        Long sellerId = UserContext.getUserId();
         orderLifecycleManager.shipOrder(orderNo, sellerId, req.getLogisticsNumber(), req.getLogisticsCompany());
         return Result.ok();
     }

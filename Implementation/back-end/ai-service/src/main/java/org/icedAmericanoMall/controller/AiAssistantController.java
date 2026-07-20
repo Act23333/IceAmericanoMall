@@ -53,8 +53,8 @@ public class AiAssistantController {
         String conversationId = req.getConversationId() != null
                 ? req.getConversationId()
                 : UUID.randomUUID().toString();
-        Long userId = UserContext.getUser();
-        String userKey = userId != null ? userId.toString() : "anonymous";
+        var userInfo = UserContext.getUser();
+        String userKey = userInfo != null ? String.valueOf(userInfo.userId()) : "anonymous";
         String memoryId = "shopping:" + userKey + ":" + conversationId;
 
         String reply;
@@ -79,8 +79,8 @@ public class AiAssistantController {
         String conversationId = req.getConversationId() != null
                 ? req.getConversationId()
                 : UUID.randomUUID().toString();
-        Long userId = UserContext.getUser();
-        String userKey = userId != null ? userId.toString() : "anonymous";
+        var userInfo = UserContext.getUser();
+        String userKey = userInfo != null ? String.valueOf(userInfo.userId()) : "anonymous";
         String memoryId = "shopping:" + userKey + ":" + conversationId;
 
         if (!aiProperties.isEnabled() || streamingShoppingAssistant == null) {

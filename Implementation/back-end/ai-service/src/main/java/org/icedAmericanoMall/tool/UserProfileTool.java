@@ -23,8 +23,9 @@ public class UserProfileTool {
     @Tool("获取当前用户的浏览历史和收藏商品，用于个性化推荐")
     public String getUserProfile() {
         try {
-            Long userId = UserContext.getUser();
-            if (userId == null) return "（未登录，无法获取个性化信息）";
+            var userInfo = UserContext.getUser();
+            if (userInfo == null) return "（未登录，无法获取个性化信息）";
+            Long userId = userInfo.userId();
 
             Result<List<String>> history = userProfileClient.getBrowseHistory(10);
             Result<List<String>> favorites = userProfileClient.getFavorites(1, 10);

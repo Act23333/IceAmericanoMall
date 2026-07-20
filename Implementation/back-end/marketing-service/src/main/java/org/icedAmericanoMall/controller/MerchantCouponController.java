@@ -22,7 +22,7 @@ public class MerchantCouponController {
     /** 创建店铺优惠券 */
     @PostMapping
     public Result<CouponEntity> create(@RequestBody CouponEntity entity) {
-        entity.setSellerId(UserContext.getUser());
+        entity.setSellerId(UserContext.getUserId());
         entity.setIssuedQty(0);
         couponService.save(entity);
         return Result.ok(entity);
@@ -31,7 +31,7 @@ public class MerchantCouponController {
     /** 我的店铺优惠券列表 */
     @GetMapping
     public Result<List<CouponEntity>> list() {
-        Long sellerId = UserContext.getUser();
+        Long sellerId = UserContext.getUserId();
         return Result.ok(couponService.lambdaQuery()
                 .eq(CouponEntity::getSellerId, sellerId)
                 .orderByDesc(org.icedAmericanoMall.domain.entity.CouponEntity::getCreateTime)
@@ -41,7 +41,7 @@ public class MerchantCouponController {
     /** 下线优惠券 */
     @PutMapping("/{couponId}/disable")
     public Result<?> disable(@PathVariable String couponId) {
-        Long sellerId = UserContext.getUser();
+        Long sellerId = UserContext.getUserId();
         CouponEntity c = couponService.lambdaQuery()
                 .eq(CouponEntity::getCouponId, couponId)
                 .eq(CouponEntity::getSellerId, sellerId).one();

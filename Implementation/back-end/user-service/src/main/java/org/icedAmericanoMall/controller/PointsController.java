@@ -17,7 +17,7 @@ public class PointsController {
 
     @GetMapping("/balance")
     public Result<Map<String, Object>> getBalance() {
-        Long userId = UserContext.getUser();
+        Long userId = UserContext.getUserId();
         return Result.ok(Map.of(
                 "userId", userId,
                 "balance", pointsService.getBalance(userId)));
@@ -26,7 +26,7 @@ public class PointsController {
     @GetMapping("/history")
     public Result<?> getHistory(@RequestParam(defaultValue = "1") int page,
                                  @RequestParam(defaultValue = "20") int size) {
-        Long userId = UserContext.getUser();
+        Long userId = UserContext.getUserId();
         return Result.ok(pointsService.getHistory(userId, page, size));
     }
 }

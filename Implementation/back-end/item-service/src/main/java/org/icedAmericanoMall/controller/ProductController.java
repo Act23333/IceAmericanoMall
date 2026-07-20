@@ -35,7 +35,7 @@ public class ProductController {
 
     @PostMapping
     public Result<Void> create(@Valid @RequestBody CreateProductReq req) {
-        Long sellerId = UserContext.getUser();
+        Long sellerId = UserContext.getUserId();
         productService.createProduct(sellerId, req);
         return Result.ok();
     }
@@ -48,7 +48,7 @@ public class ProductController {
 
     @PutMapping("/{id}")
     public Result<Void> update(@PathVariable Long id, @RequestBody UpdateProductReq req) {
-        Long sellerId = UserContext.getUser();
+        Long sellerId = UserContext.getUserId();
         productService.updateProduct(id, sellerId, req);
         return Result.ok();
     }

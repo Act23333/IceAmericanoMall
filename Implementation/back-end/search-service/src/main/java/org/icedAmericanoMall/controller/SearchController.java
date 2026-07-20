@@ -41,7 +41,7 @@ public class SearchController {
     @GetMapping("/history")
     public Result<List<String>> history(
             @RequestParam(defaultValue = "10") int limit) {
-        Long userId = UserContext.getUser();
+        Long userId = UserContext.getUserId();
         return Result.ok(searchService.getSearchHistory(userId, limit));
     }
 }

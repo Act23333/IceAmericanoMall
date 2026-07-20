@@ -40,20 +40,20 @@ public class SellerController {
     /** 用户申请成为商家 */
     @PostMapping("/register")
     public Result<Void> register(@Valid @RequestBody SellerRegisterReq req) {
-        sellerService.register(UserContext.getUser(), req);
+        sellerService.register(UserContext.getUserId(), req);
         return Result.ok();
     }
 
     /** 获取当前商家店铺信息 */
     @GetMapping("/shop")
     public Result<SellerVO> getShop() {
-        return Result.ok(sellerService.getShopVO(UserContext.getUser()));
+        return Result.ok(sellerService.getShopVO(UserContext.getUserId()));
     }
 
     /** 更新店铺信息 */
     @PutMapping("/shop")
     public Result<Void> updateShop(@Valid @RequestBody UpdateShopReq req) {
-        sellerService.updateShop(UserContext.getUser(), req);
+        sellerService.updateShop(UserContext.getUserId(), req);
         return Result.ok();
     }
 }

@@ -25,7 +25,7 @@ public class SellerDashboardController {
 
     @GetMapping
     public Result<Map<String, Object>> dashboard() {
-        Long sellerId = UserContext.getUser();
+        Long sellerId = UserContext.getUserId();
 
         // Today's stats
         LocalDateTime todayStart = LocalDate.now().atStartOfDay();
@@ -58,7 +58,7 @@ public class SellerDashboardController {
     /** V2.5 商品维度销量/金额统计（最近 N 天）。 */
     @GetMapping("/product-stats")
     public Result<List<Map<String, Object>>> productStats(@RequestParam(defaultValue = "30") int days) {
-        Long sellerId = UserContext.getUser();
+        Long sellerId = UserContext.getUserId();
         LocalDateTime since = LocalDate.now().minusDays(days).atStartOfDay();
         List<OrderEntity> orders = orderService.lambdaQuery()
                 .eq(OrderEntity::getSellerId, sellerId)
