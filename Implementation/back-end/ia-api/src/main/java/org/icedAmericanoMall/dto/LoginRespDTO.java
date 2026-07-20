@@ -19,6 +19,4 @@ import lombok.NoArgsConstructor;
 public class LoginRespDTO {
     private Long userId;
     private String username;
-    private String phone;
-    private String role;
 }

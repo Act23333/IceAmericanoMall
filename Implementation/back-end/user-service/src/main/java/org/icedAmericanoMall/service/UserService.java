@@ -6,6 +6,8 @@ import org.icedAmericanoMall.domain.dto.UpdateProfileReq;
 import org.icedAmericanoMall.domain.entity.UserEntity;
 import org.icedAmericanoMall.domain.vo.UserInfoResp;
 
+import java.util.Map;
+
 public interface UserService extends IService<UserEntity> {
     UserInfoResp getByUserId(Long userId);
     void updateProfile(Long userId, UpdateProfileReq req);
@@ -28,4 +30,7 @@ public interface UserService extends IService<UserEntity> {
 
     /** 增加余额（充值/退款）。 */
     void addBalance(Long userId, int amount);
+
+    /** 增量更新用户中心的用户信息（不包括图像） */
+    UserInfoResp patchProfile(Long userId, UpdateProfileReq req);
 }

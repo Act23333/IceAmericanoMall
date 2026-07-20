@@ -1,6 +1,9 @@
 package org.noLazy.common.utils;
 
-import java.util.Objects;
+
+
+import org.noLazy.common.domain.UserInfo;
+
 
 /**
  * @ClassName: UserContext
@@ -11,19 +14,19 @@ import java.util.Objects;
  * @ProjectName: IcedAmericanoMall
  * @Package: org.noLazy.common.utils
  */
-public class UserContext {
-    private static final ThreadLocal<Long> threadLocal = new ThreadLocal<>();
 
-    public static void setUser(Long userId) {
-        threadLocal.set(userId);
+public class UserContext {
+    private static final ThreadLocal<UserInfo> HOLDER = new ThreadLocal<>();
+
+    public static void setUser(UserInfo user) {
+        HOLDER.set(user);
     }
 
-    public static Long getUser() {
-        return threadLocal.get();
+    public static UserInfo getUser() {
+        return HOLDER.get();
     }
 
     public static void removeUser() {
-        threadLocal.remove();
+        HOLDER.remove();  // 必须 remove，防止内存泄漏
     }
-
 }

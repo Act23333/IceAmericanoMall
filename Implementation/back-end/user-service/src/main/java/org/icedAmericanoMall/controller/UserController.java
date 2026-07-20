@@ -15,6 +15,7 @@ import org.noLazy.common.utils.UserContext;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -53,15 +54,27 @@ public class UserController {
 
     @GetMapping("/info")
     public Result<UserInfoResp> getUserInfo() {
-        Long userId = UserContext.getUser();
+        Long userId = UserContext.getUser().userId();
         UserInfoResp userInfoResp = userService.getByUserId(userId);
         return Result.ok(userInfoResp);
     }
 
-    @PutMapping("/profile")
+    @PutMapping("/profile/avatar")
     public Result<Void> updateProfile(@RequestBody UpdateProfileReq req) {
-        Long userId = UserContext.getUser();
+        Long userId = UserContext.getUser().userId();
         userService.updateProfile(userId, req);
         return Result.ok();
     }
+
+    //无论前端请求体中带不带对应的属性或者对应属性为null，都代表一种用户未修改该属性，并不作区分，当前业务没意义，但是对于patch请求方式理应区分
+    @PatchMapping("/profile")
+    public Result<UserInfoResp> patchProfile(@RequestBody UpdateProfileReq req) {
+        Long userId = UserContext.getUser().userId();
+        UserInfoResp updated = userService.patchProfile(userId, req);
+        return Result.ok(updated);
+    }
+
+
+
+
 }

@@ -1,6 +1,6 @@
 package org.noLazy.common.config;
 
-import org.noLazy.common.interceptor.UserInterceptor;
+import org.noLazy.common.interceptor.AccessLogInterceptor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.DispatcherServlet;
@@ -23,7 +23,7 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        HandlerInterceptor userInteceptor = new UserInterceptor();
+        HandlerInterceptor userInteceptor = new AccessLogInterceptor();
         registry.addInterceptor(userInteceptor).addPathPatterns("/**");
     }
 }

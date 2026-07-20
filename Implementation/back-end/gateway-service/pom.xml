@@ -9,7 +9,7 @@
         <version>1.0</version>
     </parent>
 
-    <artifactId>gate-service</artifactId>
+    <artifactId>gateway-service</artifactId>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
