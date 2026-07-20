@@ -20,7 +20,7 @@ public class InternalAuthController {
     private final AuthService authService;
 
     @PostMapping("/register")
-    @RateLimit(key = "#registerReqDTO.deviceId", limit = 3, duration = 3600)
+    @RateLimit(key = "#registerReqDTO.deviceId", limit = 100, duration = 3600)
     public LoginRespDTO register(@RequestBody RegisterReqDTO registerReqDTO) {
         return authService.register(registerReqDTO);
     }

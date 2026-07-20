@@ -18,7 +18,7 @@
         <module>ia-common</module>
         <module>user-service</module>
         <module>authorization-service</module>
-        <module>gate-service</module>
+        <module>gateway-service</module>
         <module>ia-api</module>
         <module>ia-integration</module>
         <module>cart-service</module>

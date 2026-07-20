@@ -3,6 +3,7 @@ package org.icedAmericanoMall.service.impl;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.constants.UserStatusEnum;
 import org.icedAmericanoMall.convert.UserConverter;
@@ -17,6 +18,7 @@ import org.noLazy.common.exception.BizException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.Objects;
 
 @Slf4j
@@ -40,6 +42,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
 
     @Override
     public void updateProfile(Long userId, UpdateProfileReq req) {
+
         UserEntity user = lambdaQuery().eq(UserEntity::getId, userId).one();
         if (user == null) throw new BizException(ErrorCode.USER_NOT_FOUND);
         var updater = lambdaUpdate().eq(UserEntity::getId, userId);
@@ -50,6 +53,17 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         updater.update();
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public UserInfoResp patchProfile(Long userId, UpdateProfileReq req) {
+        UserEntity user = lambdaQuery().eq(UserEntity::getId, userId).one();
+        if (user == null) throw new BizException(ErrorCode.USER_NOT_FOUND);
+        // 只更新存在的属性，忽略null和未知属性
+        userConverter.updateProfile(user, req);
+        var updater = lambdaUpdate().eq(UserEntity::getId, userId);
+        updater.update(user);
+        return null;
+    }
     @Override
     public long countUsers() {
         return lambdaQuery().count();

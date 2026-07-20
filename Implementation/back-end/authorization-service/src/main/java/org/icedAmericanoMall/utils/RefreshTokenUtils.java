@@ -86,8 +86,8 @@ public class RefreshTokenUtils {
     }
 
     public void revokeRefreshToken(String tokenId) {
-        redisTemplate.delete(tokenKey(tokenId));
-        log.info("吊销 Refresh Token: {}", tokenId);
+        Boolean result = redisTemplate.delete(tokenKey(tokenId));
+        log.info("吊销 Refresh Token: {} — {}", tokenId, Boolean.TRUE.equals(result) ? "成功" : "key 不存在");
     }
 
     public RefreshTokenInfo getInfoByToken(String tokenId) {

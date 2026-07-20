@@ -35,6 +35,7 @@ public class RedisLuaScriptConfig {
     public RedisScript<Long> rateLimitRedisScript() {
         DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
         // 指定lua脚本路径
+        //        //ClassPathResource 不会解析 classpath:，所以它直接去找名为 classpath:lua/rate_limit.lua 的文件。去掉多余的 classpath: → 变成 "lua/rate_limit.lua" → 找到文件 → @RateLimit 正常工作了
         redisScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/rate_limit.lua")));
         // 设置返回值类型：脚本返回1/0，对应Long
         redisScript.setResultType(Long.class);
@@ -44,7 +45,7 @@ public class RedisLuaScriptConfig {
     @Bean
     public RedisScript<Long> checkLimitScript() {
         DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
-        redisScript.setScriptSource(new ResourceScriptSource(resourceLoader.getResource("classpath:lua/check_limit.lua")));
+        redisScript.setScriptSource(new ResourceScriptSource(resourceLoader.getResource("lua/check_limit.lua")));
         redisScript.setResultType(Long.class);
         return redisScript;
     }
@@ -52,7 +53,7 @@ public class RedisLuaScriptConfig {
     @Bean
     public RedisScript<Void> loginRateLimitRedisScript() {
         DefaultRedisScript<Void> redisScript = new DefaultRedisScript<>();
-        redisScript.setScriptSource(new ResourceScriptSource(resourceLoader.getResource("classpath:lua/login_rate_limit.lua")));
+        redisScript.setScriptSource(new ResourceScriptSource(resourceLoader.getResource("lua/login_rate_limit.lua")));
         redisScript.setResultType(Void.class);
         return redisScript;
     }

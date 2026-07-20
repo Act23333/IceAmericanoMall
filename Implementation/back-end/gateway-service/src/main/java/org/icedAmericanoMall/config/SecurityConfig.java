@@ -35,7 +35,7 @@ public class SecurityConfig {
                 .authorizeExchange(exchanges -> exchanges
                         // CORS 预检请求全部放行（浏览器 OPTIONS 不带 JWT）
                         .pathMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
-                        // 内部服务间调用路径 — 网关直接放行（生产环境需网络隔离）
+                        // 内部服务间调用路径 — 网关直接放行（生产环境需网络隔离）在微服务架构中，网关不仅仅是外部流量的入口，更应被视为整个系统流量的中央管控点。让内部请求也经过网关，本质上是为了标准化和集中化所有流量的治理
 //                        .pathMatchers("/internal/**").permitAll()
                         // 公开路径：认证、注册、支付回调
                         .pathMatchers(

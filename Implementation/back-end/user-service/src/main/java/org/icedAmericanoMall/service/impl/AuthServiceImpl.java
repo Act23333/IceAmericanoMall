@@ -87,7 +87,8 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         smsService.verifyCode(phone, req.getCode());
 
         UserEntity user = lambdaQuery().eq(UserEntity::getPhone, phone).one();
-        LoginRespDTO r; boolean isNew = false;
+        LoginRespDTO r;
+        boolean isNew = false;
         if (user != null) {
             if (user.getStatus() == UserStatusEnum.FROZEN)
                 throw new BizException(ErrorCode.USER_STATUS_ABNORMAL, "账号已被禁用");

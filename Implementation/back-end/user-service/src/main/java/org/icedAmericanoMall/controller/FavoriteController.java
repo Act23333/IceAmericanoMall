@@ -17,19 +17,19 @@ public class FavoriteController {
 
     @PostMapping
     public Result<?> add(@RequestParam Long productId) {
-        favoriteService.add(UserContext.getUser(), productId);
+        favoriteService.add(UserContext.getUser().userId(), productId);
         return Result.ok();
     }
 
     @DeleteMapping
     public Result<?> remove(@RequestParam Long productId) {
-        favoriteService.remove(UserContext.getUser(), productId);
+        favoriteService.remove(UserContext.getUser().userId(), productId);
         return Result.ok();
     }
 
     @GetMapping
     public Result<IPage<FavoriteVO>> list(@RequestParam(defaultValue = "1") int page,
                                           @RequestParam(defaultValue = "20") int size) {
-        return Result.ok(favoriteService.pageByUser(UserContext.getUser(), page, size));
+        return Result.ok(favoriteService.pageByUser(UserContext.getUser().userId(), page, size));
     }
 }
