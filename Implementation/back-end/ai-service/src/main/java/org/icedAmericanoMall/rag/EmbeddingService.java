@@ -3,11 +3,10 @@ package org.icedAmericanoMall.rag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.http.*;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -22,7 +21,11 @@ import java.util.Map;
 @ConditionalOnProperty(name = "ai.enabled", havingValue = "true")
 public class EmbeddingService {
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestClient restClient;
+
+    public EmbeddingService(RestClient restClient) {
+        this.restClient = restClient;
+    }
 
     @Value("${spring.ai.openai.api-key:${DEEPSEEK_API_KEY:sk-placeholder}}")
     private String apiKey;
@@ -41,21 +44,19 @@ public class EmbeddingService {
     @SuppressWarnings("unchecked")
     public double[] embed(String text) {
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(apiKey);
-
             Map<String, Object> body = Map.of(
                     "model", EMBEDDING_MODEL,
                     "input", text
             );
 
-            ResponseEntity<Map> response = restTemplate.postForEntity(
-                    baseUrl + "/embeddings",
-                    new HttpEntity<>(body, headers),
-                    Map.class);
+            Map<String, Object> respBody = restClient.post()
+                    .uri(baseUrl + "/embeddings")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + apiKey)
+                    .body(body)
+                    .retrieve()
+                    .body(Map.class);
 
-            Map<String, Object> respBody = response.getBody();
             if (respBody == null || !respBody.containsKey("data")) {
                 log.warn("Embedding returned empty response for text: {}", text);
                 return new double[0];

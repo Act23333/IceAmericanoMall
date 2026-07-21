@@ -50,11 +50,7 @@ public class ConversationController {
         }
         // TODO: 从 Redis + 数据库查询会话详情
         log.debug("getConversation id={}, userId={}", id, userId);
-        return Result.ok(ConversationDetail.builder()
-                .conversationId(id)
-                .agentType("SHOPPING")
-                .messages(Collections.emptyList())
-                .build());
+        return Result.ok(new ConversationDetail(id, "SHOPPING", Collections.emptyList()));
     }
 
     /**

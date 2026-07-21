@@ -27,8 +27,8 @@ public class ProductDetailTool {
             }
             ProductDetailDTO p = result.getData();
             return String.format("商品详情 — %s (ID:%s)\n品牌:%s\n描述:%s\n销量:%d\n属性:%s",
-                    p.getName(), p.getProductId(), p.getBrand(),
-                    p.getDescription(), p.getSoldCount(), p.getAttributes());
+                    p.name(), p.productId(), p.brand(),
+                    p.description(), p.soldCount(), p.attributes());
         } catch (Exception e) {
             log.warn("ProductDetailTool error: {}", e.getMessage());
             return "查询商品详情失败: " + e.getMessage();

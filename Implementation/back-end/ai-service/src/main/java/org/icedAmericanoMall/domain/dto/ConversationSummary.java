@@ -1,26 +1,16 @@
 package org.icedAmericanoMall.domain.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
 import java.time.LocalDateTime;
 
 /**
- * 对话摘要 — 会话列表项。
+ * 对话摘要 — Java Record。
  */
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class ConversationSummary {
-
-    private String conversationId;
-    private String agentType;       // SHOPPING / CUSTOMER_SERVICE
-    private String title;
-    private Integer messageCount;
-    private String lastMessage;
-    private LocalDateTime createTime;
-    private LocalDateTime updateTime;
-}
+public record ConversationSummary(
+        String conversationId,
+        String agentType,
+        String title,
+        Integer messageCount,
+        String lastMessage,
+        LocalDateTime createTime,
+        LocalDateTime updateTime
+) {}

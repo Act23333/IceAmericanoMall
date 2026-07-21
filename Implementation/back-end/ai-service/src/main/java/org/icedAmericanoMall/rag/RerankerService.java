@@ -3,9 +3,9 @@ package org.icedAmericanoMall.rag;
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.config.AiProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.http.*;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.util.*;
 
@@ -22,11 +22,12 @@ import java.util.*;
 @ConditionalOnProperty(name = "ai.enabled", havingValue = "true")
 public class RerankerService {
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestClient restClient;
     private final AiProperties aiProperties;
 
-    public RerankerService(AiProperties aiProperties) {
+    public RerankerService(AiProperties aiProperties, RestClient restClient) {
         this.aiProperties = aiProperties;
+        this.restClient = restClient;
     }
 
     /**
@@ -54,12 +55,13 @@ public class RerankerService {
                     "documents", candidates,
                     "top_k", topK
             );
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            ResponseEntity<Map> response = restTemplate.postForEntity(url,
-                    new HttpEntity<>(body, headers), Map.class);
 
-            Map<String, Object> resp = response.getBody();
+            Map<String, Object> resp = restClient.post()
+                    .uri(url)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(Map.class);
             if (resp != null && resp.containsKey("results")) {
                 List<Map<String, Object>> results = (List<Map<String, Object>>) resp.get("results");
                 return results.stream()

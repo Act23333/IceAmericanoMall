@@ -46,12 +46,12 @@ public class AiAssistantController {
     @RateLimit(key = "ip", limit = 20, duration = 60)
     @PostMapping("/chat")
     public Result<AiChatResponse> chat(@Valid @RequestBody AiChatRequest req) {
-        String safetyCheck = safetyFilter.checkInput(req.getMessage());
+        String safetyCheck = safetyFilter.checkInput(req.message());
         if (safetyCheck != null) {
             return Result.error(3102, safetyCheck);
         }
-        String conversationId = req.getConversationId() != null
-                ? req.getConversationId()
+        String conversationId = req.conversationId() != null
+                ? req.conversationId()
                 : UUID.randomUUID().toString();
         var userInfo = UserContext.getUser();
         String userKey = userInfo != null ? String.valueOf(userInfo.userId()) : "anonymous";
@@ -59,15 +59,12 @@ public class AiAssistantController {
 
         String reply;
         if (aiProperties.isEnabled() && shoppingAssistant != null) {
-            log.debug("ShoppingAssistant chat: memoryId={}, message={}", memoryId, req.getMessage());
-            reply = shoppingAssistant.chat(memoryId, req.getMessage());
+            log.debug("ShoppingAssistant chat: memoryId={}, message={}", memoryId, req.message());
+            reply = shoppingAssistant.chat(memoryId, req.message());
         } else {
             reply = "AI 助手未启用。请设置 ai.enabled=true 并配置 DEEPSEEK_API_KEY。";
         }
-        return Result.ok(AiChatResponse.builder()
-                .reply(reply)
-                .conversationId(conversationId)
-                .build());
+        return Result.ok(new AiChatResponse(reply, conversationId));
     }
 
     /**
@@ -76,8 +73,8 @@ public class AiAssistantController {
     @RateLimit(key = "ip", limit = 20, duration = 60)
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> chatStream(@Valid @RequestBody AiChatRequest req) {
-        String conversationId = req.getConversationId() != null
-                ? req.getConversationId()
+        String conversationId = req.conversationId() != null
+                ? req.conversationId()
                 : UUID.randomUUID().toString();
         var userInfo = UserContext.getUser();
         String userKey = userInfo != null ? String.valueOf(userInfo.userId()) : "anonymous";
@@ -90,7 +87,7 @@ public class AiAssistantController {
         }
 
         Sinks.Many<ServerSentEvent<String>> sink = Sinks.many().unicast().onBackpressureBuffer();
-        TokenStream tokenStream = streamingShoppingAssistant.chat(memoryId, req.getMessage());
+        TokenStream tokenStream = streamingShoppingAssistant.chat(memoryId, req.message());
 
         tokenStream.onPartialResponse(token -> sink.tryEmitNext(
                 ServerSentEvent.<String>builder().data(token).build()))

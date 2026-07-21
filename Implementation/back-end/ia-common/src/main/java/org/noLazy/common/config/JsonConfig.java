@@ -6,12 +6,23 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestClient;
 
 import java.math.BigInteger;
+import java.time.Duration;
 
 @Configuration
 @ConditionalOnClass(ObjectMapper.class)
 public class JsonConfig {
+
+    /**
+     * 大厂标准: RestClient 全局 Bean (Spring Boot 3.2+ 推荐，替代 RestTemplate)。
+     * 各服务注入此 Bean 进行 HTTP 调用，统一超时配置。
+     */
+    @Bean
+    public RestClient restClient(RestClient.Builder builder) {
+        return builder.build();
+    }
 
     /**
      * 全局生效：所有使用该 ObjectMapper 的地方（如 @RestController 返回、RestTemplate 等）都会将 Long 和 BigInteger 转为字符串。

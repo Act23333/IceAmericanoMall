@@ -4,9 +4,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.client.SearchClient;
 import org.noLazy.common.domain.Result;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.http.*;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.util.*;
 
@@ -23,7 +23,7 @@ public class RAGRetriever {
     private final EmbeddingService embeddingService;
     private final RerankerService rerankerService;
     private final SearchClient searchClient;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestClient restClient;
 
     private static final int KNN_CANDIDATES = 50;
     private static final int BM25_CANDIDATES = 30;
@@ -31,10 +31,11 @@ public class RAGRetriever {
     private static final int TOP_K = 5;
 
     public RAGRetriever(EmbeddingService embeddingService, RerankerService rerankerService,
-                        SearchClient searchClient) {
+                        SearchClient searchClient, RestClient restClient) {
         this.embeddingService = embeddingService;
         this.rerankerService = rerankerService;
         this.searchClient = searchClient;
+        this.restClient = restClient;
     }
 
     /**
@@ -71,12 +72,13 @@ public class RAGRetriever {
             if (embedding.length == 0) return Collections.emptyList();
 
             Map<String, Object> body = Map.of("embedding", embedding, "size", KNN_CANDIDATES);
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            ResponseEntity<List> resp = restTemplate.postForEntity(
-                    "http://search-service/internal/search/vector",
-                    new HttpEntity<>(body, headers), List.class);
-            return resp.getBody() != null ? resp.getBody() : Collections.emptyList();
+            List<Map<String, Object>> result = restClient.post()
+                    .uri("http://search-service/internal/search/vector")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(List.class);
+            return result != null ? result : Collections.emptyList();
         } catch (Exception e) {
             log.warn("Vector recall failed: {}", e.getMessage());
             return Collections.emptyList();
