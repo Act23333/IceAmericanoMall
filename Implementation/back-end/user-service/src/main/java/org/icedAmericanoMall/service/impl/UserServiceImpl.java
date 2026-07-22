@@ -40,30 +40,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
         return userConverter.map(user);
     }
 
-    @Override
-    public void updateProfile(Long userId, UpdateProfileReq req) {
+    // updateProfile/patchProfile 已迁移到 UserProfileService（DDD 分层重构 V3.2）
 
-        UserEntity user = lambdaQuery().eq(UserEntity::getId, userId).one();
-        if (user == null) throw new BizException(ErrorCode.USER_NOT_FOUND);
-        var updater = lambdaUpdate().eq(UserEntity::getId, userId);
-        if (req.getNickname() != null && !req.getNickname().isBlank())
-            updater.set(UserEntity::getUsername, req.getNickname());
-        if (req.getAvatar() != null && !req.getAvatar().isBlank())
-            updater.set(UserEntity::getAvatar, req.getAvatar());
-        updater.update();
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public UserInfoResp patchProfile(Long userId, UpdateProfileReq req) {
-        UserEntity user = lambdaQuery().eq(UserEntity::getId, userId).one();
-        if (user == null) throw new BizException(ErrorCode.USER_NOT_FOUND);
-        // 只更新存在的属性，忽略null和未知属性
-        userConverter.updateProfile(user, req);
-        var updater = lambdaUpdate().eq(UserEntity::getId, userId);
-        updater.update(user);
-        return null;
-    }
     @Override
     public long countUsers() {
         return lambdaQuery().count();

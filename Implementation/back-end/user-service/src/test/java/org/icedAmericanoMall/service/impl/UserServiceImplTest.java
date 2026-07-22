@@ -69,22 +69,19 @@ class UserServiceImplTest {
     // ==================== UpdateProfileReq 验证 ====================
 
     @Test
-    @DisplayName("UpdateProfileReq — 字段赋值正确")
-    void shouldSetUpdateProfileReqFields() {
-        var req = new org.icedAmericanoMall.domain.dto.UpdateProfileReq();
-        req.setNickname("newname");
-        req.setAvatar("https://example.com/avatar.jpg");
-
-        assertEquals("newname", req.getNickname());
-        assertEquals("https://example.com/avatar.jpg", req.getAvatar());
+    @DisplayName("UpdateProfileReq — Record 构造 + 字段访问")
+    void shouldCreateUpdateProfileReqRecord() {
+        var req = new org.icedAmericanoMall.domain.dto.UpdateProfileReq("newname", "https://example.com/avatar.jpg", null);
+        assertEquals("newname", req.nickname());
+        assertEquals("https://example.com/avatar.jpg", req.avatar());
     }
 
     @Test
-    @DisplayName("UpdateProfileReq — 默认所有字段为 null")
-    void shouldHaveNullFields_whenNewInstance() {
-        var req = new org.icedAmericanoMall.domain.dto.UpdateProfileReq();
-        assertNull(req.getNickname());
-        assertNull(req.getAvatar());
+    @DisplayName("UpdateProfileReq — 默认字段为 null")
+    void shouldHaveNullFields_whenNotProvided() {
+        var req = new org.icedAmericanoMall.domain.dto.UpdateProfileReq(null, null, null);
+        assertNull(req.nickname());
+        assertNull(req.avatar());
     }
 
     // ==================== DTO 序列化验证 ====================

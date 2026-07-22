@@ -10,7 +10,6 @@ import java.util.Map;
 
 public interface UserService extends IService<UserEntity> {
     UserInfoResp getByUserId(Long userId);
-    void updateProfile(Long userId, UpdateProfileReq req);
     long countUsers();
 
     /** 管理后台：分页查询用户列表。 */
@@ -31,6 +30,5 @@ public interface UserService extends IService<UserEntity> {
     /** 增加余额（充值/退款）。 */
     void addBalance(Long userId, int amount);
 
-    /** 增量更新用户中心的用户信息（不包括图像） */
-    UserInfoResp patchProfile(Long userId, UpdateProfileReq req);
+    // patchProfile 已迁移到 UserProfileService（V3.2 DDD 分层重构）
 }

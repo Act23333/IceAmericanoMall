@@ -47,6 +47,9 @@ public class UserEntity {
     /** 0=ROLE_USER, 1=ROLE_SELLER, 2=ROLE_ADMIN */
     private Integer roleType;            // 角色类型
 
+    @Version
+    private Integer version;             // 乐观锁版本号（并发更新保护）
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;    // 记录创建时间（自动填充）
 

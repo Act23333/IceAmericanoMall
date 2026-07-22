@@ -3,6 +3,7 @@ package org.icedAmericanoMall.controller;
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.domain.dto.UpdateProfileReq;
 import org.icedAmericanoMall.service.SmsService;
+import org.icedAmericanoMall.service.UserProfileService;
 import org.icedAmericanoMall.service.UserService;
 import org.icedAmericanoMall.domain.dto.SmsCodeSendReq;
 import org.icedAmericanoMall.domain.vo.UserInfoResp;
@@ -34,11 +35,14 @@ import java.util.concurrent.TimeUnit;
 public class UserController {
     private final UserService userService;
     private final SmsService smsService;
+    private final UserProfileService userProfileService;
     private final RateLimitUtils rateLimitUtils;
 
-    public UserController(UserService userService, SmsService smsService, RateLimitUtils rateLimitUtils) {
+    public UserController(UserService userService, SmsService smsService,
+                          UserProfileService userProfileService, RateLimitUtils rateLimitUtils) {
         this.userService = userService;
         this.smsService = smsService;
+        this.userProfileService = userProfileService;
         this.rateLimitUtils = rateLimitUtils;
     }
 
@@ -59,19 +63,15 @@ public class UserController {
         return Result.ok(userInfoResp);
     }
 
-    @PutMapping("/profile/avatar")
-    public Result<Void> updateProfile(@RequestBody UpdateProfileReq req) {
-        Long userId = UserContext.getUserId();
-        userService.updateProfile(userId, req);
-        return Result.ok();
-    }
-
-    //无论前端请求体中带不带对应的属性或者对应属性为null，都代表一种用户未修改该属性，并不作区分，当前业务没意义，但是对于patch请求方式理应区分
+    /**
+     * 增量更新用户资料（大厂标准 PATCH）。
+     * 支持 updateMask 显式声明要更新的字段（"nickname", "avatar"）。
+     * 返回全量 UserInfoResp（先查后全量更新）。
+     */
     @PatchMapping("/profile")
     public Result<UserInfoResp> patchProfile(@RequestBody UpdateProfileReq req) {
         Long userId = UserContext.getUserId();
-        UserInfoResp updated = userService.patchProfile(userId, req);
-        return Result.ok(updated);
+        return Result.ok(userProfileService.patchProfile(userId, req));
     }
 
 

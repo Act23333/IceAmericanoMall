@@ -12,4 +12,5 @@ public class StorageProperties {
     private String endpoint = "http://localhost:9000";
     private String accessKey = "minioadmin";
     private String secretKey = "minioadmin";
+    private String bucket = "icedmall";
 }
