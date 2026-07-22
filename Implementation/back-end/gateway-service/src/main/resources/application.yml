@@ -105,3 +105,14 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+# ── Knife4j 网关聚合 (大厂标准) ──
+# 访问 http://localhost:8080/doc.html 查看所有服务 API
+knife4j:
+  gateway:
+    enabled: true
+    strategy: discover  # 自动发现 Nacos 注册的服务
+    discover:
+      enabled: true
+      version: openapi3
+

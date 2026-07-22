@@ -15,6 +15,11 @@
 
     <dependencies>
         <dependency>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+            <version>${knife4j-swagger.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.nolazy</groupId>
             <artifactId>ia-common</artifactId>
         </dependency>

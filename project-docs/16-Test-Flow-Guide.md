@@ -307,6 +307,52 @@ curl -s http://localhost:8080/api/admin/permissions/tree \
 # 预期: 菜单/按钮/API 三级树
 ```
 
+### 5.4 使用 Knife4j 网关聚合（大厂标准）
+
+**一键访问所有服务 API 文档**:
+
+```bash
+# 启动网关
+mvn -pl gateway-service -DskipTests spring-boot:run
+
+# 浏览器打开 (无需启动各服务 — Knife4j 从 Nacos 自动发现)
+open http://localhost:8080/doc.html
+```
+
+Knife4j 网关聚合模式下，左侧导航栏自动展示所有注册到 Nacos 的微服务，
+每个服务的接口按 Controller 分组，支持在线调试（自动填充 Token）。
+
+#### 导出 Postman Collection
+
+```bash
+# 方式 1: 从 Knife4j 界面导出
+# 访问 http://localhost:8080/doc.html → 文档管理 → 离线文档 → 导出 Markdown/Postman
+
+# 方式 2: 使用脚本批量导出
+chmod +x test/export-postman.sh
+./test/export-postman.sh
+# → test/postman/IceAmericanoMall.postman_collection.json
+
+# 导入 Postman: File → Import → 选择 .json
+```
+
+#### Postman → Newman CI 自动化
+
+```bash
+# 安装 Newman
+npm install -g newman
+
+# 运行回归测试
+chmod +x test/newman-ci.sh
+./test/newman-ci.sh
+# → test/newman-reports/YYYYMMDD_HHMMSS/report.html
+```
+
+**大厂工作流**:
+```
+Knife4j(开发调试) → OpenAPI JSON(导出) → Postman(手动/分享) → Newman(CI/CD 自动化)
+```
+
 ---
 
 ## 六、第四层：自动化 API 测试脚本

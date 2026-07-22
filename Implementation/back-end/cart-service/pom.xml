@@ -18,6 +18,11 @@
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+            <version>${knife4j-swagger.version}</version>
+        </dependency>
         <!--lombok注解依赖-->
         <dependency>
             <groupId>org.projectlombok</groupId>
