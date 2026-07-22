@@ -34,6 +34,7 @@
 | **Event Storming** (事件风暴) | 02-Architecture, 03-Domain-Model (来自 doc/methodology/02) | 领域事件 → 聚合 → 限界上下文                            |
 | **AI** (人工智能)             | 13-AI-Technology-Selection, 02-Architecture §二           | RAG + Agentic Search 技术选型                    |
 | **Frontend** (前端架构)       | 15-Front-End-Technology-Selection, 02-Architecture §2.10 | React 19 + Next.js 15 全栈方案, RSC/ISR/SSG 渲染策略 |
+| **Test** (测试流程)           | 16-Test-Flow-Guide                                     | 五层测试金字塔: 基础设施→单元→API冒烟→E2E→性能 |
 
 ## 项目阶段概览
 
