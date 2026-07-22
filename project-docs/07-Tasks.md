@@ -558,7 +558,15 @@ Scenario: 查看商品详情
 > 以下功能经需求评审明确**移出 V2.x，延期至 V3.0+ 大版本**，当前不实现：
 > **RBAC 资源级权限管理、积分商城、任务中心、店铺装修、多币种**（PRD 曾标 🔵，但无对应任务，评估工作量大且非当前交易闭环所需）。
 
-### V3.1 — RBAC 授权体系 🔵 当前阶段
+### V3.2 — 现代化 + DDD 重构 ✅
+
+- **RestTemplate → RestClient**: ia-common 全局 RestClient Bean (Spring Boot 3.2+标准), EmbeddingService/RAGRetriever/RerankerService 全部替换
+- **DTO → Java Record**: 10 个 DTO 转为不可变 Record (ai-service 5个 + ia-api 5个)
+- **UserProfileService DDD 分层**: Controller→DomainService→Repository, PATCH 语义 + updateMask 白名单
+- **@Version 乐观锁**: user 表 version 列 + MyBatis-Plus 防并发覆盖
+- **MinIO 头像管理**: AvatarController 上传(Thumbnailator 3尺寸) + 下载(?width=200)
+
+### V3.1 — RBAC 授权体系 ✅
 
 - **@PreAuthorize 方法级授权**：`@PreAuthorize("@ss.hasPermi('user:admin')")` + PermissionService（大厂标准）
 - **UserContext→SecurityContext 桥接**：UserContextAuthenticationFilter 自动注入 GrantedAuthority
@@ -607,7 +615,9 @@ Scenario: 查看商品详情
 | V2.5 安全+CI+功能 | 🟢 100% | 14 | 133+ | 150+ | 安全加固(SM2/JWT轮换/keystore-git/PII/空闲超时/RabbitMQ TLS/MinIO presigned)、CI/CD Stage2/3+Checkstyle、登录奖励/管理员统计/商家分析 |
 | Phase 5 前端  | 🔵 进行中   | —   | —   | —   | React 19 + Next.js 15 + Tailwind + Shadcn/ui（storefront）/ Ant Design 5（admin·seller），详见 15-Front-End-Technology-Selection |
 | V2.5 AI 生产就绪 | 🟢 100% | 14 | 137+ | 160+ | AI 会话隔离(Redis ChatMemory)、SSE流式(2端点)、ES向量索引+kNN、Feign迁移(SearchClient/OrderClient)、Conversation API、RAG Pipeline(EmbeddingService+RAGRetriever+RAGSearchTool)、内容安全(3层防御)、单元测试(10用例)、@RateLimit(4端点) |
-| V3.0 智能升级   | 🔵 进行中 | 14 | —   | —   | 完整RAG管线(BGE-reranker+多路召回+RRF)、多模型路由(DeepSeek+Qwen)、主-子Agent编排(7类型)、AI Gateway增强(Token配额+语义缓存)、离线评测(LLM-as-Judge+Langfuse)、商家知识库(CRUD+分块索引)、人工转接(置信度+摘要+工单) |
+| V3.0 智能升级   | 🟡 60% | 14 | —   | —   | 完整RAG管线(完工)、多模型路由(ModelRouter已建未接线)、主-子Agent编排(工具扩展完成,编排未实现)、AI Gateway(Token配额完成,语义缓存未接线)、离线评测(LLMJudge完成,数据集未建)、商家知识库(DocumentChunker完成,CRUD未实现)、人工转接(未实现) |
+| V3.1 RBAC授权  | 🟢 100% | 14 | 152+ | 160+ | @PreAuthorize方法级授权+PermissionService(@Service("ss"))、角色/权限管理CRUD、Admin端点保护(user:admin)、UserContext→SecurityContext桥接 |
+| V3.2 现代化+DDD | 🟢 100% | 14 | 152+ | 160+ | RestTemplate→RestClient(Spring Boot 3.2+)、DTO→Java Record(10个)、UserProfileService DDD分层+@Version乐观锁、MinIO头像上传/下载/缩略图 |
 | V3.x 高级AI     | ⚪ 0%    | —   | —   | —   | 知识图谱(NebulaGraph)、多模态(VLM)、MCP协议、自建Embedding、领域模型微调（均有触发条件） |
 
 **已实现的核心链路**: 注册/登录 → 浏览商品 → 加入购物车 → 下单（库存扣减+地址快照+商品快照）→ 微信支付 → 商家发货 → 确认收货 → 售后 → 财务结算。

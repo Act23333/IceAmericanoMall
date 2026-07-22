@@ -18,7 +18,7 @@
 | **字符集** | `utf8mb4` + `utf8mb4_unicode_ci` |
 | **引擎** | InnoDB |
 | **JSON 扩展** | 使用 `JSON` 列类型（`expand_json`）预留灵活性 |
-| **逻辑删除** | 需要数据恢复/审计追溯的核心表（如 user、product、orders）使用 `deleted` 字段 + MyBatis-Plus `@TableLogic`；关联表/日志表不强制 |
+| **乐观锁** | `user` 表使用 `version` 字段 + MyBatis-Plus `@Version` 防并发覆盖（V3.2） |
 
 ### 主键决策矩阵
 
@@ -112,10 +112,14 @@ cart ───N:1─── sku
 | register_time | DATETIME | NOT NULL | 注册时间（业务时间） |
 | status | TINYINT | NOT NULL, DEFAULT 1 | 1-正常，0-禁用 |
 | balance | INT | NOT NULL, DEFAULT 0 | 余额（分） |
+| role_type | TINYINT | NOT NULL, DEFAULT 0 | 角色类型（0=USER, 1=SELLER, 2=ADMIN） |
+| version | INT | NOT NULL, DEFAULT 0 | 乐观锁版本号（V3.2 @Version） |
+| phone_hash | CHAR(64) | UNIQUE, NULL | 手机号 SHA-256 哈希（PII 脱敏检索，V2.5） |
+| last_login_time | DATETIME | NULL | 最近登录时间（V2.5） |
 | create_time | DATETIME | NOT NULL | 创建时间 |
 | update_time | DATETIME | NOT NULL | 更新时间 |
 
-索引：`uk_user_id`, `uk_phone`, `uk_wx_openid`
+索引：`uk_user_id`, `uk_phone`, `uk_wx_openid`, `uk_phone_hash`
 
 ### 3.2 address（收货地址表）
 
@@ -489,11 +493,41 @@ public void createOrder(OrderDTO dto) {
 
 ---
 
-## 八、AI 服务数据模型 (V2.5+)
+## 八、RBAC 权限体系 (V3.0+)
+
+### 8.1 sys_role（角色表）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK | |
+| name | VARCHAR(64) NOT NULL | 角色名称 |
+| code | VARCHAR(64) UNIQUE NOT NULL | 角色编码（ROLE_USER/ROLE_VIP/ROLE_SELLER/ROLE_ADMIN） |
+| description | VARCHAR(256) | |
+| status | TINYINT DEFAULT 1 | 1=启用 |
+| is_system | TINYINT DEFAULT 0 | 1=系统角色(不可删除) |
+
+### 8.2 sys_permission（权限表）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK | |
+| name | VARCHAR(64) NOT NULL | 权限名称 |
+| code | VARCHAR(128) UNIQUE NOT NULL | 权限编码（domain:action） |
+| type | TINYINT DEFAULT 3 | 1=菜单, 2=按钮, 3=API |
+| parent_id | BIGINT NULL | 父权限ID（菜单树） |
+| path | VARCHAR(256) NULL | 资源路径 |
+| sort_order | INT DEFAULT 0 | |
+
+### 8.3 sys_user_role / sys_role_permission / sys_user_permission
+用户-角色、角色-权限、用户-直接权限三张关联表（联合主键，FK 约束）。
+
+---
+
+## 九、AI 服务数据模型 (V2.5+)
+
+> ⚠️ 以下 `merchant_knowledge_base`、`ai_evaluation`、`ai_token_usage` 为 **V3.x 计划表**，当前未创建迁移文件。
 
 > AI 数据表为 V2.5 新增，支撑会话管理、消息持久化和知识库功能。完整设计见 [13-AI-Technology-Selection.md](./13-AI-Technology-Selection.md)。
 
-### 8.1 会话与消息
+### 9.1 会话与消息
 
 **`ai_conversation`** — AI 对话会话
 
@@ -525,7 +559,7 @@ public void createOrder(OrderDTO dto) {
 
 索引: `idx_conversation_id` (`conversation_id`)
 
-### 8.2 知识库 (V2.5)
+### 9.2 知识库 (V3.x 计划)
 
 **`merchant_knowledge_base`** — 商家 AI 知识库
 

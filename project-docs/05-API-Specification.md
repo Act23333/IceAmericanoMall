@@ -1,6 +1,6 @@
 # 05 — 接口规格文档 (API Specification — SDD)
 
-> 最后更新: 2026-07-19 | 端点总数: 128 (含V2.5计划) | 公共: 115 | 内部: 18 | 已实现: 122
+> 最后更新: 2026-07-22 | 端点总数: 152 | 公共: 133 | 内部: 24
 
 ---
 
@@ -111,7 +111,9 @@ Authorization: Bearer <JWT>
 | #   | 方法   | 路径              | 请求                                                                                                   | 响应                                                                                                          | 阶段  |
 | --- | ---- | --------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | --- |
 | 6   | GET  | `/user/info`    | — (JWT)                                                                                              | `UserInfoResp { userId(String), username, phone, avatar, status(Integer), registerTime, balance(Integer) }` | ✅   |
-| 7   | PUT  | `/user/profile` | `{ avatar?, nickname? }`                                                                             | `Void`                                                                                                      | ✅   |
+| 7   | PATCH | `/user/profile` | `UpdateProfileReq { nickname?, avatar?, updateMask? }` (updateMask 白名单: `["nickname","avatar"]`) | `UserInfoResp` (全量返回)                         | ✅ V3.2 |
+| 8   | POST | `/user/profile/avatar` | `MultipartFile`                                                                    | `String` (头像 URL)                                       | ✅ V3.2 |
+| 9   | GET  | `/user/profile/avatar` | `?width=200&height=200`                                                           | `image/jpeg` (缩略图, Cache-Control: 1h)                  | ✅ V3.2 |
 | 8   | POST | `/user/code`    | `{ phone, requestId, captchaTicket, captchaRandStr?, lotNumber, captchaOutput, passToken, genTime }` | `Void`                                                                                                      | ✅   |
 
 #### AddressController — `/user/address` (Gateway: `/api/user/address/*`)
@@ -188,6 +190,24 @@ AddressResp: `{ id(Long), userId(Long), receiver, phone, province, city, distric
 | #   | 方法  | 路径               | 请求                           | 响应                         | 阶段  |
 | --- | --- | ---------------- | ---------------------------- | -------------------------- | --- |
 | 33  | GET | `/api/admin/log` | Query: `page`(1), `size`(20) | `List<Map<String,Object>>` | 🔵  |
+
+#### RoleController — `/api/admin/roles` (V3.1 RBAC)
+
+| #   | 方法    | 路径                               | 请求                                         | 响应                    | 阶段  |
+| --- | ----- | -------------------------------- | ------------------------------------------ | --------------------- | --- |
+| 34  | GET   | `/api/admin/roles`               | —                                          | `List<Role>`          | ✅ V3.1 |
+| 35  | POST  | `/api/admin/roles`               | `{ name, code, description }`              | `Role`                | ✅ V3.1 |
+| 36  | PUT   | `/api/admin/roles/{id}`          | `{ name?, description? }`                  | `Void`                | ✅ V3.1 |
+| 37  | DELETE | `/api/admin/roles/{id}`         | — (is_system=1 的系统角色不可删除)             | `Void`                | ✅ V3.1 |
+| 38  | GET   | `/api/admin/roles/{id}/permissions` | —                                      | `List<Long>` (权限ID)  | ✅ V3.1 |
+| 39  | POST  | `/api/admin/roles/{id}/permissions` | `{ permissionIds: [1,2,3] }`            | `Void`                | ✅ V3.1 |
+
+#### PermissionController — `/api/admin/permissions` (V3.1 RBAC)
+
+| #   | 方法  | 路径                          | 请求 | 响应                     | 阶段  |
+| --- | --- | --------------------------- | -- | ---------------------- | --- |
+| 40  | GET | `/api/admin/permissions`     | —  | `List<Permission>`     | ✅ V3.1 |
+| 41  | GET | `/api/admin/permissions/tree` | — | `List<PermissionTree>` | ✅ V3.1 |
 
 #### InternalUserController — `/internal/user` (Feign)
 

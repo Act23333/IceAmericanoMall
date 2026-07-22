@@ -309,6 +309,7 @@ docker compose exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} icedamericano_m
 | `MINIO_ROOT_USER`     | `minioadmin`            | 用户名       |
 | `MINIO_ROOT_PASSWORD` | `minioadmin`            | 密码        |
 | 控制台                   | `http://localhost:9001` | 管理 Bucket |
+| Bucket                | `icedmall`              | 默认存储桶（StorageProperties.bucket） |
 
 ---
 
@@ -431,6 +432,13 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
 | Embedding (API) | `spring.ai.openai.embedding.*` | DeepSeek Embedding API，模型 `text-embedding-3-small`，1536维 |
 
 **V3.0 迁移到 Milvus**：配置 `spring.ai.vectorstore.milvus.*`（host/port/collection），Milvus 容器通过 `docker compose --profile ai up milvus` 启动。
+
+#### 5.4.5 RestClient（V3.2）
+
+**Bean 定义**: `ia-common/.../JsonConfig.restClient()` — 全局 RestClient Bean（Spring Boot 3.2+ 标准）。
+**使用者**: `EmbeddingService` (DeepSeek Embedding API)、`RAGRetriever` (ES 向量搜索)、`RerankerService` (BGE-reranker)。
+**超时配置**: 默认无超时限制，如需配置注入 `RestClient.Builder.requestFactory()` 自定义。
+**说明**: 已完全替代 RestTemplate，项目中不再使用 `new RestTemplate()`。
 
 ---
 

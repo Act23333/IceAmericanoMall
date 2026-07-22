@@ -89,6 +89,8 @@
 | **流式协议**    | SSE (Server-Sent Events)     | —    | LangChain4j TokenStream + WebFlux Flux<ServerSentEvent>（V2.5） |
 | **可观测性**    | Langfuse (OSS) + OpenTelemetry | —    | AI 专项 Trace：Token消耗、Tool调用链、用户反馈、质量评估（V2.5） |
 | **内容安全**    | 输入过滤 + System Prompt 加固 + 输出审核 | —    | Prompt Injection 防护、敏感词过滤、PII 脱敏（V2.5） |
+| **HTTP 客户端** | RestClient (Spring Boot 3.2+) | —    | ia-common 全局 Bean，替代 RestTemplate（V3.2） |
+| **DTO 模式**    | Java Record (JDK 21) | —    | 不可变数据传输对象，替代 Lombok @Data（V3.2） |
 | **知识图谱**    | NebulaGraph (V3.x 前瞻)      | —    | RAG+KG 混合检索；触发条件：SKU>10万 且 关系类查询>20%流量 |
 
 ### 2.7 开发与测试
@@ -154,7 +156,7 @@
 | ----------------------- | ---------------------------------- | ---------- | ------------------------------------------------------ |
 | 服务                      | 职责                                 | MVP 优先级    | 关键依赖技术                                                 |
 | ------                  | ------                             | ---------- | -------------                                          |
-| `gate-service`          | API 网关，路由转发，统一入口                   | P0         | Spring Cloud Gateway + Nginx + Sentinel                |
+| `gateway-service`          | API 网关，路由转发，统一入口                   | P0         | Spring Cloud Gateway + Nginx + Sentinel                |
 | `authorization-service` | OAuth2 认证授权，登录注册，Token 签发          | P0         | Spring Security + JWT + Redis + Geetest                |
 | `user-service`          | 用户 CRUD，收货地址，签到，Geetest 人机验证，阿里云短信 | P0         | MySQL + Redis (BitMap 签到) + dysmsapi20170525 (阿里云短信)   |
 | `item-service`          | 商品 (SPU)、规格 (SKU)、类目管理，库存乐观锁       | P1         | MySQL + MinIO/OSS (商品图片，计划 V1.1)                       |
@@ -176,7 +178,7 @@
                     └──────┬──────┘
                            │
                     ┌──────▼──────┐
-                    │ gate-service │  ← API 网关 (Spring Cloud Gateway)
+                    │ gateway-service │  ← API 网关 (Spring Cloud Gateway)
                     └──────┬──────┘
                            │
           ┌────────────────┼────────────────────┐
@@ -300,7 +302,7 @@ org.icedAmericanoMall
                    │ JWT (HS256/RS256)
                    │ + Refresh Token (Redis)
             ┌──────▼──────┐
-            │ gate-service │ ← Token 校验
+            │ gateway-service │ ← Token 校验
             └──────┬──────┘
                    │ 用户上下文传递
             ┌──────▼──────────┐
@@ -349,7 +351,7 @@ Docker Compose 单机部署 (本地开发)
 ├── MySQL (单实例)
 ├── Redis (单实例)
 ├── Nacos (单实例)
-├── gate-service
+├── gateway-service
 ├── authorization-service
 ├── user-service
 ├── item-service
@@ -398,6 +400,15 @@ Docker Compose 单机部署 (本地开发)
   - 知识图谱引擎（NebulaGraph）
   - RAG + KG 混合检索
   - RocketMQ 替换 RabbitMQ（高吞吐场景）
+- **V3.1**（RBAC 授权体系）：
+  - @PreAuthorize 方法级授权 + PermissionService(@Service("ss"))
+  - 角色/权限管理 CRUD API (RoleController + PermissionController)
+  - Admin 端点权限保护 (user:admin)
+- **V3.2**（现代化 + DDD）：
+  - RestTemplate → RestClient (Spring Boot 3.2+ 标准)
+  - Java Record 替代 Lombok @Data DTO
+  - UserProfileService DDD 分层 + @Version 乐观锁
+  - MinIO 头像上传/下载/多尺寸缩略图
 
 ---
 
@@ -483,7 +494,7 @@ Docker Compose 单机部署 (本地开发)
 | **单一职责**          | 每个服务一个限界上下文，不超过 3 个子域                     | ✅ 拆分 marketing-service 后全部合规                                 |
 | **Controller 上限** | P0 核心服务 ≤ 8 controllers，P1 服务 ≤ 5         | ✅ trade-service 11 个但属同一聚合根（订单域），豁免                          |
 | **共享库抽离**         | 公共组件抽离为 MAR (Middleware Asset Repository) | ✅ ia-common（基础设施）+ ia-api（契约）                                |
-| **网关统一入口**        | API Gateway 统一鉴权/限流/路由                    | ✅ gate-service: JWT + @RateLimit + 精确路由                      |
+| **网关统一入口**        | API Gateway 统一鉴权/限流/路由                    | ✅ gateway-service: JWT + @RateLimit + 精确路由                      |
 | **内部接口隔离**        | `/internal/**` 路径禁止外网访问，不包装 Result        | ✅ Gateway 拦截 + Controller 返回原始类型                             |
 | **Feign 契约集中管理**  | Feign 接口定义在独立模块，内置 fallback               | ✅ ia-api 模块：UserClient/SkuClient/LogisticsClient/OrderClient |
 | **双主键策略**         | 技术主键 (自增ID) + 业务主键 (UUID)                 | ✅ 全部表：id BIGINT + xxx_id/no VARCHAR UNIQUE                   |
@@ -496,12 +507,12 @@ Docker Compose 单机部署 (本地开发)
 | **不拆分** after-sale-service   | 售后与订单强耦合，取消→退款需同一事务                        | 保留在 trade-service           |
 | **不拆分** settlement-service   | 结算依赖订单完成状态，跨服务会导致分布式事务                     | 保留在 trade-service           |
 | **不拆分** points-service       | 签到/积分系统 < 3 controllers，拆分引入 Feign 开销 > 收益 | 保留在 user-service（V3.0 重新评估） |
-| **不拆分** notification-service | WebSocket 当前仅 1 个内部接口                      | 保留在 gate-service            |
+| **不拆分** notification-service | WebSocket 当前仅 1 个内部接口                      | 保留在 gateway-service            |
 
 ### 10.3 服务清单（最终）
 
 ```
-gate-service           (API 网关)              ✅ 1 controller
+gateway-service           (API 网关)              ✅ 1 controller
 authorization-service  (认证授权)              ✅ 2 controllers
 user-service           (用户/地址/签到/积分)    ✅ 10 controllers
 item-service           (商品/SKU/类目/首页)     ✅ 6 controllers
