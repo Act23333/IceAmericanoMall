@@ -8,12 +8,13 @@ import org.icedAmericanoMall.agent.CustomerServiceAssistant;
 import org.icedAmericanoMall.agent.ShoppingAssistant;
 import org.icedAmericanoMall.agent.StreamingCustomerServiceAssistant;
 import org.icedAmericanoMall.agent.StreamingShoppingAssistant;
+import org.icedAmericanoMall.routing.ModelRouter;
 import org.icedAmericanoMall.tool.OrderLookupTool;
 import org.icedAmericanoMall.tool.ProductDetailTool;
 import org.icedAmericanoMall.tool.RAGSearchTool;
 import org.icedAmericanoMall.tool.SearchTool;
 import org.icedAmericanoMall.tool.UserProfileTool;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -135,6 +136,36 @@ public class AiAgentConfig {
                         .chatMemoryStore(memoryStore)
                         .build())
                 .tools(orderLookupTool, ragSearchTool)
+                .build();
+    }
+
+    // ──────────────── V3.0 多模型路由 — Qwen Agent ────────────────
+
+    @Bean
+    @ConditionalOnProperty(name = "ai.enabled", havingValue = "true")
+    public OpenAiChatModel qwenChatModel(AiProperties props) {
+        var qwen = props.getModels().getQwen();
+        return OpenAiChatModel.builder()
+                .apiKey(qwen.getApiKey())
+                .baseUrl(qwen.getBaseUrl())
+                .modelName(qwen.getModel())
+                .temperature(0.7)
+                .timeout(Duration.ofSeconds(60))
+                .build();
+    }
+
+    @Bean("qwenShoppingAssistant")
+    @ConditionalOnProperty(name = "ai.enabled", havingValue = "true")
+    public ShoppingAssistant qwenShoppingAssistant(
+            @Qualifier("qwenChatModel") OpenAiChatModel qwenModel,
+            SearchTool searchTool, ProductDetailTool productDetailTool,
+            UserProfileTool userProfileTool, RedisChatMemoryStore memoryStore) {
+        return AiServices.builder(ShoppingAssistant.class)
+                .chatModel(qwenModel)
+                .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder()
+                        .id(memoryId).maxMessages(SHOPPING_MAX_MESSAGES)
+                        .chatMemoryStore(memoryStore).build())
+                .tools(searchTool, productDetailTool, userProfileTool)
                 .build();
     }
 }

@@ -162,7 +162,7 @@ public class ModelRouter {
      * 启发式复杂度估算（无需 LLM 调用，零成本）。
      * 基于：消息长度 + 问号数量 + 比较关键词 + 条件关键词
      */
-    private int estimateComplexity(String query) {
+    public int estimateComplexity(String query) {
         int score = 1;
         if (query.length() > 20) score++;
         if (query.length() > 50) score++;

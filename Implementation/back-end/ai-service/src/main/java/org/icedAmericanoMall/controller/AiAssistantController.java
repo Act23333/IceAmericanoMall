@@ -8,11 +8,13 @@ import org.icedAmericanoMall.agent.StreamingShoppingAssistant;
 import org.icedAmericanoMall.config.AiProperties;
 import org.icedAmericanoMall.domain.dto.AiChatRequest;
 import org.icedAmericanoMall.domain.dto.AiChatResponse;
+import org.icedAmericanoMall.routing.ModelRouter;
 import org.icedAmericanoMall.security.ContentSafetyFilter;
 import org.noLazy.common.annotation.RateLimit;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.utils.UserContext;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -40,6 +42,13 @@ public class AiAssistantController {
     @Autowired(required = false)
     private StreamingShoppingAssistant streamingShoppingAssistant;
 
+    @Autowired(required = false)
+    @Qualifier("qwenShoppingAssistant")
+    private ShoppingAssistant qwenShoppingAssistant;
+
+    @Autowired
+    private ModelRouter modelRouter;
+
     @Autowired
     private ContentSafetyFilter safetyFilter;
 
@@ -59,8 +68,26 @@ public class AiAssistantController {
 
         String reply;
         if (aiProperties.isEnabled() && shoppingAssistant != null) {
-            log.debug("ShoppingAssistant chat: memoryId={}, message={}", memoryId, req.message());
-            reply = shoppingAssistant.chat(memoryId, req.message());
+            // V3.0: 语义缓存 — FAQ 命中直接返回
+            reply = modelRouter.getCachedResponse(req.message());
+            if (reply != null) {
+                log.debug("Semantic cache hit");
+                return Result.ok(new AiChatResponse(reply, conversationId));
+            }
+
+            // V3.0: 多模型路由 — 复杂query走Qwen，简单query走DeepSeek
+            boolean isComplex = qwenShoppingAssistant != null
+                    && modelRouter.estimateComplexity(req.message()) >=
+                       aiProperties.getRouting().getComplexityThreshold();
+            ShoppingAssistant selectedAgent = isComplex ? qwenShoppingAssistant : shoppingAssistant;
+
+            String modelName = isComplex ? "Qwen" : "DeepSeek";
+            log.debug("Chat: memoryId={}, model={}, complexity={}",
+                    memoryId, modelName, modelRouter.estimateComplexity(req.message()));
+            reply = selectedAgent.chat(memoryId, req.message());
+
+            // V3.0: 语义缓存 — 缓存FAQ回答
+            modelRouter.cacheResponse(req.message(), reply);
         } else {
             reply = "AI 助手未启用。请设置 ai.enabled=true 并配置 DEEPSEEK_API_KEY。";
         }
