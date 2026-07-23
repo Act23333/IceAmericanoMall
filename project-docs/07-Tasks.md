@@ -569,6 +569,23 @@ Scenario: 查看商品详情
 - **知识库隔离**: RAG 检索时 WHERE `seller_id = :currentSeller`
 - **人机转接通知**: AI 置信度 < 0.7 → WebSocket 通知商家 + 对话摘要
 
+### V3.5 — 商品详情页京东标准改造 🔵
+
+> **大厂对标**: 京东详情页（多图+规格参数+SKU维度选择+店铺卡片+到手价+立即购买+评论晒图+关注店铺）。
+
+- **商品卡片增强**: ProductSearchVO 增加 shopName/shopLogo/ratingSold/viewCount 字段
+- **详情页数据聚合**: `GET /api/item/product/{id}/detail` 一次返回(商品+店铺+SKU+参数+评论摘要+优惠券)
+- **多图+视频**: product 表增加 images(JSON) + video_url
+- **规格参数表**: product 表 attributes(JSON) → 京东标准 K-V 参数表
+- **结构化SKU**: `sku_spec_dimension`/`sku_spec_option` 表 + spec_json 替换 spec 字符串
+- **原价/到手价**: sku 增加 `original_price`，到手价=price-original_price
+- **立即购买**: `POST /api/trade/order/direct { skuId, quantity, addressId }`
+- **关注商家**: `store_follow` 表 + `/api/shop/follow/{sellerId}`
+- **评论增强**: media_urls(JSON)替代 images 字符串，增加 helpful_count，筛选端点
+- **评论摘要**: 均分+星级分布+总评数，`GET /api/item/review/product/{id}/summary`
+- **购物车分组**: `GET /api/cart/grouped` 按 seller 分组
+- **店铺公开页**: `GET /api/shop/{sellerId}` + `GET /api/shop/{sellerId}/products`
+
 ### V3.3 — 买家-商家消息系统 🔵
 
 > **大厂对标**: 淘宝旺旺（独立消息系统）、京东咚咚。**消息系统是基础设施，AI 是嵌入式辅助能力。**
@@ -643,6 +660,7 @@ Scenario: 查看商品详情
 | V3.2 现代化+DDD | 🟢 100% | 14 | 152+ | 160+ | RestTemplate→RestClient(Spring Boot 3.2+)、DTO→Java Record(10个)、UserProfileService DDD分层+@Version乐观锁、MinIO头像上传/下载/缩略图 |
 | V3.3 买家-商家消息 | 🔵 计划中 | 14 | 160+ | 160+ | WebSocket长连接+STOMP、chat_message消息表、买家↔商家实时IM、离线消息推送(RabbitMQ) |
 | V3.4 店铺AI        | ⚪ V3.4 | 14 | 165+ | 160+ | 商家知识库CRUD、商家AI自动代答(限定本店知识库)、merchant_reply_template对话模板、人机转接通知 |
+| V3.5 详情页改造    | 🔵 计划中 | 14 | 172+ | 160+ | 商品详情页京东标准改造：店铺卡片/多图轮播/规格参数/结构化SKU/原价到手价/立即购买/评论增强(图视频)/关注商家/店铺公开页/购物车分组 |
 | V3.x 高级AI     | ⚪ 0%    | —   | —   | —   | 知识图谱(NebulaGraph)、多模态(VLM)、MCP协议、自建Embedding、领域模型微调（均有触发条件） |
 
 **已实现的核心链路**: 注册/登录 → 浏览商品 → 加入购物车 → 下单（库存扣减+地址快照+商品快照）→ 微信支付 → 商家发货 → 确认收货 → 售后 → 财务结算。

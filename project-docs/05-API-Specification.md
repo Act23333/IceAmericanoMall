@@ -1,6 +1,6 @@
 # 05 — 接口规格文档 (API Specification — SDD)
 
-> 最后更新: 2026-07-23 | 端点总数: 162 (含V3.3/V3.4计划) | 公共: 143 | 内部: 24 | 已实现: 152
+> 最后更新: 2026-07-23 | 端点总数: 172 (含V3.3-V3.5计划) | 公共: 153 | 内部: 24 | 已实现: 152
 
 ---
 
@@ -639,7 +639,22 @@ ProductSearchVO: `{ id(Long), productId(String), categoryId(Long), name, descrip
 | 151 | POST | `/api/seller/knowledge` | 上传 FAQ/政策（自动分块+Embedding+ES索引） | ⚪ V3.4 |
 | 152 | DELETE | `/api/seller/knowledge/{id}` | 删除知识条目 | ⚪ V3.4 |
 
-### 4.12 网关服务 (gateway-service)
+### 4.12 商品详情增强 (V3.5 计划 🔵)
+
+| #   | 方法 | 路径 | 说明 | 阶段 |
+| --- | --- | --- | --- | --- |
+| 153 | GET | `/api/item/product/{id}/detail` | 完整详情(商品+店铺+SKU+参数+评论摘要+优惠券) | 🔵 V3.5 |
+| 154 | GET | `/api/item/product/{id}/skus` | 结构化SKU数据(维度+选项+价格+库存) | 🔵 V3.5 |
+| 155 | POST | `/api/trade/order/direct` | 立即购买 `{ skuId, quantity, addressId, couponId? }` | 🔵 V3.5 |
+| 156 | GET | `/api/shop/{sellerId}` | 商家公开店铺页(店铺信息+评分) | 🔵 V3.5 |
+| 157 | GET | `/api/shop/{sellerId}/products` | 商家全部商品(分页) | 🔵 V3.5 |
+| 158 | POST | `/api/shop/follow/{sellerId}` | 关注商家 | 🔵 V3.5 |
+| 159 | DELETE | `/api/shop/follow/{sellerId}` | 取消关注 | 🔵 V3.5 |
+| 160 | GET | `/api/item/review/product/{id}/filter` | 评论筛选(?rating=5&hasMedia=true&sort=newest) | 🔵 V3.5 |
+| 161 | GET | `/api/item/review/product/{id}/summary` | 评论摘要(均分+星级分布+总评数) | 🔵 V3.5 |
+| 162 | GET | `/api/cart/grouped` | 按店铺分组购物车 | 🔵 V3.5 |
+
+### 4.13 网关服务 (gateway-service)
 
 #### WebSocketNotifyController — `/internal/ws` (内部)
 

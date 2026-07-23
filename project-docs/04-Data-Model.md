@@ -646,3 +646,20 @@ public void createOrder(OrderDTO dto) {
 | update_time | DATETIME NOT NULL | |
 
 索引: `idx_seller_category` (`seller_id`, `category`)
+
+---
+
+## 十一、商品详情页增强数据模型 (V3.5 计划)
+
+### 11.1 修改 — product/sku/review 表
+
+**`product` 表新增**: images(JSON)/video_url/attributes(JSON)/service_tags(JSON)/view_count
+**`sku` 表新增**: original_price(INT, 原价分)
+**`review` 表修改**: images→media_urls(JSON) + is_anonymous + helpful_count
+
+### 11.2 新增表
+
+**`product_view_log`** — 商品浏览(user_id/product_id/view_time), idx_product_time
+**`store_follow`** — 店铺关注(user_id+seller_id 联合主键)
+**`sku_spec_dimension`** — SKU规格维度(product_id/name/sort_order)
+**`sku_spec_option`** — SKU规格选项(dimension_id/value/image)
