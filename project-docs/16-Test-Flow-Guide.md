@@ -307,51 +307,82 @@ curl -s http://localhost:8080/api/admin/permissions/tree \
 # 预期: 菜单/按钮/API 三级树
 ```
 
-### 5.4 使用 Knife4j 网关聚合（大厂标准）
+### 5.4 Knife4j 网关聚合（大厂标准）
 
-**一键访问所有服务 API 文档**:
+项目使用 **Knife4j 4.5.0 + Nacos 服务发现** 实现网关聚合，
+一个入口 `http://localhost:8080/doc.html` 查看全部 12 个微服务 API。
 
-```bash
-# 启动网关
-mvn -pl gateway-service -DskipTests spring-boot:run
+#### 架构
 
-# 浏览器打开 (无需启动各服务 — Knife4j 从 Nacos 自动发现)
-open http://localhost:8080/doc.html
+```
+浏览器 http://localhost:8080/doc.html
+        │
+        ▼
+gateway-service (Knife4j Gateway Aggregation)
+  strategy: discover → 从 Nacos 自动发现服务列表
+        │
+        ├── authorization-service:9000  /v3/api-docs
+        ├── user-service:8081           /v3/api-docs
+        ├── trade-service:8082          /v3/api-docs
+        ├── item-service:8083           /v3/api-docs
+        ├── cart-service:8084           /v3/api-docs
+        ├── pay-service:8085            /v3/api-docs
+        ├── logistics-service:8086      /v3/api-docs
+        ├── search-service:8087         /v3/api-docs
+        ├── ai-service:8089             /v3/api-docs
+        └── marketing-service:8090      /v3/api-docs
 ```
 
-Knife4j 网关聚合模式下，左侧导航栏自动展示所有注册到 Nacos 的微服务，
-每个服务的接口按 Controller 分组，支持在线调试（自动填充 Token）。
+#### 启动方式
+
+```bash
+# 1. 启动基础设施
+docker compose --profile v1.1 up -d
+
+# 2. 启动网关 + 需要的服务
+mvn -pl gateway-service -DskipTests spring-boot:run &
+mvn -pl authorization-service -DskipTests spring-boot:run &
+mvn -pl user-service -DskipTests spring-boot:run &
+# ... 按需启动其他服务
+
+# 3. 浏览器打开
+# http://localhost:8080/doc.html
+```
+
+#### 功能
+
+| 功能 | 路径 | 说明 |
+|------|------|------|
+| 网关聚合 UI | `http://localhost:8080/doc.html` | 所有服务 API，按服务名分组 |
+| 单服务 UI | `http://localhost:{port}/doc.html` | 单个服务的 API 文档 |
+| OpenAPI JSON | `http://localhost:{port}/v3/api-docs` | 机器可读的 API 规范 |
+| 在线调试 | doc.html 内 `调试` 按钮 | 自动填充 Token，实时发送请求 |
+| 离线导出 | doc.html → 文档管理 | 导出 Markdown/Word/OpenAPI JSON |
 
 #### 导出 Postman Collection
 
 ```bash
-# 方式 1: 从 Knife4j 界面导出
-# 访问 http://localhost:8080/doc.html → 文档管理 → 离线文档 → 导出 Markdown/Postman
+# 方式 1: Knife4j 界面导出
+# 访问 http://localhost:8080/doc.html → 文档管理 → 离线文档 → 导出 OpenAPI JSON
 
-# 方式 2: 使用脚本批量导出
+# 方式 2: 脚本批量导出
 chmod +x test/export-postman.sh
 ./test/export-postman.sh
 # → test/postman/IceAmericanoMall.postman_collection.json
 
-# 导入 Postman: File → Import → 选择 .json
+# 导入 Postman: File → Import → 选择 .json 文件
 ```
 
 #### Postman → Newman CI 自动化
 
 ```bash
-# 安装 Newman
 npm install -g newman
-
-# 运行回归测试
 chmod +x test/newman-ci.sh
 ./test/newman-ci.sh
-# → test/newman-reports/YYYYMMDD_HHMMSS/report.html
+# → test/newman-reports/.../report.html
 ```
 
-**大厂工作流**:
-```
-Knife4j(开发调试) → OpenAPI JSON(导出) → Postman(手动/分享) → Newman(CI/CD 自动化)
-```
+**大厂工作流**: `Knife4j(开发调试) → OpenAPI JSON(导出) → Postman(团队分享) → Newman(CI回归)`
 
 ---
 

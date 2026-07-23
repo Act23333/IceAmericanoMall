@@ -46,3 +46,10 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+# ── Knife4j API 文档 ──
+knife4j:
+  enable: true
+springdoc:
+  api-docs:
+    enabled: true
