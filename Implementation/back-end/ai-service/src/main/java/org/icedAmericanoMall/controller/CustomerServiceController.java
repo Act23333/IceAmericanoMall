@@ -9,6 +9,7 @@ import org.icedAmericanoMall.config.AiProperties;
 import org.icedAmericanoMall.domain.dto.AiChatRequest;
 import org.icedAmericanoMall.domain.dto.AiChatResponse;
 import org.icedAmericanoMall.security.ContentSafetyFilter;
+import org.icedAmericanoMall.service.HandoffService;
 import org.noLazy.common.annotation.RateLimit;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.enums.ErrorCode;
@@ -45,6 +46,9 @@ public class CustomerServiceController {
     @Autowired
     private ContentSafetyFilter safetyFilter;
 
+    @Autowired
+    private HandoffService handoffService;
+
     @RateLimit(key = "ip", limit = 20, duration = 60)
     @PostMapping("/chat")
     public Result<AiChatResponse> chat(@Valid @RequestBody AiChatRequest req) {
@@ -64,6 +68,12 @@ public class CustomerServiceController {
         if (aiProperties.isEnabled() && customerServiceAssistant != null) {
             log.debug("CustomerServiceAssistant chat: memoryId={}, message={}", memoryId, req.message());
             reply = customerServiceAssistant.chat(memoryId, req.message());
+
+            // V3.0: 置信度 < 0.7 → 自动转人工
+            if (handoffService.needsHandoff(reply)) {
+                reply = handoffService.generateHandoffMessage(req.message(), reply);
+                log.info("Handoff triggered: memoryId={}", memoryId);
+            }
         } else {
             reply = "AI 客服未启用。请设置 ai.enabled=true 并配置 DEEPSEEK_API_KEY。";
         }
