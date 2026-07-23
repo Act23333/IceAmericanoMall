@@ -3,6 +3,7 @@ package org.icedAmericanoMall.rag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -13,8 +14,9 @@ import java.util.Map;
 /**
  * V2.5.2: Embedding 服务 — 文本向量化。
  * <p>
- * 通过 REST 调用 DeepSeek Embedding API（OpenAI 兼容协议），
+ * 通过 RestClient 调用 DeepSeek Embedding API（OpenAI 兼容协议），
  * 使用 text-embedding-3-small 模型（1536维）。
+ * V3.2: 使用 Record + ParameterizedTypeReference 根除 unchecked 警告。
  */
 @Slf4j
 @Service
@@ -35,36 +37,35 @@ public class EmbeddingService {
 
     private static final String EMBEDDING_MODEL = "text-embedding-3-small";
 
+    /** OpenAI Embedding API 响应 */
+    public record EmbeddingResponse(List<EmbeddingData> data) {}
+    public record EmbeddingData(List<Double> embedding) {}
+    private static final ParameterizedTypeReference<EmbeddingResponse> EMBED_RESPONSE_TYPE =
+            new ParameterizedTypeReference<>() {};
+
     /**
      * 将文本转换为向量。
      *
      * @param text 输入文本（查询或文档）
      * @return 1536维向量
      */
-    @SuppressWarnings("unchecked")
     public double[] embed(String text) {
         try {
-            Map<String, Object> body = Map.of(
-                    "model", EMBEDDING_MODEL,
-                    "input", text
-            );
+            Map<String, Object> body = Map.of("model", EMBEDDING_MODEL, "input", text);
 
-            Map<String, Object> respBody = restClient.post()
+            EmbeddingResponse resp = restClient.post()
                     .uri(baseUrl + "/embeddings")
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("Authorization", "Bearer " + apiKey)
                     .body(body)
                     .retrieve()
-                    .body(Map.class);
+                    .body(EMBED_RESPONSE_TYPE);
 
-            if (respBody == null || !respBody.containsKey("data")) {
+            if (resp == null || resp.data() == null || resp.data().isEmpty()) {
                 log.warn("Embedding returned empty response for text: {}", text);
                 return new double[0];
             }
-
-            List<Map<String, Object>> data = (List<Map<String, Object>>) respBody.get("data");
-            List<Double> embedding = (List<Double>) data.get(0).get("embedding");
-            return embedding.stream().mapToDouble(Double::doubleValue).toArray();
+            return resp.data().get(0).embedding().stream().mapToDouble(Double::doubleValue).toArray();
         } catch (Exception e) {
             log.warn("Embedding failed: {}", e.getMessage());
             return new double[0];

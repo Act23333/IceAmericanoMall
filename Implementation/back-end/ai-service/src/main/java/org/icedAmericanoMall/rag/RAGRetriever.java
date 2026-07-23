@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.client.SearchClient;
 import org.noLazy.common.domain.Result;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -65,7 +66,9 @@ public class RAGRetriever {
         }
     }
 
-    @SuppressWarnings("unchecked")
+    private static final ParameterizedTypeReference<List<Map<String, Object>>> MAP_LIST_TYPE =
+            new ParameterizedTypeReference<>() {};
+
     private List<Map<String, Object>> vectorRecall(String query) {
         try {
             double[] embedding = embeddingService.embed(query);
@@ -77,7 +80,7 @@ public class RAGRetriever {
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
-                    .body(List.class);
+                    .body(MAP_LIST_TYPE);
             return result != null ? result : Collections.emptyList();
         } catch (Exception e) {
             log.warn("Vector recall failed: {}", e.getMessage());
@@ -85,13 +88,17 @@ public class RAGRetriever {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> keywordRecall(String query) {
         try {
             Result<Map<String, Object>> result = searchClient.searchProducts(query, BM25_CANDIDATES);
             if (result == null || result.getData() == null) return Collections.emptyList();
-            Object records = result.getData().get("records");
-            return records instanceof List ? (List<Map<String, Object>>) records : Collections.emptyList();
+            Object raw = result.getData().get("records");
+            if (raw instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof Map) {
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                List<Map<String, Object>> records = (List) list;
+                return records;
+            }
+            return Collections.emptyList();
         } catch (Exception e) {
             log.warn("Keyword recall failed: {}", e.getMessage());
             return Collections.emptyList();

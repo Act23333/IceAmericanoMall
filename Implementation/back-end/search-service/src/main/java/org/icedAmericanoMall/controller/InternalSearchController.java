@@ -94,15 +94,14 @@ public class InternalSearchController {
      * 接受查询向量（double[]），返回 Top-K 语义相似商品。
      * 当 ES 未启用时返回空列表（降级处理）。
      */
+    /** V3.2: 向量搜索请求 — 强类型 Record 替代 Map */
+    public record VectorSearchRequest(List<Double> embedding, int size) {
+        public int size() { return size > 0 ? size : 10; }
+    }
+
     @PostMapping("/vector")
-    public List<ProductSearchVO> vectorSearch(@RequestBody Map<String, Object> req) {
-        int size = req.containsKey("size") ? ((Number) req.get("size")).intValue() : 10;
-        @SuppressWarnings("unchecked")
-        List<Number> vectorList = (List<Number>) req.get("embedding");
-        double[] embedding = new double[vectorList.size()];
-        for (int i = 0; i < vectorList.size(); i++) {
-            embedding[i] = vectorList.get(i).doubleValue();
-        }
-        return searchService.vectorSearch(embedding, size);
+    public List<ProductSearchVO> vectorSearch(@RequestBody VectorSearchRequest req) {
+        double[] embedding = req.embedding().stream().mapToDouble(Double::doubleValue).toArray();
+        return searchService.vectorSearch(embedding, req.size());
     }
 }

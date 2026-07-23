@@ -28,13 +28,14 @@ public class RedisChatMemoryStore implements ChatMemoryStore {
     private static final String KEY_PREFIX = "ai:memory:";
 
     @Override
-    @SuppressWarnings("unchecked")
     public List<ChatMessage> getMessages(Object memoryId) {
         String key = buildKey(memoryId);
         Object cached = redisTemplate.opsForValue().get(key);
-        if (cached instanceof List) {
+        if (cached instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof ChatMessage) {
             redisTemplate.expire(key, ttl);
-            return (List<ChatMessage>) cached;
+            @SuppressWarnings("unchecked")
+            List<ChatMessage> messages = (List<ChatMessage>) cached;
+            return messages;
         }
         return Collections.emptyList();
     }

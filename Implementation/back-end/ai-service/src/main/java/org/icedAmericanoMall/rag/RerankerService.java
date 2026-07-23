@@ -2,6 +2,7 @@ package org.icedAmericanoMall.rag;
 
 import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.config.AiProperties;
+import org.icedAmericanoMall.dto.RerankerResponse;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -38,34 +39,26 @@ public class RerankerService {
      * @param topK       返回 Top-K 数量
      * @return 按相关性降序排列的文档索引（0-based）
      */
-    @SuppressWarnings("unchecked")
     public List<Integer> rerank(String query, List<String> candidates, int topK) {
         if (candidates.isEmpty()) return Collections.emptyList();
 
-        // V3.0: 如果 reranker 未启用，使用启发式排序（关键词匹配度）
         if (!aiProperties.getRag().getReranker().isEnabled()) {
             return heuristicRerank(query, candidates, topK);
         }
 
-        // 调用 BGE-reranker
         try {
             String url = aiProperties.getRag().getReranker().getBaseUrl() + "/rerank";
-            Map<String, Object> body = Map.of(
-                    "query", query,
-                    "documents", candidates,
-                    "top_k", topK
-            );
+            Map<String, Object> body = Map.of("query", query, "documents", candidates, "top_k", topK);
 
-            Map<String, Object> resp = restClient.post()
+            RerankerResponse resp = restClient.post()
                     .uri(url)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
-                    .body(Map.class);
-            if (resp != null && resp.containsKey("results")) {
-                List<Map<String, Object>> results = (List<Map<String, Object>>) resp.get("results");
-                return results.stream()
-                        .map(r -> ((Number) r.get("index")).intValue())
+                    .body(RerankerResponse.class);
+            if (resp != null && resp.results() != null) {
+                return resp.results().stream()
+                        .map(RerankerResponse.RerankedDocument::index)
                         .limit(topK)
                         .toList();
             }
