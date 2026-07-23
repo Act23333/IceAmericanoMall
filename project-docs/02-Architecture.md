@@ -409,6 +409,14 @@ Docker Compose 单机部署 (本地开发)
   - Java Record 替代 Lombok @Data DTO
   - UserProfileService DDD 分层 + @Version 乐观锁
   - MinIO 头像上传/下载/多尺寸缩略图
+- **V3.3**（买家-商家消息系统）：
+  - WebSocket + STOMP 实时通讯（gateway 统一入口）
+  - `chat_message` 消息持久化 + Redis 热缓存
+  - RabbitMQ 离线消息推送
+- **V3.4**（店铺 AI）：
+  - 商家知识库 CRUD + 自动分块 + ES 索引
+  - 商家 AI 自动代答（限定本店知识库）
+  - 商家对话模板管理
 
 ---
 

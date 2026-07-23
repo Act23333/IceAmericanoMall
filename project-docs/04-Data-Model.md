@@ -607,3 +607,42 @@ public void createOrder(OrderDTO dto) {
 | cost_cents | INT DEFAULT 0 | 预估费用（分） |
 
 索引: `uk_date_model_agent` UNIQUE (`stat_date`, `model`, `agent_type`)
+
+---
+
+## 十、买家-商家消息数据模型 (V3.3 计划)
+
+### 10.1 chat_message（聊天消息）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | |
+| message_id | VARCHAR(36) UNIQUE NOT NULL | 消息业务ID (UUID) |
+| conversation_id | VARCHAR(36) NOT NULL | 会话ID (buyer_{buyerId}_seller_{sellerId}_product_{productId}) |
+| sender_id | BIGINT NOT NULL | 发送者用户ID |
+| sender_role | VARCHAR(10) NOT NULL | BUYER / SELLER / AI |
+| receiver_id | BIGINT NOT NULL | 接收者用户ID |
+| content | TEXT NOT NULL | 消息内容 |
+| content_type | VARCHAR(10) DEFAULT 'TEXT' | TEXT / IMAGE / PRODUCT_CARD / ORDER_CARD |
+| extra | JSON NULL | 扩展数据（商品卡片 productId、订单卡片 orderNo） |
+| is_read | TINYINT DEFAULT 0 | 0=未读, 1=已读 |
+| is_ai_generated | TINYINT DEFAULT 0 | 0=人工, 1=AI 自动代答 |
+| create_time | DATETIME NOT NULL | 发送时间 |
+
+索引: `idx_conversation` (`conversation_id`), `idx_sender_receiver` (`sender_id`, `receiver_id`)
+
+### 10.2 merchant_reply_template（商家回复模板）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | |
+| seller_id | BIGINT NOT NULL | 商家ID，FK → `seller.id` |
+| title | VARCHAR(200) NOT NULL | 模板标题 |
+| content | TEXT NOT NULL | 模板内容 (变量: {buyer_name}, {product_name}, {order_no}) |
+| category | VARCHAR(30) NOT NULL | GREETING / FAQ / OFFLINE / ORDER |
+| sort_order | INT DEFAULT 0 | 排序 |
+| status | TINYINT DEFAULT 1 | 1=启用, 0=禁用 |
+| create_time | DATETIME NOT NULL | |
+| update_time | DATETIME NOT NULL | |
+
+索引: `idx_seller_category` (`seller_id`, `category`)

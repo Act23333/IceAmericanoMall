@@ -1,6 +1,6 @@
 # 05 — 接口规格文档 (API Specification — SDD)
 
-> 最后更新: 2026-07-22 | 端点总数: 152 | 公共: 133 | 内部: 24
+> 最后更新: 2026-07-23 | 端点总数: 162 (含V3.3/V3.4计划) | 公共: 143 | 内部: 24 | 已实现: 152
 
 ---
 
@@ -591,7 +591,55 @@ ProductSearchVO: `{ id(Long), productId(String), categoryId(Long), name, descrip
 
 ---
 
-### 4.11 网关服务 (gate-service)
+### 4.11 买家-商家消息服务 (V3.3 计划 🔵)
+
+> **大厂对标**: 淘宝旺旺/京东咚咚。消息系统独立于 AI 服务，WebSocket + STOMP 协议。
+
+#### 4.11.1 消息 WebSocket
+
+| #   | 方法 | 路径 | 说明 | 阶段 |
+| --- | --- | --- | --- | --- |
+| 142 | WS | `/ws/chat` | STOMP 端点，订阅 `/user/queue/messages` 接收消息，发送 `/app/chat.send` | 🔵 V3.3 |
+
+**STOMP 帧格式**:
+```json
+{
+  "messageId": "uuid",
+  "conversationId": "buyer_1001_seller_5_product_P001",
+  "senderId": 1001,
+  "senderRole": "BUYER",
+  "content": "这个商品还有货吗？",
+  "contentType": "TEXT",
+  "timestamp": "2026-07-23T10:30:00"
+}
+```
+
+#### 4.11.2 消息 REST API
+
+| #   | 方法 | 路径 | 说明 | 阶段 |
+| --- | --- | --- | --- | --- |
+| 143 | GET | `/api/chat/conversations` | 当前用户的对话列表（按最后消息时间排序） | 🔵 V3.3 |
+| 144 | GET | `/api/chat/conversations/{id}/messages` | 分页查询对话历史（`?page=1&size=50`） | 🔵 V3.3 |
+| 145 | GET | `/api/chat/unread-count` | 未读消息计数 | 🔵 V3.3 |
+
+#### 4.11.3 商家回复模板（V3.4 计划 ⚪）
+
+| #   | 方法 | 路径 | 说明 | 阶段 |
+| --- | --- | --- | --- | --- |
+| 146 | GET | `/api/seller/templates` | 商家回复模板列表 | ⚪ V3.4 |
+| 147 | POST | `/api/seller/templates` | 创建模板 | ⚪ V3.4 |
+| 148 | PUT | `/api/seller/templates/{id}` | 更新模板 | ⚪ V3.4 |
+| 149 | DELETE | `/api/seller/templates/{id}` | 删除模板 | ⚪ V3.4 |
+
+#### 4.11.4 商家知识库（V3.4 计划 ⚪）
+
+| #   | 方法 | 路径 | 说明 | 阶段 |
+| --- | --- | --- | --- | --- |
+| 150 | GET | `/api/seller/knowledge` | 知识库条目列表 | ⚪ V3.4 |
+| 151 | POST | `/api/seller/knowledge` | 上传 FAQ/政策（自动分块+Embedding+ES索引） | ⚪ V3.4 |
+| 152 | DELETE | `/api/seller/knowledge/{id}` | 删除知识条目 | ⚪ V3.4 |
+
+### 4.12 网关服务 (gateway-service)
 
 #### WebSocketNotifyController — `/internal/ws` (内部)
 
