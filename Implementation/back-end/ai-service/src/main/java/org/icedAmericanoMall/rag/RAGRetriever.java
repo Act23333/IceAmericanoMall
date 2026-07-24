@@ -40,6 +40,30 @@ public class RAGRetriever {
     }
 
     /**
+     * V3.4: 限定商家知识库的检索 — 仅查询该 seller 下的 FAQ/政策/手册。
+     */
+    public String retrieveForSeller(String query, Long sellerId) {
+        try {
+            double[] embedding = embeddingService.embed(query);
+            if (embedding.length == 0) return "（暂无本店相关知识）";
+
+            Map<String, Object> body = Map.of("embedding", embedding, "size", TOP_K,
+                    "seller_id", sellerId); // 增加 seller 过滤
+            List<Map<String, Object>> results = restClient.post()
+                    .uri("http://search-service/internal/search/vector")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(MAP_LIST_TYPE);
+            if (results == null || results.isEmpty()) return "（暂无本店相关知识）";
+            return assembleContext(results);
+        } catch (Exception e) {
+            log.warn("Seller RAG failed: {}", e.getMessage());
+            return "（暂无本店相关知识）";
+        }
+    }
+
+    /**
      * 检索与查询相关的上下文（完整 5 阶段管线）。
      */
     public String retrieve(String query) {
