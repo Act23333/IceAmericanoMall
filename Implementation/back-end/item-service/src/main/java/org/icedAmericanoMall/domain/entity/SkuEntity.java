@@ -24,6 +24,7 @@ public class SkuEntity implements Serializable {
     private String spec;
 
     private Integer price;
+    private Integer originalPrice; // V3.5: 原价(分)
 
     private Integer stock;
 
