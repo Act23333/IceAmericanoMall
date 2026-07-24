@@ -424,6 +424,9 @@ Docker Compose 单机部署 (本地开发)
 - **V3.6**（秒杀+订单超时大厂优化）：
   - 秒杀: Redis Lua 预扣库存 + 用户限购 + RabbitMQ 异步
   - 订单: RabbitMQ TTL 死信队列（替换 @Scheduled 60s 轮询）
+- **V3.7**（秒杀漏斗模型+订单四层保障）：
+  - 漏斗: 网关限流→Redis热点分片(10片)→MQ削峰→DB乐观锁
+  - 订单: TTL主链路→flash_order_log事务表幂等→XXL-Job兜底→人工后台
 
 ---
 
