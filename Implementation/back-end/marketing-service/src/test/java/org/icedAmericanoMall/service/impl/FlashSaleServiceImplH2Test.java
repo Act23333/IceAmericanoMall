@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.session.SqlSessionManager;
 import org.h2.Driver;
+import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.*;
 import org.icedAmericanoMall.domain.entity.FlashSaleEntity;
 import org.icedAmericanoMall.mapper.FlashSaleMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,7 +79,9 @@ class FlashSaleServiceImplH2Test {
         // SqlSessionManager：每线程独立会话+事务（自动提交），支撑真实并发扣减
         SqlSessionManager sqlSessionManager = SqlSessionManager.newInstance(sqlSessionFactory);
 
-        flashSaleService = new FlashSaleServiceImpl();
+        var mockLua = mock(FlashSaleLuaScript.class);
+        when(mockLua.tryDeduct(anyLong(), anyLong(), anyInt())).thenReturn(10L);
+        flashSaleService = new FlashSaleServiceImpl(mockLua);
         ReflectionTestUtils.setField(flashSaleService, "baseMapper",
                 sqlSessionManager.getMapper(FlashSaleMapper.class));
     }

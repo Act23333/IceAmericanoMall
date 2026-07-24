@@ -569,6 +569,18 @@ Scenario: 查看商品详情
 - **知识库隔离**: RAG 检索时 WHERE `seller_id = :currentSeller`
 - **人机转接通知**: AI 置信度 < 0.7 → WebSocket 通知商家 + 对话摘要
 
+### V3.6 — 秒杀+订单超时大厂标准改造 🔵
+
+> **大厂对标**: 京东秒杀 Redis Lua 预扣 + 阿里 RocketMQ 延迟消息取消订单。
+> 消除 @Scheduled 60s 轮询 CPU 浪费 + 串行 Feign 调用 O(N) 复杂度。
+
+- **秒杀 Redis Lua 预扣**: 原子 DECR + 用户限购 + 库存预热, P99<10ms
+- **秒杀异步持久化**: RabbitMQ → 消费者写 MySQL, 削峰填谷
+- **订单 TTL 死信队列**: 创建订单时发 RabbitMQ 消息(TTL=30min) → 自动过期 → 死信消费者取消
+- **订单取消幂等**: closeTimeoutOrder 增加状态检查, 防止重复回库存
+- **批量回库存**: 取消时一次性调 SkuClient.restoreStock, 1 次 Feign 代替 N 次
+- **删除 @Scheduled 轮询**: OrderTimeoutJob 移除 60s 定时扫描, 改为纯事件驱动
+
 ### V3.5 — 商品详情页京东标准改造 🔵
 
 > **大厂对标**: 京东详情页（多图+规格参数+SKU维度选择+店铺卡片+到手价+立即购买+评论晒图+关注店铺）。
@@ -660,7 +672,8 @@ Scenario: 查看商品详情
 | V3.2 现代化+DDD | 🟢 100% | 14 | 152+ | 160+ | RestTemplate→RestClient(Spring Boot 3.2+)、DTO→Java Record(10个)、UserProfileService DDD分层+@Version乐观锁、MinIO头像上传/下载/缩略图 |
 | V3.3 买家-商家消息 | 🔵 计划中 | 14 | 160+ | 160+ | WebSocket长连接+STOMP、chat_message消息表、买家↔商家实时IM、离线消息推送(RabbitMQ) |
 | V3.4 店铺AI        | ⚪ V3.4 | 14 | 165+ | 160+ | 商家知识库CRUD、商家AI自动代答(限定本店知识库)、merchant_reply_template对话模板、人机转接通知 |
-| V3.5 详情页改造    | 🔵 计划中 | 14 | 172+ | 160+ | 商品详情页京东标准改造：店铺卡片/多图轮播/规格参数/结构化SKU/原价到手价/立即购买/评论增强(图视频)/关注商家/店铺公开页/购物车分组 |
+| V3.5 详情页改造    | 🟢 100% | 14 | 172+ | 160+ | 商品详情页京东标准改造：店铺卡片/多图轮播/规格参数/结构化SKU/原价到手价/立即购买/评论增强(图视频)/关注商家/店铺公开页/购物车分组 |
+| V3.6 秒杀+订单优化 | 🔵 计划中 | 14 | 172+ | 160+ | 秒杀Redis Lua预扣(消除TOCTOU)+用户限购+异步订单；订单超时RabbitMQ TTL死信队列(消除60s轮询CPU浪费)+幂等保护+批量回库存 |
 | V3.x 高级AI     | ⚪ 0%    | —   | —   | —   | 知识图谱(NebulaGraph)、多模态(VLM)、MCP协议、自建Embedding、领域模型微调（均有触发条件） |
 
 **已实现的核心链路**: 注册/登录 → 浏览商品 → 加入购物车 → 下单（库存扣减+地址快照+商品快照）→ 微信支付 → 商家发货 → 确认收货 → 售后 → 财务结算。

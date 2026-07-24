@@ -36,7 +36,7 @@ public class OrderLifecycleManager {
     /** 确认收货奖励积分比例：支付金额（分）的 1%。 */
     private static final int POINTS_RATE_DIVISOR = 100;
     private static final int POINTS_TYPE_ORDER_REWARD = 2;
-    private static final int ORDER_TIMEOUT_MINUTES = 30;
+    // V3.6: ORDER_TIMEOUT_MINUTES 已废弃 — 改用 RabbitMQ TTL 消息
 
     private final OrderService orderService;
     private final SkuClient skuClient;
@@ -84,19 +84,17 @@ public class OrderLifecycleManager {
         }
     }
 
-    public void cancelTimeoutOrders() {
-        LocalDateTime cutoff = LocalDateTime.now().minusMinutes(ORDER_TIMEOUT_MINUTES);
-        List<OrderEntity> timeoutOrders = orderService.listTimeoutPending(cutoff);
-        for (OrderEntity order : timeoutOrders) {
-            try {
-                orderService.closeTimeoutOrder(order.getId());
-                restoreStock(order.getId());
-                rollbackCoupon(order);
-                log.info("自动取消超时订单: {}", order.getOrderNo());
-            } catch (Exception e) {
-                log.error("自动取消订单失败: {}", order.getOrderNo(), e);
-            }
-        }
+    // V3.6: cancelTimeoutOrders() 已废弃 — 改用 RabbitMQ TTL 死信队列（事件驱动）
+
+    /**
+     * V3.6: 安全取消订单 — 幂等保护（仅待付款状态可取消）。
+     */
+    public void cancelOrderSafely(String orderNo, Long userId) {
+        OrderEntity order = orderService.getByOrderNo(orderNo);
+        if (order == null || order.getStatus() != 1) return; // 幂等：已处理或不存在
+        orderService.closeTimeoutOrder(order.getId());
+        restoreStock(order.getId());
+        rollbackCoupon(order);
     }
 
     private void restoreStock(Long orderId) {
