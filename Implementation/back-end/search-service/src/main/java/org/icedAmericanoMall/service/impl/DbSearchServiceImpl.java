@@ -92,6 +92,11 @@ public class DbSearchServiceImpl extends ServiceImpl<ProductMapper, ProductEntit
         return Collections.emptyList();
     }
 
+    @Override
+    public Map<String, Object> reindex() {
+        return Map.of("status", "ok", "count", 0, "esEnabled", false);
+    }
+
     private void recordKeyword(String keyword) {
         try {
             redisTemplate.opsForZSet().incrementScore(HOT_KEYWORDS_KEY, keyword, 1);

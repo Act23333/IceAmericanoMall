@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.icedAmericanoMall.domain.vo.ProductSearchVO;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 商品搜索服务 — ES 全文检索 + DB LIKE 降级双实现。
@@ -24,4 +25,7 @@ public interface SearchService {
      * @return 向量检索结果
      */
     List<ProductSearchVO> vectorSearch(double[] embedding, int size);
+
+    /** DDD 分层: ES 全量重建索引（Controller→Service→Mapper，Controller 不直接操作 Mapper） */
+    Map<String, Object> reindex();
 }

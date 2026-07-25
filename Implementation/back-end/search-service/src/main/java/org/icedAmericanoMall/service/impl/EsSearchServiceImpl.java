@@ -1,13 +1,20 @@
 package org.icedAmericanoMall.service.impl;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch._types.KnnQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.MatchQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.icedAmericanoMall.domain.entity.ProductEntity;
+import org.icedAmericanoMall.domain.entity.SkuEntity;
 import org.icedAmericanoMall.domain.vo.ProductSearchVO;
+import org.icedAmericanoMall.mapper.ProductMapper;
+import org.icedAmericanoMall.mapper.SkuMapper;
 import org.icedAmericanoMall.service.SearchService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.domain.PageRequest;
@@ -32,6 +39,9 @@ public class EsSearchServiceImpl implements SearchService {
 
     private final ElasticsearchOperations esOps;
     private final RedisTemplate<String, String> redisTemplate;
+    private final ProductMapper productMapper;
+    private final SkuMapper skuMapper;
+    private final ElasticsearchClient esClient;
 
     private static final String HOT_KEYWORDS_KEY = "search:hot:keywords";
     private static final String HISTORY_KEY_PREFIX = "search:history:";
@@ -116,6 +126,44 @@ public class EsSearchServiceImpl implements SearchService {
             list.add(f);
         }
         return list;
+    }
+
+    @Override
+    public Map<String, Object> reindex() {
+        List<ProductEntity> products = productMapper.selectList(
+                new LambdaQueryWrapper<ProductEntity>().eq(ProductEntity::getStatus, 1));
+        Map<Long, Integer> priceMap = new HashMap<>();
+        for (ProductEntity p : products) {
+            List<SkuEntity> skus = skuMapper.selectList(
+                    new LambdaQueryWrapper<SkuEntity>()
+                            .eq(SkuEntity::getProductId, p.getId())
+                            .eq(SkuEntity::getStatus, 1));
+            priceMap.put(p.getId(), skus.stream().mapToInt(SkuEntity::getPrice).min().orElse(0));
+        }
+
+        if (esClient != null) {
+            try {
+                try { esClient.indices().delete(d -> d.index("products")); } catch (Exception ignored) {}
+                BulkRequest.Builder bulk = new BulkRequest.Builder();
+                for (ProductEntity p : products) {
+                    Map<String, Object> doc = new LinkedHashMap<>();
+                    doc.put("id", p.getId()); doc.put("productId", p.getProductId());
+                    doc.put("name", p.getName()); doc.put("description", p.getDescription());
+                    doc.put("brand", p.getBrand()); doc.put("categoryId", p.getCategoryId());
+                    doc.put("price", priceMap.getOrDefault(p.getId(), 0));
+                    doc.put("mainImage", p.getMainImage()); doc.put("soldCount", p.getSoldCount());
+                    bulk.operations(op -> op.index(idx -> idx.index("products")
+                            .id(String.valueOf(p.getId())).document(doc)));
+                }
+                var resp = esClient.bulk(bulk.build());
+                long errors = resp.items().stream().filter(i -> i.error() != null).count();
+                log.info("ES reindex complete: {} products, {} errors", products.size(), errors);
+            } catch (Exception e) {
+                log.error("ES reindex failed", e);
+                return Map.of("status", "error", "message", e.getMessage(), "count", products.size());
+            }
+        }
+        return Map.of("status", "ok", "count", products.size(), "esEnabled", esClient != null);
     }
 
     private void recordKeyword(String keyword) {

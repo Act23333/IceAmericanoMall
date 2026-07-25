@@ -1,6 +1,7 @@
 package org.icedAmericanoMall.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import org.icedAmericanoMall.constants.CouponTypeEnum;
 import org.icedAmericanoMall.domain.entity.CouponEntity;
 import org.icedAmericanoMall.domain.entity.UserCouponEntity;
 import org.icedAmericanoMall.mapper.CouponMapper;
@@ -88,7 +89,7 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
         if (coupon.getType() == 1) {
             // 满减
             discount = coupon.getValue();
-        } else if (coupon.getType() == 2) {
+        } else if (coupon.getType() == CouponTypeEnum.PERCENTAGE.getCode()) {
             // 折扣: value=85 表示 8.5折
             discount = orderAmount * (100 - coupon.getValue()) / 100;
         }
