@@ -23,12 +23,9 @@ public class FlashSaleController {
 
     @PostMapping("/buy")
     public Result<?> buy(@RequestParam Long flashId) {
-        boolean ok = flashSaleService.buy(flashId);
-        if (ok) {
-            FlashSaleEntity fs = flashSaleService.getById(flashId);
-            return Result.ok(Map.of("success", true, "flashPrice", fs.getFlashPrice(),
-                    "productId", fs.getProductId()));
-        }
-        return Result.error("抢购失败，请重试");
+        flashSaleService.buy(flashId); // 异常由 GlobalExceptionHandler 统一处理
+        FlashSaleEntity fs = flashSaleService.getById(flashId);
+        return Result.ok(Map.of("success", true, "flashPrice", fs.getFlashPrice(),
+                "productId", fs.getProductId()));
     }
 }

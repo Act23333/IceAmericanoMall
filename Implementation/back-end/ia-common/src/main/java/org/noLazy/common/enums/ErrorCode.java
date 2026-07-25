@@ -29,6 +29,24 @@ public enum ErrorCode {
     USER_ALREADY_EXISTS(3006, "用户已存在", HttpStatus.OK),
     PASSWORD_ERROR(3007, "登录密码错误", HttpStatus.OK),
     USER_STATUS_ABNORMAL(3008, "用户状态异常", HttpStatus.OK),
+    // 交易/订单/商品通用错误 (3009-3029)
+    ORDER_NOT_FOUND(3009, "订单不存在", HttpStatus.OK),
+    ORDER_STATUS_INVALID(3010, "当前订单状态不支持此操作", HttpStatus.OK),
+    PRODUCT_NOT_FOUND(3011, "商品不存在", HttpStatus.OK),
+    STOCK_INSUFFICIENT(3012, "库存不足", HttpStatus.OK),
+    CART_EMPTY(3013, "购物车为空", HttpStatus.OK),
+    CROSS_STORE_FORBIDDEN(3014, "暂不支持跨店下单", HttpStatus.OK),
+    // 秒杀错误 (3020-3029)
+    FLASH_SALE_NOT_FOUND(3020, "秒杀活动不存在", HttpStatus.OK),
+    FLASH_SALE_NOT_STARTED(3021, "秒杀未开始或已结束", HttpStatus.OK),
+    FLASH_SALE_SOLD_OUT(3022, "已售罄", HttpStatus.OK),
+    FLASH_SALE_LIMIT_EXCEEDED(3023, "每人限购1件", HttpStatus.OK),
+    FLASH_SALE_FAILED(3024, "抢购失败，请重试", HttpStatus.OK),
+    // 售后/申请 (3030-3039)
+    APPLICATION_EXISTS(3030, "已有审核中的申请", HttpStatus.OK),
+    AFTER_SALE_EXISTS(3031, "已有售后申请", HttpStatus.OK),
+    APPLICATION_NOT_FOUND(3032, "申请不存在", HttpStatus.OK),
+    WITHDRAWAL_NOT_FOUND(3033, "提现申请不存在", HttpStatus.OK),
 
     // AI 服务错误 (3100-3199)
     AI_SERVICE_UNAVAILABLE(3100, "AI 服务未启用或 API Key 未配置", HttpStatus.SERVICE_UNAVAILABLE),
