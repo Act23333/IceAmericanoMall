@@ -601,4 +601,158 @@ volumes:
     driver: local
   grafana-data:
     driver: local
+  pg-data:
+    driver: local
+  kafka-data:
+    driver: local
+  zk-data:
+    driver: local
+  hadoop-nn:
+    driver: local
+  hadoop-dn:
+    driver: local
+
+  # ═══════════════════════════════════════════════════════
+  # V4.0 学习组件 (profile: v4.0)
+  # 目的: 学习大厂全链路数据处理流程
+  # V4.x 精简: 见 02-Architecture.md §2.13
+  # ═══════════════════════════════════════════════════════
+
+  # ── PostgreSQL 16 + pgvector ──
+  ia-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ia-postgres
+    profiles: ["v4.0"]
+    environment:
+      POSTGRES_DB: icedmall
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # ── PgBouncer 连接池 ──
+  ia-pgbouncer:
+    image: bitnami/pgbouncer:1.23
+    container_name: ia-pgbouncer
+    profiles: ["v4.0"]
+    environment:
+      PGBOUNCER_DATABASE: icedmall
+      PGBOUNCER_PORT: 6432
+      POSTGRESQL_HOST: ia-postgres
+      POSTGRESQL_PASSWORD: postgres123
+    ports:
+      - "6432:6432"
+    depends_on:
+      - ia-postgres
+
+  # ── Zookeeper (Kafka 集群协调，V4.x 可去) ──
+  ia-zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.0
+    container_name: ia-zookeeper
+    profiles: ["v4.0"]
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zk-data:/var/lib/zookeeper/data
+
+  # ── Kafka (事件流管道) ──
+  ia-kafka:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: ia-kafka
+    profiles: ["v4.0"]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: ia-zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    depends_on:
+      - ia-zookeeper
+
+  # ── Flink (流计算) ──
+  ia-flink-jobmanager:
+    image: flink:1.20-scala_2.12
+    container_name: ia-flink-jobmanager
+    profiles: ["v4.0"]
+    command: jobmanager
+    environment:
+      FLINK_PROPERTIES: "jobmanager.rpc.address: ia-flink-jobmanager"
+    ports:
+      - "8081:8081"
+
+  ia-flink-taskmanager:
+    image: flink:1.20-scala_2.12
+    container_name: ia-flink-taskmanager
+    profiles: ["v4.0"]
+    command: taskmanager
+    environment:
+      FLINK_PROPERTIES: "jobmanager.rpc.address: ia-flink-jobmanager"
+    depends_on:
+      - ia-flink-jobmanager
+
+  # ── Hadoop HDFS (分布式存储) ──
+  ia-hadoop-namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: ia-hadoop-namenode
+    profiles: ["v4.0"]
+    environment:
+      CLUSTER_NAME: icedmall-cluster
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    volumes:
+      - hadoop-nn:/hadoop/dfs/name
+
+  ia-hadoop-datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: ia-hadoop-datanode
+    profiles: ["v4.0"]
+    environment:
+      CLUSTER_NAME: icedmall-cluster
+      CORE_CONF_fs_defaultFS: hdfs://ia-hadoop-namenode:9000
+    volumes:
+      - hadoop-dn:/hadoop/dfs/data
+    depends_on:
+      - ia-hadoop-namenode
+
+  # ── Spark (批量计算) ──
+  ia-spark-master:
+    image: bitnami/spark:3.5
+    container_name: ia-spark-master
+    profiles: ["v4.0"]
+    environment:
+      SPARK_MODE: master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+
+  ia-spark-worker:
+    image: bitnami/spark:3.5
+    container_name: ia-spark-worker
+    profiles: ["v4.0"]
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://ia-spark-master:7077
+    depends_on:
+      - ia-spark-master
+
+  # ── Prometheus AlertManager (告警) ──
+  ia-alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: ia-alertmanager
+    profiles: ["v4.0", "observability"]
+    ports:
+      - "9093:9093"
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    restart: unless-stopped
 

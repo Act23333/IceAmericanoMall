@@ -569,19 +569,34 @@ Scenario: 查看商品详情
 - **知识库隔离**: RAG 检索时 WHERE `seller_id = :currentSeller`
 - **人机转接通知**: AI 置信度 < 0.7 → WebSocket 通知商家 + 对话摘要
 
-### V4.0 — PostgreSQL 架构升级 + 性能五级体系 🔵
+### V4.x — 组件收敛 ⚪
 
-> **大厂对标**: 阿里去 ES 推 Havenask、京东新项目推 PG。核心技术栈收敛——用更少的组件做更多的事。
-> **中间件结论**: 不需要 Kafka/ZooKeeper/Pulsar/Flink/Doris/HBase/MongoDB。
+> **大厂对标**: 京东/阿里技术栈收敛运动。先加组件学习原理(V4.0)，再减组件理解为何可以不用(V4.x)。
+> 详见 [02-Architecture.md §2.13](./02-Architecture.md) 组件演进路线。
 
-- **MySQL → PostgreSQL**: pgvector(向量)+tsvector(全文)+JSONB, 运维从双库→单库
-- **AI 向量**: ES dense_vector → pgvector(HNSW), 同库查询延迟减半
-- **性能 Level 1**: HikariCP 连接池 + PgBouncer + 慢查询告警
-- **性能 Level 2**: PG 主从读写分离 (AbstractRoutingDataSource)
-- **性能 Level 3**: Redis L1 + Caffeine L2 多级缓存 (热点探测)
-- **性能 Level 4**: RabbitMQ 异步削峰 (秒杀/订单取消已完成)
-- **性能 Level 5**: CDN 静态资源 + Next.js ISR/SSG + API 网关缓存
-- **docker-compose**: 新增 PostgreSQL 服务, 移除 ES (可选保留)
+- **PostgreSQL pgvector 替代 ES 向量** (V4.1): PG 内置 pgvector HNSW → 去 ES 向量检索组件
+- **PG tsvector 替代 ES 全文搜索** (V4.2): zhparser 中文分词 → 去 ES 全文搜索组件
+- **KRaft 替代 Zookeeper** (V4.1): Kafka 3.7+ 内置 KRaft 共识 → 去 Zk 组件
+- **MinIO 数据湖替代 Hadoop** (V4.2): Spark + MinIO → 去 Hadoop/HDFS 组件
+- **事件驱动替代 Flink** (V4.2): Spring + RabbitMQ → 去 Flink 组件（保留为可选）
+- **事务表补偿替代 Seata** (V4.2): Saga + MQ + 本地事务表 → 去 Seata 组件
+- **PG 替代 MySQL** (V4.1): PG 完全兼容 MySQL 语法(MyBatis-Plus PG 方言) → 去 MySQL 组件
+
+### V4.0 — 大数据全链路学习 🔵
+
+> **大厂对标**: 京东/阿里完整大数据架构。学习目的——先加组件理解大厂全链路，后续 V4.x 再收敛精简。
+
+- **PostgreSQL 16 + pgvector**: 第二数据库，pgvector HNSW 向量搜索、JSONB 文档、tsvector 全文
+- **PgBouncer**: PG 连接池（PG fork 进程 5-10MB/连接 → 50连接池）
+- **Caffeine**: JVM 进程内缓存（多级缓存第一层：Caffeine→Redis→DB）
+- **Prometheus AlertManager**: 告警规则（订单异常/RT飙升/AI Token超量 → 通知）
+- **Apache Kafka**: 事件流管道（用户行为埋点/订单事件溯源/实时数据流）
+- **Apache Zookeeper**: Kafka 集群协调（Kafka 3.7+ 可选 KRaft 模式去 Zk）
+- **Apache Flink**: 流计算（实时大屏秒级GMV/用户行为聚合/异常检测/CD数据同步）
+- **Apache Hadoop (HDFS)**: 分布式存储（用户行为/订单日志/搜索日志离线存储）
+- **Apache Spark**: 批量计算（离线报表/用户画像/推荐模型训练）
+- **Apache Hive**: 数据仓库 SQL-on-Hadoop（离线数据查询）
+- **docker-compose.yml**: 新增 v4.0 profile（11 个服务：PG/PgBouncer/Kafka/Zk/Flink×2/Hadoop×2/Spark×2/AlertManager）
 
 ### V3.7 — 秒杀漏斗模型+订单四层保障 🔵
 
@@ -703,7 +718,8 @@ Scenario: 查看商品详情
 | V3.5 详情页改造    | 🟢 100% | 14 | 172+ | 160+ | 商品详情页京东标准改造：店铺卡片/多图轮播/规格参数/结构化SKU/原价到手价/立即购买/评论增强(图视频)/关注商家/店铺公开页/购物车分组 |
 | V3.6 秒杀+订单优化 | 🟢 100% | 14 | 172+ | 160+ | 秒杀Redis Lua预扣(消除TOCTOU)+用户限购+异步订单；订单超时RabbitMQ TTL死信队列(消除60s轮询CPU浪费)+幂等保护+批量回库存 |
 | V3.7 秒杀漏斗模型  | 🟢 100% | 14 | 175+ | 160+ | 漏斗模型(网关限流→Redis热点分片→MQ削峰→DB乐观锁)+订单四层保障(RabbitMQ TTL主链路→事务表幂等→XXL-Job兜底→人工运营后台) |
-| V4.0 架构升级      | 🔵 计划中 | 14 | 175+ | 160+ | PostgreSQL统一数据层(MySQL→PG+pgvector+tsvector)、性能五级(连接池→读写分离→多级缓存→异步削峰→CDN)、AI向量ES→pgvector、组件收敛(去ES)、确认不需要Kafka/ZooKeeper/Pulsar |
+| V4.0 大数据学习    | 🔵 计划中 | 14 | 175+ | 160+ | +PG(pgvector)+PgBouncer+Caffeine+AlertManager+Kafka+Zk+Flink+Hadoop+Spark+Hive — 13→22组件, 学习大厂全链路 |
+| V4.x 组件收敛      | ⚪ 远期    | — | — | — | PG替代MySQL+ES向量, KRaft去Zk, MinIO+Spark去Hadoop, 事件驱动去Flink/XXL-Job, 事务表去Seata — 22→10组件 |
 | V3.x 高级AI     | ⚪ 0%    | —   | —   | —   | 知识图谱(NebulaGraph)、多模态(VLM)、MCP协议、自建Embedding、领域模型微调（均有触发条件） |
 
 **已实现的核心链路**: 注册/登录 → 浏览商品 → 加入购物车 → 下单（库存扣减+地址快照+商品快照）→ 微信支付 → 商家发货 → 确认收货 → 售后 → 财务结算。
