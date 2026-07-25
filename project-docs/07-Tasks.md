@@ -569,6 +569,20 @@ Scenario: 查看商品详情
 - **知识库隔离**: RAG 检索时 WHERE `seller_id = :currentSeller`
 - **人机转接通知**: AI 置信度 < 0.7 → WebSocket 通知商家 + 对话摘要
 
+### V4.0 — PostgreSQL 架构升级 + 性能五级体系 🔵
+
+> **大厂对标**: 阿里去 ES 推 Havenask、京东新项目推 PG。核心技术栈收敛——用更少的组件做更多的事。
+> **中间件结论**: 不需要 Kafka/ZooKeeper/Pulsar/Flink/Doris/HBase/MongoDB。
+
+- **MySQL → PostgreSQL**: pgvector(向量)+tsvector(全文)+JSONB, 运维从双库→单库
+- **AI 向量**: ES dense_vector → pgvector(HNSW), 同库查询延迟减半
+- **性能 Level 1**: HikariCP 连接池 + PgBouncer + 慢查询告警
+- **性能 Level 2**: PG 主从读写分离 (AbstractRoutingDataSource)
+- **性能 Level 3**: Redis L1 + Caffeine L2 多级缓存 (热点探测)
+- **性能 Level 4**: RabbitMQ 异步削峰 (秒杀/订单取消已完成)
+- **性能 Level 5**: CDN 静态资源 + Next.js ISR/SSG + API 网关缓存
+- **docker-compose**: 新增 PostgreSQL 服务, 移除 ES (可选保留)
+
 ### V3.7 — 秒杀漏斗模型+订单四层保障 🔵
 
 > **大厂对标**: JD 秒杀漏斗（网关限流→Redis分片→MQ削峰→乐观锁）+ 淘宝订单四层保障（RocketMQ延迟→事务表→定时兜底→人工后台）。
@@ -688,7 +702,8 @@ Scenario: 查看商品详情
 | V3.4 店铺AI        | ⚪ V3.4 | 14 | 165+ | 160+ | 商家知识库CRUD、商家AI自动代答(限定本店知识库)、merchant_reply_template对话模板、人机转接通知 |
 | V3.5 详情页改造    | 🟢 100% | 14 | 172+ | 160+ | 商品详情页京东标准改造：店铺卡片/多图轮播/规格参数/结构化SKU/原价到手价/立即购买/评论增强(图视频)/关注商家/店铺公开页/购物车分组 |
 | V3.6 秒杀+订单优化 | 🟢 100% | 14 | 172+ | 160+ | 秒杀Redis Lua预扣(消除TOCTOU)+用户限购+异步订单；订单超时RabbitMQ TTL死信队列(消除60s轮询CPU浪费)+幂等保护+批量回库存 |
-| V3.7 秒杀漏斗模型  | 🔵 计划中 | 14 | 175+ | 160+ | 漏斗模型(网关限流→Redis热点分片→MQ削峰→DB乐观锁)+订单四层保障(RabbitMQ TTL主链路→事务表幂等→XXL-Job兜底→人工运营后台) |
+| V3.7 秒杀漏斗模型  | 🟢 100% | 14 | 175+ | 160+ | 漏斗模型(网关限流→Redis热点分片→MQ削峰→DB乐观锁)+订单四层保障(RabbitMQ TTL主链路→事务表幂等→XXL-Job兜底→人工运营后台) |
+| V4.0 架构升级      | 🔵 计划中 | 14 | 175+ | 160+ | PostgreSQL统一数据层(MySQL→PG+pgvector+tsvector)、性能五级(连接池→读写分离→多级缓存→异步削峰→CDN)、AI向量ES→pgvector、组件收敛(去ES)、确认不需要Kafka/ZooKeeper/Pulsar |
 | V3.x 高级AI     | ⚪ 0%    | —   | —   | —   | 知识图谱(NebulaGraph)、多模态(VLM)、MCP协议、自建Embedding、领域模型微调（均有触发条件） |
 
 **已实现的核心链路**: 注册/登录 → 浏览商品 → 加入购物车 → 下单（库存扣减+地址快照+商品快照）→ 微信支付 → 商家发货 → 确认收货 → 售后 → 财务结算。

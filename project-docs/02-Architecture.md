@@ -427,10 +427,73 @@ Docker Compose 单机部署 (本地开发)
 - **V3.7**（秒杀漏斗模型+订单四层保障）：
   - 漏斗: 网关限流→Redis热点分片(10片)→MQ削峰→DB乐观锁
   - 订单: TTL主链路→flash_order_log事务表幂等→XXL-Job兜底→人工后台
+- **V4.0**（架构升级 — PostgreSQL 统一数据层 + 性能分级）：
+  - MySQL+ES → PostgreSQL(pgvector+tsvector+JSONB) — 组件收敛(15→14)
+  - AI 向量存储: ES dense_vector → pgvector(HNSW) — 同库查询, 延迟减半
+  - 性能五级: 连接池→读写分离→多级缓存→异步削峰→CDN边缘
+  - 中间件确认: 不需要 Kafka/ZooKeeper/Pulsar 等额外组件
 
 ---
 
-## 八、关键设计原则
+## 八、V4.0 架构升级 — PostgreSQL 统一数据层
+
+### 8.1 组件收敛
+
+```
+V3.x (当前):                           V4.0 (目标):
+MySQL + ES + Redis + RabbitMQ    →    PostgreSQL + Redis + RabbitMQ
+  (15个中间件)                         (14个中间件, -1 ES)
+
+收敛效果:
+  - MySQL JSON → PG JSONB (更强)
+  - ES 全文搜索 → PG tsvector + zhparser (中文分词)
+  - ES 向量搜索 → pgvector (HNSW 索引, 同库查询)
+  - 运维: 不再维护 ES 集群, 备份/恢复/扩容统一用 PG
+```
+
+### 8.2 性能五级体系
+
+```
+Level 1 ─ 连接池优化 (当前可做)
+  HikariCP maximum-pool-size=20, PgBouncer 事务池
+  Prepared Statement 缓存, 慢查询 >100ms 告警
+
+Level 2 ─ 读写分离 (PG 切换后)
+  PG 主库(写) + 1~2 从库(读), Spring AbstractRoutingDataSource
+  商品查询/搜索 → 从库, 订单/支付 → 主库
+
+Level 3 ─ 多级缓存 (V4.0)
+  Redis L1 (热点数据, TTL 5min) + Caffeine L2 (本地, TTL 30s)
+  热点探测: 单品 QPS >100 → 自动升级到 L1+L2
+  Cache-Aside: 读 → 查缓存 → 未命中查DB → 写缓存
+
+Level 4 ─ 异步削峰 (V3.6/V3.7 已完成)
+  RabbitMQ: 秒杀订单异步落库、订单超时 TTL 取消
+  非关键路径异步化: 浏览记录、操作日志、积分发放
+
+Level 5 ─ CDN + 边缘缓存
+  静态资源(图片/JS/CSS) → CDN, TTL 7天
+  商品详情页 ISR 60s (Next.js), 列表页 SSG+ISR
+  网关层 API 响应缓存 (Knife4j 已就绪)
+```
+
+### 8.3 不需要的组件（大厂共识）
+
+| 组件 | 阿里/京东用它 | 本项目 | 理由 |
+|------|-------------|--------|------|
+| **Kafka** | 实时流计算(Flink)、百亿级日志 | ❌ | RabbitMQ 日千万级消息以内无需换 |
+| **ZooKeeper** | Kafka/Pulsar 依赖、分布式锁 | ❌ | Nacos 配置中心 + Redis 分布式锁已覆盖 |
+| **Pulsar** | 腾讯部分团队、云原生消息 | ❌ | 运维复杂，无明确收益 |
+| **Flink** | 实时数仓、流计算 | ❌ | 暂无实时计算需求 |
+| **Doris/ClickHouse** | 实时OLAP、用户行为分析 | ❌ | 暂无分析需求，PG 可满足基础统计 |
+| **HBase** | 海量KV存储 | ❌ | Redis 已覆盖 |
+| **MongoDB** | 文档存储 | ❌ | PG JSONB 已覆盖 |
+
+**结论**: V4.0 中间件从 15 降到 14（去掉 ES），不需要引入任何新组件。
+
+---
+
+## 九、关键设计原则
 
 1. **去形容词化**：不用「高可用」「易维护」等空洞词，用技术方案和数据说话
 2. **大厂对标**：分层架构对标阿里，代码风格对标字节
@@ -445,7 +508,7 @@ Docker Compose 单机部署 (本地开发)
 
 ---
 
-## 九、架构合规审计（2026-06-20）
+## 十、架构合规审计（2026-06-20）
 
 ### 9.1 服务划分评估
 
@@ -503,7 +566,7 @@ Docker Compose 单机部署 (本地开发)
 
 ---
 
-## 十、阿里微服务标准对照
+## 十一、阿里微服务标准对照
 
 ### 10.1 模块拆分原则（阿里中台标准）
 

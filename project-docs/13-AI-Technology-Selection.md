@@ -467,20 +467,32 @@ public Object search(String keyword) {
 | 已有基础设施 | ✅ 已部署 | 需新部署 | 需扩展PG | 需新部署 |
 | 运维成本 | 低（复用现有ES） | 中（独立集群） | 低（PG扩展） | 中（独立部署） |
 | 十亿级扩展 | ★★★★☆ | ★★★★★ | ★★★☆☆ | ★★★★★ |
-| **推荐阶段** | **V2.5 MVP** | **V3.0 主力** | 备选 | 备选 |
+| **推荐阶段** | **V2.5 MVP** | **V4.0 主力** | 备选 | 备选 |
 
-**演进路线**：
+**演进路线（V4.0 修订：组件收敛，ES→PG）**：
 
 ```
-V2.5 (MVP)           V3.0 (生产)          V3.x (极致优化)
+V2.5 (MVP)           V3.0 (生产)          V4.0 (统一数据层)
     │                     │                     │
     ▼                     ▼                     ▼
-ES 8.x dense_vector   Milvus 集群           Milvus + 自建Embedding
-- 复用已有 ES 部署       - 独立向量检索引擎      - bge-large-zh 自部署
-- kNN + BM25 混合       - GPU 加速索引          - 量化压缩（PQ/IVF）
-- RRF 融合             - 十亿级向量规模          - 延迟 < 10ms
-- 适合 <100万 向量       - 适合 >100万 向量       - 日调用 >100万次
+ES 8.x dense_vector   ES dense_vector       PostgreSQL pgvector
+- 复用已有 ES 部署       - kNN + BM25 混合      - HNSW 索引 (同库)
+- kNN + BM25 混合       - RRF 融合             - tsvector 全文替代 BM25
+- RRF 融合             - 适合 <100万 向量       - 延迟减半 (无网络往返)
+- 适合 <100万 向量                               - 一个 DB 解决搜索+向量
+
+                                                V4.x (极致优化, 如需要)
+                                                      │
+                                                      ▼
+                                                pgvector + 自建Embedding
+                                                - bge-large-zh 自部署
+                                                - 量化压缩（PQ/IVF）
+                                                - 延迟 < 10ms
 ```
+
+> **V4.0 决策变更**: 原计划 V3.0 迁 Milvus，V4.0 调整为 **PostgreSQL pgvector** 作为主力向量存储。
+> 理由: (1) 组件收敛——PG 已在 V4.0 替代 MySQL，统一数据层减少运维 (2) pgvector HNSW 性能在百万级向量下优于 ES
+> (3) 同库查询避免 ai-service ↔ ES 网络往返，RAG 延迟减半。
 
 **决策理由**：
 - V2.5 用 ES 8.x：零新基础设施成本，ES 已在 docker-compose 中部署，`dense_vector` 字段 + kNN 搜索是 ES 8.x 内置功能。验证 RAG 场景后再决定是否需要专用向量数据库。
