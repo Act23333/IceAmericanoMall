@@ -582,6 +582,17 @@ Scenario: 查看商品详情
 - **事务表补偿替代 Seata** (V4.2): Saga + MQ + 本地事务表 → 去 Seata 组件
 - **PG 替代 MySQL** (V4.1): PG 完全兼容 MySQL 语法(MyBatis-Plus PG 方言) → 去 MySQL 组件
 
+### V4.0 — DDD 架构升级 🔵
+
+> **现状**: 仅 trade-service(3)/pay-service(2) 有 Manager 层。其余 7 模块采用三层(Controller→Service→Mapper)。
+> **目标**: 全模块统一四层 DDD (Controller→Manager→Service→Mapper)，符合 CLAUDE.md 规范。
+
+- **user-service**: 31处Controller→Mapper/Redis → Manager层补齐 + UserManager/SignManager 拆分
+- **item-service**: ProductDetailController→Mapper → ProductService 封装
+- **ai-service**: 8处Controller→Redis/Mapper → AIManager 编排层
+- **cart/auth/logistics/search/marketing**: 各模块 Manager 层新建
+- **Service→Feign**: 7模块 Feign调用上移到 Manager 层
+
 ### V4.0 — 大数据全链路学习 🔵
 
 > **大厂对标**: 京东/阿里完整大数据架构。学习目的——先加组件理解大厂全链路，后续 V4.x 再收敛精简。
@@ -719,6 +730,7 @@ Scenario: 查看商品详情
 | V3.6 秒杀+订单优化 | 🟢 100% | 14 | 172+ | 160+ | 秒杀Redis Lua预扣(消除TOCTOU)+用户限购+异步订单；订单超时RabbitMQ TTL死信队列(消除60s轮询CPU浪费)+幂等保护+批量回库存 |
 | V3.7 秒杀漏斗模型  | 🟢 100% | 14 | 175+ | 160+ | 漏斗模型(网关限流→Redis热点分片→RocketMQ削峰→Consumer异步DB)+订单四层保障(RocketMQ延迟消息主链路→事务表幂等→XXL-Job兜底→人工运营后台) |
 | V4.0 RocketMQ迁移  | 🟢 100% | 14 | 175+ | 160+ | RocketMQ 5.3 NameServer+Broker(docker-compose)、OrderTimeoutPublisher策略模式、FlashSaleOrderPublisher+RocketFlashSaleRocketConsumer、延迟消息level=16(30min)、替代RabbitMQ TTL+DLX |
+| V4.0 DDD架构升级  | 🔵 计划中 | 14 | 175+ | 160+ | 7模块Manager层补齐(user/item/cart/auth/logistics/search/ai/marketing)、Controller→Mapper/Redis全下沉、Service→Feign全上移、Entity不泄漏到Controller |
 | V4.0 大数据学习    | 🔵 计划中 | 14 | 175+ | 160+ | +PG(pgvector)+PgBouncer+Caffeine+AlertManager+Kafka+Zk+Flink+Hadoop+Spark+Hive — 13→22组件, 学习大厂全链路 |
 | V4.x 组件收敛      | ⚪ 远期    | — | — | — | PG替代MySQL+ES向量, KRaft去Zk, MinIO+Spark去Hadoop, 事件驱动去Flink/XXL-Job, 事务表去Seata — 22→10组件 |
 | V3.x 高级AI     | ⚪ 0%    | —   | —   | —   | 知识图谱(NebulaGraph)、多模态(VLM)、MCP协议、自建Embedding、领域模型微调（均有触发条件） |

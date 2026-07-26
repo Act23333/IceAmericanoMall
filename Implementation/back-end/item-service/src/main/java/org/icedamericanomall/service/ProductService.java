@@ -26,4 +26,7 @@ public interface ProductService extends IService<ProductEntity> {
     Map<Long, Long> getSellerIdMapByProductIds(List<Long> productIds);
 
     void updateProduct(Long productId, Long sellerId, UpdateProductReq req);
+
+    /** V3.5: 查询商品下的所有已激活 SKU（DDD: Controller→Service→Mapper） */
+    List<org.icedamericanomall.domain.entity.SkuEntity> listSkus(Long productId);
 }

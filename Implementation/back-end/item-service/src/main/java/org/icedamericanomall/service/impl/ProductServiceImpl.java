@@ -174,4 +174,12 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, ProductEntity
                 .set(req.getCategoryId() != null, ProductEntity::getCategoryId, req.getCategoryId())
                 .update();
     }
+
+    @Override
+    public List<org.icedamericanomall.domain.entity.SkuEntity> listSkus(Long productId) {
+        return skuService.lambdaQuery()
+                .eq(org.icedamericanomall.domain.entity.SkuEntity::getProductId, productId)
+                .eq(org.icedamericanomall.domain.entity.SkuEntity::getStatus, 1)
+                .list();
+    }
 }
