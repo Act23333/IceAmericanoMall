@@ -598,7 +598,7 @@ Scenario: 查看商品详情
 - **Apache Hive**: 数据仓库 SQL-on-Hadoop（离线数据查询）
 - **docker-compose.yml**: 新增 v4.0 profile（11 个服务：PG/PgBouncer/Kafka/Zk/Flink×2/Hadoop×2/Spark×2/AlertManager）
 
-### V3.7 — 秒杀漏斗模型+订单四层保障 🔵
+### V3.7 — 秒杀漏斗模型+订单四层保障 ✅
 
 > **大厂对标**: JD 秒杀漏斗（网关限流→Redis分片→MQ削峰→乐观锁）+ 淘宝订单四层保障（RocketMQ延迟→事务表→定时兜底→人工后台）。
 
@@ -717,7 +717,8 @@ Scenario: 查看商品详情
 | V3.4 店铺AI        | ⚪ V3.4 | 14 | 165+ | 160+ | 商家知识库CRUD、商家AI自动代答(限定本店知识库)、merchant_reply_template对话模板、人机转接通知 |
 | V3.5 详情页改造    | 🟢 100% | 14 | 172+ | 160+ | 商品详情页京东标准改造：店铺卡片/多图轮播/规格参数/结构化SKU/原价到手价/立即购买/评论增强(图视频)/关注商家/店铺公开页/购物车分组 |
 | V3.6 秒杀+订单优化 | 🟢 100% | 14 | 172+ | 160+ | 秒杀Redis Lua预扣(消除TOCTOU)+用户限购+异步订单；订单超时RabbitMQ TTL死信队列(消除60s轮询CPU浪费)+幂等保护+批量回库存 |
-| V3.7 秒杀漏斗模型  | 🟢 100% | 14 | 175+ | 160+ | 漏斗模型(网关限流→Redis热点分片→MQ削峰→DB乐观锁)+订单四层保障(RabbitMQ TTL主链路→事务表幂等→XXL-Job兜底→人工运营后台) |
+| V3.7 秒杀漏斗模型  | 🟢 100% | 14 | 175+ | 160+ | 漏斗模型(网关限流→Redis热点分片→RocketMQ削峰→Consumer异步DB)+订单四层保障(RocketMQ延迟消息主链路→事务表幂等→XXL-Job兜底→人工运营后台) |
+| V4.0 RocketMQ迁移  | 🟢 100% | 14 | 175+ | 160+ | RocketMQ 5.3 NameServer+Broker(docker-compose)、OrderTimeoutPublisher策略模式、FlashSaleOrderPublisher+RocketFlashSaleRocketConsumer、延迟消息level=16(30min)、替代RabbitMQ TTL+DLX |
 | V4.0 大数据学习    | 🔵 计划中 | 14 | 175+ | 160+ | +PG(pgvector)+PgBouncer+Caffeine+AlertManager+Kafka+Zk+Flink+Hadoop+Spark+Hive — 13→22组件, 学习大厂全链路 |
 | V4.x 组件收敛      | ⚪ 远期    | — | — | — | PG替代MySQL+ES向量, KRaft去Zk, MinIO+Spark去Hadoop, 事件驱动去Flink/XXL-Job, 事务表去Seata — 22→10组件 |
 | V3.x 高级AI     | ⚪ 0%    | —   | —   | —   | 知识图谱(NebulaGraph)、多模态(VLM)、MCP协议、自建Embedding、领域模型微调（均有触发条件） |

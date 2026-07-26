@@ -266,6 +266,29 @@ docker compose exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} < database/midd
 | `RABBITMQ_DEFAULT_PASS` | `admin123`               | 密码   |
 | 管理控制台                   | `http://localhost:15672` | 开发环境 |
 
+### 4.5.2 RocketMQ 5.3（V4.0 profile）
+
+**为什么需要：** 大厂标准延迟消息（阿里/京东首选），替代 RabbitMQ TTL+DLX。
+V4.0 已迁移：秒杀异步削峰 + 订单超时延迟取消。
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| NameServer | 9876 | 路由注册中心 |
+| Broker | 10911 | 消息存储+投递 |
+
+**延迟级别**（rocketmq-spring-boot-starter 2.3.3）:
+level=16 → 30min 延迟（用于订单超时取消）
+
+**应用配置** (`application.yml`):
+```yaml
+rocketmq:
+  name-server: ${ia.rocketmq.host:192.168.10.128}:9876
+  producer:
+    group: ${spring.application.name}-producer
+```
+
+**启动**: `docker compose --profile v1.1 up -d ia-rocketmq-namesrv ia-rocketmq-broker`
+
 ---
 
 ### 4.6 XXL-Job Admin 2.4.2（V1.1 profile）
