@@ -17,11 +17,14 @@ import org.icedAmericanoMall.dto.CartItemDTO;
 import org.icedAmericanoMall.dto.SkuDTO;
 import org.icedAmericanoMall.dto.StockOpDTO;
 import org.icedAmericanoMall.enums.OrderStatusEnum;
+import org.icedAmericanoMall.producer.OrderTimeoutPublisher;
 import org.icedAmericanoMall.service.OrderService;
 import org.noLazy.common.enums.ErrorCode;
 import org.noLazy.common.exception.BizException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -49,6 +52,7 @@ public class OrderCreationManager {
     private final AddressClient addressClient;
     private final SkuClient skuClient;
     private final CouponClient couponClient;
+    private final OrderTimeoutPublisher timeoutPublisher;
 
     @Transactional(rollbackFor = Exception.class)
     public OrderVO createOrder(Long userId, CreateOrderReq req) {
@@ -157,14 +161,19 @@ public class OrderCreationManager {
         // Then: 本地事务创建订单 + 订单项
         try {
             orderService.createOrderWithItems(order, items);
+            publishTimeoutAfterCommit(order.getOrderNo());
         } catch (Exception e) {
             // Saga 补偿：回滚库存 + 已用优惠券
             log.error("订单创建失败，回滚库存", e);
-            try { skuClient.restoreStock(stockOps); } catch (Exception re) {
+            try {
+                skuClient.restoreStock(stockOps);
+            } catch (Exception re) {
                 log.error("库存回滚失败！需人工处理: stockOps={}", stockOps, re);
             }
             if (discount > 0) {
-                try { couponClient.rollbackByOrderNo(order.getOrderNo()); } catch (Exception ce) {
+                try {
+                    couponClient.rollbackByOrderNo(order.getOrderNo());
+                } catch (Exception ce) {
                     log.error("优惠券回滚失败！需人工处理: orderNo={}", order.getOrderNo(), ce);
                 }
             }
@@ -182,6 +191,19 @@ public class OrderCreationManager {
         OrderVO vo = orderConverter.entityToVO(order);
         vo.setItems(orderConverter.itemEntitiesToVOs(items));
         return vo;
+    }
+
+    private void publishTimeoutAfterCommit(String orderNo) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            timeoutPublisher.publishTimeout(orderNo);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                timeoutPublisher.publishTimeout(orderNo);
+            }
+        });
     }
 
     @lombok.Data

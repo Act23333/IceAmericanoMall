@@ -2,45 +2,47 @@ package org.icedAmericanoMall.consumer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
+import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
 import org.icedAmericanoMall.manager.OrderLifecycleManager;
 import org.icedAmericanoMall.service.OrderService;
-import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.noLazy.common.config.RocketMqTopics;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-/**
- * V3.6: 订单超时取消 RabbitMQ TTL 死信消费者（大厂标准：京东 RocketMQ 延迟消息对标）。
- * <p>
- * 旧方案: @Scheduled 60s 轮询全表扫描 → CPU 浪费 + 串行 Feign。
- * 新方案: 创建订单时发 TTL=30min 消息 → 自动过期 → 死信队列 → 消费者取消。
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class OrderTimeoutConsumer {
+@ConditionalOnProperty(name = "rocketmq.enabled", havingValue = "true")
+@RocketMQMessageListener(
+        topic = RocketMqTopics.ORDER_TIMEOUT_TOPIC,
+        selectorExpression = RocketMqTopics.ORDER_TIMEOUT_TAG,
+        consumerGroup = "trade-order-timeout-consumer")
+public class OrderTimeoutConsumer implements RocketMQListener<String> {
 
     private final OrderService orderService;
     private final OrderLifecycleManager lifecycleManager;
 
-    @RabbitListener(queues = "order.timeout.dlq")
-    public void handleTimeoutOrder(String orderNo) {
-        log.info("TTL timeout triggered for: {}", orderNo);
+    @Override
+    public void onMessage(String orderNo) {
+        log.info("Order timeout message received: orderNo={}", orderNo);
         try {
             OrderEntity order = orderService.getByOrderNo(orderNo);
             if (order == null) {
-                log.warn("Order not found: {}", orderNo);
+                log.warn("Order not found: orderNo={}", orderNo);
                 return;
             }
-            // V3.6 幂等保护：只有待付款状态才取消
             if (order.getStatus() != 1) {
-                log.info("Order {} already processed (status={}), skip", orderNo, order.getStatus());
+                log.info("Order already processed, skip timeout: orderNo={}, status={}",
+                        orderNo, order.getStatus());
                 return;
             }
             lifecycleManager.cancelOrderSafely(orderNo, order.getUserId());
-            log.info("Order {} cancelled via TTL", orderNo);
+            log.info("Order cancelled by timeout message: orderNo={}", orderNo);
         } catch (Exception e) {
-            log.error("Failed to cancel order {}: {}", orderNo, e.getMessage());
-            throw e; // nack → requeue
+            log.error("Failed to cancel timeout order: orderNo={}", orderNo, e);
+            throw e;
         }
     }
 }

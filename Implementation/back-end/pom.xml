@@ -94,6 +94,7 @@
         <lombok.version>1.18.42</lombok.version>
         <spring-ai.version>1.0.0-M6</spring-ai.version>
         <langchain4j.version>1.18.0-beta28</langchain4j.version>
+        <rocketmq-spring.version>2.3.3</rocketmq-spring.version>
     </properties>
     
     <!-- 对依赖包进行管理 -->
@@ -219,6 +220,11 @@
                 <groupId>io.minio</groupId>
                 <artifactId>minio</artifactId>
                 <version>${minio.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.rocketmq</groupId>
+                <artifactId>rocketmq-spring-boot-starter</artifactId>
+                <version>${rocketmq-spring.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.nolazy</groupId>
