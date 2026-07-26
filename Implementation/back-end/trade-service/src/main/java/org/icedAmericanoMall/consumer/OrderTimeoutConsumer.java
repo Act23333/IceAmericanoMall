@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
+import org.icedAmericanoMall.enums.OrderStatusEnum;
 import org.icedAmericanoMall.manager.OrderLifecycleManager;
 import org.icedAmericanoMall.service.OrderService;
 import org.noLazy.common.config.RocketMqTopics;
@@ -33,7 +34,7 @@ public class OrderTimeoutConsumer implements RocketMQListener<String> {
                 log.warn("Order not found: orderNo={}", orderNo);
                 return;
             }
-            if (order.getStatus() != 1) {
+            if (order.getStatus() != OrderStatusEnum.PENDING_PAYMENT.getCode()) {
                 log.info("Order already processed, skip timeout: orderNo={}, status={}",
                         orderNo, order.getStatus());
                 return;

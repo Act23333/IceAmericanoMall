@@ -1,6 +1,7 @@
 package org.icedAmericanoMall.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
 import org.icedAmericanoMall.constants.FlashSaleStatusEnum;
 import org.icedAmericanoMall.domain.dto.FlashSaleOrderMessage;
 import org.icedAmericanoMall.domain.entity.FlashSaleEntity;
@@ -21,6 +22,7 @@ import java.util.UUID;
  * <p>
  * 大厂对标：京东秒杀漏斗（Redis预减→MQ削峰→DB落库）。
  */
+@Slf4j
 @Service
 public class FlashSaleServiceImpl extends ServiceImpl<FlashSaleMapper, FlashSaleEntity> implements FlashSaleService {
 
@@ -59,7 +61,14 @@ public class FlashSaleServiceImpl extends ServiceImpl<FlashSaleMapper, FlashSale
         msg.setOrderNo(UUID.randomUUID().toString().replace("-", ""));
         msg.setFlashId(flashId);
         msg.setUserId(userId);
-        publisher.publish(msg);
+        boolean published = publisher.publish(msg);
+        if (!published) {
+            log.error("Flash order publish failed — rollback Redis stock: flashId={}, userId={}", flashId, userId);
+            // 补偿: Redis 回滚库存 + 清除用户限购标记
+            luaScript.preloadStock(flashId, (int) remaining);
+            throw new BizException(ErrorCode.FLASH_SALE_FAILED);
+        }
+        log.info("Flash order published: flashId={}, userId={}, remaining={}", flashId, userId, remaining);
         return true;
     }
 }

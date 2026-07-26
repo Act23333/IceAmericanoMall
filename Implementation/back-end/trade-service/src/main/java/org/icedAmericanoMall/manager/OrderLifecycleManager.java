@@ -7,6 +7,7 @@ import org.icedAmericanoMall.client.LogisticsClient;
 import org.icedAmericanoMall.client.SkuClient;
 import org.icedAmericanoMall.client.PointsClient;
 import org.icedAmericanoMall.domain.entity.OrderEntity;
+import org.icedAmericanoMall.enums.OrderStatusEnum;
 import org.icedAmericanoMall.domain.entity.OrderItemEntity;
 import org.icedAmericanoMall.dto.CreateLogisticsDTO;
 import org.icedAmericanoMall.dto.StockOpDTO;
@@ -36,7 +37,6 @@ public class OrderLifecycleManager {
     /** 确认收货奖励积分比例：支付金额（分）的 1%。 */
     private static final int POINTS_RATE_DIVISOR = 100;
     private static final int POINTS_TYPE_ORDER_REWARD = 2;
-    // V3.6: ORDER_TIMEOUT_MINUTES 已废弃 — 改用 RabbitMQ TTL 消息
 
     private final OrderService orderService;
     private final SkuClient skuClient;
@@ -84,14 +84,13 @@ public class OrderLifecycleManager {
         }
     }
 
-    // V3.6: cancelTimeoutOrders() 已废弃 — 改用 RabbitMQ TTL 死信队列（事件驱动）
 
     /**
      * V3.6: 安全取消订单 — 幂等保护（仅待付款状态可取消）。
      */
     public void cancelOrderSafely(String orderNo, Long userId) {
         OrderEntity order = orderService.getByOrderNo(orderNo);
-        if (order == null || order.getStatus() != 1) return; // 幂等：已处理或不存在
+        if (order == null || order.getStatus() != OrderStatusEnum.PENDING_PAYMENT.getCode()) return; // 幂等：已处理或不存在
         orderService.closeTimeoutOrder(order.getId());
         restoreStock(order.getId());
         rollbackCoupon(order);

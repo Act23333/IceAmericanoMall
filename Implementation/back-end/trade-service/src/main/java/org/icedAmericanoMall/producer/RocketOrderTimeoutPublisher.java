@@ -8,6 +8,12 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
 
+/**
+ * V4.0: RocketMQ 订单超时延迟消息发布者（大厂标准: 阿里/京东 RocketMQ 延迟消息）。
+ * <p>
+ * 下单成功后调用，发送 delay level=16 (30min) 延迟消息。
+ * 30min 后消息投递 → {@link org.icedAmericanoMall.consumer.OrderTimeoutConsumer} 消费 → 幂等取消。
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -28,7 +34,11 @@ public class RocketOrderTimeoutPublisher implements OrderTimeoutPublisher {
                     RocketMqTopics.ORDER_TIMEOUT_DELAY_LEVEL);
             log.info("Order timeout message published: orderNo={}", orderNo);
         } catch (Exception e) {
-            log.error("Failed to publish order timeout message: orderNo={}", orderNo, e);
+            log.error("Order timeout publish FAILED — manual intervention needed: orderNo={}", orderNo, e);
+            // Alibaba 规范: 不吞异常。RocketMQ 不可达时不应静默丢失，需触发人工处理
+            throw new org.noLazy.common.exception.BizException(
+                    org.noLazy.common.enums.ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
+                    "订单超时消息发送失败: " + orderNo);
         }
     }
 }
