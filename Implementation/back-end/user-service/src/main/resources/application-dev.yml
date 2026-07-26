@@ -21,4 +21,4 @@ geetest:
 
 logging:
   level:
-    org.icedAmericanoMall: DEBUG
+    org.icedamericanomall: DEBUG

@@ -54,7 +54,7 @@ wechat:
     app-secret: ${WECHAT_OAUTH_APP_SECRET:}
 logging:
   level:
-    org.icedAmericanoMall: DEBUG
+    org.icedamericanomall: DEBUG
   pattern:
     dateformat: HH:mm:ss:SSS
   file:

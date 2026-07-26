@@ -26,4 +26,4 @@ wechat:
 
 logging:
   level:
-    org.icedAmericanoMall: DEBUG
+    org.icedamericanomall: DEBUG

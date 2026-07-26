@@ -1,4 +1,4 @@
-//package org.icedAmericanoMall.config;
+//package org.icedamericanomall.config;
 //
 //
 //import org.springframework.amqp.rabbit.annotation.RabbitListener;

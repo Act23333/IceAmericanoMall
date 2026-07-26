@@ -81,7 +81,7 @@ mybatis-plus:
 
 logging:
   level:
-    org.icedAmericanoMall: DEBUG
+    org.icedamericanomall: DEBUG
     io.seata: DEBUG
 
 # 开启 Feign 对 Sentinel 的支持

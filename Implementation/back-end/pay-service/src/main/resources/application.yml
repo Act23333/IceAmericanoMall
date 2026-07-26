@@ -86,7 +86,7 @@ wechat:
 
 logging:
   level:
-    org.icedAmericanoMall: DEBUG
+    org.icedamericanomall: DEBUG
     io.seata: DEBUG
 # 可观测性：Actuator 健康检查 + Prometheus 指标端点（V2.4）
 management:

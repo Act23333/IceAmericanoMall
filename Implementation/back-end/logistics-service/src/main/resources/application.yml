@@ -38,7 +38,7 @@ mybatis-plus:
       id-type: auto
 logging:
   level:
-    org.icedAmericanoMall: DEBUG
+    org.icedamericanomall: DEBUG
 
 
 
