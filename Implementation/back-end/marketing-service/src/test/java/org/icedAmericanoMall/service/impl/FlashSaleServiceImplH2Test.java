@@ -81,7 +81,7 @@ class FlashSaleServiceImplH2Test {
 
         var mockLua = mock(FlashSaleLuaScript.class);
         when(mockLua.tryDeduct(anyLong(), anyLong(), anyInt())).thenReturn(10L);
-        flashSaleService = new FlashSaleServiceImpl(mockLua);
+        flashSaleService = new FlashSaleServiceImpl(mockLua, mock(org.icedAmericanoMall.producer.FlashSaleOrderPublisher.class));
         ReflectionTestUtils.setField(flashSaleService, "baseMapper",
                 sqlSessionManager.getMapper(FlashSaleMapper.class));
     }
