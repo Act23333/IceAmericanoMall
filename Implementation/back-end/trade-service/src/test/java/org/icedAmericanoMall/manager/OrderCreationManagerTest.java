@@ -108,7 +108,8 @@ class OrderCreationManagerTest {
         this.skuClient = mock(SkuClient.class);
         this.couponClient = mock(CouponClient.class);
         this.orderManager = new OrderCreationManager(orderService, new OrderConverterImpl(),
-                cartClient, addressClient, skuClient, couponClient);
+                cartClient, addressClient, skuClient, couponClient,
+                mock(org.icedAmericanoMall.producer.OrderTimeoutPublisher.class));
     }
 
     private CartItemDTO cartItem(Long skuId, int qty) {
@@ -220,7 +221,8 @@ class OrderCreationManagerTest {
         doThrow(new RuntimeException("DB down")).when(failingService)
                 .createOrderWithItems(any(), anyList());
         OrderCreationManager mgr = new OrderCreationManager(failingService, new OrderConverterImpl(),
-                cartClient, addressClient, skuClient, couponClient);
+                cartClient, addressClient, skuClient, couponClient,
+                mock(org.icedAmericanoMall.producer.OrderTimeoutPublisher.class));
 
         when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1000L, 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));

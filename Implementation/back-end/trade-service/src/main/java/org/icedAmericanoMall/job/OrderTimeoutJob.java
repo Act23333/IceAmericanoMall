@@ -4,10 +4,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * V3.6: 订单超时取消已改为事件驱动（RabbitMQ TTL 死信队列）。
+ * V4.0: 订单超时取消已改为 RocketMQ 延迟消息（大厂标准）。
  * <p>
  * 旧方案: @Scheduled(fixedRate=60s) 轮询全表扫描 → 无论有无数据每 60s 消耗 CPU。
- * 新方案: 创建订单时发送 TTL=30min 消息到 RabbitMQ → 自动过期 → 死信消费者取消。
+ * V3.6: RabbitMQ TTL + DLX 死信队列 → 精度有限(分钟级)。
+ * V4.0: RocketMQ 延迟消息(level=16, 30min) → 大厂标准，秒级精度。
  * <p>
  * 本类保留为占位，生产环境无需任何定时任务。
  *
