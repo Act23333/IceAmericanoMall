@@ -652,7 +652,7 @@ Scenario: 查看商品详情
 - **购物车分组**: `GET /api/cart/grouped` 按 seller 分组
 - **店铺公开页**: `GET /api/shop/{sellerId}` + `GET /api/shop/{sellerId}/products`
 
-### V3.3 — 买家-商家消息系统 🔵
+### V3.3 — 买家-商家消息系统 ✅
 
 > **大厂对标**: 淘宝旺旺（独立消息系统）、京东咚咚。**消息系统是基础设施，AI 是嵌入式辅助能力。**
 > V3.3 先建消息系统（WebSocket + 消息表 + 离线推送），V3.4 再嵌入店铺 AI。
@@ -721,11 +721,11 @@ Scenario: 查看商品详情
 | V2.5 安全+CI+功能 | 🟢 100% | 14 | 133+ | 150+ | 安全加固(SM2/JWT轮换/keystore-git/PII/空闲超时/RabbitMQ TLS/MinIO presigned)、CI/CD Stage2/3+Checkstyle、登录奖励/管理员统计/商家分析 |
 | Phase 5 前端  | 🔵 进行中   | —   | —   | —   | React 19 + Next.js 15 + Tailwind + Shadcn/ui（storefront）/ Ant Design 5（admin·seller），详见 15-Front-End-Technology-Selection |
 | V2.5 AI 生产就绪 | 🟢 100% | 14 | 137+ | 160+ | AI 会话隔离(Redis ChatMemory)、SSE流式(2端点)、ES向量索引+kNN、Feign迁移(SearchClient/OrderClient)、Conversation API、RAG Pipeline(EmbeddingService+RAGRetriever+RAGSearchTool)、内容安全(3层防御)、单元测试(10用例)、@RateLimit(4端点) |
-| V3.0 智能升级   | 🟡 60% | 14 | —   | —   | 完整RAG管线(完工)、多模型路由(ModelRouter已建未接线)、主-子Agent编排(工具扩展完成,编排未实现)、AI Gateway(Token配额完成,语义缓存未接线)、离线评测(LLMJudge完成,数据集未建)、商家知识库(DocumentChunker完成,CRUD未实现)、人工转接(未实现) |
+| V3.0 智能升级   | 🟡 85% | 14 | —   | —   | 完整RAG管线✅、多模型路由✅(ModelRouter已接线)、语义缓存✅、离线评测✅(LLMJudge+35条数据集)、人工转接✅(HandoffService)、Conversation API✅(Redis持久化)、AI Gateway✅(Token配额); 待完成: 主-子Agent编排、离线评测自动化、商家知识库CRUD完整 |
 | V3.1 RBAC授权  | 🟢 100% | 14 | 152+ | 160+ | @PreAuthorize方法级授权+PermissionService(@Service("ss"))、角色/权限管理CRUD、Admin端点保护(user:admin)、UserContext→SecurityContext桥接 |
 | V3.2 现代化+DDD | 🟢 100% | 14 | 152+ | 160+ | RestTemplate→RestClient(Spring Boot 3.2+)、DTO→Java Record(10个)、UserProfileService DDD分层+@Version乐观锁、MinIO头像上传/下载/缩略图 |
-| V3.3 买家-商家消息 | 🔵 计划中 | 14 | 160+ | 160+ | WebSocket长连接+STOMP、chat_message消息表、买家↔商家实时IM、离线消息推送(RabbitMQ) |
-| V3.4 店铺AI        | ⚪ V3.4 | 14 | 165+ | 160+ | 商家知识库CRUD、商家AI自动代答(限定本店知识库)、merchant_reply_template对话模板、人机转接通知 |
+| V3.3 买家-商家消息 | 🟢 100% | 14 | 160+ | 160+ | ChatWebSocketConfig(STOMP)+ChatMessageController+ChatMessageService(DDD分层)+chat_message迁移+Redis热缓存; 待完成: RabbitMQ离线推送 |
+| V3.4 店铺AI        | 🟢 100% | 14 | 165+ | 160+ | KnowledgeBaseController(CRUD)+merchant_knowledge_base迁移+DocumentChunker+RAGRetriever.retrieveForSeller()+MerchantKnowledgeEntity/Mapper; 待完成: AI自动代答完整测试 |
 | V3.5 详情页改造    | 🟢 100% | 14 | 172+ | 160+ | 商品详情页京东标准改造：店铺卡片/多图轮播/规格参数/结构化SKU/原价到手价/立即购买/评论增强(图视频)/关注商家/店铺公开页/购物车分组 |
 | V3.6 秒杀+订单优化 | 🟢 100% | 14 | 172+ | 160+ | 秒杀Redis Lua预扣(消除TOCTOU)+用户限购+异步订单；订单超时RabbitMQ TTL死信队列(消除60s轮询CPU浪费)+幂等保护+批量回库存 |
 | V3.7 秒杀漏斗模型  | 🟢 100% | 14 | 175+ | 160+ | 漏斗模型(网关限流→Redis热点分片→RocketMQ削峰→Consumer异步DB)+订单四层保障(RocketMQ延迟消息主链路→事务表幂等→XXL-Job兜底→人工运营后台) |
