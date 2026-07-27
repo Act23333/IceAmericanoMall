@@ -3,18 +3,15 @@ package org.icedamericanomall.controller;
 import dev.langchain4j.service.TokenStream;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
-import org.icedamericanomall.agent.ShoppingAssistant;
 import org.icedamericanomall.agent.StreamingShoppingAssistant;
 import org.icedamericanomall.config.AiProperties;
 import org.icedamericanomall.domain.dto.AiChatRequest;
 import org.icedamericanomall.domain.dto.AiChatResponse;
-import org.icedamericanomall.routing.ModelRouter;
 import org.icedamericanomall.security.ContentSafetyFilter;
 import org.noLazy.common.annotation.RateLimit;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.utils.UserContext;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -37,17 +34,10 @@ public class AiAssistantController {
     private AiProperties aiProperties;
 
     @Autowired(required = false)
-    private ShoppingAssistant shoppingAssistant;
-
-    @Autowired(required = false)
     private StreamingShoppingAssistant streamingShoppingAssistant;
 
-    @Autowired(required = false)
-    @Qualifier("qwenShoppingAssistant")
-    private ShoppingAssistant qwenShoppingAssistant;
-
     @Autowired
-    private ModelRouter modelRouter;
+    private org.icedamericanomall.manager.AiManager aiManager;
 
     @Autowired
     private ContentSafetyFilter safetyFilter;
@@ -67,27 +57,9 @@ public class AiAssistantController {
         String memoryId = "shopping:" + userKey + ":" + conversationId;
 
         String reply;
-        if (aiProperties.isEnabled() && shoppingAssistant != null) {
-            // V3.0: 语义缓存 — FAQ 命中直接返回
-            reply = modelRouter.getCachedResponse(req.message());
-            if (reply != null) {
-                log.debug("Semantic cache hit");
-                return Result.ok(new AiChatResponse(reply, conversationId));
-            }
-
-            // V3.0: 多模型路由 — 复杂query走Qwen，简单query走DeepSeek
-            boolean isComplex = qwenShoppingAssistant != null
-                    && modelRouter.estimateComplexity(req.message()) >=
-                       aiProperties.getRouting().getComplexityThreshold();
-            ShoppingAssistant selectedAgent = isComplex ? qwenShoppingAssistant : shoppingAssistant;
-
-            String modelName = isComplex ? "Qwen" : "DeepSeek";
-            log.debug("Chat: memoryId={}, model={}, complexity={}",
-                    memoryId, modelName, modelRouter.estimateComplexity(req.message()));
-            reply = selectedAgent.chat(memoryId, req.message());
-
-            // V3.0: 语义缓存 — 缓存FAQ回答
-            modelRouter.cacheResponse(req.message(), reply);
+        if (aiProperties.isEnabled() && aiManager != null) {
+            // V4.0 DDD: Application层编排（路由+缓存+多模型）全在 AiManager
+            reply = aiManager.chat(memoryId, req.message());
         } else {
             reply = "AI 助手未启用。请设置 ai.enabled=true 并配置 DEEPSEEK_API_KEY。";
         }
