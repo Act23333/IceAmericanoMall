@@ -1,16 +1,18 @@
 package org.icedamericanomall.controller;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.domain.dto.CreateOrderReq;
+import org.icedamericanomall.domain.dto.DirectOrderReq;
+import org.icedamericanomall.domain.vo.OrderVO;
 import org.icedamericanomall.manager.OrderCreationManager;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.utils.UserContext;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.*;
-
 /**
- * V3.5: 立即购买 — 跳过购物车直接下单（京东标准）。
+ * V4.0: 立即购买 — 跳过购物车直接下单（京东标准）。
+ * <p>
+ * 与购物车下单的区别: 不读取购物车、下单后不清除购物车。
  */
 @RestController
 @RequestMapping("/api/trade/order")
@@ -20,18 +22,8 @@ public class DirectOrderController {
     private final OrderCreationManager orderCreationManager;
 
     @PostMapping("/direct")
-    public Result<?> directOrder(@RequestBody Map<String, Object> req) {
+    public Result<OrderVO> directOrder(@Valid @RequestBody DirectOrderReq req) {
         Long userId = UserContext.getUserId();
-        Long skuId = Long.valueOf(req.get("skuId").toString());
-        int quantity = req.containsKey("quantity")
-                ? Integer.parseInt(req.get("quantity").toString()) : 1;
-        Long addressId = Long.valueOf(req.get("addressId").toString());
-
-        // 构造购物车式下单请求（模拟购物车单商品）
-        CreateOrderReq orderReq = new CreateOrderReq();
-        orderReq.setAddressId(addressId);
-        // 通过 OrderCreationManager 直接下单
-        var result = orderCreationManager.createOrder(userId, orderReq);
-        return Result.ok(result);
+        return Result.ok(orderCreationManager.createOrderDirect(userId, req));
     }
 }

@@ -9,6 +9,7 @@ import org.icedamericanomall.client.CouponClient;
 import org.icedamericanomall.client.SkuClient;
 import org.icedamericanomall.convert.OrderConverter;
 import org.icedamericanomall.domain.dto.CreateOrderReq;
+import org.icedamericanomall.domain.dto.DirectOrderReq;
 import org.icedamericanomall.domain.entity.OrderEntity;
 import org.icedamericanomall.domain.entity.OrderItemEntity;
 import org.icedamericanomall.domain.vo.OrderVO;
@@ -215,5 +216,92 @@ public class OrderCreationManager {
         private Integer price;
         private Integer quantity;
         private String image;
+    }
+
+    /**
+     * V4.0: 立即购买 — 跳过购物车，直接下单（京东标准）。
+     * 与 createOrder() 的区别: 不读取购物车、不清理购物车。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public OrderVO createOrderDirect(Long userId, DirectOrderReq req) {
+        // 1. 查 SKU 详情
+        List<SkuDTO> skuList = skuClient.getSkuListByIds(List.of(req.getSkuId()));
+        if (skuList == null || skuList.isEmpty())
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "SKU不存在");
+
+        SkuDTO sku = skuList.get(0);
+        if (sku.getStock() < req.getQuantity())
+            throw new BizException(ErrorCode.STOCK_INSUFFICIENT);
+
+        // 2. 验证地址
+        var addr = addressClient.getAddress(req.getAddressId());
+        if (addr == null) throw new BizException(ErrorCode.PARAM_ERROR, "收货地址不存在");
+
+        // 3. 构建单个 CartItemSnapshot（模拟购物车单商品）
+        CartItemSnapshot snap = new CartItemSnapshot();
+        snap.setSkuId(req.getSkuId());
+        snap.setSellerId(sku.getSellerId());
+        snap.setProductName(sku.getProductName());
+        snap.setSkuSpec(sku.getSpec());
+        snap.setPrice(sku.getPrice());
+        snap.setQuantity(req.getQuantity());
+        snap.setImage(sku.getImage());
+
+        // 4. 扣库存
+        StockOpDTO stockOp = new StockOpDTO();
+        stockOp.setSkuId(req.getSkuId());
+        stockOp.setQuantity(req.getQuantity());
+        skuClient.deductStock(List.of(stockOp));
+
+        // 5. 创建订单（复用核心逻辑）
+        return buildOrder(userId, req.getAddressId(), List.of(snap),
+                req.getUserCouponId(), addr);
+    }
+
+    /** 复用: 从 CartItemSnapshot 构建订单（购物车下单和立即购买共用） */
+    private OrderVO buildOrder(Long userId, Long addressId,
+                               List<CartItemSnapshot> snapshots,
+                               Long userCouponId, org.icedamericanomall.dto.AddressDTO addr) {
+        // 计算总额
+        int totalAmount = snapshots.stream()
+                .mapToInt(s -> s.getPrice() * s.getQuantity()).sum();
+        int discountAmount = 0;
+
+        // 创建订单实体
+        org.icedamericanomall.domain.entity.OrderEntity order = new org.icedamericanomall.domain.entity.OrderEntity();
+        order.setOrderNo("ORD" + System.currentTimeMillis() + (userId % 10000));
+        order.setUserId(userId);
+        order.setTotalAmount(totalAmount);
+        order.setPayAmount(totalAmount - discountAmount);
+        order.setDiscountAmount(discountAmount);
+        order.setStatus(1); // 待付款
+        order.setReceiverName(addr.getReceiver());
+        order.setReceiverPhone(addr.getPhone());
+        order.setReceiverAddress(addr.getProvince() + addr.getCity() + addr.getDistrict() + addr.getStreet());
+        order.setCreateTime(java.time.LocalDateTime.now());
+
+        // 创建订单项
+        List<org.icedamericanomall.domain.entity.OrderItemEntity> items = new ArrayList<>();
+        for (CartItemSnapshot snap : snapshots) {
+            org.icedamericanomall.domain.entity.OrderItemEntity item = new org.icedamericanomall.domain.entity.OrderItemEntity();
+            item.setSkuId(snap.getSkuId());
+            item.setProductName(snap.getProductName());
+            item.setSkuSpec(snap.getSkuSpec());
+            item.setPrice(snap.getPrice());
+            item.setQuantity(snap.getQuantity());
+            item.setImage(snap.getImage());
+            items.add(item);
+        }
+
+        orderService.createOrderWithItems(order, items);
+        publishTimeoutAfterCommit(order.getOrderNo());
+
+        // 返回 VO
+        org.icedamericanomall.domain.vo.OrderVO vo = new org.icedamericanomall.domain.vo.OrderVO();
+        vo.setOrderNo(order.getOrderNo());
+        vo.setTotalAmount(order.getTotalAmount());
+        vo.setPayAmount(order.getPayAmount());
+        vo.setStatus(order.getStatus());
+        return vo;
     }
 }
