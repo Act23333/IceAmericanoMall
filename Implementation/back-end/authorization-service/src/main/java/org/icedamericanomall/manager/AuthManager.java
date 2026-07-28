@@ -5,8 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.AuthClient;
 import org.icedamericanomall.dto.LoginRespDTO;
 import org.icedamericanomall.dto.PasswordLoginReqDTO;
+import org.icedamericanomall.dto.RegisterReqDTO;
+import org.icedamericanomall.dto.ResetPasswordReqDTO;
 import org.icedamericanomall.dto.SmsLoginReqDTO;
 import org.icedamericanomall.dto.WechatLoginReqDTO;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Component;
 
 /**
@@ -52,4 +55,15 @@ public class AuthManager {
         return resp;
     }
 
+    /** V4.0 DDD: 注册 — Manager编排 Feign调用 */
+    @Transactional(rollbackFor = Exception.class)
+    public LoginRespDTO register(RegisterReqDTO req) {
+        return authClient.register(req);
+    }
+
+    /** V4.0 DDD: 重置密码 — Manager编排 Feign调用 */
+    @Transactional(rollbackFor = Exception.class)
+    public void resetPassword(ResetPasswordReqDTO req) {
+        authClient.resetPassword(req);
+    }
 }

@@ -33,8 +33,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AuthController {
 
-    private final AuthClient authClient;
-    private final UserClient userClient;
+    private final org.icedamericanomall.manager.AuthManager authManager;
     private final LoginContext loginContext;
     private final LoginTokenService loginTokenService;
     private final RefreshTokenUtils refreshTokenUtils;
@@ -59,14 +58,14 @@ public class AuthController {
     @PostMapping("/register")
     public Result<OAuth2TokenResp> register(@Validated @RequestBody RegisterReq request) {
         RegisterReqDTO registerReqDTO = BeanUtils.copyBean(request, RegisterReqDTO.class);
-        LoginRespDTO userResp = authClient.register(registerReqDTO);
+        LoginRespDTO userResp = authManager.register(registerReqDTO);
         return Result.ok(loginTokenService.createLoginResponse(userResp));
     }
 
     /** 找回密码：短信验证码重置密码（公开接口）。 */
     @PostMapping("/reset-password")
     public Result<Void> resetPassword(@Validated @RequestBody ResetPasswordReqDTO request) {
-        authClient.resetPassword(request);
+        authManager.resetPassword(request);
         return Result.ok("密码重置成功");
     }
 
