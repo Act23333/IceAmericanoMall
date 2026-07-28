@@ -31,4 +31,18 @@ public class CouponCreateReq implements Serializable {
     @NotNull
     private LocalDateTime endTime;
     private Integer status;
+
+    // V4.0: 多维度优惠券模型（京东标准）
+    @NotNull
+    private Integer discountType;
+    @NotNull
+    private Integer couponCategory;
+    @NotNull
+    private Integer grantType;
+    @NotNull
+    private Integer stockType;
+    @NotNull
+    private Integer grabType;
+    /** 付费券价格(分), grantType=PAID_PURCHASE时必填 */
+    private Integer priceInCents;
 }

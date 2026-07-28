@@ -16,4 +16,7 @@ public class UpdateProductReq implements Serializable {
     private String description;
     private String brand;
     private Long categoryId;
+
+    // V4.0: 商品级销售标签
+    private String salesTags;
 }

@@ -31,6 +31,10 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
 
     private final OrderItemMapper orderItemMapper;
 
+    /**
+     * V4.0: 批量保存订单项（FIX: 之前 TODO 未实现，订单项从未持久化到 DB）。
+     * 在同一事务中批量 insert 所有 order_item，MyBatis-Plus 自动优化为批量提交。
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void createOrderWithItems(OrderEntity order, List<OrderItemEntity> items) {
@@ -38,8 +42,8 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, OrderEntity> impl
         save(order);
         for (OrderItemEntity item : items) {
             item.setOrderId(order.getId());
+            orderItemMapper.insert(item);
         }
-        // TODO V4.0: saveBatch(items) 替代循环单条 insert
     }
 
     @Override

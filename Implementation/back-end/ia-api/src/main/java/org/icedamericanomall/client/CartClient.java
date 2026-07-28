@@ -4,6 +4,7 @@ import org.icedamericanomall.dto.CartItemDTO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
@@ -26,4 +27,10 @@ public interface CartClient {
      */
     @DeleteMapping("/clear")
     void clearCart(@RequestParam Long userId);
+
+    /**
+     * V4.0: Delete specific cart items by their IDs (only ordered items, not entire cart).
+     */
+    @DeleteMapping("/items")
+    void deleteByIds(@RequestParam Long userId, @RequestBody List<Long> cartItemIds);
 }

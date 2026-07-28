@@ -18,4 +18,10 @@ public class SkuVO implements Serializable {
     private String image;
     private Integer soldCount;
     private Integer status;
+
+    // V4.0: 库存类型 + 热销标识 + 销售标签
+    private Integer stockType;
+    private Boolean isHot;
+    private String hotReason;
+    private String salesTags;
 }

@@ -112,9 +112,9 @@ class OrderCreationManagerTest {
                 mock(org.icedamericanomall.producer.OrderTimeoutPublisher.class));
     }
 
-    private CartItemDTO cartItem(Long skuId, int qty) {
+    private CartItemDTO cartItem(Long cartItemId, Long skuId, int qty) {
         CartItemDTO c = new CartItemDTO();
-        c.setSkuId(skuId); c.setQuantity(qty);
+        c.setCartItemId(cartItemId); c.setSkuId(skuId); c.setQuantity(qty);
         return c;
     }
 
@@ -140,9 +140,9 @@ class OrderCreationManagerTest {
     }
 
     @Test
-    @DisplayName("createOrder — 正常下单：金额=各项之和、地址快照、扣库存、清购物车、订单入库")
+    @DisplayName("createOrder — 正常下单：金额=各项之和、地址快照、扣库存、删已购项、订单入库")
     void shouldCreateOrder_whenValidCartAndAddress() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1000L, 2), cartItem(1001L, 1)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2), cartItem(2L, 1001L, 1)));
         when(skuClient.getSkuListByIds(anyList()))
                 .thenReturn(List.of(sku(1000L, 9L, 5000, 10), sku(1001L, 9L, 3000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
@@ -165,13 +165,15 @@ class OrderCreationManagerTest {
         assertTrue(saved.getReceiverAddress().contains("深圳市"));    // 地址快照拼接
 
         verify(skuClient).deductStock(anyList());                     // 扣减库存
-        verify(cartClient).clearCart(100L);                           // 清空购物车
+        // V4.0: 仅删除已下单项，非全量清空
+        verify(cartClient).deleteByIds(eq(100L), anyList());
+        verify(cartClient, never()).clearCart(anyLong());
     }
 
     @Test
     @DisplayName("createOrder — 使用优惠券：抵扣后 payAmount = total - discount")
     void shouldApplyCouponDiscount_whenCouponProvided() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(couponClient.useCoupon(eq(100L), eq(55L), anyString(), eq(10000))).thenReturn(3000);
@@ -190,7 +192,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder — 库存不足：拒绝下单且不扣库存")
     void shouldReject_whenStockInsufficient() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1000L, 5)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 5)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 3)));
 
         assertThrows(BizException.class, () -> orderManager.createOrder(100L, req()));
@@ -207,7 +209,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder — 跨店铺：拒绝下单")
     void shouldReject_whenMultipleSellers() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1000L, 1), cartItem(1001L, 1)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 1), cartItem(2L, 1001L, 1)));
         when(skuClient.getSkuListByIds(anyList()))
                 .thenReturn(List.of(sku(1000L, 9L, 5000, 10), sku(1001L, 8L, 3000, 10)));
         assertThrows(BizException.class, () -> orderManager.createOrder(100L, req()));
@@ -224,7 +226,7 @@ class OrderCreationManagerTest {
                 cartClient, addressClient, skuClient, couponClient,
                 mock(org.icedamericanomall.producer.OrderTimeoutPublisher.class));
 
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
 

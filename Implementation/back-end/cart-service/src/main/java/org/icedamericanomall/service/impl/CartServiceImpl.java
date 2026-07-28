@@ -140,6 +140,19 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, CartEntity> impleme
                 .remove();
     }
 
+    /**
+     * V4.0: 删除指定购物车项（仅删除已下单的商品，京东标准）。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteByIds(Long userId, List<Long> cartItemIds) {
+        if (cartItemIds == null || cartItemIds.isEmpty()) return;
+        lambdaUpdate()
+                .eq(CartEntity::getUserId, userId)
+                .in(CartEntity::getId, cartItemIds)
+                .remove();
+    }
+
     private CartVO buildCartVO(List<CartEntity> items) {
         CartVO vo = new CartVO();
         List<CartItemResp> respItems = cartConverter.entitiesToResps(items);

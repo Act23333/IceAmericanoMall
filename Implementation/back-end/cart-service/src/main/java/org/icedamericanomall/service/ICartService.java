@@ -27,4 +27,10 @@ public interface ICartService extends IService<CartEntity> {
     void selectItem(Long userId, Long skuId, @NotNull Boolean selected);
 
     void clearCart(Long userId);
+
+    /**
+     * V4.0: Delete specific cart items by their cart record IDs (post-order cleanup).
+     * Only deletes items that were actually ordered, not the entire cart (JD standard).
+     */
+    void deleteByIds(Long userId, List<Long> cartItemIds);
 }

@@ -51,6 +51,14 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, SkuEntity> implements
         if (sku == null) {
             throw new BizException(ErrorCode.USER_NOT_FOUND, "SKU不存在");
         }
+        // V4.0: 不限量商品跳过库存扣减（京东标准），仅增加销量统计
+        if (sku.getStockType() != null && sku.getStockType() == 2) { // UNLIMITED
+            lambdaUpdate()
+                    .eq(SkuEntity::getId, skuId)
+                    .setIncrBy(SkuEntity::getSoldCount, quantity)
+                    .update();
+            return;
+        }
         if (sku.getStock() < quantity) {
             throw new BizException(ErrorCode.BALANCE_INSUFFICIENT, "库存不足");
         }
@@ -85,6 +93,10 @@ public class SkuServiceImpl extends ServiceImpl<SkuMapper, SkuEntity> implements
         SkuEntity sku = getById(skuId);
         if (sku == null) {
             log.warn("SKU不存在，跳过库存恢复: skuId={}", skuId);
+            return;
+        }
+        // V4.0: 不限量商品无需恢复库存
+        if (sku.getStockType() != null && sku.getStockType() == 2) { // UNLIMITED
             return;
         }
         boolean updated = lambdaUpdate()

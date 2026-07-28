@@ -32,6 +32,12 @@ public class SkuEntity implements Serializable {
 
     private Integer soldCount;
 
+    // V4.0: 库存类型 + 热销标识 + 销售标签（京东/淘宝标准）
+    private Integer stockType;   // 1=LIMITED, 2=UNLIMITED, 3=PRESALE
+    private Boolean isHot;       // 热销标识
+    private String hotReason;    // discount/new_arrival/best_seller/clearance
+    private String salesTags;    // JSON: ["限时优惠","新品"]
+
     private Integer status;
 
     @Version

@@ -7,7 +7,7 @@ import java.util.List;
 
 public interface CouponService extends IService<CouponEntity> {
 
-    /** 用户领取优惠券，返回 user_coupon 记录 */
+    /** 用户领取优惠券（免费领取），返回 user_coupon 记录 */
     UserCouponEntity claim(Long userId, String couponId);
 
     /** 查询用户可用优惠券列表 */
@@ -24,4 +24,12 @@ public interface CouponService extends IService<CouponEntity> {
 
     /** 按订单号回滚优惠券（下单失败/取消/超时补偿，幂等）。 */
     void rollbackByOrderNo(String orderNo);
+
+    // === V4.0: 多维度优惠券模型 ===
+
+    /** V4.0: 购买付费优惠券（创建PRE_PAID状态的user_coupon记录，status=4） */
+    UserCouponEntity purchaseCoupon(Long userId, String couponId);
+
+    /** V4.0: 秒杀级优惠券领取（Redis Lua脚本，高并发，grabType=NEED_GRAB时使用） */
+    UserCouponEntity claimWithGrab(Long userId, String couponId);
 }
