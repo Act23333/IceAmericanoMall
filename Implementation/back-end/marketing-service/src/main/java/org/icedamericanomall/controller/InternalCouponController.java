@@ -15,11 +15,12 @@ public class InternalCouponController {
 
     private final CouponService couponService;
 
-    /** 使用优惠券，返回实际抵扣金额（分）。 */
+    /** V4.2: 使用优惠券，返回实际抵扣金额（分）。新增 orderType+sellerId 用于类别/店铺校验。 */
     @PostMapping("/use")
     public int use(@RequestParam Long userId, @RequestParam Long userCouponId,
-                   @RequestParam String orderNo, @RequestParam Integer orderAmount) {
-        return couponService.useCoupon(userId, userCouponId, orderNo, orderAmount);
+                   @RequestParam String orderNo, @RequestParam Integer orderAmount,
+                   @RequestParam Integer orderType, @RequestParam Long sellerId) {
+        return couponService.useCoupon(userId, userCouponId, orderNo, orderAmount, orderType, sellerId);
     }
 
     /** 按订单号回滚优惠券。 */

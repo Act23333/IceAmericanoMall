@@ -13,10 +13,11 @@ import org.springframework.web.bind.annotation.RequestParam;
         fallbackFactory = CouponClientFallback.class)
 public interface CouponClient {
 
-    /** 使用优惠券，返回实际抵扣金额（分）。 */
+    /** V4.2: 使用优惠券，返回实际抵扣金额（分）。新增 orderType+sellerId 用于类别/店铺校验。 */
     @PostMapping("/use")
     Integer useCoupon(@RequestParam Long userId, @RequestParam Long userCouponId,
-                      @RequestParam String orderNo, @RequestParam Integer orderAmount);
+                      @RequestParam String orderNo, @RequestParam Integer orderAmount,
+                      @RequestParam Integer orderType, @RequestParam Long sellerId);
 
     /** 按订单号回滚优惠券（取消/超时/下单失败补偿）。 */
     @PostMapping("/rollback")

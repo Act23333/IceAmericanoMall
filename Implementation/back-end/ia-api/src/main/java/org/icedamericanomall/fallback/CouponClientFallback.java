@@ -15,7 +15,8 @@ public class CouponClientFallback implements FallbackFactory<CouponClient> {
     public CouponClient create(Throwable cause) {
         return new CouponClient() {
             @Override
-            public Integer useCoupon(Long userId, Long userCouponId, String orderNo, Integer orderAmount) {
+            public Integer useCoupon(Long userId, Long userCouponId, String orderNo,
+                                      Integer orderAmount, Integer orderType, Long sellerId) {
                 log.error("优惠券使用失败，降级为不抵扣: userCouponId={}, orderNo={}", userCouponId, orderNo, cause);
                 return 0;
             }

@@ -182,7 +182,7 @@ class OrderCreationManagerTest {
         when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
-        when(couponClient.useCoupon(eq(100L), eq(55L), anyString(), eq(10000))).thenReturn(3000);
+        when(couponClient.useCoupon(eq(100L), eq(55L), anyString(), eq(10000), anyInt(), anyLong())).thenReturn(3000);
 
         OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
         c.setUserCouponId(55L);
@@ -192,7 +192,7 @@ class OrderCreationManagerTest {
         assertEquals(10000, saved.getTotalAmount());
         assertEquals(3000, saved.getDiscountAmount());
         assertEquals(7000, saved.getPayAmount());
-        verify(couponClient).useCoupon(eq(100L), eq(55L), anyString(), eq(10000));
+        verify(couponClient).useCoupon(eq(100L), eq(55L), anyString(), eq(10000), anyInt(), anyLong());
     }
 
     @Test
