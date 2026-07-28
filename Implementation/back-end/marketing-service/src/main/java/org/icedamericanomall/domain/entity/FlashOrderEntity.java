@@ -10,6 +10,13 @@ import lombok.Data;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 
+/**
+ * V4.1: 标记废弃。秒杀订单已统一走 trade-service 的 orders 表（order_type=3）。
+ * 本实体保留仅用于 flash_order 表的存量数据查询，新代码不应使用。
+ *
+ * @deprecated 请使用 trade-service 的 OrderEntity + orderType=FLASH_SALE。
+ */
+@Deprecated
 @Data
 @TableName("flash_order")
 public class FlashOrderEntity implements Serializable {

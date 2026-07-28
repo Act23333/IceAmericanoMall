@@ -7,9 +7,11 @@ import org.icedamericanomall.convert.OrderConverter;
 import org.icedamericanomall.domain.dto.CreateOrderReq;
 import org.icedamericanomall.domain.entity.OrderEntity;
 import org.icedamericanomall.domain.vo.OrderVO;
+import org.icedamericanomall.enums.OrderTypeEnum;
 import org.icedamericanomall.manager.OrderCreationManager;
 import org.icedamericanomall.manager.OrderLifecycleManager;
 import org.icedamericanomall.service.OrderService;
+import org.icedamericanomall.strategy.OrderCreateContext;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.utils.UserContext;
 import org.springframework.web.bind.annotation.*;
@@ -24,9 +26,16 @@ public class OrderController {
     private final OrderService orderService;
     private final OrderConverter orderConverter;
 
+    /** V4.1: 购物车下单 — 统一订单中心入口 (orderType=NORMAL) */
     @PostMapping
     public Result<OrderVO> create(@Valid @RequestBody CreateOrderReq req) {
-        return Result.ok(orderCreationManager.createOrder(UserContext.getUserId(), req));
+        Long userId = UserContext.getUserId();
+        OrderCreateContext ctx = new OrderCreateContext();
+        ctx.setUserId(userId);
+        ctx.setOrderType(OrderTypeEnum.NORMAL);
+        ctx.setAddressId(req.getAddressId());
+        ctx.setUserCouponId(req.getUserCouponId());
+        return Result.ok(orderCreationManager.createOrder(ctx));
     }
 
     @GetMapping("/{orderNo}")

@@ -1,10 +1,13 @@
 package org.icedamericanomall.client;
 
+import org.icedamericanomall.dto.CreateOrderInternalReq;
 import org.icedamericanomall.dto.OrderSummaryDTO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
@@ -25,4 +28,11 @@ public interface OrderClient {
      */
     @GetMapping("/{orderNo}")
     OrderSummaryDTO getOrder(@PathVariable String orderNo);
+
+    /**
+     * V4.1: 营销服务调用 — 创建秒杀订单（统一订单中心）。
+     * marketing-service 完成 Redis 预扣后，通过此接口委托 trade-service 落库。
+     */
+    @PostMapping("/create")
+    OrderSummaryDTO createOrder(@RequestBody CreateOrderInternalReq req);
 }

@@ -2,8 +2,13 @@ package org.icedamericanomall.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.domain.entity.OrderEntity;
+import org.icedamericanomall.domain.vo.OrderVO;
+import org.icedamericanomall.dto.CreateOrderInternalReq;
 import org.icedamericanomall.dto.OrderSummaryDTO;
+import org.icedamericanomall.enums.OrderTypeEnum;
+import org.icedamericanomall.manager.OrderCreationManager;
 import org.icedamericanomall.service.OrderService;
+import org.icedamericanomall.strategy.OrderCreateContext;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -16,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 public class InternalOrderController {
 
     private final OrderService orderService;
+    private final OrderCreationManager orderCreationManager;
 
     /**
      * Update order status — called by pay-service after payment success / timeout.
@@ -45,6 +51,30 @@ public class InternalOrderController {
         dto.setOrderNo(order.getOrderNo());
         dto.setTotalAmount(order.getTotalAmount());
         dto.setStatus(order.getStatus());
+        return dto;
+    }
+
+    /**
+     * V4.1: 创建秒杀订单 — 营销服务完成 Redis 预扣后，调用此接口创建真实订单。
+     * 走统一订单中心（策略模式路由，orderType=FLASH_SALE）。
+     */
+    @PostMapping("/create")
+    public OrderSummaryDTO createOrder(@RequestBody CreateOrderInternalReq req) {
+        OrderCreateContext ctx = new OrderCreateContext();
+        ctx.setUserId(req.getUserId());
+        ctx.setOrderType(OrderTypeEnum.FLASH_SALE);
+        ctx.setSkuId(req.getSkuId());
+        ctx.setQuantity(req.getQuantity());
+        ctx.setAddressId(req.getAddressId());
+        ctx.setFlashId(req.getFlashId());
+        ctx.setFlashPrice(req.getFlashPrice());
+
+        OrderVO vo = orderCreationManager.createOrder(ctx);
+
+        OrderSummaryDTO dto = new OrderSummaryDTO();
+        dto.setOrderNo(vo.getOrderNo());
+        dto.setTotalAmount(vo.getPayAmount());
+        dto.setStatus(vo.getStatus());
         return dto;
     }
 }
