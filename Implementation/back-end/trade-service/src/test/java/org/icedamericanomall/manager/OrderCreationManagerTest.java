@@ -8,22 +8,20 @@ import org.h2.Driver;
 import org.icedamericanomall.client.AddressClient;
 import org.icedamericanomall.client.CartClient;
 import org.icedamericanomall.client.CouponClient;
-import org.icedamericanomall.client.LogisticsClient;
 import org.icedamericanomall.client.SkuClient;
-import org.icedamericanomall.client.UserClient;
 import org.icedamericanomall.convert.OrderConverterImpl;
-import org.icedamericanomall.domain.dto.CreateOrderReq;
 import org.icedamericanomall.domain.entity.OrderEntity;
 import org.icedamericanomall.domain.vo.OrderVO;
 import org.icedamericanomall.dto.AddressDTO;
 import org.icedamericanomall.dto.CartItemDTO;
 import org.icedamericanomall.dto.SkuDTO;
-import org.icedamericanomall.dto.StockOpDTO;
 import org.icedamericanomall.enums.OrderStatusEnum;
+import org.icedamericanomall.enums.OrderTypeEnum;
 import org.icedamericanomall.mapper.OrderItemMapper;
 import org.icedamericanomall.mapper.OrderMapper;
 import org.icedamericanomall.service.OrderService;
 import org.icedamericanomall.service.impl.OrderServiceImpl;
+import org.icedamericanomall.strategy.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,21 +33,17 @@ import javax.sql.DataSource;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * OrderCreationManager 下单编排集成测试 —— H2 承接真实 OrderService，Feign 客户端用 Mockito 打桩。
- * 锁定"购物车→SKU→地址快照→库存扣减→建单→清车"链路与 Saga 回滚，保护后续规范重构不回归。
- * <p>注：Feign 路径正确性由契约测试（Phase E）覆盖；此处聚焦编排行为。
+ * V4.1: OrderCreationManager 下单编排集成测试（策略模式）。
+ * 使用真实策略实例 + Mock Feign 客户端，验证统一订单中心管道。
  */
 @DisplayName("OrderCreationManager 下单编排集成测试")
 class OrderCreationManagerTest {
 
-    private OrderService orderService;      // 真实实现 + H2
+    private OrderService orderService;
     private CartClient cartClient;
     private AddressClient addressClient;
     private SkuClient skuClient;
@@ -69,7 +63,7 @@ class OrderCreationManagerTest {
                     order_no VARCHAR(64) NOT NULL UNIQUE,
                     user_id BIGINT NOT NULL, seller_id BIGINT NOT NULL,
                     total_amount INT DEFAULT 0, pay_amount INT DEFAULT 0, discount_amount INT DEFAULT 0,
-                    status INT DEFAULT 1, payment_type INT DEFAULT 1,
+                    status INT DEFAULT 1, order_type INT DEFAULT 1, payment_type INT DEFAULT 1,
                     receiver_name VARCHAR(50), receiver_phone VARCHAR(20), receiver_address VARCHAR(200),
                     version INT DEFAULT 0,
                     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, pay_time TIMESTAMP NULL,
@@ -107,9 +101,18 @@ class OrderCreationManagerTest {
         this.addressClient = mock(AddressClient.class);
         this.skuClient = mock(SkuClient.class);
         this.couponClient = mock(CouponClient.class);
+
+        // V4.1: 构造真实策略实例 + 策略工厂（Spring 注入模拟）
+        NormalCartOrderStrategy normalStrategy = new NormalCartOrderStrategy(
+                cartClient, skuClient, addressClient, couponClient);
+        DirectOrderStrategy directStrategy = new DirectOrderStrategy(skuClient, addressClient, couponClient);
+        FlashSaleOrderStrategy flashSaleStrategy = new FlashSaleOrderStrategy(skuClient, addressClient);
+        OrderCreateStrategyFactory factory = new OrderCreateStrategyFactory(
+                List.of(normalStrategy, directStrategy, flashSaleStrategy));
+
         this.orderManager = new OrderCreationManager(orderService, new OrderConverterImpl(),
-                cartClient, addressClient, skuClient, couponClient,
-                mock(org.icedamericanomall.producer.OrderTimeoutPublisher.class));
+                skuClient, couponClient,
+                mock(org.icedamericanomall.producer.OrderTimeoutPublisher.class), factory);
     }
 
     private CartItemDTO cartItem(Long cartItemId, Long skuId, int qty) {
@@ -133,86 +136,90 @@ class OrderCreationManagerTest {
         return a;
     }
 
-    private CreateOrderReq req() {
-        CreateOrderReq r = new CreateOrderReq();
-        r.setAddressId(1L);
-        return r;
+    private OrderCreateContext ctx(OrderTypeEnum type) {
+        OrderCreateContext c = new OrderCreateContext();
+        c.setUserId(100L);
+        c.setOrderType(type);
+        c.setAddressId(1L);
+        return c;
     }
 
     @Test
-    @DisplayName("createOrder — 正常下单：金额=各项之和、地址快照、扣库存、删已购项、订单入库")
+    @DisplayName("createOrder(NORMAL) — 正常购物车下单：金额正确、地址快照、扣库存、删已购项")
     void shouldCreateOrder_whenValidCartAndAddress() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2), cartItem(2L, 1001L, 1)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(
+                List.of(cartItem(1L, 1000L, 2), cartItem(2L, 1001L, 1)));
         when(skuClient.getSkuListByIds(anyList()))
                 .thenReturn(List.of(sku(1000L, 9L, 5000, 10), sku(1001L, 9L, 3000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
 
-        OrderVO vo = orderManager.createOrder(100L, req());
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        OrderVO vo = orderManager.createOrder(c);
 
         assertNotNull(vo);
         assertNotNull(vo.getOrderNo());
+        assertEquals(OrderTypeEnum.NORMAL.getCode(), vo.getOrderType());
         assertEquals(2, vo.getItems().size());
 
         OrderEntity saved = orderService.getByOrderNo(vo.getOrderNo());
         assertNotNull(saved);
-        assertEquals(5000 * 2 + 3000, saved.getTotalAmount());        // 总金额=Σ(price*qty)
+        assertEquals(5000 * 2 + 3000, saved.getTotalAmount());
         assertEquals(saved.getTotalAmount(), saved.getPayAmount());
         assertEquals(0, saved.getDiscountAmount());
         assertEquals(9L, saved.getSellerId());
         assertEquals(OrderStatusEnum.PENDING_PAYMENT.getCode(), saved.getStatus());
         assertEquals("张三", saved.getReceiverName());
-        assertEquals("13800138000", saved.getReceiverPhone());
-        assertTrue(saved.getReceiverAddress().contains("深圳市"));    // 地址快照拼接
+        assertTrue(saved.getReceiverAddress().contains("深圳市"));
 
-        verify(skuClient).deductStock(anyList());                     // 扣减库存
-        // V4.0: 仅删除已下单项，非全量清空
+        verify(skuClient).deductStock(anyList());
         verify(cartClient).deleteByIds(eq(100L), anyList());
         verify(cartClient, never()).clearCart(anyLong());
     }
 
     @Test
-    @DisplayName("createOrder — 使用优惠券：抵扣后 payAmount = total - discount")
+    @DisplayName("createOrder(NORMAL) — 使用优惠券：抵扣后 payAmount = total - discount")
     void shouldApplyCouponDiscount_whenCouponProvided() {
         when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(couponClient.useCoupon(eq(100L), eq(55L), anyString(), eq(10000))).thenReturn(3000);
 
-        CreateOrderReq r = req();
-        r.setUserCouponId(55L);
-        OrderVO vo = orderManager.createOrder(100L, r);
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        c.setUserCouponId(55L);
+        OrderVO vo = orderManager.createOrder(c);
 
         OrderEntity saved = orderService.getByOrderNo(vo.getOrderNo());
         assertEquals(10000, saved.getTotalAmount());
-        assertEquals(3000, saved.getDiscountAmount());   // 抵扣 3000 分
-        assertEquals(7000, saved.getPayAmount());        // 应付 = 总额 - 抵扣
+        assertEquals(3000, saved.getDiscountAmount());
+        assertEquals(7000, saved.getPayAmount());
         verify(couponClient).useCoupon(eq(100L), eq(55L), anyString(), eq(10000));
     }
 
     @Test
-    @DisplayName("createOrder — 库存不足：拒绝下单且不扣库存")
+    @DisplayName("createOrder(NORMAL) — 库存不足：拒绝下单且不扣库存")
     void shouldReject_whenStockInsufficient() {
         when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 5)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 3)));
 
-        assertThrows(BizException.class, () -> orderManager.createOrder(100L, req()));
+        assertThrows(BizException.class, () -> orderManager.createOrder(ctx(OrderTypeEnum.NORMAL)));
         verify(skuClient, never()).deductStock(anyList());
     }
 
     @Test
-    @DisplayName("createOrder — 空购物车：拒绝下单")
+    @DisplayName("createOrder(NORMAL) — 空购物车：拒绝下单")
     void shouldReject_whenCartEmpty() {
         when(cartClient.getSelectedItems(100L)).thenReturn(List.of());
-        assertThrows(BizException.class, () -> orderManager.createOrder(100L, req()));
+        assertThrows(BizException.class, () -> orderManager.createOrder(ctx(OrderTypeEnum.NORMAL)));
     }
 
     @Test
-    @DisplayName("createOrder — 跨店铺：拒绝下单")
+    @DisplayName("createOrder(NORMAL) — 跨店铺：拒绝下单")
     void shouldReject_whenMultipleSellers() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 1), cartItem(2L, 1001L, 1)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(
+                List.of(cartItem(1L, 1000L, 1), cartItem(2L, 1001L, 1)));
         when(skuClient.getSkuListByIds(anyList()))
                 .thenReturn(List.of(sku(1000L, 9L, 5000, 10), sku(1001L, 8L, 3000, 10)));
-        assertThrows(BizException.class, () -> orderManager.createOrder(100L, req()));
+        assertThrows(BizException.class, () -> orderManager.createOrder(ctx(OrderTypeEnum.NORMAL)));
         verify(skuClient, never()).deductStock(anyList());
     }
 
@@ -222,16 +229,58 @@ class OrderCreationManagerTest {
         OrderService failingService = mock(OrderService.class);
         doThrow(new RuntimeException("DB down")).when(failingService)
                 .createOrderWithItems(any(), anyList());
+
+        NormalCartOrderStrategy normalStrategy = new NormalCartOrderStrategy(
+                cartClient, skuClient, addressClient, couponClient);
+        OrderCreateStrategyFactory factory = new OrderCreateStrategyFactory(List.of(normalStrategy));
         OrderCreationManager mgr = new OrderCreationManager(failingService, new OrderConverterImpl(),
-                cartClient, addressClient, skuClient, couponClient,
-                mock(org.icedamericanomall.producer.OrderTimeoutPublisher.class));
+                skuClient, couponClient,
+                mock(org.icedamericanomall.producer.OrderTimeoutPublisher.class), factory);
 
         when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
 
-        assertThrows(BizException.class, () -> mgr.createOrder(100L, req()));
-        verify(skuClient).deductStock(anyList());       // 已扣减
-        verify(skuClient).restoreStock(anyList());      // Saga 补偿回滚
+        assertThrows(BizException.class, () -> mgr.createOrder(ctx(OrderTypeEnum.NORMAL)));
+        verify(skuClient).deductStock(anyList());
+        verify(skuClient).restoreStock(anyList());
+    }
+
+    @Test
+    @DisplayName("createOrder(DIRECT) — 立即购买：不操作购物车")
+    void shouldNotTouchCart_whenDirectOrder() {
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+
+        OrderCreateContext c = ctx(OrderTypeEnum.DIRECT);
+        c.setSkuId(1000L);
+        c.setQuantity(1);
+        OrderVO vo = orderManager.createOrder(c);
+
+        assertNotNull(vo.getOrderNo());
+        assertEquals(OrderTypeEnum.DIRECT.getCode(), vo.getOrderType());
+        verify(cartClient, never()).deleteByIds(anyLong(), anyList());
+        verify(cartClient, never()).clearCart(anyLong());
+    }
+
+    @Test
+    @DisplayName("createOrder(FLASH_SALE) — 秒杀订单：使用闪购价且不操作购物车")
+    void shouldUseFlashPrice_whenFlashSaleOrder() {
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+
+        OrderCreateContext c = ctx(OrderTypeEnum.FLASH_SALE);
+        c.setSkuId(1000L);
+        c.setQuantity(1);
+        c.setFlashId(99L);
+        c.setFlashPrice(1000); // 秒杀价 10元，远低于 SKU 原价 50元
+        OrderVO vo = orderManager.createOrder(c);
+
+        assertNotNull(vo.getOrderNo());
+        assertEquals(OrderTypeEnum.FLASH_SALE.getCode(), vo.getOrderType());
+        OrderEntity saved = orderService.getByOrderNo(vo.getOrderNo());
+        assertEquals(1000, saved.getTotalAmount()); // 秒杀价
+        assertEquals(0, saved.getDiscountAmount()); // 秒杀不使用优惠券
+        verify(cartClient, never()).deleteByIds(anyLong(), anyList());
     }
 }

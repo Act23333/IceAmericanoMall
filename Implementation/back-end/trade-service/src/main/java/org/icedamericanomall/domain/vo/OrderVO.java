@@ -19,6 +19,7 @@ public class OrderVO implements Serializable {
     private Integer payAmount;
     private Integer discountAmount;
     private Integer status;
+    private Integer orderType;   // V4.1: 1=NORMAL, 2=DIRECT, 3=FLASH_SALE, 4=PRESALE
     private Integer paymentType;
     private String receiverName;
     private String receiverPhone;

@@ -29,6 +29,9 @@ public class OrderEntity implements Serializable {
 
     private Integer status;
 
+    /** V4.1: 订单类型: 1=NORMAL, 2=DIRECT, 3=FLASH_SALE, 4=PRESALE */
+    private Integer orderType;
+
     private Integer paymentType;
 
     /** 收货人姓名快照 */

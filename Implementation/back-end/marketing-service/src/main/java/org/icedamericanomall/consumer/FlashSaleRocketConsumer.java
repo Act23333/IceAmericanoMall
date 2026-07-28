@@ -12,9 +12,10 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * V4.0: 秒杀异步订单 RocketMQ 消费者 — 大厂标准（京东漏斗模型第三层）。
+ * V4.1: 秒杀异步统计 + 补偿对账 RocketMQ 消费者。
  * <p>
- * 漏斗链路: Redis Lua 预扣 → Producer 发 RocketMQ → Consumer 异步写 MySQL + @Version 乐观锁。
+ * V4.1 职责简化：订单创建已移至 trade-service 同步调用（漏斗第三层），
+ * 本消费者仅做异步统计（soldCount +1）和补偿对账。
  */
 @Slf4j
 @Component
@@ -30,15 +31,15 @@ public class FlashSaleRocketConsumer implements RocketMQListener<FlashSaleOrderM
 
     @Override
     public void onMessage(FlashSaleOrderMessage msg) {
-        log.info("Flash order RocketMQ: orderNo={}, flashId={}, userId={}",
+        log.info("Flash async stats: orderNo={}, flashId={}, userId={}",
                 msg.getOrderNo(), msg.getFlashId(), msg.getUserId());
         try {
             FlashSaleEntity fs = flashSaleService.getById(msg.getFlashId());
             if (fs == null || fs.getSoldCount() >= fs.getStock()) {
-                log.warn("Flash {} sold out, skip order {}", msg.getFlashId(), msg.getOrderNo());
+                log.warn("Flash {} sold out, skip stats {}", msg.getFlashId(), msg.getOrderNo());
                 return;
             }
-            // V4.0: @Version 乐观锁 + 条件 UPDATE（数据库最终防线）
+            // V4.1: 异步统计 soldCount（订单已由 trade-service 同步创建）
             boolean ok = flashSaleService.lambdaUpdate()
                     .eq(FlashSaleEntity::getId, msg.getFlashId())
                     .eq(FlashSaleEntity::getVersion, fs.getVersion())
@@ -46,13 +47,13 @@ public class FlashSaleRocketConsumer implements RocketMQListener<FlashSaleOrderM
                     .setSql("sold_count = sold_count + 1")
                     .update();
             if (!ok) {
-                log.warn("Optimistic lock failed for {}", msg.getOrderNo());
+                log.warn("Optimistic lock failed for stats {}", msg.getOrderNo());
                 throw new RuntimeException("Optimistic lock failed — retry");
             }
-            log.info("Flash order persisted: {}", msg.getOrderNo());
+            log.info("Flash async stats done: {}", msg.getOrderNo());
         } catch (Exception e) {
-            log.error("Flash order consume failed: {}", msg.getOrderNo(), e);
-            throw e; // CONSUME_LATER → RocketMQ 重试（最多16次）
+            log.error("Flash stats consume failed: {}", msg.getOrderNo(), e);
+            throw e; // CONSUME_LATER → RocketMQ retry
         }
     }
 }
