@@ -1,5 +1,6 @@
 package org.icedamericanomall.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.icedamericanomall.constants.CouponTypeEnum;
 import org.icedamericanomall.domain.entity.CouponEntity;
@@ -37,7 +38,7 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
 
         // Check duplicate claim
         Long count = userCouponMapper.selectCount(
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<UserCouponEntity>()
+                new LambdaQueryWrapper<UserCouponEntity>()
                         .eq(UserCouponEntity::getUserId, userId)
                         .eq(UserCouponEntity::getCouponId, coupon.getId()));
         if (count > 0) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "已领取过该优惠券");

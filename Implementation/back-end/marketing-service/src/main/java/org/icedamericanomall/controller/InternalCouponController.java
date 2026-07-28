@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class InternalCouponController {
 
-    private final CouponService couponService;
+    private final org.icedAmericanoMall.service.CouponService couponService;
 
     /** 使用优惠券，返回实际抵扣金额（分）。 */
     @PostMapping("/use")
