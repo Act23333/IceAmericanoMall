@@ -24,6 +24,11 @@ public class CartClientFallback implements FallbackFactory<CartClient> {
             public void clearCart(Long userId) {
                 log.error("清空购物车失败, userId={}", userId, cause);
             }
+
+            @Override
+            public void deleteByIds(Long userId, List<Long> cartItemIds) {
+                log.error("删除指定购物车项失败, userId={}, cartItemIds={}", userId, cartItemIds, cause);
+            }
         };
     }
 }

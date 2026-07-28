@@ -30,6 +30,7 @@ public class ProductEntity implements Serializable {
     private String videoUrl;     // V3.5: 视频URL
     private String attributes;   // V3.5: JSON 规格参数
     private String serviceTags;  // V3.5: JSON 售后标签
+    private String salesTags;    // V4.0: JSON 销售标签
     private Integer viewCount;   // V3.5: 浏览次数
 
     private String description;

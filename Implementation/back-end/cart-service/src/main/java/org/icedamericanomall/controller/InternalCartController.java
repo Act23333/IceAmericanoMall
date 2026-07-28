@@ -37,6 +37,14 @@ public class InternalCartController {
         cartService.clearCart(userId);
     }
 
+    /**
+     * V4.0: Delete specific cart items after successful order (only ordered items, not entire cart).
+     */
+    @DeleteMapping("/items")
+    public void deleteByIds(@RequestParam Long userId, @RequestBody List<Long> cartItemIds) {
+        cartService.deleteByIds(userId, cartItemIds);
+    }
+
     private CartItemDTO toDTO(CartEntity entity) {
         CartItemDTO dto = new CartItemDTO();
         dto.setCartItemId(entity.getId());

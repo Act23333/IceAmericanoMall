@@ -20,4 +20,10 @@ public class SkuDTO implements Serializable {
     private Integer stock;
     private String image;
     private Integer status;
+
+    // V4.0: 库存类型 + 热销标识 + 销售标签（京东/淘宝标准）
+    private Integer stockType;   // 1=LIMITED, 2=UNLIMITED, 3=PRESALE
+    private Boolean isHot;
+    private String hotReason;
+    private String salesTags;
 }

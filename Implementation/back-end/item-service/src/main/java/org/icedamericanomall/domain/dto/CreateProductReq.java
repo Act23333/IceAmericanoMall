@@ -42,5 +42,14 @@ public class CreateProductReq implements Serializable {
         private Integer stock;
 
         private String image;
+
+        // V4.0: 库存类型 + 热销标识
+        private Integer stockType;
+        private Boolean isHot;
+        private String hotReason;
+        private String salesTags;
     }
+
+    // V4.0: 商品级销售标签
+    private String salesTags;
 }
