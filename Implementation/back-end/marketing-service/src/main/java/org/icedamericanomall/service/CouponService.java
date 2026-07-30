@@ -16,8 +16,9 @@ public interface CouponService extends IService<CouponEntity> {
     /** 查询用户已使用/已过期优惠券 */
     List<UserCouponEntity> getUserUsedCoupons(Long userId);
 
-    /** 使用优惠券（下单时调用），返回实际抵扣金额（分） */
-    int useCoupon(Long userId, Long userCouponId, String orderNo, int orderAmount);
+    /** V4.2: 使用优惠券（下单时调用），返回实际抵扣金额（分）。新增 orderType+sellerId 用于类别/店铺校验 */
+    int useCoupon(Long userId, Long userCouponId, String orderNo, int orderAmount,
+                  Integer orderType, Long sellerId);
 
     /** 回滚优惠券（取消订单时调用） */
     void rollbackCoupon(Long userCouponId);

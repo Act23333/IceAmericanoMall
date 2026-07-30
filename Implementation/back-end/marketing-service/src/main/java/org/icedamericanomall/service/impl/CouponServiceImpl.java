@@ -115,9 +115,22 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
      * V4.0: 使用优惠券（下单时调用），支持 discountType 三维度。
      * 向后兼容: discountType 为空时回退到旧 type 字段。
      */
+    /**
+     * V4.2: 使用优惠券 — 增加 couponCategory 与订单类型/卖家匹配校验（京东标准）。
+     *
+     * <pre>
+     * 优惠券使用规则:
+     * - PLATFORM(1): 所有订单类型通用，不限卖家
+     * - SHOP(2):     仅限该店铺(sellerId)的订单
+     * - FLASH_SALE(3): 仅限秒杀订单(orderType=3)
+     * - EXCLUSIVE(4): 平台独占券，仅限普通/立即购买订单（不含秒杀）
+     * - 秒杀订单(orderType=3): 拒绝所有优惠券（秒杀价已是底价，后端兜底）
+     * </pre>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public int useCoupon(Long userId, Long userCouponId, String orderNo, int orderAmount) {
+    public int useCoupon(Long userId, Long userCouponId, String orderNo, int orderAmount,
+                          Integer orderType, Long sellerId) {
         UserCouponEntity uc = userCouponMapper.selectById(userCouponId);
         if (uc == null || !uc.getUserId().equals(userId))
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券不存在");
@@ -129,22 +142,42 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
         if (orderAmount < coupon.getMinAmount())
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "未达到最低消费金额");
 
+        // V4.2: couponCategory 与订单类型/卖家校验（京东标准：券类别决定适用范围）
+        int category = coupon.getCouponCategory() != null ? coupon.getCouponCategory()
+                : (coupon.getSellerId() == null ? CouponCategoryEnum.PLATFORM.getCode()
+                                                 : CouponCategoryEnum.SHOP.getCode());
+        if (orderType != null) {
+            // 秒杀订单不允许使用任何优惠券（后端兜底，前端也应限制）
+            if (orderType == 3) { // FLASH_SALE
+                throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "秒杀订单不支持使用优惠券");
+            }
+            // FLASH_SALE 券仅限秒杀订单 → 但秒杀订单已在上方拒绝，此处为语义完整性
+            if (category == CouponCategoryEnum.FLASH_SALE.getCode() && orderType != 3) {
+                throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
+                        "秒杀券仅限秒杀订单使用");
+            }
+        }
+        // SHOP 券：卖家必须匹配
+        if (category == CouponCategoryEnum.SHOP.getCode()) {
+            if (coupon.getSellerId() == null || !coupon.getSellerId().equals(sellerId)) {
+                throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
+                        "店铺券仅限该店铺订单使用");
+            }
+        }
+
         // V4.0: 优先使用 discountType，兼容旧 type 字段
         int dt = coupon.getDiscountType() != null ? coupon.getDiscountType() : coupon.getType();
         int discount;
         if (dt == DiscountTypeEnum.FIXED.getCode()) {
-            // 满减券：固定金额抵扣
             discount = coupon.getValue();
         } else if (dt == DiscountTypeEnum.PERCENTAGE.getCode()) {
-            // 折扣券: value=85 表示 8.5折 → 抵扣 15%
             discount = orderAmount * (100 - coupon.getValue()) / 100;
         } else if (dt == DiscountTypeEnum.CASH_COUPON.getCode()) {
-            // V4.0: 代金券：面额抵扣，不超过订单总金额
             discount = Math.min(coupon.getValue(), orderAmount);
         } else {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "未知的优惠券类型");
         }
-        discount = Math.min(discount, orderAmount); // 抵扣金额不超过订单总金额
+        discount = Math.min(discount, orderAmount);
 
         uc.setStatus(2);
         uc.setUsedOrderNo(orderNo);

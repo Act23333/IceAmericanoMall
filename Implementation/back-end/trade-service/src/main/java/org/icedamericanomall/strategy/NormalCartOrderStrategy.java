@@ -101,7 +101,8 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
         int discount = 0;
         if (ctx.getUserCouponId() != null) {
             Integer applied = couponClient.useCoupon(
-                    ctx.getUserId(), ctx.getUserCouponId(), order.getOrderNo(), total);
+                    ctx.getUserId(), ctx.getUserCouponId(), order.getOrderNo(), total,
+                    ctx.getOrderType().getCode(), ctx.getSellerId());
             discount = applied != null ? Math.min(applied, total) : 0;
         }
         order.setTotalAmount(total);
