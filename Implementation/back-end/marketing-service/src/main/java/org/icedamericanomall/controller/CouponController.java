@@ -1,6 +1,5 @@
 package org.icedamericanomall.controller;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.domain.entity.CouponEntity;
 import org.icedamericanomall.domain.entity.UserCouponEntity;
@@ -13,7 +12,7 @@ import java.util.List;
 
 /**
  * 用户端优惠券接口。
- * V4.0: 新增付费购买 + 秒杀级领取端点（京东标准多维度优惠券模型）。
+ * V4.4: 统一领取入口 smartClaim（自动路由 DB/Redis）；删除 purchase（付费券走 trade 订单+支付）。
  */
 @RestController
 @RequestMapping("/api/coupon")
@@ -22,25 +21,19 @@ public class CouponController {
 
     private final CouponService couponService;
 
-    /** 免费领取优惠券（普通/不限量/付费PRE_PAID升级） */
+    /** V4.4: 智能领取——根据 grabType 自动路由 DB 或 Redis Lua 通道（京东标准） */
     @PostMapping("/claim")
     public Result<UserCouponEntity> claim(@RequestParam String couponId) {
-        return Result.ok(couponService.claim(UserContext.getUserId(), couponId));
+        return Result.ok(couponService.smartClaim(UserContext.getUserId(), couponId));
     }
 
-    /** V4.0: 秒杀级优惠券领取（Redis Lua 高并发） */
+    /** 秒杀级优惠券领取（直接走 Redis Lua 高并发通道，兼容保留） */
     @PostMapping("/grab")
     public Result<UserCouponEntity> grab(@RequestParam String couponId) {
         return Result.ok(couponService.claimWithGrab(UserContext.getUserId(), couponId));
     }
 
-    /** V4.0: 购买付费优惠券（创建 PRE_PAID 记录） */
-    @PostMapping("/purchase")
-    public Result<UserCouponEntity> purchase(@RequestParam String couponId) {
-        return Result.ok(couponService.purchaseCoupon(UserContext.getUserId(), couponId));
-    }
-
-    /** 可用优惠券列表 */
+    /** 所有未使用券列表（向后兼容） */
     @GetMapping("/available")
     public Result<List<UserCouponEntity>> available() {
         return Result.ok(couponService.getUserAvailableCoupons(UserContext.getUserId()));

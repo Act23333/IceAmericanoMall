@@ -36,10 +36,9 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
     }
 
     /**
-     * V4.0: 多维度领取优惠券。
-     * - UNLIMITED 券: 不检查总量上限
-     * - PAID_PURCHASE 券: 需先购买(PRE_PAID记录)，此方法仅升级为未使用
-     * - NEED_GRAB 券: 本方法拒绝，请使用 claimWithGrab()
+     * V4.4: 普通领取优惠券（免费券、不限量券）。
+     * NEED_GRAB 券由 smartClaim 自动路由到 claimWithGrab。
+     * PAID_PURCHASE 券走 trade 订单→支付→grantAfterPayment 通道，不再走此处。
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -47,16 +46,13 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
         CouponEntity coupon = lambdaQuery().eq(CouponEntity::getCouponId, couponId).one();
         if (coupon == null) throw new BizException(ErrorCode.USER_NOT_FOUND, "优惠券不存在");
         if (coupon.getStatus() != 1) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已失效");
+        // V4.4: 增加 startTime 校验（京东标准：到点才能领）
+        if (coupon.getStartTime() != null && LocalDateTime.now().isBefore(coupon.getStartTime()))
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券未到领取时间");
         if (LocalDateTime.now().isAfter(coupon.getEndTime()))
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已过期");
 
-        // V4.0: 秒杀券走 Redis 高并发通道
-        if (coupon.getGrabType() != null && coupon.getGrabType() == GrabTypeEnum.NEED_GRAB.getCode()) {
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
-                    "该优惠券为秒杀券，请使用 /api/coupon/grab 接口领取");
-        }
-
-        // V4.0: 检查重复领取
+        // 检查重复领取
         Long count = userCouponMapper.selectCount(
                 new LambdaQueryWrapper<UserCouponEntity>()
                         .eq(UserCouponEntity::getUserId, userId)
@@ -71,20 +67,6 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
             if (!incremented) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已领完");
         }
         // V4.0: UNLIMITED 券：不检查总量上限，跳过 issuedQty 扣减
-
-        // V4.0: 付费券：仅允许已购买的 PRE_PAID 记录转为未使用
-        if (coupon.getGrantType() != null && coupon.getGrantType() == GrantTypeEnum.PAID_PURCHASE.getCode()) {
-            UserCouponEntity prePaid = userCouponMapper.selectOne(
-                    new LambdaQueryWrapper<UserCouponEntity>()
-                            .eq(UserCouponEntity::getUserId, userId)
-                            .eq(UserCouponEntity::getCouponId, coupon.getId())
-                            .eq(UserCouponEntity::getStatus, 4)); // PRE_PAID
-            if (prePaid == null)
-                throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "请先购买该优惠券");
-            prePaid.setStatus(1);
-            userCouponMapper.updateById(prePaid);
-            return prePaid;
-        }
 
         UserCouponEntity uc = new UserCouponEntity();
         uc.setUserId(userId);
@@ -214,37 +196,45 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
         }
     }
 
-    // === V4.0: 多维度优惠券模型新增方法 ===
+    // === V4.4: smartClaim + grantAfterPayment ===
 
     /**
-     * V4.0: 购买付费优惠券。
-     * 创建 PRE_PAID(status=4) 状态的 user_coupon 记录，
-     * 用户后续调用 claim() 时自动升级为 status=1。
-     * TODO V4.1: 集成支付服务扣除余额/发起支付。
+     * V4.4: 智能领取——根据 grabType 自动路由到 DB 或 Redis Lua 通道。
+     * 替代了之前分离的 /claim 和 /grab 端点，前端统一调此方法。
+     */
+    @Override
+    public UserCouponEntity smartClaim(Long userId, String couponId) {
+        CouponEntity coupon = lambdaQuery().eq(CouponEntity::getCouponId, couponId).one();
+        if (coupon == null) throw new BizException(ErrorCode.USER_NOT_FOUND, "优惠券不存在");
+        if (coupon.getGrabType() != null && coupon.getGrabType() == GrabTypeEnum.NEED_GRAB.getCode()) {
+            return claimWithGrab(userId, couponId);
+        }
+        return claim(userId, couponId);
+    }
+
+    /**
+     * V4.4: 支付成功后发券（京东标准：付费券购买→支付→回调发券）。
+     * 直接创建 status=1 的 user_coupon，跳过 PRE_PAID 状态。
+     * 由 pay-service 支付成功回调 → InternalCouponController.grant 端点调用。
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public UserCouponEntity purchaseCoupon(Long userId, String couponId) {
+    public UserCouponEntity grantAfterPayment(Long userId, String couponId) {
         CouponEntity coupon = lambdaQuery().eq(CouponEntity::getCouponId, couponId).one();
         if (coupon == null) throw new BizException(ErrorCode.USER_NOT_FOUND, "优惠券不存在");
-        if (coupon.getGrantType() == null || coupon.getGrantType() != GrantTypeEnum.PAID_PURCHASE.getCode())
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "该优惠券无需购买，可直接领取");
-        if (coupon.getPriceInCents() == null || coupon.getPriceInCents() <= 0)
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券价格未配置");
+        if (coupon.getStatus() != 1) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已失效");
 
-        // 检查是否已购买/领取
+        // 防重：检查是否已发过
         Long exists = userCouponMapper.selectCount(
                 new LambdaQueryWrapper<UserCouponEntity>()
                         .eq(UserCouponEntity::getUserId, userId)
                         .eq(UserCouponEntity::getCouponId, coupon.getId()));
-        if (exists > 0) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "已购买或领取过该优惠券");
-
-        // TODO V4.1: 调用支付服务扣款 balanceClient.deduct(userId, coupon.getPriceInCents())
+        if (exists > 0) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "已发放过该优惠券");
 
         UserCouponEntity uc = new UserCouponEntity();
         uc.setUserId(userId);
         uc.setCouponId(coupon.getId());
-        uc.setStatus(4); // PRE_PAID
+        uc.setStatus(1);
         userCouponMapper.insert(uc);
         return uc;
     }
@@ -258,6 +248,10 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
         CouponEntity coupon = lambdaQuery().eq(CouponEntity::getCouponId, couponId).one();
         if (coupon == null) throw new BizException(ErrorCode.USER_NOT_FOUND, "优惠券不存在");
         if (coupon.getStatus() != 1) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已失效");
+        if (coupon.getStartTime() != null && LocalDateTime.now().isBefore(coupon.getStartTime()))
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券未到领取时间");
+        if (LocalDateTime.now().isAfter(coupon.getEndTime()))
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已过期");
         if (coupon.getGrabType() == null || coupon.getGrabType() != GrabTypeEnum.NEED_GRAB.getCode())
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "该优惠券无需抢，请使用普通领取接口");
 
