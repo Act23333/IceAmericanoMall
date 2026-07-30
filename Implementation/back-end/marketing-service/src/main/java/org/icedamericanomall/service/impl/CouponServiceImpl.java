@@ -29,14 +29,17 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
 
     private final UserCouponMapper userCouponMapper;
     private final CouponGrabLuaScript couponGrabLuaScript;
+    private final CouponClaimLuaScript couponClaimLuaScript;
 
-    public CouponServiceImpl(UserCouponMapper userCouponMapper, CouponGrabLuaScript couponGrabLuaScript) {
+    public CouponServiceImpl(UserCouponMapper userCouponMapper, CouponGrabLuaScript couponGrabLuaScript,
+                              CouponClaimLuaScript couponClaimLuaScript) {
         this.userCouponMapper = userCouponMapper;
         this.couponGrabLuaScript = couponGrabLuaScript;
+        this.couponClaimLuaScript = couponClaimLuaScript;
     }
 
     /**
-     * V4.4: 普通领取优惠券（免费券、不限量券）。
+     * V4.5: 普通领取优惠券（免费券、不限量券），增加 Redis SISMEMBER 去重保护 DB。
      * NEED_GRAB 券由 smartClaim 自动路由到 claimWithGrab。
      * PAID_PURCHASE 券走 trade 订单→支付→grantAfterPayment 通道，不再走此处。
      */
@@ -46,13 +49,17 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
         CouponEntity coupon = lambdaQuery().eq(CouponEntity::getCouponId, couponId).one();
         if (coupon == null) throw new BizException(ErrorCode.USER_NOT_FOUND, "优惠券不存在");
         if (coupon.getStatus() != 1) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已失效");
-        // V4.4: 增加 startTime 校验（京东标准：到点才能领）
         if (coupon.getStartTime() != null && LocalDateTime.now().isBefore(coupon.getStartTime()))
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券未到领取时间");
         if (LocalDateTime.now().isAfter(coupon.getEndTime()))
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已过期");
 
-        // 检查重复领取
+        // V4.5: Redis SISMEMBER 快速去重（京东标准：所有券类型都用 Redis 保护DB）
+        if (couponClaimLuaScript.tryDedup(coupon.getId(), userId) == 0) {
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "已领取过该优惠券");
+        }
+
+        // DB去重（双保险：Redis 主防 + DB 兜底，防止 Redis 数据丢失导致重复领）
         Long count = userCouponMapper.selectCount(
                 new LambdaQueryWrapper<UserCouponEntity>()
                         .eq(UserCouponEntity::getUserId, userId)
