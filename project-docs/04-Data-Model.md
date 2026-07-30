@@ -184,11 +184,17 @@ cart ───N:1─── sku
 | category_id | BIGINT | FK → category.id, NOT NULL | 所属类目 |
 | name | VARCHAR(200) | NOT NULL | 商品名称 |
 | main_image | VARCHAR(255) | NULL | 主图 URL |
+| images | JSON | NULL | 多图URL列表 (V3.5) |
+| video_url | VARCHAR(500) | NULL | 视频URL (V3.5) |
+| attributes | JSON | NULL | 规格参数K-V (V3.5) |
 | description | TEXT | NULL | 图文描述（HTML） |
 | brand | VARCHAR(100) | NULL | 品牌 |
 | sold_count | INT | DEFAULT 0 | 总销量 |
+| view_count | INT | DEFAULT 0 | 浏览次数 (V3.5) |
 | comment_count | INT | DEFAULT 0 | 总评论数 |
 | is_ad | TINYINT | DEFAULT 0 | 广告商品标记 |
+| service_tags | JSON | NULL | 售后标签 (V3.5) |
+| sales_tags | JSON | NULL | 商品级销售标签 (V4.0) |
 | status | TINYINT | DEFAULT 1 | 1-上架，2-下架，3-删除 |
 | publish_time | DATETIME | NULL | 发布时间 |
 | create_time | DATETIME | NOT NULL | |
@@ -207,9 +213,14 @@ cart ───N:1─── sku
 | product_id | BIGINT | FK → product.id, NOT NULL | 所属商品 |
 | spec | VARCHAR(200) | NOT NULL | 规格描述 |
 | price | INT | NOT NULL | 价格（分） |
+| original_price | INT | NULL | 原价（分）(V3.5) |
 | stock | INT | NOT NULL, DEFAULT 0 | 库存数量 |
 | image | VARCHAR(255) | NULL | 规格专属图片 |
 | sold_count | INT | DEFAULT 0 | 该规格销量 |
+| stock_type | TINYINT | DEFAULT 1 | 库存类型: 1=LIMITED限量, 2=UNLIMITED不限量, 3=PRESALE预售 (V4.0) |
+| is_hot | TINYINT | DEFAULT 0 | 热销标识: 0=否, 1=是 (V4.0) |
+| hot_reason | VARCHAR(50) | NULL | 热销原因: discount/new_arrival/best_seller/clearance (V4.0) |
+| sales_tags | JSON | NULL | 销售标签JSON: ["限时优惠","新品"] (V4.0) |
 | status | TINYINT | DEFAULT 1 | 1-可售，0-停售 |
 | version | INT | NOT NULL, DEFAULT 0 | 乐观锁版本号 |
 | create_time | DATETIME | NOT NULL | |
@@ -225,6 +236,7 @@ cart ───N:1─── sku
 | order_no | VARCHAR(32) | UNIQUE, NOT NULL | 订单号 |
 | user_id | BIGINT | FK → user.id, NOT NULL | 买家 |
 | seller_id | BIGINT | FK → seller.id, NOT NULL | 商家 |
+| order_type | TINYINT | NOT NULL, DEFAULT 1 | 订单类型: 1=NORMAL购物车, 2=DIRECT立即购买, 3=FLASH_SALE秒杀, 4=PRESALE预售 (V4.1) |
 | total_amount | INT | NOT NULL | 总金额（分） |
 | pay_amount | INT | NOT NULL | 实付金额（分） |
 | discount_amount | INT | NOT NULL, DEFAULT 0 | 优惠金额（分） |
@@ -403,6 +415,21 @@ public void createOrder(OrderDTO dto) {
 | version | INT | 乐观锁 |
 | start_time / end_time | DATETIME | |
 
+**`flash_order_log`** — 秒杀订单事务日志 (V3.7，幂等+兜底)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK | |
+| order_no | VARCHAR(32) UNIQUE | 订单号 |
+| flash_id | BIGINT | 秒杀活动ID |
+| user_id | BIGINT | 用户ID |
+| status | TINYINT DEFAULT 0 | 0=待处理, 1=已创建, 2=失败, 3=超时取消 |
+| retry_count | INT DEFAULT 0 | 重试次数 |
+| error_msg | VARCHAR(500) | 失败原因 |
+| create_time | DATETIME | |
+| update_time | DATETIME | |
+
+索引: `idx_order_no`, `idx_status_time`(status, create_time)
+
 **`home_config`** — 首页配置
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -423,18 +450,31 @@ public void createOrder(OrderDTO dto) {
 | ip | VARCHAR(45) | |
 | create_time | DATETIME | |
 
-**`coupon`** — 优惠券模板（V1.1 迁移时加入，V1.2 添加 seller_id）
+**`coupon`** — 优惠券模板（V1.1 迁移时加入，V1.2 添加 seller_id，V4.0 升级为五维模型）
+
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK | |
 | coupon_id | VARCHAR(32) UNIQUE | 业务标识 |
 | name | VARCHAR(100) | |
-| type | TINYINT | 1=满减, 2=折扣 |
-| value | INT | 满减金额(分) / 折扣百分比 |
+| type | TINYINT | **DEPRECATED V4.0**: 请使用 discountType。1=满减, 2=折扣（保留向后兼容） |
+| value | INT | 满减金额(分) / 折扣百分比(85=8.5折) |
 | min_amount | INT | 最低消费(分) |
 | seller_id | BIGINT | NULL=平台券, 非NULL=店铺券 |
 | total_qty / issued_qty | INT | |
 | start_time / end_time | DATETIME | |
+| **V4.0 五维模型** | | |
+| discount_type | TINYINT | **V4.0**: 优惠计算类型: 1=FIXED满减, 2=PERCENTAGE折扣, 3=CASH_COUPON代金券 |
+| coupon_category | TINYINT | **V4.0**: 券类别: 1=PLATFORM平台券, 2=SHOP店铺券, 3=FLASH_SALE秒杀券, 4=EXCLUSIVE独占券 |
+| grant_type | TINYINT | **V4.0**: 获取方式: 1=FREE_CLAIM免费领, 2=PAID_PURCHASE付费购买, 3=INVITATION邀请, 4=AUTO_ISSUE自动发放 |
+| stock_type | TINYINT | **V4.0**: 总量模型: 1=LIMITED限量, 2=UNLIMITED不限量 |
+| grab_type | TINYINT | **V4.0**: 领取方式: 1=NORMAL普通, 2=NEED_GRAB需抢(Redis Lua), 3=PLATFORM_EXCLUSIVE平台独占 |
+| price_in_cents | INT | **V4.0**: 付费券价格(分), grantType=PAID_PURCHASE时必填 |
+| **V4.3 适用范围** | | |
+| scope_type | TINYINT | **V4.3**: 适用范围: 1=ALL全场, 2=CATEGORY指定类目, 3=PRODUCT指定商品 (计划) |
+| scope_values | JSON | **V4.3**: 适用范围值: {"categoryIds":[1,2,3]} 或 {"productIds":[101,102]} (计划) |
+| stack_rule | TINYINT | **V4.3**: 叠加规则: 1=不可叠加, 2=可与其他券叠加, 3=可与活动叠加 (计划) |
+| stack_group | VARCHAR(50) | **V4.3**: 叠加分组: 同组券互斥、跨组可叠加 (计划) |
 
 **`user_coupon`** — 用户优惠券
 | 字段 | 类型 | 说明 |
@@ -649,17 +689,17 @@ public void createOrder(OrderDTO dto) {
 
 ---
 
-## 十一、商品详情页增强数据模型 (V3.5 计划)
+## 十一、商品详情页增强数据模型 (V3.5 已实现)
 
-### 11.1 修改 — product/sku/review 表
+### 11.1 已落库的 product/sku/review 字段
 
-**`product` 表新增**: images(JSON)/video_url/attributes(JSON)/service_tags(JSON)/view_count
-**`sku` 表新增**: original_price(INT, 原价分)
-**`review` 表修改**: images→media_urls(JSON) + is_anonymous + helpful_count
+**`product` 表已新增** (V3.5 migration): images(JSON多图)/video_url(VARCHAR)/attributes(JSON规格参数)/service_tags(JSON售后标签)/view_count(INT浏览数)
+**`sku` 表已新增** (V3.5 migration): original_price(INT, 原价分)
+**`review` 表已修改** (V3.5 migration): images→media_urls(JSON) + is_anonymous(TINYINT) + helpful_count(INT)
 
-### 11.2 新增表
+### 11.2 已建表
 
-**`product_view_log`** — 商品浏览(user_id/product_id/view_time), idx_product_time
-**`store_follow`** — 店铺关注(user_id+seller_id 联合主键)
-**`sku_spec_dimension`** — SKU规格维度(product_id/name/sort_order)
-**`sku_spec_option`** — SKU规格选项(dimension_id/value/image)
+**`product_view_log`** — 商品浏览记录 (user_id/product_id/view_time), idx_product_time
+**`store_follow`** — 店铺关注 (user_id+seller_id 联合主键)
+**`sku_spec_dimension`** — SKU规格维度 (product_id/name/sort_order) (计划)
+**`sku_spec_option`** — SKU规格选项 (dimension_id/value/image) (计划)

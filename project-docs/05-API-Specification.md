@@ -1,6 +1,6 @@
 # 05 — 接口规格文档 (API Specification — SDD)
 
-> 最后更新: 2026-07-23 | 端点总数: 172 (含V3.3-V3.5计划) | 公共: 153 | 内部: 24 | 已实现: 152
+> 最后更新: 2026-07-31 | 端点总数: 175 | 公共: 160 | 内部: 27 | 已实现: 174
 
 ---
 
@@ -324,6 +324,7 @@ CartItemResp: `{ skuId(Long), productName, spec, image, price(Integer), quantity
 | 70  | GET  | `/api/trade/order/page`              | Query: `status?`, `page`(1), `size`(20)            | `IPage<OrderVO>` | ✅   |
 | 71  | POST | `/api/trade/order/{orderNo}/cancel`  | Path: `orderNo` (String)                           | `Void`           | ✅   |
 | 72  | POST | `/api/trade/order/{orderNo}/confirm` | Path: `orderNo` (String)                           | `Void`           | ✅   |
+| —   | POST | `/api/trade/order/direct`         | `{ skuId(Long), quantity, addressId, couponId? }` | `OrderVO`        | ✅ V4.0 |
 
 OrderVO: `{ id(Long), orderNo(String), userId(Long), sellerId(Long), totalAmount(Integer), payAmount(Integer), discountAmount(Integer), status(Integer)["PENDING_PAY"/"PENDING_SHIP"/"PENDING_RECEIPT"/"COMPLETED"/"CANCELLED"/"PENDING_REVIEW"], paymentType(Integer), receiverName, receiverPhone, receiverAddress, createTime, payTime?, consignTime?, endTime?, items: List<OrderItemVO> }`
 OrderItemVO: `{ id(Long), skuId(Long), productName, skuSpec, price(Integer), quantity, subTotal(Integer), image }`
@@ -403,6 +404,7 @@ OrderItemVO: `{ id(Long), skuId(Long), productName, skuSpec, price(Integer), qua
 | --- | --- | ---------------------------------------- | --------------------------------------------------- | ----------------- | --- |
 | 97  | PUT | `/internal/trade/order/{orderNo}/status` | Path: `orderNo` (String), Query: `status` (Integer) | `void`            | ✅   |
 | 98  | GET | `/internal/trade/order/{orderNo}`        | Path: `orderNo` (String)                            | `OrderSummaryDTO` | ✅   |
+| —   | POST | `/internal/trade/order/create`        | `{ userId, skuId, quantity, addressId, couponId?, orderType }` | `OrderSummaryDTO` (内部秒杀订单创建, marketing→trade Feign, V4.1) | ✅ V4.1 |
 
 ---
 
@@ -466,6 +468,10 @@ ProductSearchVO: `{ id(Long), productId(String), categoryId(Long), name, descrip
 | 110 | GET  | `/api/coupon/available` | — (JWT)                    | `List<UserCouponEntity>` | 🔵  |
 | 111 | GET  | `/api/coupon/used`      | — (JWT)                    | `List<UserCouponEntity>` | 🔵  |
 | 112 | GET  | `/api/coupon/template`  | —                          | `List<CouponEntity>`     | 🔵  |
+| —   | POST | `/api/coupon/grab`     | Query: `couponId` (String) | `UserCouponEntity` (Redis Lua 原子领取，防超发) | ✅ V4.0 |
+| —   | POST | `/api/coupon/available/filter` | `{ skuIds: List<Long>, totalAmount: Integer }` | `List<UserCouponEntity>` (结算页预过滤可用券，V4.3 京东标准) | ✅ V4.3 |
+
+> **V4.4 变更**: `POST /api/coupon/purchase` 已移除，优惠券仅通过 claim/grab 领取。
 
 #### InternalCouponController — `/internal/coupon`（供 trade-service 下单抵扣，Feign 内部调用，异常透传不包 Result）
 
@@ -502,24 +508,24 @@ ProductSearchVO: `{ id(Long), productId(String), categoryId(Long), name, descrip
 
 ### 4.10 AI 服务 (ai-service)
 
-> 当前实现: V2.0 MVP ✅ | V2.5 生产就绪 🔵 | 完整选型见 [13-AI-Technology-Selection.md](./13-AI-Technology-Selection.md)
+> 当前实现: V2.0 MVP ✅ | V2.5 生产就绪 ✅ | 完整选型见 [13-AI-Technology-Selection.md](./13-AI-Technology-Selection.md)
 
 #### 4.10.1 AI 商品助手
 
 | #   | 方法   | 路径                         | 请求                                                    | 响应                          | 阶段  |
 | --- | ---- | --------------------------- | ------------------------------------------------------- | ----------------------------- | --- |
 | 120 | POST | `/api/ai/chat`              | `AiChatRequest { message: String, conversationId?: String }` | `AiChatResponse { reply: String, conversationId: String }` | ✅ V2.0 |
-| 122 | POST | `/api/ai/chat/stream`       | `AiChatRequest { message: String, conversationId?: String }` | SSE `text/event-stream` (逐token返回) | 🔵 V2.5 |
-| 123 | GET  | `/api/ai/conversations`     | —                                                       | `Result<List<ConversationSummary>>` | 🔵 V2.5 |
-| 124 | GET  | `/api/ai/conversations/{id}`| —                                                       | `Result<ConversationDetail>` | 🔵 V2.5 |
-| 125 | DELETE | `/api/ai/conversations/{id}` | —                                                     | `Result<Void>`                | 🔵 V2.5 |
+| 122 | POST | `/api/ai/chat/stream`       | `AiChatRequest { message: String, conversationId?: String }` | SSE `text/event-stream` (逐token返回) | ✅ V2.5 |
+| 123 | GET  | `/api/ai/conversations`     | —                                                       | `Result<List<ConversationSummary>>` | ✅ V2.5 |
+| 124 | GET  | `/api/ai/conversations/{id}`| —                                                       | `Result<ConversationDetail>` | ✅ V2.5 |
+| 125 | DELETE | `/api/ai/conversations/{id}` | —                                                     | `Result<Void>`                | ✅ V2.5 |
 
 #### 4.10.2 AI 客服
 
 | #   | 方法   | 路径                          | 请求                                                    | 响应                          | 阶段  |
 | --- | ---- | ---------------------------- | ------------------------------------------------------- | ----------------------------- | --- |
 | 121 | POST | `/api/ai/cs/chat`            | `AiChatRequest { message: String, conversationId?: String }` | `AiChatResponse { reply: String, conversationId: String }` | ✅ V2.0 |
-| 126 | POST | `/api/ai/cs/chat/stream`     | `AiChatRequest { message: String, conversationId?: String }` | SSE `text/event-stream` (逐token返回) | 🔵 V2.5 |
+| 126 | POST | `/api/ai/cs/chat/stream`     | `AiChatRequest { message: String, conversationId?: String }` | SSE `text/event-stream` (逐token返回) | ✅ V2.5 |
 
 #### 4.10.3 DTO 定义
 
@@ -591,7 +597,7 @@ ProductSearchVO: `{ id(Long), productId(String), categoryId(Long), name, descrip
 
 ---
 
-### 4.11 买家-商家消息服务 (V3.3 计划 🔵)
+### 4.11 买家-商家消息服务 (V3.3 已实现 ✅)
 
 > **大厂对标**: 淘宝旺旺/京东咚咚。消息系统独立于 AI 服务，WebSocket + STOMP 协议。
 
@@ -599,7 +605,7 @@ ProductSearchVO: `{ id(Long), productId(String), categoryId(Long), name, descrip
 
 | #   | 方法 | 路径 | 说明 | 阶段 |
 | --- | --- | --- | --- | --- |
-| 142 | WS | `/ws/chat` | STOMP 端点，订阅 `/user/queue/messages` 接收消息，发送 `/app/chat.send` | 🔵 V3.3 |
+| 142 | WS | `/ws/chat` | STOMP 端点，订阅 `/user/queue/messages` 接收消息，发送 `/app/chat.send` | ✅ V3.3 |
 
 **STOMP 帧格式**:
 ```json
@@ -618,9 +624,9 @@ ProductSearchVO: `{ id(Long), productId(String), categoryId(Long), name, descrip
 
 | #   | 方法 | 路径 | 说明 | 阶段 |
 | --- | --- | --- | --- | --- |
-| 143 | GET | `/api/chat/conversations` | 当前用户的对话列表（按最后消息时间排序） | 🔵 V3.3 |
-| 144 | GET | `/api/chat/conversations/{id}/messages` | 分页查询对话历史（`?page=1&size=50`） | 🔵 V3.3 |
-| 145 | GET | `/api/chat/unread-count` | 未读消息计数 | 🔵 V3.3 |
+| 143 | GET | `/api/chat/conversations` | 当前用户的对话列表（按最后消息时间排序） | ✅ V3.3 |
+| 144 | GET | `/api/chat/conversations/{id}/messages` | 分页查询对话历史（`?page=1&size=50`） | ✅ V3.3 |
+| 145 | GET | `/api/chat/unread-count` | 未读消息计数 | ✅ V3.3 |
 
 #### 4.11.3 商家回复模板（V3.4 计划 ⚪）
 
@@ -639,20 +645,20 @@ ProductSearchVO: `{ id(Long), productId(String), categoryId(Long), name, descrip
 | 151 | POST | `/api/seller/knowledge` | 上传 FAQ/政策（自动分块+Embedding+ES索引） | ⚪ V3.4 |
 | 152 | DELETE | `/api/seller/knowledge/{id}` | 删除知识条目 | ⚪ V3.4 |
 
-### 4.12 商品详情增强 (V3.5 计划 🔵)
+### 4.12 商品详情增强 (V3.5 已实现 ✅)
 
 | #   | 方法 | 路径 | 说明 | 阶段 |
 | --- | --- | --- | --- | --- |
-| 153 | GET | `/api/item/product/{id}/detail` | 完整详情(商品+店铺+SKU+参数+评论摘要+优惠券) | 🔵 V3.5 |
-| 154 | GET | `/api/item/product/{id}/skus` | 结构化SKU数据(维度+选项+价格+库存) | 🔵 V3.5 |
-| 155 | POST | `/api/trade/order/direct` | 立即购买 `{ skuId, quantity, addressId, couponId? }` | 🔵 V3.5 |
-| 156 | GET | `/api/shop/{sellerId}` | 商家公开店铺页(店铺信息+评分) | 🔵 V3.5 |
-| 157 | GET | `/api/shop/{sellerId}/products` | 商家全部商品(分页) | 🔵 V3.5 |
-| 158 | POST | `/api/shop/follow/{sellerId}` | 关注商家 | 🔵 V3.5 |
-| 159 | DELETE | `/api/shop/follow/{sellerId}` | 取消关注 | 🔵 V3.5 |
-| 160 | GET | `/api/item/review/product/{id}/filter` | 评论筛选(?rating=5&hasMedia=true&sort=newest) | 🔵 V3.5 |
-| 161 | GET | `/api/item/review/product/{id}/summary` | 评论摘要(均分+星级分布+总评数) | 🔵 V3.5 |
-| 162 | GET | `/api/cart/grouped` | 按店铺分组购物车 | 🔵 V3.5 |
+| 153 | GET | `/api/item/product/{id}/detail` | 完整详情(商品+店铺+SKU+参数+评论摘要+优惠券) | ✅ V3.5 |
+| 154 | GET | `/api/item/product/{id}/skus` | 结构化SKU数据(维度+选项+价格+库存) | ✅ V3.5 |
+| 155 | POST | `/api/trade/order/direct` | 立即购买 `{ skuId, quantity, addressId, couponId? }` | ✅ V3.5 |
+| 156 | GET | `/api/shop/{sellerId}` | 商家公开店铺页(店铺信息+评分) | ✅ V3.5 |
+| 157 | GET | `/api/shop/{sellerId}/products` | 商家全部商品(分页) | ✅ V3.5 |
+| 158 | POST | `/api/shop/follow/{sellerId}` | 关注商家 | ✅ V3.5 |
+| 159 | DELETE | `/api/shop/follow/{sellerId}` | 取消关注 | ✅ V3.5 |
+| 160 | GET | `/api/item/review/product/{id}/filter` | 评论筛选(?rating=5&hasMedia=true&sort=newest) | ✅ V3.5 |
+| 161 | GET | `/api/item/review/product/{id}/summary` | 评论摘要(均分+星级分布+总评数) | ✅ V3.5 |
+| 162 | GET | `/api/cart/grouped` | 按店铺分组购物车 | ✅ V3.5 |
 
 ### 4.13 网关服务 (gateway-service)
 

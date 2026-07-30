@@ -22,7 +22,7 @@
 | Redisson | **3.26.0** | 分布式锁在 `authorization-service`（登录并发控制），非 ia-common |
 | 微信支付 SDK | **0.2.17** | wechatpay-java，封装在 `ia-common` client 层 |
 | 阿里云短信 SDK | **3.1.0** | dysmsapi20170525，封装在 `ia-common` client 层 |
-| ElasticSearch | **7.17.25** | V1.1 上线 search-service（当前为骨架） |
+| ElasticSearch | **7.17.25** | search-service 双实现（ES + MySQL fallback），opt-in via `search.elasticsearch.enabled` |
 
 **子模块版本原则**：所有版本号在父 POM `<dependencyManagement>` 中统一管理，子模块只声明 groupId:artifactId，不加 version。
 
@@ -244,20 +244,18 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 **MVP 可以做的**：
 - user, address, seller, category, product, sku, order, order_item, cart, pay_order, order_logistics 相关功能
 - 手机号+验证码注册/登录、密码登录
-- 一级商品分类、商品列表/详情
+- 多级商品分类、商品列表/详情（含全文搜索）
 - 购物车 CRUD
 - 下单支付（微信支付）
 - 商家后台（商品/订单管理、发货）
 - 管理员后台（查看/管理）
 
 **MVP 不可以做的**（留给后续迭代）：
-- 优惠券、秒杀、拼团、积分（签到除外）
+- 拼团（团购）、积分商城
 - 首页装修、广告位
 - 在线客服、售后工单
 - 对账、结算、发票
 - 小程序/App
-- 多级分类（MVP 仅一级）
-- 全文搜索（ElasticSearch）
 - 复杂营销活动
 
 **原则**：MVP 只做能跑通「注册→浏览商品→加入购物车→下单→支付→商家发货→用户确认收货」完整闭环的最小功能集。
