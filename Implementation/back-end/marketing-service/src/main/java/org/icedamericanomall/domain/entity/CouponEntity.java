@@ -40,6 +40,17 @@ public class CouponEntity implements Serializable {
     private Integer grabType;
     /** 付费券价格(分), grantType=PAID_PURCHASE时必填 */
     private Integer priceInCents;
+
+    // V4.3: 适用范围 + 叠加规则（京东标准）
+    /** 适用范围: 1=ALL全场, 2=CATEGORY品类, 3=PRODUCT单品 */
+    private Integer scopeType;
+    /** 适用范围的ID列表(JSON): categoryIds 或 productIds */
+    private String scopeValues;
+    /** 叠加规则: 1=MUTUAL_EXCLUSIVE互斥, 2=STACKABLE可叠加 */
+    private Integer stackRule;
+    /** 叠加分组，同组券可叠加 */
+    private String stackGroup;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
     @TableField(fill = FieldFill.INSERT_UPDATE)

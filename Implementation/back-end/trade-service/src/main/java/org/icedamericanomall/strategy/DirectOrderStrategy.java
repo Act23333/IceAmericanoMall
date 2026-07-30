@@ -46,6 +46,8 @@ public class DirectOrderStrategy implements OrderCreateStrategy {
 
         OrderCreateContext.CartItemSnapshot snap = new OrderCreateContext.CartItemSnapshot();
         snap.setSkuId(ctx.getSkuId());
+        snap.setProductId(sku.getProductId());        // V4.3: scope 校验
+        snap.setCategoryId(sku.getCategoryId());      // V4.3: scope 校验
         snap.setSellerId(sku.getSellerId());
         snap.setProductName(sku.getProductName());
         snap.setSkuSpec(sku.getSpec());
@@ -65,13 +67,10 @@ public class DirectOrderStrategy implements OrderCreateStrategy {
         OrderEntity order = NormalCartOrderStrategy.buildBaseOrder(ctx);
         order.setOrderType(OrderTypeEnum.DIRECT.getCode());
         int total = ctx.getTotalAmount();
-        int discount = 0;
-        if (ctx.getUserCouponId() != null) {
-            Integer applied = couponClient.useCoupon(
-                    ctx.getUserId(), ctx.getUserCouponId(), order.getOrderNo(), total,
-                    ctx.getOrderType().getCode(), ctx.getSellerId());
-            discount = applied != null ? Math.min(applied, total) : 0;
-        }
+
+        // V4.3: 多券叠加（与 NormalCartOrderStrategy 共用 applyCoupons）
+        int discount = NormalCartOrderStrategy.applyCoupons(couponClient, ctx, order, total);
+
         order.setDiscountAmount(discount);
         order.setPayAmount(total - discount);
         ctx.setDiscountAmount(discount);

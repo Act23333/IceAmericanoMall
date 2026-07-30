@@ -45,4 +45,10 @@ public class CouponCreateReq implements Serializable {
     private Integer grabType;
     /** 付费券价格(分), grantType=PAID_PURCHASE时必填 */
     private Integer priceInCents;
+
+    // V4.3: 适用范围 + 叠加规则
+    private Integer scopeType;
+    private String scopeValues;
+    private Integer stackRule;
+    private String stackGroup;
 }

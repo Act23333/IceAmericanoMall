@@ -31,8 +31,13 @@ public class OrderCreateContext {
 
     // === 通用 ===
     private Long addressId;
-    private Long userCouponId;
-    private AddressDTO address;   // 策略校验时填充
+    private Long userCouponId;            // @Deprecated V4.3: 单券，保留兼容
+    private List<Long> userCouponIds;     // V4.3: 多券支持
+    private AddressDTO address;
+
+    // V4.3: 订单商品信息（用于优惠券 scope 校验）
+    private String productIds;            // SKU对应的 productIds，逗号分隔
+    private String categoryIds;           // SKU对应的 categoryIds，逗号分隔
 
     // === 计算结果（策略 buildOrder 填充） ===
     private List<CartItemSnapshot> snapshots;
@@ -43,6 +48,8 @@ public class OrderCreateContext {
     @Data
     public static class CartItemSnapshot {
         private Long skuId;
+        private Long productId;    // V4.3: 优惠券 scope 校验用
+        private Long categoryId;   // V4.3: 优惠券 scope 校验用
         private Long sellerId;
         private String productName;
         private String skuSpec;

@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * V4.0: 立即购买请求 — 京东标准（商品详情页直接下单，不操作购物车）。
@@ -23,6 +24,8 @@ public class DirectOrderReq implements Serializable {
     @NotNull(message = "地址ID不能为空")
     private Long addressId;
 
-    /** 可选：使用的用户优惠券ID */
+    /** @deprecated V4.3: 单券模式，保留兼容 */
     private Long userCouponId;
+    /** V4.3: 多券叠加模式 */
+    private List<Long> userCouponIds;
 }

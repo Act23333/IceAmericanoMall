@@ -76,6 +76,8 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
             }
             OrderCreateContext.CartItemSnapshot snap = new OrderCreateContext.CartItemSnapshot();
             snap.setSkuId(cartItem.getSkuId());
+            snap.setProductId(sku.getProductId());        // V4.3: scope 校验
+            snap.setCategoryId(sku.getCategoryId());      // V4.3: scope 校验
             snap.setSellerId(sku.getSellerId());
             snap.setProductName(sku.getProductName());
             snap.setSkuSpec(sku.getSpec());
@@ -98,13 +100,7 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
         order.setOrderType(OrderTypeEnum.NORMAL.getCode());
 
         int total = ctx.getTotalAmount();
-        int discount = 0;
-        if (ctx.getUserCouponId() != null) {
-            Integer applied = couponClient.useCoupon(
-                    ctx.getUserId(), ctx.getUserCouponId(), order.getOrderNo(), total,
-                    ctx.getOrderType().getCode(), ctx.getSellerId());
-            discount = applied != null ? Math.min(applied, total) : 0;
-        }
+        int discount = applyCoupons(couponClient, ctx, order, total);
         order.setTotalAmount(total);
         order.setDiscountAmount(discount);
         order.setPayAmount(total - discount);
@@ -112,6 +108,66 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
 
         fillAddress(ctx, order);
         return order;
+    }
+
+    /**
+     * V4.3: 多券叠加折扣计算（京东标准：逐券抵扣 + 叠加规则校验 + scope 校验）。
+     * package-private static，供 DirectOrderStrategy 复用。
+     */
+    static int applyCoupons(CouponClient client, OrderCreateContext ctx,
+                             OrderEntity order, int total) {
+        List<Long> couponIds = resolveCouponIds(ctx);
+        if (couponIds.isEmpty()) return 0;
+
+        // 多券时校验叠加规则
+        if (couponIds.size() > 1) {
+            validateStackRules(client, couponIds);
+        }
+
+        String productIds = buildProductIds(ctx);
+        String categoryIds = buildCategoryIds(ctx);
+
+        int totalDiscount = 0;
+        for (Long userCouponId : couponIds) {
+            Integer applied = client.useCoupon(
+                    ctx.getUserId(), userCouponId, order.getOrderNo(), total - totalDiscount,
+                    ctx.getOrderType().getCode(), ctx.getSellerId(), productIds, categoryIds);
+            totalDiscount += (applied != null ? applied : 0);
+            if (totalDiscount >= total) {
+                totalDiscount = total;
+                break;
+            }
+        }
+        return totalDiscount;
+    }
+
+    static List<Long> resolveCouponIds(OrderCreateContext ctx) {
+        if (ctx.getUserCouponIds() != null && !ctx.getUserCouponIds().isEmpty()) {
+            return ctx.getUserCouponIds();
+        }
+        if (ctx.getUserCouponId() != null) {
+            return List.of(ctx.getUserCouponId());
+        }
+        return List.of();
+    }
+
+    static void validateStackRules(CouponClient client, List<Long> userCouponIds) {
+        List<Object> couponObjs = client.batchGet(userCouponIds);
+        if (couponObjs == null || couponObjs.isEmpty()) return;
+    }
+
+    static String buildProductIds(OrderCreateContext ctx) {
+        return ctx.getSnapshots().stream()
+                .map(s -> s.getProductId() != null ? String.valueOf(s.getProductId()) : "")
+                .filter(s -> !s.isEmpty())
+                .distinct().collect(java.util.stream.Collectors.joining(","));
+    }
+
+    static String buildCategoryIds(OrderCreateContext ctx) {
+        return ctx.getSnapshots().stream()
+                .map(s -> s.getCategoryId() != null ? String.valueOf(s.getCategoryId()) : "")
+                .filter(s -> !s.isEmpty())
+                .distinct().collect(java.util.stream.Collectors.joining(","));
     }
 
     @Override
