@@ -6,6 +6,7 @@ import org.icedamericanomall.client.AddressClient;
 import org.icedamericanomall.client.CartClient;
 import org.icedamericanomall.client.CouponClient;
 import org.icedamericanomall.client.SkuClient;
+import org.icedamericanomall.dto.CouponStackInfoDTO;
 import org.icedamericanomall.domain.entity.OrderEntity;
 import org.icedamericanomall.domain.entity.OrderItemEntity;
 import org.icedamericanomall.dto.AddressDTO;
@@ -152,8 +153,25 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
     }
 
     static void validateStackRules(CouponClient client, List<Long> userCouponIds) {
-        List<Object> couponObjs = client.batchGet(userCouponIds);
-        if (couponObjs == null || couponObjs.isEmpty()) return;
+        List<CouponStackInfoDTO> infos = client.batchGet(userCouponIds);
+        if (infos == null || infos.isEmpty()) return; // 降级：不阻断下单
+
+        // V4.3: 互斥券不能与其他券叠加
+        long exclusiveCount = infos.stream()
+                .filter(s -> s.getStackRule() != null && s.getStackRule() == 1).count();
+        if (exclusiveCount > 0 && infos.size() > 1) {
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "互斥券不能与其他优惠券叠加使用");
+        }
+
+        // V4.3: 可叠加券需同 group
+        if (infos.size() > 1) {
+            String firstGroup = infos.get(0).getStackGroup();
+            boolean allSameGroup = infos.stream()
+                    .allMatch(s -> java.util.Objects.equals(s.getStackGroup(), firstGroup));
+            if (!allSameGroup) {
+                throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "不同叠加组的券不能一起使用");
+            }
+        }
     }
 
     static String buildProductIds(OrderCreateContext ctx) {

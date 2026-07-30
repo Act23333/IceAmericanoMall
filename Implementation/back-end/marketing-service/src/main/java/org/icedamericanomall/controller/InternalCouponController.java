@@ -2,9 +2,11 @@ package org.icedamericanomall.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.domain.entity.CouponEntity;
+import org.icedamericanomall.dto.CouponStackInfoDTO;
 import org.icedamericanomall.service.CouponService;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -35,9 +37,22 @@ public class InternalCouponController {
         couponService.rollbackByOrderNo(orderNo);
     }
 
-    /** V4.3: 批量查询券模板（下单时校验多券叠加规则）。 */
+    /** V4.3: 批量查询券模板（下单时校验多券叠加规则）。返回轻量 DTO 避免 full entity 序列化。 */
     @GetMapping("/batch")
-    public List<CouponEntity> batchGet(@RequestParam List<Long> ids) {
-        return couponService.getBatchByIds(ids);
+    public List<CouponStackInfoDTO> batchGet(@RequestParam List<Long> ids) {
+        List<CouponEntity> entities = couponService.getBatchByIds(ids);
+        List<CouponStackInfoDTO> dtos = new ArrayList<>();
+        for (CouponEntity e : entities) {
+            CouponStackInfoDTO d = new CouponStackInfoDTO();
+            d.setId(e.getId());
+            d.setCouponId(e.getCouponId());
+            d.setCouponCategory(e.getCouponCategory());
+            d.setStackRule(e.getStackRule());
+            d.setStackGroup(e.getStackGroup());
+            d.setDiscountType(e.getDiscountType());
+            d.setSellerId(e.getSellerId());
+            dtos.add(d);
+        }
+        return dtos;
     }
 }
