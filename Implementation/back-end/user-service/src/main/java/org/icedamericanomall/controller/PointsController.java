@@ -18,6 +18,7 @@ public class PointsController {
     @GetMapping("/balance")
     public Result<Map<String, Object>> getBalance() {
         Long userId = UserContext.getUserId();
+        assert userId != null;
         return Result.ok(Map.of(
                 "userId", userId,
                 "balance", pointsService.getBalance(userId)));
