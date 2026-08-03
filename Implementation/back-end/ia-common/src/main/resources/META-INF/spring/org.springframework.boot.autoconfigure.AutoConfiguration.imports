@@ -4,10 +4,12 @@ org.noLazy.common.config.WebConfig
 org.noLazy.common.config.RedisLuaScriptConfig
 org.noLazy.common.config.I18nConfig
 org.noLazy.common.config.XxlJobConfig
-org.noLazy.common.config.RabbitMqConfig
+# RabbitMqConfig 已废弃 (V5.0 → RocketMQ)，保留文件供参考
 org.noLazy.common.aspect.RateLimitAspect
 org.noLazy.common.aspect.GlobalExceptionHandler
 org.noLazy.common.utils.RateLimitUtils
 org.noLazy.common.config.RedisConfig
 org.noLazy.common.filter.TraceIdFilter
 org.noLazy.common.filter.UserContextFilter
+org.noLazy.common.security.PermissionService
+org.noLazy.common.config.MethodSecurityConfig

@@ -12,6 +12,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * 物流事件监听器 — 仅在 rabbitmq.enabled=true 时激活。
+ *
+ * @deprecated V5.0: RabbitMQ 已迁移至 RocketMQ。当前默认使用 Feign 同步调用。
+ *             待 V5.1 补充 RocketMQ order.shipped 事件后彻底删除。
  * <p>
  * 降级方案：rabbitmq.enabled=false 时，物流记录通过 trade-service
  * → logistics-service 的同步 Feign 调用创建。

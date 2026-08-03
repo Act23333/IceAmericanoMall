@@ -77,7 +77,10 @@ class AuthServiceImplH2Test {
         RedisTemplate<String, String> redisTemplate = mock(RedisTemplate.class);
         org.icedamericanomall.service.PointsService pointsSvc =
                 mock(org.icedamericanomall.service.PointsService.class);
-        authService = new AuthServiceImpl(smsService, redisTemplate, passwordEncoder, wechatOAuthClient, pointsSvc);
+        var roleMapper = mock(org.icedamericanomall.mapper.RoleMapper.class);
+        var permissionMapper = mock(org.icedamericanomall.mapper.PermissionMapper.class);
+        authService = new AuthServiceImpl(smsService, redisTemplate, passwordEncoder, wechatOAuthClient,
+                pointsSvc, roleMapper, permissionMapper);
         ReflectionTestUtils.setField(authService, "baseMapper",
                 sqlSessionFactory.openSession().getMapper(UserMapper.class));
     }

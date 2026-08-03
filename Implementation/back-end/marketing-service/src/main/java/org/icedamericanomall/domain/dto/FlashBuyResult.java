@@ -13,5 +13,6 @@ public class FlashBuyResult implements Serializable {
     private Long flashId;
     private Integer flashPrice;
     private Long productId;
+    private Long skuId;
     private Long remainingStock;
 }

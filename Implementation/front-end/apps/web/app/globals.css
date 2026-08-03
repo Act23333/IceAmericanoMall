@@ -1,56 +1,101 @@
 @import 'tailwindcss';
 
 /* ===================================================================
-   冰美商城 — 设计系统
+   冰美商城 — 设计系统 V5.0
    视觉世界观：「东方自然主义 × 未来玻璃艺术」
    Apple Vision Pro 空间感 + 日本庭院留白 + 高级生活方式品牌
+   参考: project-docs/17-Frontend-Design-System.md
    =================================================================== */
 
 @theme {
-  /* ── 基础色板 ── */
-  --color-mist-white: #F7F6F3;
+  /* ── 主色调 (Mist White + Ink Black + Warm/Cool Grays) ── */
+  --color-mist: #FAFAF8;
+  --color-mist-white: #FAFAF8;
   --color-pure-white: #FFFFFF;
-  --color-warm-gray-50: #FAFAF8;
-  --color-warm-gray-100: #F0EFEC;
-  --color-warm-gray-200: #E8E6E1;
-  --color-warm-gray-400: #B8B5B0;
-  --color-warm-gray-600: #8C8A87;
+  --color-ink: #1A1A1A;
   --color-ink-black: #1A1A1A;
   --color-ink-black-soft: #2D2D2D;
+  --color-warm-gray: #F5F3F0;
+  --color-warm-gray-50: #FAFAF8;
+  --color-warm-gray-100: #F5F3F0;
+  --color-warm-gray-200: #EDEAE5;
+  --color-warm-gray-400: #B8B5B0;
+  --color-warm-gray-600: #8C8A87;
+  --color-cool-gray: #F0F0F2;
 
-  /* ── 点缀色 ── */
-  --color-accent-green: #4A7C59;
-  --color-accent-green-light: #6B9E7A;
-  --color-accent-green-dark: #3A6346;
-  --color-accent-gold: #C4A747;
-  --color-accent-gold-light: #D9C56E;
-  --color-accent-blue-purple: #6B7DB3;
-  --color-accent-blue-purple-dark: #4A5A8A;
+  /* ── 文字色 ── */
+  --color-text-primary: #1A1A1A;
+  --color-text-secondary: #6B6B6B;
+  --color-text-tertiary: #9B9B9B;
+  --color-text-disabled: #C0C0C0;
+  --color-text-inverse: #FAFAF8;
 
-  /* ── 语义色 (保留，适配新色板) ── */
-  --color-success: #4A7C59;
-  --color-danger: #C44E4E;
-  --color-warning: #C4A747;
-  --color-info: #6B7DB3;
+  /* ── 点缀色 (17-Design-System §2.2) ── */
+  --color-accent: #2D8B6E;
+  --color-accent-hover: #247A5E;
+  --color-accent-light: #E8F5F0;
+  --color-accent-green: #2D8B6E;
+  --color-accent-green-light: #E8F5F0;
+  --color-accent-green-dark: #247A5E;
+  --color-gold: #C8A96E;
+  --color-gold-light: #F5F0E5;
+  --color-accent-gold: #C8A96E;
+  --color-accent-gold-light: #F5F0E5;
+  --color-violet: #4A4A7A;
+  --color-amber: #D4956A;
+  --color-accent-blue-purple: #4A4A7A;
+  --color-accent-blue-purple-dark: #3A3A62;
 
-  /* ── 毛玻璃材质 ── */
-  --glass-bg: rgba(255, 255, 255, 0.12);
-  --glass-border: rgba(255, 255, 255, 0.25);
+  /* ── 语义色 (17-Design-System §2.3) ── */
+  --color-success: #2D8B6E;
+  --color-danger: #C45A5A;
+  --color-warning: #D4956A;
+  --color-info: #6B8AAB;
+
+  /* ── 毛玻璃材质 (17-Design-System §1.2) ── */
   --glass-blur: 20px;
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.04);
+  --glass-saturate: 180%;
+  --glass-bg: rgba(255, 255, 255, 0.70);
+  --glass-bg-light: rgba(255, 255, 255, 0.40);
+  --glass-bg-heavy: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.30);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+  --glass-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.10);
 
   /* ── 渐变 — 昼夜时间变换 ── */
-  --gradient-day: linear-gradient(180deg, #F7F6F3 0%, #E8E6E1 100%);
-  --gradient-dusk: linear-gradient(180deg, #D4C5B9 0%, #A8A0C0 50%, #6B7DB3 100%);
+  --gradient-day: linear-gradient(180deg, #FAFAF8 0%, #EDEAE5 100%);
+  --gradient-dusk: linear-gradient(180deg, #D4C5B9 0%, #A8A0C0 50%, #4A4A7A 100%);
   --gradient-night: linear-gradient(180deg, #2D2D3F 0%, #1A1A2E 100%);
 
-  /* ── 缓动函数 ── */
+  /* ── 阴影 ── */
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-card-hover: 0 4px 24px -8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
+  --shadow-button: 0 2px 8px rgba(45, 139, 110, 0.25);
+
+  /* ── 圆角 ── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* ── 缓动函数 (17-Design-System §5.2) ── */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-natural: cubic-bezier(0.4, 0, 0.2, 1);
 
+  /* ── 动画时长 ── */
+  --duration-instant: 100ms;
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --duration-glacial: 500ms;
+
   /* ── 品牌字体 ── */
-  --font-sans: 'Geist Sans', system-ui, -apple-system, sans-serif;
-  --font-mono: 'Geist Mono', monospace;
+  --font-sans: 'Inter', 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+  --font-display: 'Playfair Display', 'Noto Serif SC', serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 /* ===================================================================
@@ -70,27 +115,48 @@ body {
 }
 
 /* ===================================================================
-   毛玻璃工具类
+   毛玻璃工具类 (17-Design-System §4.1)
    =================================================================== */
 @utility glass {
   background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border);
 }
 @utility glass-card {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.04);
-  border-radius: 1rem;
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: var(--radius-lg);
+  transition: all var(--duration-slow) var(--ease-standard);
+}
+@utility glass-card-hover {
+  &:hover {
+    background: var(--glass-bg-heavy);
+    transform: translateY(-2px);
+    box-shadow: var(--glass-shadow-lg);
+  }
 }
 @utility glass-dense {
-  background: rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: var(--glass-bg-light);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border: 1px solid var(--glass-border);
+}
+@utility glass-nav {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.20);
+  transition: border-color var(--duration-slow) var(--ease-standard);
+}
+@utility glass-dark {
+  background: rgba(26, 26, 26, 0.70);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
 }
 
 /* ===================================================================
@@ -158,6 +224,54 @@ body {
    选中颜色
    =================================================================== */
 ::selection {
-  background: rgba(74, 124, 89, 0.2);
+  background: rgba(45, 139, 110, 0.2);
   color: var(--color-ink-black);
 }
+
+/* ===================================================================
+   主题作用域 — 品牌主页(暗) vs 商城(亮)
+   参考: 17-Design-System §6.1
+   =================================================================== */
+
+/* 品牌主页 — 强制暗色 */
+[data-theme-scope='brand'] {
+  --bg-primary: #1A1A1A;
+  --bg-secondary: #252525;
+  --text-primary: #FAFAF8;
+  --text-secondary: rgba(250, 250, 248, 0.70);
+  --accent: #C8A96E;
+  --glass-bg: rgba(26, 26, 26, 0.70);
+  --glass-border: rgba(255, 255, 255, 0.10);
+}
+
+/* 商城 — 默认亮色 */
+[data-theme-scope='marketplace'] {
+  --bg-primary: #FAFAF8;
+  --bg-secondary: #F5F3F0;
+  --text-primary: #1A1A1A;
+  --text-secondary: #6B6B6B;
+  --accent: #2D8B6E;
+  --glass-bg: rgba(255, 255, 255, 0.70);
+  --glass-border: rgba(255, 255, 255, 0.30);
+}
+
+/* 商城 — 系统暗色模式 */
+@media (prefers-color-scheme: dark) {
+  [data-theme-scope='marketplace'] {
+    --bg-primary: #1A1A1A;
+    --bg-secondary: #252525;
+    --text-primary: #FAFAF8;
+    --glass-bg: rgba(26, 26, 26, 0.70);
+  }
+}
+
+/* ===================================================================
+   价格数字专用 (17-Design-System §3.3)
+   =================================================================== */
+.price {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.price-lg { font-size: 24px; font-weight: 700; line-height: 1.2; }
+.price-sm { font-size: 14px; font-weight: 600; }

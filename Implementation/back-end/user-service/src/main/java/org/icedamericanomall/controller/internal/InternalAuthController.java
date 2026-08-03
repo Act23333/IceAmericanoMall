@@ -1,0 +1,47 @@
+package org.icedamericanomall.controller.internal;
+
+import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.dto.LoginRespDTO;
+import org.icedamericanomall.dto.PasswordLoginReqDTO;
+import org.icedamericanomall.dto.RegisterReqDTO;
+import org.icedamericanomall.dto.SmsLoginReqDTO;
+import org.icedamericanomall.service.AuthService;
+import org.noLazy.common.annotation.RateLimit;
+import org.springframework.web.bind.annotation.*;
+
+/**
+ * 认证域内部接口 —— Feign 调用（原本混在 InternalUserController 中）。
+ */
+@RestController
+@RequestMapping("/internal/auth")
+@RequiredArgsConstructor
+public class InternalAuthController {
+
+    private final AuthService authService;
+
+    @PostMapping("/register")
+    @RateLimit(key = "#registerReqDTO.deviceId", limit = 100, duration = 3600)
+    public LoginRespDTO register(@RequestBody RegisterReqDTO registerReqDTO) {
+        return authService.register(registerReqDTO);
+    }
+
+    @PostMapping("/login/password")
+    public LoginRespDTO loginByPassword(@RequestBody PasswordLoginReqDTO passwordLoginReqDTO) {
+        return authService.loginByPassword(passwordLoginReqDTO);
+    }
+
+    @PostMapping("/login/sms")
+    public LoginRespDTO loginBySms(@RequestBody SmsLoginReqDTO smsLoginReqDTO) {
+        return authService.loginBySms(smsLoginReqDTO);
+    }
+
+    @PostMapping("/login/wechat")
+    public LoginRespDTO loginByWechat(@RequestBody org.icedamericanomall.dto.WechatLoginReqDTO request) {
+        return authService.loginByWechat(request);
+    }
+
+    @PostMapping("/reset-password")
+    public void resetPassword(@RequestBody org.icedamericanomall.dto.ResetPasswordReqDTO request) {
+        authService.resetPassword(request);
+    }
+}

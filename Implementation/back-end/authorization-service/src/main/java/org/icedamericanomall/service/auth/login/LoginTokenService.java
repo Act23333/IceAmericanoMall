@@ -45,7 +45,7 @@ public class LoginTokenService {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userResp.getUserId());
         claims.put("username", userResp.getUsername());
-//        claims.put("role", userResp.getRole() != null ? userResp.getRole() : "ROLE_USER");
+        claims.put("role", userResp.getRole() != null ? userResp.getRole() : "ROLE_USER");
         return claims;
     }
 

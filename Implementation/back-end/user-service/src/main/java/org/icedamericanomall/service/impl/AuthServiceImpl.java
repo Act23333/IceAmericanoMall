@@ -14,6 +14,8 @@ import org.icedamericanomall.dto.SmsLoginReqDTO;
 import org.icedamericanomall.dto.WechatLoginReqDTO;
 import org.icedamericanomall.integration.wechat.WechatOAuthClient;
 import org.icedamericanomall.integration.wechat.WechatUserInfo;
+import org.icedamericanomall.mapper.PermissionMapper;
+import org.icedamericanomall.mapper.RoleMapper;
 import org.icedamericanomall.service.PointsService;
 import org.icedamericanomall.mapper.UserMapper;
 import org.icedamericanomall.service.AuthService;
@@ -27,6 +29,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 
 
 import static org.icedamericanomall.constants.RedisKeyConstants.SMS_CODE_PREFIX;
@@ -40,15 +44,19 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
     private final PasswordEncoder passwordEncoder;
     private final WechatOAuthClient wechatOAuthClient;
     private final PointsService pointsService;
+    private final RoleMapper roleMapper;
+    private final PermissionMapper permissionMapper;
 
     public AuthServiceImpl(SmsService smsService, RedisTemplate<String, String> redisTemplate,
                            PasswordEncoder passwordEncoder, WechatOAuthClient wechatOAuthClient,
-                           PointsService pointsService) {
+                           PointsService pointsService, RoleMapper roleMapper, PermissionMapper permissionMapper) {
         this.smsService = smsService;
         this.redisTemplate = redisTemplate;
         this.passwordEncoder = passwordEncoder;
         this.wechatOAuthClient = wechatOAuthClient;
         this.pointsService = pointsService;
+        this.roleMapper = roleMapper;
+        this.permissionMapper = permissionMapper;
     }
 
     @Override
@@ -179,12 +187,18 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
     }
 
 
+    /** 默认角色ID — 新用户注册时自动分配 ROLE_USER */
+    private static final Long DEFAULT_ROLE_ID = 1L;
+
     private void registerUser(UserEntity user) {
         String userId = UUID.fastUUID().toString(true); // true=无连字符，固定32位
         if (StrUtil.isBlankIfStr(user.getUsername())) user.setUsername("ice_" + userId);
         user.setUserId(userId);
         // createTime/updateTime/registerTime → @TableField + MyMetaObjectHandler 自动填充
         if (!save(user)) throw new BizException(ErrorCode.FREQUENT_ERROR, "注册失败");
+
+        // RBAC: 新用户默认分配 ROLE_USER (id=1)
+        roleMapper.insertUserRole(user.getId(), DEFAULT_ROLE_ID);
     }
 
     private void checkUserUnique(String phone, String username) {
@@ -194,13 +208,26 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, UserEntity> impleme
             throw new BizException(ErrorCode.USERNAME_ALREADY_TAKEN, "用户名已被占用");
     }
 
-    /** 手动构建 LoginRespDTO — 避免 BeanUtils.copyBean 的 String UUID → Long 转换崩溃 */
+    /** 手动构建 LoginRespDTO — 聚合 RBAC 五表模型的角色+权限 */
     private LoginRespDTO toLoginResp(UserEntity user) {
         LoginRespDTO resp = new LoginRespDTO();
-        resp.setUserId(user.getId());           // Long 技术PK
+        resp.setUserId(user.getId());
         resp.setUsername(user.getUsername());
-        //resp.setPhone(user.getPhone());
-        //resp.setRole(mapRole(user.getRoleType()));
+
+        // 从 RBAC 五表模型加载角色+权限
+        Set<String> roles = roleMapper.selectRoleCodesByUserId(user.getId());
+        Set<String> perms = new HashSet<>();
+        perms.addAll(permissionMapper.selectDirectPermCodesByUserId(user.getId()));
+        perms.addAll(permissionMapper.selectRolePermCodesByUserId(user.getId()));
+        resp.setRoles(roles);
+        resp.setPermissions(perms);
+
+        // 主角色 (兼容旧字段，取最高权限角色)
+        String primaryRole = mapRole(user.getRoleType());
+        if (roles.contains("ROLE_ADMIN")) primaryRole = "ROLE_ADMIN";
+        else if (roles.contains("ROLE_SELLER")) primaryRole = "ROLE_SELLER";
+        resp.setRole(primaryRole);
+
         return resp;
     }
 

@@ -83,18 +83,8 @@ class FlashSaleServiceImplH2Test {
         var mockLua = mock(FlashSaleLuaScript.class);
         when(mockLua.tryDeduct(anyLong(), anyLong(), anyInt())).thenReturn(10L);
 
-        // V4.1: Mock OrderClient (trade-service Feign)
-        OrderClient mockOrderClient = mock(OrderClient.class);
-        OrderSummaryDTO mockOrderSummary = new OrderSummaryDTO();
-        mockOrderSummary.setOrderNo("TEST-ORDER-NO");
-        mockOrderSummary.setTotalAmount(9900);
-        mockOrderSummary.setStatus(1);
-        when(mockOrderClient.createOrder(any())).thenReturn(mockOrderSummary);
-
-        FlashSaleOrderPublisher mockPublisher = mock(FlashSaleOrderPublisher.class);
-        when(mockPublisher.publish(any())).thenReturn(true);
-
-        flashSaleService = new FlashSaleServiceImpl(mockLua, mockPublisher, mockOrderClient);
+        // V5.0 DDD: Feign/MQ 编排已上移至 MarketingManager
+        flashSaleService = new FlashSaleServiceImpl(mockLua);
         ReflectionTestUtils.setField(flashSaleService, "baseMapper",
                 sqlSessionManager.getMapper(FlashSaleMapper.class));
     }

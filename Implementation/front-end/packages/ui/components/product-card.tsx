@@ -23,7 +23,7 @@ const variantClasses: Record<ProductCardVariant, string> = {
 
 const cardClasses =
   'group cursor-pointer overflow-hidden rounded-2xl transition-all duration-300 block ' +
-  'border-2 border-transparent hover:border-red-400 hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-green/40';
+  'border border-transparent hover:border-accent/20 hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40';
 
 function CardContent({ product, variant = 'default' }: Omit<ProductCardProps, 'href' | 'onClick' | 'className'>) {
   return (

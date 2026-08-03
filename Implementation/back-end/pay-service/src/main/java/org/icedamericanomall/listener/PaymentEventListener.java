@@ -11,6 +11,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * 支付事件监听器 — 仅在 rabbitmq.enabled=true 时激活。
+ *
+ * @deprecated V5.0: RabbitMQ 已迁移至 RocketMQ。当前默认使用 Feign 同步调用。
+ *             待 V5.1 补充 RocketMQ order.created 事件后彻底删除。
  * <p>
  * 降级方案：rabbitmq.enabled=false 时，支付流程继续使用
  * trade-service → pay-service 的同步 Feign 调用。
