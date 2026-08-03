@@ -1,5 +1,5 @@
 import { View, Text, Image } from '@tarojs/components';
-import { formatPrice } from '@icedmall/utils';
+import { formatPrice } from '../utils/format';
 import Taro from '@tarojs/taro';
 import { productImage } from '../utils/mock';
 

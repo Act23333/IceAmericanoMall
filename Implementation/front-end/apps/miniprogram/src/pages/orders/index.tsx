@@ -3,7 +3,7 @@ import Taro from '@tarojs/taro';
 import { useState } from 'react';
 import { useDidShow } from '@tarojs/taro';
 import { apiClient } from '../../utils/api';
-import { formatPrice } from '@icedmall/utils';
+import { formatPrice } from '../../utils/format';
 
 const STATUS_MAP: Record<number, string> = { 1: '待付款', 2: '待发货', 3: '待收货', 4: '已完成', 5: '已取消' };
 const TABS = [{ label: '全部', value: null }, { label: '待付款', value: 1 }, { label: '待发货', value: 2 }, { label: '待收货', value: 3 }];

@@ -2,7 +2,7 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { useState } from 'react';
 import { apiClient } from '../../utils/api';
-import { formatPrice } from '@icedmall/utils';
+import { formatPrice } from '../../utils/format';
 
 const STATUS_MAP: Record<number, string> = { 1: '待付款', 2: '待发货', 3: '待收货', 4: '已完成', 5: '已取消' };
 

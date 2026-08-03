@@ -3,7 +3,7 @@ import Taro, { useLoad } from '@tarojs/taro';
 import { useState } from 'react';
 import { apiClient } from '../../utils/api';
 import { MOCK_PRODUCTS } from '../../utils/mock';
-import { formatPrice } from '@icedmall/utils';
+import { formatPrice } from '../../utils/format';
 import ProductCard from '../../components/product-card';
 import './index.scss';
 
