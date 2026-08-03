@@ -3,7 +3,7 @@ import Taro from '@tarojs/taro';
 import { useState } from 'react';
 import { useDidShow } from '@tarojs/taro';
 import { apiClient } from '../../utils/api';
-import { formatPrice } from '@icedmall/utils';
+import { formatPrice } from '../../utils/format';
 
 export default function CouponsPage() {
   const [templates, setTemplates] = useState<any[]>([]);

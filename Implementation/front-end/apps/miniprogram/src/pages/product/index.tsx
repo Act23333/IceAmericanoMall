@@ -2,7 +2,7 @@ import { View, Text, Image } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { useState } from 'react';
 import { apiClient } from '../../utils/api';
-import { formatPrice } from '@icedmall/utils';
+import { formatPrice } from '../../utils/format';
 
 export default function ProductPage() {
   const [product, setProduct] = useState<any>(null);
