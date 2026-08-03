@@ -52,7 +52,7 @@
 | **ORM**       | MyBatis-Plus          | 3.5.11  | 数据访问：LambdaQueryWrapper 参数化查询，`@Version` 乐观锁 |
 | **缓存**        | Redis                 | 7.x     | 缓存（Token/验证码/用户会话）、分布式锁（Redisson）、限流计数器（Lua） |
 | **Redis 客户端** | Redisson              | 3.26.0  | 分布式锁（`authorization-service`，登录并发控制）         |
-| **搜索引擎**      | ElasticSearch         | 7.17.25 | 商品全文检索 + 向量检索（V1.1 上线 search-service，当前为骨架）  |
+| **搜索引擎**      | ElasticSearch         | 7.17.25 | 商品全文检索（V2.5 已启用 search-service，ES+MySQL双实现）  |
 | **对象存储**      | MinIO / 阿里云 OSS       | —       | 商品图片、用户头像、商家 Logo（计划 V1.1）                   |
 | **分库分表**      | Apache ShardingSphere | —       | 分库分表中间件（计划 V2.0，触发条件：单表 > 500 万行）            |
 
@@ -60,10 +60,10 @@
 
 | 层级       | 技术                 | 版本    | 使用场景                                                  |
 | -------- | ------------------ | ----- | ----------------------------------------------------- |
-| **消息队列** | RabbitMQ           | 3.13+ | 异步解耦：订单创建→支付发起、支付成功→物流准备、用户注册→新用户奖励          |
-|          | RocketMQ           | 5.3   | ✅ V4.0：秒杀漏斗模型(Redis→RocketMQ→Consumer→DB) + 订单超时延迟消息(level=16/30min) 替代 RabbitMQ TTL+DLX |
+| **消息队列** | RocketMQ           | 5.3   | ✅ V4.0+：秒杀异步削峰(Redis→RocketMQ→Consumer→DB) + 订单超时延迟消息(level=16/30min)。Topics 定义于 `ia-common` 的 `RocketMqTopics`：`order-timeout-topic:timeout-cancel`（30分钟延迟取消）和 `flash-order-topic:create`（秒杀异步统计+补偿对账） |
+| **领域事件** | RabbitMQ           | 3.13+ | 领域事件解耦：订单创建(`order.created`)、支付成功(`payment.succeeded`)、订单发货(`order.shipped`)。`RabbitMqConfig` 在 `ia-common` 中，由 `rabbitmq.enabled` 控制，默认关闭 |
 | **CDC**  | Apache Flink CDC   | 3.2+  | MySQL binlog → Kafka → ES/Redis/PG 实时同步（V4.0 学习，替代 Canal） |
-| **实时推送** | WebSocket (Spring) | —     | 订单状态变更实时通知、商家新订单提醒（计划 V1.2）                           |
+| **实时推送** | WebSocket (Spring) | —     | 订单状态变更实时通知、商家新订单提醒（V3.3 已实现）                           |
 | **事件流**   | Apache Kafka       | 3.9+  | 用户行为埋点流(浏览/点击/加购)、订单事件溯源、实时数据管道（V4.0 学习）  |
 | **流计算**   | Apache Flink       | 1.20+ | 实时大屏(秒级GMV/订单数)、用户行为实时聚合、异常检测（V4.0 学习）    |
 | **CDC**     | Apache Flink CDC   | 3.2+  | MySQL binlog → Kafka → ES/Redis/PG 实时同步（V4.0 替代 Canal） |
@@ -178,7 +178,7 @@
 
 | 阶段 | 组件数 | 说明 |
 |------|--------|------|
-| **V3.7 (当前)** | 13 | MySQL+ES+Redis+RabbitMQ+Nacos+XXL-Job+Sentinel+MinIO+Seata+SkyWalking+Prometheus+Grafana+ELK |
+| **V4.5 (当前)** | 14 | MySQL+ES+Redis+RocketMQ+RabbitMQ+Nacos+XXL-Job+Sentinel+MinIO+Seata+SkyWalking+Prometheus+Grafana+ELK |
 | **V4.0 (学习)** | 22 | +PG+PgBouncer+Caffeine+AlertManager+Kafka+Zookeeper+Flink+Hadoop+Hive |
 | **V4.x (收敛)** | 10 | PG→替代MySQL+ES向量, KRaft→去Zk, MinIO+Spark→去Hadoop/Hive, 事件驱动→去Flink, 事务表→去Seata |
 
@@ -195,15 +195,16 @@
 | `gateway-service`          | API 网关，路由转发，统一入口                   | P0         | Spring Cloud Gateway + Nginx + Sentinel                |
 | `authorization-service` | OAuth2 认证授权，登录注册，Token 签发          | P0         | Spring Security + JWT + Redis + Geetest                |
 | `user-service`          | 用户 CRUD，收货地址，签到，Geetest 人机验证，阿里云短信 | P0         | MySQL + Redis (BitMap 签到) + dysmsapi20170525 (阿里云短信)   |
-| `item-service`          | 商品 (SPU)、规格 (SKU)、类目管理，库存乐观锁       | P1         | MySQL + MinIO/OSS (商品图片，计划 V1.1)                       |
+| `item-service`          | 商品 (SPU)、规格 (SKU)、类目管理，库存乐观锁；V4.0: stockType(LIMITED/UNLIMITED/PRESALE)+isHot+hotReason+salesTags | P1         | MySQL + MinIO/OSS (商品图片，计划 V1.1)                       |
 | `cart-service`          | 购物车                                | P1         | MySQL                                                  |
-| `trade-service`         | 订单管理，Saga 补偿，OrderManager 编排       | P1         | MySQL + Seata (分布式事务，计划 V1.1) + XXL-Job (超时取消，计划 V1.1) |
-| `pay-service`           | 支付处理，微信支付 API v3                   | P1         | MySQL + wechatpay-java 0.2.17 + XXL-Job (超时关闭，计划 V1.1) |
-| `logistics-service`     | 物流信息管理，状态追踪                        | P1         | MySQL + WebSocket (物流状态推送，计划 V1.2)                     |
-| `search-service`        | 商品全文检索（V1.1 正式启用 ES）               | P1         | ElasticSearch + Canal (MySQL→ES 同步，计划 V1.1)            |
-| `ai-service`            | AI客服、AI商品助手、智能搜索 🔵 V2.5 生产就绪中     | P2         | LangChain4j(Agent) + Spring AI(基建) + DeepSeek V3 + ES向量(P1) |
-| `marketing-service`     | 优惠券（平台/店铺）+ 秒杀活动                   | P1         | MySQL + Redis                                          |
-| `ia-common`             | 共享库：异常、Result、工具、注解、SMS SDK、i18n   | 基础模块       | Hutool + Knife4j                                       |
+| `trade-service`         | 统一订单中心：OrderTypeEnum(NORMAL/DIRECT/FLASH_SALE/PRESALE)+策略模式(OrderCreateStrategy+OrderCreateContext+OrderCreateStrategyFactory)；Saga补偿；OrderManager编排；售后+结算+入住审核 | P1         | MySQL + RocketMQ (订单超时延迟消息 level=16/30min) + Seata (分布式事务，计划 V1.1) + XXL-Job (兜底，计划 V1.1) |
+| `pay-service`           | 支付处理，微信支付 API v3，多渠道路由(WECHAT/ALIPAY/BALANCE) | P1         | MySQL + wechatpay-java 0.2.17 + RocketMQ (支付超时延迟消息) |
+| `logistics-service`     | 物流信息管理，状态追踪，快递员API V1.1            | P1         | MySQL + WebSocket (物流状态推送，计划 V1.2)                     |
+| `search-service`        | 商品全文检索：ES双实现(ES全面搜索+DBSearch MySQL LIKE回退) | P1         | ElasticSearch 7.17 + MySQL LIKE (双实现, @Primary 为 DB)            |
+| `ai-service`            | AI客服、AI商品助手、智能搜索 🔵 V2.5 生产就绪中；LangChain4j AiServices Agent+@Tool+ChatMemory | P2         | LangChain4j(Agent) + Spring AI(基建) + DeepSeek V3 + ES向量(P1) |
+| `marketing-service`     | 优惠券V4.0 五维模型(discountType FIXED/PERCENTAGE/CASH_COUPON × couponCategory PLATFORM/SHOP/FLASH_SALE/EXCLUSIVE × grantType FREE_CLAIM/PAID_PURCHASE/INVITATION/AUTO_ISSUE × stockType LIMITED/UNLIMITED × grabType NORMAL/NEED_GRAB/PLATFORM_EXCLUSIVE)；Redis Lua抢券；smartClaim智能路由；V4.2 couponCategory+卖家匹配校验；V4.5 Redis SISMEMBER去重；秒杀活动(Redis Lua预扣+RocketMQ异步削峰) | P1         | MySQL + Redis + RocketMQ |
+| `ia-integration`        | 外部集成SDK：微信支付V3、支付宝Mock、阿里云短信、极验Geetest V4、MinIO对象存储、微信OAuth | 基础模块       | wechatpay-java + dysmsapi + MinIO SDK |
+| `ia-common`             | 共享库：异常、Result、工具、注解、SMS SDK、i18n；RocketMqTopics；RabbitMqConfig；DomainEvents | 基础模块       | Hutool + Knife4j + RocketMQ + RabbitMQ |
 | `ia-api`                | 共享 Feign 接口定义                      | 基础模块       | OpenFeign + LoadBalancer                               |
 
 ### 3.2 服务关系图
@@ -410,7 +411,7 @@ Docker Compose 单机部署 (本地开发)
   - Sentinel 流量控制 + 熔断降级上线
   - XXL-Job 替换 `@Scheduled` 定时任务
   - SkyWalking 分布式链路追踪上线
-  - RabbitMQ 异步消息上线（订单事件解耦）
+  - RocketMQ 异步消息上线（订单超时延迟消息、秒杀削峰）
   - MinIO/OSS 对象存储上线（商品图片）
   - GitHub Actions CI/CD 流水线
   - Prometheus + Grafana + ELK 可观测性上线
@@ -435,12 +436,12 @@ Docker Compose 单机部署 (本地开发)
   - 多模型路由（DeepSeek/Qwen）+ 主-子Agent 编排
   - 知识图谱引擎（NebulaGraph）
   - RAG + KG 混合检索
-  - RocketMQ 替换 RabbitMQ（高吞吐场景）
+  - RocketMQ 全面替换 RabbitMQ（高吞吐场景）
 - **V3.1**（RBAC 授权体系）：
   - @PreAuthorize 方法级授权 + PermissionService(@Service("ss"))
   - 角色/权限管理 CRUD API (RoleController + PermissionController)
   - Admin 端点权限保护 (user:admin)
-- **V3.2**（现代化 + DDD）：
+- **V3.2**（现代化 + DDD）✅ 已实现：
   - RestTemplate → RestClient (Spring Boot 3.2+ 标准)
   - Java Record 替代 Lombok @Data DTO
   - UserProfileService DDD 分层 + @Version 乐观锁
@@ -448,7 +449,7 @@ Docker Compose 单机部署 (本地开发)
 - **V3.3**（买家-商家消息系统）：
   - WebSocket + STOMP 实时通讯（gateway 统一入口）
   - `chat_message` 消息持久化 + Redis 热缓存
-  - RabbitMQ 离线消息推送
+  - RocketMQ 离线消息推送
 - **V3.4**（店铺 AI）：
   - 商家知识库 CRUD + 自动分块 + ES 索引
   - 商家 AI 自动代答（限定本店知识库）
@@ -458,11 +459,26 @@ Docker Compose 单机部署 (本地开发)
   - 原价/到手价 + 立即购买 + 关注商家
   - 评论增强(图/视频/筛选) + 购物车店铺分组
 - **V3.6**（秒杀+订单超时大厂优化）：
-  - 秒杀: Redis Lua 预扣库存 + 用户限购 + RabbitMQ 异步
-  - 订单: RabbitMQ TTL 死信队列（替换 @Scheduled 60s 轮询）
+  - 秒杀: Redis Lua 预扣库存 + 用户限购 + RocketMQ 异步
+  - 订单: RocketMQ 延迟消息(level=16/30min) 替代 @Scheduled 60s 轮询
 - **V3.7**（秒杀漏斗模型+订单四层保障）：
   - 漏斗: 网关限流→Redis热点分片(10片)→MQ削峰→DB乐观锁
   - 订单: TTL主链路→flash_order_log事务表幂等→XXL-Job兜底→人工后台
+- **V4.0**（SKU库存类型+优惠券多维度模型+RocketMQ迁移）：
+  - SKU: stockType(LIMITED/UNLIMITED/PRESALE)+isHot+hotReason+salesTags
+  - 优惠券: 五维模型(discountType×couponCategory×grantType×stockType×grabType)+priceInCents
+  - MQ: RocketMQ 替代 RabbitMQ TTL/DLX(订单超时延迟+秒杀异步削峰)
+- **V4.1**（统一订单中心+营销-交易职责分离）：
+  - 订单: OrderTypeEnum(NORMAL/DIRECT/FLASH_SALE/PRESALE)+策略模式(OrderCreateStrategy+OrderCreateContext+OrderCreateStrategyFactory)
+  - 秒杀下单: 营销Redis预扣→Feign调用trade-service InternalOrderController.createOrder 创建订单
+  - 路由: gateway 精确路由兜底规则
+- **V4.2**（优惠券使用强制校验）：
+  - useCoupon: couponCategory+orderType+sellerId 三维校验（京东标准：PLATFORM通用/SHOP店铺限定/FLASH_SALE秒杀限定/EXCLUSIVE平台独占）
+- **V4.4**（优惠券智能领取）：
+  - smartClaim: 根据 grabType 自动路由 DB普通领取/RedisLua高并发通道
+  - 付费券: trade订单→支付→grantAfterPayment 发放（京东标准）
+- **V4.5**（优惠券去重保护）：
+  - 所有券领取增加 Redis SISMEMBER 去重 + DB 双保险兜底
 
 ---
 
@@ -487,8 +503,8 @@ Docker Compose 单机部署 (本地开发)
 
 | 维度     | 评估                                 | 对标                                   |
 | ------ | ---------------------------------- | ------------------------------------ |
-| 服务拆分粒度 | 13 个服务按业务域划分，粒度合理                  | 阿里中台标准（用户/商品/交易/支付/物流/搜索）            |
-| 共享库抽离  | ia-common（基础设施）+ ia-api（契约）        | 阿里 MAR (Middleware Asset Repository) |
+| 服务拆分粒度 | 15 个模块按业务域划分，粒度合理                  | 阿里中台标准（用户/商品/交易/支付/物流/搜索/营销/集成）            |
+| 共享库抽离  | ia-common（基础设施）+ ia-api（契约）+ ia-integration（外部集成）        | 阿里 MAR (Middleware Asset Repository) |
 | 网关统一入口 | Spring Cloud Gateway + JWT 鉴权 + 限流 | 阿里 API Gateway                       |
 | 注册中心   | Nacos 服务发现+配置中心                    | 阿里 Diamond + ConfigServer            |
 | 负载均衡   | Spring Cloud LoadBalancer          | Ribbon 替代方案                          |
@@ -529,7 +545,7 @@ Docker Compose 单机部署 (本地开发)
 
 | 维度       | 得分         | 说明                                                           |
 | -------- | ---------- | ------------------------------------------------------------ |
-| 服务拆分     | 10/10      | 14 模块，trade-service 拆分出 marketing-service，单服务 Controller ≤11 |
+| 服务拆分     | 10/10      | 15 模块，trade-service 拆分出 marketing-service，单服务 Controller ≤11 |
 | DDD 分层   | 9/10       | 核心链路合规，边缘接口有已知例外                                             |
 | 网关路由     | 10/10      | 精确路由分发，13 条路由覆盖全部服务                                          |
 | 异常处理     | 10/10      | 统一 GlobalExceptionHandler + ErrorCode 体系                     |
@@ -578,9 +594,10 @@ search-service         (搜索)                  ✅ 2 controllers
 ai-service             (AI 助手+客服)          ✅ 2 controllers
 marketing-service      (优惠券+秒杀)           ✅ 4 controllers
 ─── 基础设施 ───
-ia-common              (共享库: 异常/Result/工具/AOP/i18n)
+ia-integration         (外部集成: 微信支付/短信/验证码/存储/OAuth)
+ia-common              (共享库: 异常/Result/工具/AOP/i18n/RocketMQ/RabbitMQ)
 ia-api                 (Feign 契约: 接口+DTO+fallback)
-database               (SQL: Initialize + 10 migrations)
+database               (SQL: Initialize + 20 migrations)
 ─────────────────────────────────────────────
-14 模块 / 12 子服务 / 115 端点 / 82 测试 / 9.4 分
+15 模块 / 12 子服务 / 115 端点 / 82 测试 / 9.4 分
 ```

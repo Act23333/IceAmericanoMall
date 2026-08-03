@@ -28,9 +28,20 @@ public interface CouponService extends IService<CouponEntity> {
 
     // === V4.0: 多维度优惠券模型 ===
 
-    /** V4.0: 购买付费优惠券（创建PRE_PAID状态的user_coupon记录，status=4） */
-    UserCouponEntity purchaseCoupon(Long userId, String couponId);
-
     /** V4.0: 秒杀级优惠券领取（Redis Lua脚本，高并发，grabType=NEED_GRAB时使用） */
     UserCouponEntity claimWithGrab(Long userId, String couponId);
+
+    // === V4.4: smartClaim + 支付后发券 ===
+
+    /**
+     * V4.4: 智能领取——根据 grabType 自动路由（DB 或 Redis Lua）。
+     * 替代了之前的 claim/grab 分离端点，前端统一调此方法。
+     */
+    UserCouponEntity smartClaim(Long userId, String couponId);
+
+    /**
+     * V4.4: 支付成功后发券（付费券购买→支付→回调发券，京东标准）。
+     * 直接创建 status=1 的 user_coupon，跳过 PRE_PAID 状态。
+     */
+    UserCouponEntity grantAfterPayment(Long userId, String couponId);
 }

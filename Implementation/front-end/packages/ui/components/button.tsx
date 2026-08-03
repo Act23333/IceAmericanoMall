@@ -3,7 +3,7 @@
 import { forwardRef } from 'react';
 import { cn } from '../lib/utils';
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'gold';
+type ButtonVariant = 'primary' | 'secondary' | 'glass' | 'ghost' | 'gold';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -13,32 +13,36 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 /**
- * 设计系统按钮 — 品牌风格
+ * 设计系统按钮 — 17-Design-System §4.5
  *
- * primary: 绿色填充 (CTA)
- * secondary: 毛玻璃描边
- * ghost: 透明文字
- * gold: 金色填充 (高级CTA, 如下单)
+ * primary: 青绿填充 (#2D8B6E) — 主 CTA
+ * glass: 毛玻璃描边 — 次要操作
+ * ghost: 透明文字 — 低优先级
+ * gold: 金微光填充 (#C8A96E) — 高级 CTA (下单/品牌主页)
  *
  * GPU-friendly: active:scale-[0.98], 无 layout shift
  */
 const variants: Record<ButtonVariant, string> = {
   primary:
-    'bg-accent-green text-white shadow-sm shadow-accent-green/10 ' +
-    'hover:bg-accent-green-light hover:shadow-md hover:shadow-accent-green/15 ' +
+    'bg-accent text-white shadow-sm shadow-accent/10 ' +
+    'hover:bg-accent-hover hover:shadow-md hover:shadow-accent/15 ' +
     'active:bg-accent-green-dark',
   secondary:
-    'glass border border-white/30 text-ink-black ' +
-    'hover:bg-white/30 hover:shadow-md ' +
-    'active:bg-white/20',
+    'bg-white/70 backdrop-blur-[20px] backdrop-saturate-[180%] border border-white/30 text-ink-black ' +
+    'hover:bg-white/60 hover:shadow-md ' +
+    'active:bg-white/40',
+  glass:
+    'bg-white/70 backdrop-blur-[20px] backdrop-saturate-[180%] border border-white/30 text-ink-black ' +
+    'hover:bg-white/60 hover:shadow-md ' +
+    'active:bg-white/40',
   ghost:
-    'bg-transparent text-ink-soft ' +
-    'hover:bg-warm-100 hover:text-ink-black ' +
-    'active:bg-warm-200',
+    'bg-transparent text-text-secondary ' +
+    'hover:bg-accent-light hover:text-accent ' +
+    'active:bg-accent-light/50',
   gold:
-    'bg-accent-gold text-white shadow-sm shadow-accent-gold/15 ' +
-    'hover:bg-accent-gold-light hover:shadow-md hover:shadow-accent-gold/20 ' +
-    'active:bg-accent-gold',
+    'bg-gold text-white shadow-sm shadow-gold/15 ' +
+    'hover:bg-gold/80 hover:shadow-md hover:shadow-gold/20 ' +
+    'active:bg-gold',
 };
 
 const sizes: Record<ButtonSize, string> = {

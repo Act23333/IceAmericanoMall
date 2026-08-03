@@ -33,3 +33,25 @@ export function useClaimCoupon() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['coupons'] }); },
   });
 }
+
+export function useGrabCoupon() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (couponId: string) =>
+      apiClient<UserCouponEntity>(`/api/coupon/grab?couponId=${couponId}`, { method: 'POST' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['coupons'] }); },
+  });
+}
+
+/** 结算页预过滤可用券 — V4.3 京东标准 */
+export interface CouponFilterReq { skuIds: number[]; totalAmount: number; }
+
+export function useCouponFilter() {
+  return useMutation({
+    mutationFn: (req: CouponFilterReq) =>
+      apiClient<UserCouponEntity[]>('/api/coupon/available/filter', {
+        method: 'POST',
+        body: JSON.stringify(req),
+      }),
+  });
+}

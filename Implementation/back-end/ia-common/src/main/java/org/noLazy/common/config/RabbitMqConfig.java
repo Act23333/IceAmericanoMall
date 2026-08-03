@@ -9,7 +9,9 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * RabbitMQ 配置 — 仅在 rabbitmq.enabled=true 且 spring-amqp 在类路径时激活。
- * 声明领域事件所需的 Queue / Exchange / Binding。
+ *
+ * @deprecated V5.0: 已迁移至 RocketMQ (RocketMqTopics + RocketMQTemplate)。
+ *             此文件保留供回退参考，默认不激活。V5.1 将彻底删除。
  */
 @Configuration
 @ConditionalOnClass(TopicExchange.class)

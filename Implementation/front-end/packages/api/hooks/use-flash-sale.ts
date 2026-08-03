@@ -3,20 +3,27 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, type FlashSaleEntity } from '@icedmall/api';
 
-export function useActiveFlashSales() {
+/** 进行中的秒杀活动列表 */
+export function useFlashSales() {
   return useQuery<FlashSaleEntity[]>({
     queryKey: ['flash-sales', 'active'],
-    queryFn: () => apiClient<FlashSaleEntity[]>('/api/item/product/page?sort=sales&order=desc&size=6'),
-    // Flash sale 用秒杀专用 endpoint；若后端未单独提供，降级为热门商品
-    staleTime: 30 * 1000,
+    queryFn: () => apiClient<FlashSaleEntity[]>('/api/flash'),
+    staleTime: 10 * 1000, // 秒杀高频刷新
   });
 }
 
-export function useFlashSaleBuy() {
+/** 秒杀抢购 */
+export function useFlashBuy() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (flashId: number) =>
-      apiClient<void>(`/api/marketing/flash-sale/${flashId}/buy`, { method: 'POST' }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['flash-sales'] }); },
+    mutationFn: (params: { flashId: number; addressId: number }) =>
+      apiClient<any>(
+        `/api/flash/buy?flashId=${params.flashId}&addressId=${params.addressId}`,
+        { method: 'POST' }
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['flash-sales'] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+    },
   });
 }

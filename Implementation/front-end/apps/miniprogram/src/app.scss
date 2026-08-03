@@ -1,14 +1,276 @@
 /* ===================================================================
-   冰美商城 — 小程序全局样式
+   冰美商城 — 小程序全局样式 V5.0
    设计语言: 东方自然主义 × 未来玻璃艺术
-   注意: 不使用 CSS var() — 微信小程序对其级联支持不稳定
    =================================================================== */
 
 page {
-  background-color: #F7F6F3;
+  background-color: #FAFAF8;
   color: #1A1A1A;
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
   font-size: 28rpx;
   line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
 }
+
+/* ==================== Layout ==================== */
+.page { padding: 20rpx 24rpx 40rpx; min-height: 100vh; }
+.page-title { font-size: 36rpx; font-weight: 600; color: #1A1A1A; margin-bottom: 32rpx; display: block; }
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24rpx; }
+.section { margin-top: 40rpx; }
+.section-header { display: flex; justify-content: space-between; align-items: center; }
+.section-title { font-size: 30rpx; font-weight: 600; color: #1A1A1A; margin-bottom: 16rpx; display: block; }
+.section-more { font-size: 24rpx; color: #9B9B9B; }
+.section-label { font-size: 24rpx; color: #9B9B9B; margin-bottom: 12rpx; display: block; }
+
+/* ==================== Hero ==================== */
+.hero { padding: 80rpx 0; text-align: center; background: linear-gradient(180deg, #F5F3F0, #FAFAF8); border-radius: 24rpx; margin-bottom: 32rpx; }
+.hero-title { font-size: 52rpx; font-weight: 700; color: #1A1A1A; display: block; }
+.hero-subtitle { font-size: 28rpx; color: #6B6B6B; margin-top: 12rpx; display: block; }
+.hero-btn { margin: 40rpx auto 0; width: 240rpx; height: 72rpx; background: #2D8B6E; border-radius: 36rpx; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 28rpx; }
+
+/* ==================== Search ==================== */
+.search-bar { display: flex; gap: 16rpx; margin-bottom: 24rpx; align-items: center; }
+.search-input { flex: 1; height: 72rpx; background: #F5F3F0; border-radius: 36rpx; padding: 0 32rpx; font-size: 28rpx; }
+.search-btn { color: #2D8B6E; font-size: 28rpx; font-weight: 500; }
+.result-count { font-size: 24rpx; color: #9B9B9B; margin-bottom: 16rpx; display: block; }
+
+/* ==================== Product Card ==================== */
+.product-grid { display: flex; flex-wrap: wrap; gap: 16rpx; }
+.product-card { width: calc(50% - 8rpx); background: #fff; border-radius: 16rpx; overflow: hidden; box-shadow: 0 2rpx 12rpx rgba(0,0,0,0.04); }
+.product-img { width: 100%; height: 340rpx; background: #F5F3F0; }
+.product-info { padding: 16rpx; }
+.product-name { font-size: 26rpx; color: #1A1A1A; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.product-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 8rpx; }
+.product-price { font-size: 30rpx; font-weight: 700; color: #1A1A1A; }
+.product-sold { font-size: 22rpx; color: #9B9B9B; }
+
+/* ==================== Category ==================== */
+.cat-scroll { white-space: nowrap; margin-bottom: 24rpx; }
+.cat-tag { display: inline-block; padding: 12rpx 28rpx; margin-right: 12rpx; background: #F5F3F0; border-radius: 32rpx; font-size: 26rpx; color: #6B6B6B; }
+.cat-tag.active { background: #2D8B6E; color: #fff; }
+.category-grid { display: flex; flex-wrap: wrap; gap: 16rpx; }
+.category-item { width: calc(25% - 12rpx); text-align: center; padding: 16rpx 0; }
+.category-icon { width: 80rpx; height: 80rpx; background: #F5F3F0; border-radius: 20rpx; margin: 0 auto 8rpx; display: flex; align-items: center; justify-content: center; font-size: 32rpx; }
+.category-name { font-size: 22rpx; color: #6B6B6B; display: block; }
+
+/* ==================== Flash ==================== */
+.flash-scroll { white-space: nowrap; margin-bottom: 8rpx; }
+.flash-item { display: inline-block; width: 180rpx; margin-right: 16rpx; padding: 20rpx; background: #FFF8F0; border-radius: 16rpx; text-align: center; border: 2rpx solid #D4956A; }
+.flash-price { font-size: 32rpx; font-weight: 700; color: #D4956A; display: block; }
+.flash-sold { font-size: 22rpx; color: #9B9B9B; margin-top: 4rpx; display: block; }
+.flash-card { margin-bottom: 16rpx; background: #fff; border-radius: 16rpx; padding: 24rpx; }
+.flash-header { display: flex; justify-content: space-between; margin-bottom: 16rpx; }
+.flash-countdown { font-size: 24rpx; color: #D4956A; font-weight: 600; }
+.flash-progress { font-size: 24rpx; color: #9B9B9B; }
+.flash-body { display: flex; align-items: center; justify-content: space-between; }
+.flash-info { flex: 1; }
+.flash-product { font-size: 28rpx; color: #1A1A1A; display: block; }
+.flash-prices { display: flex; align-items: baseline; gap: 12rpx; margin-top: 8rpx; }
+.flash-price { font-size: 34rpx; font-weight: 700; color: #D4956A; }
+.flash-original { font-size: 24rpx; color: #9B9B9B; text-decoration: line-through; }
+.flash-btn { width: 140rpx; height: 64rpx; background: #D4956A; border-radius: 32rpx; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 28rpx; }
+
+/* ==================== Cart ==================== */
+.cart-list { margin-bottom: 120rpx; }
+.cart-item { display: flex; align-items: center; gap: 16rpx; padding: 20rpx; background: #fff; border-radius: 16rpx; margin-bottom: 12rpx; }
+.check-box { width: 40rpx; height: 40rpx; border-radius: 20rpx; border: 2rpx solid #C0C0C0; display: flex; align-items: center; justify-content: center; font-size: 24rpx; }
+.check-box.checked { background: #2D8B6E; border-color: #2D8B6E; color: #fff; }
+.cart-img { width: 120rpx; height: 120rpx; border-radius: 12rpx; background: #F5F3F0; }
+.cart-info { flex: 1; }
+.cart-name { font-size: 28rpx; color: #1A1A1A; display: block; }
+.cart-spec { font-size: 22rpx; color: #9B9B9B; margin-top: 4rpx; display: block; }
+.cart-price { font-size: 30rpx; font-weight: 700; color: #1A1A1A; margin-top: 8rpx; display: block; }
+.cart-qty { display: flex; align-items: center; gap: 16rpx; }
+.qty-btn { width: 48rpx; height: 48rpx; border-radius: 24rpx; background: #F5F3F0; display: flex; align-items: center; justify-content: center; font-size: 28rpx; }
+.qty-val { font-size: 28rpx; min-width: 40rpx; text-align: center; }
+.cart-bottom { position: fixed; bottom: 0; left: 0; right: 0; padding: 20rpx 24rpx; background: #fff; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 -4rpx 20rpx rgba(0,0,0,0.06); }
+.cart-summary { display: flex; align-items: baseline; gap: 8rpx; }
+.total-label { font-size: 28rpx; color: #6B6B6B; }
+.total-price { font-size: 36rpx; font-weight: 700; color: #1A1A1A; }
+.checkout-btn { padding: 16rpx 40rpx; background: #C8A96E; border-radius: 36rpx; color: #fff; font-size: 28rpx; }
+
+/* ==================== Empty ==================== */
+.empty-page { display: flex; flex-direction: column; align-items: center; justify-content: center; padding-top: 200rpx; }
+.empty-icon { font-size: 80rpx; display: block; }
+.empty-text { font-size: 30rpx; color: #9B9B9B; margin-top: 16rpx; display: block; }
+.empty-btn { margin-top: 32rpx; padding: 16rpx 48rpx; border: 2rpx solid #6B6B6B; border-radius: 36rpx; font-size: 28rpx; color: #6B6B6B; }
+.empty { text-align: center; padding: 80rpx 0; color: #9B9B9B; display: block; }
+.loading { text-align: center; padding: 80rpx 0; color: #9B9B9B; }
+.loading-text { display: block; text-align: center; padding: 200rpx 0; color: #9B9B9B; }
+
+/* ==================== Product Detail ==================== */
+.detail-img { width: 100%; height: 600rpx; background: #F5F3F0; }
+.detail-body { padding: 24rpx; }
+.detail-name { font-size: 34rpx; font-weight: 600; color: #1A1A1A; display: block; }
+.detail-desc { font-size: 26rpx; color: #6B6B6B; margin-top: 12rpx; display: block; }
+.detail-price-row { display: flex; align-items: baseline; gap: 16rpx; margin-top: 20rpx; }
+.detail-price { font-size: 44rpx; font-weight: 700; color: #D4956A; }
+.detail-original { font-size: 28rpx; color: #9B9B9B; text-decoration: line-through; }
+.sku-section { margin-top: 24rpx; }
+.sku-label { font-size: 26rpx; color: #6B6B6B; margin-bottom: 12rpx; display: block; }
+.sku-list { display: flex; flex-wrap: wrap; gap: 12rpx; }
+.sku-tag { padding: 12rpx 28rpx; background: #F5F3F0; border-radius: 8rpx; font-size: 26rpx; color: #6B6B6B; border: 2rpx solid transparent; }
+.sku-tag.active { border-color: #2D8B6E; color: #2D8B6E; background: #E8F5F0; }
+.qty-section { margin-top: 24rpx; display: flex; align-items: center; gap: 24rpx; }
+.qty-stepper { display: flex; align-items: center; gap: 20rpx; }
+.bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; padding: 16rpx 24rpx; background: #fff; display: flex; gap: 16rpx; box-shadow: 0 -4rpx 20rpx rgba(0,0,0,0.06); }
+.btn-add { flex: 1; height: 80rpx; border-radius: 40rpx; border: 2rpx solid #2D8B6E; display: flex; align-items: center; justify-content: center; font-size: 28rpx; color: #2D8B6E; }
+.btn-buy { flex: 1; height: 80rpx; border-radius: 40rpx; background: #C8A96E; display: flex; align-items: center; justify-content: center; font-size: 28rpx; color: #fff; }
+
+/* ==================== Profile ==================== */
+.profile-header { display: flex; align-items: center; gap: 20rpx; padding: 40rpx 0; }
+.avatar { width: 100rpx; height: 100rpx; border-radius: 50rpx; background: #F5F3F0; display: flex; align-items: center; justify-content: center; font-size: 40rpx; }
+.header-text { flex: 1; }
+.nickname { font-size: 34rpx; font-weight: 600; color: #1A1A1A; display: block; }
+.subtitle { font-size: 24rpx; color: #9B9B9B; margin-top: 4rpx; display: block; }
+.arrow { font-size: 36rpx; color: #C0C0C0; }
+.stats-row { display: flex; background: #fff; border-radius: 16rpx; padding: 24rpx; margin-bottom: 24rpx; }
+.stat-item { flex: 1; text-align: center; }
+.stat-val { font-size: 32rpx; font-weight: 700; color: #1A1A1A; display: block; }
+.stat-label { font-size: 22rpx; color: #9B9B9B; margin-top: 4rpx; display: block; }
+.menu-section { background: #fff; border-radius: 16rpx; overflow: hidden; }
+.menu-item { display: flex; align-items: center; padding: 24rpx; border-bottom: 1rpx solid #F5F3F0; }
+.menu-icon { font-size: 32rpx; margin-right: 16rpx; }
+.menu-title { flex: 1; font-size: 28rpx; color: #1A1A1A; }
+.menu-arrow { font-size: 32rpx; color: #C0C0C0; }
+.badge { background: #C45A5A; color: #fff; font-size: 20rpx; padding: 4rpx 12rpx; border-radius: 20rpx; margin-right: 8rpx; }
+.logout-btn { margin-top: 40rpx; text-align: center; padding: 24rpx; color: #C45A5A; font-size: 28rpx; }
+
+/* ==================== Profile Avatar ==================== */
+.avatar-img { width: 100rpx; height: 100rpx; border-radius: 50rpx; background: #F5F3F0; }
+
+/* ==================== Login ==================== */
+.login-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.login-card { width: 100%; max-width: 600rpx; padding: 48rpx 32rpx; background: #fff; border-radius: 24rpx; }
+.brand-header { text-align: center; margin-bottom: 32rpx; }
+.brand-name { font-size: 44rpx; font-weight: 700; color: #1A1A1A; display: block; }
+.brand-slogan { font-size: 26rpx; color: #9B9B9B; margin-top: 8rpx; display: block; }
+.login-title { font-size: 40rpx; font-weight: 600; color: #1A1A1A; text-align: center; margin-bottom: 32rpx; display: block; }
+.tab-row { display: flex; margin-bottom: 24rpx; gap: 8rpx; flex-wrap: wrap; justify-content: center; }
+.tab { padding: 12rpx 28rpx; font-size: 26rpx; color: #9B9B9B; }
+.tab.active { color: #2D8B6E; font-weight: 600; border-bottom: 4rpx solid #2D8B6E; }
+.input { width: 100%; height: 80rpx; background: #F5F3F0; border-radius: 16rpx; padding: 0 24rpx; font-size: 28rpx; margin-bottom: 16rpx; box-sizing: border-box; }
+.flex-1 { flex: 1; }
+.sms-row { display: flex; gap: 16rpx; align-items: center; }
+.sms-btn { padding: 16rpx 24rpx; background: #2D8B6E; border-radius: 16rpx; font-size: 24rpx; color: #fff; white-space: nowrap; }
+.login-btn { width: 100%; height: 80rpx; background: #2D8B6E; border-radius: 16rpx; display: flex; align-items: center; justify-content: center; font-size: 30rpx; color: #fff; margin-top: 24rpx; border: none; }
+.login-footer { text-align: center; margin-top: 24rpx; font-size: 26rpx; color: #9B9B9B; }
+/* ==================== WeChat Login ==================== */
+.wechat-section { text-align: center; margin-bottom: 24rpx; }
+.wx-user-info { display: flex; flex-direction: column; align-items: center; margin-bottom: 24rpx; }
+.wx-avatar { width: 120rpx; height: 120rpx; border-radius: 60rpx; background: #F5F3F0; }
+.wx-avatar-placeholder { width: 120rpx; height: 120rpx; border-radius: 60rpx; background: #F5F3F0; display: flex; align-items: center; justify-content: center; font-size: 60rpx; }
+.wx-nickname { font-size: 30rpx; color: #1A1A1A; margin-top: 12rpx; display: block; }
+.wechat-login-btn { width: 100%; height: 88rpx; background: #07C160; border-radius: 16rpx; display: flex; align-items: center; justify-content: center; font-size: 30rpx; color: #fff; gap: 8rpx; border: none; margin-bottom: 12rpx; }
+.wechat-login-btn[loading] { opacity: 0.7; }
+.wechat-icon { font-size: 36rpx; }
+.get-profile-btn { font-size: 24rpx; color: #6B7DB3; margin-bottom: 16rpx; display: block; }
+.error-text { font-size: 24rpx; color: #C45A5A; margin-top: 12rpx; display: block; }
+.divider { display: flex; align-items: center; margin: 24rpx 0; gap: 16rpx; }
+.divider-line { flex: 1; height: 1rpx; background: #E0E0E0; }
+.divider-text { font-size: 22rpx; color: #C0C0C0; }
+
+/* ==================== Orders ==================== */
+.order-card { background: #fff; border-radius: 16rpx; padding: 24rpx; margin-bottom: 16rpx; }
+.order-header { display: flex; justify-content: space-between; margin-bottom: 16rpx; }
+.order-no { font-size: 22rpx; color: #9B9B9B; }
+.order-status { font-size: 24rpx; color: #2D8B6E; font-weight: 500; }
+.order-item { display: flex; justify-content: space-between; padding: 8rpx 0; }
+.item-name { font-size: 26rpx; color: #1A1A1A; flex: 1; }
+.item-price { font-size: 26rpx; color: #6B6B6B; }
+.order-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 16rpx; padding-top: 16rpx; border-top: 1rpx solid #F5F3F0; }
+.order-total { font-size: 28rpx; font-weight: 600; color: #1A1A1A; }
+.order-actions { display: flex; gap: 12rpx; }
+.action-btn { padding: 10rpx 24rpx; border-radius: 24rpx; border: 2rpx solid #C0C0C0; font-size: 24rpx; color: #6B6B6B; }
+.action-btn.primary { border-color: #2D8B6E; color: #2D8B6E; }
+.order-status-bar { display: flex; justify-content: space-between; align-items: center; padding: 24rpx; background: #E8F5F0; border-radius: 16rpx; margin-bottom: 24rpx; }
+.status-text { font-size: 30rpx; font-weight: 600; color: #2D8B6E; }
+.order-no-text { font-size: 22rpx; color: #9B9B9B; }
+.info-text { font-size: 26rpx; color: #6B6B6B; display: block; margin-bottom: 4rpx; }
+.order-summary { padding: 24rpx; background: #fff; border-radius: 16rpx; margin-top: 16rpx; }
+.pay-amount { font-size: 34rpx; font-weight: 700; color: #1A1A1A; margin-top: 8rpx; display: block; }
+
+/* ==================== Pay ==================== */
+.pay-amount { text-align: center; padding: 40rpx 0; }
+.pay-label { font-size: 26rpx; color: #9B9B9B; display: block; }
+.pay-price { font-size: 60rpx; font-weight: 700; color: #1A1A1A; margin-top: 12rpx; display: block; }
+.channel-list { margin-bottom: 32rpx; }
+.channel-item { display: flex; justify-content: space-between; padding: 28rpx 24rpx; background: #fff; border-radius: 16rpx; margin-bottom: 12rpx; font-size: 28rpx; border: 2rpx solid transparent; }
+.channel-item.selected { border-color: #2D8B6E; }
+.pay-link { padding: 24rpx; background: #F5F3F0; border-radius: 16rpx; margin-bottom: 24rpx; text-align: center; }
+.pay-link-text { font-size: 24rpx; color: #9B9B9B; display: block; }
+.pay-link-url { font-size: 22rpx; color: #2D8B6E; word-break: break-all; margin-top: 8rpx; display: block; }
+
+/* ==================== Coupons ==================== */
+.coupon-card { display: flex; margin-bottom: 16rpx; border-radius: 16rpx; overflow: hidden; background: #fff; }
+.coupon-left { width: 180rpx; background: #E8F5F0; padding: 24rpx; display: flex; align-items: center; justify-content: center; }
+.coupon-amount { font-size: 36rpx; font-weight: 700; color: #2D8B6E; }
+.coupon-right { flex: 1; padding: 24rpx; display: flex; flex-direction: column; justify-content: center; }
+.coupon-name { font-size: 28rpx; color: #1A1A1A; font-weight: 500; display: block; }
+.coupon-desc { font-size: 22rpx; color: #9B9B9B; margin-top: 4rpx; display: block; }
+.claim-btn { align-self: flex-end; padding: 10rpx 24rpx; background: #C8A96E; border-radius: 24rpx; font-size: 24rpx; color: #fff; margin-top: 12rpx; }
+
+/* ==================== Address ==================== */
+.addr-card { padding: 24rpx; background: #fff; border-radius: 16rpx; margin-bottom: 12rpx; border: 2rpx solid transparent; }
+.addr-card.selected { border-color: #2D8B6E; background: #E8F5F0; }
+.addr-header { display: flex; justify-content: space-between; align-items: center; }
+.addr-name { font-size: 28rpx; color: #1A1A1A; font-weight: 500; }
+.addr-tag { font-size: 20rpx; background: #2D8B6E; color: #fff; padding: 4rpx 12rpx; border-radius: 8rpx; }
+.addr-detail { font-size: 24rpx; color: #6B6B6B; margin-top: 8rpx; display: block; }
+.del-btn { font-size: 24rpx; color: #C45A5A; margin-top: 12rpx; display: block; }
+
+/* ==================== Sign ==================== */
+.sign-card { text-align: center; padding: 80rpx 0; background: #fff; border-radius: 24rpx; }
+.sign-icon { font-size: 100rpx; display: block; }
+.sign-status { font-size: 32rpx; color: #1A1A1A; margin-top: 16rpx; font-weight: 600; display: block; }
+.sign-info { font-size: 26rpx; color: #6B6B6B; margin-top: 8rpx; display: block; }
+
+/* ==================== Points ==================== */
+.balance-card { text-align: center; padding: 48rpx; background: #fff; border-radius: 24rpx; margin-bottom: 32rpx; }
+.balance-val { font-size: 72rpx; font-weight: 700; color: #C8A96E; display: block; }
+.balance-label { font-size: 26rpx; color: #9B9B9B; margin-top: 8rpx; display: block; }
+.log-item { display: flex; justify-content: space-between; padding: 16rpx 0; border-bottom: 1rpx solid #F5F3F0; }
+.log-source { font-size: 26rpx; color: #1A1A1A; }
+.log-amount { font-size: 28rpx; color: #6B6B6B; }
+.log-amount.positive { color: #2D8B6E; }
+
+/* ==================== Notification ==================== */
+.mark-all { font-size: 26rpx; color: #2D8B6E; }
+.notif-item { padding: 24rpx; background: #fff; border-radius: 12rpx; margin-bottom: 8rpx; position: relative; }
+.notif-item.unread { background: #F0F7F4; }
+.notif-title { font-size: 28rpx; color: #1A1A1A; display: block; }
+.notif-content { font-size: 24rpx; color: #9B9B9B; margin-top: 4rpx; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unread-dot { position: absolute; top: 28rpx; right: 24rpx; width: 16rpx; height: 16rpx; background: #2D8B6E; border-radius: 8rpx; }
+
+/* ==================== Hot search ==================== */
+.hot-section { padding: 32rpx 0; }
+.hot-title { font-size: 28rpx; color: #6B6B6B; margin-bottom: 16rpx; display: block; }
+.hot-tags { display: flex; flex-wrap: wrap; gap: 12rpx; }
+.hot-tag { padding: 12rpx 28rpx; background: #F5F3F0; border-radius: 32rpx; font-size: 26rpx; color: #6B6B6B; }
+
+/* ==================== Checkout ==================== */
+.total-row { display: flex; justify-content: space-between; padding: 24rpx; background: #fff; border-radius: 16rpx; margin: 24rpx 0; font-size: 30rpx; }
+.submit-btn { margin-top: 24rpx; height: 88rpx; background: #C8A96E; border-radius: 44rpx; display: flex; align-items: center; justify-content: center; font-size: 30rpx; color: #fff; }
+
+/* ==================== Pagination ==================== */
+.pagination { display: flex; justify-content: center; align-items: center; gap: 24rpx; margin-top: 32rpx; }
+.page-btn { font-size: 26rpx; color: #2D8B6E; }
+.page-num { font-size: 26rpx; color: #9B9B9B; }
+
+/* ==================== Banner Swiper ==================== */
+.banner-swiper { width: 100%; height: 300rpx; border-radius: 24rpx; overflow: hidden; margin-bottom: 24rpx; }
+.banner-slide { position: relative; width: 100%; height: 300rpx; }
+.banner-img { width: 100%; height: 300rpx; }
+.banner-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 24rpx 32rpx; background: linear-gradient(transparent, rgba(0,0,0,0.4)); }
+.banner-title { font-size: 30rpx; color: #fff; font-weight: 600; }
+
+/* ==================== Flash Item ==================== */
+.flash-img { width: 120rpx; height: 120rpx; border-radius: 12rpx; background: #F5F3F0; margin-bottom: 8rpx; }
+
+/* ==================== Category Emoji ==================== */
+.category-emoji { font-size: 36rpx; }
+
+/* ==================== Mock Products ==================== */
+.mock-products { display: flex; flex-wrap: wrap; gap: 16rpx; }
+.loading-hint { text-align: center; padding: 40rpx 0; }
+.loading-text { font-size: 26rpx; color: #9B9B9B; display: block; }
+.loading-sub { font-size: 22rpx; color: #C0C0C0; margin-top: 8rpx; display: block; }
