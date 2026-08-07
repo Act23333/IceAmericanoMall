@@ -73,4 +73,20 @@ public class RoleManageServiceImpl implements RoleManageService {
         }
         log.info("角色权限分配成功: roleId={}, permCount={}", roleId, permissionIds.size());
     }
+
+    /** V5.0: roleType → sys_role.id 映射: 0→1(USER), 1→3(SELLER), 2→4(ADMIN) */
+    private static final Long[] ROLE_MAP = {1L, 3L, 4L};
+
+    @Override
+    public void setUserRole(Long userId, Integer roleType) {
+        if (roleType == null || roleType < 0 || roleType >= ROLE_MAP.length) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "无效的角色类型: " + roleType);
+        }
+        roleMapper.deleteUserRoles(userId);
+        roleMapper.insertUserRole(userId, ROLE_MAP[roleType]);
+        if (roleType == 1) {
+            roleMapper.insertUserRole(userId, 1L); // 商家也保留 ROLE_USER
+        }
+        log.info("用户角色已更新: userId={}, roleType={}", userId, roleType);
+    }
 }
