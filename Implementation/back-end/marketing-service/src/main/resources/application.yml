@@ -13,7 +13,7 @@ spring:
     nacos:
       server-addr: ${ia.nacos.host:192.168.10.128}:8848
       username: nacos
-      password: nacoss
+      password: nacos
       discovery:
         enabled: true
     openfeign:
@@ -72,6 +72,7 @@ springdoc:
 
 # ── RocketMQ 5.x (V4.0: 延迟消息替代 RabbitMQ TTL) ──
 rocketmq:
+  enabled: true
   name-server: ${ia.rocketmq.host:192.168.10.128}:9876
   producer:
     group: ${spring.application.name}-producer

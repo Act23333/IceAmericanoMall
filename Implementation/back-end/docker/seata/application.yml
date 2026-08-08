@@ -28,7 +28,7 @@ seata:
       namespace: ""
       cluster: default
       username: ${SEATA_NACOS_USER:nacos}
-      password: ${SEATA_NACOS_PWD:nacoss}
+      password: ${SEATA_NACOS_PWD:nacos}
       accessKey: ${NACOS_AUTH_IDENTITY_VALUE:security}
       secretKey: ${NACOS_AUTH_IDENTITY_KEY:serverIdentity}
 

@@ -143,11 +143,11 @@
             <optional>true</optional>
         </dependency>
         <!-- RabbitMQ（可选：仅 trade/pay/logistics-service 使用时引入） -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-amqp</artifactId>
-            <optional>true</optional>
-        </dependency>
+<!--        <dependency>-->
+<!--            <groupId>org.springframework.boot</groupId>-->
+<!--            <artifactId>spring-boot-starter-amqp</artifactId>-->
+<!--            <optional>true</optional>-->
+<!--        </dependency>-->
         <!-- Seata AT 模式（可选：仅 trade/pay-service 使用） -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>

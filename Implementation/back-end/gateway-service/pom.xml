@@ -27,6 +27,19 @@
         <dependency>
             <groupId>org.nolazy</groupId>
             <artifactId>ia-common</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework</groupId>
+                    <artifactId>spring-webmvc</artifactId>
+                </exclusion>
+            </exclusions>
+            <!-- 如果有其他 Servlet 相关依赖（如 spring-webmvc），视情况也排除 -->
+            <!--
+            <exclusion>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-webmvc</artifactId>
+            </exclusion>
+            -->
         </dependency>
         <!--配置nacos，让该服务被发现和注册-->
         <dependency>
