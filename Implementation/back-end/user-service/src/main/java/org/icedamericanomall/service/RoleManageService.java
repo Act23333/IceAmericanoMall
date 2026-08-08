@@ -17,4 +17,7 @@ public interface RoleManageService {
     List<Long> getRolePermissions(Long roleId);
 
     void assignPermissions(Long roleId, List<Long> permissionIds);
+
+    /** V5.0: 修改用户角色 — 同步写入 sys_user_role */
+    void setUserRole(Long userId, Integer roleType);
 }
