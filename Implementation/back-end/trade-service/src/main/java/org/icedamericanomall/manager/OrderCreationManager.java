@@ -1,6 +1,5 @@
 package org.icedamericanomall.manager;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.CouponClient;
 import org.icedamericanomall.client.SkuClient;
@@ -9,6 +8,7 @@ import org.icedamericanomall.domain.entity.OrderEntity;
 import org.icedamericanomall.domain.entity.OrderItemEntity;
 import org.icedamericanomall.domain.vo.OrderVO;
 import org.icedamericanomall.dto.StockOpDTO;
+import org.icedamericanomall.producer.DomainEventProducer;
 import org.icedamericanomall.producer.OrderTimeoutPublisher;
 import org.icedamericanomall.service.OrderService;
 import org.icedamericanomall.strategy.NormalCartOrderStrategy;
@@ -16,6 +16,7 @@ import org.icedamericanomall.strategy.OrderCreateContext;
 import org.icedamericanomall.strategy.OrderCreateStrategy;
 import org.icedamericanomall.strategy.OrderCreateStrategyFactory;
 import org.noLazy.common.enums.ErrorCode;
+import org.noLazy.common.event.OrderCreatedEvent;
 import org.noLazy.common.exception.BizException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,7 +40,6 @@ import java.util.List;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class OrderCreationManager {
 
     private final OrderService orderService;
@@ -48,6 +48,21 @@ public class OrderCreationManager {
     private final CouponClient couponClient;
     private final OrderTimeoutPublisher timeoutPublisher;
     private final OrderCreateStrategyFactory strategyFactory;
+    private final DomainEventProducer eventProducer;
+
+    public OrderCreationManager(OrderService orderService, OrderConverter orderConverter,
+                                 SkuClient skuClient, CouponClient couponClient,
+                                 OrderTimeoutPublisher timeoutPublisher,
+                                 OrderCreateStrategyFactory strategyFactory,
+                                 DomainEventProducer eventProducer) {
+        this.orderService = orderService;
+        this.orderConverter = orderConverter;
+        this.skuClient = skuClient;
+        this.couponClient = couponClient;
+        this.timeoutPublisher = timeoutPublisher;
+        this.strategyFactory = strategyFactory;
+        this.eventProducer = eventProducer;
+    }
 
     /**
      * V4.1: 统一订单创建入口。
@@ -98,10 +113,23 @@ public class OrderCreationManager {
         // 5. 策略后置处理
         strategy.afterCreate(ctx, order);
 
-        // 6. 返回 VO
+        // 6. RocketMQ 领域事件: order.created (非关键路径)
+        publishOrderCreatedEvent(order);
+
+        // 7. 返回 VO
         OrderVO vo = orderConverter.entityToVO(order);
         vo.setItems(orderConverter.itemEntitiesToVOs(items));
         return vo;
+    }
+
+    private void publishOrderCreatedEvent(OrderEntity order) {
+        try {
+            eventProducer.publishOrderCreated(new OrderCreatedEvent(
+                    order.getOrderNo(), order.getUserId(),
+                    order.getPayAmount(), "WECHAT"));
+        } catch (Exception e) {
+            log.warn("订单创建事件发布失败(order.created): orderNo={}", order.getOrderNo(), e);
+        }
     }
 
     private List<StockOpDTO> buildStockOps(OrderCreateContext ctx) {

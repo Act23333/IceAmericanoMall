@@ -1,6 +1,5 @@
 package org.icedamericanomall.manager;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.CouponClient;
 import org.icedamericanomall.client.LogisticsClient;
@@ -11,7 +10,9 @@ import org.icedamericanomall.enums.OrderStatusEnum;
 import org.icedamericanomall.domain.entity.OrderItemEntity;
 import org.icedamericanomall.dto.CreateLogisticsDTO;
 import org.icedamericanomall.dto.StockOpDTO;
+import org.icedamericanomall.producer.DomainEventProducer;
 import org.icedamericanomall.service.OrderService;
+import org.noLazy.common.event.OrderShippedEvent;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -31,10 +32,8 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class OrderLifecycleManager {
 
-    /** 确认收货奖励积分比例：支付金额（分）的 1%。 */
     private static final int POINTS_RATE_DIVISOR = 100;
     private static final int POINTS_TYPE_ORDER_REWARD = 2;
 
@@ -43,6 +42,18 @@ public class OrderLifecycleManager {
     private final CouponClient couponClient;
     private final LogisticsClient logisticsClient;
     private final PointsClient pointsClient;
+    private final DomainEventProducer eventProducer;
+
+    public OrderLifecycleManager(OrderService orderService, SkuClient skuClient,
+                                  CouponClient couponClient, LogisticsClient logisticsClient,
+                                  PointsClient pointsClient, DomainEventProducer eventProducer) {
+        this.orderService = orderService;
+        this.skuClient = skuClient;
+        this.couponClient = couponClient;
+        this.logisticsClient = logisticsClient;
+        this.pointsClient = pointsClient;
+        this.eventProducer = eventProducer;
+    }
 
     public void cancelOrder(String orderNo, Long userId) {
         orderService.cancelOrder(orderNo, userId);
@@ -81,6 +92,13 @@ public class OrderLifecycleManager {
             log.info("物流记录创建成功: orderId={}", order.getId());
         } catch (Exception e) {
             log.error("物流记录创建失败，需人工处理: orderId={}", order.getId(), e);
+        }
+        // RocketMQ: 发布订单发货事件 (非关键路径，失败不影响主流程)
+        try {
+            eventProducer.publishOrderShipped(new OrderShippedEvent(
+                    orderNo, order.getUserId(), logisticsNumber, logisticsCompany));
+        } catch (Exception e) {
+            log.warn("订单发货事件发布失败(order.shipped): orderNo={}", orderNo, e);
         }
     }
 

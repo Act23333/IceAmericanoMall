@@ -61,5 +61,9 @@
             <groupId>org.nolazy</groupId>
             <artifactId>ia-common</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-spring-boot-starter</artifactId>
+        </dependency>
     </dependencies>
 </project>
