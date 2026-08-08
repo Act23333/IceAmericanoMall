@@ -11,8 +11,8 @@ import Taro from '@tarojs/taro';
 
 // ==================== 配置 ====================
 
-/** 后端 API 地址 — 本地开发使用局域网 IP */
-const BASE_URL = 'http://192.168.10.128:8080';
+/** 后端 API 地址 — 本机开发使用 localhost，真机调试改为局域网 IP */
+const BASE_URL = 'http://localhost:8080';
 
 /** Token 存储 key */
 const TOKEN_KEY = 'access_token';
