@@ -9,7 +9,7 @@ import Link from 'next/link';
 
 export default function HistoryPage() {
   const qc = useQueryClient();
-  const { data: ids, isLoading } = useQuery({
+  const { data: ids } = useQuery({
     queryKey: ['history'],
     queryFn: () => apiClient<number[]>('/api/user/history?size=20'),
     staleTime: 30_000,
@@ -21,10 +21,14 @@ export default function HistoryPage() {
   useEffect(() => {
     if (!ids || ids.length === 0) return;
     const base = process.env.NEXT_PUBLIC_API_URL || '';
+    const token = typeof document !== 'undefined' ? document.cookie.split('; ').find(r => r.startsWith('access_token='))?.split('=')[1] : '';
     ids.forEach(async (id) => {
       if (products[id]) return;
       try {
-        const res = await fetch(`${base}/api/item/product/${id}`, { credentials: 'include' });
+        const res = await fetch(`${base}/api/item/product/${id}`, {
+          credentials: 'include',
+          headers: token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {},
+        });
         const data = await res.json();
         if (data.code === 200 && data.data) {
           setProducts((p) => ({ ...p, [id]: data.data }));
@@ -38,6 +42,9 @@ export default function HistoryPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['history'] }); setProducts({}); },
   });
 
+  // ids === undefined → 加载中; ids === [] → 空状态
+  const loading = ids === undefined;
+
   return (
     <div className="mx-auto max-w-2xl px-4 pt-24 pb-20">
       <div className="flex items-center justify-between mb-6">
@@ -45,9 +52,9 @@ export default function HistoryPage() {
         {(ids?.length ?? 0) > 0 && <Button size="sm" variant="secondary" onClick={() => clearMutation.mutate()}>清空历史</Button>}
       </div>
 
-      {isLoading ? (
+      {loading ? (
         <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-16 rounded-xl bg-warm-gray-100 animate-pulse" />)}</div>
-      ) : (!ids || ids.length === 0) ? (
+      ) : ids.length === 0 ? (
         <div className="text-center py-20">
           <div className="text-6xl select-none">🕐</div>
           <p className="mt-4 text-text-secondary">暂无浏览记录</p>
