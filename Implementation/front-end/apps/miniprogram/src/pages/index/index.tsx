@@ -50,11 +50,13 @@ export default function IndexPage() {
         <Text style="font-size:72rpx">{b.icon}</Text>
         <Text style="font-size:34rpx;font-weight:700;color:#1A1A1A;margin-top:8rpx">{b.title}</Text>
         <Text style="font-size:24rpx;color:#9B9B9B;margin-top:4rpx">{b.sub}</Text>
-        {/* 轮播指示器 */}
-        <View style="display:flex;gap:12rpx;margin-top:16rpx">
+        {/* 轮播指示器 — 大触摸区，未选中半透明明显可见 */}
+        <View style="display:flex;gap:16rpx;margin-top:20rpx">
           {BANNER_DATA.map((_, i) => (
             <View key={i} onClick={(e: any) => { e.stopPropagation(); setBannerIdx(i); }}
-              style={`width:${i === bannerIdx ? 24 : 8}rpx;height:8rpx;border-radius:4rpx;background:${i === bannerIdx ? '#2D8B6E' : '#C0C0C0'};transition:all 0.3s`} />
+              style={`width:${i === bannerIdx ? 20 : 20}rpx;height:${i === bannerIdx ? 20 : 20}rpx;border-radius:10rpx;display:flex;align-items:center;justify-content:center`}>
+              <View style={`width:${i === bannerIdx ? 20 : 12}rpx;height:${i === bannerIdx ? 6 : 12}rpx;border-radius:${i === bannerIdx ? 3 : 6}rpx;background:${i === bannerIdx ? '#2D8B6E' : 'rgba(0,0,0,0.25)'}`} />
+            </View>
           ))}
         </View>
       </View>
