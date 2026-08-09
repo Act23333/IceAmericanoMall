@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useAuthStore } from '@icedmall/auth';
 import { Button, GlassCard } from '@icedmall/ui';
 import { formatPrice } from '@icedmall/utils';
@@ -13,7 +13,6 @@ function yuanToCents(yuan: number): number {
 export default function ProfilePage() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [rechargeYuan, setRechargeYuan] = useState('');
   const [rechargeMsg, setRechargeMsg] = useState('');
@@ -85,28 +84,25 @@ export default function ProfilePage() {
       <h1 className="text-2xl font-light text-ink-black mb-8">个人中心</h1>
 
       <GlassCard className="p-6 mb-6 flex items-center gap-4">
-        {/* 头像 — 可点击上传 */}
-        <div
-          className="relative h-16 w-16 rounded-full bg-gradient-to-br from-accent-green/20 to-accent-blue-purple/10 flex items-center justify-center text-2xl cursor-pointer group overflow-hidden"
-          onClick={() => fileInputRef.current?.click()}
-        >
+        {/* 头像 — 可点击上传 (用 label 触发 input，比 ref+onClick 更可靠) */}
+        <label className="relative h-16 w-16 rounded-full bg-gradient-to-br from-accent-green/20 to-accent-blue-purple/10 flex items-center justify-center text-2xl cursor-pointer group overflow-hidden">
           {user?.avatar ? (
-            <img src={user.avatar} alt="" className="h-full w-full rounded-full object-cover" />
+            <img src={user.avatar} alt="" className="h-full w-full rounded-full object-cover pointer-events-none" />
           ) : (
-            <span>👤</span>
+            <span className="pointer-events-none">👤</span>
           )}
           {/* hover overlay */}
-          <div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
             <span className="text-white text-xs">{uploading ? '...' : '📷'}</span>
           </div>
           <input
-            ref={fileInputRef}
             type="file"
             accept="image/jpeg,image/png,image/webp"
-            className="hidden"
+            className="sr-only"
             onChange={handleAvatarUpload}
+            disabled={uploading}
           />
-        </div>
+        </label>
         <div>
           <h2 className="text-lg font-medium text-ink-black">{user?.username ?? '用户'}</h2>
           {user?.userId && <p className="text-xs text-text-tertiary">ID: {user.userId}</p>}
