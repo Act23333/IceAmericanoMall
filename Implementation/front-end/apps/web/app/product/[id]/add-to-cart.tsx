@@ -27,7 +27,11 @@ export function AddToCart({ product }: AddToCartProps) {
       method: 'POST',
       credentials: 'include',
       headers: token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {},
-    }).catch(() => {});
+    }).then(r => {
+      if (!r.ok) console.warn('[足迹] 记录失败:', r.status);
+    }).catch(e => {
+      console.warn('[足迹] 请求异常:', e.message);
+    });
   }, [product.id]);
 
   // SKU 选项
