@@ -12,6 +12,7 @@ import { ProductCard, ImageGallery, SectionReveal } from '@icedmall/ui';
 import { AddToCart } from './add-to-cart';
 import { ReviewsSection } from './reviews-section';
 import { ShopInfoCard } from './shop-info-card';
+import { TrackHistory } from './track-history';
 import type { Metadata } from 'next';
 
 export const revalidate = 120;
@@ -85,6 +86,7 @@ export default async function ProductDetailPage({ params }: Props) {
 
   return (
     <div className="mx-auto max-w-7xl px-4 pt-24 pb-20">
+      <TrackHistory productId={Number(id)} />
       {/* ── 主内容: 图片 + 信息 ── */}
       <div className="grid gap-10 md:grid-cols-2">
         {/* 左: 图片 */}

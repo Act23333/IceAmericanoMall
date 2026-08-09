@@ -46,6 +46,11 @@ export default async function MarketplacePage({ searchParams }: Props) {
       {/* 秒杀横幅 */}
       <FlashSaleBanner />
 
+      {/* 热卖推荐 — 放在分类上面，切换分类不变 */}
+      {hotProducts?.records && hotProducts.records.length > 0 && (
+        <ProductScroll products={hotProducts.records} />
+      )}
+
       {/* 分类 Tab 栏 — 客户端路由，不重载页面 */}
       {categories && (
         <SectionReveal>
@@ -53,11 +58,6 @@ export default async function MarketplacePage({ searchParams }: Props) {
             <CategoryTabs categories={categories} />
           </div>
         </SectionReveal>
-      )}
-
-      {/* 横向滚动热卖商品 — 仿京东首页 */}
-      {hotProducts?.records && hotProducts.records.length > 0 && (
-        <ProductScroll products={hotProducts.records} />
       )}
 
       {/* 标题 */}
