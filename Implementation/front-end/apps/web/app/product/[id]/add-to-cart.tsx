@@ -19,6 +19,14 @@ export function AddToCart({ product }: AddToCartProps) {
   const [added, setAdded] = useState(false);
   const [quantity, setQuantity] = useState(1);
 
+  // 记录浏览历史 (fire-and-forget)
+  useEffect(() => {
+    const base = process.env.NEXT_PUBLIC_API_URL || '';
+    fetch(`${base}/api/user/history?productId=${product.id}`, {
+      method: 'POST', credentials: 'include',
+    }).catch(() => {});
+  }, [product.id]);
+
   // SKU 选项
   const skuOptions = (product.skus ?? []).map((s) => ({
     id: s.id, skuId: s.skuId, spec: s.spec, price: s.price, stock: s.stock, image: s.image,
