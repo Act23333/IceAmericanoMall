@@ -26,14 +26,19 @@ export default function ProfilePage() {
     setRechargeMsg('');
     try {
       const base = process.env.NEXT_PUBLIC_API_URL || '';
+      const token = document.cookie.split('; ').find(r => r.startsWith('access_token='))?.split('=')[1];
       const res = await fetch(`${base}/api/user/balance/recharge?amount=${yuanToCents(val)}`, {
         method: 'POST', credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {},
       });
       const data = await res.json();
       if (data.code === 200) {
         setRechargeYuan('');
         setRechargeMsg(`充值成功，余额 ¥${formatPrice(data.data)}`);
-        const infoRes = await fetch(`${base}/api/user/info`, { credentials: 'include' });
+        const infoRes = await fetch(`${base}/api/user/info`, {
+          credentials: 'include',
+          headers: token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {},
+        });
         const infoData = await infoRes.json();
         if (infoData.code === 200 && infoData.data) setUser(infoData.data);
       } else {
@@ -69,7 +74,10 @@ export default function ProfilePage() {
       const data = await res.json();
       if (data.code === 200) {
         // 刷新用户信息（含新头像URL）
-        const infoRes = await fetch(`${base}/api/user/info`, { credentials: 'include' });
+        const infoRes = await fetch(`${base}/api/user/info`, {
+          credentials: 'include',
+          headers: token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {},
+        });
         const infoData = await infoRes.json();
         if (infoData.code === 200 && infoData.data) setUser(infoData.data);
       }
