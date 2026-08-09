@@ -1,29 +1,50 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { useRecharge } from '@icedmall/api';
 import { useAuthStore } from '@icedmall/auth';
 import { Button, GlassCard } from '@icedmall/ui';
-import { formatPrice, yuanToCents } from '@icedmall/utils';
+import { formatPrice } from '@icedmall/utils';
 import Link from 'next/link';
+
+function yuanToCents(yuan: number): number {
+  return Math.round(yuan * 100);
+}
 
 export default function ProfilePage() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
-  const recharge = useRecharge();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [rechargeYuan, setRechargeYuan] = useState('');
   const [rechargeMsg, setRechargeMsg] = useState('');
+  const [recharging, setRecharging] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const handleRecharge = () => {
-    const cents = yuanToCents(Number(rechargeYuan));
-    if (cents <= 0) { setRechargeMsg('请输入有效金额'); return; }
-    recharge.mutate(cents, {
-      onSuccess: (newBal) => { setRechargeYuan(''); setRechargeMsg(`充值成功，余额 ¥${formatPrice(newBal)}`); },
-      onError: () => setRechargeMsg('充值失败'),
-    });
+  const handleRecharge = async () => {
+    const val = Number(rechargeYuan);
+    if (isNaN(val) || val <= 0) { setRechargeMsg('请输入有效金额'); return; }
+    setRecharging(true);
+    setRechargeMsg('');
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || '';
+      const res = await fetch(`${base}/api/user/balance/recharge?amount=${yuanToCents(val)}`, {
+        method: 'POST', credentials: 'include',
+      });
+      const data = await res.json();
+      if (data.code === 200) {
+        setRechargeYuan('');
+        setRechargeMsg(`充值成功，余额 ¥${formatPrice(data.data)}`);
+        const infoRes = await fetch(`${base}/api/user/info`, { credentials: 'include' });
+        const infoData = await infoRes.json();
+        if (infoData.code === 200 && infoData.data) setUser(infoData.data);
+      } else {
+        setRechargeMsg(data.msg || '充值失败');
+      }
+    } catch {
+      setRechargeMsg('网络错误，请重试');
+    } finally {
+      setRecharging(false);
+    }
   };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -103,7 +124,7 @@ export default function ProfilePage() {
           <input type="number" value={rechargeYuan} onChange={(e) => setRechargeYuan(e.target.value)}
             placeholder="充值金额（元）" min="0.01" step="0.01"
             className="flex-1 rounded-xl border border-warm-gray-200 bg-white px-4 py-2 text-sm outline-none focus:border-accent" />
-          <Button variant="secondary" size="md" loading={recharge.isPending} onClick={handleRecharge}>充值</Button>
+          <Button variant="secondary" size="md" loading={recharging} onClick={handleRecharge}>充值</Button>
         </div>
         {rechargeMsg && <p className="mt-2 text-xs text-accent">{rechargeMsg}</p>}
       </GlassCard>
