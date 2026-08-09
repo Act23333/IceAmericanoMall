@@ -34,8 +34,8 @@ public class CartServiceImpl extends ServiceImpl<CartMapper, CartEntity> impleme
      */
     @Override
     public CartVO getCart(Long userId) {
-        List<CartEntity> items = lambdaQuery().eq(CartEntity::getUserId, userId).list();
-        // SKU enrichment happens in CartManager — here we just return raw cart data
+        List<CartEntity> items = lambdaQuery().eq(CartEntity::getUserId, userId)
+                .orderByDesc(CartEntity::getCreateTime).list();
         return buildCartVO(items);
     }
 

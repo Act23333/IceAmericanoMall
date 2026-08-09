@@ -16,6 +16,7 @@ export interface CartItem {
   price: number; // cents
   quantity: number;
   selected: boolean;
+  createTime?: string; // V5.0: 加入购物车时间
 }
 
 interface CartState {
