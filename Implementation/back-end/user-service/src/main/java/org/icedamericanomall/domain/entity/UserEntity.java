@@ -30,6 +30,7 @@ public class UserEntity {
     private String password;
     private String avatar;
     private String wxOpenid;
+    private String phoneHash;  // V2.5: SHA-256(phone) for privacy-safe lookups
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime registerTime;
     private LocalDateTime lastLoginTime;
@@ -99,6 +100,7 @@ public class UserEntity {
     public void setPassword(String v) { this.password = v; }
     public void setAvatar(String v) { this.avatar = v; }
     public void setWxOpenid(String v) { this.wxOpenid = v; }
+    public void setPhoneHash(String v) { this.phoneHash = v; }
     public void setRegisterTime(LocalDateTime v) { this.registerTime = v; }
     public void setLastLoginTime(LocalDateTime v) { this.lastLoginTime = v; }
     public void setStatus(UserStatusEnum v) { this.status = v; }
