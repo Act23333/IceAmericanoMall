@@ -96,7 +96,14 @@ public class UserProfileService {
                 storageClient.upload(bucket, thumbObj, new ByteArrayInputStream(thumb), "image/jpeg");
             }
 
-            return storageClient.getUrl(bucket, originalObj);
+            String url = storageClient.getUrl(bucket, originalObj);
+            // 更新 user.avatar 字段
+            UserEntity entity = userMapper.selectById(userId);
+            if (entity != null) {
+                entity.setAvatar(url);
+                userMapper.updateById(entity);
+            }
+            return url;
         } catch (IOException e) {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "头像上传失败");
         }

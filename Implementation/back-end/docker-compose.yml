@@ -57,6 +57,10 @@ services:
       - ./database/middleware/xxl-job-mysql.sql:/docker-entrypoint-initdb.d/12-xxl-job-mysql.sql:ro
       - ./database/middleware/seata-mysql.sql:/docker-entrypoint-initdb.d/13-seata-mysql.sql:ro
       - ./docker/mysql/conf.d:/etc/mysql/conf.d:ro
+      - ./database/migrations/V5.0__add_review_enhancements.sql:/docker-entrypoint-initdb.d/14-review-enhance.sql:ro
+      - ./database/migrations/V5.0__add_notification.sql:/docker-entrypoint-initdb.d/15-notification.sql:ro
+      - ./database/migrations/V5.0__add_product_view_log.sql:/docker-entrypoint-initdb.d/16-view-log.sql:ro
+      - ./docker/mysql/conf.d/custom.cnf:/etc/mysql/conf.d/custom.cnf:ro
     deploy:
       resources:
         limits:

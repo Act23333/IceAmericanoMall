@@ -6,7 +6,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.mapper.ProductViewLogMapper;
 import org.icedamericanomall.service.HistoryService;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -15,8 +14,8 @@ import java.util.*;
 /**
  * 浏览足迹服务 — V5.0 京东标准
  *
- * MySQL product_view_log 持久化 + Redis 热缓存
- * 重复浏览同一商品 → UPDATE view_time
+ * MySQL product_view_log 持久化，直接查库（无需 Redis 缓存）
+ * 重复浏览同一商品 → ON DUPLICATE KEY UPDATE view_time
  */
 @Slf4j
 @Service
@@ -24,13 +23,11 @@ import java.util.*;
 public class HistoryServiceImpl implements HistoryService {
 
     private final ProductViewLogMapper logMapper;
-    private final StringRedisTemplate redisTemplate;
     private final JdbcTemplate jdbcTemplate;
 
     @Override
     public void record(Long userId, Long productId) {
         logMapper.recordView(userId, productId);
-        redisTemplate.delete("user:history:" + userId);
     }
 
     @Override
@@ -51,7 +48,6 @@ public class HistoryServiceImpl implements HistoryService {
         }
         sql.append(" ORDER BY v.view_time ").append("asc".equals(sort) ? "ASC" : "DESC");
 
-        // 查总数
         String countSql = "SELECT COUNT(*) FROM product_view_log v WHERE v.user_id=?"
                 + (keyword != null && !keyword.isBlank() ? " AND EXISTS(SELECT 1 FROM product p WHERE p.id=v.product_id AND p.name LIKE ?)" : "");
         List<Object> countParams = new ArrayList<>();
@@ -79,12 +75,10 @@ public class HistoryServiceImpl implements HistoryService {
     @Override
     public void deleteById(Long userId, Long logId) {
         jdbcTemplate.update("DELETE FROM product_view_log WHERE id=? AND user_id=?", logId, userId);
-        redisTemplate.delete("user:history:" + userId);
     }
 
     @Override
     public void clear(Long userId) {
         jdbcTemplate.update("DELETE FROM product_view_log WHERE user_id=?", userId);
-        redisTemplate.delete("user:history:" + userId);
     }
 }
