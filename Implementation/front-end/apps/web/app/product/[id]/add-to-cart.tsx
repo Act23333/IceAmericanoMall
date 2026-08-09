@@ -19,11 +19,14 @@ export function AddToCart({ product }: AddToCartProps) {
   const [added, setAdded] = useState(false);
   const [quantity, setQuantity] = useState(1);
 
-  // 记录浏览历史 (fire-and-forget)
+  // 记录浏览历史 (fire-and-forget, 带JWT认证)
   useEffect(() => {
     const base = process.env.NEXT_PUBLIC_API_URL || '';
+    const token = document.cookie.split('; ').find(r => r.startsWith('access_token='))?.split('=')[1];
     fetch(`${base}/api/user/history?productId=${product.id}`, {
-      method: 'POST', credentials: 'include',
+      method: 'POST',
+      credentials: 'include',
+      headers: token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {},
     }).catch(() => {});
   }, [product.id]);
 

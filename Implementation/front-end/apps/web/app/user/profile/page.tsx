@@ -59,9 +59,11 @@ export default function ProfilePage() {
       const formData = new FormData();
       formData.append('file', file);
       const base = process.env.NEXT_PUBLIC_API_URL || '';
+      const token = document.cookie.split('; ').find(r => r.startsWith('access_token='))?.split('=')[1];
       const res = await fetch(`${base}/api/user/profile/avatar`, {
         method: 'POST',
         credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {},
         body: formData,
       });
       const data = await res.json();
