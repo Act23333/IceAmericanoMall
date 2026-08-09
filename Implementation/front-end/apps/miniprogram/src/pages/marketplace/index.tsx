@@ -16,7 +16,11 @@ export default function MarketplacePage() {
   const [loading, setLoading] = useState(false);
 
   useLoad((options) => {
-    const cid = options?.categoryId ? Number(options.categoryId) : null;
+    // switchTab 不支持传参，通过 storage 桥接
+    const urlCid = options?.categoryId ? Number(options.categoryId) : null;
+    const storedCid = Taro.getStorageSync('activeCategoryId');
+    const cid = urlCid || (storedCid ? Number(storedCid) : null);
+    if (storedCid) Taro.removeStorageSync('activeCategoryId');
     setActiveCid(cid);
     fetchCategories();
     fetchProducts(cid, 1);

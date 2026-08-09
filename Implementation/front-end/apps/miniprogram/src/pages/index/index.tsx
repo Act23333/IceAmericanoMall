@@ -53,35 +53,39 @@ export default function IndexPage() {
         {/* 轮播指示器 */}
         <View style="display:flex;gap:12rpx;margin-top:16rpx">
           {BANNER_DATA.map((_, i) => (
-            <View key={i} style={`width:${i === bannerIdx ? 24 : 8}rpx;height:8rpx;border-radius:4rpx;background:${i === bannerIdx ? '#2D8B6E' : '#C0C0C0'}`} />
+            <View key={i} onClick={(e: any) => { e.stopPropagation(); setBannerIdx(i); }}
+              style={`width:${i === bannerIdx ? 24 : 8}rpx;height:8rpx;border-radius:4rpx;background:${i === bannerIdx ? '#2D8B6E' : '#C0C0C0'};transition:all 0.3s`} />
           ))}
         </View>
       </View>
 
-      {/* Categories — emoji 纯文字 */}
-      <View className="section">
-        <Text className="section-title">探索分类</Text>
-        <View className="category-grid">
-          {CAT_DATA.map((cat, i) => (
-            <View key={i} className="category-item" onClick={() => Taro.switchTab({ url: '/pages/marketplace/index' })}>
-              <View style={`width:80rpx;height:80rpx;background:${cat.bg};border-radius:20rpx;display:flex;align-items:center;justify-content:center;margin:0 auto 8rpx`}>
-                <Text style="font-size:36rpx">{cat.icon}</Text>
-              </View>
-              <Text className="category-name">{cat.name}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-
-      {/* Hot products */}
+      {/* Hot products — 热卖推荐，放在分类上面 */}
       <View className="section">
         <View className="section-header">
-          <Text className="section-title">🔥 热销推荐</Text>
+          <Text className="section-title">🔥 大家都在买</Text>
           <Text className="section-more" onClick={() => Taro.switchTab({ url: '/pages/marketplace/index' })}>查看全部 →</Text>
         </View>
         <View className="product-grid">
           {(hotProducts.length > 0 ? hotProducts : MOCK_PRODUCTS).map((p: any) => (
             <ProductCard key={p.id} product={p} />
+          ))}
+        </View>
+      </View>
+
+      {/* Categories */}
+      <View className="section">
+        <Text className="section-title">探索分类</Text>
+        <View className="category-grid">
+          {CAT_DATA.map((cat, i) => (
+            <View key={i} className="category-item" onClick={() => {
+              Taro.setStorageSync('activeCategoryId', i + 1);
+              Taro.switchTab({ url: '/pages/marketplace/index' });
+            }}>
+              <View style={`width:80rpx;height:80rpx;background:${cat.bg};border-radius:20rpx;display:flex;align-items:center;justify-content:center;margin:0 auto 8rpx`}>
+                <Text style="font-size:36rpx">{cat.icon}</Text>
+              </View>
+              <Text className="category-name">{cat.name}</Text>
+            </View>
           ))}
         </View>
       </View>

@@ -18,6 +18,8 @@ export default function ProductPage() {
       const data = await apiClient<any>(`/api/item/product/${id}`);
       setProduct(data);
       if (data?.skus?.length > 0) setSelectedSku(data.skus[0]);
+      // 记录浏览历史（fire-and-forget）
+      apiClient(`/api/user/history?productId=${id}`, { method: 'POST' }).catch(() => {});
     } catch { Taro.showToast({ title: '商品不存在', icon: 'none' }); }
   }
 
