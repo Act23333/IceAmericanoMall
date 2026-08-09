@@ -1,58 +1,99 @@
 'use client';
 
 import { useState } from 'react';
-import { useProductReviews, useCreateReview } from '@icedmall/api';
-import { GlassCard, Button } from '@icedmall/ui';
+import { useProductReviews } from '@icedmall/api';
+import { GlassCard } from '@icedmall/ui';
 import { timeAgo } from '@icedmall/utils';
-import { Heart, MessageSquare, Star } from 'lucide-react';
+import { Heart, MessageSquare, Star, Image } from 'lucide-react';
 
-/**
- * 评价区域 — V5.0 增强
- *
- * 京东/淘宝标准: 评分分布 + 筛选 + 点赞 + 商家回复 + 追评
- */
+const RATINGS = [
+  { label: '全部', value: undefined },
+  { label: '好评', value: 4 },
+  { label: '中评', value: 3 },
+  { label: '差评', value: 1 },
+];
+const SORTS = [
+  { label: '最新', value: 'newest' },
+  { label: '最早', value: 'oldest' },
+];
+
 export function ReviewsSection({ productId }: { productId: number }) {
-  const [filter, setFilter] = useState<{ rating?: number; hasMedia?: boolean; sort?: string }>({ sort: 'newest' });
-  const { data, isLoading } = useProductReviews(productId, filter);
+  const [rating, setRating] = useState<number | undefined>();
+  const [hasMedia, setHasMedia] = useState(false);
+  const [sort, setSort] = useState('newest');
+
+  const { data, isLoading } = useProductReviews(productId, { rating, hasMedia: hasMedia || undefined, sort });
 
   const handleLike = async (reviewId: number) => {
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/item/review/${reviewId}/like`, { method: 'POST', credentials: 'include' });
-      // 简单刷新: 触发 refetch
+      const base = process.env.NEXT_PUBLIC_API_URL || '';
+      await fetch(`${base}/api/item/review/${reviewId}/like`, { method: 'POST', credentials: 'include' });
       window.location.reload();
     } catch {}
   };
 
   return (
     <div className="mt-24 border-t border-warm-gray-200 pt-16">
-      {/* 标题 + 筛选 */}
-      <div className="flex items-center justify-between mb-6">
+      {/* 标题 */}
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-medium text-ink-black">
           商品评价
-          {data?.total && <span className="text-sm text-text-secondary font-normal ml-2">({data.total})</span>}
+          {data?.total != null && <span className="text-sm text-text-secondary font-normal ml-2">({data.total})</span>}
         </h2>
-        <div className="flex gap-1.5">
-          {[
-            { label: '全部', value: {} },
-            { label: '好评', value: { rating: 5 } },
-            { label: '有图', value: { hasMedia: true } },
-            { label: '最新', value: { sort: 'newest' } },
-          ].map((f) => (
-            <button
-              key={f.label}
-              onClick={() => setFilter({ ...filter, ...f.value })}
-              className={`px-3 py-1 text-xs rounded-full border transition-colors ${
-                (f.value.rating && filter.rating === f.value.rating) ||
-                (f.value.hasMedia && filter.hasMedia) ||
-                (f.value.sort && filter.sort === 'newest' && !filter.rating && !filter.hasMedia)
-                  ? 'border-accent bg-accent/5 text-accent'
-                  : 'border-warm-gray-200 text-text-tertiary hover:border-warm-gray-400'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+      </div>
+
+      {/* 筛选栏 */}
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        {/* 评级 */}
+        <span className="text-xs text-text-tertiary mr-1">评级</span>
+        {RATINGS.map((r) => (
+          <button
+            key={r.label}
+            onClick={() => setRating(r.value)}
+            className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+              rating === r.value
+                ? 'border-accent bg-accent/5 text-accent'
+                : 'border-warm-gray-200 text-text-tertiary hover:border-warm-gray-400'
+            }`}
+          >
+            {r.label}
+          </button>
+        ))}
+
+        {/* 分隔 */}
+        <span className="w-px h-4 bg-warm-gray-300 mx-1" />
+
+        {/* 有图开关 */}
+        <button
+          onClick={() => setHasMedia(!hasMedia)}
+          className={`flex items-center gap-1 px-3 py-1 text-xs rounded-full border transition-colors ${
+            hasMedia
+              ? 'border-accent bg-accent/5 text-accent'
+              : 'border-warm-gray-200 text-text-tertiary hover:border-warm-gray-400'
+          }`}
+        >
+          <Image className="h-3 w-3" />
+          有图
+        </button>
+
+        {/* 分隔 */}
+        <span className="w-px h-4 bg-warm-gray-300 mx-1" />
+
+        {/* 排序 */}
+        <span className="text-xs text-text-tertiary mr-1">排序</span>
+        {SORTS.map((s) => (
+          <button
+            key={s.label}
+            onClick={() => setSort(s.value)}
+            className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+              sort === s.value
+                ? 'border-accent bg-accent/5 text-accent'
+                : 'border-warm-gray-200 text-text-tertiary hover:border-warm-gray-400'
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
       </div>
 
       {/* Loading */}
@@ -73,7 +114,6 @@ export function ReviewsSection({ productId }: { productId: number }) {
       <div className="space-y-4">
         {data?.records?.map((r: any) => (
           <GlassCard key={r.id} className="p-4" blur="sm">
-            {/* Header */}
             <div className="flex items-center gap-2 mb-2">
               <span className="flex items-center gap-0.5 text-amber text-xs">
                 {Array.from({ length: 5 }).map((_, i) => (
@@ -84,10 +124,8 @@ export function ReviewsSection({ productId }: { productId: number }) {
               <span className="text-xs text-text-tertiary ml-auto">{r.createTime ? timeAgo(r.createTime) : ''}</span>
             </div>
 
-            {/* Content */}
             <p className="text-sm text-text-secondary leading-relaxed">{r.content}</p>
 
-            {/* Images */}
             {r.images && (
               <div className="flex gap-2 mt-2">
                 {r.images.split(',').slice(0, 4).map((img: string, i: number) => (
@@ -96,16 +134,14 @@ export function ReviewsSection({ productId }: { productId: number }) {
               </div>
             )}
 
-            {/* Tags */}
             {r.tags && (
               <div className="flex gap-1.5 mt-2">
-                {JSON.parse(r.tags || '[]').map((tag: string) => (
+                {(() => { try { return JSON.parse(r.tags); } catch { return []; } })().map((tag: string) => (
                   <span key={tag} className="px-2 py-0.5 text-xs rounded bg-warm-gray-100 text-text-tertiary">{tag}</span>
                 ))}
               </div>
             )}
 
-            {/* Merchant reply */}
             {r.reply && (
               <div className="mt-3 p-3 rounded-lg bg-warm-gray-100/50 border border-warm-gray-200/50">
                 <p className="text-xs font-medium text-accent mb-1">
@@ -116,7 +152,6 @@ export function ReviewsSection({ productId }: { productId: number }) {
               </div>
             )}
 
-            {/* User append */}
             {r.appendContent && (
               <div className="mt-3 p-3 rounded-lg bg-accent-light/30 border border-accent/10">
                 <p className="text-xs font-medium text-ink-black mb-1">
@@ -126,7 +161,6 @@ export function ReviewsSection({ productId }: { productId: number }) {
               </div>
             )}
 
-            {/* Like button */}
             <div className="flex items-center gap-3 mt-3 pt-2 border-t border-warm-gray-100">
               <button
                 onClick={() => handleLike(r.id)}
