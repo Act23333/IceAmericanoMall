@@ -13,7 +13,7 @@ let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function resetRefreshMutex() { refreshMutex = null; }
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.icedmall.com';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
 /** 提前多少毫秒触发主动刷新（默认 2 分钟） */
 const REFRESH_AHEAD_MS = 2 * 60 * 1000;
 
