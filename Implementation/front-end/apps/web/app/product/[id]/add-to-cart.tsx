@@ -21,8 +21,10 @@ export function AddToCart({ product }: AddToCartProps) {
 
   // 记录浏览历史 (fire-and-forget, 带JWT认证)
   useEffect(() => {
+    console.log('[足迹] 触发记录, productId:', product.id);
     const base = process.env.NEXT_PUBLIC_API_URL || '';
     const token = document.cookie.split('; ').find(r => r.startsWith('access_token='))?.split('=')[1];
+    console.log('[足迹] token存在:', !!token);
     fetch(`${base}/api/user/history?productId=${product.id}`, {
       method: 'POST',
       credentials: 'include',
