@@ -65,6 +65,7 @@ export default function ProfilePage() {
         headers: token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {},
         body: formData,
       });
+      if (!res.ok) throw new Error(`上传失败: ${res.status}`);
       const data = await res.json();
       if (data.code === 200) {
         // 刷新用户信息（含新头像URL）
