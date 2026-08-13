@@ -37,20 +37,27 @@ public class RefreshTokenUtils {
         return RedisKeyConstants.REFRESH_TOKEN_PREFIX + tokenId;
     }
 
-    /** 登录：已有活跃 token → 刷新 TTL 复用；否则新建。 */
+    /** 登录：已有活跃 token → 刷新 TTL 复用；超过绝对过期时间 → 强制新建。 */
     public String createRefreshToken(Long userId, String username, long ttlSeconds) {
         String prevId = (String) redisTemplate.opsForValue().get(userKey(userId));
         if (prevId != null) {
             RefreshTokenInfo prev = (RefreshTokenInfo) redisTemplate.opsForValue().get(tokenKey(prevId));
-            if (prev != null) {
+            // ⚠️ 安全修复: 复用前必须校验 maxExpireAt，防止定期登录让 refresh token 永不过期
+            if (prev != null && prev.getMaxExpireAt() > System.currentTimeMillis()) {
                 redisTemplate.expire(tokenKey(prevId), ttlSeconds, TimeUnit.SECONDS);
                 redisTemplate.expire(userKey(userId), ttlSeconds, TimeUnit.SECONDS);
                 log.info("复用已有 Refresh Token: {} for user {}", prevId, userId);
                 return prevId;
             }
+            // 旧 token 已达绝对过期时间 → 清理后走新建流程
+            if (prev != null) {
+                revokeRefreshToken(prevId);
+                log.info("Refresh Token 达绝对过期，强制新建: {} for user {}", prevId, userId);
+            }
         }
         long now = System.currentTimeMillis();
-        long maxExpireAt = now + ttlSeconds * 1000;
+        // 绝对过期时间 = 滑动TTL × 4（京东标准: 滑动7天+绝对28天，定期登录最多续到28天）
+        long maxExpireAt = now + ttlSeconds * 4 * 1000;
         String id = UUID.randomUUID().toString().replace("-", "");
         RefreshTokenInfo info = new RefreshTokenInfo(id, userId, username, now, maxExpireAt);
         redisTemplate.opsForValue().set(tokenKey(id), info, ttlSeconds, TimeUnit.SECONDS);
