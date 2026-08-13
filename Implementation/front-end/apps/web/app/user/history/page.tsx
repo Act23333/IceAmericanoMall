@@ -42,11 +42,11 @@ function groupByDate(items: FootprintItem[]): { label: string; items: FootprintI
     else if (day.getTime() > weekAgo.getTime()) key = '本周';
     else key = '更早';
     if (!groups[key]) groups[key] = [];
-    groups[key].push(item);
+    groups[key]!.push(item);
   });
 
   const order = ['今天', '昨天', '本周', '更早'];
-  return order.filter((k) => groups[k]).map((k) => ({ label: k, items: groups[k] }));
+  return order.filter((k) => groups[k]).map((k) => ({ label: k, items: groups[k]! }));
 }
 
 function formatViewTime(t: string): string {
