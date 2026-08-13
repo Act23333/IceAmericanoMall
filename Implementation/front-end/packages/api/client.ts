@@ -5,7 +5,7 @@
  *   1. 主动刷新：解 JWT exp，提前 2 分钟定时续期（setTimeout 调度）
  *   2. 被动刷新：401 拦截器 + 互斥锁（兜底）
  */
-import { getAccessToken, getRefreshToken, setTokens } from './token';
+import { getAccessToken, getRefreshToken, setTokens, clearTokens } from './token';
 
 // ==================== 刷新互斥锁 ====================
 let refreshMutex: Promise<string | undefined> | null = null;
@@ -33,20 +33,42 @@ function jwtExp(token: string): number | undefined {
 
 // ==================== 核心刷新逻辑 ====================
 
+/** 全局登出事件名 — 布局层监听并跳转登录页 */
+export const AUTH_LOGOUT_EVENT = 'auth:logout';
+
+/** 刷新失败 → 清理凭证 + 广播全局登出事件（京东标准） */
+function handleRefreshFailure() {
+  clearTokens();
+  clearProactiveRefresh();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(AUTH_LOGOUT_EVENT));
+  }
+}
+
 async function doRefresh(): Promise<string | undefined> {
   const rt = getRefreshToken();
-  if (!rt) return undefined;
+  if (!rt) {
+    handleRefreshFailure();
+    return undefined;
+  }
   try {
     const res = await fetch(`${BASE_URL}/api/auth/refresh?refresh_token=${encodeURIComponent(rt)}`, {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
     });
-    if (!res.ok) return undefined;
+    if (!res.ok) {
+      handleRefreshFailure();
+      return undefined;
+    }
     const body = await res.json().catch(() => null);
-    if (!body || body.code !== 200 || !body.data?.access_token) return undefined;
+    if (!body || body.code !== 200 || !body.data?.access_token) {
+      handleRefreshFailure();
+      return undefined;
+    }
     setTokens(body.data.access_token, body.data.refresh_token);
     return body.data.access_token as string;
   } catch {
+    handleRefreshFailure();
     return undefined;
   }
 }
