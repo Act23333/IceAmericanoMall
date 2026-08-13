@@ -44,9 +44,12 @@ public class RefreshTokenUtils {
             RefreshTokenInfo prev = (RefreshTokenInfo) redisTemplate.opsForValue().get(tokenKey(prevId));
             // ⚠️ 安全修复: 复用前必须校验 maxExpireAt，防止定期登录让 refresh token 永不过期
             if (prev != null && prev.getMaxExpireAt() > System.currentTimeMillis()) {
-                redisTemplate.expire(tokenKey(prevId), ttlSeconds, TimeUnit.SECONDS);
-                redisTemplate.expire(userKey(userId), ttlSeconds, TimeUnit.SECONDS);
-                log.info("复用已有 Refresh Token: {} for user {}", prevId, userId);
+                // Redis TTL 封顶在绝对过期剩余时间内，保证 Redis 过期与逻辑过期一致
+                long remainingSec = (prev.getMaxExpireAt() - System.currentTimeMillis()) / 1000;
+                long effectiveTtl = Math.min(ttlSeconds, remainingSec);
+                redisTemplate.expire(tokenKey(prevId), effectiveTtl, TimeUnit.SECONDS);
+                redisTemplate.expire(userKey(userId), effectiveTtl, TimeUnit.SECONDS);
+                log.info("复用已有 Refresh Token: {} for user {}, 剩余绝对寿命 {}s", prevId, userId, effectiveTtl);
                 return prevId;
             }
             // 旧 token 已达绝对过期时间 → 清理后走新建流程
