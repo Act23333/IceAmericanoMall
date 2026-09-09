@@ -22,7 +22,7 @@ public class LoginTokenService {
     @Value("${jwt.access-token-ttl:3600}")
     private Long accessTokenTtl;
 
-    @Value("${jwt.refresh-token-ttl:604800}")
+    @Value("${jwt.refresh-token-ttl:2592000}")
     private Long refreshTokenTtl;
 
     public OAuth2TokenResp createLoginResponse(LoginRespDTO userResp) {

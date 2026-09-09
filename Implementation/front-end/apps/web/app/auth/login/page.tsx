@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, GlassCard } from '@icedmall/ui';
 import { login } from '@icedmall/auth';
 import { useAuthStore } from '@icedmall/auth';
@@ -20,7 +20,14 @@ type LoginTab = 'sms' | 'password';
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const setUser = useAuthStore((s) => s.setUser);
+
+  /** 登录成功后回跳地址（由 auth:logout 事件携带） */
+  const redirect = searchParams.get('redirect');
+  const goAfterLogin = useCallback((path: string) => {
+    router.replace(redirect && redirect.startsWith('/') ? redirect : path);
+  }, [router, redirect]);
 
   const [tab, setTab] = useState<LoginTab>('sms');
   const [phone, setPhone] = useState('');
@@ -66,7 +73,7 @@ export default function LoginPage() {
       const result = await apiClient<{ access_token: string; refresh_token: string; user_id: number; username: string }>(
         '/api/auth/login/wechat', { method: 'POST', body: JSON.stringify({ code: 'mock_code_web' }) });
       setUser({ userId: String(result.user_id ?? ''), username: result.username ?? '' });
-      router.push('/marketplace');
+      goAfterLogin('/marketplace');
     } catch (err: unknown) {
       setError(getUserMessage(err as { code?: number; message?: string }));
     } finally { setLoading(false); }
@@ -104,7 +111,7 @@ export default function LoginPage() {
         userId: String(result.user_id ?? ''),
         username: result.username ?? '',
       });
-      router.push('/marketplace');
+      goAfterLogin('/marketplace');
     } catch (err: unknown) {
       setError(getUserMessage(err as { code?: number; message?: string }));
       // 连续失败3次 → 冷却10秒 (UX限流, 非安全边界)

@@ -14,7 +14,7 @@ spring:
 
 jwt:
   access-token-ttl: 3600
-  refresh-token-ttl: 604800
+  refresh-token-ttl: 2592000
   keystore:
     password: changeit
     key-password: changeit
