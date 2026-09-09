@@ -11,6 +11,7 @@ import { getProduct, getProducts } from '@icedmall/api';
 import { ProductCard, ImageGallery, SectionReveal } from '@icedmall/ui';
 import { AddToCart } from './add-to-cart';
 import { ReviewsSection } from './reviews-section';
+import { ShopInfoCard } from './shop-info-card';
 import type { Metadata } from 'next';
 
 export const revalidate = 120;
@@ -102,6 +103,13 @@ export default async function ProductDetailPage({ params }: Props) {
           )}
 
           <AddToCart product={product} />
+
+          {/* 店铺信息卡片 — 京东标准 */}
+          {product.sellerId && (
+            <div className="mt-6">
+              <ShopInfoCard sellerId={product.sellerId} />
+            </div>
+          )}
 
           <div className="mt-8 flex items-center gap-6 text-xs text-warm-400">
             <span className="flex items-center gap-1">✓ 品质保证</span>

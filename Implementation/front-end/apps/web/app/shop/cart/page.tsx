@@ -93,7 +93,10 @@ export default function CartPage() {
                 {item.spec && (
                   <p className="text-xs text-warm-400 mt-0.5">{item.spec}</p>
                 )}
-                <PriceDisplay cents={item.price} size="sm" className="mt-2" />
+                <PriceDisplay cents={item.price} size="sm" className="mt-1.5" />
+                {item.createTime && (
+                  <p className="text-xs text-text-tertiary mt-1">加入于 {new Date(item.createTime).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })} {new Date(item.createTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</p>
+                )}
               </div>
 
               {/* 数量 + 删除 */}

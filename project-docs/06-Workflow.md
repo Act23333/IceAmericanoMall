@@ -13,11 +13,21 @@ Phase 1 (MVP)              Phase 1.5 (完善)               Phase 2 (平台化) 
 核心交易闭环               精细化运营 + AI                平台生态                       知识驱动
 用户→商品→购物车→下单→支付  优惠券/秒杀/积分/搜索/AI商品助手  商家入驻/财务结算/客服(含AI客服)  知识图谱/RAG+KG混合检索/场景化推荐
                                                                         
-现在所处阶段：V2.5 安全+CI+功能收尾 + AI 生产就绪 🔵 —— 14 模块 / 133+ 端点 / 150+ 测试。下一阶段：Phase 5 前端 + V3.0 智能升级
+现在所处阶段：V4.5 营销活动完善（多维度优惠券+秒杀+订单类型策略模式）—— 14 模块。下一阶段：Phase 5 前端 + V5.0 智能升级
+
+### V4.0-V4.5 关键里程碑
+
+| 版本 | 关键特性 |
+|------|---------|
+| V4.0 | SKU库存类型(LIMITED/UNLIMITED/PRESALE)+热销标识+优惠券多维度模型重构(discountType/couponCategory/grantType/stockType/grabType/scopeType/stackRule) |
+| V4.1 | 营销-交易职责分离：秒杀订单创建移至订单上下文；统一订单类型策略模式(OrderCreateStrategy: NORMAL/DIRECT/FLASH_SALE/PRESALE) |
+| V4.2 | useCoupon 强制校验 couponCategory+卖家匹配规则（平台券/店铺券/秒杀券/专属券各自限定可用范围） |
+| V4.3 | 优惠券领取 Redis Lua 去重（CouponClaimLuaScript: SISMEMBER 防重复领取，适用所有券类型） |
+| V4.4 | 抢券 Redis Lua 原子化（CouponGrabLuaScript: DECR库存+SISMEMBER去重，适用 NEED_GRAB 类型券） |
+| V4.5 | 秒杀热 Key 分片 Redis Lua 扣库存（FlashSaleLuaScript: 分片键分散热点，原子扣减防超卖） |
 
 相关图表：
 - MVP 范围用例图：`drawio/IA-MALL-MVP.drawio`（标注了 Must/Should/Could 优先级）
-```
 ```
 
 ---

@@ -5,7 +5,8 @@
 # 默认启动基础三件 (MySQL + Redis + Nacos)
 # v1.1 profile: ES + RabbitMQ + XXL-Job + MinIO + Nginx
 # ============================================
-
+# x-common-logging：为所有使用它的服务统一设置日志驱动为 json-file，并限制单个日志文件为 50MB，最多保留 3 个文件。
+# x-common-restart：为所有使用它的服务统一设置重启策略为 unless-stopped（除非手动停止，否则总是重启）。
 x-common-logging: &common-logging
   driver: "json-file"
   options:
@@ -55,6 +56,10 @@ services:
       - ./database/middleware/nacos-mysql.sql:/docker-entrypoint-initdb.d/11-nacos-mysql.sql:ro
       - ./database/middleware/xxl-job-mysql.sql:/docker-entrypoint-initdb.d/12-xxl-job-mysql.sql:ro
       - ./database/middleware/seata-mysql.sql:/docker-entrypoint-initdb.d/13-seata-mysql.sql:ro
+      - ./docker/mysql/conf.d:/etc/mysql/conf.d:ro
+      - ./database/migrations/V5.0__add_review_enhancements.sql:/docker-entrypoint-initdb.d/14-review-enhance.sql:ro
+      - ./database/migrations/V5.0__add_notification.sql:/docker-entrypoint-initdb.d/15-notification.sql:ro
+      - ./database/migrations/V5.0__add_product_view_log.sql:/docker-entrypoint-initdb.d/16-view-log.sql:ro
       - ./docker/mysql/conf.d/custom.cnf:/etc/mysql/conf.d/custom.cnf:ro
     deploy:
       resources:
@@ -123,8 +128,8 @@ services:
       # MYSQL_SERVICE_HOST: mysql
       # MYSQL_SERVICE_DB_NAME: nacos_config
       # MYSQL_SERVICE_PORT: 3306
-#	 JVM_XMS: 256m
-#	 JVM_XMX: 256m
+    #	 JVM_XMS: 256m
+    #	 JVM_XMX: 256m
     ports:
       - "${NACOS_HTTP_PORT:-8848}:8848"
       - "${NACOS_GRPC_PORT:-9848}:9848"
@@ -170,6 +175,7 @@ services:
       - es-data:/usr/share/elasticsearch/data
       - es-snapshots:/usr/share/elasticsearch/snapshots
       - ./docker/es/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+      - ./docker/es/plugins/ik:/usr/share/elasticsearch/plugins/ik:ro
     ulimits:
       memlock:
         soft: -1
@@ -186,52 +192,56 @@ services:
           cpus: '1'
           memory: 1G
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q 'green\\|yellow'"]
-      interval: 20s
+      test: ["CMD-SHELL", "curl -f http://localhost:7091/actuator/health || exit 1"]
+      interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 3
+      start_period: 40s
 
   # ---------- RabbitMQ 3.13 Management ----------
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    container_name: ia-rabbitmq
-    profiles: ["v1.1"]
-    <<: *common-restart
-    logging: *common-logging
-    networks:
-      - backend
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-admin}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-admin123}
-      # 以下两行已删除，改为配置文件
-      # RABBITMQ_VM_MEMORY_HIGH_WATERMARK: 0.6
-      # RABBITMQ_DISK_FREE_LIMIT: 2GB
-    ports:
-      - "${RABBITMQ_AMQP_PORT:-5672}:5672"
-      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
-    volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
-      - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro   # 新增挂载
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 256M
-    healthcheck:
-      test: ["CMD", "rabbitmqctl", "status"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+  #  rabbitmq:
+  #    image: rabbitmq:3.13-management-alpine
+  #    container_name: ia-rabbitmq
+  #    profiles: ["v1.1"]
+  #    <<: *common-restart
+  #    logging: *common-logging
+  #    networks:
+  #      - backend
+  #    environment:
+  #      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-admin}
+  #      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-admin123}
+  #      # 以下两行已删除，改为配置文件
+  #      # RABBITMQ_VM_MEMORY_HIGH_WATERMARK: 0.6
+  #      # RABBITMQ_DISK_FREE_LIMIT: 2GB
+  #    ports:
+  #      - "${RABBITMQ_AMQP_PORT:-5672}:5672"
+  #      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+  #    volumes:
+  #      - rabbitmq-data:/var/lib/rabbitmq
+  #      - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro   # 新增挂载
+  #    deploy:
+  #      resources:
+  #        limits:
+  #          cpus: '1'
+  #          memory: 256M
+  #    healthcheck:
+  #      test: ["CMD", "rabbitmqctl", "status"]
+  #      interval: 15s
+  #      timeout: 10s
+  #      retries: 5
+  #      start_period: 30s
 
   # ---------- RocketMQ 5.3 NameServer + Broker ----------
   # 大厂标准：阿里/京东延迟消息（替代 RabbitMQ TTL + DLX）
   ia-rocketmq-namesrv:
     image: apache/rocketmq:5.3.0
     container_name: ia-rocketmq-namesrv
+    <<: *common-restart
+    logging: *common-logging
     profiles: ["v1.1", "v4.0"]
     command: sh mqnamesrv
+    networks:
+      - backend
     ports:
       - "9876:9876"
     deploy:
@@ -240,16 +250,21 @@ services:
           cpus: '0.5'
           memory: 512M
     healthcheck:
-      test: ["CMD", "sh", "-c", "netstat -an | grep 9876"]
+      test: ["CMD", "sh", "-c", "ps -ef | grep mqnamesrv | grep -v grep"]
       interval: 15s
       timeout: 10s
       retries: 5
 
+
   ia-rocketmq-broker:
     image: apache/rocketmq:5.3.0
     container_name: ia-rocketmq-broker
+    <<: *common-restart
+    logging: *common-logging
     profiles: ["v1.1", "v4.0"]
     command: sh mqbroker -n ia-rocketmq-namesrv:9876 -c /home/rocketmq/conf/broker.conf
+    networks:
+      - backend
     ports:
       - "10911:10911"  # 生产者
       - "10909:10909"  # 控制台(非官方)
@@ -375,7 +390,7 @@ services:
     environment:
       # 可选：动态注入Nacos账号密码，yml配合占位符使用
       SEATA_NACOS_USER: ${SEATA_NACOS_USER:-nacos}
-      SEATA_NACOS_PWD: ${SEATA_NACOS_PWD:-nacoss}
+      SEATA_NACOS_PWD: ${SEATA_NACOS_PWD:-nacos}
       # Nacos 2.4 identity 认证，需与 nacos 服务的值一致
       NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
       NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}
@@ -553,7 +568,7 @@ services:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "${GRAFANA_PORT:-3001}:3000"
     depends_on:
       - prometheus
 
@@ -619,15 +634,168 @@ services:
     ports:
       - "${KIBANA_PORT:-5601}:5601"
 
+  # ═══════════════════════════════════════════════════════
+  # V4.0 学习组件 (profile: v4.0)
+  # 目的: 学习大厂全链路数据处理流程
+  # ═══════════════════════════════════════════════════════
+
+  ia-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ia-postgres
+    profiles: ["v4.0"]
+    networks:
+      - backend
+    environment:
+      POSTGRES_DB: icedmall
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  ia-pgbouncer:
+    image: bitnami/pgbouncer:1.23
+    container_name: ia-pgbouncer
+    profiles: ["v4.0"]
+    networks:
+      - backend
+    environment:
+      PGBOUNCER_DATABASE: icedmall
+      PGBOUNCER_PORT: 6432
+      POSTGRESQL_HOST: ia-postgres
+      POSTGRESQL_PASSWORD: postgres123
+    ports:
+      - "6432:6432"
+    depends_on:
+      - ia-postgres
+
+  ia-zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.0
+    container_name: ia-zookeeper
+    profiles: ["v4.0"]
+    networks:
+      - backend
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zk-data:/var/lib/zookeeper/data
+
+  ia-kafka:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: ia-kafka
+    profiles: ["v4.0"]
+    networks:
+      - backend
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: ia-zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    depends_on:
+      - ia-zookeeper
+
+  ia-flink-jobmanager:
+    image: flink:1.20-scala_2.12
+    container_name: ia-flink-jobmanager
+    profiles: ["v4.0"]
+    networks:
+      - backend
+    command: jobmanager
+    environment:
+      FLINK_PROPERTIES: "jobmanager.rpc.address: ia-flink-jobmanager"
+    ports:
+      - "8081:8081"
+
+  ia-flink-taskmanager:
+    image: flink:1.20-scala_2.12
+    container_name: ia-flink-taskmanager
+    profiles: ["v4.0"]
+    networks:
+      - backend
+    command: taskmanager
+    environment:
+      FLINK_PROPERTIES: "jobmanager.rpc.address: ia-flink-jobmanager"
+    depends_on:
+      - ia-flink-jobmanager
+
+  ia-hadoop-namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: ia-hadoop-namenode
+    profiles: ["v4.0"]
+    networks:
+      - backend
+    environment:
+      CLUSTER_NAME: icedmall-cluster
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    volumes:
+      - hadoop-nn:/hadoop/dfs/name
+
+  ia-hadoop-datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: ia-hadoop-datanode
+    profiles: ["v4.0"]
+    networks:
+      - backend
+    environment:
+      CLUSTER_NAME: icedmall-cluster
+      CORE_CONF_fs_defaultFS: hdfs://ia-hadoop-namenode:9000
+    volumes:
+      - hadoop-dn:/hadoop/dfs/data
+    depends_on:
+      - ia-hadoop-namenode
+
+  ia-spark-master:
+    image: bitnami/spark:3.5
+    container_name: ia-spark-master
+    profiles: ["v4.0"]
+    networks:
+      - backend
+    environment:
+      SPARK_MODE: master
+    ports:
+      - "8082:8080"
+      - "7077:7077"
+
+  ia-spark-worker:
+    image: bitnami/spark:3.5
+    container_name: ia-spark-worker
+    profiles: ["v4.0"]
+    networks:
+      - backend
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://ia-spark-master:7077
+    depends_on:
+      - ia-spark-master
+
+  ia-alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: ia-alertmanager
+    profiles: ["v4.0", "observability"]
+    networks:
+      - backend
+    ports:
+      - "9093:9093"
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    restart: unless-stopped
+
 volumes:
   nginx-cache:
     driver: local
   mysql-data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${DATA_DIR:-./data}/mysql
   redis-data:
     driver: local
   nacos-logs:
@@ -635,8 +803,6 @@ volumes:
   es-data:
     driver: local
   es-snapshots:
-    driver: local
-  rabbitmq-data:
     driver: local
   minio-data:
     driver: local
@@ -658,148 +824,3 @@ volumes:
     driver: local
   hadoop-dn:
     driver: local
-
-  # ═══════════════════════════════════════════════════════
-  # V4.0 学习组件 (profile: v4.0)
-  # 目的: 学习大厂全链路数据处理流程
-  # V4.x 精简: 见 02-Architecture.md §2.13
-  # ═══════════════════════════════════════════════════════
-
-  # ── PostgreSQL 16 + pgvector ──
-  ia-postgres:
-    image: pgvector/pgvector:pg16
-    container_name: ia-postgres
-    profiles: ["v4.0"]
-    environment:
-      POSTGRES_DB: icedmall
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres123
-    ports:
-      - "5432:5432"
-    volumes:
-      - pg-data:/var/lib/postgresql/data
-    restart: unless-stopped
-
-  # ── PgBouncer 连接池 ──
-  ia-pgbouncer:
-    image: bitnami/pgbouncer:1.23
-    container_name: ia-pgbouncer
-    profiles: ["v4.0"]
-    environment:
-      PGBOUNCER_DATABASE: icedmall
-      PGBOUNCER_PORT: 6432
-      POSTGRESQL_HOST: ia-postgres
-      POSTGRESQL_PASSWORD: postgres123
-    ports:
-      - "6432:6432"
-    depends_on:
-      - ia-postgres
-
-  # ── Zookeeper (Kafka 集群协调，V4.x 可去) ──
-  ia-zookeeper:
-    image: confluentinc/cp-zookeeper:7.7.0
-    container_name: ia-zookeeper
-    profiles: ["v4.0"]
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
-    volumes:
-      - zk-data:/var/lib/zookeeper/data
-
-  # ── Kafka (事件流管道) ──
-  ia-kafka:
-    image: confluentinc/cp-kafka:7.7.0
-    container_name: ia-kafka
-    profiles: ["v4.0"]
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: ia-zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-    ports:
-      - "9092:9092"
-    volumes:
-      - kafka-data:/var/lib/kafka/data
-    depends_on:
-      - ia-zookeeper
-
-  # ── Flink (流计算) ──
-  ia-flink-jobmanager:
-    image: flink:1.20-scala_2.12
-    container_name: ia-flink-jobmanager
-    profiles: ["v4.0"]
-    command: jobmanager
-    environment:
-      FLINK_PROPERTIES: "jobmanager.rpc.address: ia-flink-jobmanager"
-    ports:
-      - "8081:8081"
-
-  ia-flink-taskmanager:
-    image: flink:1.20-scala_2.12
-    container_name: ia-flink-taskmanager
-    profiles: ["v4.0"]
-    command: taskmanager
-    environment:
-      FLINK_PROPERTIES: "jobmanager.rpc.address: ia-flink-jobmanager"
-    depends_on:
-      - ia-flink-jobmanager
-
-  # ── Hadoop HDFS (分布式存储) ──
-  ia-hadoop-namenode:
-    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
-    container_name: ia-hadoop-namenode
-    profiles: ["v4.0"]
-    environment:
-      CLUSTER_NAME: icedmall-cluster
-    ports:
-      - "9870:9870"
-      - "9000:9000"
-    volumes:
-      - hadoop-nn:/hadoop/dfs/name
-
-  ia-hadoop-datanode:
-    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
-    container_name: ia-hadoop-datanode
-    profiles: ["v4.0"]
-    environment:
-      CLUSTER_NAME: icedmall-cluster
-      CORE_CONF_fs_defaultFS: hdfs://ia-hadoop-namenode:9000
-    volumes:
-      - hadoop-dn:/hadoop/dfs/data
-    depends_on:
-      - ia-hadoop-namenode
-
-  # ── Spark (批量计算) ──
-  ia-spark-master:
-    image: bitnami/spark:3.5
-    container_name: ia-spark-master
-    profiles: ["v4.0"]
-    environment:
-      SPARK_MODE: master
-    ports:
-      - "8080:8080"
-      - "7077:7077"
-
-  ia-spark-worker:
-    image: bitnami/spark:3.5
-    container_name: ia-spark-worker
-    profiles: ["v4.0"]
-    environment:
-      SPARK_MODE: worker
-      SPARK_MASTER_URL: spark://ia-spark-master:7077
-    depends_on:
-      - ia-spark-master
-
-  # ── Prometheus AlertManager (告警) ──
-  ia-alertmanager:
-    image: prom/alertmanager:v0.27.0
-    container_name: ia-alertmanager
-    profiles: ["v4.0", "observability"]
-    ports:
-      - "9093:9093"
-    command:
-      - '--config.file=/etc/alertmanager/alertmanager.yml'
-    restart: unless-stopped
-

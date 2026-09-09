@@ -132,7 +132,13 @@ export default function SearchPage() {
       <div className="mx-auto max-w-7xl px-4 pt-24 pb-20">
         {/* 搜索栏 */}
         <div className="max-w-2xl mx-auto mb-12">
-          <SearchBar placeholder="搜索商品、品牌、分类…" onSearch={handleSearch} />
+          <SearchBar
+            placeholder="搜索商品、品牌、分类…"
+            hotKeywords={hotKeywords.length > 0 ? hotKeywords : undefined}
+            history={loadHistory()}
+            onSearch={handleSearch}
+            onClearHistory={clearHistory}
+          />
         </div>
 
         {/* 搜索历史 */}
@@ -169,7 +175,14 @@ export default function SearchPage() {
     <div className="mx-auto max-w-7xl px-4 pt-24 pb-20">
       {/* 搜索栏 (保留当前关键词) */}
       <div className="max-w-xl mx-auto mb-6">
-        <SearchBar placeholder="搜索商品、品牌、分类…" onSearch={handleSearch} />
+        <SearchBar
+          placeholder="搜索商品、品牌、分类…"
+          defaultValue={keyword}
+          hotKeywords={hotKeywords.length > 0 ? hotKeywords : undefined}
+          history={loadHistory()}
+          onSearch={handleSearch}
+          onClearHistory={clearHistory}
+        />
       </div>
 
       {/* 分类筛选 (仅在搜索结果页显示) */}

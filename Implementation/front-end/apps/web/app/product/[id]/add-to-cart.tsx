@@ -19,6 +19,21 @@ export function AddToCart({ product }: AddToCartProps) {
   const [added, setAdded] = useState(false);
   const [quantity, setQuantity] = useState(1);
 
+  // 记录浏览历史 (fire-and-forget, 带JWT认证)
+  useEffect(() => {
+    const base = process.env.NEXT_PUBLIC_API_URL || '';
+    const token = document.cookie.split('; ').find(r => r.startsWith('access_token='))?.split('=')[1];
+    fetch(`${base}/api/user/history?productId=${product.id}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {},
+    }).then(r => {
+      if (!r.ok) console.warn('[足迹] 记录失败:', r.status);
+    }).catch(e => {
+      console.warn('[足迹] 请求异常:', e.message);
+    });
+  }, [product.id]);
+
   // SKU 选项
   const skuOptions = (product.skus ?? []).map((s) => ({
     id: s.id, skuId: s.skuId, spec: s.spec, price: s.price, stock: s.stock, image: s.image,

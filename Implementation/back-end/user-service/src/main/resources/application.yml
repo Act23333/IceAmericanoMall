@@ -13,7 +13,7 @@ spring:
     nacos:
       server-addr: ${ia.nacos.host:192.168.10.128}:8848
       username: nacos
-      password: nacoss
+      password: nacos
       discovery:
         enabled: true
     openfeign:
@@ -79,3 +79,11 @@ knife4j:
 springdoc:
   api-docs:
     enabled: true
+
+# V5.0: MinIO 对象存储 — 头像上传
+minio:
+  enabled: true
+  endpoint: http://192.168.10.128:9000
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket: icedmall

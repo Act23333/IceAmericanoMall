@@ -1,20 +1,18 @@
 package org.noLazy.common.event;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
 
-/**
- * 订单发货事件 — trade-service 发布，logistics-service 消费自动创建物流记录。
- */
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 @EqualsAndHashCode(callSuper = true)
 public class OrderShippedEvent extends DomainEvent {
     private static final long serialVersionUID = 1L;
-
-    private Long orderId;
     private String orderNo;
+    private Long userId;
     private String logisticsNumber;
     private String logisticsCompany;
-    private String contact;
-    private String mobile;
 }

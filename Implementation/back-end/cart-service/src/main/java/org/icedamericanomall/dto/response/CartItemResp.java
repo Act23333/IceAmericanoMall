@@ -12,4 +12,5 @@ public class CartItemResp {
     private Integer quantity;
     private Boolean selected;
     private Integer subTotal;  // 价格*数量，单位分
+    private String createTime;  // V5.0: 加入购物车时间
 }

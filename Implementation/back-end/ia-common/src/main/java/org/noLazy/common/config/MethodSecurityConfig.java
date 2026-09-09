@@ -2,6 +2,7 @@ package org.noLazy.common.config;
 
 import org.noLazy.common.security.UserContextAuthenticationFilter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -33,6 +34,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity  // 启用 @PreAuthorize / @PostAuthorize / @Secured
 @ConditionalOnClass(name = "org.springframework.security.config.annotation.web.configuration.EnableWebSecurity")
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+@ConditionalOnMissingBean(name = "securityFilterChain")// 只要容器里存在名为 'securityFilterChain' 的 Bean，这个配置就自动失效
 public class MethodSecurityConfig {
 
     @Bean

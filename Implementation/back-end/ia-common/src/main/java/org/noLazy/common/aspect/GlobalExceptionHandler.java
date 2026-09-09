@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import org.springframework.validation.BindException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -123,8 +124,15 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 处理静态资源 404（如 favicon.ico）— 不打印堆栈，仅返回 404
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public Object handleNoResourceFound(NoResourceFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+    }
+
+    /**
      * 处理其他所有未捕获的异常（兜底）
-     * 作为兜底方案，捕获所有的非定义异常，因为非自定义是系统级异常，可能存在信息泄露，故永远传递系统错误枚举信息，不传递捕获异常的详细信息给前端
      */
     @ExceptionHandler(Exception.class)
     public Object handleException(Exception e) {

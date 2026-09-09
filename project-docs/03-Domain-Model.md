@@ -27,13 +27,13 @@
 │  │ 凭证         │  │ 搜索结果     │  │ 支付渠道       │  │ RAG知识库    │  │
 │  └──────────────┘  └──────────────┘  └───────────────┘  │ Agent对话    │  │
 │                                                          └──────────────┘  │
-│                                                          ┌──────────────┐  │
-│  ┌──────────────┐                                       │              │  │
-│  │ 物流上下文    │                                       │ 知识图谱      │  │
-│  │ Logistics Ctx│                                       │ KnowledgeCtx │  │
-│  │              │                                       │ (V3.0+)      │  │
-│  │ 物流单       │                                       │ 实体关系图    │  │
-│  └──────────────┘                                       └──────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐                     ┌──────────────┐  │
+│  │ 物流上下文    │  │ 营销上下文    │                     │              │  │
+│  │ Logistics Ctx│  │Marketing Ctx │                     │ 知识图谱      │  │
+│  │              │  │ (V4.0+)      │                     │ KnowledgeCtx │  │
+│  │ 物流单       │  │ 优惠券/秒杀   │                     │ (V3.0+)      │  │
+│  └──────────────┘  └──────────────┘                     │ 实体关系图    │  │
+│                                                          └──────────────┘  │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -49,8 +49,12 @@
 | 订单上下文 | 通知上下文 | 发布/订阅       | 状态变更通过 **WebSocket** 实时推送（V1.2） |
 | 商品上下文 | AI搜索上下文 | 客户/供应商  | ai-service 调用 search-service + item-service |
 | 用户上下文 | AI客服上下文 | 客户/供应商  | ai-service 调用 user-service + trade-service |
+| 用户上下文 | 营销上下文 | 客户/供应商      | marketing-service 发放优惠券给用户     |
+| 订单上下文 | 营销上下文 | 客户/供应商      | 下单时校验并使用优惠券；**秒杀订单创建归属订单上下文**（trade-service），营销上下文仅负责秒杀活动管理 + Redis 预扣库存 |
 | AI搜索上下文 | AI客服上下文 | 共享内核 (Embedding) | 向量检索能力复用                      |
 | AI搜索上下文 | 知识图谱     | 发布/订阅（V3.0+） | 商品实体关系抽取 → 图谱更新              |
+
+> **V4.1 限界上下文调整**：秒杀订单创建从营销上下文移至订单上下文。trade-service 的 `OrderCreateStrategy` 策略模式统一处理 NORMAL/DIRECT/FLASH_SALE/PRESALE 四种订单类型。marketing-service 仅负责秒杀活动管理（活动配置、库存预热）和 Redis Lua 预扣库存，不再直接创建订单。
 
 ---
 
@@ -60,8 +64,8 @@
 | ------- | ----------------- | ---------- |
 | **核心域** | 订单上下文、支付上下文       | 核心竞争力，交易闭环 |
 | **支撑域** | 用户上下文、商品上下文、AI搜索上下文 | 必不可少但非差异化  |
-| **通用域** | 认证上下文、搜索上下文、物流上下文 | 可用通用方案实现   |
-| **创新域** | AI客服上下文 (✅ V2.0)、知识图谱 (⚪ V3.x) | 差异化竞争力，智能体验  |
+| **通用域** | 认证上下文、搜索上下文、物流上下文、营销上下文 | 可用通用方案实现   |
+| **创新域** | AI客服上下文 (🟡 GATED)、知识图谱 (⚪ V3.x) | 差异化竞争力，智能体验  |
 
 ---
 
@@ -119,6 +123,7 @@
 | soldCount    | 整数   | 总销量          |
 | commentCount | 整数   | 总评论数         |
 | isAd         | 布尔   | 广告商品标记       |
+| salesTags    | JSON字符串 | 销售标签（如["热销","新品","限时优惠"]） |
 | status       | 枚举   | 上架 / 下架 / 删除 |
 | publishTime  | 日期时间 | 发布时间         |
 
@@ -131,6 +136,10 @@
 | spec      | 字符串 | 规格描述（如"黑色 128G"） |
 | price     | 金额  | 价格               |
 | stock     | 整数  | 库存数量             |
+| stockType | 枚举  | 库存类型：LIMITED(1,限量)/UNLIMITED(2,不限量)/PRESALE(3,预售) |
+| isHot     | 布尔  | 热销标识             |
+| hotReason | 字符串 | 热销原因（如"月销10万+"）  |
+| salesTags | JSON字符串 | 销售标签（继承自Product，可覆盖） |
 | image     | URL | 规格专属图片           |
 | soldCount | 整数  | 该规格销量            |
 | status    | 枚举  | 可售 / 停售          |
@@ -154,12 +163,13 @@
 | -------------------------- | ---- | ----------------------- |
 | orderId                    | 标识   | 订单唯一标识（技术主键）|
 | orderNo                    | 业务编号 | 订单号（对外）                 |
+| orderType                  | 枚举   | 订单类型：NORMAL(1,购物车下单)/DIRECT(2,立即购买)/FLASH_SALE(3,秒杀)/PRESALE(4,预售) — 驱动策略模式（V4.1） |
 | userId                     | 关联   | 买家                      |
 | sellerId                   | 关联   | 商家（一个订单属于一个商家）          |
 | totalAmount                | 金额   | 总金额                     |
 | payAmount                  | 金额   | 实付金额                    |
 | discountAmount             | 金额   | 优惠金额（优惠券/满减等）        |
-| status                     | 枚举   | 待付款→待发货→待收货→已完成→已取消→待评价 |
+| status                     | 枚举   | 待付款(1)→待发货(2)→待收货(3)→已完成(4)→已取消(5)→待评价→待审核(6) |
 | paymentType                | 枚举   | 支付宝 / 微信 / 余额           |
 | receiverName/Phone/Address | 快照   | 收货信息快照（address 最长 500 字符）|
 | createTime                 | 日期时间 | 下单时间                    |
@@ -218,6 +228,55 @@
 | contact/mobile                       | 快照  | 收件人信息快照    |
 | province/city/district/street/detail | 快照  | 地址快照       |
 
+### 3.12 优惠券 (Coupon) — 营销上下文聚合根（V4.0+ 多维度模型）
+
+> V4.0 重构：从单一 discountType 扩展为多维度优惠券模型，支持平台券/店铺券/秒杀券/专属券四种类别，每种可配置不同的发放方式、库存策略、领取方式和适用范围。
+
+| 属性           | 类型     | 说明                                                         |
+| -------------- | -------- | ------------------------------------------------------------ |
+| couponId       | 标识     | 优惠券唯一标识（技术主键）                                    |
+| couponNo       | 业务编号 | 优惠券对外编号                                               |
+| name           | 字符串   | 优惠券名称（如"618满200减30"）                                |
+| discountType   | 枚举     | 优惠类型：FIXED(1,满减券)/PERCENTAGE(2,折扣券)/CASH_COUPON(3,现金券) |
+| couponCategory | 枚举     | 券类别：PLATFORM(1,平台券)/SHOP(2,店铺券)/FLASH_SALE(3,秒杀券)/EXCLUSIVE(4,专属券) |
+| grantType      | 枚举     | 发放方式：FREE_CLAIM(1,免费领取)/PAID_PURCHASE(2,付费购买)/INVITATION(3,邀请发券)/AUTO_ISSUE(4,自动发放) |
+| stockType      | 枚举     | 库存类型：LIMITED(1,限量)/UNLIMITED(2,不限量)                  |
+| grabType       | 枚举     | 领取方式：NORMAL(1,普通领取)/NEED_GRAB(2,抢券)/PLATFORM_EXCLUSIVE(3,平台专享) |
+| scopeType      | 枚举     | 适用范围类型：ALL(1,全场通用)/CATEGORY(2,指定类目)/PRODUCT(3,指定商品) |
+| scopeValues    | JSON     | 适用范围值：当 scopeType=CATEGORY 时为类目ID列表，=PRODUCT 时为商品ID列表 |
+| stackRule      | 枚举     | 叠加规则：MUTUAL_EXCLUSIVE(1,互斥)/STACKABLE(2,可叠加)         |
+| stackGroup     | 字符串   | 叠加分组：同组内按 stackRule 决定是否可叠加，跨组始终可叠加    |
+| priceInCents   | 整数     | 券面额（分）：FIXED 时为满减金额，PERCENTAGE 时为折扣百分比(如85表示85折)，CASH_COUPON 时为固定现金额 |
+| minAmountInCents | 整数   | 最低消费金额（分），0 表示无门槛                                |
+| totalStock     | 整数     | 总发行量（stockType=LIMITED 时有效）                           |
+| claimedCount   | 整数     | 已领取数量（stockType=LIMITED 时有效）                         |
+| usedCount      | 整数     | 已使用数量                                                    |
+| startTime      | 日期时间 | 有效期开始                                                    |
+| endTime        | 日期时间 | 有效期结束                                                    |
+| status         | 枚举     | 状态：DRAFT(0,草稿)/ACTIVE(1,已发布)/PAUSED(2,已暂停)/EXPIRED(3,已过期)/TERMINATED(4,已终止) |
+| sellerId       | 关联     | 所属商家（couponCategory=SHOP 时必填，PLATFORM 时为空）        |
+| createTime     | 日期时间 | 创建时间                                                      |
+| updateTime     | 日期时间 | 更新时间                                                      |
+
+> **业务规则**：
+> - `grantType=FREE_CLAIM` 时用户可直接领取；`PAID_PURCHASE` 需积分/余额兑换；`INVITATION` 仅受邀用户可见；`AUTO_ISSUE` 由系统自动发放（如新用户注册）
+> - `grabType=NEED_GRAB` 时启用 Redis 原子库存扣减 + SISMEMBER 去重（`CouponGrabLuaScript`）
+> - 使用优惠券时需校验 `couponCategory` 与卖家匹配规则（`useCoupon` V4.2）：平台券可用于任意商家，店铺券仅限发券商家，秒杀券仅限秒杀活动商品，专属券按规则匹配
+> - 优惠券叠加由 `stackRule` + `stackGroup` 共同决定：同组互斥则只能选一张，跨组始终可叠加
+
+### 3.13 用户优惠券 (UserCoupon) — 营销上下文实体
+
+| 属性           | 类型     | 说明                                     |
+| -------------- | -------- | ---------------------------------------- |
+| userCouponId   | 标识     | 用户优惠券唯一标识                         |
+| userId         | 关联     | 用户ID                                    |
+| couponId       | 关联     | 优惠券ID                                  |
+| status         | 枚举     | 状态：AVAILABLE(1,可用)/USED(2,已用)/EXPIRED(3,已过期) |
+| usedOrderNo    | 业务编号 | 使用的订单号（status=USED 时有值）          |
+| claimTime      | 日期时间 | 领取时间                                  |
+| useTime        | 日期时间 | 使用时间                                  |
+| expireTime     | 日期时间 | 过期时间（基于 Coupon.endTime 快照）       |
+
 ---
 
 ## 四、聚合与聚合根
@@ -229,6 +288,7 @@
 | 订单聚合 | Orders         | OrderItem (1:N，组合) | 订单总额 = 所有订单项小计之和 - 优惠金额；订单项不能脱离订单     |
 | 支付聚合 | PayOrder       | —                  | 支付金额 = 关联订单应付金额                |
 | 物流聚合 | OrderLogistics | —                  | 物流必须关联已支付订单                    |
+| 营销聚合 | Coupon         | UserCoupon (1:N)   | 优惠券总发行量 >= 已领取量 >= 已使用量；用户优惠券不能脱离 Coupon 存在 |
 
 ---
 
@@ -263,6 +323,11 @@
 | 待收货      | Pending Receipt          | 商家已发货等待用户确认     |
 | 已完成      | Completed                | 用户确认收货，交易完成     |
 | 已取消      | Cancelled                | 交易关闭（超时或用户主动取消） |
+| 待审核      | Pending Review           | 售后申请提交后等待商家/平台审核处理 |
+| 优惠券      | Coupon                   | 营销工具，用户领取后可在下单时抵扣 |
+| 优惠券类别  | Coupon Category          | PLATFORM(平台券)/SHOP(店铺券)/FLASH_SALE(秒杀券)/EXCLUSIVE(专属券) |
+| 秒杀        | Flash Sale               | 限时限量的促销活动，库存通过 Redis Lua 原子扣减 |
+| 订单类型    | Order Type               | NORMAL(购物车)/DIRECT(立即购买)/FLASH_SALE(秒杀)/PRESALE(预售)，驱动下单策略 |
 
 ---
 
@@ -281,14 +346,21 @@
 | `AmountCalculator`  | 订单总价计算、优惠分摊、运费计算     | 订单上下文 |
 | `OrderStateMachine` | 订单状态流转控制           | 订单上下文 |
 | `PaymentRouter`     | 根据支付方式路由到不同渠道      | 支付上下文 |
+| `OrderCreateStrategy` (接口) | 统一订单创建策略接口：`support(OrderType)` + `createOrder(CreateOrderReq)`（V4.1） | 订单上下文 |
+| `NormalCartOrderStrategy` | 购物车下单策略：校验购物车→校验SKU→校验地址→扣库存→创建订单（V4.1） | 订单上下文 |
+| `DirectOrderStrategy` | 立即购买策略：单个SKU直接下单，跳过购物车（V4.1） | 订单上下文 |
+| `FlashSaleOrderStrategy` | 秒杀下单策略：Redis预扣库存校验→创建订单（V4.1） | 订单上下文 |
+| `CouponClaimLuaScript` | Redis Lua 脚本：优惠券领取去重（SISMEMBER），适用所有券类型（V4.0） | 营销上下文 |
+| `CouponGrabLuaScript` | Redis Lua 脚本：抢券原子库存扣减 + 去重（DECR + SISMEMBER），用于 NEED_GRAB 类型券（V4.0） | 营销上下文 |
+| `FlashSaleLuaScript` | Redis Lua 脚本：秒杀热 Key 分片库存扣减，防超卖（V4.0） | 营销上下文 |
 | `EventPublisher`   | 领域事件投递（RabbitMQ, V1.1） | 全局（ia-common） |
 | `NotificationService` | WebSocket 实时推送（V1.2） | 通知上下文 |
 | `DistributedScheduler` | 分布式定时任务协调（XXL-Job, V1.1） | 全局 |
-| `ProductVectorizer` | 商品信息 → Embedding 向量（🔵 V2.5） | AI搜索上下文 |
-| `RAGRetriever`     | 多路召回 + 重排序（🔵 V2.5）       | AI客服上下文 |
-| `AgentPlanner`     | ReAct 推理 + 工具链编排（✅ V2.0：LangChain4j AiServices） | AI搜索上下文 |
-| `HandoffManager`   | 人机转接决策（🔵 V2.5）           | AI客服上下文 |
-| `SessionManager`   | Per-User 会话隔离 + Redis 持久化（🔵 V2.5） | AI客服/AI搜索上下文 |
+| `ProductVectorizer` | 商品信息 → Embedding 向量（🟡 GATED, ai.enabled=false） | AI搜索上下文 |
+| `RAGRetriever`     | 多路召回 + 重排序（🟡 GATED, ai.enabled=false）       | AI客服上下文 |
+| `AgentPlanner`     | ReAct 推理 + 工具链编排（🟡 GATED, ai.enabled=false：LangChain4j AiServices） | AI搜索上下文 |
+| `HandoffManager`   | 人机转交决策（🟡 GATED, ai.enabled=false）           | AI客服上下文 |
+| `SessionManager`   | Per-User 会话隔离 + Redis 持久化（🟡 GATED, ai.enabled=false） | AI客服/AI搜索上下文 |
 | `EvaluationCollector` | 用户反馈采集 + Langfuse 上报（⚪ V3.0） | AI客服/AI搜索上下文 |
 
 ---

@@ -1,24 +1,34 @@
-/**
- * Taro App 配置
- * 定义页面路由 + 窗口样式 + 底部导航
- */
 export default {
   pages: [
     'pages/index/index',
     'pages/marketplace/index',
+    'pages/product/index',
+    'pages/search/index',
     'pages/cart/index',
+    'pages/checkout/index',
+    'pages/pay/index',
+    'pages/orders/index',
+    'pages/order-detail/index',
     'pages/profile/index',
+    'pages/login/index',
+    'pages/addresses/index',
+    'pages/favorites/index',
+    'pages/coupons/index',
+    'pages/flash/index',
+    'pages/notifications/index',
+    'pages/sign/index',
+    'pages/points/index',
   ],
   window: {
     backgroundTextStyle: 'light',
-    navigationBarBackgroundColor: '#F7F6F3',
+    navigationBarBackgroundColor: '#FAFAF8',
     navigationBarTitleText: '冰美商城',
     navigationBarTextStyle: 'black',
-    backgroundColor: '#F7F6F3',
+    backgroundColor: '#FAFAF8',
   },
   tabBar: {
-    color: '#8C8A87',
-    selectedColor: '#4A7C59',
+    color: '#9B9B9B',
+    selectedColor: '#2D8B6E',
     backgroundColor: '#FFFFFF',
     borderStyle: 'white',
     list: [

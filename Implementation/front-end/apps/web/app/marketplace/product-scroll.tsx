@@ -29,8 +29,8 @@ export function ProductScroll({ products }: { products: ProductVO[] }) {
   return (
     <section className="py-12" suppressHydrationWarning>
       <div className="mb-6">
-        <h2 className="text-xl font-light text-ink-black">🔥 热卖推荐</h2>
-        <p className="text-xs text-warm-400 mt-1">大家都在买</p>
+        <h2 className="text-xl font-light text-ink-black">🔥 大家都在买</h2>
+        <p className="text-xs text-warm-400 mt-1">热卖推荐</p>
       </div>
 
       {/* 轮播视窗 */}
@@ -68,13 +68,18 @@ export function ProductScroll({ products }: { products: ProductVO[] }) {
         </div>
       </div>
 
-      {/* 圆点指示器 */}
-      <div className="mt-4 flex justify-center gap-2">
+      {/* 圆点指示器 — 大触摸区，可点击切换 */}
+      <div className="mt-4 flex justify-center gap-3">
         {products.map((_, i) => (
-          <button key={i} onClick={() => setIdx(i)}
-            className={`h-2 rounded-full transition-all duration-300 ${
-              i === idx ? 'w-6 bg-accent-green' : 'w-2 bg-warm-300 hover:bg-warm-400'
+          <button key={i} onClick={() => setIdx(i)} aria-label={`切换到第${i + 1}个`}
+            className="p-1 rounded-full transition-all duration-300 focus:outline-none"
+            style={{ padding: '6px' }}>
+            <span className={`block rounded-full transition-all duration-300 ${
+              i === idx
+                ? 'w-6 h-2.5 bg-accent shadow-sm'
+                : 'w-2.5 h-2.5 bg-warm-300 hover:bg-warm-400 hover:scale-125'
             }`} />
+          </button>
         ))}
       </div>
     </section>

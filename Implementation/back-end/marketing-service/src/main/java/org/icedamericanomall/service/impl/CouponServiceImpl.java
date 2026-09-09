@@ -1,14 +1,11 @@
 package org.icedamericanomall.service.impl;
 
-import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.constants.*;
-import org.icedamericanomall.domain.dto.CouponAvailableFilterReq;
 import org.icedamericanomall.domain.entity.CouponEntity;
 import org.icedamericanomall.domain.entity.UserCouponEntity;
-import org.icedamericanomall.domain.vo.CouponAvailableVO;
 import org.icedamericanomall.mapper.CouponMapper;
 import org.icedamericanomall.mapper.UserCouponMapper;
 import org.icedamericanomall.service.CouponService;
@@ -18,14 +15,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
- * V4.3: 多维度优惠券服务实现（京东标准）。
- * 新增: 适用范围(scopeType×scopeValues) + 预过滤 + 多券叠加。
+ * V4.0: 多维度优惠券服务实现（京东标准）。
+ * <p>
+ * 优惠券5维模型: discountType × couponCategory × grantType × stockType × grabType
+ * 支持: 无限量/付费购买/秒杀级领取(Redis Lua)/免费领取。
  */
 @Slf4j
 @Service
@@ -33,51 +29,51 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
 
     private final UserCouponMapper userCouponMapper;
     private final CouponGrabLuaScript couponGrabLuaScript;
+    private final CouponClaimLuaScript couponClaimLuaScript;
 
-    public CouponServiceImpl(UserCouponMapper userCouponMapper, CouponGrabLuaScript couponGrabLuaScript) {
+    public CouponServiceImpl(UserCouponMapper userCouponMapper, CouponGrabLuaScript couponGrabLuaScript,
+                              CouponClaimLuaScript couponClaimLuaScript) {
         this.userCouponMapper = userCouponMapper;
         this.couponGrabLuaScript = couponGrabLuaScript;
+        this.couponClaimLuaScript = couponClaimLuaScript;
     }
 
+    /**
+     * V4.5: 普通领取优惠券（免费券、不限量券），增加 Redis SISMEMBER 去重保护 DB。
+     * NEED_GRAB 券由 smartClaim 自动路由到 claimWithGrab。
+     * PAID_PURCHASE 券走 trade 订单→支付→grantAfterPayment 通道，不再走此处。
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public UserCouponEntity claim(Long userId, String couponId) {
         CouponEntity coupon = lambdaQuery().eq(CouponEntity::getCouponId, couponId).one();
         if (coupon == null) throw new BizException(ErrorCode.USER_NOT_FOUND, "优惠券不存在");
         if (coupon.getStatus() != 1) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已失效");
+        if (coupon.getStartTime() != null && LocalDateTime.now().isBefore(coupon.getStartTime()))
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券未到领取时间");
         if (LocalDateTime.now().isAfter(coupon.getEndTime()))
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已过期");
 
-        if (coupon.getGrabType() != null && coupon.getGrabType() == GrabTypeEnum.NEED_GRAB.getCode()) {
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
-                    "该优惠券为秒杀券，请使用 /api/coupon/grab 接口领取");
+        // V4.5: Redis SISMEMBER 快速去重（京东标准：所有券类型都用 Redis 保护DB）
+        if (couponClaimLuaScript.tryDedup(coupon.getId(), userId) == 0) {
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "已领取过该优惠券");
         }
 
+        // DB去重（双保险：Redis 主防 + DB 兜底，防止 Redis 数据丢失导致重复领）
         Long count = userCouponMapper.selectCount(
                 new LambdaQueryWrapper<UserCouponEntity>()
                         .eq(UserCouponEntity::getUserId, userId)
                         .eq(UserCouponEntity::getCouponId, coupon.getId()));
         if (count > 0) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "已领取过该优惠券");
 
+        // V4.0: 限量券：原子条件 UPDATE 扣减总库存
         if (coupon.getStockType() == null || coupon.getStockType() == CouponStockTypeEnum.LIMITED.getCode()) {
             boolean incremented = lambdaUpdate().eq(CouponEntity::getId, coupon.getId())
                     .lt(CouponEntity::getIssuedQty, coupon.getTotalQty())
                     .setSql("issued_qty = issued_qty + 1").update();
             if (!incremented) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已领完");
         }
-
-        if (coupon.getGrantType() != null && coupon.getGrantType() == GrantTypeEnum.PAID_PURCHASE.getCode()) {
-            UserCouponEntity prePaid = userCouponMapper.selectOne(
-                    new LambdaQueryWrapper<UserCouponEntity>()
-                            .eq(UserCouponEntity::getUserId, userId)
-                            .eq(UserCouponEntity::getCouponId, coupon.getId())
-                            .eq(UserCouponEntity::getStatus, 4));
-            if (prePaid == null)
-                throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "请先购买该优惠券");
-            prePaid.setStatus(1);
-            userCouponMapper.updateById(prePaid);
-            return prePaid;
-        }
+        // V4.0: UNLIMITED 券：不检查总量上限，跳过 issuedQty 扣减
 
         UserCouponEntity uc = new UserCouponEntity();
         uc.setUserId(userId);
@@ -104,12 +100,26 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
                         .orderByDesc(UserCouponEntity::getUseTime));
     }
 
-    // === V4.3: useCoupon — 完整校验链 (couponCategory + sellerId + scopeType) ===
-
+    /**
+     * V4.0: 使用优惠券（下单时调用），支持 discountType 三维度。
+     * 向后兼容: discountType 为空时回退到旧 type 字段。
+     */
+    /**
+     * V4.2: 使用优惠券 — 增加 couponCategory 与订单类型/卖家匹配校验（京东标准）。
+     *
+     * <pre>
+     * 优惠券使用规则:
+     * - PLATFORM(1): 所有订单类型通用，不限卖家
+     * - SHOP(2):     仅限该店铺(sellerId)的订单
+     * - FLASH_SALE(3): 仅限秒杀订单(orderType=3)
+     * - EXCLUSIVE(4): 平台独占券，仅限普通/立即购买订单（不含秒杀）
+     * - 秒杀订单(orderType=3): 拒绝所有优惠券（秒杀价已是底价，后端兜底）
+     * </pre>
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int useCoupon(Long userId, Long userCouponId, String orderNo, int orderAmount,
-                          Integer orderType, Long sellerId, String productIds, String categoryIds) {
+                          Integer orderType, Long sellerId) {
         UserCouponEntity uc = userCouponMapper.selectById(userCouponId);
         if (uc == null || !uc.getUserId().equals(userId))
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券不存在");
@@ -121,45 +131,30 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
         if (orderAmount < coupon.getMinAmount())
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "未达到最低消费金额");
 
-        // V4.2: couponCategory × orderType/sellerId
+        // V4.2: couponCategory 与订单类型/卖家校验（京东标准：券类别决定适用范围）
         int category = coupon.getCouponCategory() != null ? coupon.getCouponCategory()
                 : (coupon.getSellerId() == null ? CouponCategoryEnum.PLATFORM.getCode()
                                                  : CouponCategoryEnum.SHOP.getCode());
         if (orderType != null) {
-            if (orderType == 3) {
+            // 秒杀订单不允许使用任何优惠券（后端兜底，前端也应限制）
+            if (orderType == 3) { // FLASH_SALE
                 throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "秒杀订单不支持使用优惠券");
             }
+            // FLASH_SALE 券仅限秒杀订单 → 但秒杀订单已在上方拒绝，此处为语义完整性
             if (category == CouponCategoryEnum.FLASH_SALE.getCode() && orderType != 3) {
-                throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "秒杀券仅限秒杀订单使用");
+                throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
+                        "秒杀券仅限秒杀订单使用");
             }
         }
+        // SHOP 券：卖家必须匹配
         if (category == CouponCategoryEnum.SHOP.getCode()) {
             if (coupon.getSellerId() == null || !coupon.getSellerId().equals(sellerId)) {
-                throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "店铺券仅限该店铺订单使用");
+                throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
+                        "店铺券仅限该店铺订单使用");
             }
         }
 
-        // V4.3: scopeType × 商品/品类匹配
-        int scope = coupon.getScopeType() != null ? coupon.getScopeType() : ScopeTypeEnum.ALL.getCode();
-        if (scope != ScopeTypeEnum.ALL.getCode()) {
-            if (scope == ScopeTypeEnum.CATEGORY.getCode()) {
-                List<Long> scopeCatIds = parseJsonLongList(coupon.getScopeValues());
-                List<Long> orderCatIds = parseCommaSepLongs(categoryIds);
-                if (orderCatIds.isEmpty()
-                        || scopeCatIds.stream().noneMatch(orderCatIds::contains)) {
-                    throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券不适用于该商品品类");
-                }
-            } else if (scope == ScopeTypeEnum.PRODUCT.getCode()) {
-                List<Long> scopeProductIds = parseJsonLongList(coupon.getScopeValues());
-                List<Long> orderProductIds = parseCommaSepLongs(productIds);
-                if (orderProductIds.isEmpty()
-                        || scopeProductIds.stream().noneMatch(orderProductIds::contains)) {
-                    throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券不适用于该商品");
-                }
-            }
-        }
-
-        // 折扣计算
+        // V4.0: 优先使用 discountType，兼容旧 type 字段
         int dt = coupon.getDiscountType() != null ? coupon.getDiscountType() : coupon.getType();
         int discount;
         if (dt == DiscountTypeEnum.FIXED.getCode()) {
@@ -180,133 +175,6 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
 
         return discount;
     }
-
-    // === V4.3: 预过滤——结算页可用券列表 ===
-
-    @Override
-    public List<CouponAvailableVO> getAvailableCoupons(Long userId, CouponAvailableFilterReq filter) {
-        List<UserCouponEntity> userCoupons = getUserAvailableCoupons(userId);
-        if (userCoupons.isEmpty()) return List.of();
-
-        List<CouponAvailableVO> result = new ArrayList<>();
-        for (UserCouponEntity uc : userCoupons) {
-            CouponEntity coupon = getById(uc.getCouponId());
-            if (coupon == null || coupon.getStatus() != 1) continue;
-
-            CouponAvailableVO vo = new CouponAvailableVO();
-            vo.setUserCouponId(uc.getId());
-            vo.setCouponId(coupon.getCouponId());
-            vo.setName(coupon.getName());
-            vo.setDiscountType(coupon.getDiscountType());
-            vo.setValue(coupon.getValue());
-            vo.setMinAmount(coupon.getMinAmount());
-            vo.setCouponCategory(coupon.getCouponCategory());
-            vo.setScopeType(coupon.getScopeType());
-            vo.setEndTime(coupon.getEndTime());
-
-            String reason = checkApplicability(coupon, filter);
-            vo.setApplicable(reason == null);
-            vo.setUnapplicableReason(reason);
-
-            if (reason == null) {
-                // 预估折扣（仅参考，实际以下单时计算为准）
-                vo.setEstimatedDiscount(estimateDiscount(coupon, filter.getTotalAmount()));
-            }
-            result.add(vo);
-        }
-        return result;
-    }
-
-    @Override
-    public List<CouponEntity> getBatchByIds(List<Long> couponIds) {
-        if (couponIds == null || couponIds.isEmpty()) return List.of();
-        return listByIds(couponIds);
-    }
-
-    // === private helpers ===
-
-    /** 检查券是否适用于订单上下文，返回不可用原因（null=适用） */
-    private String checkApplicability(CouponEntity coupon, CouponAvailableFilterReq filter) {
-        // 过期
-        if (LocalDateTime.now().isAfter(coupon.getEndTime())) return "已过期";
-
-        // 秒杀订单不用券
-        if (filter.getOrderType() != null && filter.getOrderType() == 3)
-            return "秒杀订单不支持优惠券";
-        if (coupon.getCouponCategory() != null
-                && coupon.getCouponCategory() == CouponCategoryEnum.FLASH_SALE.getCode()
-                && filter.getOrderType() != null && filter.getOrderType() != 3)
-            return "秒杀券仅限秒杀订单使用";
-
-        // 店铺券 × 卖家匹配
-        if (coupon.getCouponCategory() != null
-                && coupon.getCouponCategory() == CouponCategoryEnum.SHOP.getCode()) {
-            if (coupon.getSellerId() != null && !coupon.getSellerId().equals(filter.getSellerId()))
-                return "仅限指定店铺使用";
-        }
-
-        // 最低消费
-        if (filter.getTotalAmount() != null && coupon.getMinAmount() != null
-                && filter.getTotalAmount() < coupon.getMinAmount()) {
-            return "未达最低消费" + (coupon.getMinAmount() / 100) + "元";
-        }
-
-        // V4.3: scopeType 品类匹配
-        int scope = coupon.getScopeType() != null ? coupon.getScopeType() : ScopeTypeEnum.ALL.getCode();
-        if (scope == ScopeTypeEnum.CATEGORY.getCode()) {
-            List<Long> scopeCats = parseJsonLongList(coupon.getScopeValues());
-            List<Long> orderCats = filter.getCategoryIds();
-            if (orderCats == null || orderCats.isEmpty()
-                    || scopeCats.stream().noneMatch(orderCats::contains)) {
-                return "仅限指定品类";
-            }
-        }
-        if (scope == ScopeTypeEnum.PRODUCT.getCode()) {
-            List<Long> scopeProds = parseJsonLongList(coupon.getScopeValues());
-            // 单品匹配需要 productIds，通过 skuIds→productId 查询后使用
-            // 前端传入 categoryIds 包含了对应的品类信息，如果需要精确匹配 product 需要额外查询
-            if (filter.getSkuIds() == null || filter.getSkuIds().isEmpty()) return "仅限指定商品";
-            // 简化：如果前端传了 productIds（放在 categoryIds 复用），此处做包含检查
-            // 完整方案需要新增 productIds 参数到 filter
-        }
-
-        return null; // 适用
-    }
-
-    /** 预估折扣金额 */
-    private int estimateDiscount(CouponEntity coupon, Integer totalAmount) {
-        if (totalAmount == null) return 0;
-        int dt = coupon.getDiscountType() != null ? coupon.getDiscountType() : coupon.getType();
-        if (dt == DiscountTypeEnum.FIXED.getCode()) return Math.min(coupon.getValue(), totalAmount);
-        if (dt == DiscountTypeEnum.PERCENTAGE.getCode())
-            return Math.min(totalAmount * (100 - coupon.getValue()) / 100, totalAmount);
-        if (dt == DiscountTypeEnum.CASH_COUPON.getCode()) return Math.min(coupon.getValue(), totalAmount);
-        return 0;
-    }
-
-    private List<Long> parseJsonLongList(String json) {
-        if (json == null || json.isBlank()) return List.of();
-        try {
-            return JSONUtil.toList(json, Long.class);
-        } catch (Exception e) {
-            return List.of();
-        }
-    }
-
-    private List<Long> parseCommaSepLongs(String csv) {
-        if (csv == null || csv.isBlank()) return List.of();
-        try {
-            List<Long> result = new ArrayList<>();
-            for (String part : csv.split(",")) {
-                result.add(Long.parseLong(part.trim()));
-            }
-            return result;
-        } catch (Exception e) {
-            return List.of();
-        }
-    }
-
-    // === V4.0-4.2 helper methods (unchanged) ===
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -335,48 +203,78 @@ public class CouponServiceImpl extends ServiceImpl<CouponMapper, CouponEntity> i
         }
     }
 
+    // === V4.4: smartClaim + grantAfterPayment ===
+
+    /**
+     * V4.4: 智能领取——根据 grabType 自动路由到 DB 或 Redis Lua 通道。
+     * 替代了之前分离的 /claim 和 /grab 端点，前端统一调此方法。
+     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
-    public UserCouponEntity purchaseCoupon(Long userId, String couponId) {
+    public UserCouponEntity smartClaim(Long userId, String couponId) {
         CouponEntity coupon = lambdaQuery().eq(CouponEntity::getCouponId, couponId).one();
         if (coupon == null) throw new BizException(ErrorCode.USER_NOT_FOUND, "优惠券不存在");
-        if (coupon.getGrantType() == null || coupon.getGrantType() != GrantTypeEnum.PAID_PURCHASE.getCode())
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "该优惠券无需购买，可直接领取");
-        if (coupon.getPriceInCents() == null || coupon.getPriceInCents() <= 0)
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券价格未配置");
+        if (coupon.getGrabType() != null && coupon.getGrabType() == GrabTypeEnum.NEED_GRAB.getCode()) {
+            return claimWithGrab(userId, couponId);
+        }
+        return claim(userId, couponId);
+    }
 
+    /**
+     * V4.4: 支付成功后发券（京东标准：付费券购买→支付→回调发券）。
+     * 直接创建 status=1 的 user_coupon，跳过 PRE_PAID 状态。
+     * 由 pay-service 支付成功回调 → InternalCouponController.grant 端点调用。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public UserCouponEntity grantAfterPayment(Long userId, String couponId) {
+        CouponEntity coupon = lambdaQuery().eq(CouponEntity::getCouponId, couponId).one();
+        if (coupon == null) throw new BizException(ErrorCode.USER_NOT_FOUND, "优惠券不存在");
+        if (coupon.getStatus() != 1) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已失效");
+
+        // 防重：检查是否已发过
         Long exists = userCouponMapper.selectCount(
                 new LambdaQueryWrapper<UserCouponEntity>()
                         .eq(UserCouponEntity::getUserId, userId)
                         .eq(UserCouponEntity::getCouponId, coupon.getId()));
-        if (exists > 0) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "已购买或领取过该优惠券");
-
-        UserCouponEntity uc = new UserCouponEntity();
-        uc.setUserId(userId);
-        uc.setCouponId(coupon.getId());
-        uc.setStatus(4);
-        userCouponMapper.insert(uc);
-        return uc;
-    }
-
-    @Override
-    public UserCouponEntity claimWithGrab(Long userId, String couponId) {
-        CouponEntity coupon = lambdaQuery().eq(CouponEntity::getCouponId, couponId).one();
-        if (coupon == null) throw new BizException(ErrorCode.USER_NOT_FOUND, "优惠券不存在");
-        if (coupon.getStatus() != 1) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已失效");
-        if (coupon.getGrabType() == null || coupon.getGrabType() != GrabTypeEnum.NEED_GRAB.getCode())
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "该优惠券无需抢，请使用普通领取接口");
-
-        long result = couponGrabLuaScript.tryClaim(coupon.getId(), userId);
-        if (result == -1) throw new BizException(ErrorCode.FLASH_SALE_SOLD_OUT, "优惠券已抢光");
-        if (result == -2) throw new BizException(ErrorCode.FLASH_SALE_LIMIT_EXCEEDED, "已领取过该优惠券");
+        if (exists > 0) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "已发放过该优惠券");
 
         UserCouponEntity uc = new UserCouponEntity();
         uc.setUserId(userId);
         uc.setCouponId(coupon.getId());
         uc.setStatus(1);
         userCouponMapper.insert(uc);
+        return uc;
+    }
 
+    /**
+     * V4.0: 秒杀级优惠券领取（Redis Lua 原子操作 + DB 落库）。
+     * 仅 grabType=NEED_GRAB 的优惠券走此通道。
+     */
+    @Override
+    public UserCouponEntity claimWithGrab(Long userId, String couponId) {
+        CouponEntity coupon = lambdaQuery().eq(CouponEntity::getCouponId, couponId).one();
+        if (coupon == null) throw new BizException(ErrorCode.USER_NOT_FOUND, "优惠券不存在");
+        if (coupon.getStatus() != 1) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已失效");
+        if (coupon.getStartTime() != null && LocalDateTime.now().isBefore(coupon.getStartTime()))
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券未到领取时间");
+        if (LocalDateTime.now().isAfter(coupon.getEndTime()))
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已过期");
+        if (coupon.getGrabType() == null || coupon.getGrabType() != GrabTypeEnum.NEED_GRAB.getCode())
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "该优惠券无需抢，请使用普通领取接口");
+
+        // Redis Lua 原子预扣
+        long result = couponGrabLuaScript.tryClaim(coupon.getId(), userId);
+        if (result == -1) throw new BizException(ErrorCode.FLASH_SALE_SOLD_OUT, "优惠券已抢光");
+        if (result == -2) throw new BizException(ErrorCode.FLASH_SALE_LIMIT_EXCEEDED, "已领取过该优惠券");
+
+        // Redis 扣减成功 → DB 落库
+        UserCouponEntity uc = new UserCouponEntity();
+        uc.setUserId(userId);
+        uc.setCouponId(coupon.getId());
+        uc.setStatus(1);
+        userCouponMapper.insert(uc);
+
+        // 同步更新 MySQL 的 issued_qty（非关键路径，失败不影响领取）
         try {
             lambdaUpdate().eq(CouponEntity::getId, coupon.getId())
                     .setIncrBy(CouponEntity::getIssuedQty, 1).update();

@@ -8,7 +8,7 @@ spring:
     nacos:
       server-addr: 192.168.10.128:8848
       username: nacos
-      password: nacoss
+      password: nacos
       discovery:
         enabled: true
       config:
@@ -29,7 +29,7 @@ spring:
 
 jwt:
   access-token-ttl: 3600
-  refresh-token-ttl: 604800
+  refresh-token-ttl: 2592000
   keystore:
     # V2.5: 生产通过 JWT_KEYSTORE_PATH/PASSWORD 环境变量注入；dev 用本地 dev.p12（不提交 Git）
     key-store-path: keystore/dev-keystore.p12

@@ -3,27 +3,28 @@ package org.icedamericanomall.controller;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.domain.dto.ConversationDetail;
 import org.icedamericanomall.domain.dto.ConversationSummary;
+import org.icedamericanomall.service.ConversationService;
 import org.noLazy.common.domain.Result;
 import org.noLazy.common.utils.UserContext;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.Collections;
+import java.util.List;
 
 /**
- * AI 会话管理 — Redis 持久化（V3.0 完成 TODO）。
+ * AI 会话管理 Interface 层 — V5.0 DDD 合规
+ *
+ * Redis 操作全部下沉到 {@link ConversationService}，Controller 仅做参数解析 + Result 包装。
  */
 @Slf4j
 @RestController
 @RequestMapping("/api/ai")
 public class ConversationController {
 
-    private final RedisTemplate<String, Object> redisTemplate;
-    private static final String CONV_KEY_PREFIX = "ai:conv:";
+    private final ConversationService conversationService;
 
-    public ConversationController(RedisTemplate<String, Object> redisTemplate) {
-        this.redisTemplate = redisTemplate;
+    public ConversationController(ConversationService conversationService) {
+        this.conversationService = conversationService;
     }
 
     @GetMapping("/conversations")
@@ -31,27 +32,7 @@ public class ConversationController {
         var userInfo = UserContext.getUser();
         Long userId = userInfo != null ? userInfo.userId() : null;
         if (userId == null) return Result.ok(Collections.emptyList());
-
-        Set<String> keys = redisTemplate.keys(CONV_KEY_PREFIX + userId + ":*");
-        if (keys == null || keys.isEmpty()) return Result.ok(Collections.emptyList());
-
-        List<ConversationSummary> list = new ArrayList<>();
-        for (String key : keys) {
-            Object meta = redisTemplate.opsForHash().get(key, "_meta");
-            if (meta instanceof Map<?,?> raw) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> m = (Map<String, Object>) raw;
-                String convId = key.substring(key.lastIndexOf(":") + 1);
-                Object a = m.getOrDefault("agentType", "SHOPPING");
-                Object t = m.getOrDefault("title", "");
-                Object c = m.getOrDefault("messageCount", 0);
-                String agentType = a != null ? a.toString() : "SHOPPING";
-                String title = t != null ? t.toString() : "";
-                int mc = c instanceof Number ? ((Number) c).intValue() : 0;
-                list.add(new ConversationSummary(convId, agentType, title, mc, null, null, null));
-            }
-        }
-        return Result.ok(list);
+        return Result.ok(conversationService.listConversations(userId));
     }
 
     @GetMapping("/conversations/{id}")
@@ -59,8 +40,7 @@ public class ConversationController {
         var userInfo = UserContext.getUser();
         Long userId = userInfo != null ? userInfo.userId() : null;
         if (userId == null) return Result.error(401, "请先登录");
-
-        return Result.ok(new ConversationDetail(id, "SHOPPING", Collections.emptyList()));
+        return Result.ok(conversationService.getConversation(userId, id));
     }
 
     @DeleteMapping("/conversations/{id}")
@@ -68,11 +48,7 @@ public class ConversationController {
         var userInfo = UserContext.getUser();
         Long userId = userInfo != null ? userInfo.userId() : null;
         if (userId == null) return Result.error(401, "请先登录");
-
-        String key = CONV_KEY_PREFIX + userId + ":" + id;
-        redisTemplate.delete(key);
-        redisTemplate.delete("ai:memory:shopping:" + userId + ":" + id);
-        redisTemplate.delete("ai:memory:cs:" + userId + ":" + id);
+        conversationService.deleteConversation(userId, id);
         return Result.ok();
     }
 }

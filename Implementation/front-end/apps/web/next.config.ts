@@ -3,6 +3,21 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  // API 代理: WSL2 → Windows Gateway
+  // 浏览器(Windows)和Next.js服务端(WSL2)都能通过 /api/* 访问后端
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://172.24.176.1:8080/api/:path*',
+      },
+      {
+        source: '/oauth2/:path*',
+        destination: 'http://172.24.176.1:8080/oauth2/:path*',
+      },
+    ];
+  },
+
   // Docker standalone output
   output: 'standalone',
 

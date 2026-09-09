@@ -22,7 +22,7 @@ public class LoginTokenService {
     @Value("${jwt.access-token-ttl:3600}")
     private Long accessTokenTtl;
 
-    @Value("${jwt.refresh-token-ttl:604800}")
+    @Value("${jwt.refresh-token-ttl:2592000}")
     private Long refreshTokenTtl;
 
     public OAuth2TokenResp createLoginResponse(LoginRespDTO userResp) {
@@ -45,7 +45,7 @@ public class LoginTokenService {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userResp.getUserId());
         claims.put("username", userResp.getUsername());
-//        claims.put("role", userResp.getRole() != null ? userResp.getRole() : "ROLE_USER");
+        claims.put("role", userResp.getRole() != null ? userResp.getRole() : "ROLE_USER");
         return claims;
     }
 

@@ -6,15 +6,15 @@
 
 ## 一、选型原则
 
-| 原则 | 说明 |
-|------|------|
-| **面向 2030** | 技术栈有 5 年以上的生命力，社区活跃，不被单一厂商绑定 |
+| 原则             | 说明                                             |
+| -------------- | ---------------------------------------------- |
+| **面向 2030**    | 技术栈有 5 年以上的生命力，社区活跃，不被单一厂商绑定                   |
 | **SSR/SSG 优先** | 电商 SEO 是硬需求，首屏 JS 零负担（React Server Components） |
-| **优雅简洁** | UI 组件可拥有（Shadcn/ui），不依赖黑盒 npm 包 |
-| **高并发就绪** | ISR 静态再生成、CDN 边缘缓存、图片自动优化 |
-| **渐进增强** | PWA 先行验证，小程序通过 Taro 后期补入 |
-| **类型安全** | TypeScript strict 模式，前后端共享类型契约 |
-| **大厂标准** | React/Next.js 全球主流，Ant Design 阿里出品，每个选择有企业验证 |
+| **优雅简洁**       | UI 组件可拥有（Shadcn/ui），不依赖黑盒 npm 包                |
+| **高并发就绪**      | ISR 静态再生成、CDN 边缘缓存、图片自动优化                      |
+| **渐进增强**       | PWA 先行验证，小程序通过 Taro 后期补入                       |
+| **类型安全**       | TypeScript strict 模式，前后端共享类型契约                 |
+| **大厂标准**       | React/Next.js 全球主流，Ant Design 阿里出品，每个选择有企业验证   |
 
 ---
 
@@ -41,68 +41,68 @@
 
 #### 核心框架
 
-| 技术 | 版本 | 角色 | 选型理由 |
-|------|------|------|---------|
-| **Next.js** | 15+ | 全栈框架 | App Router 成熟稳定，React Server Components 默认开启，ISR/SSG/SSR 三种渲染模式按需切换。Vercel 持续投入，社区第一。 |
-| **React** | 19 | UI 库 | Server Components 革命性创新：商品页零客户端 JS 渲染。`use()` hook、actions、Suspense 流式渲染。全球最大生态。 |
-| **TypeScript** | 5.x | 类型系统 | strict 模式。前后端共享 DTO 类型定义（从 `ia-api` 的 OpenAPI 生成）。 |
+| 技术             | 版本  | 角色   | 选型理由                                                                                  |
+| -------------- | --- | ---- | ------------------------------------------------------------------------------------- |
+| **Next.js**    | 15+ | 全栈框架 | App Router 成熟稳定，React Server Components 默认开启，ISR/SSG/SSR 三种渲染模式按需切换。Vercel 持续投入，社区第一。 |
+| **React**      | 19  | UI 库 | Server Components 革命性创新：商品页零客户端 JS 渲染。`use()` hook、actions、Suspense 流式渲染。全球最大生态。      |
+| **TypeScript** | 5.x | 类型系统 | strict 模式。前后端共享 DTO 类型定义（从 `ia-api` 的 OpenAPI 生成）。                                    |
 
 #### 样式 & 组件
 
-| 技术 | 版本 | 角色 | 选型理由 |
-|------|------|------|---------|
-| **Tailwind CSS** | 4 | 原子化 CSS | 设计系统约束在 design tokens，不会产生废弃 CSS。v4 的 `@theme` + CSS-first 配置更简洁。 |
-| **Shadcn/ui** | latest | 通用 UI | 组件代码直接复制到项目中（非 npm 依赖），完全可控可定制。基于 Radix 原语，无障碍访问内置。移动端适配良好。 |
-| **Ant Design** | 5 | 后台 UI | 阿里出品，Table/Form/ProTable 开箱即用，企业级后台事实标准。仅用于商家后台和平台管理后台。 |
-| **Lucide** | latest | 图标 | 轻量 SVG 图标，与 Shadcn/ui 配套。 |
+| 技术               | 版本     | 角色      | 选型理由                                                              |
+| ---------------- | ------ | ------- | ----------------------------------------------------------------- |
+| **Tailwind CSS** | 4      | 原子化 CSS | 设计系统约束在 design tokens，不会产生废弃 CSS。v4 的 `@theme` + CSS-first 配置更简洁。 |
+| **Shadcn/ui**    | latest | 通用 UI   | 组件代码直接复制到项目中（非 npm 依赖），完全可控可定制。基于 Radix 原语，无障碍访问内置。移动端适配良好。       |
+| **Ant Design**   | 5      | 后台 UI   | 阿里出品，Table/Form/ProTable 开箱即用，企业级后台事实标准。仅用于商家后台和平台管理后台。           |
+| **Lucide**       | latest | 图标      | 轻量 SVG 图标，与 Shadcn/ui 配套。                                         |
 
 #### 状态管理
 
-| 技术 | 版本 | 角色 | 选型理由 |
-|------|------|------|---------|
-| **TanStack Query** | v5 | 服务端状态 | 请求去重、缓存失效、乐观更新、无限滚动、分页——一站式解决。比 SWR 更灵活。Next.js App Router 完美配合（Server Components 预取 + Client 水合）。 |
-| **Zustand** | v5 | 客户端状态 | 购物车草稿、UI 状态、认证 Token。API 极简（无 Provider/Reducer 模板），TS 推断完美。 |
+| 技术                 | 版本  | 角色    | 选型理由                                                                                               |
+| ------------------ | --- | ----- | -------------------------------------------------------------------------------------------------- |
+| **TanStack Query** | v5  | 服务端状态 | 请求去重、缓存失效、乐观更新、无限滚动、分页——一站式解决。比 SWR 更灵活。Next.js App Router 完美配合（Server Components 预取 + Client 水合）。 |
+| **Zustand**        | v5  | 客户端状态 | 购物车草稿、UI 状态、认证 Token。API 极简（无 Provider/Reducer 模板），TS 推断完美。                                        |
 
 #### 表单 & 校验
 
-| 技术 | 版本 | 角色 | 选型理由 |
-|------|------|------|---------|
-| **React Hook Form** | 7.x | 表单管理 | 非受控组件，性能最优（不触发全树重渲染）。与 Zod 集成无缝。 |
-| **Zod** | 3.x | Schema 校验 | 类型推断 + 运行时校验合一。前后端共享校验规则（从 Zod schema 生成 TypeScript 类型）。 |
+| 技术                  | 版本  | 角色        | 选型理由                                                     |
+| ------------------- | --- | --------- | -------------------------------------------------------- |
+| **React Hook Form** | 7.x | 表单管理      | 非受控组件，性能最优（不触发全树重渲染）。与 Zod 集成无缝。                         |
+| **Zod**             | 3.x | Schema 校验 | 类型推断 + 运行时校验合一。前后端共享校验规则（从 Zod schema 生成 TypeScript 类型）。 |
 
 #### 测试
 
-| 技术 | 版本 | 角色 | 选型理由 |
-|------|------|------|---------|
-| **Vitest** | latest | 单元/组件测试 | Vite 原生速度。与 Jest API 兼容，迁移成本低。 |
-| **React Testing Library** | latest | 组件测试 | 以用户视角测试（不测实现细节）。Next.js 官方推荐。 |
-| **Playwright** | latest | E2E 测试 | 多浏览器并行，trace viewer 调试，API mocking 内置。比 Cypress 更快更稳定。 |
-| **MSW** | 2.x | API Mock | Service Worker 级别的请求拦截，测试和开发共用 mock handler。 |
+| 技术                        | 版本     | 角色       | 选型理由                                                   |
+| ------------------------- | ------ | -------- | ------------------------------------------------------ |
+| **Vitest**                | latest | 单元/组件测试  | Vite 原生速度。与 Jest API 兼容，迁移成本低。                         |
+| **React Testing Library** | latest | 组件测试     | 以用户视角测试（不测实现细节）。Next.js 官方推荐。                          |
+| **Playwright**            | latest | E2E 测试   | 多浏览器并行，trace viewer 调试，API mocking 内置。比 Cypress 更快更稳定。 |
+| **MSW**                   | 2.x    | API Mock | Service Worker 级别的请求拦截，测试和开发共用 mock handler。           |
 
 #### 构建 & 工程化
 
-| 技术 | 版本 | 角色 | 选型理由 |
-|------|------|------|---------|
-| **Turbopack** | — | 开发构建 | Next.js 内置，Rust 实现，比 Webpack 快 10x。 |
-| **pnpm** | 9+ | 包管理 | 严格依赖解析、磁盘高效、monorepo workspace 原生支持。 |
-| **ESLint** | 9 | 代码检查 | Flat config 模式。`eslint-config-next` + `typescript-eslint`。 |
-| **Prettier** | 3 | 代码格式化 | 配合 `prettier-plugin-tailwindcss` 自动排序 class。 |
-| **Husky + lint-staged** | latest | Git hooks | 提交前自动 lint + format。 |
+| 技术                      | 版本     | 角色        | 选型理由                                                       |
+| ----------------------- | ------ | --------- | ---------------------------------------------------------- |
+| **Turbopack**           | —      | 开发构建      | Next.js 内置，Rust 实现，比 Webpack 快 10x。                        |
+| **pnpm**                | 9+     | 包管理       | 严格依赖解析、磁盘高效、monorepo workspace 原生支持。                       |
+| **ESLint**              | 9      | 代码检查      | Flat config 模式。`eslint-config-next` + `typescript-eslint`。 |
+| **Prettier**            | 3      | 代码格式化     | 配合 `prettier-plugin-tailwindcss` 自动排序 class。               |
+| **Husky + lint-staged** | latest | Git hooks | 提交前自动 lint + format。                                       |
 
 #### 移动端 & 小程序
 
-| 技术 | 版本 | 角色 | 选型理由 |
-|------|------|------|---------|
-| **PWA** | — | 渐进式 Web App | Service Worker 离线缓存、安装到桌面、推送通知。Next.js 内置 `next-pwa` 或手动配 Workbox。先以 PWA 验证业务，降低初期开发成本。 |
-| **Taro** | 4.x | 跨端小程序 | 京东出品。React 语法编写，一套代码编译到微信/支付宝/抖音小程序 + H5。待 PWA 验证 PMF 后再补入。 |
+| 技术       | 版本  | 角色          | 选型理由                                                                                    |
+| -------- | --- | ----------- | --------------------------------------------------------------------------------------- |
+| **PWA**  | —   | 渐进式 Web App | Service Worker 离线缓存、安装到桌面、推送通知。Next.js 内置 `next-pwa` 或手动配 Workbox。先以 PWA 验证业务，降低初期开发成本。 |
+| **Taro** | 4.x | 跨端小程序       | 京东出品。React 语法编写，一套代码编译到微信/支付宝/抖音小程序 + H5。待 PWA 验证 PMF 后再补入。                             |
 
 #### 监控 & 分析
 
-| 技术 | 版本 | 角色 | 选型理由 |
-|------|------|------|---------|
-| **Sentry** | latest | 错误追踪 | React Error Boundary 集成，源码映射，Session Replay。 |
-| **Web Vitals** | — | 性能指标 | LCP/FID(INP)/CLS 上报。`@vercel/speed-insights` 开箱即用。 |
-| **Google Analytics 4** | — | 用户分析 | 电商漏斗分析（浏览→加购→下单→支付转化率）。 |
+| 技术                     | 版本     | 角色   | 选型理由                                               |
+| ---------------------- | ------ | ---- | -------------------------------------------------- |
+| **Sentry**             | latest | 错误追踪 | React Error Boundary 集成，源码映射，Session Replay。       |
+| **Web Vitals**         | —      | 性能指标 | LCP/FID(INP)/CLS 上报。`@vercel/speed-insights` 开箱即用。 |
+| **Google Analytics 4** | —      | 用户分析 | 电商漏斗分析（浏览→加购→下单→支付转化率）。                            |
 
 ---
 
@@ -110,53 +110,53 @@
 
 ### 3.1 核心框架对比
 
-| 维度 | **Next.js 15 ✅** | Nuxt 4 | Remix | SvelteKit | Astro |
-|------|------------------|--------|-------|-----------|-------|
-| **SSR/SSG/ISR** | 🟢 全部支持 | 🟢 全部支持 | 🟢 SSR only | 🟢 全部支持 | 🟡 SSG 为主 |
-| **Server Components** | 🟢 React 19 RSC | 🟡 无 RSC | 🟡 无 RSC | 🟡 无 RSC | 🟡 Islands |
-| **电商 SEO** | 🟢 ISR 最佳 | 🟢 可用 | 🟢 可用 | 🟢 可用 | 🟢 最佳 |
-| **交互密集(购物车/下单)** | 🟢 混合渲染 | 🟢 SPA 模式 | 🟢 迁移到 SPA | 🟢 SPA 模式 | 🔴 不适合 |
-| **生态规模** | 🟢 最大 | 🟡 中等 | 🟡 增长中 | 🟡 较小 | 🟡 内容站 |
-| **小程序支持** | 🟡 Taro(React) | 🟢 uni-app(Vue) | 🟡 无 | 🔴 无 | 🔴 无 |
-| **中国公司使用** | 字节/TikTok/蚂蚁 | 饿了么/美团/B站 | Shopify | 少数 | 少数 |
+| 维度                    | **Next.js 15 ✅** | Nuxt 4          | Remix       | SvelteKit | Astro      |
+| --------------------- | ---------------- | --------------- | ----------- | --------- | ---------- |
+| **SSR/SSG/ISR**       | 🟢 全部支持          | 🟢 全部支持         | 🟢 SSR only | 🟢 全部支持   | 🟡 SSG 为主  |
+| **Server Components** | 🟢 React 19 RSC  | 🟡 无 RSC        | 🟡 无 RSC    | 🟡 无 RSC  | 🟡 Islands |
+| **电商 SEO**            | 🟢 ISR 最佳        | 🟢 可用           | 🟢 可用       | 🟢 可用     | 🟢 最佳      |
+| **交互密集(购物车/下单)**      | 🟢 混合渲染          | 🟢 SPA 模式       | 🟢 迁移到 SPA  | 🟢 SPA 模式 | 🔴 不适合     |
+| **生态规模**              | 🟢 最大            | 🟡 中等           | 🟡 增长中      | 🟡 较小     | 🟡 内容站     |
+| **小程序支持**             | 🟡 Taro(React)   | 🟢 uni-app(Vue) | 🟡 无        | 🔴 无      | 🔴 无       |
+| **中国公司使用**            | 字节/TikTok/蚂蚁     | 饿了么/美团/B站       | Shopify     | 少数        | 少数         |
 
 **结论**：Next.js 在 SSR/ISR 和交互密集的平衡上最优，React Server Components 是 2026-2030 的方向。
 
 ### 3.2 UI 框架对比
 
-| 维度 | **Shadcn/ui ✅** | Ant Design | MUI | Chakra UI | Headless UI |
-|------|-----------------|------------|-----|-----------|-------------|
-| **所有权** | 🟢 代码属于你 | 🟡 npm 依赖 | 🟡 npm 依赖 | 🟡 npm 依赖 | 🟢 代码属于你 |
-| **定制性** | 🟢 源码直接改 | 🟡 theme token | 🟡 theme token | 🟡 theme token | 🟢 完全自由 |
-| **美观度** | 🟢 现代简约 | 🟡 企业风格 | 🟡 Material | 🟢 现代简约 | 🟡 无样式 |
-| **Table/Form 复杂组件** | 🟡 需自己拼 | 🟢 开箱即用 | 🟡 DataGrid 付费 | 🔴 无 | 🔴 无 |
-| **移动端适配** | 🟢 可适配 | 🔴 PC only | 🔴 PC only | 🟡 可适配 | 🟢 可适配 |
-| **体积** | 🟢 按需 | 🟡 较大 | 🔴 大 | 🟡 中等 | 🟢 极小 |
+| 维度                  | **Shadcn/ui ✅** | Ant Design     | MUI            | Chakra UI      | Headless UI |
+| ------------------- | --------------- | -------------- | -------------- | -------------- | ----------- |
+| **所有权**             | 🟢 代码属于你        | 🟡 npm 依赖      | 🟡 npm 依赖      | 🟡 npm 依赖      | 🟢 代码属于你    |
+| **定制性**             | 🟢 源码直接改        | 🟡 theme token | 🟡 theme token | 🟡 theme token | 🟢 完全自由     |
+| **美观度**             | 🟢 现代简约         | 🟡 企业风格        | 🟡 Material    | 🟢 现代简约        | 🟡 无样式      |
+| **Table/Form 复杂组件** | 🟡 需自己拼         | 🟢 开箱即用        | 🟡 DataGrid 付费 | 🔴 无           | 🔴 无        |
+| **移动端适配**           | 🟢 可适配          | 🔴 PC only     | 🔴 PC only     | 🟡 可适配         | 🟢 可适配      |
+| **体积**              | 🟢 按需           | 🟡 较大          | 🔴 大           | 🟡 中等          | 🟢 极小       |
 
 **结论**：两个都用——H5 用户端用 Shadcn/ui（优雅、轻量、移动适配），PC 后台用 Ant Design 5（Table/Form/ProTable 开箱即用）。
 
 ### 3.3 状态管理对比
 
-| 维度 | **TanStack Query ✅** | SWR | Redux Toolkit | Apollo Client |
-|------|----------------------|-----|---------------|---------------|
-| **缓存策略** | 🟢 最丰富 | 🟡 够用 | 🔴 需手写 | 🟡 GraphQL only |
-| **乐观更新** | 🟢 内置 | 🟡 需配置 | 🟡 需手写 | 🟢 内置 |
-| **无限滚动** | 🟢 `useInfiniteQuery` | 🟢 `useSWRInfinite` | 🔴 需手写 | 🟡 需手写 |
-| **DevTools** | 🟢 专用工具 | 🟡 无 | 🟢 Redux DevTools | 🟡 Apollo DevTools |
-| **Next.js 兼容** | 🟢 完美 | 🟢 完美 | 🟡 需配置 | 🟡 GraphQL 限定 |
+| 维度             | **TanStack Query ✅**  | SWR                 | Redux Toolkit     | Apollo Client      |
+| -------------- | --------------------- | ------------------- | ----------------- | ------------------ |
+| **缓存策略**       | 🟢 最丰富                | 🟡 够用               | 🔴 需手写            | 🟡 GraphQL only    |
+| **乐观更新**       | 🟢 内置                 | 🟡 需配置              | 🟡 需手写            | 🟢 内置              |
+| **无限滚动**       | 🟢 `useInfiniteQuery` | 🟢 `useSWRInfinite` | 🔴 需手写            | 🟡 需手写             |
+| **DevTools**   | 🟢 专用工具               | 🟡 无                | 🟢 Redux DevTools | 🟡 Apollo DevTools |
+| **Next.js 兼容** | 🟢 完美                 | 🟢 完美               | 🟡 需配置            | 🟡 GraphQL 限定      |
 
 ### 3.4 对比：为什么不用 Vue？
 
 Vue 生态在中国确实更流行（饿了么/美团/有赞），但：
 
-| 维度 | React/Next.js | Vue/Nuxt |
-|------|---------------|----------|
-| **Server Components** | ✅ React 19 RSC | ❌ 无等价物 |
-| **ISR 粒度** | ✅ `revalidate` 60s/page | ⚠️ 有但生态小 |
-| **TypeScript 体验** | ✅ JSX 天然类型推断 | ⚠️ 模板 TS 推断有限 |
-| **小程序** | ⚠️ Taro（React 版） | ✅ uni-app 更成熟 |
-| **全球人才池** | ✅ 最大 | ⚠️ 中国为主 |
-| **AI 编码辅助** | ✅ 训练数据最多 | ⚠️ 较少 |
+| 维度                    | React/Next.js           | Vue/Nuxt      |
+| --------------------- | ----------------------- | ------------- |
+| **Server Components** | ✅ React 19 RSC          | ❌ 无等价物        |
+| **ISR 粒度**            | ✅ `revalidate` 60s/page | ⚠️ 有但生态小      |
+| **TypeScript 体验**     | ✅ JSX 天然类型推断            | ⚠️ 模板 TS 推断有限 |
+| **小程序**               | ⚠️ Taro（React 版）        | ✅ uni-app 更成熟 |
+| **全球人才池**             | ✅ 最大                    | ⚠️ 中国为主       |
+| **AI 编码辅助**           | ✅ 训练数据最多                | ⚠️ 较少         |
 
 小程序方面的劣势由 Taro 4 弥补——京东的 Taro 在 React 生态小程序编译方面已经足够成熟。
 
@@ -291,18 +291,18 @@ front-end/
 
 ### 4.3 页面 → 渲染模式映射
 
-| 页面 | 渲染模式 | 理由 |
-|------|---------|------|
-| 首页 | SSG + ISR 60s | 内容相对稳定，需要秒开 + SEO |
-| 商品列表 | ISR 60s | 商品变化中等，需要 SEO + 搜索友好 |
-| 商品详情 | ISR 300s + Client islands | 基本信息稳定，库存/价格 client fetch |
-| 分类页 | SSG | 类目结构变化极少 |
-| 购物车 | Client Component | 纯交互，无需 SEO |
-| 下单/支付 | Client Component | 表单密集，需要实时校验 |
-| 订单列表/详情 | SSR (auth required) | 需要登录，但不能缓存 |
-| 登录/注册 | Client Component | 表单交互 |
-| 商家后台 | SPA (Client only) | 纯管理功能，无需 SEO |
-| 平台管理后台 | SPA (Client only) | 纯管理功能，无需 SEO |
+| 页面      | 渲染模式                      | 理由                        |
+| ------- | ------------------------- | ------------------------- |
+| 首页      | SSG + ISR 60s             | 内容相对稳定，需要秒开 + SEO         |
+| 商品列表    | ISR 60s                   | 商品变化中等，需要 SEO + 搜索友好      |
+| 商品详情    | ISR 300s + Client islands | 基本信息稳定，库存/价格 client fetch |
+| 分类页     | SSG                       | 类目结构变化极少                  |
+| 购物车     | Client Component          | 纯交互，无需 SEO                |
+| 下单/支付   | Client Component          | 表单密集，需要实时校验               |
+| 订单列表/详情 | SSR (auth required)       | 需要登录，但不能缓存                |
+| 登录/注册   | Client Component          | 表单交互                      |
+| 商家后台    | SPA (Client only)         | 纯管理功能，无需 SEO              |
+| 平台管理后台  | SPA (Client only)         | 纯管理功能，无需 SEO              |
 
 ---
 
@@ -396,24 +396,24 @@ Gateway (Spring Cloud Gateway) ──── 限流/熔断 (Sentinel)
 后端微服务集群
 ```
 
-| 层级 | 优化手段 | 目标 |
-|------|---------|------|
-| **静态资源** | CDN + immutable cache + 图片 WebP/AVIF 自动转换 | 图片 LCP < 2.5s |
-| **页面渲染** | ISR（商品列表/详情）+ SSG（首页/分类） | TTFB < 200ms |
-| **API 缓存** | TanStack Query 客户端缓存 + `staleTime` 配置 | 减少 70% 重复请求 |
-| **代码分割** | Next.js Route-based splitting + `dynamic(() => import())` | 首屏 JS < 100KB |
-| **图片优化** | `next/image` (自动 WebP/AVIF, lazy loading, blur placeholder) | 图片体积减少 60% |
-| **字体** | `next/font` (自托管 Google Fonts, 无外部请求) | FOIT 0ms |
-| **预取** | `<Link prefetch>` 视口内链接自动预取 | 页面切换 < 100ms |
-| **PWA** | Service Worker 离线缓存 + Cache-Control: stale-while-revalidate | 二次访问秒开 |
+| 层级         | 优化手段                                                        | 目标            |
+| ---------- | ----------------------------------------------------------- | ------------- |
+| **静态资源**   | CDN + immutable cache + 图片 WebP/AVIF 自动转换                   | 图片 LCP < 2.5s |
+| **页面渲染**   | ISR（商品列表/详情）+ SSG（首页/分类）                                    | TTFB < 200ms  |
+| **API 缓存** | TanStack Query 客户端缓存 + `staleTime` 配置                       | 减少 70% 重复请求   |
+| **代码分割**   | Next.js Route-based splitting + `dynamic(() => import())`   | 首屏 JS < 100KB |
+| **图片优化**   | `next/image` (自动 WebP/AVIF, lazy loading, blur placeholder) | 图片体积减少 60%    |
+| **字体**     | `next/font` (自托管 Google Fonts, 无外部请求)                       | FOIT 0ms      |
+| **预取**     | `<Link prefetch>` 视口内链接自动预取                                 | 页面切换 < 100ms  |
+| **PWA**    | Service Worker 离线缓存 + Cache-Control: stale-while-revalidate | 二次访问秒开        |
 
 ### 6.2 Core Web Vitals 目标
 
-| 指标 | 目标 | 说明 |
-|------|------|------|
-| **LCP** (最大内容绘制) | < 2.5s | 商品首图、轮播 Banner |
-| **INP** (交互到下次绘制) | < 200ms | 加购按钮、结算流程 |
-| **CLS** (累计布局偏移) | < 0.1 | 防止图片加载导致的布局跳动 |
+| 指标                | 目标      | 说明             |
+| ----------------- | ------- | -------------- |
+| **LCP** (最大内容绘制)  | < 2.5s  | 商品首图、轮播 Banner |
+| **INP** (交互到下次绘制) | < 200ms | 加购按钮、结算流程      |
+| **CLS** (累计布局偏移)  | < 0.1   | 防止图片加载导致的布局跳动  |
 
 ---
 
@@ -421,13 +421,13 @@ Gateway (Spring Cloud Gateway) ──── 限流/熔断 (Sentinel)
 
 ### 7.1 测试分布（参考 11-Test-Strategy）
 
-| 层级 | 工具 | 覆盖目标 | 示例 |
-|------|------|---------|------|
-| **单元测试** | Vitest | 工具函数、Zod schema、状态管理 | `formatPrice(1250) → "12.50"` |
-| **组件测试** | Vitest + RTL | UI 交互、表单校验、边界状态 | 购物车数量加减、表单错误提示 |
-| **集成测试** | Playwright + MSW | 关键业务流程的端到端 | 浏览商品→加购→下单→支付成功 |
-| **视觉回归** | Percy / Chromatic | 组件视觉一致性 | 按钮/卡片/表单样式变更检测 |
-| **性能测试** | Lighthouse CI | PR 级别性能门禁 | LCP > 3s 阻止合并 |
+| 层级       | 工具                | 覆盖目标                 | 示例                            |
+| -------- | ----------------- | -------------------- | ----------------------------- |
+| **单元测试** | Vitest            | 工具函数、Zod schema、状态管理 | `formatPrice(1250) → "12.50"` |
+| **组件测试** | Vitest + RTL      | UI 交互、表单校验、边界状态      | 购物车数量加减、表单错误提示                |
+| **集成测试** | Playwright + MSW  | 关键业务流程的端到端           | 浏览商品→加购→下单→支付成功               |
+| **视觉回归** | Percy / Chromatic | 组件视觉一致性              | 按钮/卡片/表单样式变更检测                |
+| **性能测试** | Lighthouse CI     | PR 级别性能门禁            | LCP > 3s 阻止合并                 |
 
 ### 7.2 关键 E2E 场景
 
@@ -485,12 +485,12 @@ Gateway (Spring Cloud Gateway) ──── 限流/熔断 (Sentinel)
                     └─────────────────────────┘
 ```
 
-| 组件 | 部署方式 | 说明 |
-|------|---------|------|
-| **静态资源** | CDN (阿里云 CDN/Cloudflare) | `_next/static/` + `public/` 目录 |
-| **Next.js App** | Docker 容器 (K8s/Compose) | `next start` 生产模式，多实例 + 负载均衡 |
-| **ISR 缓存** | 共享 Redis / 文件系统 | 多实例间 ISR 缓存一致性 |
-| **图片优化** | `next/image` + 独立图片服务 | 生产环境可替换为阿里云图片处理 |
+| 组件              | 部署方式                     | 说明                             |
+| --------------- | ------------------------ | ------------------------------ |
+| **静态资源**        | CDN (阿里云 CDN/Cloudflare) | `_next/static/` + `public/` 目录 |
+| **Next.js App** | Docker 容器 (K8s/Compose)  | `next start` 生产模式，多实例 + 负载均衡   |
+| **ISR 缓存**      | 共享 Redis / 文件系统          | 多实例间 ISR 缓存一致性                 |
+| **图片优化**        | `next/image` + 独立图片服务    | 生产环境可替换为阿里云图片处理                |
 
 ---
 
@@ -534,14 +534,14 @@ Gateway (Spring Cloud Gateway) ──── 限流/熔断 (Sentinel)
 
 ### 10.1 API 协议
 
-| 维度 | 约定 |
-|------|------|
-| **Base URL** | `https://api.icedmall.com` (外部) / `http://gate-service:8080` (内部) |
-| **Content-Type** | `application/json; charset=utf-8` |
-| **Auth** | Cookie: `access_token` (httpOnly, Secure, SameSite=Lax, max-age=1800) |
-| **响应格式** | `{ "code": 200, "msg": "success", "data": T }` (参考 `ia-common Result<T>`) |
-| **错误格式** | `{ "code": 40001, "msg": "手机号已注册", "data": null }` |
-| **分页格式** | `{ "code": 200, "data": { "records": T[], "total": 100, "size": 20, "current": 1 } }` |
+| 维度               | 约定                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| **Base URL**     | `https://api.icedmall.com` (外部) / `http://gate-service:8080` (内部)                     |
+| **Content-Type** | `application/json; charset=utf-8`                                                     |
+| **Auth**         | Cookie: `access_token` (httpOnly, Secure, SameSite=Lax, max-age=1800)                 |
+| **响应格式**         | `{ "code": 200, "msg": "success", "data": T }` (参考 `ia-common Result<T>`)             |
+| **错误格式**         | `{ "code": 40001, "msg": "手机号已注册", "data": null }`                                    |
+| **分页格式**         | `{ "code": 200, "data": { "records": T[], "total": 100, "size": 20, "current": 1 } }` |
 
 ### 10.2 类型生成
 
@@ -558,18 +558,18 @@ npx openapi-typescript http://localhost:8080/v3/api-docs -o packages/api/types/s
 
 ## 十一、禁止事项
 
-| ❌ 禁止 | ✅ 替代 |
-|--------|--------|
-| Redux (模板太多) | Zustand + TanStack Query |
-| CSS-in-JS 运行时 (RSC 不兼容) | Tailwind CSS + CSS Modules |
-| class 组件 | React 函数组件 + Hooks |
-| `any` 类型 | 严格 TypeScript + Zod 推断 |
-| 直接操作 localStorage Token | httpOnly Cookie |
-| Webpack 自定义配置 | Turbopack / 零配置 |
-| npm/yarn | pnpm (Monorepo 最佳) |
-| Axios (非必需) | 原生 `fetch` + TanStack Query (RSC 兼容) |
-| 在 Client Component 中 `fetch` 数据库 | Server Actions / API Routes |
-| 图片用 `<img>` | `next/image` (自动优化) |
+| ❌ 禁止                             | ✅ 替代                                 |
+| -------------------------------- | ------------------------------------ |
+| Redux (模板太多)                     | Zustand + TanStack Query             |
+| CSS-in-JS 运行时 (RSC 不兼容)          | Tailwind CSS + CSS Modules           |
+| class 组件                         | React 函数组件 + Hooks                   |
+| `any` 类型                         | 严格 TypeScript + Zod 推断               |
+| 直接操作 localStorage Token          | httpOnly Cookie                      |
+| Webpack 自定义配置                    | Turbopack / 零配置                      |
+| npm/yarn                         | pnpm (Monorepo 最佳)                   |
+| Axios (非必需)                      | 原生 `fetch` + TanStack Query (RSC 兼容) |
+| 在 Client Component 中 `fetch` 数据库 | Server Actions / API Routes          |
+| 图片用 `<img>`                      | `next/image` (自动优化)                  |
 
 ---
 
@@ -607,11 +607,11 @@ npx openapi-typescript http://localhost:8080/v3/api-docs -o packages/api/types/s
 
 ### 13.1 AI Chat 组件选型
 
-| 方案 | 适用场景 | 优势 |
-|------|---------|------|
+| 方案                                              | 适用场景      | 优势                                                                    |
+| ----------------------------------------------- | --------- | --------------------------------------------------------------------- |
 | **Vercel AI SDK** (`@ai-sdk/react` + `useChat`) | 🟢 **首选** | `useChat` hook 一行代码接入 SSE 流式对话；自动处理 loading/error/重连；支持 tool-call 可视化 |
-| **SSE EventSource + 自建 UI** | 需完全自定义 | 无框架依赖，UI 完全自主 |
-| **shadcn-chat** | 快速原型 | 基于 shadcn/ui 的现成 Chat 组件，与项目 UI 体系一致 |
+| **SSE EventSource + 自建 UI**                     | 需完全自定义    | 无框架依赖，UI 完全自主                                                         |
+| **shadcn-chat**                                 | 快速原型      | 基于 shadcn/ui 的现成 Chat 组件，与项目 UI 体系一致                                  |
 
 **推荐组合：Vercel AI SDK (`useChat`) + shadcn-chat 基础样式 + 自定义业务组件。**
 
@@ -660,21 +660,22 @@ export function ShoppingAssistant() {
 ```
 
 **关键决策**：
+
 - **Next.js API Route 作为 BFF**：前端请求先到 Next.js server，由 server 转发到 ai-service，避免 CORS + 隐藏 API Key
 - **流式消费用 `useChat`**：Vercel AI SDK 自动处理 `text/event-stream` 解析、重连、状态同步
 - **会话管理**：`conversationId` 存储在 Zustand store，首次对话自动创建，后续请求携带
 
 ### 13.3 交互设计规范
 
-| 状态 | UI 表现 | 说明 |
-|------|--------|------|
-| **空闲** | 输入框 + 欢迎语 + 快捷问题推荐 | 引导用户开始对话 |
-| **等待中** | 发送按钮变 loading + 消息列表末尾显示骨架屏 | 用户发送后，等待首个 token 返回 |
-| **流式输出中** | 打字机效果 + 光标闪烁 | SSE 逐 token 渲染 |
-| **Tool 调用中** | 内联提示："正在搜索商品..." → 完成后展开 Tool 结果卡片 | 透明度提示 AI 在做什么 |
-| **错误** | Toast 提示 + 重试按钮 | 区分：网络错误/超时/AI未启用/限流 |
-| **完成** | 完整回复 + 👍👎反馈按钮 | 收集用户反馈 |
-| **AI 未启用** | 静态提示："AI 助手暂未开启" | `ai.enabled=false` 时的降级 UI |
+| 状态           | UI 表现                              | 说明                         |
+| ------------ | ---------------------------------- | -------------------------- |
+| **空闲**       | 输入框 + 欢迎语 + 快捷问题推荐                 | 引导用户开始对话                   |
+| **等待中**      | 发送按钮变 loading + 消息列表末尾显示骨架屏        | 用户发送后，等待首个 token 返回        |
+| **流式输出中**    | 打字机效果 + 光标闪烁                       | SSE 逐 token 渲染             |
+| **Tool 调用中** | 内联提示："正在搜索商品..." → 完成后展开 Tool 结果卡片 | 透明度提示 AI 在做什么              |
+| **错误**       | Toast 提示 + 重试按钮                    | 区分：网络错误/超时/AI未启用/限流        |
+| **完成**       | 完整回复 + 👍👎反馈按钮                    | 收集用户反馈                     |
+| **AI 未启用**   | 静态提示："AI 助手暂未开启"                   | `ai.enabled=false` 时的降级 UI |
 
 ### 13.4 性能注意事项
 

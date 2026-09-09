@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
-@FeignClient(name = "item-service", path = "/internal/item/sku")
+@FeignClient(name = "item-service", path = "/internal/item/sku", contextId = "sku")
 public interface SkuClient {
 
     @GetMapping("/list/batch")

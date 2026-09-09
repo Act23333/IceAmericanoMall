@@ -1,10 +1,8 @@
 package org.icedamericanomall.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
-import org.icedamericanomall.domain.dto.CouponAvailableFilterReq;
 import org.icedamericanomall.domain.entity.CouponEntity;
 import org.icedamericanomall.domain.entity.UserCouponEntity;
-import org.icedamericanomall.domain.vo.CouponAvailableVO;
 import java.util.List;
 
 public interface CouponService extends IService<CouponEntity> {
@@ -18,9 +16,9 @@ public interface CouponService extends IService<CouponEntity> {
     /** 查询用户已使用/已过期优惠券 */
     List<UserCouponEntity> getUserUsedCoupons(Long userId);
 
-    /** V4.3: 使用优惠券，返回实际抵扣金额（分）。新增 productIds+categoryIds 用于 scope 校验 */
+    /** V4.2: 使用优惠券（下单时调用），返回实际抵扣金额（分）。新增 orderType+sellerId 用于类别/店铺校验 */
     int useCoupon(Long userId, Long userCouponId, String orderNo, int orderAmount,
-                  Integer orderType, Long sellerId, String productIds, String categoryIds);
+                  Integer orderType, Long sellerId);
 
     /** 回滚优惠券（取消订单时调用） */
     void rollbackCoupon(Long userCouponId);
@@ -30,17 +28,20 @@ public interface CouponService extends IService<CouponEntity> {
 
     // === V4.0: 多维度优惠券模型 ===
 
-    /** V4.0: 购买付费优惠券（创建PRE_PAID状态的user_coupon记录，status=4） */
-    UserCouponEntity purchaseCoupon(Long userId, String couponId);
-
     /** V4.0: 秒杀级优惠券领取（Redis Lua脚本，高并发，grabType=NEED_GRAB时使用） */
     UserCouponEntity claimWithGrab(Long userId, String couponId);
 
-    // === V4.3: 预过滤 + 适用范围 ===
+    // === V4.4: smartClaim + 支付后发券 ===
 
-    /** V4.3: 结算页预过滤——根据订单上下文返回可用+不可用的券列表（京东标准） */
-    List<CouponAvailableVO> getAvailableCoupons(Long userId, CouponAvailableFilterReq filter);
+    /**
+     * V4.4: 智能领取——根据 grabType 自动路由（DB 或 Redis Lua）。
+     * 替代了之前的 claim/grab 分离端点，前端统一调此方法。
+     */
+    UserCouponEntity smartClaim(Long userId, String couponId);
 
-    /** V4.3: 批量查询券的叠加规则（下单时校验多券组合合法性） */
-    List<CouponEntity> getBatchByIds(List<Long> couponIds);
+    /**
+     * V4.4: 支付成功后发券（付费券购买→支付→回调发券，京东标准）。
+     * 直接创建 status=1 的 user_coupon，跳过 PRE_PAID 状态。
+     */
+    UserCouponEntity grantAfterPayment(Long userId, String couponId);
 }

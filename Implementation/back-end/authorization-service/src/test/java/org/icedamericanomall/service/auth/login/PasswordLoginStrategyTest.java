@@ -39,7 +39,9 @@ class PasswordLoginStrategyTest {
     @DisplayName("用户名密码登录 - 正确凭证 -> 调用用户服务并返回Token")
     void shouldReturnToken_whenUsernamePasswordValid() {
         LoginReq request = loginReq(IdentityTypeEnum.USERNAME, "tom_1", "Aa123456!");
-        LoginRespDTO loginResp = new LoginRespDTO(1L, "tom_1");
+        LoginRespDTO loginResp = new LoginRespDTO();
+        loginResp.setUserId(1L);
+        loginResp.setUsername("tom_1");
         OAuth2TokenResp tokenResp = new OAuth2TokenResp();
         when(userClient.loginByPassword(any(PasswordLoginReqDTO.class))).thenReturn(loginResp);
         when(loginTokenService.createLoginResponse(loginResp)).thenReturn(tokenResp);
@@ -57,7 +59,9 @@ class PasswordLoginStrategyTest {
     @DisplayName("手机号密码登录 - 正确凭证 -> 使用手机号查询")
     void shouldUsePhone_whenPhonePasswordValid() {
         LoginReq request = loginReq(IdentityTypeEnum.PHONE, "13888888888", "Aa123456!");
-        LoginRespDTO loginResp = new LoginRespDTO(1L, "ice_user");
+        LoginRespDTO loginResp = new LoginRespDTO();
+        loginResp.setUserId(1L);
+        loginResp.setUsername("ice_user");
         when(userClient.loginByPassword(any(PasswordLoginReqDTO.class))).thenReturn(loginResp);
         when(loginTokenService.createLoginResponse(loginResp)).thenReturn(new OAuth2TokenResp());
 
