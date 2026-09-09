@@ -1,0 +1,805 @@
+
+
+# ============================================
+# IceAmericanoMall 分布式容器编排
+# 默认启动基础三件 (MySQL + Redis + Nacos)
+# v1.1 profile: ES + RabbitMQ + XXL-Job + MinIO + Nginx
+# ============================================
+
+x-common-logging: &common-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "3"
+
+x-common-restart: &common-restart
+  restart: unless-stopped
+
+networks:
+  backend:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+services:
+  # ==================== 基础设施 (默认启动) ====================
+
+  # ---------- MySQL 8.4 (主库) ----------
+  mysql:
+    image: mysql:8.4
+    container_name: ia-mysql
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-icedamericano_mall}
+      MYSQL_USER: ${MYSQL_USER:-iamall}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-iamall123}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./database/Initialize.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./database/migrations/V1.1__add_points.sql:/docker-entrypoint-initdb.d/02-points.sql:ro
+      - ./database/migrations/V1.1__add_coupon.sql:/docker-entrypoint-initdb.d/03-coupon.sql:ro
+      - ./database/migrations/V1.1__add_logistics_status.sql:/docker-entrypoint-initdb.d/04-logistics.sql:ro
+      - ./database/migrations/V1.1__add_review_favorite.sql:/docker-entrypoint-initdb.d/05-review.sql:ro
+      - ./database/migrations/V1.2__add_flash_sale_home.sql:/docker-entrypoint-initdb.d/06-flash-home.sql:ro
+      - ./database/migrations/V1.2__add_operation_log.sql:/docker-entrypoint-initdb.d/07-oplog.sql:ro
+      - ./database/migrations/V1.2__add_shop_coupon.sql:/docker-entrypoint-initdb.d/08-shop-coupon.sql:ro
+      - ./database/migrations/V2.0__add_after_sale_application.sql:/docker-entrypoint-initdb.d/09-after-sale.sql:ro
+      - ./database/migrations/V2.1__add_settlement.sql:/docker-entrypoint-initdb.d/10-settlement.sql:ro
+      - ./database/middleware/nacos-mysql.sql:/docker-entrypoint-initdb.d/11-nacos-mysql.sql:ro
+      - ./database/middleware/xxl-job-mysql.sql:/docker-entrypoint-initdb.d/12-xxl-job-mysql.sql:ro
+      - ./database/middleware/seata-mysql.sql:/docker-entrypoint-initdb.d/13-seata-mysql.sql:ro
+      - ./docker/mysql/conf.d/custom.cnf:/etc/mysql/conf.d/custom.cnf:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root123}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ---------- Redis 7 (RDB + AOF 持久化) ----------
+  redis:
+    image: redis:7-alpine
+    container_name: ia-redis
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    sysctls:
+      - net.core.somaxconn=1024
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------- Nacos 2.4 (注册中心 + 配置中心, standalone) ----------
+  nacos:
+    image: nacos/nacos-server:v2.4.0
+    container_name: ia-nacos
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      MODE: standalone
+      PREFER_HOST_MODE: hostname
+      NACOS_AUTH_ENABLE: "true"
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-your_base64_key_here}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_DB_NAME: nacos_config
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_USER: root
+      MYSQL_SERVICE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_SERVICE_DB_PARAM: characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      # MYSQL_SERVICE_HOST: mysql
+      # MYSQL_SERVICE_DB_NAME: nacos_config
+      # MYSQL_SERVICE_PORT: 3306
+#	 JVM_XMS: 256m
+#	 JVM_XMX: 256m
+    ports:
+      - "${NACOS_HTTP_PORT:-8848}:8848"
+      - "${NACOS_GRPC_PORT:-9848}:9848"
+    volumes:
+      - nacos-logs:/home/nacos/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8848/nacos/v1/console/health/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  # ==================== V1.1 中间件 (通过 --profile v1.1 启用) ====================
+
+  # ---------- ElasticSearch 7.17 ----------
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.25
+    container_name: ia-elasticsearch
+    profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      discovery.type: single-node
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+      xpack.security.enabled: "false"
+      xpack.monitoring.collection.enabled: "true"
+      bootstrap.memory_lock: "true"
+      path.repo: /usr/share/elasticsearch/snapshots
+    ports:
+      - "${ES_HTTP_PORT:-9200}:9200"
+      - "${ES_TRANSPORT_PORT:-9300}:9300"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+      - es-snapshots:/usr/share/elasticsearch/snapshots
+      - ./docker/es/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q 'green\\|yellow'"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ---------- RabbitMQ 3.13 Management ----------
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: ia-rabbitmq
+    profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-admin123}
+      # 以下两行已删除，改为配置文件
+      # RABBITMQ_VM_MEMORY_HIGH_WATERMARK: 0.6
+      # RABBITMQ_DISK_FREE_LIMIT: 2GB
+    ports:
+      - "${RABBITMQ_AMQP_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro   # 新增挂载
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ---------- RocketMQ 5.3 NameServer + Broker ----------
+  # 大厂标准：阿里/京东延迟消息（替代 RabbitMQ TTL + DLX）
+  ia-rocketmq-namesrv:
+    image: apache/rocketmq:5.3.0
+    container_name: ia-rocketmq-namesrv
+    profiles: ["v1.1", "v4.0"]
+    command: sh mqnamesrv
+    ports:
+      - "9876:9876"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "sh", "-c", "netstat -an | grep 9876"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  ia-rocketmq-broker:
+    image: apache/rocketmq:5.3.0
+    container_name: ia-rocketmq-broker
+    profiles: ["v1.1", "v4.0"]
+    command: sh mqbroker -n ia-rocketmq-namesrv:9876 -c /home/rocketmq/conf/broker.conf
+    ports:
+      - "10911:10911"  # 生产者
+      - "10909:10909"  # 控制台(非官方)
+    environment:
+      NAMESRV_ADDR: ia-rocketmq-namesrv:9876
+      JAVA_OPT_EXT: "-Xms512m -Xmx512m -Xmn256m"
+    volumes:
+      - ./docker/rocketmq/broker.conf:/home/rocketmq/conf/broker.conf:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    depends_on:
+      - ia-rocketmq-namesrv
+    healthcheck:
+      test: ["CMD", "sh", "-c", "netstat -an | grep 10911"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # ---------- XXL-Job Admin 2.4.2 ----------
+  xxl-job-admin:
+    image: xuxueli/xxl-job-admin:2.4.2
+    container_name: ia-xxl-job
+    profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      JAVA_OPTS: "-Xms256m -Xmx512m -XX:+UseG1GC"
+      PARAMS: >-
+        --logging.level.root=DEBUG
+        --logging.level.org.springframework.web=DEBUG
+        --spring.datasource.url=jdbc:mysql://mysql:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+        --spring.datasource.username=root
+        --spring.datasource.password=${MYSQL_ROOT_PASSWORD:-root123}
+        --server.servlet.context-path=/xxl-job-admin
+        --xxl.job.accessToken=${XXL_JOB_ACCESS_TOKEN:-iamall_token}
+        --server.address=0.0.0.0
+        --server.tomcat.max-connections=200
+        --server.tomcat.accept-count=100
+        --server.tomcat.threads.max=50
+    ports:
+      - "${XXL_JOB_PORT:-8088}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+
+  # ---------- MinIO ----------
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    container_name: ia-minio
+    profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BROWSER_REDIRECT_URL: ""
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ---------- Sentinel Dashboard 1.8.6 (流量控制 + 熔断降级) ----------
+  sentinel:
+    image: bladex/sentinel-dashboard:1.8.6
+    container_name: ia-sentinel
+    profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      SERVER_PORT: 8858
+      SENTINEL_DASHBOARD_USERNAME: ${SENTINEL_USERNAME:-sentinel}
+      SENTINEL_DASHBOARD_PASSWORD: ${SENTINEL_PASSWORD:-sentinel}
+      JAVA_OPTS: -Dserver.port=8858 -Dcsp.sentinel.dashboard.server=localhost:8858 -Dproject.name=sentinel-dashboard
+    ports:
+      - "${SENTINEL_PORT:-8858}:8858"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8858"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ---------- Seata Server 2.5 (分布式事务 TC, SCA 2025.0.0.0 官方适配) ----------
+  seata:
+    image: apache/seata-server:2.5.0
+    container_name: ia-seata
+    profiles: ["v1.1"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      # 可选：动态注入Nacos账号密码，yml配合占位符使用
+      SEATA_NACOS_USER: ${SEATA_NACOS_USER:-nacos}
+      SEATA_NACOS_PWD: ${SEATA_NACOS_PWD:-nacoss}
+      # Nacos 2.4 identity 认证，需与 nacos 服务的值一致
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}
+      # 对外暴露宿主机IP，其他微服务能正常连接TC
+      SEATA_IP: 192.168.10.128
+    ports:
+      # RPC核心端口，必须对外开放
+      - "${SEATA_RPC_PORT:-8091}:8091"
+      # 控制台端口，可选注释掉不暴露
+      - "${SEATA_CONSOLE_PORT:-7091}:7091"
+    volumes:
+      - ./docker/seata/application.yml:/seata-server/resources/application.yml:ro
+      - seata-logs:/root/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    # 修复：TCP探测RPC 8091端口，不再curl http
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8091"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+  
+  # ==================== V1.2 反向代理 (--profile v1.2) ====================
+
+  # ---------- 前端: 用户端 (Next.js 15) ----------
+  frontend-web:
+    build:
+      context: ../front-end
+      dockerfile: apps/web/Dockerfile
+    container_name: ia-frontend-web
+    profiles: ["v1.2"]
+    restart: unless-stopped
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://nginx/api
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ---------- 前端: 平台管理后台 ----------
+  frontend-admin:
+    build:
+      context: ../front-end
+      dockerfile: apps/admin/Dockerfile
+    container_name: ia-frontend-admin
+    profiles: ["v1.2"]
+    restart: unless-stopped
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://nginx/api
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ---------- 前端: 商家后台 ----------
+  frontend-seller:
+    build:
+      context: ../front-end
+      dockerfile: apps/seller/Dockerfile
+    container_name: ia-frontend-seller
+    profiles: ["v1.2"]
+    restart: unless-stopped
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://nginx/api
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3002"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ---------- Nginx 反向代理 ----------
+  nginx:
+    build:
+      context: ./docker/nginx
+      dockerfile: Dockerfile
+    container_name: ia-nginx
+    profiles: ["v1.2"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - nginx-logs:/var/log/nginx
+      - nginx-cache:/var/cache/nginx
+    depends_on:
+      nacos:
+        condition: service_started
+      frontend-web:
+        condition: service_started
+      frontend-admin:
+        condition: service_started
+      frontend-seller:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ==================== 可观测性 (--profile observability；依赖 ES，可同时 --profile v1.1) ====================
+
+  # ---------- Prometheus (指标采集，抓各服务 /actuator/prometheus) ----------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: ia-prometheus
+    profiles: ["observability"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+
+  # ---------- Grafana (指标面板) ----------
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: ia-grafana
+    profiles: ["observability"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+
+  # ---------- SkyWalking OAP (链路追踪后端，存储接现有 ES) ----------
+  skywalking-oap:
+    image: apache/skywalking-oap-server:9.7.0
+    container_name: ia-skywalking-oap
+    profiles: ["observability"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      SW_STORAGE: elasticsearch
+      SW_STORAGE_ES_CLUSTER_NODES: elasticsearch:9200
+      JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "11800:11800"   # gRPC（Agent 上报）
+      - "12800:12800"   # HTTP（UI 查询）
+
+  # ---------- SkyWalking UI (链路拓扑界面) ----------
+  skywalking-ui:
+    image: apache/skywalking-ui:9.7.0
+    container_name: ia-skywalking-ui
+    profiles: ["observability"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      SW_OAP_ADDRESS: http://skywalking-oap:12800
+    ports:
+      - "${SKYWALKING_UI_PORT:-8090}:8080"
+    depends_on:
+      - skywalking-oap
+
+  # ---------- Logstash (日志管道 → ES) ----------
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.17.25
+    container_name: ia-logstash
+    profiles: ["observability"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    volumes:
+      - ./docker/logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    ports:
+      - "5044:5044"   # beats
+      - "5000:5000"   # tcp json
+
+  # ---------- Kibana (日志检索界面) ----------
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.25
+    container_name: ia-kibana
+    profiles: ["observability"]
+    <<: *common-restart
+    logging: *common-logging
+    networks:
+      - backend
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"
+
+volumes:
+  nginx-cache:
+    driver: local
+  mysql-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/mysql
+  redis-data:
+    driver: local
+  nacos-logs:
+    driver: local
+  es-data:
+    driver: local
+  es-snapshots:
+    driver: local
+  rabbitmq-data:
+    driver: local
+  minio-data:
+    driver: local
+  seata-logs:
+    driver: local
+  nginx-logs:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  pg-data:
+    driver: local
+  kafka-data:
+    driver: local
+  zk-data:
+    driver: local
+  hadoop-nn:
+    driver: local
+  hadoop-dn:
+    driver: local
+
+  # ═══════════════════════════════════════════════════════
+  # V4.0 学习组件 (profile: v4.0)
+  # 目的: 学习大厂全链路数据处理流程
+  # V4.x 精简: 见 02-Architecture.md §2.13
+  # ═══════════════════════════════════════════════════════
+
+  # ── PostgreSQL 16 + pgvector ──
+  ia-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ia-postgres
+    profiles: ["v4.0"]
+    environment:
+      POSTGRES_DB: icedmall
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # ── PgBouncer 连接池 ──
+  ia-pgbouncer:
+    image: bitnami/pgbouncer:1.23
+    container_name: ia-pgbouncer
+    profiles: ["v4.0"]
+    environment:
+      PGBOUNCER_DATABASE: icedmall
+      PGBOUNCER_PORT: 6432
+      POSTGRESQL_HOST: ia-postgres
+      POSTGRESQL_PASSWORD: postgres123
+    ports:
+      - "6432:6432"
+    depends_on:
+      - ia-postgres
+
+  # ── Zookeeper (Kafka 集群协调，V4.x 可去) ──
+  ia-zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.0
+    container_name: ia-zookeeper
+    profiles: ["v4.0"]
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zk-data:/var/lib/zookeeper/data
+
+  # ── Kafka (事件流管道) ──
+  ia-kafka:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: ia-kafka
+    profiles: ["v4.0"]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: ia-zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    depends_on:
+      - ia-zookeeper
+
+  # ── Flink (流计算) ──
+  ia-flink-jobmanager:
+    image: flink:1.20-scala_2.12
+    container_name: ia-flink-jobmanager
+    profiles: ["v4.0"]
+    command: jobmanager
+    environment:
+      FLINK_PROPERTIES: "jobmanager.rpc.address: ia-flink-jobmanager"
+    ports:
+      - "8081:8081"
+
+  ia-flink-taskmanager:
+    image: flink:1.20-scala_2.12
+    container_name: ia-flink-taskmanager
+    profiles: ["v4.0"]
+    command: taskmanager
+    environment:
+      FLINK_PROPERTIES: "jobmanager.rpc.address: ia-flink-jobmanager"
+    depends_on:
+      - ia-flink-jobmanager
+
+  # ── Hadoop HDFS (分布式存储) ──
+  ia-hadoop-namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: ia-hadoop-namenode
+    profiles: ["v4.0"]
+    environment:
+      CLUSTER_NAME: icedmall-cluster
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    volumes:
+      - hadoop-nn:/hadoop/dfs/name
+
+  ia-hadoop-datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: ia-hadoop-datanode
+    profiles: ["v4.0"]
+    environment:
+      CLUSTER_NAME: icedmall-cluster
+      CORE_CONF_fs_defaultFS: hdfs://ia-hadoop-namenode:9000
+    volumes:
+      - hadoop-dn:/hadoop/dfs/data
+    depends_on:
+      - ia-hadoop-namenode
+
+  # ── Spark (批量计算) ──
+  ia-spark-master:
+    image: bitnami/spark:3.5
+    container_name: ia-spark-master
+    profiles: ["v4.0"]
+    environment:
+      SPARK_MODE: master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+
+  ia-spark-worker:
+    image: bitnami/spark:3.5
+    container_name: ia-spark-worker
+    profiles: ["v4.0"]
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://ia-spark-master:7077
+    depends_on:
+      - ia-spark-master
+
+  # ── Prometheus AlertManager (告警) ──
+  ia-alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: ia-alertmanager
+    profiles: ["v4.0", "observability"]
+    ports:
+      - "9093:9093"
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    restart: unless-stopped
+

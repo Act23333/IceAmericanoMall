@@ -1,0 +1,225 @@
+# 11 — 测试策略文档
+
+> 来源：`doc/methodology/10-test-strategy.md`（方法论模板）
+> 关联：`05-API-Specification.md`（BDD 契约）、`10-review.md`（测试检查点）
+
+---
+
+## 〇、当前实施状态 vs 目标策略
+
+> ⚠️ 以下测试金字塔为 **V1.1 目标策略**。当前 MVP 阶段的实际覆盖与目标差距较大。
+
+| 测试层级 | 目标占比 | 当前实际 | 状态 |
+|---------|---------|---------|------|
+| Unit (Entity/Enum/DTO) | 70% | **多模块覆盖** | ✅ 部分覆盖 |
+| Unit (Mockito 业务逻辑) | 70% | **多 Manager/Service** (PayManager/OrderManager/SignManager 等) | 🟡 起步→提升 |
+| API / Integration | 20% | **~30 H2 集成测试**（OrderManager/AuthService/Balance/FlashSale/DbSearch/Cart 等，MyBatis-Plus+H2 无 Spring 上下文） | 🟡 起步（替代重量级 @SpringBootTest） |
+| Contract (Pact) | — | **0**（以内部端点 H2 集成 + Feign fallback 单测替代） | 🟡 后续 |
+| E2E | 5% | **0 tests** | ❌ 未开始 |
+| Performance (JMeter) | — | **0 tests** | ❌ 未开始 |
+| JaCoCo 覆盖率 | 70%(目标) | **V2.4 已接入**：父 POM `jacoco-maven-plugin`（report 随 test 生成；排除 POJO/config/生成代码）；`check` 门禁 30% **advisory(不阻断)**，随测试补齐逐步抬高至 70% | 🟡 已接入(advisory) |
+
+**已覆盖模块**: ia-common (8), user-service (9), cart-service (12), pay-service (14), trade-service (16), item-service (5), logistics-service (13)  
+**零测试模块**: authorization-service, gate-service, ia-api, search-service, database
+
+**已知限制**: MyBatis-Plus `ServiceImpl` 的 `lambdaQuery()`/`lambdaUpdate()` 链无法被 Mockito mock（`currentModelClass()` 从 Mapper 接口读取泛型类型信息，在 Mockito 代理中丢失）。这些方法需要 `@SpringBootTest` + H2 或 Testcontainers 集成测试。
+
+---
+
+## 一、测试金字塔（V1.1 目标）
+
+```
+       /\
+      /E2E\          5%   — 核心全链路（下单→支付→发货→收货）
+     /------\
+    /  API   \        20%  — 接口契约测试（每端点 1 正常 + N 异常）
+   /----------\
+  /   Unit     \      70%  — 单元测试（Service/Domain/Util/Converter）
+ /--------------\
+     Security         不按占比 — 越权/注入/签名伪造
+```
+
+| 层级 | 占比 | 范围 | 框架 | 运行频率 |
+|------|------|------|------|---------|
+| Unit | 70% | Service、Domain、Util、Converter | JUnit 5 + Mockito | 每次 push |
+| API / Integration | 20% | Controller → Service → Mapper → DB | SpringBootTest + Testcontainers | 每次 PR |
+| Contract | — | Feign 接口契约 | Pact | 每次 PR |
+| E2E | 5% | 全链路，外部系统 Mock | Postman / Newman | 每次发布前 |
+| Security | — | 越权、注入、签名伪造 | 手动 + OWASP ZAP | 每次大版本 |
+
+---
+
+## 二、BDD → 测试用例映射规则
+
+PRD 中每个 BDD Scenario 映射到至少一个集成测试：
+
+| BDD 场景 | 测试类型 | 最少测试数 |
+|----------|---------|-----------|
+| 正常场景（Happy Path） | API 集成测试 | 1 |
+| 备选场景（Alternative） | API 集成测试 | 每个备选 1 个 |
+| 异常场景（Error） | API 集成测试 + 单元测试 | 每个异常 1 个 |
+
+**命名约定**：`should_[预期行为]_when_[条件]`
+
+### 示例：注册功能
+
+```java
+// BDD 正常场景 → API 测试
+@Test
+@DisplayName("注册 — 新手机号+有效验证码 → 返回Token")
+void shouldReturnToken_whenNewPhoneAndValidCode() { ... }
+
+// BDD 备选场景 → API 测试
+@Test
+@DisplayName("注册 — 已注册手机号 → 返回错误")
+void shouldReturnError_whenPhoneAlreadyRegistered() { ... }
+
+// BDD 备选场景 → API 测试
+@Test
+@DisplayName("注册 — 验证码错误 → 提示错误，允许重试")
+void shouldReturnError_whenWrongSmsCode() { ... }
+```
+
+---
+
+## 三、契约测试 (Contract Testing)
+
+微服务间 Feign 接口通过 **Pact** 做 Consumer-Driven Contract Testing：
+
+### 3.1 原则
+
+- **消费者定义契约**：调用方（如 trade-service）定义期望的 Feign 接口行为
+- **提供者验证契约**：被调用方（如 user-service）验证自己能满足所有消费者的期望
+- **契约即文档**：`.pact` 文件可导出为可读的 API 规范
+
+### 3.2 关键接口契约清单
+
+| 消费者 | 提供者 | Feign 接口 | 关键场景 |
+|--------|--------|-----------|---------|
+| trade-service | user-service | `GET /internal/user/{id}` | 返回用户基本信息 |
+| trade-service | user-service | `GET /internal/user/address/{id}` | 返回收货地址 |
+| trade-service | item-service | `GET /internal/sku/{id}` | 返回 SKU 库存/价格 |
+| trade-service | item-service | `PUT /internal/sku/{id}/stock` | 锁库存 |
+| pay-service | trade-service | `PUT /internal/order/{orderNo}/status` | 更新订单支付状态 |
+| gate-service | authorization-service | `POST /api/auth/*` | JWT 签发/验证 |
+
+### 3.3 CI 集成
+
+```
+PR 创建 → 消费者 Pact 生成 → 提供者 Pact 验证 → 契约不匹配 → CI 失败
+```
+
+契约变更必须双向 Review：消费者提 PR 时附带 `.pact` 变更，提供者确认兼容性。
+
+---
+
+## 四、覆盖率目标
+
+| 维度 | 最低 | 目标 | 豁免 |
+|------|------|------|------|
+| 行覆盖率（全项目） | 70% | 80% | Lombok 生成、POJO、Config、Constants |
+| 分支覆盖率 | 60% | 70% | — |
+| Service 层 | 90% | 95% | — |
+| Manager 层 | 85% | 90% | — |
+| Controller 层 | 80% | 90% | — |
+| Domain/Util 层 | 95% | 95%+ | — |
+| Mapper 层 | 不要求 | — | MyBatis-Plus 自动生成 |
+
+**执行**：JaCoCo 插件，CI 中覆盖率不达标则构建失败。
+
+---
+
+## 五、性能测试基线
+
+| 场景 | 并发 | TPS 目标 | P99 延迟 | 失败率 |
+|------|------|---------|---------|--------|
+| 商品列表查询 | 500 | ≥ 5000 | < 200ms | < 0.1% |
+| 商品详情 | 500 | ≥ 3000 | < 150ms | < 0.1% |
+| 登录 | 200 | ≥ 1000 | < 300ms | < 0.1% |
+| 创建订单 | 200 | ≥ 500 | < 500ms | < 0.1% |
+| 支付回调 | 100 | ≥ 800 | < 200ms | < 0.01% |
+
+**压测工具**：JMeter（计划中），每个 Sprint 至少跑一次基准测试。
+
+---
+
+## 六、安全测试清单
+
+| 测试项 | 方法 | 优先级 |
+|--------|------|--------|
+| 横向越权 — 订单 | 替换 JWT 中的 userId 后请求他人订单 | 🔴 必测 |
+| 横向越权 — 地址 | 修改 addressId 参数访问他人地址 | 🔴 必测 |
+| SQL 注入 | 搜索/排序字段注入 payload | 🔴 必测 |
+| 支付回调签名伪造 | 篡改金额/订单号重放回调 | 🔴 必测 |
+| 短信接口爆破 | 60s 内高频请求 `/api/auth/send-sms` | 🟡 应测 |
+| 日志敏感信息泄露 | grep 日志中的手机号/密码/Token | 🟡 应测 |
+| 管理员接口越权 | 普通用户 Token 请求 `/admin/**` | 🔴 必测 |
+
+---
+
+## 七、测试数据管理
+
+- **单元测试**：纯 Mock，不需数据库
+- **API 集成测试**：Testcontainers 启动临时 MySQL/Redis，测试结束自动销毁
+- **E2E 测试**：独立测试环境，预置标准测试数据集
+- **隔离原则**：测试之间不共享可变状态
+
+---
+
+## 八、测试在 CI/CD 中的位置
+
+```
+Push → 单元测试 (3min) → 编译 → 契约测试 (2min) → API集成测试 (8min) → PR 创建
+                                                                    │
+PR Merge ← Code Review ← 覆盖率检查 ← E2E测试 (15min) ←──────────┘
+```
+
+覆盖率不达标 → CI 直接失败，禁止合并。
+
+---
+
+## 六、AI 服务测试策略 (V2.5+)
+
+> AI 服务（ai-service）的测试与传统微服务有本质差异：LLM 输出具有不确定性，Tool 调用链动态变化，传统"给定输入→断言输出"模式不适用。
+
+### 6.1 测试分层
+
+| 层级 | 测试对象 | 策略 | 工具 |
+|------|---------|------|------|
+| **Unit** | Tool 方法（SearchTool, OrderLookupTool） | Mock LLM + 断言 Tool 输入/输出格式化逻辑 | JUnit 5 + Mockito |
+| **Unit** | 会话管理（RedisChatMemoryStore） | Testcontainers Redis → 写入/读取/过期验证 | Testcontainers |
+| **Integration** | Agent 行为（ReAct 循环） | 录制 LLM 响应 → 回放验证 Tool 选择正确性 | 自定义 Record/Replay 或 Spring AI Test |
+| **Integration** | RAG Pipeline（V2.5 ES向量检索） | Testcontainers ES 8.x → 索引测试文档 → 验证召回 | Testcontainers |
+| **Evaluation** | 答案质量（Faithfulness/Relevance） | 标注数据集 + LLM-as-Judge 自动评分 | Langfuse Evaluation |
+| **E2E** | 用户完整对话流程 | 真人验收 / E2E 录制回放（非 CI，周期性执行） | 人工 + 自动化报告 |
+
+### 6.2 LLM 调用的录制/回放模式
+
+```
+录制模式（生成 goldens）:
+  AI请求 → 真实 LLM → 保存 {input → output} 到 test/resources/llm-goldens/
+
+回放模式（CI 中使用）:
+  AI请求 → 拦截器匹配 → 返回录制响应（不调用真实 LLM）
+```
+
+**关键规则**：
+- Golden 文件签入 Git（小体积 JSON，不超过 100 条）
+- CI 必须使用回放模式（`ai.test.record=false`）
+- 新增 Tool 或 Prompt 变更 → 手动重新录制 goldens
+- 回放模式下，断言聚焦于：Tool 是否被正确选择、返回格式是否正确（不评测 LLM 生成质量）
+
+### 6.3 RAG 评估指标
+
+| 指标 | 计算方式 | CI 准入阈值 |
+|------|---------|------------|
+| Context Recall | 检索文档是否覆盖答案所需信息 | > 80% |
+| Context Precision | 检索文档中相关文档的排位 | MRR > 0.85 |
+| Faithfulness | LLM-as-Judge: 回答是否被检索文档支持 | > 90% |
+| Answer Relevance | LLM-as-Judge: 回答是否切题 | > 85% |
+
+### 6.4 特殊约束
+
+- LLM 测试 API Key 独立于生产，设置月度预算上限（$5/月）
+- 不测试 LLM 的"生成质量"（那是 Prompt Engineering 的工作，不是测试的工作）
+- 只测试"确定性行为"：Tool 选择、格式化输出、会话隔离、错误降级

@@ -1,0 +1,42 @@
+/* 购物车页 */
+
+.page {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+.empty-cart {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 120rpx 80rpx;
+}
+
+.empty-icon {
+  font-size: 120rpx;
+}
+
+.empty-title {
+  margin-top: 40rpx;
+  font-size: 36rpx;
+  color: #1A1A1A;
+  font-weight: 500;
+}
+
+.empty-desc {
+  margin-top: 16rpx;
+  font-size: 28rpx;
+  color: #8C8A87;
+}
+
+.empty-btn {
+  margin-top: 48rpx;
+  padding: 24rpx 80rpx;
+  border-radius: 36rpx;
+  background: #4A7C59;
+  color: #FFFFFF;
+  font-size: 30rpx;
+  font-weight: 500;
+}

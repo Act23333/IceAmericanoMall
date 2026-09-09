@@ -1,0 +1,91 @@
+/**
+ * 商城 — 分类筛选 + 服务端渲染 (ISR)
+ * Server Component: SEO 友好, 每个分类独立缓存 60s
+ */
+
+import Link from 'next/link';
+import { getCategories, getProducts } from '@icedmall/api';
+import { SectionReveal } from '@icedmall/ui';
+import { MarketplaceInfinite } from './infinite-client';
+import { CategoryTabs } from './category-tabs';
+import { ProductScroll } from './product-scroll';
+import { FlashSaleBanner } from './flash-sale-banner';
+
+export const revalidate = 60;
+
+interface Props {
+  searchParams: Promise<{ categoryId?: string; sort?: string; page?: string }>;
+}
+
+export default async function MarketplacePage({ searchParams }: Props) {
+  const params = await searchParams;
+  const categoryId = params.categoryId ? Number(params.categoryId) : undefined;
+  const sort = params.sort || 'sales';
+  const initialPage = Number(params.page || 1);
+
+  let categories, products, hotProducts;
+  try {
+    [categories, products, hotProducts] = await Promise.all([
+      getCategories(),
+      getProducts({ categoryId, sort, order: 'desc', size: 12, page: initialPage }),
+      getProducts({ sort: 'sales', order: 'desc', size: 12 }),
+    ]);
+  } catch {
+    categories = null;
+    products = null;
+    hotProducts = null;
+  }
+
+  const records = products?.records ?? [];
+  const total = products?.total ?? 0;
+  const totalPages = products?.pages ?? 0;
+  const activeCategory = categories?.find((c) => c.id === categoryId);
+
+  return (
+    <div className="mx-auto max-w-7xl px-4 pb-20">
+      {/* 秒杀横幅 */}
+      <FlashSaleBanner />
+
+      {/* 分类 Tab 栏 — 客户端路由，不重载页面 */}
+      {categories && (
+        <SectionReveal>
+          <div className="mt-8">
+            <CategoryTabs categories={categories} />
+          </div>
+        </SectionReveal>
+      )}
+
+      {/* 横向滚动热卖商品 — 仿京东首页 */}
+      {hotProducts?.records && hotProducts.records.length > 0 && (
+        <ProductScroll products={hotProducts.records} />
+      )}
+
+      {/* 标题 */}
+      <SectionReveal delay={50}>
+        <div className="mt-6 mb-4">
+          <h2 className="text-xl font-medium text-ink-black">{activeCategory ? activeCategory.name : '全部商品'}</h2>
+          <p className="text-xs text-warm-400 mt-1">共 {total} 件</p>
+        </div>
+      </SectionReveal>
+
+      {/* 商品网格 + 无限滚动客户端层 */}
+      {records.length > 0 ? (
+        <SectionReveal delay={100}>
+          <MarketplaceInfinite
+            categoryId={categoryId}
+            sort={sort}
+            initialProducts={records}
+            initialPage={initialPage}
+            totalPages={totalPages}
+          />
+        </SectionReveal>
+      ) : (
+        <div className="text-center py-20">
+          <div className="text-6xl select-none">🍃</div>
+          <p className="mt-4 text-warm-600">该分类暂无商品</p>
+          <Link href="/marketplace" className="mt-3 inline-block text-sm text-accent-green">查看全部商品 →</Link>
+        </div>
+      )}
+    </div>
+  );
+}

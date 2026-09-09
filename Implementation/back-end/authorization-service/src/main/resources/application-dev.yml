@@ -1,0 +1,25 @@
+# Dev profile: shared infra defaults to 192.168.10.128 for this project.
+spring:
+  cloud:
+    nacos:
+      server-addr: ${ia.nacos.host:192.168.10.128}:8848
+      discovery:
+        enabled: true
+      config:
+        enabled: true
+  data:
+    redis:
+      host: ${ia.redis.host:192.168.10.128}
+      port: 6379
+
+jwt:
+  access-token-ttl: 3600
+  refresh-token-ttl: 604800
+  keystore:
+    password: changeit
+    key-password: changeit
+
+logging:
+  level:
+    org.icedamericanomall: DEBUG
+    org.nolazy: DEBUG

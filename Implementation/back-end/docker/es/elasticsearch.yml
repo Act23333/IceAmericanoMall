@@ -1,0 +1,33 @@
+# ============================================
+# ElasticSearch 7.17 配置
+# ============================================
+
+cluster.name: icedmall-es
+node.name: es-node-1
+
+# 数据与日志路径
+path.data: /usr/share/elasticsearch/data
+path.logs: /usr/share/elasticsearch/logs
+path.repo: /usr/share/elasticsearch/snapshots
+
+# 网络
+network.host: 0.0.0.0
+http.port: 9200
+transport.port: 9300
+
+# 单节点模式 (生产改为 discovery.seed_hosts)
+discovery.type: single-node
+
+# 内存锁定 (防止 swap)
+bootstrap.memory_lock: true
+
+# 安全 (生产开启)
+xpack.security.enabled: false
+
+# 监控
+xpack.monitoring.collection.enabled: true
+
+# 索引性能
+indices.memory.index_buffer_size: 10%
+indices.queries.cache.size: 10%
+thread_pool.write.queue_size: 1000

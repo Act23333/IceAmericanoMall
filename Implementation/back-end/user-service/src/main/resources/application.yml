@@ -1,0 +1,81 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: user-service
+  datasource:
+    url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: ${hm.db.pw:root}
+  cloud:
+    nacos:
+      server-addr: ${ia.nacos.host:192.168.10.128}:8848
+      username: nacos
+      password: nacoss
+      discovery:
+        enabled: true
+    openfeign:
+      okhttp:
+        enabled: true
+  data:
+    redis:
+      host: ${ia.redis.host:192.168.10.128}
+      port: 6379
+      client-name: user-service
+      password: redis
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+  global-config:
+    db-config:
+      update-strategy: not_null
+      id-type: auto
+
+geetest:
+  captcha-id: "${GEETEST_CAPTCHA_ID:}"
+  key: "${GEETEST_KEY:}"
+
+aliyun:
+  sms:
+    enabled: ${ALIYUN_SMS_ENABLED:false}
+    access-key-id: ${ALIYUN_ACCESS_KEY_ID:}
+    access-key-secret: ${ALIYUN_ACCESS_KEY_SECRET:}
+    sign-name: ${ALIYUN_SMS_SIGN_NAME:冰美式商城}
+    template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}
+# 微信 OAuth：enabled=false（默认）走 Mock 客户端（虚拟 openid）；接入微信开放平台后置 true 并填 app-id/secret
+wechat:
+  oauth:
+    enabled: ${WECHAT_OAUTH_ENABLED:false}
+    app-id: ${WECHAT_OAUTH_APP_ID:}
+    app-secret: ${WECHAT_OAUTH_APP_SECRET:}
+logging:
+  level:
+    org.icedamericanomall: DEBUG
+  pattern:
+    dateformat: HH:mm:ss:SSS
+  file:
+    path: "logs/${spring.application.name}"
+
+# 可观测性：Actuator 健康检查 + Prometheus 指标端点（V2.4）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# ── Knife4j API 文档 ──
+knife4j:
+  enable: true
+springdoc:
+  api-docs:
+    enabled: true

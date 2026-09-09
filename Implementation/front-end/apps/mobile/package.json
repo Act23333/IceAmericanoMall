@@ -1,0 +1,19 @@
+{
+  "name": "@icedmall/mobile",
+  "version": "0.0.1",
+  "private": true,
+  "description": "📦 App 端 (React Native) — 可选。当前阶段 PWA 覆盖 App 场景，PWA 不够用时激活此项目。",
+  "scripts": {
+    "start": "react-native start",
+    "ios": "react-native run-ios",
+    "android": "react-native run-android"
+  },
+  "dependencies": {
+    "@icedmall/api": "workspace:*",
+    "@icedmall/utils": "workspace:*"
+  },
+  "devDependencies": {
+    "react-native": "^0.76.0",
+    "typescript": "^5.5.0"
+  }
+}

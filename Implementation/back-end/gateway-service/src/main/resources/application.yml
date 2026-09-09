@@ -1,0 +1,118 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+spring:
+  main:
+    allow-bean-definition-overriding: true # 开启bean覆盖
+  application:
+    name: gateway-service
+#  profiles:
+#    active: dev
+  data:
+    redis:
+      client-name: gateway-service
+      password: redis
+      port: 6379
+      host: 192.168.10.128
+  cloud:
+    nacos:
+      server-addr: 192.168.10.128:8848
+      username: nacos
+      password: nacoss
+      discovery:
+        enabled: true
+      config:
+        import-check:
+          enabled: false
+    sentinel:
+      enabled: false
+
+    gateway:
+      server:
+        webflux:
+          routes:
+            # 认证服务路由
+            - id: auth-service
+              uri: lb://authorization-service
+              predicates: [Path=/api/auth/**]
+            # 用户服务路由（带限流）
+            - id: user-service
+              uri: lb://user-service
+              predicates: [Path=/api/user/**]
+            # 商品服务路由
+            - id: item-service
+              uri: lb://item-service
+              predicates: [Path=/api/item/**]
+            # 购物车服务路由
+            - id: cart-service
+              uri: lb://cart-service
+              predicates: [Path=/api/cart/**]
+            # 交易服务路由
+            - id: trade-service
+              uri: lb://trade-service
+              predicates: [Path=/api/trade/**]
+            # 支付服务路由
+            - id: pay-service
+              uri: lb://pay-service
+              predicates: [Path=/api/pay/**]
+            # 物流服务路由
+            - id: logistics-service
+              uri: lb://logistics-service
+              predicates: [Path=/api/logistics/**]
+            # 营销服务路由
+            - id: marketing-service
+              uri: lb://marketing-service
+              predicates:
+                - Path=/api/coupon/**
+                - Path=/api/flash/**
+            # 管理员路由
+            - id: admin-user-routes
+              uri: lb://user-service
+              predicates: [Path=/api/admin/**]
+            # 商家路由
+            - id: seller-user-routes
+              uri: lb://user-service
+              predicates: [Path=/api/seller/**]
+            # 搜索服务路由
+            - id: search-service
+              uri: lb://search-service
+              predicates: [Path=/api/search/**]
+            - id: ai-service
+              uri: lb://ai-service
+              predicates: [Path=/api/ai/**]
+  security:
+   oauth2:
+    resourceserver:
+        jwt:
+#          jwk-set-uri: http://authorization-server:9000/oauth2/jwks
+          jwk-set-uri: http://localhost:9000/oauth2/jwks
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+
+# 可观测性：Actuator 健康检查 + Prometheus 指标端点（V2.4）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# ── Knife4j 网关聚合 (大厂标准) ──
+# 访问 http://localhost:8080/doc.html 查看所有服务 API
+knife4j:
+  gateway:
+    enabled: true
+    strategy: discover  # 自动发现 Nacos 注册的服务
+    discover:
+      enabled: true
+      version: openapi3
+

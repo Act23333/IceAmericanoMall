@@ -1,0 +1,163 @@
+@import 'tailwindcss';
+
+/* ===================================================================
+   冰美商城 — 设计系统
+   视觉世界观：「东方自然主义 × 未来玻璃艺术」
+   Apple Vision Pro 空间感 + 日本庭院留白 + 高级生活方式品牌
+   =================================================================== */
+
+@theme {
+  /* ── 基础色板 ── */
+  --color-mist-white: #F7F6F3;
+  --color-pure-white: #FFFFFF;
+  --color-warm-gray-50: #FAFAF8;
+  --color-warm-gray-100: #F0EFEC;
+  --color-warm-gray-200: #E8E6E1;
+  --color-warm-gray-400: #B8B5B0;
+  --color-warm-gray-600: #8C8A87;
+  --color-ink-black: #1A1A1A;
+  --color-ink-black-soft: #2D2D2D;
+
+  /* ── 点缀色 ── */
+  --color-accent-green: #4A7C59;
+  --color-accent-green-light: #6B9E7A;
+  --color-accent-green-dark: #3A6346;
+  --color-accent-gold: #C4A747;
+  --color-accent-gold-light: #D9C56E;
+  --color-accent-blue-purple: #6B7DB3;
+  --color-accent-blue-purple-dark: #4A5A8A;
+
+  /* ── 语义色 (保留，适配新色板) ── */
+  --color-success: #4A7C59;
+  --color-danger: #C44E4E;
+  --color-warning: #C4A747;
+  --color-info: #6B7DB3;
+
+  /* ── 毛玻璃材质 ── */
+  --glass-bg: rgba(255, 255, 255, 0.12);
+  --glass-border: rgba(255, 255, 255, 0.25);
+  --glass-blur: 20px;
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.04);
+
+  /* ── 渐变 — 昼夜时间变换 ── */
+  --gradient-day: linear-gradient(180deg, #F7F6F3 0%, #E8E6E1 100%);
+  --gradient-dusk: linear-gradient(180deg, #D4C5B9 0%, #A8A0C0 50%, #6B7DB3 100%);
+  --gradient-night: linear-gradient(180deg, #2D2D3F 0%, #1A1A2E 100%);
+
+  /* ── 缓动函数 ── */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-natural: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ── 品牌字体 ── */
+  --font-sans: 'Geist Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', monospace;
+}
+
+/* ===================================================================
+   全局基础样式
+   =================================================================== */
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--color-mist-white);
+  color: var(--color-ink-black);
+  font-family: var(--font-sans);
+}
+
+/* ===================================================================
+   毛玻璃工具类
+   =================================================================== */
+@utility glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+}
+@utility glass-card {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.04);
+  border-radius: 1rem;
+}
+@utility glass-dense {
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* ===================================================================
+   动画关键帧
+   =================================================================== */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes glass-shimmer {
+  0%   { opacity: 0.6; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+/* 只在用户未请求减少动效时播放 */
+@media (prefers-reduced-motion: no-preference) {
+  .animate-fade-up {
+    animation: fade-up 0.6s var(--ease-natural) both;
+  }
+  .animate-fade-in {
+    animation: fade-in 0.4s var(--ease-natural) both;
+  }
+  .animate-scale-in {
+    animation: scale-in 0.4s var(--ease-spring) both;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up,
+  .animate-fade-in,
+  .animate-scale-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ===================================================================
+   滚动条（仅 Webkit）
+   =================================================================== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-warm-gray-400);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-warm-gray-600);
+}
+
+/* ===================================================================
+   选中颜色
+   =================================================================== */
+::selection {
+  background: rgba(74, 124, 89, 0.2);
+  color: var(--color-ink-black);
+}

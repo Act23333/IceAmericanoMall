@@ -1,0 +1,103 @@
+%% 冰美商城 — C4 Container Diagram (Phase 4: Architecture Design)
+%% 渲染: npx @mermaid-js/mermaid-cli mmdc -i architecture-c4.mmd -o architecture-c4.png
+
+graph TB
+    %% --- Users ---
+    User["👤 用户<br/>(浏览器/App)"]
+    Seller["👤 商家<br/>(浏览器)"]
+    Admin["👤 管理员<br/>(浏览器)"]
+
+    %% --- External ---
+    WxPay["🏦 微信支付<br/>(外部)"]
+    Alipay["🏦 支付宝<br/>(外部)"]
+    SMS["📱 短信服务<br/>(外部)"]
+
+    %% --- Gateway ---
+    Gateway["🚪 API Gateway<br/>gate-service<br/>Spring Cloud Gateway"]
+
+    %% --- Registry/Config ---
+    Nacos["🔧 Nacos<br/>注册中心 + 配置中心"]
+
+    %% --- Core Services ---
+    Auth["🔐 auth-service<br/>认证授权<br/>OAuth2 + JWT"]
+    UserSvc["👥 user-service<br/>用户/地址/商家"]
+    Item["📦 item-service<br/>商品/SPU/SKU/类目"]
+    Cart["🛒 cart-service<br/>购物车"]
+    Trade["📋 trade-service<br/>订单管理"]
+    Pay["💳 pay-service<br/>支付处理"]
+    Logistics["🚚 logistics-service<br/>物流查询"]
+
+    %% --- Data stores ---
+    RedisAuth[("Redis<br/>Token 缓存")]
+    MySQL[(MySQL<br/>)]
+    ES[("ElasticSearch<br/>商品搜索")]
+
+    %% --- Shared libs ---
+    IACommon["📚 ia-common<br/>Result/异常/工具类"]
+    IAApi["📡 ia-api<br/>Feign 接口定义"]
+
+    %% --- Connections: Users → Gateway ---
+    User -->|HTTPS| Gateway
+    Seller -->|HTTPS| Gateway
+    Admin -->|HTTPS| Gateway
+
+    %% --- Gateway → Services ---
+    Gateway -->|路由| Auth
+    Gateway -->|路由| UserSvc
+    Gateway -->|路由| Item
+    Gateway -->|路由| Cart
+    Gateway -->|路由| Trade
+    Gateway -->|路由| Pay
+    Gateway -->|路由| Logistics
+
+    %% --- Service Registry ---
+    Auth -.->|注册| Nacos
+    UserSvc -.->|注册| Nacos
+    Item -.->|注册| Nacos
+    Cart -.->|注册| Nacos
+    Trade -.->|注册| Nacos
+    Pay -.->|注册| Nacos
+    Logistics -.->|注册| Nacos
+
+    %% --- Inter-Service Feign Calls ---
+    Trade -->|Feign: 获取地址| UserSvc
+    Trade -->|Feign: 锁库存| Item
+    Trade -->|Feign: 清购物车| Cart
+    Trade -->|Feign: 创建支付单| Pay
+    Pay -->|Feign: 更新订单| Trade
+    Pay -->|HTTPS 回调| WxPay
+    Pay -->|HTTPS 回调| Alipay
+    Auth -->|Feign: 短信| SMS
+
+    %% --- Data Stores ---
+    Auth --> RedisAuth
+    UserSvc --> MySQL
+    Item --> MySQL
+    Cart --> MySQL
+    Trade --> MySQL
+    Pay --> MySQL
+    Logistics --> MySQL
+    Item -.-> ES
+
+    %% --- Shared ---
+    Auth -.-> IACommon
+    UserSvc -.-> IACommon
+    Item -.-> IACommon
+    Cart -.-> IACommon
+    Trade -.-> IACommon
+    Pay -.-> IACommon
+    Logistics -.-> IACommon
+
+    Auth -.-> IAApi
+    UserSvc -.-> IAApi
+    Item -.-> IAApi
+    Cart -.-> IAApi
+    Trade -.-> IAApi
+    Pay -.-> IAApi
+    Logistics -.-> IAApi
+
+    %% --- Internal API rule ---
+    style Gateway fill:#f9f,stroke:#333,stroke-width:2px
+    style Nacos fill:#87CEEB,stroke:#333
+    style MySQL fill:#90EE90,stroke:#333
+    style RedisAuth fill:#FFB6C1,stroke:#333

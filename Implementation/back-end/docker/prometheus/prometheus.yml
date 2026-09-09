@@ -1,0 +1,22 @@
+# Prometheus 抓取配置 —— 采集各微服务 Spring Boot Actuator 暴露的 /actuator/prometheus 指标。
+# 服务以 mvn spring-boot:run 在宿主机运行时，用 host.docker.internal 访问；若服务也容器化，改为容器名。
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'ia-services'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      # 端口按各服务 application.yml 的 server.port 调整；下列为已知端口，其余按需补充
+      - targets: ['host.docker.internal:8080']   # gate-service
+        labels: {application: 'gate-service'}
+      - targets: ['host.docker.internal:9000']   # authorization-service
+        labels: {application: 'authorization-service'}
+      - targets: ['host.docker.internal:8086']   # search-service
+        labels: {application: 'search-service'}
+      # - targets: ['host.docker.internal:<port>']  # user/item/cart/trade/pay/logistics/marketing-service

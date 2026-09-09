@@ -1,0 +1,373 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<!--    POM文件的格式说明书版本，4.0.0是maven2和3唯一有效的版本-->
+    <modelVersion>4.0.0</modelVersion>
+<!--    项目归属（组织/公司/团体）方：group（组 / 组织）+ Id（标识），即项目所属组织 / 公司 / 团队的唯一标`识。-->
+    <groupId>org.nolazy</groupId>
+<!--    项目名：artifact（产物 / 制品）+ Id（标识），即项目 / 模块的唯一-->
+    <artifactId>IcedAmericanoMall</artifactId>
+<!--    打包方式为pom。pom 是特殊类型，说明这个项目是 父工程 / 聚合工程-->
+    <packaging>pom</packaging>
+<!--    开始项目的版本号为1.0-->
+    <version>1.0</version>
+
+<!--    当前模块为整个项目的父模块，父工程，让它可以统一管理子模块-->
+    <modules>
+        <module>ia-common</module>
+        <module>user-service</module>
+        <module>authorization-service</module>
+        <module>gateway-service</module>
+        <module>ia-api</module>
+        <module>ia-integration</module>
+        <module>cart-service</module>
+        <module>pay-service</module>
+        <module>trade-service</module>
+        <module>item-service</module>
+        <module>logistics-service</module>
+        <module>search-service</module>
+        <module>ai-service</module>
+        <module>marketing-service</module>
+    </modules>
+
+    <!--实现 Maven 的配置继承-->
+    <parent>
+        <!--表示这个父工程属于 Spring Boot 官方组织（org.springframework.boot 是 Spring Boot 所有官方构件的标准 groupId）。-->
+        <groupId>org.springframework.boot</groupId>
+        <!--Spring Boot 专门为普通项目提供的 “基础父工程-->
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <!--表示继承的 Spring Boot 父工程版本是 3.5.4，这直接决定了你项目中所有 Spring Boot 核心依赖的版本-->
+        <version>3.5.4</version>
+        <!--指定父工程的 pom.xml 文件在本地的相对路径。-->
+<!--        <relativePath/>-->
+    </parent>
+    <repositories>
+        <!--阿里云镜像-->
+        <repository>
+            <id>alimaven</id>
+            <name>aliyun maven</name>
+            <url>https://maven.aliyun.com/nexus/content/groups/public/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+        <!-- Spring AI Milestones/Releases -->
+        <repository>
+            <id>spring-milestones</id>
+            <name>Spring Milestones</name>
+            <url>https://repo.spring.io/milestone</url>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+    </repositories>
+    <properties>
+        <java.version>21</java.version>
+        <!--限制java代码版本，可以使用java21版本及以下的语法-->
+        <maven.compiler.source>21</maven.compiler.source>
+        <!--指定编译生成的字节码文件的java版本，只能在java21及以上的JVM上运行-->
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+<!--        <org.projectlombok.version>1.18.32</org.projectlombok.version>-->
+<!--        <spring-boot.version>3.5.4</spring-boot.version>-->
+        <spring-cloud.version>2025.0.1</spring-cloud.version>
+        <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
+        <mybatis-plus.version>3.5.11</mybatis-plus.version>
+        <hutool.version>5.8.43</hutool.version>
+        <mysql.version>9.3.0</mysql.version>
+        <elasticsearch.version>7.17.25</elasticsearch.version>
+        <xxl-job.version>2.4.2</xxl-job.version>
+        <h2.version>2.3.232</h2.version>
+        <minio.version>8.5.10</minio.version>
+        <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
+        <webmvc-swagger.version>2.8.8</webmvc-swagger.version>
+        <webflux-swagger.version>2.6.0</webflux-swagger.version>
+        <knife4j-swagger.version>4.5.0</knife4j-swagger.version>
+        <knife4j-gateway-swagger.version>4.5.0</knife4j-gateway-swagger.version>
+        <mapstruct.version>1.5.5.Final</mapstruct.version>
+        <jjwt.version>0.13.0</jjwt.version>
+        <ia-common.version>1.0</ia-common.version>
+        <ia-api.version>1.0</ia-api.version>
+        <ia-integration.version>1.0</ia-integration.version>
+        <lombok.version>1.18.42</lombok.version>
+        <spring-ai.version>1.0.0-M6</spring-ai.version>
+        <langchain4j.version>1.18.0-beta28</langchain4j.version>
+        <rocketmq-spring.version>2.3.3</rocketmq-spring.version>
+    </properties>
+    
+    <!-- 对依赖包进行管理 -->
+    <dependencyManagement>
+        <dependencies>
+<!--            <dependency>-->
+<!--                <groupId>org.projectlombok</groupId>-->
+<!--                <artifactId>lombok</artifactId>-->
+<!--                <version>${lombok.version}</version>-->
+<!--            </dependency>-->
+            <!--spring cloud-->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!--spring cloud alibaba-->
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+                <version>${spring-cloud-alibaba.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Spring AI BOM -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- 数据库驱动包管理 -->
+            <dependency>
+                <groupId>com.mysql</groupId>
+                <artifactId>mysql-connector-j</artifactId>
+                <version>${mysql.version}</version>
+            </dependency>
+            <!-- mybatis plus 管理 -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <!-- mybatis-plus分页插件管理-->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-jsqlparser</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <!--hutool工具包-->
+            <dependency>
+                <groupId>cn.hutool</groupId>
+                <artifactId>hutool-all</artifactId>
+                <version>${hutool.version}</version>
+            </dependency>
+            <!--普通服务的swagger管理-->
+            <dependency>
+                <groupId>com.github.xiaoymin</groupId>
+                <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+                <version>${knife4j-swagger.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct-processor</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+            <!--网关服务的swagger管理-->
+<!--            <dependency>-->
+<!--                <groupId>com.github.xiaoymin</groupId>-->
+<!--                <artifactId>knife4j-gateway-spring-boot-starter</artifactId>-->
+<!--                <version>4.4.0</version>-->
+<!--            </dependency>-->
+
+<!--            <dependency>-->
+<!--                <groupId>org.springdoc</groupId>-->
+<!--                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>-->
+<!--                <version>${webmvc-swagger.version}</version> &lt;!&ndash; 请使用父工程管理的统一版本 &ndash;&gt;-->
+<!--            </dependency>-->
+<!--            &lt;!&ndash;网关服务的swagger管理&ndash;&gt;-->
+<!--            <dependency>-->
+<!--                <groupId>org.springdoc</groupId>-->
+<!--                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>-->
+<!--                <version>${webflux-swagger.version}</version> &lt;!&ndash; 使用适合 Spring Boot 3 的版本 &ndash;&gt;-->
+<!--            </dependency>-->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-api</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-impl</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-jackson</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <!-- XXL-Job distributed scheduling -->
+            <dependency>
+                <groupId>com.xuxueli</groupId>
+                <artifactId>xxl-job-core</artifactId>
+                <version>${xxl-job.version}</version>
+            </dependency>
+            <!-- H2 in-memory database for integration tests -->
+            <dependency>
+                <groupId>com.h2database</groupId>
+                <artifactId>h2</artifactId>
+                <version>${h2.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <!-- MinIO object storage SDK -->
+            <dependency>
+                <groupId>io.minio</groupId>
+                <artifactId>minio</artifactId>
+                <version>${minio.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.rocketmq</groupId>
+                <artifactId>rocketmq-spring-boot-starter</artifactId>
+                <version>${rocketmq-spring.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.nolazy</groupId>
+                <artifactId>ia-common</artifactId>
+                <version>${ia-common.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.nolazy</groupId>
+                <artifactId>ia-api</artifactId>
+                <version>${ia-api.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.nolazy</groupId>
+                <artifactId>ia-integration</artifactId>
+                <version>${ia-integration.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+<!--        &lt;!&ndash; lombok 管理 &ndash;&gt;-->
+<!--        <dependency>-->
+<!--            <groupId>org.projectlombok</groupId>-->
+<!--            <artifactId>lombok</artifactId>-->
+<!--&lt;!&ndash;            <version>${org.projectlombok.version}</version>&ndash;&gt;-->
+<!--        </dependency>-->
+        <!--单元测试-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+
+
+
+    <!--这段配置是 Maven 项目中对 Java 编译过程的精细化管控，核心作用是：统一声明 maven-compiler-plugin（Maven 编译插件）的版本，并指定项目编译时使用的 JDK 版本，且通过 pluginManagement 实现 “配置统一管理、子模块可继承” 的效果。-->
+    <build>
+        <!--统一声明 / 管控插件的版本和配置，但不会直接执行这个插件（只是 “定义规则”，不是 “执行规则”）。-->
+        <pluginManagement>
+            <plugins>
+                <plugin>
+<!--                    Maven 官方插件的固定组标识（所有官方插件的 groupId 都是这个）。-->
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <source>${maven.compiler.source}</source> <!-- depending on your project -->
+                        <target>${maven.compiler.target}</target> <!-- depending on your project -->
+                        <annotationProcessorPaths>
+                            <!-- 先处理 Lombok,配置注解处理器，再处理 MapStruct -->
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+
+                            <path>
+                                <groupId>org.mapstruct</groupId>
+                                <artifactId>mapstruct-processor</artifactId>
+                                <version>${mapstruct.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+
+                <!-- Spring Boot Maven 插件：repackage 生成可执行 fat jar（V2.5 Docker 构建用） -->
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>3.5.4</version>
+                    <executions>
+                        <execution>
+                            <goals><goal>repackage</goal></goals>
+                        </execution>
+                    </executions>
+                </plugin>
+
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <!-- JaCoCo 覆盖率：report 随 test 生成；check 门禁定在现实可达阈值（不阻断构建） -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <configuration>
+                    <excludes>
+                        <exclude>**/domain/**</exclude>
+                        <exclude>**/dto/**</exclude>
+                        <exclude>**/entity/**</exclude>
+                        <exclude>**/vo/**</exclude>
+                        <exclude>**/config/**</exclude>
+                        <exclude>**/enums/**</exclude>
+                        <exclude>**/constants/**</exclude>
+                        <exclude>**/convert/**</exclude>
+                        <exclude>**/fallback/**</exclude>
+                        <exclude>**/mapper/**</exclude>
+                        <exclude>**/*Application.class</exclude>
+                        <exclude>net/sf/jsqlparser/**</exclude>
+                    </excludes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <!-- 覆盖率门禁：advisory（haltOnFailure=false），仅告警不阻断构建；
+                             目标行覆盖 30%（排除 POJO/config/生成代码后），随测试补齐逐步抬高。 -->
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <haltOnFailure>false</haltOnFailure>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.30</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

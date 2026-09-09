@@ -1,3 +1,106 @@
+
+# ============================================================
+# IceAmericanoMall — 全局 .gitignore
+# ============================================================
+
+# ── knowledge-rag ──
+.knowledge-rag/
+
+# ── 操作系统 ──
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ── IDE ──
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.project
+.classpath
+.settings/
+*.swp
+*.swo
+*~
+\#*\#
+.#*
+.history/
+
+# ── Java / Maven (后端) ──
+**/target/
+target/
+!**/src/main/**/target/
+!**/src/test/**/target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+
+# ── Node.js / 前端 ──
+node_modules/
+.npm
+.yarn/
+*.tsbuildinfo
+
+# ── Next.js ──
+.next/
+.next/**
+
+# ── 环境变量 (含敏感信息) ──
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ── Docker / 数据 ──
+data/
+docker-compose.override.yml
+
+# ── 测试 & 覆盖率 ──
+coverage/
+*.lcov
+.nyc_output/
+playwright-report/
+test-results/
+
+# ── 日志 ──
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── 缓存 & 临时文件 ──
+.cache/
+.turbo/
+.tmp/
+temp/
+tmp/
+
+# ── 操作系统 & 工具临时文件 ──
+*.bak
+*.tmp
+*.temp
+*.orig
+
+# ── Archive ──
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+
+
+*.jks
+*.p12
+=======
 # Compiled class file
 *.class
 
@@ -24,6 +127,4 @@ hs_err_pid*
 replay_pid*
 
 
-.idea/
-**/target/
-*.p12
+

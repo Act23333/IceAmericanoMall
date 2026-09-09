@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mysql:
+        image: mysql:9.0
+        env:
+          MYSQL_ROOT_PASSWORD: root123
+          MYSQL_DATABASE: icedamericano_mall
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build & Compile
+        run: mvn -f Implementation/back-end/pom.xml clean compile -DskipTests
+
+      - name: Run Unit Tests
+        run: mvn -f Implementation/back-end/pom.xml test
+
+      - name: Package
+        run: mvn -f Implementation/back-end/pom.xml package -DskipTests
+
+  # Stage 2: Docker 镜像构建 + 推送（仅 push main/develop）
+  docker:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [authorization,cart,gate,item,logistics,marketing,pay,search,trade,user]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & Push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: Implementation/back-end
+          file: Implementation/back-end/${{ matrix.service }}-service/Dockerfile
+          push: false  # TODO: push to ghcr.io after setting up registry credentials
+          tags: ghcr.io/act23333/iam-${{ matrix.service }}:latest
+
+  # Stage 3: CD 部署 + 冒烟测试（仅 push main & docker job 成功）
+  deploy:
+    needs: docker
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Health check loop (target: gateway)
+        run: |
+          for i in $(seq 1 12); do
+            http_code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/actuator/health 2>/dev/null || echo 000)
+            echo "attempt $i: gateway health = $http_code"
+            [ "$http_code" = "200" ] && exit 0
+            sleep 10
+          done
+          exit 1

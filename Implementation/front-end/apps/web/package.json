@@ -1,0 +1,39 @@
+{
+  "name": "@icedmall/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.3.0",
+    "@icedmall/api": "workspace:*",
+    "@icedmall/auth": "workspace:*",
+    "@icedmall/ui": "workspace:*",
+    "@icedmall/utils": "workspace:*",
+    "@tanstack/react-query": "^5.0.0",
+    "clsx": "^2.1.0",
+    "lucide-react": "^0.400.0",
+    "next": "^15.0.0",
+    "next-themes": "^0.3.0",
+    "react": "~18.2.0",
+    "react-dom": "~18.2.0",
+    "react-hook-form": "^7.50.0",
+    "sharp": "^0.35.3",
+    "tailwind-merge": "^2.3.0",
+    "zod": "^3.23.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@icedmall/config": "workspace:*",
+    "@tailwindcss/postcss": "^4.3.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.5.0"
+  }
+}

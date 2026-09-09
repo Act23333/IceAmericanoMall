@@ -1,0 +1,65 @@
+%% 冰美商城 — Security DFD with Trust Boundaries (Phase 9: Security Modeling)
+%% 渲染: npx @mermaid-js/mermaid-cli mmdc -i security-dfd.mmd -o security-dfd.png
+
+graph LR
+    subgraph boundary1 ["🔴 信任边界 1 — 公网入口"]
+        User["👤 用户浏览器"]
+        Attacker["⚠️ 潜在攻击者"]
+    end
+
+    subgraph trusted ["🟢 受信任内网"]
+        subgraph dmz ["🟡 DMZ 层"]
+            Gateway["🚪 API Gateway<br/>gate-service<br/><br/>安全控制:<br/>• JWT 验签<br/>• @RateLimit 限流<br/>• /internal/** 拦截<br/>• CORS 白名单"]
+        end
+
+        subgraph services ["🟢 微服务层 (内网)"]
+            Auth["🔐 auth-service<br/>认证/登录/Token签发"]
+            Trade["📋 trade-service<br/>下单/订单管理"]
+            Pay["💳 pay-service<br/>支付处理"]
+            Item["📦 item-service<br/>商品查询"]
+            UserSvc["👥 user-service<br/>用户/地址管理"]
+        end
+
+        subgraph data ["🟢 数据层"]
+            Redis[(Redis<br/>Token/验证码)]
+            MySQL[(MySQL<br/>业务数据)]
+        end
+    end
+
+    subgraph boundary2 ["🔴 信任边界 2 — 外部支付网关"]
+        WxPay["🏦 微信支付"]
+        Alipay["🏦 支付宝"]
+    end
+
+    %% --- Flows ---
+    User -->|"HTTPS + JWT"| Gateway
+    Attacker -.->|"❌ 未认证拒绝<br/>❌ 限流拦截<br/>❌ /internal/ 禁止"| Gateway
+
+    Gateway -->|"验证通过"| Auth
+    Gateway -->|"验证通过"| Trade
+    Gateway -->|"验证通过"| Item
+    Gateway -->|"验证通过"| UserSvc
+    Gateway -->|"❌ 禁止外部访问<br/>/internal/**"| Pay
+
+    Auth --> Redis
+    Auth --> MySQL
+    Trade --> MySQL
+    Trade -->|"Feign /internal/"| UserSvc
+    Trade -->|"Feign /internal/"| Item
+    Trade -->|"Feign /internal/"| Pay
+    UserSvc --> MySQL
+    Item --> MySQL
+
+    Pay -->|"HTTPS + 签名验证<br/>+ IP 白名单"| WxPay
+    Pay -->|"HTTPS + 签名验证<br/>+ IP 白名单"| Alipay
+    WxPay -.->|"回调 (需签名校验)"| Pay
+    Alipay -.->|"回调 (需签名校验)"| Pay
+
+    %% --- Styling ---
+    style boundary1 fill:#ffcccc,stroke:#cc0000,stroke-width:2px
+    style boundary2 fill:#ffcccc,stroke:#cc0000,stroke-width:2px
+    style trusted fill:#ccffcc,stroke:#00cc00,stroke-width:1px
+    style dmz fill:#ffffcc,stroke:#cccc00
+    style services fill:#ccffdd,stroke:#00cc66
+    style data fill:#ddffdd,stroke:#66cc66
+    style Attacker fill:#ff6666,stroke:#cc0000

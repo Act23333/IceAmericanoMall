@@ -1,0 +1,68 @@
+server:
+  port: 9000
+
+spring:
+  application:
+    name: authorization-service
+  cloud:
+    nacos:
+      server-addr: 192.168.10.128:8848
+      username: nacos
+      password: nacoss
+      discovery:
+        enabled: true
+      config:
+        import-check:
+          enabled: false
+        #关闭 Nacos 服务端认证（仅限开发环境）无需提供用户名和密码，直接连接
+        #如果仅在本地开发，且不介意安全问题，可修改 Nacos 服务端配置文件（conf/application.properties）：
+        #properties
+        #nacos.core.auth.enabled=false
+#      config:
+
+  data:
+    redis:
+      host: ${ia.redis.host:192.168.10.128}
+      port: 6379
+      password: redis
+      client-name: authorization-service
+
+jwt:
+  access-token-ttl: 3600
+  refresh-token-ttl: 604800
+  keystore:
+    # V2.5: 生产通过 JWT_KEYSTORE_PATH/PASSWORD 环境变量注入；dev 用本地 dev.p12（不提交 Git）
+    key-store-path: keystore/dev-keystore.p12
+    key-password: ${JWT_KEYSTORE_PASSWORD:pkcs12}
+    keystore-password: ${JWT_KEYSTORE_PASSWORD:pkcs12}
+    key-alias: dev-pkcs
+  rotation:
+    enabled: false  # dev 默认关闭，生产打开
+    cron: "0 0 2 * * ?"
+
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    org.icedamericanomall: DEBUG
+    org.nolazy: DEBUG
+
+# 可观测性：Actuator 健康检查 + Prometheus 指标端点（V2.4）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# ── Knife4j API 文档 ──
+knife4j:
+  enable: true
+springdoc:
+  api-docs:
+    enabled: true

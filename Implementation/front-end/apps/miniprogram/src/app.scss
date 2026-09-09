@@ -1,0 +1,14 @@
+/* ===================================================================
+   冰美商城 — 小程序全局样式
+   设计语言: 东方自然主义 × 未来玻璃艺术
+   注意: 不使用 CSS var() — 微信小程序对其级联支持不稳定
+   =================================================================== */
+
+page {
+  background-color: #F7F6F3;
+  color: #1A1A1A;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
+  font-size: 28rpx;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}

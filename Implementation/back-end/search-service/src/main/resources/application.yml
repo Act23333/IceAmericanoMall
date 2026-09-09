@@ -1,0 +1,63 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: search-service
+  datasource:
+    url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: ${hm.db.pw:root}
+  cloud:
+    nacos:
+      server-addr: 192.168.10.128:8848
+      username: nacos
+      password: nacoss
+      discovery:
+        enabled: true
+
+  data:
+    redis:
+      port: 6379
+      host: 192.168.10.128
+      password: redis
+      client-name: search-service
+  elasticsearch:
+    uris: http://192.168.10.128:9200
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+  global-config:
+    db-config:
+      update-strategy: not_null
+      id-type: auto
+
+# ElasticSearch 默认关闭：本地/无 ES 环境走 DbSearchServiceImpl（@Primary 兜底，基于 MySQL LIKE）。
+# 需要全文检索时，先启动 ES(9200) 再将 enabled 置为 true 以激活 EsSearchServiceImpl。
+search:
+  elasticsearch:
+    enabled: true
+    host: 192.168.10.128
+    port: 9200
+
+# 可观测性：Actuator 健康检查 + Prometheus 指标端点（V2.4）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# ── Knife4j API 文档 ──
+knife4j:
+  enable: true
+springdoc:
+  api-docs:
+    enabled: true
