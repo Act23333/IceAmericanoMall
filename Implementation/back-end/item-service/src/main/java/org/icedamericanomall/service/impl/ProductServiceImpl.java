@@ -156,6 +156,21 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, ProductEntity
     }
 
     @Override
+    public Map<Long, Long> getCategoryIdMapByProductIds(List<Long> productIds) {
+        if (productIds == null || productIds.isEmpty()) {
+            return Map.of();
+        }
+        return lambdaQuery()
+                .in(ProductEntity::getId, productIds)
+                .list()
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        ProductEntity::getId,
+                        ProductEntity::getCategoryId,
+                        (a, b) -> a));
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateProduct(Long productId, Long sellerId, UpdateProductReq req) {
         ProductEntity product = getById(productId);

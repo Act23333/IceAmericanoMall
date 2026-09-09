@@ -28,4 +28,10 @@ public class CouponVO implements Serializable {
     private Integer stockType;
     private Integer grabType;
     private Integer priceInCents;
+
+    // V4.3: 适用范围 + 叠加规则
+    private Integer scopeType;
+    private String scopeValues;
+    private Integer stackRule;
+    private String stackGroup;
 }

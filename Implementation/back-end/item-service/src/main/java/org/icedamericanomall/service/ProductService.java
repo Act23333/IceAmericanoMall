@@ -25,6 +25,9 @@ public interface ProductService extends IService<ProductEntity> {
      */
     Map<Long, Long> getSellerIdMapByProductIds(List<Long> productIds);
 
+    /** V4.3: 批量查 productId → categoryId 映射（优惠券品类 scope 校验） */
+    Map<Long, Long> getCategoryIdMapByProductIds(List<Long> productIds);
+
     void updateProduct(Long productId, Long sellerId, UpdateProductReq req);
 
     /** V3.5: 查询商品下的所有已激活 SKU（DDD: Controller→Service→Mapper） */

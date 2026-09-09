@@ -30,16 +30,18 @@ public class InternalSkuController {
         List<SkuEntity> entities = skuService.getSkuListByIds(skuIds);
         List<SkuDTO> dtos = skuConverter.entitiesToDTOs(entities);
 
-        // Enrich with sellerId from associated products
+        // Enrich with sellerId and categoryId from associated products
         List<Long> productIds = entities.stream()
                 .map(SkuEntity::getProductId)
                 .distinct()
                 .toList();
         Map<Long, Long> productSellerMap = productService.getSellerIdMapByProductIds(productIds);
+        Map<Long, Long> productCategoryMap = productService.getCategoryIdMapByProductIds(productIds);
 
         for (int i = 0; i < dtos.size(); i++) {
             SkuEntity entity = entities.get(i);
             dtos.get(i).setSellerId(productSellerMap.get(entity.getProductId()));
+            dtos.get(i).setCategoryId(productCategoryMap.get(entity.getProductId())); // V4.3
         }
         return dtos;
     }

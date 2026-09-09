@@ -26,4 +26,7 @@ public class SkuDTO implements Serializable {
     private Boolean isHot;
     private String hotReason;
     private String salesTags;
+
+    // V4.3: 品类ID（从产品表关联，用于优惠券品类范围校验）
+    private Long categoryId;
 }

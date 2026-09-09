@@ -26,7 +26,7 @@ public class OrderController {
     private final OrderService orderService;
     private final OrderConverter orderConverter;
 
-    /** V4.1: 购物车下单 — 统一订单中心入口 (orderType=NORMAL) */
+    /** V4.3: 购物车下单 — 支持多券叠加 (orderType=NORMAL) */
     @PostMapping
     public Result<OrderVO> create(@Valid @RequestBody CreateOrderReq req) {
         Long userId = UserContext.getUserId();
@@ -34,7 +34,9 @@ public class OrderController {
         ctx.setUserId(userId);
         ctx.setOrderType(OrderTypeEnum.NORMAL);
         ctx.setAddressId(req.getAddressId());
+        // V4.3: 多券支持（向后兼容单券）
         ctx.setUserCouponId(req.getUserCouponId());
+        ctx.setUserCouponIds(req.getUserCouponIds());
         return Result.ok(orderCreationManager.createOrder(ctx));
     }
 

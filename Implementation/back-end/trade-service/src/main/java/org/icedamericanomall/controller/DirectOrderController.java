@@ -31,7 +31,9 @@ public class DirectOrderController {
         ctx.setSkuId(req.getSkuId());
         ctx.setQuantity(req.getQuantity());
         ctx.setAddressId(req.getAddressId());
+        // V4.3: 多券支持（向后兼容单券）
         ctx.setUserCouponId(req.getUserCouponId());
+        ctx.setUserCouponIds(req.getUserCouponIds());
         return Result.ok(orderCreationManager.createOrder(ctx));
     }
 }

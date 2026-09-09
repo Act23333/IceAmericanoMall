@@ -1,8 +1,10 @@
 package org.icedamericanomall.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import org.icedamericanomall.domain.dto.CouponAvailableFilterReq;
 import org.icedamericanomall.domain.entity.CouponEntity;
 import org.icedamericanomall.domain.entity.UserCouponEntity;
+import org.icedamericanomall.domain.vo.CouponAvailableVO;
 import java.util.List;
 
 public interface CouponService extends IService<CouponEntity> {
@@ -16,9 +18,9 @@ public interface CouponService extends IService<CouponEntity> {
     /** 查询用户已使用/已过期优惠券 */
     List<UserCouponEntity> getUserUsedCoupons(Long userId);
 
-    /** V4.2: 使用优惠券（下单时调用），返回实际抵扣金额（分）。新增 orderType+sellerId 用于类别/店铺校验 */
+    /** V4.3: 使用优惠券，返回实际抵扣金额（分）。新增 productIds+categoryIds 用于 scope 校验 */
     int useCoupon(Long userId, Long userCouponId, String orderNo, int orderAmount,
-                  Integer orderType, Long sellerId);
+                  Integer orderType, Long sellerId, String productIds, String categoryIds);
 
     /** 回滚优惠券（取消订单时调用） */
     void rollbackCoupon(Long userCouponId);
@@ -33,4 +35,12 @@ public interface CouponService extends IService<CouponEntity> {
 
     /** V4.0: 秒杀级优惠券领取（Redis Lua脚本，高并发，grabType=NEED_GRAB时使用） */
     UserCouponEntity claimWithGrab(Long userId, String couponId);
+
+    // === V4.3: 预过滤 + 适用范围 ===
+
+    /** V4.3: 结算页预过滤——根据订单上下文返回可用+不可用的券列表（京东标准） */
+    List<CouponAvailableVO> getAvailableCoupons(Long userId, CouponAvailableFilterReq filter);
+
+    /** V4.3: 批量查询券的叠加规则（下单时校验多券组合合法性） */
+    List<CouponEntity> getBatchByIds(List<Long> couponIds);
 }
