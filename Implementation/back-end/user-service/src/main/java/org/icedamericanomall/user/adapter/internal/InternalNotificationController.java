@@ -1,7 +1,7 @@
 package org.icedamericanomall.user.adapter.internal;
 
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.user.service.NotificationService;
+import org.icedamericanomall.user.app.notification.NotificationManager;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -14,11 +14,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class InternalNotificationController {
 
-    private final NotificationService notificationService;
+    private final NotificationManager notificationManager;
 
     @PostMapping("/send")
     public void send(@RequestBody Map<String, Object> req) {
-        notificationService.send(
+        notificationManager.send(
                 ((Number) req.get("recipientId")).longValue(),
                 req.get("senderId") != null ? ((Number) req.get("senderId")).longValue() : null,
                 (String) req.get("senderName"),

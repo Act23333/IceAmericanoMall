@@ -1,8 +1,8 @@
 package org.icedamericanomall.user.adapter.user;
 
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.user.domain.vo.SignResultVO;
-import org.icedamericanomall.user.manager.SignManager;
+import org.icedamericanomall.user.adapter.response.SignResultVO;
+import org.icedamericanomall.user.app.signin.SignManager;
 import org.icedamericanomall.common.domain.Result;
 import org.icedamericanomall.common.domain.UserContext;
 import org.springframework.web.bind.annotation.*;

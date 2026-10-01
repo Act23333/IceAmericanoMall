@@ -1,7 +1,7 @@
 package org.icedamericanomall.user.adapter.user;
 
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.user.service.UserService;
+import org.icedamericanomall.user.app.user.UserManager;
 import org.icedamericanomall.common.domain.Result;
 import org.icedamericanomall.common.domain.UserContext;
 import org.springframework.web.bind.annotation.*;
@@ -26,18 +26,18 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class BalanceController {
 
-    private final UserService userService;
+    private final UserManager userManager;
 
     @GetMapping
     public Result<Integer> getBalance() {
-        return Result.ok(userService.getBalance(UserContext.getUserId()));
+        return Result.ok(userManager.getBalance(UserContext.getUserId()));
     }
 
     /** 简易充值（Mock）：直接为当前用户增加余额，返回最新余额。 */
     @PostMapping("/recharge")
     public Result<Integer> recharge(@RequestParam int amount) {
         Long userId = UserContext.getUserId();
-        userService.addBalance(userId, amount);
-        return Result.ok(userService.getBalance(userId));
+        userManager.addBalance(userId, amount);
+        return Result.ok(userManager.getBalance(userId));
     }
 }

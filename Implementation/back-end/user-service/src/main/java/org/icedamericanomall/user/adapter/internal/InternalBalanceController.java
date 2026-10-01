@@ -1,7 +1,7 @@
 package org.icedamericanomall.user.adapter.internal;
 
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.user.service.UserService;
+import org.icedamericanomall.user.app.user.UserManager;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -12,10 +12,10 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class InternalBalanceController {
 
-    private final UserService userService;
+    private final UserManager userManager;
 
     @PostMapping("/deduct")
     public void deductBalance(@RequestParam Long userId, @RequestParam Integer amount) {
-        userService.deductBalance(userId, amount);
+        userManager.deductBalance(userId, amount);
     }
 }

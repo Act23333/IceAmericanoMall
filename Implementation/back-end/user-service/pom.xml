@@ -114,6 +114,12 @@
             <artifactId>thumbnailator</artifactId>
             <version>0.4.20</version>
         </dependency>
+        <!-- Redisson: 业务键互斥锁（DomainBeanConfig 装配 DistributedLock 端口，镜像 authorization-service） -->
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson-spring-boot-starter</artifactId>
+            <version>3.26.0</version>
+        </dependency>
         <!-- V3.3: WebSocket STOMP 消息系统 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

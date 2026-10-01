@@ -1,6 +1,6 @@
 package org.icedamericanomall.user.adapter.open;
 
-import org.icedamericanomall.user.service.StoreFollowService;
+import org.icedamericanomall.user.app.seller.StoreFollowManager;
 import org.icedamericanomall.common.domain.Result;
 import org.icedamericanomall.common.domain.UserContext;
 import org.springframework.web.bind.annotation.*;
@@ -9,23 +9,23 @@ import org.springframework.web.bind.annotation.*;
  * V3.5: 关注/取消关注商家（京东标准 — 店铺关注）。
  *
  * DDD COLA 合规 (V5.0): Controller 仅做参数校验 + Result 包装，
- * Redis 操作全部下沉到 {@link StoreFollowService}。
+ * Redis 操作全部下沉到 {@link StoreFollowManager}。
  */
 @RestController
 @RequestMapping("/api/shop")
 public class StoreFollowController {
 
-    private final StoreFollowService storeFollowService;
+    private final StoreFollowManager storeFollowManager;
 
-    public StoreFollowController(StoreFollowService storeFollowService) {
-        this.storeFollowService = storeFollowService;
+    public StoreFollowController(StoreFollowManager storeFollowManager) {
+        this.storeFollowManager = storeFollowManager;
     }
 
     @PostMapping("/follow/{sellerId}")
     public Result<Boolean> follow(@PathVariable Long sellerId) {
         Long userId = UserContext.getUserId();
         if (userId == null) return Result.error(401, "请先登录");
-        storeFollowService.follow(userId, sellerId);
+        storeFollowManager.follow(userId, sellerId);
         return Result.ok(true);
     }
 
@@ -33,7 +33,7 @@ public class StoreFollowController {
     public Result<Boolean> unfollow(@PathVariable Long sellerId) {
         Long userId = UserContext.getUserId();
         if (userId == null) return Result.error(401, "请先登录");
-        storeFollowService.unfollow(userId, sellerId);
+        storeFollowManager.unfollow(userId, sellerId);
         return Result.ok(false);
     }
 
@@ -41,11 +41,11 @@ public class StoreFollowController {
     public Result<Boolean> isFollowing(@PathVariable Long sellerId) {
         Long userId = UserContext.getUserId();
         if (userId == null) return Result.ok(false);
-        return Result.ok(storeFollowService.isFollowing(userId, sellerId));
+        return Result.ok(storeFollowManager.isFollowing(userId, sellerId));
     }
 
     @GetMapping("/follow/{sellerId}/count")
     public Result<Long> followerCount(@PathVariable Long sellerId) {
-        return Result.ok(storeFollowService.followerCount(sellerId));
+        return Result.ok(storeFollowManager.followerCount(sellerId));
     }
 }

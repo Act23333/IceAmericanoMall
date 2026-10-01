@@ -2,7 +2,7 @@ package org.icedamericanomall.user.adapter.user;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.icedamericanomall.user.service.UserProfileService;
+import org.icedamericanomall.user.app.user.UserProfileManager;
 import org.icedamericanomall.common.domain.Result;
 import org.icedamericanomall.common.domain.UserContext;
 import org.springframework.http.CacheControl;
@@ -22,13 +22,13 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class AvatarController {
 
-    private final UserProfileService userProfileService;
+    private final UserProfileManager userProfileManager;
 
     /** POST /api/user/profile/avatar — 上传头像到 MinIO，生成多尺寸缩略图 */
     @PostMapping("/avatar")
     public Result<String> uploadAvatar(@RequestParam("file") MultipartFile file) {
         Long userId = UserContext.getUserId();
-        String url = userProfileService.uploadAvatar(userId, file);
+        String url = userProfileManager.uploadAvatar(userId, file);
         return Result.ok("头像上传成功", url);
     }
 
@@ -41,7 +41,7 @@ public class AvatarController {
             @RequestParam(defaultValue = "200") int width,
             @RequestParam(defaultValue = "200") int height) {
         Long userId = UserContext.getUserId();
-        byte[] data = userProfileService.getAvatar(userId, width, height);
+        byte[] data = userProfileManager.getAvatar(userId, width, height);
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_JPEG)
                 .cacheControl(CacheControl.maxAge(1, TimeUnit.HOURS))

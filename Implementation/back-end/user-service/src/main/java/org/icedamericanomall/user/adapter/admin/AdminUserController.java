@@ -1,11 +1,11 @@
 package org.icedamericanomall.user.adapter.admin;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import org.icedamericanomall.user.domain.vo.SellerVO;
-import org.icedamericanomall.user.domain.vo.UserInfoResp;
-import org.icedamericanomall.user.service.RoleManageService;
-import org.icedamericanomall.user.service.SellerService;
-import org.icedamericanomall.user.service.UserService;
+import org.icedamericanomall.user.adapter.response.SellerVO;
+import org.icedamericanomall.user.adapter.response.UserInfoResp;
+import org.icedamericanomall.user.app.rbac.RoleManageManager;
+import org.icedamericanomall.user.app.seller.SellerManager;
+import org.icedamericanomall.user.app.user.UserManager;
 import org.icedamericanomall.common.domain.Result;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -23,27 +23,27 @@ public class AdminUserController {
 
     private static final int SELLER_STATUS_APPROVED = 1;
 
-    private final UserService userService;
-    private final SellerService sellerService;
-    private final RoleManageService roleManageService;
+    private final UserManager userManager;
+    private final SellerManager sellerManager;
+    private final RoleManageManager roleManageManager;
 
-    public AdminUserController(UserService userService, SellerService sellerService,
-                                RoleManageService roleManageService) {
-        this.userService = userService;
-        this.sellerService = sellerService;
-        this.roleManageService = roleManageService;
+    public AdminUserController(UserManager userManager, SellerManager sellerManager,
+                                RoleManageManager roleManageManager) {
+        this.userManager = userManager;
+        this.sellerManager = sellerManager;
+        this.roleManageManager = roleManageManager;
     }
 
     @GetMapping("/user/page")
     public Result<IPage<UserInfoResp>> pageUsers(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return Result.ok(userService.pageUsers(page, size));
+        return Result.ok(userManager.pageUsers(page, size));
     }
 
     @PutMapping("/user/{id}/status")
     public Result<Void> updateUserStatus(@PathVariable Long id, @RequestParam Integer status) {
-        userService.updateStatus(id, status);
+        userManager.updateStatus(id, status);
         return Result.ok();
     }
 
@@ -51,20 +51,20 @@ public class AdminUserController {
     public Result<IPage<SellerVO>> pendingSellers(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return Result.ok(sellerService.pagePending(page, size));
+        return Result.ok(sellerManager.pagePending(page, size));
     }
 
     @PutMapping("/seller/{id}/approve")
     public Result<Void> approveSeller(@PathVariable Long id) {
-        sellerService.updateStatus(id, SELLER_STATUS_APPROVED);
+        sellerManager.updateStatus(id, SELLER_STATUS_APPROVED);
         return Result.ok();
     }
 
     /** 修改用户角色 — 同时更新 user.role_type + sys_user_role */
     @PutMapping("/user/{id}/role")
     public Result<Void> setUserRole(@PathVariable Long id, @RequestParam Integer roleType) {
-        userService.updateRole(id, roleType);
-        roleManageService.setUserRole(id, roleType);
+        userManager.updateRole(id, roleType);
+        roleManageManager.setUserRole(id, roleType);
         return Result.ok();
     }
 }

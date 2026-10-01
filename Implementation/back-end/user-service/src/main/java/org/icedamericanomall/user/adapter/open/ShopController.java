@@ -1,7 +1,7 @@
 package org.icedamericanomall.user.adapter.open;
 
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.user.manager.ShopManager;
+import org.icedamericanomall.user.app.seller.ShopManager;
 import org.icedamericanomall.common.domain.Result;
 import org.springframework.web.bind.annotation.*;
 

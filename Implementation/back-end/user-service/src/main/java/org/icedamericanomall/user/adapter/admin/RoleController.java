@@ -1,7 +1,7 @@
 package org.icedamericanomall.user.adapter.admin;
 
 import lombok.extern.slf4j.Slf4j;
-import org.icedamericanomall.user.service.RoleManageService;
+import org.icedamericanomall.user.app.rbac.RoleManageManager;
 import org.icedamericanomall.common.domain.Result;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
@@ -13,7 +13,7 @@ import java.util.*;
 /**
  * 角色管理 Interface 层 — DDD COLA 合规
  *
- * 调用链: Controller → RoleManageService(Application) → RoleMapper(Infrastructure)
+ * 调用链: Controller → RoleManageManager(Application) → RoleMapper(Infrastructure)
  * 不直接依赖 Mapper，通过 Service 层解耦。
  */
 @Slf4j
@@ -22,15 +22,15 @@ import java.util.*;
 @PreAuthorize("@ss.hasPermi('user:admin')")
 public class RoleController {
 
-    private final RoleManageService roleManageService;
+    private final RoleManageManager roleManageManager;
 
-    public RoleController(RoleManageService roleManageService) {
-        this.roleManageService = roleManageService;
+    public RoleController(RoleManageManager roleManageManager) {
+        this.roleManageManager = roleManageManager;
     }
 
     @GetMapping
     public Result<List<Map<String, Object>>> listRoles() {
-        return Result.ok(roleManageService.listAllRoles());
+        return Result.ok(roleManageManager.listAllRoles());
     }
 
     @PostMapping
@@ -38,26 +38,26 @@ public class RoleController {
         String name = (String) req.get("name");
         String code = (String) req.get("code");
         String description = (String) req.getOrDefault("description", "");
-        return Result.ok(roleManageService.createRole(name, code, description));
+        return Result.ok(roleManageManager.createRole(name, code, description));
     }
 
     @PutMapping("/{id}")
     public Result<Void> updateRole(@PathVariable Long id, @RequestBody Map<String, Object> req) {
         String name = (String) req.get("name");
         String description = (String) req.get("description");
-        roleManageService.updateRole(id, name, description);
+        roleManageManager.updateRole(id, name, description);
         return Result.ok();
     }
 
     @DeleteMapping("/{id}")
     public Result<Void> deleteRole(@PathVariable Long id) {
-        roleManageService.deleteRole(id);
+        roleManageManager.deleteRole(id);
         return Result.ok();
     }
 
     @GetMapping("/{id}/permissions")
     public Result<List<Long>> getRolePermissions(@PathVariable Long id) {
-        return Result.ok(roleManageService.getRolePermissions(id));
+        return Result.ok(roleManageManager.getRolePermissions(id));
     }
 
     @PostMapping("/{id}/permissions")
@@ -67,7 +67,7 @@ public class RoleController {
         if (permissionIds == null) {
             throw new BizException(ErrorCode.PARAM_ERROR, "permissionIds 不能为空");
         }
-        roleManageService.assignPermissions(id, permissionIds);
+        roleManageManager.assignPermissions(id, permissionIds);
         return Result.ok();
     }
 }

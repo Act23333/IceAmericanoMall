@@ -2,7 +2,7 @@ package org.icedamericanomall.user.adapter.user;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.user.service.HistoryService;
+import org.icedamericanomall.user.app.history.HistoryManager;
 import org.icedamericanomall.common.domain.Result;
 import org.icedamericanomall.common.domain.UserContext;
 import org.springframework.web.bind.annotation.*;
@@ -22,11 +22,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class HistoryController {
 
-    private final HistoryService historyService;
+    private final HistoryManager historyManager;
 
     @PostMapping
     public Result<?> record(@RequestParam Long productId) {
-        historyService.record(UserContext.getUserId(), productId);
+        historyManager.record(UserContext.getUserId(), productId);
         return Result.ok();
     }
 
@@ -36,18 +36,18 @@ public class HistoryController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "newest") String sort) {
-        return Result.ok(historyService.page(UserContext.getUserId(), page, size, keyword, sort));
+        return Result.ok(historyManager.page(UserContext.getUserId(), page, size, keyword, sort));
     }
 
     @DeleteMapping("/{id}")
     public Result<?> deleteById(@PathVariable Long id) {
-        historyService.deleteById(UserContext.getUserId(), id);
+        historyManager.deleteById(UserContext.getUserId(), id);
         return Result.ok();
     }
 
     @DeleteMapping
     public Result<?> clear() {
-        historyService.clear(UserContext.getUserId());
+        historyManager.clear(UserContext.getUserId());
         return Result.ok();
     }
 }

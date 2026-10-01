@@ -1,38 +1,44 @@
 package org.icedamericanomall.user;
 
+import org.apache.ibatis.annotations.Mapper;
+import org.icedamericanomall.config.DefaultFeignConfig;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.openfeign.EnableFeignClients;
 
 /**
- * @ClassName: UserApplication
- * @Description: TODO
- * @Author: noLazy
- * @Date: 2026/3/13 15:15
- * @Version: 1.0.0
- * @ProjectName: IcedAmericanoMall
- * @Package: org.icedamericanomall.user
+ * 用户服务启动类。
  *
- * <p><b>组件扫描范围</b>：本服务基础包为 {@code org.icedamericanomall.user}，
- * 默认扫描不再覆盖共享模块（ia-integration 的第三方客户端），因此显式声明。
- * 不扫描 {@code org.icedamericanomall.config} —— 那是 ia-api 的 {@code DefaultFeignConfig}，
- * 属于 Feign 专用配置，只能通过 {@code defaultConfiguration} 挂载。
+ * <p>Feign 客户端契约在 ia-api（{@code org.icedamericanomall.client}）中统一定义；
+ * Mapper 只扫描基础设施层持久化包（按聚合分子包，{@code persistence/{user,address,seller,...}}）。
+ *
+ * <p><b>组件扫描范围</b>（本服务基础包是 {@code org.icedamericanomall.user}，比其余服务深一层，
+ * 因此必须显式声明，否则共享模块的 Bean 全部缺失）：
  * <ul>
- *   <li>{@code org.icedamericanomall.user} —— 本服务</li>
- *   <li>{@code org.icedamericanomall.integration.auth} —— ia-integration 微信第三方客户端
- *       （真实 / Mock 由 {@code wechat.*.enabled} 决定）</li>
+ *   <li>{@code org.icedamericanomall.user} —— 本服务四层</li>
+ *   <li>{@code org.icedamericanomall.fallback} —— ia-api 的 Feign 降级工厂。
+ *       <b>开启 Feign 熔断（R6）后 fallbackFactory 必须能取到 Bean</b>，
+ *       仅靠 ia-api 里的 {@code @Component} 注解不够（ia-api 不在本服务的扫描路径内）</li>
+ *   <li>{@code org.icedamericanomall.integration.auth} —— ia-integration 的微信第三方客户端
+ *       （真实 / Mock 由 {@code wechat.*.enabled} 决定）。
+ *       短信（SmsClient 直发）/ 极验（CaptchaClient）客户端<b>已不再被本服务使用</b>：
+ *       发码/人机验证收口 verification-service（ADR-007 / ADR-016），
+ *       相关客户端由 ia-integration 的 {@code AutoConfiguration.imports} 独立登记，无需扫描</li>
  * </ul>
  *
- * <p>短信 / 极验 / 对象存储客户端（{@code integration.sms / captcha / storage}）
- * <b>不在此扫描</b>：它们由 ia-integration 的 {@code AutoConfiguration.imports} 统一登记，
- * 扫描与导入二选一，避免同一个类被注册两次。
+ * <p>不扫描 {@code org.icedamericanomall.config}（ia-api 的 {@code DefaultFeignConfig}）：
+ * 它是 Feign 专用配置类，需通过 {@code defaultConfiguration} 挂载，不能被全局扫描。
  */
 @SpringBootApplication(scanBasePackages = {
         "org.icedamericanomall.user",
+        "org.icedamericanomall.fallback",
         "org.icedamericanomall.integration.auth"
 })
-@MapperScan("org.icedamericanomall.user.mapper")
+@EnableFeignClients(basePackages = {"org.icedamericanomall.client"}, defaultConfiguration = DefaultFeignConfig.class)
+@MapperScan(basePackages = "org.icedamericanomall.user.infrastructure.persistence", annotationClass = Mapper.class)
 public class UserApplication {
+
     public static void main(String[] args) {
         SpringApplication.run(UserApplication.class, args);
     }

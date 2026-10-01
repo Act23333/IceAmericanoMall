@@ -2,8 +2,8 @@ package org.icedamericanomall.user.adapter.admin;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.user.domain.vo.OperationLogVO;
-import org.icedamericanomall.user.service.OperationLogService;
+import org.icedamericanomall.user.adapter.response.OperationLogVO;
+import org.icedamericanomall.user.app.oplog.OperationLogManager;
 import org.icedamericanomall.common.domain.Result;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,11 +15,11 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class AdminLogController {
 
-    private final OperationLogService operationLogService;
+    private final OperationLogManager operationLogManager;
 
     @GetMapping
     public Result<IPage<OperationLogVO>> list(@RequestParam(defaultValue = "1") int page,
                                               @RequestParam(defaultValue = "20") int size) {
-        return Result.ok(operationLogService.pageLogs(page, size));
+        return Result.ok(operationLogManager.pageLogs(page, size));
     }
 }

@@ -2,10 +2,10 @@ package org.icedamericanomall.user.adapter.seller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.user.domain.dto.SellerRegisterReq;
-import org.icedamericanomall.user.domain.dto.UpdateShopReq;
-import org.icedamericanomall.user.domain.vo.SellerVO;
-import org.icedamericanomall.user.service.SellerService;
+import org.icedamericanomall.user.adapter.request.SellerRegisterReq;
+import org.icedamericanomall.user.adapter.request.UpdateShopReq;
+import org.icedamericanomall.user.adapter.response.SellerVO;
+import org.icedamericanomall.user.app.seller.SellerManager;
 import org.icedamericanomall.common.domain.Result;
 import org.icedamericanomall.common.domain.UserContext;
 import org.springframework.web.bind.annotation.*;
@@ -35,25 +35,25 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class SellerController {
 
-    private final SellerService sellerService;
+    private final SellerManager sellerManager;
 
     /** 用户申请成为商家 */
     @PostMapping("/register")
     public Result<Void> register(@Valid @RequestBody SellerRegisterReq req) {
-        sellerService.register(UserContext.getUserId(), req);
+        sellerManager.register(UserContext.getUserId(), req);
         return Result.ok();
     }
 
     /** 获取当前商家店铺信息 */
     @GetMapping("/shop")
     public Result<SellerVO> getShop() {
-        return Result.ok(sellerService.getShopVO(UserContext.getUserId()));
+        return Result.ok(sellerManager.getShopVO(UserContext.getUserId()));
     }
 
     /** 更新店铺信息 */
     @PutMapping("/shop")
     public Result<Void> updateShop(@Valid @RequestBody UpdateShopReq req) {
-        sellerService.updateShop(UserContext.getUserId(), req);
+        sellerManager.updateShop(UserContext.getUserId(), req);
         return Result.ok();
     }
 }

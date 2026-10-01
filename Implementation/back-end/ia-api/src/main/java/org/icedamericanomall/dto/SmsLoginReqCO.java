@@ -21,8 +21,9 @@ public class SmsLoginReqCO {
     @Pattern(regexp = "^1[3-9]\\d{9}$",
             message = "手机号格式不正确")
     @NotBlank private String phone;
-//    @Pattern(regexp = "^(\\d{6})$",
-//            message = "验证码错误")
-//    @NotBlank private String code;
+
+    /** 短信验证码（6 位数字）。 */
+    @Pattern(regexp = "^(\\d{6})$", message = "验证码格式错误")
+    private String code;
 
 }

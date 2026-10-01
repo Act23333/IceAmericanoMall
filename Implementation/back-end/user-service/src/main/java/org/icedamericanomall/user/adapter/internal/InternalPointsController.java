@@ -1,7 +1,7 @@
 package org.icedamericanomall.user.adapter.internal;
 
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.user.service.PointsService;
+import org.icedamericanomall.user.app.points.PointsManager;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -12,12 +12,12 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class InternalPointsController {
 
-    private final PointsService pointsService;
+    private final PointsManager pointsManager;
 
     @PostMapping("/add")
     public long addPoints(@RequestParam Long userId, @RequestParam int points,
                           @RequestParam(defaultValue = "2") int type,
                           @RequestParam(defaultValue = "下单奖励") String source) {
-        return pointsService.addPoints(userId, points, type, source);
+        return pointsManager.addPoints(userId, points, type, source);
     }
 }
