@@ -1,6 +1,7 @@
 # 04 — 数据模型文档
 
 > 来源：`doc/项目的分析流程/04.数据建模.md`、`doc/项目代码/数据库/Initialize.sql.md`、`doc/项目的分析流程/03.领域建模.md`、`drawio/IA_E-R.drawio`
+> 最后更新: 2026-09-30
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/变更表结构时必须同步
 
 ---
@@ -109,7 +110,7 @@ user ───1:N─── user_auth (authorization-service 认证凭证聚合, 
 | user_id | VARCHAR(32) | UNIQUE, NOT NULL | 业务唯一标识（UUID） |
 | username | VARCHAR(50) | NULL | 用户名（可选） |
 | phone | VARCHAR(20) | UNIQUE, NULL | 手机号（登录账号；微信-only 用户可空） |
-| password | VARCHAR(100) | NULL | BCrypt 加密密码（微信-only 用户可空） |
+| password | VARCHAR(100) | NULL | BCrypt 加密密码（微信/纯验证码登录用户为空——不再写占位哈希，与 Initialize.sql 契约一致，ADR-016） |
 | avatar | VARCHAR(255) | NULL | 头像 URL |
 | wx_openid | VARCHAR(128) | UNIQUE, NULL | 微信 openid（第三方登录，V2.2） |
 | register_time | DATETIME | NOT NULL | 注册时间（业务时间） |

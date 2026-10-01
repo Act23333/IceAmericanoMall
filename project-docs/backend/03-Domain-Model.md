@@ -1,6 +1,7 @@
 # 03 — 领域模型文档 (DDD Domain Model)
 
 > 来源：`doc/项目的分析流程/03.领域建模.md`、`doc/项目的分析流程/00.用户分析.md`、`doc/IDEA.md`
+> 最后更新: 2026-09-30
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/变更聚合、端口、领域服务、领域事件时
 
 ---
@@ -82,8 +83,10 @@
 | password     | 加密字符串  | 密码        |
 | avatar       | URL    | 头像        |
 | registerTime | 日期时间   | 注册时间      |
-| status       | 枚举     | 正常 / 禁用   |
+| status       | 枚举     | 正常(1) / 禁用(0) |
 | balance      | 金额     | 账户余额      |
+
+> **状态机**：正常 ⇄ 禁用，启/停迁移内聚于 User 实体方法（领域纯净，规则不散落 Service；ADR-016）。
 
 ### 3.2 收货地址 (Address) — 用户上下文实体
 
@@ -108,7 +111,9 @@
 | shopLogo                             | URL | 店铺 logo       |
 | contactPhone                         | 字符串 | 联系电话          |
 | province/city/district/detailAddress | 字符串 | 发货地址          |
-| status                               | 枚举  | 审核中 / 正常 / 冻结 |
+| status                               | 枚举  | PENDING(0,审核中) / NORMAL(1,正常) / FROZEN(2,冻结) |
+
+> **状态机**：PENDING → NORMAL / FROZEN；准入由领域服务 `SellerRegistrar` 保障「一用户一商家」（`seller.user_id` 唯一，ADR-016）。
 
 ### 3.4 商品 (Product/SPU) — 商品上下文聚合根
 
@@ -318,6 +323,16 @@
 | 物流聚合 | OrderLogistics | —                  | 物流必须关联已支付订单                    |
 | 营销聚合 | Coupon         | UserCoupon (1:N)   | 优惠券总发行量 >= 已领取量 >= 已使用量；用户优惠券不能脱离 Coupon 存在 |
 
+**user-service 聚合划分结论（V5.2 DDD 四层重构落地，见 [ADR-016](../adr/016-user-service-ddd-and-sms-migration.md)）**——包结构 `org.icedamericanomall.user.{adapter, app, domain, infrastructure}`，app 编排层按聚合 13 个子包（user/address/seller/signin/sms/rbac/points/favorite/history/notification/chat/knowledge/oplog），infrastructure/persistence 按聚合 11 个持久化子包（signin/sms 为 Redis 存储、无表）：
+
+| 层级 | 聚合/模块 | 落地形态 |
+| ---- | -------- | -------- |
+| 核心域聚合 | User / Address / Seller | 纯 POJO 聚合根 + 业务规则内聚实体方法（User 启停/凭证/余额不变量、Address `assertOwnedBy` 归属断言、Seller 状态机）；仓储按业务键操作（Address 更新/删除/标默认以 `{userId, id}` 为 WHERE，SQL 级越权兜底）；`UserProvisioner` 幂等建档（getOrCreate） |
+| 支撑域模块 | signin / sms / rbac | 无完整聚合，规则内聚领域服务（`SignInPointsPolicy` 签到积分 + Redis Bitmap、`SmsCodeVerifier` 验证码校验） |
+| 外围 CRUD | points / favorite / history / notification / chat / knowledge | 无跨实体不变量，按 CQRS 读路径直用持久化读模型（DO 不出持久化层、不出 Controller）——记录在案的务实取舍（ADR-016 决策一·5） |
+
+> 领域端口（domain/port）：`DistributedLock`（Redisson）/ `PasswordVerifier`（BCrypt）/ `SignInStore`（Redis Bitmap）/ `SmsCodeStore`（Redis `sms:code:`）；跨上下文防腐网关（domain/gateway）：`VerificationGateway` / `WechatOAuthGateway`。微信换取已移出事务边界（唯一本地事务为 UserRegistrar 注册链路，ADR-016）。
+
 ---
 
 ## 五、值对象
@@ -362,6 +377,9 @@
 | 校验结果码     | Verification Result Code | SUCCESS/CODE_MISMATCH/CODE_EXPIRED/TOO_MANY_ATTEMPTS/RATE_LIMITED/SEND_FAILED/SERVICE_UNAVAILABLE/CAPTCHA_FAILED/NOT_SUPPORTED/PARAM_INVALID——结构化结果码（而非异常）用于内部 Feign 校验契约 |
 | 校验收口      | Verification Convergence | 验证码与人机验证统一由 verification-service 裁决（fail-closed：服务不可用即拒绝），调用方不自行校验 |
 | 邮箱地址      | EmailAddress             | 认证上下文值对象：trim+小写归一化 + 格式校验 + HMAC 盲索引，保证盲索引/Redis Key/建号标识三方对齐（V5.2 邮箱登录） |
+| 建档      | Provisioning             | 用户档案幂等创建/回查：按业务唯一键（user_id/手机号/微信 openid）查无则建、唯一键冲突回查重放，由领域服务 UserProvisioner 承载（getOrCreate 语义，ADR-006/016） |
+| 灰度后门  | Gray-release Bypass      | 灰度联调期刻意保留的验证码放行入口：万能码 `000000` + 宽松校验（严格比对分支暂关闭）；恢复路径见 ADR-016，真实短信通道全面接入前不得上线生产 |
+| 重发限流  | Reissue Rate Limiting    | 同一手机号验证码重发的最小间隔（60 秒窗口），由 verification-service 签发侧执行；user-service 本地分级限流（`sms:minute/hour/day:` 独立键空间）与之互补（ADR-016） |
 
 ---
 
@@ -372,6 +390,10 @@
 | 领域服务                | 职责                 | 所在上下文 |
 | ------------------- | ------------------ | ----- |
 | `PasswordEncoder`   | 密码加密与验证（BCrypt）    | 用户上下文 |
+| `UserProvisioner` | 用户幂等建档：查/建 user + 默认角色，业务唯一键冲突回查重放（ADR-016） | 用户上下文 |
+| `SellerRegistrar` | 商家准入：一用户一商家唯一性校验 + PENDING→NORMAL/FROZEN 状态机（ADR-016） | 用户上下文 |
+| `SignInPointsPolicy` | 每日签到积分规则（Redis Bitmap 签到，策略为纯 POJO） | 用户上下文 |
+| `SmsCodeVerifier` | 短信验证码本地校验（读 `sms:code:` 契约；含 `000000` 灰度后门，恢复路径见 ADR-016） | 用户上下文 |
 | `LoginTokenService` | JWT RS256 签发、Access Token + Refresh Token 双Token模式 | 认证上下文 |
 | `LoginStrategy` (接口) | 登录策略接口：`support(IdentityType, CredentialType)` + `login(LoginReq)` | 认证上下文 |
 | `LoginStrategyFactory` | 注入 `List<LoginStrategy>`，按 identityType+credentialType 分发 | 认证上下文 |

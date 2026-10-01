@@ -53,7 +53,7 @@
 | **关系型数据库**    | MySQL (InnoDB)        | 9.3.0   | 所有业务数据：用户/商品/订单/购物车/支付                       |
 | **ORM**       | MyBatis-Plus          | 3.5.11  | 数据访问：LambdaQueryWrapper 参数化查询，`@Version` 乐观锁 |
 | **缓存**        | Redis                 | 7.x     | 缓存（Token/验证码/用户会话）、分布式锁（Redisson）、限流计数器（Lua） |
-| **Redis 客户端** | Redisson              | 3.26.0  | 分布式锁（`authorization-service`，登录并发控制）         |
+| **Redis 客户端** | Redisson              | 3.26.0  | 分布式锁（`authorization-service` 登录并发控制；`user-service` DistributedLock 端口，ADR-016） |
 | **搜索引擎**      | ElasticSearch         | 7.17.25 | 商品全文检索（V2.5 已启用 search-service，ES+MySQL双实现）  |
 | **对象存储**      | MinIO / 阿里云 OSS       | —       | 商品图片、用户头像、商家 Logo（计划 V1.1）                   |
 | **分库分表**      | Apache ShardingSphere | —       | 分库分表中间件（计划 V2.0，触发条件：单表 > 500 万行）            |
@@ -196,7 +196,7 @@
 | ------                  | ------                             | ---------- | -------------                                          |
 | `gateway-service`          | API 网关，路由转发，统一入口                   | P0         | Spring Cloud Gateway + Nginx + Sentinel                |
 | `authorization-service` | OAuth2 认证授权，登录注册，Token 签发          | P0         | Spring Security + JWT + Redis + Geetest                |
-| `user-service`          | 用户 CRUD，收货地址，签到，Geetest 人机验证，阿里云短信 | P0         | MySQL + Redis (BitMap 签到) + dysmsapi20170525 (阿里云短信)   |
+| `user-service`          | 用户/地址/商家/签到：DDD 四层归位（adapter/app/domain/infrastructure，app 按聚合 13 子包编排 + persistence 按聚合 11 子包，domain 纯 POJO + 端口化，见 [ADR-016](../adr/016-user-service-ddd-and-sms-migration.md)）；发码/人机验证收口 verification-service | P0         | MySQL + Redis (BitMap 签到 + Redisson 3.26.0 分布式锁 DistributedLock 端口) |
 | `item-service`          | 商品 (SPU)、规格 (SKU)、类目管理，库存乐观锁；V4.0: stockType(LIMITED/UNLIMITED/PRESALE)+isHot+hotReason+salesTags | P1         | MySQL + MinIO/OSS (商品图片，计划 V1.1)                       |
 | `cart-service`          | 购物车                                | P1         | MySQL                                                  |
 | `trade-service`         | 统一订单中心：OrderTypeEnum(NORMAL/DIRECT/FLASH_SALE/PRESALE)+策略模式(OrderCreateStrategy+OrderCreateContext+OrderCreateStrategyFactory)；Saga补偿；OrderManager编排；售后+结算+入住审核 | P1         | MySQL + RocketMQ (订单超时延迟消息 level=16/30min) + Seata (分布式事务，计划 V1.1) + XXL-Job (兜底，计划 V1.1) |
@@ -254,13 +254,13 @@
 **V5.2 通信/校验调用链**（能力抽离后）：
 
 ```
-authorization-service / user-service（后续迁移）
+authorization-service / user-service（均已收口）
   → Feign verification-service  /internal/verification/**   （校验收口，fail-closed）
       → Feign notification-service /internal/notify/**      （纯通道发送）
           → ia-integration (sms/ email/ captcha/) → 第三方（阿里云短信 / SMTP / 极验）
 ```
 
-> 过渡态说明：user-service 仍直发短信验证码（写 `sms:code:` Redis key），verification-service 按同一契约校验，两端互通；user-service 直发链路迁移与 `000000` 测试后门迁移为独立任务。authorization-service 人机验证已收口 verification-service（不再直连极验），Feign 熔断已启用（resilience4j，fail-closed，TimeLimiter 5s）。
+> 迁移状态（[ADR-016](../adr/016-user-service-ddd-and-sms-migration.md)）：user-service 发码/人机验证已收口 verification-service（scene=`USER_CODE` 中性透传），本地验证码生成、`sms:limit:` 本地限流与短信直连引用已删除——user-service 发送的短信经 verification-service → notification-service 完成，两端仍以 `sms:code:{phone}` Redis Key 契约互通。过渡态保留：user-service 侧 verifyCode 仍为本地校验（含 `000000` 灰度后门，严格比对分支暂关闭），恢复路径见 ADR-016。authorization-service 人机验证已收口 verification-service（不再直连极验），Feign 熔断已启用（resilience4j，fail-closed，TimeLimiter 5s）。
 
 ### 3.3 共享模块
 

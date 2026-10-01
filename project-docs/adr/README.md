@@ -19,3 +19,4 @@
 | [013](./013-payment-conditional-namespace-migration-deferred.md) | 支付渠道条件装配命名空间暂不迁移（记录风险与迁移路径） | 2026-09-29 |
 | [014](./014-doc-template-purification.md)         | 模板纯化 —— ADR 与图示归位 project-docs，doc/ 只留通用 | 2026-09-30 |
 | [015](./015-package-and-contract-naming.md)        | 应用层包名 `app` + 契约对象 `XxxCO` 命名规范 | 2026-10-01 |
+| [016](./016-user-service-ddd-and-sms-migration.md) | user-service DDD 四层重构 + 短信直发链路迁移 verification-service | 2026-10-01 |

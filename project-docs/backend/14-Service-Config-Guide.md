@@ -1,6 +1,7 @@
 # 14 — 服务配置指南
 
 > 从零搭建 IceAmericanoMall 所需的全部组件：Docker 容器编排、中间件配置、第三方平台注册、微服务环境变量。
+> 最后更新: 2026-09-30
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增中间件/配置项/端口时
 
 ---
@@ -68,7 +69,7 @@ docker compose exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} icedamericano_m
 | Nginx     | ia-nginx              | **80**         | 宿主机     | 反向代理 + 限流    |
 | Gateway   | gate-service          | **8080**       | backend | API 统一入口     |
 | Auth      | authorization-service | **9000**       | backend | OAuth2 + JWT |
-| User      | user-service          | **8080**       | backend | 同端口，分实例部署    |
+| User      | user-service          | **8081**       | backend | 以 application.yml 为准 |
 | Item      | item-service          | **8082**       | backend | 商品/类目/SKU    |
 | Cart      | cart-service          | **8083**       | backend | 购物车          |
 | Trade     | trade-service         | **8084**       | backend | 订单/售后/结算     |
@@ -380,6 +381,8 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
 
 ### 5.2 阿里云短信（user-service）
 
+> ⚠️ **能力已收口 verification-service**（ADR-016）：user-service 侧直连短信的发码代码引用已删（本节 yml 键位暂保留）；签名/模板/AccessKey 现由 verification-service → notification-service 投递链路使用。
+
 **注册步骤：**
 
 1. [阿里云短信控制台](https://dysms.console.aliyun.com/) → 开通服务
@@ -401,6 +404,8 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
 ---
 
 ### 5.3 极验人机验证（user-service）
+
+> ⚠️ **能力已收口 verification-service**（ADR-016）：user-service 侧直连极验的代码引用已删（本节 yml 键位暂保留）；人机验证四要素由调用方透传 verification-service 裁决（authorization-service / user-service 同一模式）。
 
 **注册步骤：**
 

@@ -64,7 +64,7 @@
 | # | 威胁 | 严重度 | 对策 |
 |---|------|--------|------|
 | I1 | 横向越权查看他人订单 | 🔴 高 | Manager 层统一校验 `order.userId == currentUser.id` |
-| I2 | 横向越权操作他人地址 | 🔴 高 | 同 I1，地址归属校验 |
+| I2 | 横向越权操作他人地址 | 🔴 高 | 同 I1；user-service 双层越权防范：聚合实体归属断言（Address.assertOwnedBy）+ 仓储 SQL WHERE user_id 兜底（ADR-016） |
 | I3 | 日志泄露手机号/密码 | 🟡 中 | 日志脱敏：手机 `138****5678`，密码不记录 |
 | I4 | 异常堆栈泄露内部结构 | 🟡 中 | 生产环境 `server.error.include-stacktrace=never` |
 | I5 | 枚举用户是否存在 | 🟡 中 | 注册/登录返回统一模糊信息：「手机号或密码错误」 |
@@ -117,9 +117,10 @@
 |--------|------|---------|
 | 传输层 | HTTPS (TLS 1.3) + Nginx 反向代理 | T1-T4, I1-I6 |
 | 认证层 | JWT RS256 + JWKS | S1, S2 |
-| 鉴权层 | RBAC + 资源归属校验 | E1, E2, I1, I2 |
+| 鉴权层 | RBAC + 资源归属校验；user-service 双层越权防范（聚合实体归属断言 + 仓储 SQL WHERE userId 兜底，ADR-016） | E1, E2, I1, I2 |
 | 输入层 | 参数校验 + 白名单 | A03-Injection |
 | 限流层 | @RateLimit (Redis Lua) + Sentinel 熔断 | D1-D4 |
+| 发码/校验链路 | 短信发码与人机验证收口 verification-service，Feign 熔断 fail-closed（依赖不可用即失败，绝不静默成功）；user-service 本地分级限流（`sms:minute/hour/day:`）与远端 60 秒重发窗口互补（ADR-016） | D1 |
 | 数据层 | DO/DTO/VO 隔离 + AES-256 PII 加密 | I6, A02 |
 | 审计层 | 操作日志 + 不可变日志表 | R1, R2 |
 | 运维层 | Gateway 路由控制 + `/internal/**` 隔离 | E3 |
@@ -128,6 +129,8 @@
 | 消息层 | RabbitMQ TLS + 生产/消费双向认证 (V1.1) | E4 |
 | 调度层 | XXL-Job AccessToken + 执行器注册校验 (V1.1) | E5 |
 | 存储层 | MinIO/OSS Pre-signed URL + 防盗链 (V1.1) | E6 |
+
+> ⚠️ **灰度期已知豁免**：user-service `verifyCode` 本地校验保留 `000000` 万能码旁路（严格比对分支暂关闭），迁移与恢复路径见 [ADR-016](../adr/016-user-service-ddd-and-sms-migration.md)；真实短信通道全面接入并执行恢复路径前，**不得上线生产环境**。
 
 ---
 

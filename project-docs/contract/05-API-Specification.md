@@ -1,6 +1,6 @@
 # 05 — API 规格文档 (API Specification — SDD)
 
-> **最后更新**: 2026-09-30 | **版本**: V5.2.1 | **端点总数**: 210+ | **公共**: 180+ | **内部**: 30+ | **已实现**: 190+
+> **最后更新**: 2026-09-30 | **版本**: V5.2.2 | **端点总数**: 210+ | **公共**: 180+ | **内部**: 30+ | **已实现**: 190+
 > 
 > **角色**: Frontend (Next.js 15 + React 19) ↔ Backend (Spring Cloud Microservices) 唯一 API 契约。
 > 本文件是 SDD (Specification-Driven Development) 的核心产物——前后端并行开发的唯一真相来源。
@@ -276,6 +276,8 @@ Authorization: Bearer <access_token>
 | U3  | POST  | `/api/user/profile/avatar` | 🔒  | `multipart/form-data: file` (≤5MB, jpg/png/webp)                                                                    | `String` (头像 URL)                | ✅ V3.2 |
 | U4  | GET   | `/api/user/profile/avatar` | 🌐  | Query: `width?`, `height?` (默认200x200)                                                                              | `image/jpeg` (Cache-Control: 1h) | ✅ V3.2 |
 | U5  | POST  | `/api/user/code`           | 🌐  | `SmsCodeSendReq { phone, requestId, captchaTicket, captchaRandStr?, lotNumber, captchaOutput, passToken, genTime }` | `Void`                           | ✅      |
+
+> **U5 内部行为注记（ADR-016）**：发码/人机验证已收口 verification-service（生成→限流→投递，内部透传 `scene=USER_CODE`）；对外报文无变化。`000000` 灰度后门仅存在于 user-service 本地校验路径，真实短信通道接入前不得上线生产。
 
 **`UserInfoResp`**:
 
@@ -1455,7 +1457,7 @@ Authorization: Bearer <access_token>
 | --- | ---- | ------------------------------------ | ---------------------- | -------------- | ------ |
 | I1  | POST | `/internal/auth/register`            | `RegisterReqCO`       | `LoginRespCO` | ✅ V5.1 |
 | I2  | POST | `/internal/auth/web/password/login`  | `PasswordLoginReqCO`  | `LoginRespCO` | ✅ V5.1 |
-| I3  | POST | `/internal/auth/login/sms/login`     | `SmsLoginReqCO`       | `LoginRespCO` | ✅ V5.1 |
+| I3  | POST | `/internal/auth/web/sms/login`       | `SmsLoginReqCO`       | `LoginRespCO` | ✅ V5.1 |
 | I4  | POST | `/internal/auth/web/wechat/login`    | `WechatWebLoginReqCO` | `LoginRespCO` | ✅ V5.1 |
 | I5  | POST | `/internal/auth/wechat/mini/login`   | `WechatMiniLoginReqCO` | `LoginRespCO` | ✅ V5.1 |
 | I6  | POST | `/internal/auth/reset-password`      | `ResetPasswordReqCO`  | `void`         | ✅ V5.1 |
@@ -1477,6 +1479,8 @@ Authorization: Bearer <access_token>
 | #   | 方法  | 路径                       | 请求                | 响应 (原始)       | 阶段  |
 | --- | --- | ------------------------ | ----------------- | ------------- | --- |
 | I10 | GET | `/internal/address/{id}` | Path: `id` (Long) | `AddressResp` | ✅   |
+
+> ⚠️ 客户端路径修正（ADR-016）：ia-api `AddressClient` 原误拼为 `/internal/user/address/address/{id}`（运行期 404），已更正为本表路径；`AddressCO` 为服务端 `AddressResp` 的字段子集。
 
 #### 4.14.3 InternalBalanceController — `/internal/balance` (user-service)
 
@@ -1910,6 +1914,7 @@ data: [DONE]
 | **V5.1** | **2026-09-29** | **authorization-service DDD 四层重构配套同步**：①§4.1 端点路径核对更正（A1 `/api/auth/web/login`、A6 `/api/auth/web/wechat/login`、A9 新增小程序 `/api/auth/wechat/mini/login`，响应统一含 `token_type` 增量字段）；②§4.14.1 内部端点路径更正：认证域迁移至 `/internal/auth/*`（I1-I6），新增 `/internal/user/getOrCreate`（I9），后续内部端点编号顺延；③§8.1 DTO 示例区分 LoginResp/OAuth2TokenResp；④§7.1 前端映射登录路径更正 |
 | **V5.2** | **2026-09-29** | **通信/校验能力抽离**：①新增微服务 notification-service:9400（纯通道发送，§4.14.12 I30-I32）与 verification-service:9401（验证码签发/校验+人机验证收口，§4.14.13 I33-I35）；②ia-common SMS/Geetest 工具迁至 ia-integration；③**破坏性变更**：`NotificationClient.sendSmsCode(Map)` → 强类型 `sendSms/sendEmail/sendInAppMessage`，旧 `/internal/notify/send` 废弃；④新增 `VerificationClient`（fail-closed 降级）；⑤§4.1 A1 `credentialType` 改为服务端路由依据（PASSWORD/SMS_CODE/EMAIL_CODE），新增 A10 邮箱发码端点；⑥authorization-service 人机验证改经 verification-service 裁决，启用 Feign 熔断（resilience4j） |
 | **V5.2.1** | **2026-09-30** | **契约对象按 ADR-015 更名**：ia-api 契约对象 `XxxDTO` → `XxxCO`（24 类，§4.14 内部端点表同步；报文格式/路由/JSON 字段零变化，仅 Java 类名）；`CreateOrderInternalReq` 等无 DTO 后缀类保留原名 |
+| **V5.2.2** | **2026-09-30** | **user-service DDD 重构契约同步（ADR-016）**：I3 路径更正 `/internal/auth/web/sms/login`（文档残留错配）；I10 标注 AddressClient 客户端路径修正；U5 发码/人机验证收口 verification-service 注记（报文无变化） |
 
 ---
 
