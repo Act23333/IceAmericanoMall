@@ -1,0 +1,75 @@
+server:
+  port: 9401
+
+spring:
+  application:
+    name: verification-service
+  cloud:
+    nacos:
+      server-addr: ${ia.nacos.host:192.168.10.128}:8848
+      username: nacos
+      password: nacos
+      discovery:
+        enabled: true
+  data:
+    redis:
+      host: ${ia.redis.host:192.168.10.128}
+      port: 6379
+      password: redis
+      client-name: verification-service
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+
+# ── 验证码策略（领域策略由配置装配；默认值与 user-service 直发链路一致）──
+verification:
+  code:
+    length: 6
+    ttl-seconds: 300            # 与 user-service 的 sms:code TTL（5 分钟）保持一致
+    send-limit-seconds: 60      # 与 user-service 的 sms:limit 窗口（60 秒）保持一致
+    max-failures: 5             # 连续错误上限，超过即作废验证码
+    failure-window-seconds: 1800
+
+# ── 人机验证（极验 Geetest v4）──
+geetest:
+  captcha-id: ${GEETEST_CAPTCHA_ID:}
+  key: ${GEETEST_KEY:}
+  validate-url: https://gcaptcha4.geetest.com/validate
+
+# Feign：调用 notification-service 投递验证码（SMS / EMAIL）
+feign:
+  okhttp:
+    enabled: true
+
+logging:
+  level:
+    org.icedamericanomall: DEBUG
+    org.nolazy: DEBUG
+  file:
+    name: C:\Users\18279\Desktop\10\IceAmericanoMall\Implementation\back-end\logs\verification-service\app
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      max-history: 30
+
+# 可观测性：Actuator 健康检查 + Prometheus 指标端点
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# ── Knife4j API 文档 ──
+knife4j:
+  enable: true
+springdoc:
+  api-docs:
+    enabled: true

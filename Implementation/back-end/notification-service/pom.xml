@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.nolazy</groupId>
+        <artifactId>IcedAmericanoMall</artifactId>
+        <version>1.0</version>
+    </parent>
+
+    <artifactId>notification-service</artifactId>
+    <description>通信服务：短信/邮件通道投递（纯通道发送，无库表）</description>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <!-- 共享库：异常体系统一走 ia-common（ErrorCode / 全局异常处理 / 脱敏工具） -->
+        <dependency>
+            <groupId>org.nolazy</groupId>
+            <artifactId>ia-common</artifactId>
+        </dependency>
+
+        <!-- 第三方集成：短信（阿里云/Mock）、邮件（SMTP/Mock） -->
+        <dependency>
+            <groupId>org.nolazy</groupId>
+            <artifactId>ia-integration</artifactId>
+        </dependency>
+
+        <!-- 内部端点请求体使用 ia-api 的强类型 DTO（与 NotificationClient 契约同源） -->
+        <dependency>
+            <groupId>org.nolazy</groupId>
+            <artifactId>ia-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- 邮件通道（SMTP）：ia-integration 中声明为 optional，真实投递的服务需自行声明 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+        <!-- Redis：V5.2 已摘除。
+             本服务不直接使用 Redis；此前保留该依赖的唯一原因是 ia-common 的
+             RedisConfig / RedisLuaScriptConfig / RateLimitUtils / RateLimitAspect
+             在类路径缺少 spring-data-redis 时加载失败（R-1 遗留问题）。
+             该问题已在 ia-common 侧通过 @ConditionalOnClass 守卫根治，
+             因此这里不再需要 Redis —— 顺带消除 actuator 中一个永远指向「非本服务职责」
+             的 redis health 指标。若将来本服务需要限流（@RateLimit），再引回依赖即可。 -->
+
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+            <version>${knife4j-swagger.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>jakarta.annotation</groupId>
+            <artifactId>jakarta.annotation-api</artifactId>
+        </dependency>
+    </dependencies>
+</project>

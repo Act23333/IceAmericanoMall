@@ -1,0 +1,79 @@
+server:
+  port: 9400
+
+spring:
+  application:
+    name: notification-service
+  cloud:
+    nacos:
+      server-addr: ${ia.nacos.host:192.168.10.128}:8848
+      username: nacos
+      password: nacos
+      discovery:
+        enabled: true
+  # V5.2: 原先的 spring.data.redis.* 已随 Redis 依赖一并摘除
+  # （本服务不使用 Redis；ia-common 的 Redis 自动配置已加 @ConditionalOnClass 守卫，
+  #   不会因类路径缺少 spring-data-redis 而启动失败）
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+
+# ── 短信通道（SMS）──────────────────────────────────────────────
+# enabled=false（dev 默认）→ ia-integration MockSmsClient（日志投递）
+# enabled=true            → AliyunSmsClient（需配置 AK/SK/签名/模板）
+aliyun:
+  sms:
+    enabled: false
+    access-key-id: ${ALIYUN_SMS_ACCESS_KEY_ID:}
+    access-key-secret: ${ALIYUN_SMS_ACCESS_KEY_SECRET:}
+    region-id: cn-hangzhou
+    sign-name: 冰美商城
+    template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}
+
+# ── 邮件通道（EMAIL）────────────────────────────────────────────
+# enabled=false（dev 默认）→ MockEmailClient（日志投递）
+# enabled=true            → RealEmailClient（SMTP，需配置 host/账号/密码/发件人）
+notification:
+  email:
+    enabled: false
+    host: ${MAIL_SMTP_HOST:}
+    port: 465
+    username: ${MAIL_SMTP_USERNAME:}
+    password: ${MAIL_SMTP_PASSWORD:}
+    from: ${MAIL_SMTP_FROM:}
+    protocol: smtp
+    ssl-enabled: true
+    default-encoding: UTF-8
+
+logging:
+  level:
+    org.icedamericanomall: DEBUG
+    org.nolazy: DEBUG
+  file:
+    name: C:\Users\18279\Desktop\10\IceAmericanoMall\Implementation\back-end\logs\notification-service\app
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      max-history: 30
+
+# 可观测性：Actuator 健康检查 + Prometheus 指标端点
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# ── Knife4j API 文档 ──
+knife4j:
+  enable: true
+springdoc:
+  api-docs:
+    enabled: true
