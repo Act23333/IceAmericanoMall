@@ -116,18 +116,18 @@ gate-service (API Gateway — Spring Cloud Gateway + Nacos)             ✅ COMP
 
 > **Note**: This project has grown to **14 modules** (12 services + `ia-common`/`ia-api` shared libs, plus `ia-integration` and the `database` module). Earlier revisions of this file listed only 11 and marked `search-service` as a skeleton — that is outdated. As of the current audit, `search-service`, `marketing-service`, and `ia-integration` are fully implemented; `ai-service` is implemented but disabled by default.
 
-`ia-common` is the shared kernel — it defines `Result<T>`, `ErrorCode` enum, exception hierarchy (`CommonException`, `BadRequestException`, `BizException`, `DBException`, `ForbiddenException`, `UnauthorizedException`), `@RateLimit` annotation + `RateLimitAspect`, `GlobalExceptionHandler`, Lua scripts (`rate_limit.lua`, `check_limit.lua`, `login_rate_limit.lua`, `del_redisKey.lua`), SMS utilities, Geetest captcha integration, MyBatis-Plus config, Json config.
+`ia-common` is the shared kernel — it defines `Result<T>`, `ErrorCode` enum, exception hierarchy (`CommonException`, `BadRequestException`, `BizException`, `DBException`, `ForbiddenException`, `UnauthorizedException`), `@RateLimit` annotation + `RateLimitAspect`, `GlobalExceptionHandler`, Lua scripts (`rate_limit.lua`, `check_limit.lua`, `login_rate_limit.lua`, `del_redisKey.lua`), MyBatis-Plus config, Json config. (V5.2: SMS/Geetest third-party integration moved out of ia-common into `ia-integration`.)
 
 `ia-api` contains Feign client interfaces (e.g., `UserClient`, `SkuClient`), shared DTOs, and fallback implementations so services can call each other without duplicating contract definitions.
 
-**Package naming note**: `ia-common` uses the base package `org.noLazy.common`, while all other services use `org.icedAmericanoMall`. This inconsistency exists because `ia-common` was bootstrapped separately. New code should follow the service's existing convention.
+**Package naming note (V5.2 unified)**: All modules share the base package `org.icedamericanomall`. Service implementations are segmented by service: `org.icedamericanomall.<service>` (e.g., `user`, `item`, `auth`, `gateway`); shared modules live in dedicated segments: `ia-common` = `org.icedamericanomall.common`, `ia-integration` = `org.icedamericanomall.integration.*`, `ia-api` = `org.icedamericanomall.{client,config,dto,fallback}`. Never create a sub-package in one module that shares a name with another service's segment (e.g., an `auth/` package inside item-service). Because service base packages no longer cover shared-module packages, service main classes must declare explicit `scanBasePackages` for ia-api fallback / ia-integration beans they use (see ADR-009).
 
 ### Package Structure (Alibaba Lightweight DDD)
 
 Each service follows this package layout (minimal version for small/medium services):
 
 ```
-org.icedAmericanoMall
+org.icedamericanomall.<service>
 ├── controller/    — REST endpoints, param validation (no business logic, no Redis/lock ops)
 ├── manager/       — Flow orchestration, distributed locks, rate limiting, multi-service aggregation
 ├── service/       — Atomic business logic, single-domain operations
@@ -252,7 +252,7 @@ Knowledge graph (product entity graph, RAG+KG hybrid retrieval), personalized re
 
 **需求评审明确延期至 V3.0+（不在 V2.x 范围，当前不实现）**：RBAC 资源级权限管理、积分商城（积分兑换）、任务中心、店铺装修、多币种。这些在 PRD 中曾标 🔵 但无对应任务；如需实现须先在需求评审重新排期。
 
-### Hard Constraints (from `project-docs/09-constraints.md`)
+### Hard Constraints (from `project-docs/collaboration/09-constraints.md`)
 
 These are non-negotiable rules. Violating any of them = PR rejection.
 
@@ -324,11 +324,11 @@ Single MySQL schema (`Initialize.sql`) with tables: `user`, `address`, `seller`,
 ### Project Documentation
 
 - `doc/methodology/` — Generic analysis methodology (11-phase pipeline: BDD→DDD→SDD→TDD→SPC), reusable for any project
-- `doc/adr/` — Architecture Decision Records: why DDD layering, dual primary keys, DO/DTO/VO isolation, internal API exception passthrough were chosen
+- `project-docs/adr/` — Architecture Decision Records: why DDD layering, dual primary keys, DO/DTO/VO isolation, internal API exception passthrough were chosen
 - `project-docs/` — IceAmericanoMall-specific deliverables (PRD, Architecture, Domain Model, API Spec, Data Model, Workflow, Test Strategy, Security Model)
-- `project-docs/08-agents.md` — **AI coding instructions** (layer templates, naming, test patterns, forbidden patterns). Read before writing any code.
-- `project-docs/09-constraints.md` — **Hard constraints & anti-patterns** (version locks, layer rules, security rules, coding rules). Check before committing.
-- `drawio/` — Architecture diagrams (use case, ER, sequence, domain class, C4 container, security DFD — both `.drawio` and `.mmd` formats)
+- `project-docs/collaboration/08-agents.md` — **AI coding instructions** (layer templates, naming, test patterns, forbidden patterns). Read before writing any code.
+- `project-docs/collaboration/09-constraints.md` — **Hard constraints & anti-patterns** (version locks, layer rules, security rules, coding rules). Check before committing.
+- `project-docs/drawio/` — Architecture diagrams (use case, ER, sequence, domain class, C4 container, security DFD — both `.drawio` and `.mmd` formats)
 
 ### Available MCP Tools (this project)
 

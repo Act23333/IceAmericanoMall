@@ -131,7 +131,7 @@
 - [ ] STRIDE 威胁清单通过安全评审
 - [ ] 所有高危威胁的对策已在 Architecture/API Spec 中体现
 - [ ] OWASP 评估记录可追溯
-- [ ] 安全控制措施在 Security-Model.md (project-docs) 中记录
+- [ ] 安全控制措施在 Security-Model.md ({project-docs}) 中记录
 
 ---
 

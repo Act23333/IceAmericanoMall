@@ -105,7 +105,7 @@
 | 商品  | Product | SKU (1:N)       | 库存不能为负       |
 | 订单  | Order   | OrderItem (1:N) | 总额 = 各小计之和   |
 
-### 通用语言词汇表（片段，完整版见 project-docs/03-Domain-Model.md）
+### 通用语言词汇表（片段，完整版见 {project-docs}/backend/03-Domain-Model.md）
 
 | 中文  | 英文               | 定义         |
 | --- | ---------------- | ---------- |
@@ -113,7 +113,7 @@
 | 待发货 | Pending Shipment | 支付完成等待商家发货 |
 | 快照  | Snapshot         | 下单时复制的信息副本 |
 
-详见：[project-docs/03-Domain-Model.md](../../project-docs/03-Domain-Model.md)
+详见：`{project-docs}/backend/03-Domain-Model.md`
 
 ---
 
@@ -144,7 +144,7 @@
 - [ ] 所有检查清单项通过
 - [ ] 限界上下文与 Phase 4 (架构设计) 一致
 - [ ] 聚合候选与 Phase 2 (事件风暴) 产出一致
-- [ ] 产出已同步到 project-docs/03-Domain-Model.md
+- [ ] 产出已同步到 {project-docs}/backend/03-Domain-Model.md
 
 ---
 

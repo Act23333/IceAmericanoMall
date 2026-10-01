@@ -31,7 +31,7 @@
 │  ─────────────────────────────────────────────────           │
 │  输入: 用户原始需求                                             │
 │  文档: methodology/01-requirements-elicitation.md             │
-│  产出: project-docs/01-PRD.md                                 │
+│  产出: {project-docs}/product/01-PRD.md                       │
 │        ├── 用户角色 (Actor)                                    │
 │        ├── 功能列表 (MoSCoW 优先级)                             │
 │        ├── 核心流程 BDD 场景 (Given-When-Then)                 │
@@ -77,7 +77,7 @@
 │  ─────────────────────────────────────────────────           │
 │  输入: PRD + 用例图 + 事件风暴 (限界上下文泳道)                  │
 │  文档: methodology/04-microservice-architecture.md            │
-│  产出: project-docs/02-Architecture.md + adr/                 │
+│  产出: {project-docs}/backend/02-Architecture.md + adr/       │
 │        ├── 架构风格 (微服务/单体/事件驱动)                        │
 │        ├── 技术栈决策 (每条关键决策一条 ADR)                      │
 │        ├── 服务分解 → DDD 限界上下文映射                          │
@@ -94,7 +94,7 @@
 │  ─────────────────────────────────────────────────           │
 │  输入: Architecture Document (限界上下文) + 事件风暴 (聚合候选)   │
 │  文档: methodology/05-domain-modeling.md                      │
-│  产出: project-docs/03-Domain-Model.md                        │
+│  产出: {project-docs}/backend/03-Domain-Model.md              │
 │        ├── 限界上下文 + Context Map                            │
 │        ├── 实体 (Entity) + 属性                                │
 │        ├── 值对象 (Value Object)                               │
@@ -113,7 +113,7 @@
 │  ─────────────────────────────────────────────────           │
 │  输入: Domain Model (聚合根) + PRD (功能列表) + Architecture    │
 │  文档: methodology/06-api-design.md                           │
-│  产出: project-docs/05-API-Specification.md                   │
+│  产出: {project-docs}/contract/05-API-Specification.md        │
 │        ├── API 设计约定 (RESTful/HTTP方法/URL规范)              │
 │        ├── 统一响应格式 (Result<T> + ErrorCode)                │
 │        ├── 端点目录 (按服务列出所有 API)                         │
@@ -130,7 +130,7 @@
 │  ─────────────────────────────────────────────────           │
 │  输入: Domain Model (实体 + 属性 + 关系) + API Spec (VO参考)    │
 │  文档: methodology/07-data-modeling.md                        │
-│  产出: project-docs/04-Data-Model.md                          │
+│  产出: {project-docs}/backend/04-Data-Model.md                │
 │        ├── 数据库设计约定 (主键策略/金额/快照/字符集)              │
 │        ├── ER 图 → 表结构映射                                   │
 │        ├── 表定义 (字段/类型/约束/索引)                           │
@@ -142,19 +142,20 @@
 └───────────────────────────┬──────────────────────────────────┘
                             │
                             ▼
-┌──────────────────────────────────────────────────────────────┐
-│  Phase 8: 行为建模  ───  验证 API 设计                         │
-│  ─────────────────────────────────────────────────           │
-│  输入: API Spec (端点) + Domain Model (聚合)                   │
-│  文档: methodology/08-behavior-modeling.md                    │
-│  产出: 行为模型 (嵌入 project-docs/05-API-Specification.md)     │
-│        ├── 时序图 (Sequence Diagram) — 验证 API 调用链          │
-│        ├── 状态机 (State Machine) — 订单/支付状态流转            │
-│        └── 并发场景标注 (锁/幂等/事务边界)                       │
-│  标准: UML 2.5                                                │
-│  图表: 时序图 + 状态机 (Sequence + State Machine Diagram)        │
-│  DoD : 时序图覆盖正常+异常路径 + 状态机无死角 + 并发标注明确      │
-└───────────────────────────┬──────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Phase 8: 行为建模  ───  验证 API 设计                             │
+│  ─────────────────────────────────────────────────               │
+│  输入: API Spec (端点) + Domain Model (聚合)                       │
+│  文档: methodology/08-behavior-modeling.md                        │
+│  产出: 行为模型                                               │
+│        (嵌入 {project-docs}/contract/05-API-Specification.md) │
+│        ├── 时序图 (Sequence Diagram) — 验证 API 调用链              │
+│        ├── 状态机 (State Machine) — 订单/支付状态流转                │
+│        └── 并发场景标注 (锁/幂等/事务边界)                           │
+│  标准: UML 2.5                                                    │
+│  图表: 时序图 + 状态机 (Sequence + State Machine Diagram)            │
+│  DoD : 时序图覆盖正常+异常路径 + 状态机无死角 + 并发标注明确          │
+└───────────────────────────┬──────────────────────────────────────┘
                             │
                             ▼
 ┌──────────────────────────────────────────────────────────────┐
@@ -162,7 +163,7 @@
 │  ─────────────────────────────────────────────────           │
 │  输入: Architecture + API Spec + Data Model                   │
 │  文档: methodology/09-security-modeling.md                    │
-│  产出: project-docs/12-Security-Model.md                      │
+│  产出: {project-docs}/backend/12-Security-Model.md            │
 │        ├── 数据流图 (DFD) + 信任边界标注                        │
 │        ├── STRIDE 威胁清单 (按六类逐一分析)                      │
 │        ├── 安全控制措施表 (威胁 → 对策 → 实现)                   │
@@ -177,7 +178,7 @@
 │  ─────────────────────────────────────────────────           │
 │  输入: PRD (BDD场景) + API Spec + Security Model              │
 │  文档: methodology/10-test-strategy.md                        │
-│  产出: project-docs/11-Test-Strategy.md                       │
+│  产出: {project-docs}/quality/11-Test-Strategy.md             │
 │        ├── 测试金字塔定义 (Unit 70% / API 20% / E2E 5%)        │
 │        ├── BDD → 测试用例映射规则                               │
 │        ├── 覆盖率目标 (行/分支/方法/分层)                        │
@@ -188,26 +189,26 @@
 └───────────────────────────┬──────────────────────────────────┘
                             │
                             ▼
-┌──────────────────────────────────────────────────────────────┐
-│  Phase 11: 开发执行  ───  TDD + SPC                           │
-│  ─────────────────────────────────────────────────           │
-│  输入: 以上所有文档                                             │
-│  产出: Working Code + Tests                                   │
-│  流程:                                                        │
-│        BDD 场景 → 写失败测试 → 最小实现 → 重构                  │
-│        → 对照 09-constraints 查反模式                          │
-│        → 对照 10-review 自检                                   │
-│        → 对照 11-Test-Strategy 验证覆盖率                       │
-│        → 对照 12-Security-Model 查安全漏洞                      │
-│        → PR → Code Review → 合并                              │
-│                                                               │
-│  支撑文档:                                                     │
-│        project-docs/06-Workflow.md    — 开发流程 + 编码规范     │
-│        project-docs/07-Tasks.md       — 任务分解 + 验收场景     │
-│        project-docs/08-agents.md      — AI 编码指令            │
-│        project-docs/09-constraints.md — 技术约束 + 反模式       │
-│        project-docs/10-review.md      — 代码评审标准            │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  Phase 11: 开发执行  ───  TDD + SPC                                  │
+│  ─────────────────────────────────────────────────                   │
+│  输入: 以上所有文档                                                  │
+│  产出: Working Code + Tests                                          │
+│  流程:                                                               │
+│        BDD 场景 → 写失败测试 → 最小实现 → 重构                       │
+│        → 对照 09-constraints 查反模式                                │
+│        → 对照 10-review 自检                                         │
+│        → 对照 11-Test-Strategy 验证覆盖率                            │
+│        → 对照 12-Security-Model 查安全漏洞                           │
+│        → PR → Code Review → 合并                                     │
+│                                                                      │
+│  支撑文档:                                                           │
+│        quality/06-Workflow.md          — 开发流程 + 编码规范         │
+│        collaboration/07-Tasks.md       — 任务分解 + 验收场景         │
+│        collaboration/08-agents.md      — AI 编码指令                 │
+│        collaboration/09-constraints.md — 技术约束 + 反模式           │
+│        quality/10-review.md            — 代码评审标准                │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---

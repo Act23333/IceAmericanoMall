@@ -119,7 +119,7 @@ Scenario: POST /api/trade/order — 成功创建订单
 {"code": 40100, "data": null, "message": "Token已过期，请重新登录"}
 ```
 
-详见：[project-docs/05-API-Specification.md](../../project-docs/05-API-Specification.md)
+详见：`{project-docs}/contract/05-API-Specification.md`
 
 ---
 
@@ -149,7 +149,7 @@ Scenario: POST /api/trade/order — 成功创建订单
 - [ ] API 规格文档通过前后端联合评审
 - [ ] 所有检查清单项通过
 - [ ] 每个端点可追溯到 PRD 中的功能或 Phase 5 的聚合根
-- [ ] 产出已同步到 project-docs/05-API-Specification.md
+- [ ] 产出已同步到 {project-docs}/contract/05-API-Specification.md
 
 ---
 

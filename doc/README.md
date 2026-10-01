@@ -8,7 +8,6 @@
 | ---------------------------------- | ----------- | ----------------------- |
 | **[methodology/](./methodology/)** | 分析方法论（通用模板） | 可复用于任何项目的分析流程，告诉你「怎么分析」 |
 | **[knowledge/](./knowledge/)**     | 技术知识库       | 本项目遇到的技术问题、决策推演、学习笔记    |
-| **[adr/](./adr/)**                 | 架构决策记录      | 关键设计决策的 WHY（为什么这样选）     |
 | **[references/](./references/)**   | 参考资料        | 项目原始构想、命名规范、流程说明        |
 
 ## 文档在哪里？
@@ -16,7 +15,7 @@
 **项目交付物**（PRD、架构文档、领域模型、API 规格等）在：
 → **[../project-docs/](../project-docs/00-README.md)**
 
-`doc/` 是「分析方法论 + 知识库」，`project-docs/` 是「项目产物」。
+`doc/` 是「分析方法论 + 知识库」——**通用内容，可复用于任何项目**；`project-docs/` 是「项目产物」（含项目专属的 `adr/` 与 `drawio/`）。
 
 ## 阅读路径
 
@@ -24,8 +23,8 @@
 
 1. **[references/IDEA.md](./references/IDEA.md)** — 了解项目起源与愿景
 2. **[../project-docs/00-README.md](../project-docs/00-README.md)** — 浏览项目文档索引
-3. **[../project-docs/01-PRD.md](../project-docs/01-PRD.md)** — 理解产品需求
-4. **[../project-docs/02-Architecture.md](../project-docs/02-Architecture.md)** — 理解系统架构
+3. **[../project-docs/product/01-PRD.md](../project-docs/product/01-PRD.md)** — 理解产品需求
+4. **[../project-docs/backend/02-Architecture.md](../project-docs/backend/02-Architecture.md)** — 理解系统架构
 
 ### 如果你想学习分析方法论
 
@@ -35,7 +34,7 @@
 
 ### 如果你想理解某个技术决策
 
-→ **[adr/](./adr/)** — 每条 ADR 记录了「背景 → 决策 → 后果」
+→ **[../project-docs/adr/](../project-docs/adr/)** — 每条 ADR 记录了「背景 → 决策 → 后果」（ADR 是项目专属产物，已归档至 project-docs，不属于本通用模板）
 
 ### 如果你遇到了类似的技术问题
 

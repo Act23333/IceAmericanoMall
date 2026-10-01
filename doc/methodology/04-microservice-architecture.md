@@ -117,7 +117,7 @@ MVP: Docker单机 → V1.1: 读写分离 → V1.2: Nacos集群 → V2.0: K8s
 
 11 个模块（2 共享 + 9 服务），按 Phase 0→1→2→3→4 逐步实现。
 
-详见：[project-docs/02-Architecture.md](../../project-docs/02-Architecture.md)
+详见：`{project-docs}/backend/02-Architecture.md`
 
 ### 分层铁律
 
@@ -155,7 +155,7 @@ MVP: Docker单机 → V1.1: 读写分离 → V1.2: Nacos集群 → V2.0: K8s
 - [ ] 所有检查清单项通过
 - [ ] 每条关键决策有对应 ADR 记录
 - [ ] 限界上下文划分与 Phase 2 (事件风暴) 泳道一致
-- [ ] 产出已同步到 project-docs/02-Architecture.md + adr/
+- [ ] 产出已同步到 {project-docs}/backend/02-Architecture.md + adr/
 
 ---
 

@@ -108,7 +108,7 @@ orders ─1:1─ order_logistics
 user ─N:M─ sku (经由 cart 表)
 ```
 
-详见：[project-docs/04-Data-Model.md](../../project-docs/04-Data-Model.md)
+详见：`{project-docs}/backend/04-Data-Model.md`
 ER 图：见项目 drawio 目录下的 ER 图文件
 
 ---
@@ -142,7 +142,7 @@ ER 图：见项目 drawio 目录下的 ER 图文件
 - [ ] 数据模型通过后端/DBA 评审
 - [ ] 所有检查清单项通过
 - [ ] 表结构与 Phase 5 (领域模型) 的实体一一对应
-- [ ] 产出已同步到 project-docs/04-Data-Model.md
+- [ ] 产出已同步到 {project-docs}/backend/04-Data-Model.md
 
 ---
 

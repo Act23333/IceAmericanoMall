@@ -87,7 +87,7 @@ Feature: 用户注册
 
 **角色**：游客、普通用户、商家、管理员、第三方系统（支付网关/短信/OSS）
 
-**功能模块**（精简版，完整版见 project-docs/01-PRD.md）：
+**功能模块**（精简版，完整版见 {project-docs}/product/01-PRD.md）：
 
 | 模块  | 核心功能            | MVP      |
 | --- | --------------- | -------- |
@@ -100,7 +100,7 @@ Feature: 用户注册
 | 积分  | 签到/任务/积分商城      | 🔵 V1.1  |
 | 营销  | 优惠券/秒杀/拼团       | 🔵 V1.2+ |
 
-详见：[project-docs/01-PRD.md](../../project-docs/01-PRD.md)
+详见：`{project-docs}/product/01-PRD.md`
 
 ---
 
@@ -126,7 +126,7 @@ Feature: 用户注册
 - [ ] 产出文档通过团队评审
 - [ ] 所有检查清单项通过
 - [ ] 与前序阶段的可追溯性已验证
-- [ ] 产出已同步到 project-docs/01-PRD.md
+- [ ] 产出已同步到 {project-docs}/product/01-PRD.md
 
 ---
 
