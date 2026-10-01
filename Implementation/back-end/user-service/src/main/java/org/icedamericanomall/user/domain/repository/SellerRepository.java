@@ -1,7 +1,7 @@
 package org.icedamericanomall.user.domain.repository;
 
 import org.icedamericanomall.user.domain.model.Seller;
-import org.icedamericanomall.user.domain.model.SellerStatusEnum;
+import org.icedamericanomall.user.domain.enums.SellerStatusEnum;
 
 import java.util.List;
 import java.util.Optional;

@@ -11,7 +11,7 @@ import org.icedamericanomall.dto.UserAuthCO;
 import org.icedamericanomall.user.adapter.response.UserInfoResp;
 import org.icedamericanomall.user.app.rbac.RoleTypeDerivation;
 import org.icedamericanomall.user.domain.model.User;
-import org.icedamericanomall.user.domain.model.UserStatusEnum;
+import org.icedamericanomall.user.domain.enums.UserStatusEnum;
 import org.icedamericanomall.user.domain.repository.RoleRepository;
 import org.icedamericanomall.user.domain.repository.UserRepository;
 import org.icedamericanomall.user.domain.service.UserProvisioner;

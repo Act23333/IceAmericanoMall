@@ -8,7 +8,7 @@ import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.utils.crypto.BlindIndexUtil;
 import org.icedamericanomall.user.domain.exception.DuplicateUserException;
 import org.icedamericanomall.user.domain.model.User;
-import org.icedamericanomall.user.domain.model.UserStatusEnum;
+import org.icedamericanomall.user.domain.enums.UserStatusEnum;
 import org.icedamericanomall.user.domain.repository.UserRepository;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;

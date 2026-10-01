@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.user.domain.model.Seller;
-import org.icedamericanomall.user.domain.model.SellerStatusEnum;
+import org.icedamericanomall.user.domain.enums.SellerStatusEnum;
 import org.icedamericanomall.user.domain.repository.SellerRepository;
 import org.springframework.stereotype.Repository;
 

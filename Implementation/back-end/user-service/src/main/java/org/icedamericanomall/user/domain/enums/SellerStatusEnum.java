@@ -1,4 +1,4 @@
-package org.icedamericanomall.user.domain.model;
+package org.icedamericanomall.user.domain.enums;
 
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;

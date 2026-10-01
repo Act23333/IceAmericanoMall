@@ -1,5 +1,6 @@
 package org.icedamericanomall.user.domain.model;
 
+import org.icedamericanomall.user.domain.enums.SellerStatusEnum;
 import org.icedamericanomall.common.exception.BizException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

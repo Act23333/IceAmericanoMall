@@ -7,6 +7,7 @@ import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.user.adapter.request.UpdateProfileReq;
 import org.icedamericanomall.user.adapter.response.UserInfoResp;
 import org.icedamericanomall.user.app.port.AvatarStorage;
+import org.icedamericanomall.user.domain.enums.GenderEnum;
 import org.icedamericanomall.user.domain.model.User;
 import org.icedamericanomall.user.domain.repository.UserRepository;
 import org.springframework.stereotype.Component;
@@ -109,7 +110,7 @@ public class UserProfileManager {
             }
             case "gender" -> {
                 if (req.gender() != null) {
-                    user.changeGender(req.gender());
+                    user.changeGender(parseGender(req.gender()));
                 }
             }
             case "birthday" -> {
@@ -132,10 +133,19 @@ public class UserProfileManager {
             user.changeAvatar(req.avatar());
         }
         if (req.gender() != null) {
-            user.changeGender(req.gender());
+            user.changeGender(parseGender(req.gender()));
         }
         if (req.birthday() != null) {
             user.changeBirthday(req.birthday());
         }
+    }
+
+    /** 报文 code → 领域枚举（非法取值即参数错误）。 */
+    private GenderEnum parseGender(Integer code) {
+        GenderEnum gender = GenderEnum.fromCode(code);
+        if (gender == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "无效的性别取值: 0=未知, 1=男, 2=女");
+        }
+        return gender;
     }
 }

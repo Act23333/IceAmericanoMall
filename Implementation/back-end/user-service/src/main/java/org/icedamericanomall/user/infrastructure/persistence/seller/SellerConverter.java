@@ -1,7 +1,7 @@
 package org.icedamericanomall.user.infrastructure.persistence.seller;
 
 import org.icedamericanomall.user.domain.model.Seller;
-import org.icedamericanomall.user.domain.model.SellerStatusEnum;
+import org.icedamericanomall.user.domain.enums.SellerStatusEnum;
 
 /**
  * {@code SellerDO} ↔ 领域对象 {@link Seller} 转换器（基础设施层内部，纯静态转换）。

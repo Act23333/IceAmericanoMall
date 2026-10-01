@@ -1,5 +1,6 @@
 package org.icedamericanomall.user.domain.model;
 
+import org.icedamericanomall.user.domain.enums.SellerStatusEnum;
 import lombok.Builder;
 import lombok.Data;
 import org.icedamericanomall.common.enums.ErrorCode;

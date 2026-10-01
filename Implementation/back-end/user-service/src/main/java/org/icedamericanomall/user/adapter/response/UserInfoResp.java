@@ -74,9 +74,9 @@ public class UserInfoResp {
         resp.setPhone(user.getPhone() == null ? null : user.getPhone().getMask());
         resp.setEmail(user.getEmail() == null ? null : user.getEmail().getMask());
         resp.setAvatar(user.getAvatar());
-        resp.setGender(user.getGender());
+        resp.setGender(user.getGender() == null ? null : user.getGender().getCode());
         resp.setBirthday(user.getBirthday());
-        resp.setMemberLevel(user.getMemberLevel());
+        resp.setMemberLevel(user.getMemberLevel() == null ? null : user.getMemberLevel().getCode());
         resp.setStatus(user.getStatus() == null ? null : user.getStatus().getCode());
         resp.setRegisterTime(user.getCreateTime());
         resp.setBalance(user.getBalance());

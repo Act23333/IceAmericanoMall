@@ -1,7 +1,9 @@
 package org.icedamericanomall.user.infrastructure.persistence.user;
 
 import org.icedamericanomall.user.domain.model.User;
-import org.icedamericanomall.user.domain.model.UserStatusEnum;
+import org.icedamericanomall.user.domain.enums.GenderEnum;
+import org.icedamericanomall.user.domain.enums.MemberLevelEnum;
+import org.icedamericanomall.user.domain.enums.UserStatusEnum;
 import org.icedamericanomall.common.model.EncryptedIdentifier;
 
 /**
@@ -34,12 +36,12 @@ public final class UserConverter {
                 .userId(dataObject.getUserId())
                 .nickname(dataObject.getUsername())
                 .avatar(dataObject.getAvatar())
-                .gender(dataObject.getGender())
+                .gender(GenderEnum.fromCode(dataObject.getGender()))
                 .birthday(dataObject.getBirthday())
                 .balance(dataObject.getBalance())
                 .phone(toIdentifier(dataObject.getPhoneCipher(), dataObject.getPhoneHash(), dataObject.getPhoneMask()))
                 .email(toIdentifier(dataObject.getEmailCipher(), dataObject.getEmailHash(), dataObject.getEmailMask()))
-                .memberLevel(dataObject.getMemberLevel())
+                .memberLevel(MemberLevelEnum.fromCode(dataObject.getMemberLevel()))
                 .status(UserStatusEnum.fromCode(dataObject.getStatus()))
                 .createTime(dataObject.getCreateTime())
                 .updateTime(dataObject.getUpdateTime())
@@ -61,10 +63,10 @@ public final class UserConverter {
         dataObject.setUserId(user.getUserId());
         dataObject.setUsername(user.getNickname());
         dataObject.setAvatar(user.getAvatar());
-        dataObject.setGender(user.getGender());
+        dataObject.setGender(user.getGender() == null ? null : user.getGender().getCode());
         dataObject.setBirthday(user.getBirthday());
         dataObject.setBalance(user.getBalance());
-        dataObject.setMemberLevel(user.getMemberLevel());
+        dataObject.setMemberLevel(user.getMemberLevel() == null ? null : user.getMemberLevel().getCode());
         dataObject.setStatus(user.getStatus() == null ? null : user.getStatus().getCode());
         dataObject.setCreateTime(user.getCreateTime());
         dataObject.setUpdateTime(user.getUpdateTime());

@@ -3,7 +3,7 @@ package org.icedamericanomall.user.domain.repository;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.user.domain.exception.DuplicateUserException;
 import org.icedamericanomall.user.domain.model.User;
-import org.icedamericanomall.user.domain.model.UserStatusEnum;
+import org.icedamericanomall.user.domain.enums.UserStatusEnum;
 
 import java.util.List;
 import java.util.Optional;

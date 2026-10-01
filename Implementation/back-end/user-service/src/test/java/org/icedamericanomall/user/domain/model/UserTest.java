@@ -1,5 +1,8 @@
 package org.icedamericanomall.user.domain.model;
 
+import org.icedamericanomall.user.domain.enums.GenderEnum;
+import org.icedamericanomall.user.domain.enums.MemberLevelEnum;
+import org.icedamericanomall.user.domain.enums.UserStatusEnum;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.exception.BadRequestException;
@@ -89,12 +92,11 @@ class UserTest {
     @DisplayName("changeGender — 合法取值（0/1/2）写入；非法取值抛 PARAM_ERROR")
     void shouldChangeGender_withValidation() {
         User user = User.create(IdentityTypeEnum.PHONE, "13800138000");
-        assertEquals(User.GENDER_UNKNOWN, user.getGender(), "工厂缺省性别=未知");
+        assertEquals(GenderEnum.UNKNOWN, user.getGender(), "工厂缺省性别=未知");
 
-        user.changeGender(User.GENDER_FEMALE);
-        assertEquals(User.GENDER_FEMALE, user.getGender());
+        user.changeGender(GenderEnum.FEMALE);
+        assertEquals(GenderEnum.FEMALE, user.getGender());
 
-        assertThrows(BizException.class, () -> user.changeGender(9));
         assertThrows(BizException.class, () -> user.changeGender(null));
     }
 
@@ -112,15 +114,17 @@ class UserTest {
     }
 
     @Test
-    @DisplayName("changeMemberLevel — 归一化为大写；空白值拒绝")
+    @DisplayName("changeMemberLevel — fromCode 归一化大小写；空白/未知 code 拒绝")
     void shouldChangeMemberLevel_withNormalization() {
         User user = User.create(IdentityTypeEnum.PHONE, "13800138000");
-        assertEquals(User.MEMBER_LEVEL_DEFAULT, user.getMemberLevel(), "工厂缺省等级=NORMAL");
+        assertEquals(MemberLevelEnum.NORMAL, user.getMemberLevel(), "工厂缺省等级=NORMAL");
 
-        user.changeMemberLevel("gold");
-        assertEquals("GOLD", user.getMemberLevel());
+        user.changeMemberLevel(MemberLevelEnum.fromCode("gold"));
+        assertEquals(MemberLevelEnum.GOLD, user.getMemberLevel());
 
-        assertThrows(BizException.class, () -> user.changeMemberLevel("  "));
+        assertThrows(BizException.class, () -> user.changeMemberLevel(MemberLevelEnum.fromCode("  ")));
+        assertThrows(BizException.class, () -> user.changeMemberLevel(MemberLevelEnum.fromCode("DIAMOND")));
+        assertThrows(BizException.class, () -> user.changeMemberLevel(null));
     }
 
     // ==================== 标识换绑（PII 三字段） ====================

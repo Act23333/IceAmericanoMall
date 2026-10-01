@@ -1,11 +1,14 @@
 package org.icedamericanomall.user.domain.model;
 
+import org.icedamericanomall.user.domain.enums.UserStatusEnum;
 import lombok.Builder;
 import lombok.Data;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.model.EncryptedIdentifier;
+import org.icedamericanomall.user.domain.enums.GenderEnum;
+import org.icedamericanomall.user.domain.enums.MemberLevelEnum;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -41,18 +44,6 @@ import java.util.regex.Pattern;
 @Builder
 public class User {
 
-    /** 性别：未知 */
-    public static final int GENDER_UNKNOWN = 0;
-
-    /** 性别：男 */
-    public static final int GENDER_MALE = 1;
-
-    /** 性别：女 */
-    public static final int GENDER_FEMALE = 2;
-
-    /** 会员等级缺省值（注册即普通会员） */
-    public static final String MEMBER_LEVEL_DEFAULT = "NORMAL";
-
     /** 手机号格式（中国大陆） */
     private static final Pattern PHONE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
 
@@ -70,8 +61,8 @@ public class User {
 
     private String avatar;
 
-    /** 性别：0=未知，1=男，2=女 */
-    private Integer gender;
+    /** 性别（闭集取值域，持久化/报文口径为 Integer code） */
+    private GenderEnum gender;
 
     private LocalDate birthday;
 
@@ -84,8 +75,8 @@ public class User {
     /** 邮箱（PII 三字段：cipher + hash + mask；未绑定为 null） */
     private EncryptedIdentifier email;
 
-    /** 会员等级（NORMAL / SILVER / GOLD / PLATINUM，展示与营销维度） */
-    private String memberLevel;
+    /** 会员等级（闭集取值域，持久化/报文口径为 String code） */
+    private MemberLevelEnum memberLevel;
 
     private UserStatusEnum status;
 
@@ -112,8 +103,8 @@ public class User {
                 .userId(newBusinessId())
                 .status(UserStatusEnum.NORMAL)
                 .balance(0)
-                .gender(GENDER_UNKNOWN)
-                .memberLevel(MEMBER_LEVEL_DEFAULT);
+                .gender(GenderEnum.UNKNOWN)
+                .memberLevel(MemberLevelEnum.NORMAL);
         if (identityType == null) {
             return builder.build();
         }
@@ -175,12 +166,12 @@ public class User {
     /**
      * 修改性别。
      *
-     * @param gender 0=未知，1=男，2=女
-     * @throws BizException 非法取值（PARAM_ERROR）
+     * @param gender 性别枚举（边界层经 {@code GenderEnum.fromCode} 完成 code 反查与合法性校验）
+     * @throws BizException 空值（PARAM_ERROR）
      */
-    public void changeGender(Integer gender) {
-        if (gender == null || gender < GENDER_UNKNOWN || gender > GENDER_FEMALE) {
-            throw new BizException(ErrorCode.PARAM_ERROR, "无效的性别取值: 0=未知, 1=男, 2=女");
+    public void changeGender(GenderEnum gender) {
+        if (gender == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "性别不能为空");
         }
         this.gender = gender;
         this.updateTime = LocalDateTime.now();
@@ -200,15 +191,15 @@ public class User {
     }
 
     /**
-     * 修改会员等级（统一大写存储）。
+     * 修改会员等级（归一化由 {@code MemberLevelEnum.fromCode} 承担）。
      *
      * @throws BizException 空值（PARAM_ERROR）
      */
-    public void changeMemberLevel(String memberLevel) {
-        if (memberLevel == null || memberLevel.isBlank()) {
+    public void changeMemberLevel(MemberLevelEnum memberLevel) {
+        if (memberLevel == null) {
             throw new BizException(ErrorCode.PARAM_ERROR, "会员等级不能为空");
         }
-        this.memberLevel = memberLevel.trim().toUpperCase(Locale.ROOT);
+        this.memberLevel = memberLevel;
         this.updateTime = LocalDateTime.now();
     }
 

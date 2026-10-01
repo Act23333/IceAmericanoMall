@@ -1,5 +1,6 @@
 package org.icedamericanomall.user.infrastructure.persistence.user;
 
+import org.icedamericanomall.user.domain.enums.UserStatusEnum;
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;

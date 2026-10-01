@@ -10,7 +10,7 @@ import org.icedamericanomall.user.adapter.request.SellerRegisterReq;
 import org.icedamericanomall.user.adapter.request.UpdateShopReq;
 import org.icedamericanomall.user.adapter.response.SellerVO;
 import org.icedamericanomall.user.domain.model.Seller;
-import org.icedamericanomall.user.domain.model.SellerStatusEnum;
+import org.icedamericanomall.user.domain.enums.SellerStatusEnum;
 import org.icedamericanomall.user.domain.repository.SellerRepository;
 import org.icedamericanomall.user.domain.service.SellerRegistrar;
 import org.springframework.stereotype.Component;
