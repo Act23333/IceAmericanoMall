@@ -95,7 +95,7 @@ user ───1:N─── address
 cart ───N:1─── user
 cart ───N:1─── sku
 
-user ───1:N─── user_auth (authorization-service 认证凭证聚合, V5.1)
+user ───1:N─── user_auth (authorization-service 认证凭证聚合, V5.1；V5.2 起凭证唯一所有权归 auth，ADR-017)
 ```
 
 ---
@@ -104,26 +104,38 @@ user ───1:N─── user_auth (authorization-service 认证凭证聚合, 
 
 ### 3.1 user（用户表）
 
+> **V5.2 资料/凭证分离 + PII 加密**（[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)）：user 表为纯资料表；密码凭证/微信身份的唯一权威是 `user_auth`（§3.12），角色唯一权威是 RBAC 五表（§八）。
+
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
 | user_id | VARCHAR(32) | UNIQUE, NOT NULL | 业务唯一标识（UUID） |
-| username | VARCHAR(50) | NULL | 用户名（可选） |
-| phone | VARCHAR(20) | UNIQUE, NULL | 手机号（登录账号；微信-only 用户可空） |
-| password | VARCHAR(100) | NULL | BCrypt 加密密码（微信/纯验证码登录用户为空——不再写占位哈希，与 Initialize.sql 契约一致，ADR-016） |
+| username | VARCHAR(50) | NULL | 昵称（V5.2 术语统一：原"用户名"语义降级为展示字段，可重复；列名保留历史兼容） |
+| phone | VARCHAR(20) | NULL | ⚠️ **deprecated V5.2**：明文手机号退役（迁移器搬数后置 NULL），权威数据在 phone_cipher/phone_hash/phone_mask |
+| phone_cipher | VARCHAR(512) | NULL | 手机号密文（AES-256-GCM，Base64，V5.2 新增） |
+| phone_hash | CHAR(64) | UNIQUE, NULL | 手机号盲索引（HMAC-SHA256，等值查询/唯一性校验，V2.5 建列） |
+| phone_mask | VARCHAR(64) | NULL | 手机号脱敏展示值（如 `138****5678`，V5.2 新增） |
+| email_cipher | VARCHAR(512) | NULL | 邮箱密文（AES-256-GCM，V5.2 新增；邮箱身份登录归 user_auth.EMAIL 行） |
+| email_hash | VARCHAR(128) | UNIQUE, NULL | 邮箱盲索引（HMAC-SHA256，V5.2 新增） |
+| email_mask | VARCHAR(64) | NULL | 邮箱脱敏展示值（V5.2 新增） |
+| password | VARCHAR(100) | NULL | ⚠️ **deprecated V5.2**：密码凭证归 `user_auth.credential`（迁移器搬数后置 NULL），观察期后删列 |
 | avatar | VARCHAR(255) | NULL | 头像 URL |
-| wx_openid | VARCHAR(128) | UNIQUE, NULL | 微信 openid（第三方登录，V2.2） |
-| register_time | DATETIME | NOT NULL | 注册时间（业务时间） |
+| gender | TINYINT | NOT NULL, DEFAULT 0 | 性别：0-未知，1-男，2-女（V5.2 新增） |
+| birthday | DATE | NULL | 生日（V5.2 新增） |
+| wx_openid | VARCHAR(128) | UNIQUE, NULL | ⚠️ **deprecated V5.2**：微信身份归 `user_auth`（WECHAT 行 `identifier_plain`），观察期后删列 |
+| member_level | VARCHAR(20) | NOT NULL, DEFAULT 'NORMAL' | 会员等级：NORMAL/SILVER/GOLD/PLATINUM（V5.2 新增） |
+| register_time | DATETIME | NOT NULL | 注册时间（审计列，metaObjectHandler 填充；领域语义由 create_time 承担） |
 | status | TINYINT | NOT NULL, DEFAULT 1 | 1-正常，0-禁用 |
 | balance | INT | NOT NULL, DEFAULT 0 | 余额（分） |
-| role_type | TINYINT | NOT NULL, DEFAULT 0 | 角色类型（0=USER, 1=SELLER, 2=ADMIN） |
+| role_type | TINYINT | NOT NULL, DEFAULT 0 | ⚠️ **deprecated V5.2**：角色唯一权威为 RBAC 五表（sys_user_role），兼容字段由五表派生（RoleTypeDerivation），观察期后删列 |
 | version | INT | NOT NULL, DEFAULT 0 | 乐观锁版本号（V3.2 @Version） |
-| phone_hash | CHAR(64) | UNIQUE, NULL | 手机号 SHA-256 哈希（PII 脱敏检索，V2.5） |
-| last_login_time | DATETIME | NULL | 最近登录时间（V2.5） |
+| last_login_time | DATETIME | NULL | ⚠️ **deprecated V5.2**：登录链路已退出 user 上下文，停止写入，观察期后删列 |
 | create_time | DATETIME | NOT NULL | 创建时间 |
 | update_time | DATETIME | NOT NULL | 更新时间 |
 
-索引：`uk_user_id`, `uk_phone`, `uk_wx_openid`, `uk_phone_hash`
+索引：`uk_user_id`, `uk_phone_hash`（V2.5）, `uk_email_hash`（V5.2 新增）, `uk_wx_openid`；`uk_phone` 已随明文手机号退役删除（V5.2）。
+
+> **V5.2 迁移说明**：结构变更脚本 `database/migrations/V5.2__user_profile_split_and_encryption.sql`。`Initialize.sql` 为历史基线（仍含 `uk_phone` 等旧形态），V5.2 形态需按版本顺序应用迁移获得。本 DDL **只做结构变更**：①新增资料列 gender / birthday / member_level；②PII 三字段激活（phone_cipher/phone_mask 补齐，email 三列新增）；③唯一索引 `uk_phone` → `uk_phone_hash` + `uk_email_hash`（盲索引唯一，明文列退役）；④旧列（password / wx_openid / role_type / 明文 phone / last_login_time）注释标 **deprecated**，代码停止读写，观察期后另行 DDL 删列。**数据搬迁由 authorization-service 存量迁移器执行**（`LegacyCredentialMigrationRunner`，开关 `auth.legacy-migration.enabled` 默认 false）：①user.password → `user_auth.credential`（PHONE 行）后置 NULL；②user.phone 明文 → 三列后置 NULL；③user.wx_openid → `user_auth` WECHAT 行（identifier_plain，本轮不清理列）；幂等可重跑、逐条独立事务、失败 WARN 不中断；前置条件为 PII 密钥已装载（`CryptoKeyConfig`）。
 
 ### 3.2 address（收货地址表）
 

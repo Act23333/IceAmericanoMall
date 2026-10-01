@@ -78,6 +78,8 @@ docker compose exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} icedamericano_m
 | Logistics | logistics-service     | **8087**       | backend | 物流           |
 | AI        | ai-service            | **8089**       | backend | AI 助手        |
 | Marketing | marketing-service     | **8090**       | backend | 优惠券+秒杀       |
+| Notification | notification-service | **9400**     | backend | 短信/邮件纯通道（V5.2） |
+| Verification | verification-service | **9401**     | backend | 验证码/人机验证收口（V5.2） |
 | MySQL     | ia-mysql              | **3306**       | 宿主机     | 数据库          |
 | Redis     | ia-redis              | **6379**       | 宿主机     | 缓存+限流        |
 | Nacos     | ia-nacos              | **8848/9848**  | 宿主机     | 注册+配置中心      |
@@ -514,6 +516,31 @@ mvn spring-boot:run
 | Docker Secret | Docker Swarm | `docker secret create wechat_pay_key apiclient_key.pem` |
 | 环境变量 | 单机/小团队 | 最简单，配合 systemd EnvironmentFile 使用 |
 
+### 6.4 PII 加密密钥（V5.2，[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)）
+
+ia-common `CryptoKeyConfig`（自动装配）为全部启用 PII 三字段模型的服务装载两把密钥（均为 **Base64 编码 32 字节**）：
+
+| 属性键 | 环境变量（代码约定） | 用途 |
+|--------|--------------------|------|
+| `ia.crypto.aes-key` | `IA_CRYPTO_AES_KEY` | AES-256-GCM 数据密钥（`phone_cipher` / `email_cipher` / `identifier_cipher`） |
+| `ia.crypto.hmac-key` | `IA_CRYPTO_HMAC_KEY` | HMAC-SHA256 盲索引密钥（`phone_hash` / `email_hash` / `identifier_hash`） |
+
+- **未注入**：回退内置开发密钥并打印 WARN —— 仅为本地联调便利，生产严禁依赖（否则等于未加密）。
+- **非法密钥**（非 Base64 / 非 32 字节）：启动**快速失败**，避免半可用状态。
+- **跨服务一致（硬约束）**：`ia.crypto.hmac-key` 全集群必须相同——user-service 的 `user.phone_hash` 与 authorization-service 的 `user_auth.identifier_hash` 对同一手机号必须算出同一值。
+- **注入方式**：直接配属性（yml/Nacos/启动参数均可）；若走环境变量需在 yml 补占位符（如 `ia.crypto.aes-key: ${IA_CRYPTO_AES_KEY:}`）——当前各服务 yml 未预置该占位符（实测 2026-09-30）。
+
+### 6.5 存量凭证/PII 迁移器（authorization-service，一次性工具）
+
+`LegacyCredentialMigrationRunner`（V5.2，[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)）：把 `user` 表历史列数据搬迁到 V5.2 权威落点——①`user.password` → `user_auth.credential`（PHONE 行）后置 NULL；②`user.phone` 明文 → `phone_cipher/phone_hash/phone_mask` 后置 NULL；③`user.wx_openid` → `user_auth` WECHAT 行（`identifier_plain`，列本轮不清理）。
+
+**执行时机与步骤**：
+
+1. 先应用 V5.2 DDL（`database/migrations/V5.2__user_profile_split_and_encryption.sql`）并注入 PII 密钥（§6.4）——密钥未装载时迁移逐行 WARN 不中断；
+2. 置 `AUTH_LEGACY_MIGRATION_ENABLED=true`（yml：`auth.legacy-migration.enabled`，**默认 false**）后**启动一次** authorization-service；
+3. 迁移**幂等可重跑**，逐条独立事务，单行失败仅 WARN 不中断整批；
+4. 完成后**置回 false**，人工复核旧列（`password` / `wx_openid` / `role_type` / 明文 `phone` / `last_login_time`，均已标 deprecated），删列另行 DDL。
+
 ---
 
 ## 七、环境变量速查表
@@ -528,6 +555,8 @@ mvn spring-boot:run
 | `DEEPSEEK_API_KEY`         | 系统 | ai    | —         |
 | `WECHAT_PAY_MERCHANT_ID`   | 系统 | pay   | —         |
 | `WECHAT_PAY_API_V3_KEY`    | 系统 | pay   | —         |
+| `IA_CRYPTO_AES_KEY`        | 系统 | user/auth 等全部装配 CryptoKeyConfig 的服务 | —（未注入回退开发密钥并 WARN，生产必设） |
+| `IA_CRYPTO_HMAC_KEY`       | 系统 | user/auth 等同上 | —（盲索引密钥须全集群一致，生产必设） |
 | `KEYSTORE_PASSWORD`        | 系统 | auth  | `changeit` |
 
 ### 7.2 功能开关（全部默认关闭）
@@ -543,6 +572,7 @@ mvn spring-boot:run
 | `ai.enabled=true`                   | Spring AI Agent（关闭 → 降级提示）         |
 | `seata.enabled=true`                | Seata 分布式事务（关闭 → 手动 Saga）          |
 | `websocket.enabled=true`            | WebSocket 实时推送                     |
+| `AUTH_LEGACY_MIGRATION_ENABLED=true`（yml: `auth.legacy-migration.enabled`） | authorization-service 启动时执行一次存量凭证/PII 迁移（见 §6.5；默认 false，迁移完成后置回 false） |
 
 ---
 

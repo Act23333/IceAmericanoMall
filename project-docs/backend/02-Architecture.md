@@ -195,8 +195,8 @@
 | 服务                      | 职责                                 | MVP 优先级    | 关键依赖技术                                                 |
 | ------                  | ------                             | ---------- | -------------                                          |
 | `gateway-service`          | API 网关，路由转发，统一入口                   | P0         | Spring Cloud Gateway + Nginx + Sentinel                |
-| `authorization-service` | OAuth2 认证授权，登录注册，Token 签发          | P0         | Spring Security + JWT + Redis + Geetest                |
-| `user-service`          | 用户/地址/商家/签到：DDD 四层归位（adapter/app/domain/infrastructure，app 按聚合 13 子包编排 + persistence 按聚合 11 子包，domain 纯 POJO + 端口化，见 [ADR-016](../adr/016-user-service-ddd-and-sms-migration.md)）；发码/人机验证收口 verification-service | P0         | MySQL + Redis (BitMap 签到 + Redisson 3.26.0 分布式锁 DistributedLock 端口) |
+| `authorization-service` | OAuth2 认证授权，登录注册，Token 签发；**`user_auth` 凭证唯一所有权**（密码凭证/微信身份只落此处，user-service 登录业务退出，见 [ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)）；存量迁移器 `LegacyCredentialMigrationRunner` | P0         | Spring Security + JWT + Redis + Geetest                |
+| `user-service`          | 用户/地址/商家/签到：DDD 四层归位（adapter/app/domain/infrastructure，app 按聚合 13 子包编排 + persistence 按聚合 11 子包，domain 纯 POJO + 端口化，见 [ADR-016](../adr/016-user-service-ddd-and-sms-migration.md)）；发码/人机验证收口 verification-service；V5.2 资料/凭证分离——user 聚合只承载资料（phone/email 三字段加密，凭证归 auth），`/internal/auth/**` 登录业务端点整体下线（见 [ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)） | P0         | MySQL + Redis (BitMap 签到 + Redisson 3.26.0 分布式锁 DistributedLock 端口) |
 | `item-service`          | 商品 (SPU)、规格 (SKU)、类目管理，库存乐观锁；V4.0: stockType(LIMITED/UNLIMITED/PRESALE)+isHot+hotReason+salesTags | P1         | MySQL + MinIO/OSS (商品图片，计划 V1.1)                       |
 | `cart-service`          | 购物车                                | P1         | MySQL                                                  |
 | `trade-service`         | 统一订单中心：OrderTypeEnum(NORMAL/DIRECT/FLASH_SALE/PRESALE)+策略模式(OrderCreateStrategy+OrderCreateContext+OrderCreateStrategyFactory)；Saga补偿；OrderManager编排；售后+结算+入住审核 | P1         | MySQL + RocketMQ (订单超时延迟消息 level=16/30min) + Seata (分布式事务，计划 V1.1) + XXL-Job (兜底，计划 V1.1) |
@@ -207,7 +207,7 @@
 | `marketing-service`     | 优惠券V4.0 五维模型(discountType FIXED/PERCENTAGE/CASH_COUPON × couponCategory PLATFORM/SHOP/FLASH_SALE/EXCLUSIVE × grantType FREE_CLAIM/PAID_PURCHASE/INVITATION/AUTO_ISSUE × stockType LIMITED/UNLIMITED × grabType NORMAL/NEED_GRAB/PLATFORM_EXCLUSIVE)；Redis Lua抢券；smartClaim智能路由；V4.2 couponCategory+卖家匹配校验；V4.5 Redis SISMEMBER去重；秒杀活动(Redis Lua预扣+RocketMQ异步削峰) | P1         | MySQL + Redis + RocketMQ |
 | `ia-integration`        | 外部集成SDK：微信支付V3、支付宝Mock、阿里云短信、邮件(SMTP+Mock)、极验Geetest V4、MinIO对象存储、微信OAuth（V5.2 起 SMS/Geetest 工具类统一收口于此） | 基础模块       | wechatpay-java + dysmsapi + spring-boot-starter-mail(optional) + MinIO SDK |
 | `ia-common`             | 共享库：异常、Result、工具、注解、i18n；RocketMqTopics；DomainEvents（V5.2 起 SMS/Geetest 工具已迁出至 ia-integration） | 基础模块       | Hutool + Knife4j + RocketMQ |
-| `ia-api`                | 共享 Feign 接口定义（V5.2：新增 `VerificationClient` fail-closed 降级；`NotificationClient` 强类型化） | 基础模块       | OpenFeign + LoadBalancer                               |
+| `ia-api`                | 共享 Feign 接口定义（V5.2：新增 `VerificationClient` fail-closed 降级；`NotificationClient` 强类型化；`AuthClient` 契约随 `/internal/auth/**` 整体退役删除，见 [ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)） | 基础模块       | OpenFeign + LoadBalancer                               |
 | `notification-service`  | 🆕 V5.2 通信通道发送（纯通道）：短信/邮件（站内信契约预留）；第三方请求全部在 ia-integration | P1         | ia-integration (SmsClient/EmailClient)，无库表，端口 9400 |
 | `verification-service`  | 🆕 V5.2 校验收口：验证码签发/校验消费 + 人机验证(Geetest)；降级 fail-closed | P1         | Redis + ia-api Feign(→notification-service)，无库表，端口 9401 |
 
@@ -383,17 +383,26 @@ AuthController(adapter) 参数校验 → LoginCommand
        3. 风控处置（RiskHandler 策略：Pass / Captcha / SmsVerify / AccountFreeze，阻断即抛 BizException）
        4. 登录策略（LoginStrategy 领域策略，按 identityType+credentialType 分发）
             └─ 领域服务 UserAuthProvisioner：查 user_auth → 分布式锁 → 查/建凭证
-               （本地缺凭证时经 UserAccountGateway 防腐层调 user-service /internal/auth 幂等建号）
+               （建档经 UserAccountGateway 防腐层调 user-service /internal/user/getOrCreate 幂等建号；
+                 V5.2 起凭证只写本地 user_auth，不再回写 user.password）
        5. 签发令牌（LoginTokenService Port：access + refresh，refresh 轮换不延长绝对有效期）
 ```
 
 事务边界（V5.1，见 ADR-005）：模块内无多语句本地写，**不使用 `@Transactional`**；跨服务一致性靠远端幂等端点 + `user_auth` 业务唯一索引 + 冲突回查重放（`DuplicateIdentityException`），无 MQ 故不引入本地消息表。
+
+> **V5.2 认证边界收敛**（[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)）：`user_auth` 凭证唯一所有权归 authorization-service。注册链路 = 本地校验并消费短信验证码（verification-service）→ `UserAccountGateway.getOrCreateUserId`（user-service 幂等建档 + 新用户建档奖励）→ 本地 `UserAuthProvisioner.findByHashOrCreateWithCredential`（PHONE 三字段 + credential）→ 签发 token；已注册手机号返回 `PHONE_ALREADY_REGISTERED`（用户名占用校验退役，昵称降级为展示字段）。`/internal/auth/**` 六端点与 ia-api `AuthClient` 契约整体废弃删除；重置密码不再回调 user-service；微信网页登录收归 auth 本地（`WechatWebSessionService` 直连 ia-integration 换 openid，冻结拦截移至下游业务 API）。
 
 ### 5.3 密钥管理
 
 - RS256 非对称加密：私钥签发，公钥通过 JWKS 端点暴露（`/.well-known/jwks.json`）
 - HS256 对称加密：共享密钥，用于内部服务间调用
 - 支持多密钥切换（大厂做法：平滑滚动更新）
+- PII 数据加密密钥（`ia.crypto.aes-key` / `ia.crypto.hmac-key`，V5.2 起由 ia-common `CryptoKeyConfig` 装载）：见 12-Security-Model §5.4
+
+### 5.4 RBAC 权限缓存失效与网关可信头剥离（V5.2，[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)）
+
+- **权限缓存主动失效**：网关实时权限读 `user:perms:{userId}`（Redis SET，TTL 30 分钟）。授权变更（user-service `RoleManageManager` 的 `setUserRole` / `assignPermissions` / `deleteRole`）经 `PermissionCacheEvictor` 主动删除受影响用户的 `user:perms:` 与 `user:info:` 两键（`UserSecurityCache.evict`），撤销的权限即时生效；失效失败仅 WARN（缓存可自愈）。`sys_user_permission` 当前无写入端点，新增直授端点时必须接入本失效器。
+- **入站可信头剥离**：网关新增 `UntrustedHeaderSanitizerFilter`（order = **-1100**，过滤器链最早）无条件移除入站 `X-User-Id` / `X-Username` / `X-User-Roles` / `X-User-Permissions` / `X-Tenant-Id` / `X-Client-Ip`（`X-Trace-Id` 保留透传）。可信上下文头**只由网关在 JWT 校验通过后注入**（`UserContextHeaderFilter`）。链序：Sanitizer(-1100) → TraceIdFilter(-1000) → Security Auth(-800) → UserContextHeaderFilter(-600) → 路由。
 
 ---
 

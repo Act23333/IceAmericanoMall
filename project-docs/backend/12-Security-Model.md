@@ -91,6 +91,7 @@
 | E4 | 消息队列被注入伪造事件 | 🔴 高 | RabbitMQ 生产者和消费者双向 TLS 认证（⚠️ V1.1 计划，当前未部署） |
 | E5 | XXL-Job 执行器被伪造 | 🟡 中 | 执行器 AccessToken 认证（⚠️ V1.1 计划，当前未部署） |
 | E6 | 对象存储直传绕过业务校验 | 🟡 中 | MinIO/OSS Pre-signed URL 短时有效（⚠️ V1.1 计划，当前未部署） |
+| E7 | 伪造 `X-User-Id` / `X-User-Roles` 等上下文头（公开路径无 JWT 也直通下游，`UserContextFilter` 照常重建为用户上下文） | 🔴 高 | 网关 `UntrustedHeaderSanitizerFilter`（order = -1100，过滤器链最早）**无条件**剥离入站 X-User-Id/X-Username/X-User-Roles/X-User-Permissions/X-Tenant-Id/X-Client-Ip；可信上下文头只由网关在 JWT 验证后注入（`UserContextHeaderFilter`，V5.2 ADR-017） |
 
 ---
 
@@ -99,7 +100,7 @@
 | OWASP Top 10 (2021) | 本项目风险 | 应对措施 |
 |---------------------|-----------|---------|
 | A01: Broken Access Control | **高** | Manager 层资源归属校验 + Gateway 角色拦截 |
-| A02: Cryptographic Failures | **中** | BCrypt + RS256 JWT + TLS 1.3 + JWT 密钥轮换（§五）+ PII 静态加密（§六 ⚠️ V1.1 计划）+ Vault 密钥管理（⚠️ 计划） |
+| A02: Cryptographic Failures | **中** | BCrypt + RS256 JWT + TLS 1.3 + JWT 密钥轮换（§五）+ PII 静态加密（§六，V5.2 user 表 phone/email 三字段模型已激活）+ PII 密钥管理（§5.4，生产 KMS）+ Vault 密钥管理（⚠️ 计划） |
 | A03: Injection | **高** | MyBatis-Plus 参数化查询 + 排序字段白名单校验 |
 | A04: Insecure Design | **中** | 本文档（威胁建模）+ ADR 记录关键决策 + Seata/Sentinel 安全配置 |
 | A05: Security Misconfiguration | **中** | 生产配置关闭 stacktrace + CORS 白名单 + Sentinel 规则审计 |
@@ -116,8 +117,9 @@
 | 控制层 | 机制 | 覆盖威胁 |
 |--------|------|---------|
 | 传输层 | HTTPS (TLS 1.3) + Nginx 反向代理 | T1-T4, I1-I6 |
-| 认证层 | JWT RS256 + JWKS | S1, S2 |
-| 鉴权层 | RBAC + 资源归属校验；user-service 双层越权防范（聚合实体归属断言 + 仓储 SQL WHERE userId 兜底，ADR-016） | E1, E2, I1, I2 |
+| 认证层 | JWT RS256 + JWKS；密码凭证唯一落点 `user_auth.credential`（authorization-service，user.password 退役，V5.2 ADR-017） | S1, S2 |
+| 鉴权层 | RBAC + 资源归属校验；user-service 双层越权防范（聚合实体归属断言 + 仓储 SQL WHERE userId 兜底，ADR-016）；`roleType` 由 RBAC 五表派生、`role_type` 列退役（ADR-017） | E1, E2, E7, I1, I2 |
+| 网关头卫生层 | `UntrustedHeaderSanitizerFilter`（-1100）入站可信头无条件剥离，仅网关 JWT 验证后回注（V5.2 ADR-017） | E7 |
 | 输入层 | 参数校验 + 白名单 | A03-Injection |
 | 限流层 | @RateLimit (Redis Lua) + Sentinel 熔断 | D1-D4 |
 | 发码/校验链路 | 短信发码与人机验证收口 verification-service，Feign 熔断 fail-closed（依赖不可用即失败，绝不静默成功）；user-service 本地分级限流（`sms:minute/hour/day:`）与远端 60 秒重发窗口互补（ADR-016） | D1 |
@@ -125,12 +127,12 @@
 | 审计层 | 操作日志 + 不可变日志表 | R1, R2 |
 | 运维层 | Gateway 路由控制 + `/internal/**` 隔离 | E3 |
 | 密钥层 | JWT 密钥轮换 + Vault/K8s Secret | S1, S2, A02 |
-| 加密层 | AES-256 PII 加密 + HMAC 辅助列 | A02, 个保法合规 |
+| 加密层 | AES-256-GCM PII 加密（user 表 phone/email 三字段模型已激活，V5.2）+ HMAC 盲索引列（uk_phone_hash / uk_email_hash） | A02, 个保法合规 |
 | 消息层 | RabbitMQ TLS + 生产/消费双向认证 (V1.1) | E4 |
 | 调度层 | XXL-Job AccessToken + 执行器注册校验 (V1.1) | E5 |
 | 存储层 | MinIO/OSS Pre-signed URL + 防盗链 (V1.1) | E6 |
 
-> ⚠️ **灰度期已知豁免**：user-service `verifyCode` 本地校验保留 `000000` 万能码旁路（严格比对分支暂关闭），迁移与恢复路径见 [ADR-016](../adr/016-user-service-ddd-and-sms-migration.md)；真实短信通道全面接入并执行恢复路径前，**不得上线生产环境**。
+> ⚠️ **灰度期已知豁免**：user-service `SmsCodeVerifier` 本地校验保留 `000000` 万能码旁路（严格比对分支暂关闭），迁移与恢复路径见 [ADR-016](../adr/016-user-service-ddd-and-sms-migration.md)；V5.2 认证边界收敛后该 `sms:code:` 读路径**原样保留**（`/internal/auth/**` 登录端点下线不影响此读契约，[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)）。真实短信通道全面接入并执行恢复路径前，**不得上线生产环境**。
 
 ---
 
@@ -172,19 +174,40 @@ jwt:
 | 复用检测 | 同一 Refresh Token 被使用 2 次 → 判定泄露 → 吊销该用户所有 Token |
 | 登出清理 | 用户主动登出 → 立即删除 Redis 中的 Refresh Token |
 
+### 5.4 PII 数据加密密钥（V5.2，[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)）
+
+ia-common 新增 `CryptoKeyConfig`（自动装配），装载 AES 数据密钥与 HMAC 盲索引密钥，修复了"AesGcmUtil/BlindIndexUtil 仅在单测 init、运行期无装载点"的缺口：
+
+| 项 | 值 | 说明 |
+|----|-----|------|
+| 配置属性 | `ia.crypto.aes-key` / `ia.crypto.hmac-key` | 均为 Base64 编码的 32 字节密钥 |
+| 环境变量（代码约定） | `IA_CRYPTO_AES_KEY` / `IA_CRYPTO_HMAC_KEY` | 生产经 KMS / 环境变量注入（Vault/K8s Secret，见 §5.2 硬约束同样适用） |
+| 缺省行为 | 未注入 → 回退内置开发密钥 + WARN | 仅为本地联调便利，**生产严禁依赖**（否则等于未加密） |
+| 非法密钥 | 启动快速失败 | 非 Base64 / 非 32 字节即抛异常，避免半可用状态 |
+
+**跨服务一致性硬约束**：盲索引密钥（`ia.crypto.hmac-key`）必须全集群一致——user-service 的 `user.phone_hash` 与 authorization-service 的 `user_auth.identifier_hash` 对同一手机号必须算出同一值，否则按盲索引的跨服务定位/幂等全部失效。
+
+> 实测备注（2026-09-30）：当前各服务 application.yml 尚未预置 `${IA_CRYPTO_*}` 占位符，部署时需直接以属性形式提供 `ia.crypto.*`（yml/Nacos/启动参数），或在 yml 补占位符 `ia.crypto.aes-key: ${IA_CRYPTO_AES_KEY:}`。
+
 ---
 
 ## 六、数据静态加密
 
-> ⚠️ **当前状态：认证上下文加密已落地（AES-256-GCM），存量 PII 迁移待激活。** 加密工具类为 `ia-common/.../utils/crypto/AesGcmUtil.java`（AES-256-GCM：随机 12 字节 IV + 128 位 Tag，密钥经 `init(base64Key)` 注入、不硬编码），与敏感标识三字段模型（cipher + hash + mask）配套，已用于 `user_auth.identifier_cipher`（见 04-Data-Model §3.12）。原 AES-256-CBC 工具类（`ia-common/security/AesEncryptor`）**已删除**（零引用，且 CBC 与现行 GCM 规范冲突）。user/address/seller 等存量 PII 字段仍以明文 VARCHAR 存储（保持向后兼容），迁移实现**必须用 GCM 而非 CBC**；phone_hash 辅助列（`V2.5__add_security_columns.sql`）已交付。生产激活步骤（密钥注入方式与功能开关的最终形态）需按实现确认——原方案 `PII_AES_KEY` / `pii.encryption.enabled` 未在当前代码中找到对应配置（未核实）。
+> ✅ **当前状态（V5.2，[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)）：user 表 PII 三字段模型全量激活**——`phone`（cipher + hash + mask）与 `email`（V5.2 新增）经 `EncryptedIdentifier` 值对象加密存储，明文等值查询全部改走盲索引。加密工具类为 `ia-common/.../utils/crypto/AesGcmUtil.java`（AES-256-GCM：随机 12 字节 IV + 128 位 Tag，密钥经 `init(base64Key)` 注入、不硬编码），盲索引由 `BlindIndexUtil`（HMAC-SHA256）生成，密钥经 ia-common `CryptoKeyConfig` 装载（见 §5.4）。原 AES-256-CBC 工具类（`ia-common/security/AesEncryptor`）**已删除**（零引用，且 CBC 与现行 GCM 规范冲突）。存量数据由 authorization-service 迁移器搬数（user.password → user_auth.credential、phone 明文 → 三列、wx_openid → user_auth WECHAT 行）。address / seller 等其余 PII 字段仍以明文 VARCHAR 存储（保持向后兼容，见 6.1 V1.1+ 目标）；迁移实现**必须用 GCM 而非 CBC**。原方案 `PII_AES_KEY` / `pii.encryption.enabled` 已废弃（未在代码中存在，以 §5.4 密钥方案为准）。
 
-### 6.1 PII 敏感字段加密（V1.1 目标）
+### 6.1 PII 敏感字段加密
 
-以下字段 **V1.1 迁移后**不得明文存储：
+**已落地（V5.2，user 表三字段模型 `EncryptedIdentifier`）**：
+
+| 表 | 字段 | 状态 | 说明 |
+|----|------|------|------|
+| user | phone → phone_cipher / phone_hash / phone_mask | ✅ V5.2 | 明文 `phone` 列 deprecated，迁移器搬数后置 NULL；`uk_phone` 已删，唯一性走 `uk_phone_hash` |
+| user | email → email_cipher / email_hash / email_mask | ✅ V5.2 | 邮箱标识能力新增（认证侧 EMAIL 身份行）；唯一键 `uk_email_hash` |
+
+**V1.1+ 目标（仍明文，保持向后兼容）**：
 
 | 表 | 字段 | 加密方式 | 说明 |
 |----|------|---------|------|
-| user | phone | AES-256-GCM + 应用层加解密 | 手机号是登录凭证，泄露风险极高 |
 | address | phone | AES-256-GCM | 收货电话 |
 | address | receiver | AES-256-GCM | 收货人姓名 |
 | address | detail | AES-256-GCM | 详细地址 |
@@ -203,15 +226,17 @@ DEK (Data Encryption Key): 从 Key Management Service 获取
 
 ### 6.3 搜索方案
 
-加密后无法用 `WHERE phone = '138...'` 查询，使用 **HMAC 哈希辅助列**：
+加密后无法用 `WHERE phone = '138...'` 查询，使用 **HMAC 哈希辅助列（盲索引，Blind Index）**：
 
 ```sql
--- user 表额外维护一个 phone_hash 列用于登录查找
-`phone_hash` VARCHAR(64) NOT NULL COMMENT 'HMAC-SHA256(phone, secret) — 用于唯一性校验和登录查找'
-UNIQUE KEY `uk_phone_hash` (`phone_hash`)
+-- user 表维护 phone_hash / email_hash 盲索引列（V5.2，见 04-Data-Model §3.1）
+`phone_hash` CHAR(64) DEFAULT NULL COMMENT 'HMAC-SHA256(phone, secret) — 用于唯一性校验和登录查找'
+`email_hash` VARCHAR(128) DEFAULT NULL COMMENT 'HMAC-SHA256(email, secret)'
+UNIQUE KEY `uk_phone_hash` (`phone_hash`),
+UNIQUE KEY `uk_email_hash` (`email_hash`)
 ```
 
-查询流程：`用户输入手机号 → HMAC(手机号) → WHERE phone_hash = hash → 查到记录 → AES解密phone字段`
+查询流程：`用户输入手机号 → 归一化 → HMAC(手机号) → WHERE phone_hash = hash → 查到记录 → AES-GCM 解密 phone_cipher`。密钥未装载时 `EncryptedIdentifier.fromPlain` 抛 `CryptoException`（启动期经 `CryptoKeyConfig` 装载，见 §5.4）；user-service `phone_hash` 与 authorization-service `identifier_hash` 必须使用同一盲索引密钥（跨服务定位一致）。
 
 ---
 
@@ -290,6 +315,8 @@ UNIQUE KEY `uk_phone_hash` (`phone_hash`)
 网关(gateway-service)               下游服务(user/trade/item/...)
 ─────────────────────              ─────────────────────────────
 JWT验证 → Redis查权限 → Headers → UserContextFilter → UserContext
+   ↑
+UntrustedHeaderSanitizerFilter(-1100)：入站伪造头先剥离，可信头仅此处注入（V5.2 ADR-017）
                                     ↓
                            UserContextAuthenticationFilter
                            (UserInfo → Spring Security Authentication)

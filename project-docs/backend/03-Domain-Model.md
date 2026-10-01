@@ -43,7 +43,7 @@
 
 | 上游    | 下游    | 关系          | 实现                            |
 | ----- | ----- | ----------- | ----------------------------- |
-| 用户上下文 | 认证上下文 | 共享内核 (User) | user-service 提供 Feign 接口      |
+| 用户上下文 | 认证上下文 | 客户/供应商（开放主机服务） | user-service 提供 `/internal/user/getOrCreate` 幂等建档（ADR-006）；**`user_auth` 凭证唯一所有权归认证上下文**（V5.2，[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)），认证侧不再经 Feign 写 user 域凭证 |
 | 用户上下文 | 订单上下文 | 客户/供应商      | trade-service 调用 user-service |
 | 商品上下文 | 订单上下文 | 客户/供应商      | item-service 提供商品信息           |
 | 订单上下文 | 支付上下文 | 发布/订阅       | 订单事件通过 **RabbitMQ** 触发支付（V1.1） |
@@ -75,18 +75,26 @@
 
 ### 3.1 用户 (User) — 用户上下文聚合根
 
+> **资料/凭证分离（V5.2，[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)）**：User 聚合只承载资料。密码凭证与微信身份的唯一权威是认证上下文 `user_auth`（见 §3.14）；聚合已移除 `password` / `wxOpenid` 字段，`verifyPassword` / `changePassword` 行为删除（密码校验能力不再出现在 user 域）。
+> **术语统一（V5.2）**：领域字段 `username` → `nickname`（展示语义，可重复；持久化列名保留 `username`，Converter 显式映射，`UserInfoResp.username` 报文不变）。`registerTime` 领域语义由 `createTime` 承担；`lastLoginTime` 随登录链路退出 user 上下文停止读取。
+
 | 属性           | 类型（业务） | 说明        |
 | ------------ | ------ | --------- |
-| userId       | 标识     | 用户业务唯一标识  |
-| username     | 字符串    | 用户名（可选）   |
-| phone        | 字符串    | 手机号（登录账号） |
-| password     | 加密字符串  | 密码        |
+| userId       | 标识     | 用户业务唯一标识（UUID，ADR-002 双主键）  |
+| nickname     | 字符串    | 昵称（展示字段；V5.2 术语统一，原 username 语义）   |
+| phone        | 值对象    | 手机号 `EncryptedIdentifier`（cipher+hash+mask 三字段，等值查询走盲索引，见 §五/§六） |
+| email        | 值对象    | 邮箱 `EncryptedIdentifier`（三字段模型，V5.2 新增） |
 | avatar       | URL    | 头像        |
-| registerTime | 日期时间   | 注册时间      |
+| gender       | 枚举     | 性别：0-未知 / 1-男 / 2-女（V5.2 新增） |
+| birthday     | 日期     | 生日（V5.2 新增） |
+| balance      | 金额     | 账户余额（分）      |
+| memberLevel  | 字符串    | 会员等级：NORMAL/SILVER/GOLD/PLATINUM（V5.2 新增；不开放用户自改） |
 | status       | 枚举     | 正常(1) / 禁用(0) |
-| balance      | 金额     | 账户余额      |
+| createTime / updateTime | 日期时间 | 审计时间（注册语义由 createTime 承担） |
 
+> **行为（内聚聚合根，不散落 Service）**：`assertActive()` 启停、`assertBalanceSufficient()` 余额不变量、`changeNickname` / `changeAvatar`、`changeGender` / `changeBirthday` / `changeMemberLevel`（含取值校验）、`changePhone` / `changeEmail`（格式校验 + 归一化 + `EncryptedIdentifier` 三字段整体替换）。
 > **状态机**：正常 ⇄ 禁用，启/停迁移内聚于 User 实体方法（领域纯净，规则不散落 Service；ADR-016）。
+> **role_type 退役（V5.2）**：聚合不再持有角色类型字段；`roleType` 兼容字段由 RBAC 五表角色编码派生（`RoleTypeDerivation`，见 §七），权限唯一权威为 RBAC 五表。
 
 ### 3.2 收货地址 (Address) — 用户上下文实体
 
@@ -287,6 +295,7 @@
 
 > 数据库表名：`user_auth`（见 04-Data-Model）。每种登录方式（手机号/邮箱/用户名/微信）对应一条记录，通过 `userId` 关联 user-service 的用户（聚合间只存 ID 引用，不持有对象）。
 > 领域对象**零框架依赖**：密码哈希比较等能力通过 `PasswordVerifier` 端口以方法参数注入，不依赖 Spring Security。
+> **凭证唯一所有权（V5.2，[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)）**：密码凭证与微信身份只落 `user_auth`（authorization-service 本地写入）。注册 = 幂等建档（getOrCreate）+ 本地建凭证行，已带凭证的手机号拒绝注册（`PHONE_ALREADY_REGISTERED`，防账号接管；用户名占用校验退役）；重置密码改为本端按手机号盲索引定位后 `updatePassword`，不再回调 user-service。user-service 侧 `/internal/auth/**` 六端点与 ia-api `AuthClient` 契约已废弃删除。
 
 | 属性 | 类型（业务） | 说明 |
 | ---- | ---- | ---- |
@@ -327,11 +336,11 @@
 
 | 层级 | 聚合/模块 | 落地形态 |
 | ---- | -------- | -------- |
-| 核心域聚合 | User / Address / Seller | 纯 POJO 聚合根 + 业务规则内聚实体方法（User 启停/凭证/余额不变量、Address `assertOwnedBy` 归属断言、Seller 状态机）；仓储按业务键操作（Address 更新/删除/标默认以 `{userId, id}` 为 WHERE，SQL 级越权兜底）；`UserProvisioner` 幂等建档（getOrCreate） |
+| 核心域聚合 | User / Address / Seller | 纯 POJO 聚合根 + 业务规则内聚实体方法（User 启停/余额不变量 + 资料变更行为 `changePhone`/`changeEmail` 等，凭证已移交认证上下文 ADR-017、Address `assertOwnedBy` 归属断言、Seller 状态机）；仓储按业务键操作（Address 更新/删除/标默认以 `{userId, id}` 为 WHERE，SQL 级越权兜底）；`UserProvisioner` 幂等建档（getOrCreate，新建分支统一发建档奖励） |
 | 支撑域模块 | signin / sms / rbac | 无完整聚合，规则内聚领域服务（`SignInPointsPolicy` 签到积分 + Redis Bitmap、`SmsCodeVerifier` 验证码校验） |
 | 外围 CRUD | points / favorite / history / notification / chat / knowledge | 无跨实体不变量，按 CQRS 读路径直用持久化读模型（DO 不出持久化层、不出 Controller）——记录在案的务实取舍（ADR-016 决策一·5） |
 
-> 领域端口（domain/port）：`DistributedLock`（Redisson）/ `PasswordVerifier`（BCrypt）/ `SignInStore`（Redis Bitmap）/ `SmsCodeStore`（Redis `sms:code:`）；跨上下文防腐网关（domain/gateway）：`VerificationGateway` / `WechatOAuthGateway`。微信换取已移出事务边界（唯一本地事务为 UserRegistrar 注册链路，ADR-016）。
+> 领域端口（domain/port）：`DistributedLock`（Redisson）/ `SignInStore`（Redis Bitmap）/ `SmsCodeStore`（Redis `sms:code:`）/ `NewUserRewardService`（新用户建档奖励，V5.2 ADR-017）；`PasswordVerifier` 端口与适配器已随凭证移交认证上下文删除（ADR-017）。跨上下文防腐网关（domain/gateway）：`VerificationGateway` / `WechatOAuthGateway`。微信换取已移出事务边界（唯一本地事务为 UserRegistrar 注册链路，ADR-016）。
 
 ---
 
@@ -380,6 +389,9 @@
 | 建档      | Provisioning             | 用户档案幂等创建/回查：按业务唯一键（user_id/手机号/微信 openid）查无则建、唯一键冲突回查重放，由领域服务 UserProvisioner 承载（getOrCreate 语义，ADR-006/016） |
 | 灰度后门  | Gray-release Bypass      | 灰度联调期刻意保留的验证码放行入口：万能码 `000000` + 宽松校验（严格比对分支暂关闭）；恢复路径见 ADR-016，真实短信通道全面接入前不得上线生产 |
 | 重发限流  | Reissue Rate Limiting    | 同一手机号验证码重发的最小间隔（60 秒窗口），由 verification-service 签发侧执行；user-service 本地分级限流（`sms:minute/hour/day:` 独立键空间）与之互补（ADR-016） |
+| 建档奖励      | Provisioning Reward      | 新用户建档时统一发放的一次性积分奖励（200 分、类型 2）：注册 / 短信首登 / 邮箱首登 / 微信登录共用建档漏斗（`UserProvisioner` 新建分支），已存在用户不发，失败仅 WARN 不阻断建档；V5.2 起取代"仅微信新用户"语义，"回归登录奖励（>30 天 100 分）"退役（ADR-017） |
+| 盲索引定位     | Blind Index Lookup       | 敏感标识（手机号/邮箱）的等值查询方式：对归一化明文算 HMAC-SHA256（盲索引密钥）得不可逆哈希入唯一索引——密文不可比较，等值查询一律按 hash 定位（user 表 `phone_hash`/`email_hash`，user_auth 表 `identifier_hash`） |
+| 头剥离       | Header Sanitization      | 网关在过滤器链最早处（order -1100，`UntrustedHeaderSanitizerFilter`）无条件移除入站 X-User-Id/X-Username/X-User-Roles/X-User-Permissions/X-Tenant-Id/X-Client-Ip；可信上下文头只由网关在 JWT 验证后注入，X-Trace-Id 保留透传（ADR-017） |
 
 ---
 
@@ -389,11 +401,12 @@
 
 | 领域服务                | 职责                 | 所在上下文 |
 | ------------------- | ------------------ | ----- |
-| `PasswordEncoder`   | 密码加密与验证（BCrypt）    | 用户上下文 |
-| `UserProvisioner` | 用户幂等建档：查/建 user + 默认角色，业务唯一键冲突回查重放（ADR-016） | 用户上下文 |
+| `UserProvisioner` | 用户幂等建档：查/建 user + 默认角色 + 新用户建档奖励（`NewUserRewardService`，已存在用户不发），业务唯一键冲突回查重放（ADR-016/017） | 用户上下文 |
 | `SellerRegistrar` | 商家准入：一用户一商家唯一性校验 + PENDING→NORMAL/FROZEN 状态机（ADR-016） | 用户上下文 |
 | `SignInPointsPolicy` | 每日签到积分规则（Redis Bitmap 签到，策略为纯 POJO） | 用户上下文 |
 | `SmsCodeVerifier` | 短信验证码本地校验（读 `sms:code:` 契约；含 `000000` 灰度后门，恢复路径见 ADR-016） | 用户上下文 |
+| `RoleTypeDerivation` | roleType 兼容字段派生：按 RBAC 五表角色编码派生（ADMIN→2 / SELLER→1 / 其余→0），`user.role_type` 列退役、五表为唯一口径（V5.2 ADR-017） | 用户上下文 |
+| `PasswordVerifier`（端口） | 密码哈希比较（BCrypt）；V5.2 起密码能力收敛认证上下文（user 域端口与适配器已删除，ADR-017） | 认证上下文 |
 | `LoginTokenService` | JWT RS256 签发、Access Token + Refresh Token 双Token模式 | 认证上下文 |
 | `LoginStrategy` (接口) | 登录策略接口：`support(IdentityType, CredentialType)` + `login(LoginReq)` | 认证上下文 |
 | `LoginStrategyFactory` | 注入 `List<LoginStrategy>`，按 identityType+credentialType 分发 | 认证上下文 |

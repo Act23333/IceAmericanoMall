@@ -20,3 +20,4 @@
 | [014](./014-doc-template-purification.md)         | 模板纯化 —— ADR 与图示归位 project-docs，doc/ 只留通用 | 2026-09-30 |
 | [015](./015-package-and-contract-naming.md)        | 应用层包名 `app` + 契约对象 `XxxCO` 命名规范 | 2026-10-01 |
 | [016](./016-user-service-ddd-and-sms-migration.md) | user-service DDD 四层重构 + 短信直发链路迁移 verification-service | 2026-10-01 |
+| [017](./017-user-domain-split-and-auth-boundary.md) | user 域资料/凭证分离（PII 加密）+ 认证边界收敛（user_auth 唯一所有权）+ RBAC 收尾 | 2026-10-01 |

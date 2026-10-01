@@ -1,6 +1,6 @@
 # 05 — API 规格文档 (API Specification — SDD)
 
-> **最后更新**: 2026-09-30 | **版本**: V5.2.2 | **端点总数**: 210+ | **公共**: 180+ | **内部**: 30+ | **已实现**: 190+
+> **最后更新**: 2026-09-30 | **版本**: V5.2.3 | **端点总数**: 210+ | **公共**: 180+ | **内部**: 30+ | **已实现**: 190+
 > 
 > **角色**: Frontend (Next.js 15 + React 19) ↔ Backend (Spring Cloud Microservices) 唯一 API 契约。
 > 本文件是 SDD (Specification-Driven Development) 的核心产物——前后端并行开发的唯一真相来源。
@@ -190,6 +190,7 @@ Authorization: Bearer <access_token>
 >   同时修复了 `SmsLoginStrategy`（手机号+短信码）此前无 HTTP 入口的缺陷。
 > - A1 新增可选人机验证字段（极验 v4 四要素）；风控命中时返回 `1016 CAPTCHA_REQUIRED`，`data` 携带重试参数（见下方说明）。
 > - 新增 A10 邮箱验证码签发端点。
+> - **V5.2.3 注册错误语义（ADR-017）**：已注册手机号 → `PHONE_ALREADY_REGISTERED(3003)`；`USERNAME_ALREADY_TAKEN(3004)` 用户名占用校验退役（昵称降级为展示字段）。
 
 | #   | 方法   | 路径                         | 认证  | 请求                                                                                                                              | 响应                                                                           | 阶段      |
 | --- | ---- | -------------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------- |
@@ -1449,20 +1450,10 @@ Authorization: Bearer <access_token>
 
 > 以下端点仅供集群内微服务间通过 Feign 调用。**不经过 Gateway**，返回原始类型（不包装 Result）。异常直接透传给调用方。
 
-#### 4.14.1 InternalAuthController — `/internal/auth` (user-service)
+#### 4.14.1 InternalAuthController — `/internal/auth` (user-service) — ⚠️ 已整体下线（ADR-017）
 
-> V5.1 修正：认证域内部端点从 `/internal/user` 迁移至 `/internal/auth`（原本混在 InternalUserController）。**客户端（ia-api `AuthClient`）与服务端路径必须同步修改**，曾出现 `loginBySms`/`loginByWechat` 两处路径错配导致运行期 404。
-
-| #   | 方法   | 路径                                   | 请求                     | 响应 (原始)        | 阶段     |
-| --- | ---- | ------------------------------------ | ---------------------- | -------------- | ------ |
-| I1  | POST | `/internal/auth/register`            | `RegisterReqCO`       | `LoginRespCO` | ✅ V5.1 |
-| I2  | POST | `/internal/auth/web/password/login`  | `PasswordLoginReqCO`  | `LoginRespCO` | ✅ V5.1 |
-| I3  | POST | `/internal/auth/web/sms/login`       | `SmsLoginReqCO`       | `LoginRespCO` | ✅ V5.1 |
-| I4  | POST | `/internal/auth/web/wechat/login`    | `WechatWebLoginReqCO` | `LoginRespCO` | ✅ V5.1 |
-| I5  | POST | `/internal/auth/wechat/mini/login`   | `WechatMiniLoginReqCO` | `LoginRespCO` | ✅ V5.1 |
-| I6  | POST | `/internal/auth/reset-password`      | `ResetPasswordReqCO`  | `void`         | ✅ V5.1 |
-
-> 以上端点由 ia-api `AuthClient`（`@FeignClient(name="user-service", path="/internal/auth")`）调用，authorization-service 通过 `UserAccountGateway` / `UserAccountService` 端口（防腐层）间接使用。
+> **V5.2.3 认证边界收敛**：`user_auth` 凭证唯一所有权归 authorization-service，本节 I1-I6 六端点与 ia-api `AuthClient` 契约**整体废弃删除**（凭证读写全部收敛至 auth 本地 `user_auth`；注册/重置密码的错误语义见 §4.1）。保留本节仅作历史索引。
+> 用户行建档入口收敛为 I9 `/internal/user/getOrCreate`（幂等，可选 `nickname`；WECHAT 类标识由 user-service 写 `wx_openid` 列）。已知取舍：端点内对 WECHAT 无二次幂等确认，依赖 auth 侧 `user_auth` 唯一键 + 建档锁（ADR-017 后果·风险 1）。
 
 #### 4.14.1a InternalUserController — `/internal/user` (user-service)
 
@@ -1915,6 +1906,7 @@ data: [DONE]
 | **V5.2** | **2026-09-29** | **通信/校验能力抽离**：①新增微服务 notification-service:9400（纯通道发送，§4.14.12 I30-I32）与 verification-service:9401（验证码签发/校验+人机验证收口，§4.14.13 I33-I35）；②ia-common SMS/Geetest 工具迁至 ia-integration；③**破坏性变更**：`NotificationClient.sendSmsCode(Map)` → 强类型 `sendSms/sendEmail/sendInAppMessage`，旧 `/internal/notify/send` 废弃；④新增 `VerificationClient`（fail-closed 降级）；⑤§4.1 A1 `credentialType` 改为服务端路由依据（PASSWORD/SMS_CODE/EMAIL_CODE），新增 A10 邮箱发码端点；⑥authorization-service 人机验证改经 verification-service 裁决，启用 Feign 熔断（resilience4j） |
 | **V5.2.1** | **2026-09-30** | **契约对象按 ADR-015 更名**：ia-api 契约对象 `XxxDTO` → `XxxCO`（24 类，§4.14 内部端点表同步；报文格式/路由/JSON 字段零变化，仅 Java 类名）；`CreateOrderInternalReq` 等无 DTO 后缀类保留原名 |
 | **V5.2.2** | **2026-09-30** | **user-service DDD 重构契约同步（ADR-016）**：I3 路径更正 `/internal/auth/web/sms/login`（文档残留错配）；I10 标注 AddressClient 客户端路径修正；U5 发码/人机验证收口 verification-service 注记（报文无变化） |
+| **V5.2.3** | **2026-09-30** | **认证边界收敛（ADR-017）契约同步**：①§4.14.1 `/internal/auth` 六端点与 `AuthClient` 整体废弃（凭证唯一所有权归 auth）；②I9 getOrCreate 增量可选 `nickname`，标注 WECHAT 幂等取舍；③注册错误语义变更：`PHONE_ALREADY_REGISTERED(3003)` 取代用户名占用校验；④前端行为变化：`/api/user/info` 的 phone/email 返回掩码、`registerTime` 回退 `create_time`、奖励统一为建档奖励、微信登录不再因 user 冻结被拒（拦截点移至下游业务 API） |
 
 ---
 
