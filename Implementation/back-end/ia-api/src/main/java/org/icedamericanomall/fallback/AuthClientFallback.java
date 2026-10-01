@@ -12,11 +12,12 @@ public class AuthClientFallback implements FallbackFactory<AuthClient> {
     @Override
     public AuthClient create(Throwable cause) {
         return new AuthClient() {
-            @Override public LoginRespDTO register(RegisterReqDTO r) { log.error("注册失败", cause); return null; }
-            @Override public LoginRespDTO loginByPassword(PasswordLoginReqDTO r) { log.error("登录失败", cause); return null; }
-            @Override public LoginRespDTO loginBySms(SmsLoginReqDTO r) { log.error("登录失败", cause); return null; }
-            @Override public LoginRespDTO loginByWechat(WechatLoginReqDTO r) { log.error("微信登录失败", cause); return null; }
-            @Override public void resetPassword(ResetPasswordReqDTO r) { log.error("密码重置失败", cause); }
+            @Override public LoginRespCO register(RegisterReqCO r) { log.error("注册失败", cause); return null; }
+            @Override public LoginRespCO loginByPassword(PasswordLoginReqCO r) { log.error("登录失败", cause); return null; }
+            @Override public LoginRespCO loginBySms(SmsLoginReqCO r) { log.error("登录失败", cause); return null; }
+            @Override public LoginRespCO loginByWechat(WechatWebLoginReqCO r) { log.error("微信网页登录失败", cause); return null; }
+            @Override public LoginRespCO wechatMiniLogin(WechatMiniLoginReqCO r) { log.error("微信小程序登录失败", cause); return null; }
+            @Override public void resetPassword(ResetPasswordReqCO r) { log.error("密码重置失败", cause); }
         };
     }
 }

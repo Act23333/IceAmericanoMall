@@ -1,0 +1,8 @@
+wechat:
+  mini:
+    app-id:
+    app-secret:
+  oauth:
+    enabled: false
+    app-id:
+    app-secret:

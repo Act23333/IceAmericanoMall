@@ -1,10 +1,23 @@
-org.icedAmericanoMall.integration.sms.MockSmsClient
-org.icedAmericanoMall.integration.sms.AliyunSmsClient
-org.icedAmericanoMall.integration.payment.WechatPaymentClient
-org.icedAmericanoMall.integration.payment.WechatPaymentClient.MockWechatPaymentClient
-org.icedAmericanoMall.integration.payment.MockAlipayPaymentClient
-org.icedAmericanoMall.integration.storage.MockStorageClient
-org.icedAmericanoMall.integration.storage.MinioStorageClient
-org.icedAmericanoMall.integration.captcha.GeetestCaptchaClient
-org.icedAmericanoMall.integration.wechat.MockWechatOAuthClient
-org.icedAmericanoMall.integration.wechat.RealWechatOAuthClient
+# ia-integration 第三方客户端 Bean 注册表（Spring Boot 自动配置导入清单）。
+# 本模块没有 @AutoConfiguration 类，直接用本文件登记各第三方客户端；
+# 被登记的类以「全限定类名」作为 Bean 名（Spring Boot 对导入的配置类使用 FQCN 命名）。
+#
+# 未在此登记（改由业务服务的组件扫描获得，避免重复注册）：
+#   integration.auth.*   —— authorization-service / user-service 显式 scanBasePackages 覆盖
+# 新增/删除条目必须核对类是否真实存在（含内部类用 Outer.Inner 点号写法）。
+org.icedamericanomall.integration.sms.MockSmsClient
+org.icedamericanomall.integration.sms.AliyunSmsClient
+org.icedamericanomall.integration.sms.AliyunSmsProperties
+org.icedamericanomall.integration.email.MockEmailClient
+org.icedamericanomall.integration.email.RealEmailClient
+org.icedamericanomall.integration.email.EmailProperties
+org.icedamericanomall.integration.payment.WechatPaymentClient
+org.icedamericanomall.integration.payment.WechatPaymentClient.MockWechatPaymentClient
+org.icedamericanomall.integration.payment.MockAlipayPaymentClient
+org.icedamericanomall.integration.payment.WechatPayProperties
+org.icedamericanomall.integration.payment.AlipayProperties
+org.icedamericanomall.integration.storage.MockStorageClient
+org.icedamericanomall.integration.storage.MinioStorageClient
+org.icedamericanomall.integration.storage.StorageProperties
+org.icedamericanomall.integration.captcha.GeetestCaptchaClient
+org.icedamericanomall.integration.captcha.GeetestProperties

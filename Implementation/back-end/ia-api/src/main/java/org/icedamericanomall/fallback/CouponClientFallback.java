@@ -2,7 +2,7 @@ package org.icedamericanomall.fallback;
 
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.CouponClient;
-import org.icedamericanomall.dto.CouponStackInfoDTO;
+import org.icedamericanomall.dto.CouponStackInfoCO;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;
 
@@ -31,7 +31,7 @@ public class CouponClientFallback implements FallbackFactory<CouponClient> {
             }
 
             @Override
-            public List<CouponStackInfoDTO> batchGet(List<Long> ids) {
+            public List<CouponStackInfoCO> batchGet(List<Long> ids) {
                 log.error("批量查询券模板失败: ids={}", ids, cause);
                 return List.of();
             }

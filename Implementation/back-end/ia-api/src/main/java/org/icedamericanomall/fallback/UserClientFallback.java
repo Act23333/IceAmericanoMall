@@ -2,6 +2,7 @@ package org.icedamericanomall.fallback;
 
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.UserClient;
+import org.icedamericanomall.dto.UserAuthCO;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;
 
@@ -18,6 +19,12 @@ public class UserClientFallback implements FallbackFactory<UserClient> {
             public Long countUsers() {
                 log.error("获取用户总数失败", cause);
                 return 0L;
+            }
+
+            @Override
+            public Long getOrCreateUser(UserAuthCO userAuthDTO) {
+                log.error("查询/创建用户失败", cause);
+                return null;
             }
         };
     }

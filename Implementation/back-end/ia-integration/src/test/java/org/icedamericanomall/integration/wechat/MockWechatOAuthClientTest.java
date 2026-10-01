@@ -1,8 +1,10 @@
 package org.icedamericanomall.integration.wechat;
 
+import org.icedamericanomall.integration.auth.model.WechatOAuthResp;
+import org.icedamericanomall.integration.auth.service.thirdparty.impl.MockWechatOAuthClient;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.noLazy.common.exception.BizException;
+import org.icedamericanomall.common.exception.BizException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -17,8 +19,8 @@ class MockWechatOAuthClientTest {
     @Test
     @DisplayName("同一 code 恒定映射到同一 openid，且昵称/头像非空")
     void shouldReturnDeterministicOpenid() {
-        WechatUserInfo a = client.getUserInfoByCode("code-abc");
-        WechatUserInfo b = client.getUserInfoByCode("code-abc");
+        WechatOAuthResp a = client.getUserInfoByCode("code-abc");
+        WechatOAuthResp b = client.getUserInfoByCode("code-abc");
 
         assertNotNull(a.getOpenid());
         assertEquals(a.getOpenid(), b.getOpenid(), "同一 code 应得到同一 openid");

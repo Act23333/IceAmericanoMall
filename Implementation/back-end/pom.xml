@@ -29,6 +29,8 @@
         <module>search-service</module>
         <module>ai-service</module>
         <module>marketing-service</module>
+        <module>notification-service</module>
+        <module>verification-service</module>
     </modules>
 
     <!--实现 Maven 的配置继承-->
@@ -82,7 +84,7 @@
         <h2.version>2.3.232</h2.version>
         <minio.version>8.5.10</minio.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
-        <webmvc-swagger.version>2.8.8</webmvc-swagger.version>
+<!--        <webmvc-swagger.version>2.8.8</webmvc-swagger.version>-->
         <webflux-swagger.version>2.6.0</webflux-swagger.version>
         <knife4j-swagger.version>4.5.0</knife4j-swagger.version>
         <knife4j-gateway-swagger.version>4.5.0</knife4j-gateway-swagger.version>
@@ -92,9 +94,11 @@
         <ia-api.version>1.0</ia-api.version>
         <ia-integration.version>1.0</ia-integration.version>
         <lombok.version>1.18.42</lombok.version>
+        <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
         <spring-ai.version>1.0.0-M6</spring-ai.version>
         <langchain4j.version>1.18.0-beta28</langchain4j.version>
         <rocketmq-spring.version>2.3.3</rocketmq-spring.version>
+        <httpclient5.version>5.6.4</httpclient5.version>
     </properties>
     
     <!-- 对依赖包进行管理 -->
@@ -241,6 +245,18 @@
                 <artifactId>ia-integration</artifactId>
                 <version>${ia-integration.version}</version>
             </dependency>
+            <!--http连接池-->
+            <dependency>
+                <groupId>org.apache.httpcomponents.client5</groupId>
+                <artifactId>httpclient5</artifactId>
+                <version>${httpclient5.version}</version>
+            </dependency>
+            <!--swagger日志，导出可以进行测试-->
+            <dependency>
+                <groupId>com.github.xiaoymin</groupId>
+                <artifactId>knife4j-gateway-spring-boot-starter</artifactId>
+                <version>${knife4j-gateway-swagger.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -280,6 +296,16 @@
                                 <groupId>org.projectlombok</groupId>
                                 <artifactId>lombok</artifactId>
                                 <version>${lombok.version}</version>
+                            </path>
+                            <!--
+                              Lombok 与 MapStruct 协同的必需桥接件（官方推荐）。
+                              缺少它时，MapStruct 在第一轮注解处理中看不到 Lombok 生成的
+                              getter/builder/log 成员，javac 会报大量 “找不到符号: 方法 getXxx()/变量 log”。
+                            -->
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok-mapstruct-binding</artifactId>
+                                <version>${lombok-mapstruct-binding.version}</version>
                             </path>
 
                             <path>

@@ -1,6 +1,6 @@
 package org.icedamericanomall.client;
 
-import org.icedamericanomall.dto.AddressDTO;
+import org.icedamericanomall.dto.AddressCO;
 import org.icedamericanomall.fallback.AddressClientFallback;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,5 +20,5 @@ public interface AddressClient {
      * Get address by ID for order address snapshot.
      */
     @GetMapping("/address/{id}")
-    AddressDTO getAddress(@PathVariable Long id);
+    AddressCO getAddress(@PathVariable Long id);
 }

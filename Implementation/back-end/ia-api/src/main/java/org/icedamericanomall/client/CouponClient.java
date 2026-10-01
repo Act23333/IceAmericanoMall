@@ -1,6 +1,6 @@
 package org.icedamericanomall.client;
 
-import org.icedamericanomall.dto.CouponStackInfoDTO;
+import org.icedamericanomall.dto.CouponStackInfoCO;
 import org.icedamericanomall.fallback.CouponClientFallback;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,5 +31,5 @@ public interface CouponClient {
 
     /** V4.3: 批量查询券模板（下单时校验多券叠加规则）。 */
     @GetMapping("/batch")
-    List<CouponStackInfoDTO> batchGet(@RequestParam List<Long> ids);
+    List<CouponStackInfoCO> batchGet(@RequestParam List<Long> ids);
 }

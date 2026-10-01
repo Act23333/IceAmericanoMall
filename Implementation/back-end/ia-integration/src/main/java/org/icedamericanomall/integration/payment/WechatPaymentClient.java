@@ -8,9 +8,8 @@ import com.wechat.pay.java.service.payments.nativepay.model.*;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.icedamericanomall.integration.payment.WechatPayProperties;
-import org.noLazy.common.enums.ErrorCode;
-import org.noLazy.common.exception.BizException;
+import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BizException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -19,6 +18,14 @@ import java.util.Map;
 
 /**
  * 微信支付 API v3 Native 支付 — {@code wechat.pay.merchant-id} 配置后激活。
+ *
+ * <p>⚠️ 条件装配与其余四组（sms / email / storage / alipay）<b>暂不一致</b>：
+ * 本组用「{@code wechat.pay.merchant-id} 存在性」判定真实实现，其余组用
+ * 「{@code <ns>.enabled} 布尔开关 + matchIfMissing」。
+ *
+ * <p>不是疏漏而是<b>有意保留</b>：pay-service 的 yml 中 {@code merchant-id} 键恒存在
+ * （值来自可能为空的环境变量），改按统一模板迁移会让「真实支付」瞬间翻转为「Mock 支付」。
+ * 迁移只能在支付服务同批发布时进行，路径与验证方式见 {@code project-docs/adr/013}。
  */
 @Slf4j
 @Component

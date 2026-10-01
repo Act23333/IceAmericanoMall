@@ -10,7 +10,6 @@
     </parent>
 
     <artifactId>ia-common</artifactId>
-    <version>1.0</version>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
@@ -19,6 +18,7 @@
     </properties>
 
     <dependencies>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -36,7 +36,7 @@
 <!--        配置mybatis-plus依赖-->
 <!--        <dependency>-->
 <!--            <groupId>com.baomidou</groupId>-->
-<!--            <artifactId>mybatis-plus-boot-starter</artifactId>-->
+<!--            <artifactId>mybatis-plus-boot3-starter</artifactId>-->
 <!--        </dependency>-->
 <!--        <dependency>-->
 <!--            <groupId>org.springframework</groupId>-->
@@ -48,6 +48,7 @@
             <groupId>org.springframework</groupId>
             <artifactId>spring-webmvc</artifactId>
             <scope>provided</scope>
+            <optional>true</optional>
         </dependency>
 <!--        &lt;!&ndash; Spring Context（包含 validation 包） &ndash;&gt;-->
 <!--        <dependency>-->
@@ -84,7 +85,7 @@
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
-<!--            <optional>true</optional>-->
+            <optional>true</optional>
         </dependency>
 
 
@@ -92,14 +93,9 @@
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-jsqlparser</artifactId>
-<!--            <optional>true</optional> 这个maven标签为true标识依赖不需要传递-->
+            <optional>true</optional>
+<!--            这个maven标签为true标识依赖不需要传递-->
         </dependency>
-<!--        <dependency>-->
-<!--            <groupId>com.baomidou</groupId>-->
-<!--            <artifactId>mybatis-plus-extension</artifactId>-->
-<!--            <version>${mybatis-plus.version}</version>-->
-<!--            <scope>provided</scope>-->
-<!--        </dependency>-->
         <!--配置mapstruct代替beanProperty，类之间的映射-->
         <!-- MapStruct：不传递 -->
         <dependency>
@@ -173,6 +169,18 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!--HTTP 连接池-->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
             <optional>true</optional>
         </dependency>
     </dependencies>
