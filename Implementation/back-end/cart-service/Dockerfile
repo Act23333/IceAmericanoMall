@@ -1,5 +1,5 @@
 # V2.5 多阶段构建: maven -> jre (cart-service)
-# 入口: org.icedAmericanoMall.CartApplication
+# 入口: org.icedamericanomall.cart.CartApplication
 FROM maven:3.9-eclipse-temurin-21-alpine AS build
 WORKDIR /build
 COPY pom.xml ./

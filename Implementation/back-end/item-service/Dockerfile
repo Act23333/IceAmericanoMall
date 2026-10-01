@@ -1,5 +1,5 @@
 # V2.5 多阶段构建: maven -> jre (item-service)
-# 入口: org.icedAmericanoMall.ItemApplication
+# 入口: org.icedamericanomall.item.ItemApplication
 FROM maven:3.9-eclipse-temurin-21-alpine AS build
 WORKDIR /build
 COPY pom.xml ./

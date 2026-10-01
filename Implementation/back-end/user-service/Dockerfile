@@ -1,5 +1,5 @@
 # V2.5 多阶段构建: maven -> jre (user-service)
-# 入口: org.icedAmericanoMall.UserApplication
+# 入口: org.icedamericanomall.user.UserApplication
 FROM maven:3.9-eclipse-temurin-21-alpine AS build
 WORKDIR /build
 COPY pom.xml ./
