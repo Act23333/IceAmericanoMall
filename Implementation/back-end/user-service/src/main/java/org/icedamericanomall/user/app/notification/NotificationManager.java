@@ -109,10 +109,10 @@ public class NotificationManager {
             // 兜底到用户名
         }
         try {
-            String username = userRepository.findById(senderId)
-                    .map(u -> u.getUsername()).orElse(null);
-            if (username != null) {
-                return username;
+            String nickname = userRepository.findById(senderId)
+                    .map(u -> u.getNickname()).orElse(null);
+            if (nickname != null) {
+                return nickname;
             }
         } catch (Exception ignored) {
             // 兜底到默认名

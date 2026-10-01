@@ -11,30 +11,35 @@ import java.util.Optional;
 /**
  * 用户聚合仓储（领域层定义，基础设施层实现）。
  *
- * <p>业务键口径（ADR-002 / ADR-006）：
+ * <p>业务键口径（ADR-002 / ADR-006 / ADR-017）：
  * <ul>
  *   <li>创建：{@code insert}（由实现生成 {@code userId} UUID 业务键，不做"按 id 判断增减"）</li>
- *   <li>登录定位：{@code findByPhone} / {@code findByUsername} / {@code findByWxOpenid}（业务列）</li>
+ *   <li>标识定位：{@code findByPhone} / {@code findByEmail} —— 入参为<b>明文</b>，
+ *       实现内部换算 HMAC 盲索引后按 {@code phone_hash} / {@code email_hash} 定位
+ *       （PII 密文列不参与等值查询）</li>
  *   <li>聚合定位：{@code findById} —— 技术主键是集群内部口径（JWT / 网关 header / 各业务表 user_id），
  *       聚合一旦装载，其后的变更（资料/状态/余额）按 id 定位是该聚合的规范操作，非"无谓按 id"</li>
  * </ul>
+ *
+ * <p>V5.2 移除：{@code findByWxOpenid}（微信身份归 user_auth 聚合，ADR-017）、
+ * {@code updateRoleTypeById}（{@code role_type} 列退役，鉴权口径统一为 RBAC 五表）。
  */
 public interface UserRepository {
 
     /** 按技术主键查询（跨服务口径，ADR-006）。 */
     Optional<User> findById(Long id);
 
-    /** 按登录标识查询（当前仅 PHONE 落 user 表列；EMAIL / WECHAT 由 user_auth 承载）。 */
+    /** 按登录标识查询（PHONE / EMAIL 走盲索引；其余类型本表无标识列，返回 empty）。 */
     Optional<User> findByIdentity(IdentityTypeEnum identityType, String identifier);
 
-    /** 按手机号查询（uk_phone 业务唯一键）。 */
+    /** 按手机号（明文入参 → 盲索引）查询。 */
     Optional<User> findByPhone(String phone);
 
-    /** 按用户名查询（登录用）。 */
-    Optional<User> findByUsername(String username);
+    /** 按邮箱（明文入参 → 盲索引）查询。 */
+    Optional<User> findByEmail(String email);
 
-    /** 按微信 openid 查询（登录用）。 */
-    Optional<User> findByWxOpenid(String wxOpenid);
+    /** 按昵称查询（展示名，非登录标识）。 */
+    Optional<User> findByNickname(String nickname);
 
     /**
      * 新增用户（生成 user_id 业务键与默认状态，回填技术主键）。
@@ -45,14 +50,11 @@ public interface UserRepository {
      */
     User insert(User user);
 
-    /** 全量更新（资料编辑：昵称/头像等；@Version 乐观锁生效，entity 须已装载）。 */
+    /** 全量更新（资料编辑：昵称/头像/性别/生日/会员等级/标识换绑；@Version 乐观锁生效，entity 须已装载）。 */
     int update(User user);
 
     /** 管理后台：启用/禁用状态迁移。 */
     int updateStatusById(Long id, UserStatusEnum status);
-
-    /** 管理后台：设置角色类型。 */
-    int updateRoleTypeById(Long id, int roleType);
 
     /**
      * 原子条件扣减余额（余额支付）：仅当余额充足才更新。

@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
+import org.icedamericanomall.common.utils.crypto.BlindIndexUtil;
 import org.icedamericanomall.user.domain.exception.DuplicateUserException;
 import org.icedamericanomall.user.domain.model.User;
 import org.icedamericanomall.user.domain.model.UserStatusEnum;
@@ -18,9 +19,12 @@ import java.util.Optional;
 /**
  * 用户仓储实现（基础设施层）。
  *
- * <p>创建走业务键（{@code uk_user_id} / {@code uk_phone} / {@code uk_wx_openid}），
+ * <p>创建走业务键（{@code uk_user_id} / {@code uk_phone_hash} / {@code uk_email_hash}），
  * 不做"按 id 判断新增还是更新"；持久化框架的唯一键冲突在此翻译为领域异常
  * {@link DuplicateUserException}（领域层不依赖 Spring 异常）。
+ *
+ * <p><b>PII 定位（V5.2）</b>：手机号 / 邮箱入参为明文，等值查询一律换算 HMAC 盲索引后
+ * 命中 {@code phone_hash} / {@code email_hash}（密文列不可等值比较）；明文列不再读写。
  */
 @Repository
 @RequiredArgsConstructor
@@ -40,8 +44,9 @@ public class UserRepositoryImpl implements UserRepository {
         }
         return switch (identityType) {
             case PHONE -> findByPhone(identifier);
-            case WECHAT, WECHAT_MINI -> findByWxOpenid(identifier);
-            // EMAIL / USERNAME / APPLE_ID：user 表无对应列（身份由 user_auth 承载，ADR-008）
+            case EMAIL -> findByEmail(identifier);
+            // WECHAT / WECHAT_MINI / USERNAME / APPLE_ID：user 表不承载这些标识
+            // （身份与凭证归 user_auth 聚合，ADR-008/017）
             default -> Optional.empty();
         };
     }
@@ -52,25 +57,25 @@ public class UserRepositoryImpl implements UserRepository {
             return Optional.empty();
         }
         return Optional.ofNullable(UserConverter.toDomain(userMapper.selectOne(
-                new LambdaQueryWrapper<UserDO>().eq(UserDO::getPhone, phone).last("LIMIT 1"))));
+                new LambdaQueryWrapper<UserDO>().eq(UserDO::getPhoneHash, BlindIndexUtil.hmac(phone)).last("LIMIT 1"))));
     }
 
     @Override
-    public Optional<User> findByUsername(String username) {
-        if (username == null) {
+    public Optional<User> findByEmail(String email) {
+        if (email == null) {
             return Optional.empty();
         }
         return Optional.ofNullable(UserConverter.toDomain(userMapper.selectOne(
-                new LambdaQueryWrapper<UserDO>().eq(UserDO::getUsername, username).last("LIMIT 1"))));
+                new LambdaQueryWrapper<UserDO>().eq(UserDO::getEmailHash, BlindIndexUtil.hmac(email)).last("LIMIT 1"))));
     }
 
     @Override
-    public Optional<User> findByWxOpenid(String wxOpenid) {
-        if (wxOpenid == null) {
+    public Optional<User> findByNickname(String nickname) {
+        if (nickname == null) {
             return Optional.empty();
         }
         return Optional.ofNullable(UserConverter.toDomain(userMapper.selectOne(
-                new LambdaQueryWrapper<UserDO>().eq(UserDO::getWxOpenid, wxOpenid).last("LIMIT 1"))));
+                new LambdaQueryWrapper<UserDO>().eq(UserDO::getUsername, nickname).last("LIMIT 1"))));
     }
 
     @Override
@@ -94,13 +99,6 @@ public class UserRepositoryImpl implements UserRepository {
         return userMapper.update(null, new LambdaUpdateWrapper<UserDO>()
                 .eq(UserDO::getId, id)
                 .set(UserDO::getStatus, status == null ? null : status.getCode()));
-    }
-
-    @Override
-    public int updateRoleTypeById(Long id, int roleType) {
-        return userMapper.update(null, new LambdaUpdateWrapper<UserDO>()
-                .eq(UserDO::getId, id)
-                .set(UserDO::getRoleType, roleType));
     }
 
     @Override

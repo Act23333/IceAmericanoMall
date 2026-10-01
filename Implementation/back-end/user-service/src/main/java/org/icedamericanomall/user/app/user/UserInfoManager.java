@@ -54,7 +54,7 @@ public class UserInfoManager {
 
         UserInfo userInfo = UserInfo.builder()
                 .userId(user.getId())
-                .username(user.getUsername())
+                .username(user.getNickname())
                 .roles(roles)
                 .permissions(perms)
                 .build();

@@ -1,6 +1,8 @@
 package org.icedamericanomall.user.infrastructure.config;
 
 import org.icedamericanomall.user.domain.port.DistributedLock;
+import org.icedamericanomall.user.domain.port.NewUserRegistrar;
+import org.icedamericanomall.user.domain.port.NewUserRewardService;
 import org.icedamericanomall.user.domain.port.SmsCodeStore;
 import org.icedamericanomall.user.domain.repository.SellerRepository;
 import org.icedamericanomall.user.domain.repository.UserRepository;
@@ -25,8 +27,10 @@ public class DomainBeanConfig {
 
     @Bean
     public UserProvisioner userProvisioner(UserRepository userRepository,
-                                           DistributedLock distributedLock) {
-        return new UserProvisioner(userRepository, distributedLock);
+                                           DistributedLock distributedLock,
+                                           NewUserRegistrar newUserRegistrar,
+                                           NewUserRewardService newUserRewardService) {
+        return new UserProvisioner(userRepository, distributedLock, newUserRegistrar, newUserRewardService);
     }
 
     @Bean

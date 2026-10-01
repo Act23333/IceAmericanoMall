@@ -39,15 +39,17 @@ class UserBalanceH2Test {
             stmt.execute("""
                 CREATE TABLE user (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                    user_id VARCHAR(64), username VARCHAR(50), phone VARCHAR(20),
-                    password VARCHAR(100), avatar VARCHAR(255), wx_openid VARCHAR(128), phone_hash VARCHAR(64),
-                    register_time TIMESTAMP, last_login_time TIMESTAMP NULL, status INT DEFAULT 1, balance INT DEFAULT 0,
-                    role_type INT DEFAULT 0, version INT DEFAULT 0,
-                    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    user_id VARCHAR(64), username VARCHAR(50), avatar VARCHAR(255),
+                    gender INT DEFAULT 0, birthday DATE, member_level VARCHAR(20) DEFAULT 'NORMAL',
+                    phone_cipher VARCHAR(512), phone_hash VARCHAR(128), phone_mask VARCHAR(64),
+                    email_cipher VARCHAR(512), email_hash VARCHAR(128), email_mask VARCHAR(64),
+                    register_time TIMESTAMP NULL, status INT DEFAULT 1, balance INT DEFAULT 0,
+                    version INT DEFAULT 0,
+                    create_time TIMESTAMP NULL,
+                    update_time TIMESTAMP NULL
                 )""");
-            stmt.execute("INSERT INTO user (id, user_id, phone, status, balance, role_type) "
-                    + "VALUES (100, 'u-100', '13800138000', 1, 10000, 0)");
+            stmt.execute("INSERT INTO user (id, user_id, status, balance) "
+                    + "VALUES (100, 'u-100', 1, 10000)");
         }
 
         MybatisConfiguration config = new MybatisConfiguration();
@@ -64,8 +66,8 @@ class UserBalanceH2Test {
 
         UserRepositoryImpl userRepository = new UserRepositoryImpl(
                 sqlSessionFactory.openSession().getMapper(UserMapper.class));
-        // 余额链路不经过 UserProvisioner
-        userManager = new UserManager(userRepository, null);
+        // 余额链路不经过 UserProvisioner / 角色仓储
+        userManager = new UserManager(userRepository, null, null);
     }
 
     @Test

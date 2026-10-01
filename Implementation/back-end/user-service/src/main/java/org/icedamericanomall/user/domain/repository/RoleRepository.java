@@ -1,5 +1,6 @@
 package org.icedamericanomall.user.domain.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -51,6 +52,23 @@ public interface RoleRepository {
 
     /** 用户角色编码集合（ROLE_ 前缀，登录响应 & user:perms 网关缓存）。 */
     Set<String> findRoleCodesByUserId(Long userId);
+
+    /**
+     * 批量查询用户角色编码（管理后台列表派生 roleType 用，避免逐行 N+1）。
+     *
+     * @param userIds 用户技术主键集合（空集合返回空 Map）
+     * @return userId → 角色编码集合（无角色的用户不在 Map 中）
+     */
+    Map<Long, Set<String>> findRoleCodesByUserIds(Collection<Long> userIds);
+
+    /**
+     * 按角色反查持有该角色的用户（V5.2 权限缓存主动失效：sys_role_permission 变更后
+     * 需要逐用户删除 {@code user:perms:{userId}}）。
+     *
+     * @param roleId 角色 ID
+     * @return 持有该角色的用户技术主键集合
+     */
+    Set<Long> findUserIdsByRoleId(Long roleId);
 
     /** 用户个人直接权限编码集合。 */
     Set<String> findDirectPermissionCodesByUserId(Long userId);

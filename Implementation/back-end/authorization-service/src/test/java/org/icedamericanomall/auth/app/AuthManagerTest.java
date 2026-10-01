@@ -10,7 +10,6 @@ import org.icedamericanomall.auth.app.port.CaptchaService;
 import org.icedamericanomall.auth.app.port.LoginSecurityService;
 import org.icedamericanomall.auth.app.port.LoginTokenService;
 import org.icedamericanomall.auth.app.port.RiskControlService;
-import org.icedamericanomall.auth.app.port.UserAccountService;
 import org.icedamericanomall.auth.app.port.VerificationCodeIssueService;
 import org.icedamericanomall.auth.domain.ability.auth.LoginStrategy;
 import org.icedamericanomall.auth.domain.ability.auth.LoginStrategyFactory;
@@ -20,11 +19,19 @@ import org.icedamericanomall.auth.domain.enums.PlatformEnum;
 import org.icedamericanomall.auth.domain.enums.RiskLevel;
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
 import org.icedamericanomall.auth.domain.enums.VerificationSceneEnum;
+import org.icedamericanomall.auth.domain.gateway.UserAccountGateway;
 import org.icedamericanomall.auth.domain.model.RiskAssessment;
 import org.icedamericanomall.auth.domain.model.UserAuth;
+import org.icedamericanomall.auth.domain.port.PasswordVerifier;
+import org.icedamericanomall.auth.domain.port.VerificationCodeService;
+import org.icedamericanomall.auth.domain.repository.UserAuthRepository;
+import org.icedamericanomall.auth.domain.service.UserAuthProvisioner;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.common.utils.crypto.AesGcmUtil;
+import org.icedamericanomall.common.utils.crypto.BlindIndexUtil;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,7 +40,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Base64;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -44,6 +53,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -51,10 +61,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * AuthManager 用例编排单元测试（R3 人机验证闭环 + 邮箱发码用例）。
+ * AuthManager 用例编排单元测试（R3 人机验证闭环 + 邮箱发码 + V5.2 注册/重置密码本地闭环）。
  *
- * <p>只验证编排：人机验证的四种状态（未携带 / 未启用 / 参数残缺 / 校验不通过）与
- * 邮箱发码的归一化与转发，业务规则本身在领域层测试。
+ * <p>只验证编排：人机验证的四种状态（未携带 / 未启用 / 参数残缺 / 校验不通过）、
+ * 邮箱发码的归一化与转发、注册（验证码 → 建档 → 凭证 → 签发）与重置密码
+ * （验证码 → 盲索引定位 → 写新哈希）的编排顺序，业务规则本身在领域层测试。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AuthManager 单元测试")
@@ -67,7 +78,16 @@ class AuthManagerTest {
     private LoginStrategyFactory strategyFactory;
 
     @Mock
-    private UserAccountService userAccountService;
+    private UserAccountGateway userAccountGateway;
+
+    @Mock
+    private UserAuthProvisioner userAuthProvisioner;
+
+    @Mock
+    private UserAuthRepository userAuthRepository;
+
+    @Mock
+    private PasswordVerifier passwordVerifier;
 
     @Mock
     private LoginSecurityService loginSecurityService;
@@ -82,10 +102,19 @@ class AuthManagerTest {
     private CaptchaService captchaService;
 
     @Mock
+    private VerificationCodeService verificationCodeService;
+
+    @Mock
     private VerificationCodeIssueService verificationCodeIssueService;
 
     @InjectMocks
     private AuthManager authManager;
+
+    @BeforeAll
+    static void initCrypto() {
+        AesGcmUtil.init(Base64.getEncoder().encodeToString(new byte[32]));
+        BlindIndexUtil.init(Base64.getEncoder().encodeToString(new byte[32]));
+    }
 
     // ========== R3：人机验证闭环 ==========
 
@@ -233,6 +262,77 @@ class AuthManagerTest {
                 EmailCodeCommand.builder().email("buyer@example.com").build()));
 
         assertEquals(ErrorCode.FREQUENT_ERROR, exception.getErrorCode());
+    }
+
+    // ========== V5.2：注册 / 重置密码（认证边界收敛） ==========
+
+    @Test
+    @DisplayName("注册 — 验证码校验 → 远程建档 → 本地凭证建档 → 签发令牌（编排顺序）")
+    void shouldRegister_withLocalCredential() {
+        when(userAccountGateway.getOrCreateUserId("13800138000", IdentityTypeEnum.PHONE, "小明")).thenReturn(100L);
+        when(passwordVerifier.encode("Aa123456!")).thenReturn("$2a$hash");
+        when(userAuthProvisioner.findByHashOrCreateWithCredential(
+                eq(IdentityTypeEnum.PHONE), anyString(), eq("13800138000"), eq("$2a$hash"), eq(null)))
+                .thenReturn(UserAuth.builder().userId(100L).identityType(IdentityTypeEnum.PHONE).build());
+        when(loginTokenService.createLoginResponse(any(TokenGenerateParam.class)))
+                .thenReturn(new TokenPair(100L, "access", "refresh", 1800L));
+
+        var loginDTO = authManager.register(org.icedamericanomall.auth.app.command.RegisterCommand.builder()
+                .username("小明").phone("13800138000").password("Aa123456!").code("123456")
+                .deviceId("dev-1").platform(PlatformEnum.WEB).build());
+
+        assertEquals(100L, loginDTO.userId());
+        // 验证码先消费（一次性），再建档，最后本地凭证带有正确盲索引
+        verify(verificationCodeService).verifyAndConsume(VerificationChannelEnum.SMS, "13800138000", "123456");
+        verify(userAccountGateway).getOrCreateUserId("13800138000", IdentityTypeEnum.PHONE, "小明");
+        verify(userAuthProvisioner).findByHashOrCreateWithCredential(
+                IdentityTypeEnum.PHONE, BlindIndexUtil.hmac("13800138000"), "13800138000", "$2a$hash", null);
+    }
+
+    @Test
+    @DisplayName("注册 — 验证码校验失败 → 不建档不打远程（异常透传）")
+    void shouldNotRegister_whenCodeRejected() {
+        org.mockito.Mockito.doThrow(new BizException(ErrorCode.CAPTCHA_ERROR, "验证码错误"))
+                .when(verificationCodeService)
+                .verifyAndConsume(VerificationChannelEnum.SMS, "13800138000", "bad");
+
+        assertThrows(BizException.class, () -> authManager.register(
+                org.icedamericanomall.auth.app.command.RegisterCommand.builder()
+                        .username("小明").phone("13800138000").password("Aa123456!").code("bad")
+                        .platform(PlatformEnum.WEB).build()));
+
+        verifyNoInteractions(userAccountGateway, userAuthProvisioner);
+    }
+
+    @Test
+    @DisplayName("重置密码 — 验证码通过 → 盲索引定位凭证 → 写入新密码哈希（不调 user-service）")
+    void shouldResetPassword_onLocalCredential() {
+        UserAuth existing = UserAuth.builder().userId(100L).identityType(IdentityTypeEnum.PHONE)
+                .credential("$2a$old").build();
+        when(userAuthRepository.findByIdentityHash(IdentityTypeEnum.PHONE, BlindIndexUtil.hmac("13800138000")))
+                .thenReturn(Optional.of(existing));
+        when(passwordVerifier.encode("NewPw123!")).thenReturn("$2a$new");
+
+        authManager.resetPassword(org.icedamericanomall.auth.app.command.ResetPasswordCommand.builder()
+                .phone("13800138000").code("123456").newPassword("NewPw123!").build());
+
+        verify(verificationCodeService).verifyAndConsume(VerificationChannelEnum.SMS, "13800138000", "123456");
+        verify(userAuthRepository).updateByUserIdAndType(existing);
+        assertEquals("$2a$new", existing.getCredential(), "凭证哈希已写入聚合");
+    }
+
+    @Test
+    @DisplayName("重置密码 — 手机号未注册 → USER_NOT_FOUND（与历史语义一致）")
+    void shouldRejectReset_whenPhoneNotRegistered() {
+        when(userAuthRepository.findByIdentityHash(IdentityTypeEnum.PHONE, BlindIndexUtil.hmac("13900139000")))
+                .thenReturn(Optional.empty());
+
+        BizException exception = assertThrows(BizException.class,
+                () -> authManager.resetPassword(org.icedamericanomall.auth.app.command.ResetPasswordCommand.builder()
+                        .phone("13900139000").code("123456").newPassword("NewPw123!").build()));
+
+        assertEquals(ErrorCode.USER_NOT_FOUND, exception.getErrorCode());
+        verify(userAuthRepository, never()).updateByUserIdAndType(any());
     }
 
     // ========== 脚手架 ==========

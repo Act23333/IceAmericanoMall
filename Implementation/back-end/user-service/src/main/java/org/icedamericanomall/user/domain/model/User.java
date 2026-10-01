@@ -5,29 +5,59 @@ import lombok.Data;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.exception.BizException;
-import org.icedamericanomall.user.domain.port.PasswordVerifier;
+import org.icedamericanomall.common.model.EncryptedIdentifier;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
- * 用户聚合根（纯 POJO，零框架依赖）。
+ * 用户聚合根（纯 POJO，零框架依赖）—— V5.2 资料/凭证分离后的"资料聚合"。
  *
  * <p>双主键语义（ADR-002 / ADR-006）：
  * <ul>
  *   <li>{@link #id} —— 技术主键（BIGINT），集群内部跨服务口径（JWT claim / 网关 header / 各业务表 user_id）</li>
- *   <li>{@link #userId} —— 业务唯一键（UUID），对外暴露与 user-service 域内定位</li>
+ *   <li>{@link #userId} —— 业务唯一键（UUID，32 位），对外暴露与 user-service 域内定位</li>
  * </ul>
  *
- * <p>边界说明：登录标识（手机号 / 邮箱 / 微信）的凭证化存储属于 authorization-service 的
- * {@code user_auth} 聚合（ADR-008）；本聚合保留 {@code phone} / {@code wxOpenid} 两个
- * user 表历史登录列与 {@code password} 凭证哈希（注册、密码登录、找回密码链路沿用）。
+ * <p><b>边界声明（V5.2 / ADR-017）</b>：本聚合<b>只承载"资料"</b>——昵称、头像、性别、生日、
+ * 会员等级、余额、状态，以及两个 PII 标识（手机号 / 邮箱，三字段加密值对象，仅用于展示、
+ * 换绑与跨上下文定位）。
+ * <ul>
+ *   <li>登录<b>凭证</b>（密码哈希、微信 openid）归 authorization-service 的 {@code user_auth} 聚合
+ *       （ADR-008）——本聚合已移除 {@code password} / {@code wxOpenid} 字段与
+ *       {@code verifyPassword} / {@code changePassword} 行为，"注册即可密码登录"的凭证一致性
+ *       由凭证唯一所有权方保证；</li>
+ *   <li>角色/权限<b>不落在本聚合</b>（RBAC 五表 sys_role/sys_permission/sys_user_role/
+ *       sys_role_permission/sys_user_permission 派生 + Redis 缓存，ADR-017）——
+ *       {@code role_type} 列已退役（保留列仅为观察期，代码不读不写）。</li>
+ * </ul>
  *
- * <p>业务规则内聚在实体方法中（状态迁移、凭证校验、余额不变量），不泄漏到应用层。
+ * <p>业务规则内聚在实体方法中（状态迁移、标识换绑校验、余额不变量），不泄漏到应用层。
  */
 @Data
 @Builder
 public class User {
+
+    /** 性别：未知 */
+    public static final int GENDER_UNKNOWN = 0;
+
+    /** 性别：男 */
+    public static final int GENDER_MALE = 1;
+
+    /** 性别：女 */
+    public static final int GENDER_FEMALE = 2;
+
+    /** 会员等级缺省值（注册即普通会员） */
+    public static final String MEMBER_LEVEL_DEFAULT = "NORMAL";
+
+    /** 手机号格式（中国大陆） */
+    private static final Pattern PHONE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
+
+    /** 邮箱格式（宽松校验：本地部分@域名，域名含点） */
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[\\w.+-]+@[\\w-]+(\\.[\\w-]+)+$");
 
     /** 技术主键（跨服务 user_id 语义，ADR-006） */
     private Long id;
@@ -35,30 +65,29 @@ public class User {
     /** 业务唯一键（UUID，32 位无连字符） */
     private String userId;
 
-    private String username;
-
-    /** 手机号（历史登录列；邮箱-only 用户为空） */
-    private String phone;
-
-    /** 登录凭证哈希（BCrypt）；微信-only / 纯验证码用户为空 */
-    private String password;
+    /** 昵称（展示名；持久化映射历史列名 {@code username}） */
+    private String nickname;
 
     private String avatar;
 
-    /** 微信 openid（历史登录列） */
-    private String wxOpenid;
+    /** 性别：0=未知，1=男，2=女 */
+    private Integer gender;
 
-    private UserStatusEnum status;
+    private LocalDate birthday;
 
     /** 余额（单位：分，INTEGER —— 禁用 float/double/BigDecimal） */
     private Integer balance;
 
-    /** 角色类型：0=普通用户，1=商家，2=管理员（兼容旧字段；RBAC 以 sys_user_role 为准） */
-    private Integer roleType;
+    /** 手机号（PII 三字段：cipher + hash + mask；未绑定为 null） */
+    private EncryptedIdentifier phone;
 
-    private LocalDateTime registerTime;
+    /** 邮箱（PII 三字段：cipher + hash + mask；未绑定为 null） */
+    private EncryptedIdentifier email;
 
-    private LocalDateTime lastLoginTime;
+    /** 会员等级（NORMAL / SILVER / GOLD / PLATINUM，展示与营销维度） */
+    private String memberLevel;
+
+    private UserStatusEnum status;
 
     private LocalDateTime createTime;
 
@@ -67,13 +96,15 @@ public class User {
     // ==================== 工厂 ====================
 
     /**
-     * 创建新用户资料（未落库状态，{@code id} / {@code userId} 由仓储落库时补齐）。
+     * 创建新用户资料（未落库状态，{@code id} 由仓储落库时补齐）。
      *
-     * <p>登录标识归属：PHONE 写入 {@code phone} 列（uk_phone 兜底幂等）；
-     * 其余标识类型（EMAIL / WECHAT…）在本聚合不落列 —— 其身份由 user_auth 承载。
+     * <p>标识归属：PHONE / EMAIL 落各自三字段列（盲索引唯一键兜底幂等）；
+     * WECHAT / WECHAT_MINI / USERNAME 等其余标识类型在本聚合<b>不落列</b> ——
+     * 其身份与凭证由 authorization-service 的 {@code user_auth} 承载（ADR-008/017），
+     * 本上下文只按 {@code userId} 关联资料。
      *
      * @param identityType 登录标识类型
-     * @param identifier   登录标识（手机号 / 邮箱 / openid，明文）
+     * @param identifier   登录标识（手机号 / 邮箱；其余类型忽略）
      * @return 新用户聚合
      */
     public static User create(IdentityTypeEnum identityType, String identifier) {
@@ -81,11 +112,14 @@ public class User {
                 .userId(newBusinessId())
                 .status(UserStatusEnum.NORMAL)
                 .balance(0)
-                .roleType(0)
-                .registerTime(LocalDateTime.now());
+                .gender(GENDER_UNKNOWN)
+                .memberLevel(MEMBER_LEVEL_DEFAULT);
+        if (identityType == null) {
+            return builder.build();
+        }
         return switch (identityType) {
-            case PHONE -> builder.phone(identifier).build();
-            case WECHAT, WECHAT_MINI -> builder.wxOpenid(identifier).build();
+            case PHONE -> builder.phone(EncryptedIdentifier.fromPlain(identifier)).build();
+            case EMAIL -> builder.email(EncryptedIdentifier.fromPlain(identifier)).build();
             default -> builder.build();
         };
     }
@@ -95,7 +129,7 @@ public class User {
         return UUID.randomUUID().toString().replace("-", "");
     }
 
-    // ==================== 业务方法 ====================
+    // ==================== 状态机 ====================
 
     /** 是否被冻结。 */
     public boolean isFrozen() {
@@ -124,29 +158,11 @@ public class User {
         this.updateTime = LocalDateTime.now();
     }
 
-    /**
-     * 校验明文密码。
-     *
-     * @param rawPassword      用户提交的明文密码
-     * @param passwordVerifier 哈希比较能力（基础设施用 BCrypt 实现）
-     * @return true 表示密码正确
-     */
-    public boolean verifyPassword(String rawPassword, PasswordVerifier passwordVerifier) {
-        if (password == null || password.isBlank()) {
-            return false;
-        }
-        return passwordVerifier.matches(rawPassword, password);
-    }
-
-    /** 更新凭证哈希（注册 / 找回密码传入已哈希值）。 */
-    public void changePassword(String encodedPassword) {
-        this.password = encodedPassword;
-        this.updateTime = LocalDateTime.now();
-    }
+    // ==================== 资料变更 ====================
 
     /** 修改昵称。 */
     public void changeNickname(String nickname) {
-        this.username = nickname;
+        this.nickname = nickname;
         this.updateTime = LocalDateTime.now();
     }
 
@@ -156,17 +172,82 @@ public class User {
         this.updateTime = LocalDateTime.now();
     }
 
-    /** 设置角色类型（管理后台；0=USER, 1=SELLER, 2=ADMIN）。 */
-    public void changeRoleType(int roleType) {
-        this.roleType = roleType;
+    /**
+     * 修改性别。
+     *
+     * @param gender 0=未知，1=男，2=女
+     * @throws BizException 非法取值（PARAM_ERROR）
+     */
+    public void changeGender(Integer gender) {
+        if (gender == null || gender < GENDER_UNKNOWN || gender > GENDER_FEMALE) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "无效的性别取值: 0=未知, 1=男, 2=女");
+        }
+        this.gender = gender;
         this.updateTime = LocalDateTime.now();
     }
 
-    /** 记录一次成功登录。 */
-    public void markLoginSuccess() {
-        this.lastLoginTime = LocalDateTime.now();
-        this.updateTime = this.lastLoginTime;
+    /**
+     * 修改生日（不得晚于今天）。
+     *
+     * @throws BizException 未来日期（PARAM_ERROR）
+     */
+    public void changeBirthday(LocalDate birthday) {
+        if (birthday != null && birthday.isAfter(LocalDate.now())) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "生日不能晚于今天");
+        }
+        this.birthday = birthday;
+        this.updateTime = LocalDateTime.now();
     }
+
+    /**
+     * 修改会员等级（统一大写存储）。
+     *
+     * @throws BizException 空值（PARAM_ERROR）
+     */
+    public void changeMemberLevel(String memberLevel) {
+        if (memberLevel == null || memberLevel.isBlank()) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "会员等级不能为空");
+        }
+        this.memberLevel = memberLevel.trim().toUpperCase(Locale.ROOT);
+        this.updateTime = LocalDateTime.now();
+    }
+
+    // ==================== 标识换绑（PII 整体替换） ====================
+
+    /**
+     * 换绑手机号 —— 格式校验后整体替换三字段（cipher + hash + mask）。
+     *
+     * <p>说明：验证码校验属认证边界（authorization-service），换绑入口在调用链上游完成
+     * "新手机号可用性 + 验证码"校验后再落到本方法；本方法只承担领域内的格式不变量。
+     *
+     * @param rawPhone 新手机号明文（中国大陆 11 位）
+     * @throws BizException 格式非法（PARAM_ERROR）
+     */
+    public void changePhone(String rawPhone) {
+        String normalized = rawPhone == null ? null : rawPhone.trim();
+        if (normalized == null || !PHONE_PATTERN.matcher(normalized).matches()) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "手机号格式不正确");
+        }
+        this.phone = EncryptedIdentifier.fromPlain(normalized);
+        this.updateTime = LocalDateTime.now();
+    }
+
+    /**
+     * 换绑邮箱 —— 归一化（去空格 + 小写）后整体替换三字段（cipher + hash + mask）。
+     *
+     * @param rawEmail 新邮箱明文
+     * @throws BizException 格式非法（PARAM_ERROR）
+     */
+    public void changeEmail(String rawEmail) {
+        String normalized = rawEmail == null ? null : rawEmail.trim().toLowerCase(Locale.ROOT);
+        if (normalized == null || !EMAIL_PATTERN.matcher(normalized).matches()) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "邮箱格式不正确");
+        }
+        this.email = EncryptedIdentifier.fromPlain(normalized);
+        this.updateTime = LocalDateTime.now();
+    }
+
+    // ==================== 余额不变量 ====================
 
     /**
      * 断言余额充足（内存校验；真正的原子扣减由仓储的条件 UPDATE 承担）。

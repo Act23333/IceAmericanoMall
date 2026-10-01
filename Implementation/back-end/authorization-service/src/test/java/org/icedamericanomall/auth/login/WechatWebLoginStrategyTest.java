@@ -3,10 +3,11 @@ package org.icedamericanomall.auth.login;
 import org.icedamericanomall.auth.domain.ability.auth.impl.WechatWebLoginStrategy;
 import org.icedamericanomall.auth.domain.enums.CredentialTypeEnum;
 import org.icedamericanomall.auth.domain.enums.PlatformEnum;
-import org.icedamericanomall.auth.domain.gateway.WechatWebLoginGateway;
 import org.icedamericanomall.auth.domain.model.LoginSpec;
 import org.icedamericanomall.auth.domain.model.UserAuth;
-import org.icedamericanomall.auth.domain.model.UserIdentity;
+import org.icedamericanomall.auth.domain.model.WechatSession;
+import org.icedamericanomall.auth.domain.port.WechatWebSessionService;
+import org.icedamericanomall.auth.domain.service.UserAuthProvisioner;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.exception.BizException;
 import org.junit.jupiter.api.DisplayName;
@@ -22,19 +23,26 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * WechatWebLoginStrategy 单元测试 —— 委托网关登录并把身份装配成认证凭证。
+ * WechatWebLoginStrategy 单元测试（V5.2 边界收敛后）——
+ * code→openid 由本上下文第三方能力完成，凭证建档委托 UserAuthProvisioner
+ * （不再经 user-service 登录端点）。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("WechatWebLoginStrategy 单元测试")
 class WechatWebLoginStrategyTest {
 
     @Mock
-    private WechatWebLoginGateway wechatWebLoginGateway;
+    private WechatWebSessionService wechatWebSessionService;
+
+    @Mock
+    private UserAuthProvisioner userAuthProvisioner;
 
     @InjectMocks
     private WechatWebLoginStrategy strategy;
@@ -48,33 +56,54 @@ class WechatWebLoginStrategyTest {
     }
 
     @Test
-    @DisplayName("网页微信登录 — 网关返回身份 → 装配为认证凭证")
-    void shouldReturnUserAuth_whenGatewayReturnsIdentity() {
-        when(wechatWebLoginGateway.loginByWebCode("wx-code", "state-1"))
-                .thenReturn(new UserIdentity(100L, "微信用户"));
+    @DisplayName("网页微信登录 — code 换取 openid → 查找或创建本地凭证（昵称透传建档）")
+    void shouldProvisionLocalCredential_whenExchangeSucceeds() {
+        when(wechatWebSessionService.exchange("wx-code", "state-1"))
+                .thenReturn(new WechatSession("openid-1", "unionid-1", null, "微信用户"));
+        UserAuth provisioned = UserAuth.builder().userId(100L).identityType(IdentityTypeEnum.WECHAT).build();
+        when(userAuthProvisioner.findByPlainOrCreate(
+                eq(IdentityTypeEnum.WECHAT), eq("openid-1"), eq("unionid-1"), eq("微信用户")))
+                .thenReturn(provisioned);
 
         UserAuth result = strategy.login(spec("wx-code", "state-1"));
 
         assertEquals(100L, result.getUserId());
         assertEquals(IdentityTypeEnum.WECHAT, result.getIdentityType());
-        verify(wechatWebLoginGateway).loginByWebCode("wx-code", "state-1");
+        verify(userAuthProvisioner).findByPlainOrCreate(
+                IdentityTypeEnum.WECHAT, "openid-1", "unionid-1", "微信用户");
     }
 
     @Test
-    @DisplayName("网页微信登录 — code 为空 → 抛出业务异常")
+    @DisplayName("网页微信登录 — code 为空 → 抛出业务异常，不触发换取与建档")
     void shouldThrow_whenCodeBlank() {
         assertThrows(BizException.class, () -> strategy.login(spec("  ", null)));
 
-        verifyNoInteractions(wechatWebLoginGateway);
+        verifyNoInteractions(wechatWebSessionService, userAuthProvisioner);
     }
 
     @Test
-    @DisplayName("网页微信登录 — 网关未返回 userId → 抛出业务异常")
-    void shouldThrow_whenUserIdMissing() {
-        when(wechatWebLoginGateway.loginByWebCode("wx-code", null))
-                .thenReturn(new UserIdentity(null, null));
+    @DisplayName("网页微信登录 — 换取结果无 openid → 抛出业务异常，不建档")
+    void shouldThrow_whenOpenidMissing() {
+        when(wechatWebSessionService.exchange("wx-code", null))
+                .thenReturn(new WechatSession(null, null, null, null));
 
         assertThrows(BizException.class, () -> strategy.login(spec("wx-code", null)));
+
+        verify(userAuthProvisioner, org.mockito.Mockito.never())
+                .findByPlainOrCreate(eq(IdentityTypeEnum.WECHAT), isNull(), isNull(), isNull());
+    }
+
+    @Test
+    @DisplayName("网页微信登录 — openid 存在但无 unionId/昵称 → 仍可建档（空值安全）")
+    void shouldProvision_whenUnionIdAndNicknameAbsent() {
+        when(wechatWebSessionService.exchange("wx-code", null))
+                .thenReturn(new WechatSession("openid-2", null, null, null));
+        when(userAuthProvisioner.findByPlainOrCreate(IdentityTypeEnum.WECHAT, "openid-2", null, null))
+                .thenReturn(UserAuth.builder().userId(200L).identityType(IdentityTypeEnum.WECHAT).build());
+
+        UserAuth result = strategy.login(spec("wx-code", null));
+
+        assertEquals(200L, result.getUserId());
     }
 
     private LoginSpec spec(String code, String state) {

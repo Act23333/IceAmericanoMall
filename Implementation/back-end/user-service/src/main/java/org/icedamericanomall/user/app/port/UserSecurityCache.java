@@ -14,6 +14,7 @@ import java.util.Set;
  *   <li>{@code user:perms:{userId}} —— 权限 SET（含 {@code ROLE_} 前缀角色），TTL 30 分钟；
  *       网关 {@code UserContextHeaderFilter} 读取该 Key 注入 {@code X-User-Roles}/{@code X-User-Permissions} header</li>
  * </ul>
+ * 写入语义为"先删后写"；授权数据变更时由 {@code PermissionCacheEvictor} 主动失效。
  */
 public interface UserSecurityCache {
 
@@ -27,4 +28,15 @@ public interface UserSecurityCache {
      * @param permissionSet 权限 + 角色编码集合（写入 {@code user:perms:{userId}}）
      */
     void store(UserInfo userInfo, Set<String> permissionSet);
+
+    /**
+     * 主动失效单个用户的安全上下文缓存（V5.2：授权变更后调用）。
+     *
+     * <p>删除 {@code user:perms:{userId}} 与 {@code user:info:{userId}}：前者是网关实时权限
+     * 的唯一来源，后者携带角色/权限快照 —— 两者任一残留都会让撤销的权限在 TTL 内继续生效。
+     * 幂等：Key 不存在时静默返回。
+     *
+     * @param userId 用户技术主键
+     */
+    void evict(Long userId);
 }

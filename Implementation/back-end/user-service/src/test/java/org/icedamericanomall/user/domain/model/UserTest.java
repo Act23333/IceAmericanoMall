@@ -4,9 +4,14 @@ import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.exception.BadRequestException;
 import org.icedamericanomall.common.exception.BizException;
-import org.icedamericanomall.user.domain.port.PasswordVerifier;
+import org.icedamericanomall.common.utils.crypto.AesGcmUtil;
+import org.icedamericanomall.common.utils.crypto.BlindIndexUtil;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import java.time.LocalDate;
+import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -18,23 +23,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 用户聚合根纯单元测试（不依赖任何框架，直接 new / 工厂构造）。
  *
- * <p>覆盖：状态迁移（禁用/启用）、凭证校验、资料变更、余额不变量、状态枚举映射。
+ * <p>V5.2 覆盖：状态迁移、资料变更（含 gender/birthday/memberLevel）、
+ * 标识换绑（手机号/邮箱格式校验与三字段替换）、余额不变量、工厂与枚举映射；
+ * 凭证行为（password / wxOpenid / roleType）已移除（归 user_auth / RBAC 五表，ADR-017）。
  */
 @DisplayName("User 聚合根领域单元测试")
 class UserTest {
 
-    /** 测试替身：明文比较（哈希实现属基础设施职责） */
-    private final PasswordVerifier passwordVerifier = new PasswordVerifier() {
-        @Override
-        public boolean matches(CharSequence rawPassword, String encodedPassword) {
-            return encodedPassword != null && encodedPassword.contentEquals(rawPassword);
-        }
-
-        @Override
-        public String encode(CharSequence rawPassword) {
-            return rawPassword.toString();
-        }
-    };
+    @BeforeAll
+    static void initCrypto() {
+        AesGcmUtil.init(Base64.getEncoder().encodeToString(new byte[32]));
+        BlindIndexUtil.init(Base64.getEncoder().encodeToString(new byte[32]));
+    }
 
     // ==================== 状态迁移 ====================
 
@@ -72,19 +72,6 @@ class UserTest {
         assertEquals(ErrorCode.USER_STATUS_ABNORMAL, e.getErrorCode());
     }
 
-    // ==================== 凭证 ====================
-
-    @Test
-    @DisplayName("verifyPassword — 哈希匹配决策委托 PasswordVerifier 端口")
-    void shouldVerifyPassword_viaPort() {
-        User user = User.create(IdentityTypeEnum.PHONE, "13800138000");
-        assertFalse(user.verifyPassword("secret", passwordVerifier), "无凭证时校验失败");
-
-        user.changePassword(passwordVerifier.encode("secret"));
-        assertTrue(user.verifyPassword("secret", passwordVerifier));
-        assertFalse(user.verifyPassword("wrong", passwordVerifier));
-    }
-
     // ==================== 资料变更 ====================
 
     @Test
@@ -93,18 +80,81 @@ class UserTest {
         User user = User.create(IdentityTypeEnum.PHONE, "13800138000");
         user.changeNickname("冰美式");
         user.changeAvatar("https://cdn/avatar.jpg");
-        assertEquals("冰美式", user.getUsername());
+        assertEquals("冰美式", user.getNickname());
         assertEquals("https://cdn/avatar.jpg", user.getAvatar());
         assertNotNull(user.getUpdateTime());
     }
 
     @Test
-    @DisplayName("markLoginSuccess — 记录最近登录时间")
-    void shouldMarkLoginSuccess() {
+    @DisplayName("changeGender — 合法取值（0/1/2）写入；非法取值抛 PARAM_ERROR")
+    void shouldChangeGender_withValidation() {
         User user = User.create(IdentityTypeEnum.PHONE, "13800138000");
-        assertNull(user.getLastLoginTime());
-        user.markLoginSuccess();
-        assertNotNull(user.getLastLoginTime());
+        assertEquals(User.GENDER_UNKNOWN, user.getGender(), "工厂缺省性别=未知");
+
+        user.changeGender(User.GENDER_FEMALE);
+        assertEquals(User.GENDER_FEMALE, user.getGender());
+
+        assertThrows(BizException.class, () -> user.changeGender(9));
+        assertThrows(BizException.class, () -> user.changeGender(null));
+    }
+
+    @Test
+    @DisplayName("changeBirthday — 合法日期写入；未来日期拒绝")
+    void shouldChangeBirthday_withValidation() {
+        User user = User.create(IdentityTypeEnum.PHONE, "13800138000");
+        LocalDate birthday = LocalDate.of(1998, 3, 15);
+        user.changeBirthday(birthday);
+        assertEquals(birthday, user.getBirthday());
+
+        assertThrows(BizException.class, () -> user.changeBirthday(LocalDate.now().plusDays(1)));
+        user.changeBirthday(null);
+        assertNull(user.getBirthday(), "允许清空生日");
+    }
+
+    @Test
+    @DisplayName("changeMemberLevel — 归一化为大写；空白值拒绝")
+    void shouldChangeMemberLevel_withNormalization() {
+        User user = User.create(IdentityTypeEnum.PHONE, "13800138000");
+        assertEquals(User.MEMBER_LEVEL_DEFAULT, user.getMemberLevel(), "工厂缺省等级=NORMAL");
+
+        user.changeMemberLevel("gold");
+        assertEquals("GOLD", user.getMemberLevel());
+
+        assertThrows(BizException.class, () -> user.changeMemberLevel("  "));
+    }
+
+    // ==================== 标识换绑（PII 三字段） ====================
+
+    @Test
+    @DisplayName("changePhone — 合法手机号整体替换三字段；非法格式拒绝且原值不变")
+    void shouldChangePhone_withThreeFieldReplacement() {
+        User user = User.create(IdentityTypeEnum.PHONE, "13800138000");
+        user.getPhone().getMask();
+
+        user.changePhone("13900139000");
+
+        assertNotNull(user.getPhone());
+        assertEquals("13900139000", user.getPhone().getPlain(), "换绑后明文可用于解密核验");
+        assertEquals("139****9000", user.getPhone().getMask());
+        assertEquals(64, user.getPhone().getHash().length(), "HMAC-SHA256 盲索引 64 位十六进制");
+
+        assertThrows(BizException.class, () -> user.changePhone("12345"));
+        assertEquals("13900139000", user.getPhone().getPlain(), "非法输入不得破坏原值");
+    }
+
+    @Test
+    @DisplayName("changeEmail — 归一化（小写去空格）后替换三字段；非法格式拒绝")
+    void shouldChangeEmail_withNormalization() {
+        User user = User.create(IdentityTypeEnum.PHONE, "13800138000");
+        assertNull(user.getEmail(), "手机号注册用户初始无邮箱");
+
+        user.changeEmail("  Buyer@Example.COM ");
+
+        assertNotNull(user.getEmail());
+        assertEquals("buyer@example.com", user.getEmail().getPlain());
+        assertEquals(64, user.getEmail().getHash().length());
+
+        assertThrows(BizException.class, () -> user.changeEmail("not-an-email"));
     }
 
     // ==================== 余额不变量 ====================
@@ -137,18 +187,21 @@ class UserTest {
     // ==================== 工厂与枚举 ====================
 
     @Test
-    @DisplayName("create — PHONE 落 phone 列；WECHAT 落 wx_openid；默认状态/余额")
+    @DisplayName("create — PHONE 落手机号三字段；EMAIL 落邮箱三字段；WECHAT 不落标识列（凭证归 user_auth）")
     void shouldCreateByIdentityType() {
         User phoneUser = User.create(IdentityTypeEnum.PHONE, "13800138000");
-        assertEquals("13800138000", phoneUser.getPhone());
-        assertNull(phoneUser.getWxOpenid());
+        assertEquals("13800138000", phoneUser.getPhone().getPlain());
+        assertNull(phoneUser.getEmail());
         assertNotNull(phoneUser.getUserId(), "业务 UUID 由工厂生成");
+        assertEquals(0, phoneUser.getBalance());
+
+        User emailUser = User.create(IdentityTypeEnum.EMAIL, "buyer@example.com");
+        assertEquals("buyer@example.com", emailUser.getEmail().getPlain());
+        assertNull(emailUser.getPhone());
 
         User wechatUser = User.create(IdentityTypeEnum.WECHAT, "wx-openid-1");
-        assertEquals("wx-openid-1", wechatUser.getWxOpenid());
-        assertNull(wechatUser.getPhone());
-        assertEquals(0, wechatUser.getBalance());
-        assertEquals(0, wechatUser.getRoleType());
+        assertNull(wechatUser.getPhone(), "微信身份由 user_auth 承载，user 表不落列");
+        assertNull(wechatUser.getEmail());
     }
 
     @Test

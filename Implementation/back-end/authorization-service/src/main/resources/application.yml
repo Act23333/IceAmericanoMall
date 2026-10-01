@@ -143,3 +143,10 @@ mybatis-plus:
     db-config:
       update-strategy: not_null
       id-type: auto
+
+# 存量迁移器（V5.2 一次性工具，ADR-017）：
+# true 时启动执行 user → user_auth / PII 三字段的数据搬迁（幂等可重跑，逐条事务，失败 WARN 不中断）。
+# 默认关闭；迁移完成后置回 false 并人工复核旧列（password / wx_openid / phone 等）。
+auth:
+  legacy-migration:
+    enabled: ${AUTH_LEGACY_MIGRATION_ENABLED:false}

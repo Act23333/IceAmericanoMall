@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.user.adapter.request.SmsCodeSendReq;
 import org.icedamericanomall.user.adapter.request.UpdateProfileReq;
 import org.icedamericanomall.user.adapter.response.UserInfoResp;
+import org.icedamericanomall.user.app.rbac.RoleTypeDerivation;
 import org.icedamericanomall.user.app.sms.SmsCodeManager;
 import org.icedamericanomall.user.app.user.UserInfoManager;
 import org.icedamericanomall.user.app.user.UserManager;
@@ -54,7 +55,7 @@ public class UserController {
         return Result.ok("验证码已发送");
     }
 
-    /** 当前用户信息（含 RBAC 角色/权限填充）。 */
+    /** 当前用户信息（含 RBAC 角色/权限填充；roleType 由五表角色派生）。 */
     @GetMapping("/info")
     public Result<UserInfoResp> getUserInfo() {
         Long userId = UserContext.getUserId();
@@ -63,7 +64,11 @@ public class UserController {
         // V5.0 RBAC: 加载角色+权限填充到响应（失败不阻断基本信息返回）
         try {
             UserInfo userInfo = userInfoManager.loadUserById(userId);
-            if (userInfo.roles() != null) userInfoResp.setRoles(userInfo.roles());
+            if (userInfo.roles() != null) {
+                userInfoResp.setRoles(userInfo.roles());
+                // V5.2: roleType 兼容字段 —— 由五表角色编码派生（不再读 user.role_type 列）
+                userInfoResp.setRoleType(RoleTypeDerivation.fromRoleCodes(userInfo.roles()));
+            }
             if (userInfo.permissions() != null) userInfoResp.setPermissions(userInfo.permissions());
         } catch (Exception e) {
             log.warn("Failed to load RBAC info for userId={}: {}", userId, e.getMessage());

@@ -82,9 +82,12 @@
  *   <tr><td>UserProfileClient</td><td>getBrowseHistory / getFavorites</td><td>① 展示型</td><td>Result.ok(空列表)</td></tr>
  *   <tr><td>NotificationClient</td><td>sendSms / sendEmail / sendInAppMessage</td><td>③ 命令</td><td>抛 BizException</td></tr>
  *   <tr><td>VerificationClient</td><td>issueCode / verifyCode / verifyCaptcha</td><td>② 判别型（安全优先）</td><td>结构化 success=false</td></tr>
- *   <tr><td>AddressClient / AuthClient / BalanceClient / CouponClient / PointsClient / LogisticsClient / UserClient</td>
+ *   <tr><td>AddressClient / BalanceClient / CouponClient / PointsClient / LogisticsClient / UserClient</td>
  *       <td>（详见各自实现）</td><td>混合</td><td>查询→空值；命令→异常</td></tr>
  * </table>
+ *
+ * <p><b>V5.2</b>：认证域 Feign 契约（{@code /internal/auth/**}）已随认证边界收敛整体废弃
+ * （ADR-017 —— 端点、user-service 对端与共享 CO 一并移除），本包不再包含其降级工厂。
  *
  * @see org.springframework.cloud.openfeign.FallbackFactory
  */

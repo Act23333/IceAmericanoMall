@@ -16,18 +16,24 @@ import org.icedamericanomall.auth.app.port.CaptchaService;
 import org.icedamericanomall.auth.app.port.LoginSecurityService;
 import org.icedamericanomall.auth.app.port.LoginTokenService;
 import org.icedamericanomall.auth.app.port.RiskControlService;
-import org.icedamericanomall.auth.app.port.UserAccountService;
 import org.icedamericanomall.auth.app.port.VerificationCodeIssueService;
 import org.icedamericanomall.auth.domain.ability.auth.LoginStrategy;
 import org.icedamericanomall.auth.domain.ability.auth.LoginStrategyFactory;
 import org.icedamericanomall.auth.domain.ability.risk.RiskHandlerFactory;
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
+import org.icedamericanomall.auth.domain.gateway.UserAccountGateway;
 import org.icedamericanomall.auth.domain.model.EmailAddress;
 import org.icedamericanomall.auth.domain.model.LoginSpec;
 import org.icedamericanomall.auth.domain.model.RiskAssessment;
 import org.icedamericanomall.auth.domain.model.UserAuth;
+import org.icedamericanomall.auth.domain.port.PasswordVerifier;
+import org.icedamericanomall.auth.domain.port.VerificationCodeService;
+import org.icedamericanomall.auth.domain.repository.UserAuthRepository;
+import org.icedamericanomall.auth.domain.service.UserAuthProvisioner;
 import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.common.utils.crypto.BlindIndexUtil;
 import org.icedamericanomall.common.utils.crypto.DesensitizeUtil;
 import org.springframework.stereotype.Component;
 
@@ -36,9 +42,10 @@ import java.util.Map;
 /**
  * 认证用例编排器（应用层）。
  *
- * <p>职责：编排用例 —— 人机验证 → 风控评估 → 风控处置 → 领域策略登录 → 签发令牌。
- * 业务规则在领域层（LoginStrategy / UserAuth），远程调用在基础设施层，
- * 本类只做顺序编排与跨层转换，<b>不写业务规则</b>。
+ * <p>职责：编排用例 —— 人机验证 → 风控评估 → 风控处置 → 领域策略登录 → 签发令牌；
+ * 注册/重置密码在本服务本地完成凭证写入（凭证唯一所有权方，ADR-017）。
+ * 业务规则在领域层（LoginStrategy / UserAuth / UserAuthProvisioner），
+ * 远程调用在基础设施层，本类只做顺序编排与跨层转换，<b>不写业务规则</b>。
  *
  * <p>事务边界：本类所有用例都是"单条本地写入 + 远程调用"或纯远程调用，
  * 本地写入天然原子（单条 INSERT/UPDATE），因此<b>不声明 {@code @Transactional}</b>：
@@ -58,11 +65,15 @@ public class AuthManager {
 
     private final RiskHandlerFactory riskHandlerFactory;
     private final LoginStrategyFactory strategyFactory;
-    private final UserAccountService userAccountService;
+    private final UserAccountGateway userAccountGateway;
+    private final UserAuthProvisioner userAuthProvisioner;
+    private final UserAuthRepository userAuthRepository;
+    private final PasswordVerifier passwordVerifier;
     private final LoginSecurityService loginSecurityService;
     private final LoginTokenService loginTokenService;
     private final RiskControlService riskControlService;
     private final CaptchaService captchaService;
+    private final VerificationCodeService verificationCodeService;
     private final VerificationCodeIssueService verificationCodeIssueService;
 
     /**
@@ -97,16 +108,39 @@ public class AuthManager {
     }
 
     /**
-     * 注册用例 —— 委托用户上下文落地，成功后直接签发登录令牌。
+     * 注册用例（手机号 + 短信验证码 + 密码）—— 凭证唯一所有权归本服务的闭环（ADR-017）。
+     *
+     * <p>流程（修复"注册后密码登录失败"的凭证脑裂）：
+     * <ol>
+     *   <li>本地校验并消费短信验证码（verification-service 在线校验，一次性消费）；</li>
+     *   <li>user-service 幂等建档（新建分支发建档奖励；昵称落 user.nickname）；</li>
+     *   <li>本地 {@code user_auth} 写入凭证行（PHONE + 三字段 + credential=密码哈希），
+     *       已有凭证的标识按"已注册"拒绝（防账号接管）；</li>
+     *   <li>签发登录令牌。</li>
+     * </ol>
      *
      * @param command 注册命令
      * @return 登录结果
      */
     public LoginDTO register(RegisterCommand command) {
-        Long userId = userAccountService.register(command);
+        String phone = command.phone();
+
+        // 1. 验证码校验（本地边界：注册与密码登录共用同一凭证所有权方）
+        verificationCodeService.verifyAndConsume(VerificationChannelEnum.SMS, phone, command.code());
+
+        // 2. user-service 幂等建档（新用户发建档奖励；昵称落 user.nickname；已存在不覆盖）
+        userAccountGateway.getOrCreateUserId(phone, IdentityTypeEnum.PHONE, command.username());
+
+        // 3. 本地凭证建档（PHONE + 三字段 + credential=密码哈希）—— 修复"注册只写 user.password"的脑裂
+        UserAuth userAuth = userAuthProvisioner.findByHashOrCreateWithCredential(
+                IdentityTypeEnum.PHONE, BlindIndexUtil.hmac(phone), phone,
+                passwordVerifier.encode(command.password()), null);
+
+        // 4. 签发令牌（userId 取凭证行归属，保证 token 与凭证同源）
+        Long userId = userAuth.getUserId();
         TokenPair tokenPair = loginTokenService.createLoginResponse(
                 new TokenGenerateParam(userId, command.platform(), command.deviceId(), null, Map.of()));
-        log.info("注册成功: userId={}", userId);
+        log.info("注册成功: userId={}, phone={}", userId, DesensitizeUtil.mask(phone));
         return LoginDTO.of(userId, tokenPair);
     }
 
@@ -130,12 +164,30 @@ public class AuthManager {
     }
 
     /**
-     * 重置密码用例 —— 纯远程调用，无本地写入，因此不声明事务。
+     * 重置密码用例 —— 认证边界收敛后在本服务本地闭环（ADR-017）。
+     *
+     * <p>流程：短信验证码校验并消费 → 按手机号盲索引定位 {@code user_auth} 凭证
+     * → 写入新密码哈希。不再调用 user-service（user 表不再持有密码凭证）。
+     *
+     * <p>无本地事务：验证码消费与凭证更新各自原子（单条 UPDATE），失败由用户重试。
      *
      * @param command 重置密码命令
+     * @throws BizException 手机号未注册（USER_NOT_FOUND）/ 验证码未通过
      */
     public void resetPassword(ResetPasswordCommand command) {
-        userAccountService.resetPassword(command);
+        String phone = command.phone();
+        // 1. 校验并消费验证码（verification-service 在线校验，一次性消费）
+        verificationCodeService.verifyAndConsume(VerificationChannelEnum.SMS, phone, command.code());
+
+        // 2. 盲索引定位本地凭证（user_auth 是密码凭证的唯一载体）
+        UserAuth userAuth = userAuthRepository
+                .findByIdentityHash(IdentityTypeEnum.PHONE, BlindIndexUtil.hmac(phone))
+                .orElseThrow(() -> new BizException(ErrorCode.USER_NOT_FOUND, "该手机号未注册"));
+
+        // 3. 写入新密码哈希
+        userAuth.updatePassword(passwordVerifier.encode(command.newPassword()));
+        userAuthRepository.updateByUserIdAndType(userAuth);
+        log.info("密码重置成功: userId={}, phone={}", userAuth.getUserId(), DesensitizeUtil.mask(phone));
     }
 
     /**

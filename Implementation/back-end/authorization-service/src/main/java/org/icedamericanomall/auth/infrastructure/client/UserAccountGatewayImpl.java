@@ -13,6 +13,8 @@ import org.springframework.stereotype.Component;
  * <p>返回的是 {@code user.id}（技术主键 BIGINT），与 JWT claim / 网关 X-User-Id /
  * 其他服务 {@code user_id} 列的语义一致；user-service 的 {@code user_id}（UUID）
  * 仅是该上下文内部的业务唯一键。
+ *
+ * <p>V5.2：随 {@code nickname} 透传（注册用户名 / 微信昵称），建档时写入 user 表。
  */
 @Component
 @RequiredArgsConstructor
@@ -21,10 +23,11 @@ public class UserAccountGatewayImpl implements UserAccountGateway {
     private final UserClient userClient;
 
     @Override
-    public Long getOrCreateUserId(String identifier, IdentityTypeEnum identityType) {
+    public Long getOrCreateUserId(String identifier, IdentityTypeEnum identityType, String nickname) {
         UserAuthCO request = UserAuthCO.builder()
                 .identifier(identifier)
                 .identityType(identityType)
+                .nickname(nickname)
                 .build();
         return userClient.getOrCreateUser(request);
     }

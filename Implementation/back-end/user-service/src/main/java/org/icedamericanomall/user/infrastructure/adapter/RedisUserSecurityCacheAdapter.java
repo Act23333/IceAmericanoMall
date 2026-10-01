@@ -19,6 +19,8 @@ import java.util.concurrent.TimeUnit;
  *   <li>{@code user:info:{userId}} —— UserInfo JSON，TTL 30 分钟</li>
  *   <li>{@code user:perms:{userId}} —— 权限 SET（含 ROLE_ 角色），TTL 30 分钟，先删后写</li>
  * </ul>
+ * 授权变更（sys_user_role / sys_user_permission / sys_role_permission 写入）后由
+ * {@code PermissionCacheEvictor} 调 {@link #evict(Long)} 主动失效。
  */
 @Component
 @RequiredArgsConstructor
@@ -55,5 +57,14 @@ public class RedisUserSecurityCacheAdapter implements UserSecurityCache {
             redisTemplate.opsForSet().add(permsKey, permissionSet.toArray(new String[0]));
         }
         redisTemplate.expire(permsKey, TTL_MINUTES, TimeUnit.MINUTES);
+    }
+
+    @Override
+    public void evict(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        redisTemplate.delete(PERMS_KEY_PREFIX + userId);
+        redisTemplate.delete(USER_INFO_KEY_PREFIX + userId);
     }
 }

@@ -1,7 +1,6 @@
 package org.icedamericanomall.auth.infrastructure.config;
 
 import org.icedamericanomall.auth.AuthorizationApplication;
-import org.icedamericanomall.fallback.AuthClientFallback;
 import org.icedamericanomall.fallback.UserClientFallback;
 import org.icedamericanomall.fallback.VerificationClientFallback;
 import org.junit.jupiter.api.DisplayName;
@@ -99,7 +98,7 @@ class FeignCircuitBreakerConfigTest {
                 "组件扫描必须包含 org.icedamericanomall.fallback，否则熔断开启后取不到 fallbackFactory Bean");
 
         List<Class<?>> fallbackFactories = List.of(
-                AuthClientFallback.class, UserClientFallback.class, VerificationClientFallback.class);
+                UserClientFallback.class, VerificationClientFallback.class);
         for (Class<?> fallbackFactory : fallbackFactories) {
             assertTrue(fallbackFactory.isAnnotationPresent(Component.class),
                     fallbackFactory.getSimpleName() + " 必须标注 @Component 才能被扫描为 Bean");

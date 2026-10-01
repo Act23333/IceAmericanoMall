@@ -13,11 +13,11 @@ import org.icedamericanomall.auth.domain.ability.risk.impl.AccountFreezeHandler;
 import org.icedamericanomall.auth.domain.ability.risk.impl.CaptchaHandler;
 import org.icedamericanomall.auth.domain.ability.risk.impl.PassHandler;
 import org.icedamericanomall.auth.domain.gateway.UserAccountGateway;
-import org.icedamericanomall.auth.domain.gateway.WechatWebLoginGateway;
 import org.icedamericanomall.auth.domain.port.DistributedLock;
 import org.icedamericanomall.auth.domain.port.PasswordVerifier;
 import org.icedamericanomall.auth.domain.port.VerificationCodeService;
 import org.icedamericanomall.auth.domain.port.WechatMiniSessionService;
+import org.icedamericanomall.auth.domain.port.WechatWebSessionService;
 import org.icedamericanomall.auth.domain.repository.UserAuthRepository;
 import org.icedamericanomall.auth.domain.service.UserAuthProvisioner;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -73,8 +73,10 @@ public class DomainBeanConfig {
     }
 
     @Bean
-    public WechatWebLoginStrategy wechatWebLoginStrategy(WechatWebLoginGateway wechatWebLoginGateway) {
-        return new WechatWebLoginStrategy(wechatWebLoginGateway);
+    public WechatWebLoginStrategy wechatWebLoginStrategy(
+            WechatWebSessionService wechatWebSessionService,
+            UserAuthProvisioner userAuthProvisioner) {
+        return new WechatWebLoginStrategy(wechatWebSessionService, userAuthProvisioner);
     }
 
     @Bean

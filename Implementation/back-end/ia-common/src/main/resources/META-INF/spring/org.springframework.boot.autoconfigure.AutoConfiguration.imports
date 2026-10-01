@@ -1,4 +1,5 @@
 org.icedamericanomall.common.config.JsonConfig
+org.icedamericanomall.common.config.CryptoKeyConfig
 org.icedamericanomall.common.config.MybatisConfig
 org.icedamericanomall.common.config.WebConfig
 org.icedamericanomall.common.config.RedisLuaScriptConfig

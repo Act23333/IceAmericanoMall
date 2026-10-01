@@ -60,10 +60,13 @@ public class AdminUserController {
         return Result.ok();
     }
 
-    /** 修改用户角色 — 同时更新 user.role_type + sys_user_role */
+    /**
+     * 修改用户角色 —— V5.2 只写 RBAC 五表（sys_user_role 为唯一权威口径）；
+     * {@code user.role_type} 列退役（代码不读写，响应 roleType 由五表派生）。
+     * 变更后由 {@code RoleManageManager} 主动失效该用户的权限缓存。
+     */
     @PutMapping("/user/{id}/role")
     public Result<Void> setUserRole(@PathVariable Long id, @RequestParam Integer roleType) {
-        userManager.updateRole(id, roleType);
         roleManageManager.setUserRole(id, roleType);
         return Result.ok();
     }

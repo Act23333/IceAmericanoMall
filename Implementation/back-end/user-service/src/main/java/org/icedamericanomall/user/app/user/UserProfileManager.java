@@ -20,6 +20,9 @@ import java.util.Set;
  *
  * <p>Controller → Manager → Repository 分层；图片缩放/对象存储通过
  * {@link AvatarStorage} 端口下沉到基础设施实现。
+ *
+ * <p>V5.2：PATCH 白名单新增 {@code gender} / {@code birthday}（资料重构增量字段）；
+ * 会员等级 {@code memberLevel} 不开放用户自改（运营/系统口径）。
  */
 @Slf4j
 @Component
@@ -27,7 +30,7 @@ import java.util.Set;
 public class UserProfileManager {
 
     /** 允许通过 PATCH 更新的白名单字段 */
-    private static final Set<String> ALLOWED_FIELDS = Set.of("nickname", "avatar");
+    private static final Set<String> ALLOWED_FIELDS = Set.of("nickname", "avatar", "gender", "birthday");
 
     private final UserRepository userRepository;
     private final AvatarStorage avatarStorage;
@@ -37,7 +40,7 @@ public class UserProfileManager {
      *
      * <ol>
      *   <li>先查全量聚合（装载后按 id 更新）</li>
-     *   <li>白名单校验 → merge（实体方法内聚字段变更）</li>
+     *   <li>白名单校验 → merge（实体方法内聚字段变更与校验）</li>
      *   <li>@Version 乐观锁更新</li>
      *   <li>返回完整用户信息</li>
      * </ol>
@@ -55,12 +58,7 @@ public class UserProfileManager {
                 applyField(user, field, req);
             }
         } else {
-            if (req.nickname() != null) {
-                user.changeNickname(req.nickname());
-            }
-            if (req.avatar() != null) {
-                user.changeAvatar(req.avatar());
-            }
+            applyAllPresentFields(user, req);
         }
 
         userRepository.update(user);
@@ -109,9 +107,35 @@ public class UserProfileManager {
                     user.changeAvatar(req.avatar());
                 }
             }
+            case "gender" -> {
+                if (req.gender() != null) {
+                    user.changeGender(req.gender());
+                }
+            }
+            case "birthday" -> {
+                if (req.birthday() != null) {
+                    user.changeBirthday(req.birthday());
+                }
+            }
             default -> {
                 // 白名单已过滤，不可达
             }
+        }
+    }
+
+    /** 未携带 updateMask：按非空字段全量合并（历史语义）。 */
+    private void applyAllPresentFields(User user, UpdateProfileReq req) {
+        if (req.nickname() != null) {
+            user.changeNickname(req.nickname());
+        }
+        if (req.avatar() != null) {
+            user.changeAvatar(req.avatar());
+        }
+        if (req.gender() != null) {
+            user.changeGender(req.gender());
+        }
+        if (req.birthday() != null) {
+            user.changeBirthday(req.birthday());
         }
     }
 }

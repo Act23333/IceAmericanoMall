@@ -9,9 +9,10 @@ import org.icedamericanomall.user.domain.port.SmsCodeStore;
  * 直接放行，用于人机验证 / 短信通道联调环境。后门与严格校验分支的恢复计划见
  * {@code project-docs/adr/016-user-service-ddd-and-sms-migration.md}。
  *
- * <p>发码链路已迁移 verification-service（写同一 {@code sms:code:} 契约，ADR-016），
- * 本校验读到的即远端签发的验证码，迁移前后语义一致；
- * authorization-service 登录侧走 verification-service 在线校验，两端互通。
+ * <p>V5.2（ADR-017 认证边界收敛）：认证写路径（注册/登录/改密）已整体归位
+ * authorization-service，本领域服务<b>当前无端点调用方</b>，按红线"读路径原样保留"
+ * 继续装配（{@code DomainBeanConfig}），作为 {@code sms:code:} 契约校验能力的恢复载体
+ * （恢复计划与 000000 后门同批处理）。
  *
  * <p>纯业务逻辑：Redis 读取通过 {@link SmsCodeStore} 端口注入。
  */
