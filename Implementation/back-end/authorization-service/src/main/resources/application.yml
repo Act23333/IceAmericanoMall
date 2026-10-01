@@ -5,6 +5,10 @@ spring:
   application:
     name: authorization-service
   cloud:
+    # Feign 熔断降级（R6）：开启后 @FeignClient 的 fallbackFactory 真实生效（依赖 resilience4j starter）
+    openfeign:
+      circuitbreaker:
+        enabled: true
     nacos:
       server-addr: 192.168.10.128:8848
       username: nacos
@@ -26,6 +30,20 @@ spring:
       port: 6379
       password: redis
       client-name: authorization-service
+  # 认证凭证（user_auth 表）由本服务独占持久化
+  datasource:
+    url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: ${ia.db.pw:root}
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+      # 将 Long 序列化为 String，避免前端精度丢失
+    generator:
+      write-numbers-as-strings: true
 
 jwt:
   access-token-ttl: 3600
@@ -46,6 +64,15 @@ logging:
     org.springframework.security: DEBUG
     org.icedamericanomall: DEBUG
     org.nolazy: DEBUG
+  file:
+    name: C:\Users\18279\Desktop\10\IceAmericanoMall\Implementation\back-end\logs\authorization-servic\app
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB          # 单个日志文件最大大小
+      max-history: 30               # 保留最近 30 天的日志
+      total-size-cap: 10GB          # 所有日志文件总大小上限
+      clean-history-on-start: false # 启动时是否清理历史日志
+      file-name-pattern: ${LOG_FILE}.%d{yyyy-MM-dd}.%i.gz  # 归档文件名格式
 
 # 可观测性：Actuator 健康检查 + Prometheus 指标端点（V2.4）
 management:
@@ -66,3 +93,53 @@ knife4j:
 springdoc:
   api-docs:
     enabled: true
+# Feign 熔断参数（配套 spring.cloud.openfeign.circuitbreaker.enabled=true）
+# 说明：Spring Cloud 从 resilience4j 注册表读取默认配置，未配置时 TimeLimiter 默认仅 1 秒，
+# 会把「注册/重置密码」等写库慢调用误判为失败并走降级（降级是 fail-closed，等于业务失败），
+# 因此这里显式放宽超时并给出熔断阈值。
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 20                       # 统计窗口（调用次数）
+        minimum-number-of-calls: 10                    # 达到该调用数才开始计算失败率
+        failure-rate-threshold: 50                     # 失败率阈值（%）
+        wait-duration-in-open-state: 30s               # 熔断打开后保持时长
+        permitted-number-of-calls-in-half-open-state: 3 # 半开状态试探调用数
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 5s                           # 单次 Feign 调用上限（缺省 1s 过短）
+
+# 人机验证：本服务只决定"是否强制验证 / 用哪家 / 前端拿什么参数初始化"，
+# 二次校验（含极验密钥与签名）由 verification-service 完成，故这里不再有 geetest.key / validate-url。
+captcha:
+  # 开关：默认关闭（未配置即关闭）。关闭时跳过校验并 WARN，不阻断登录；生产必须显式置 true
+  enabled: ${CAPTCHA_ENABLED:false}
+  provider-mapping:
+    LOW: RECAPTCHA
+    MEDIUM: GEETEST
+    HIGH: GEETEST
+  default-provider: GEETEST
+  # 厂商公开标识（极验 captcha_id）：随 1016 CAPTCHA_REQUIRED 的 payload 下发，前端用它初始化验证组件
+  captcha-id: ${GEETEST_CAPTCHA_ID:}
+
+# 微信：小程序未配置时由 ia-integration 的 Mock 客户端兜底（返回确定性虚拟 openid）
+wechat:
+  mini:
+    enabled: ${WECHAT_MINI_ENABLED:false}
+    app-id: ${WECHAT_MINI_APP_ID:}
+    app-secret: ${WECHAT_MINI_APP_SECRET:}
+  oauth:
+    enabled: ${WECHAT_OAUTH_ENABLED:false}
+    app-id: ${WECHAT_OAUTH_APP_ID:}
+    app-secret: ${WECHAT_OAUTH_APP_SECRET:}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+  global-config:
+    db-config:
+      update-strategy: not_null
+      id-type: auto
