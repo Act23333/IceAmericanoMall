@@ -19,8 +19,10 @@ import org.springframework.web.bind.annotation.RequestBody;
  * 上游服务不再各自实现验证码生成与 Redis 存储。
  *
  * <p><b>返回值约定</b>：三个端点都返回结构化结果（{@code success + reason}），
- * 不使用异常表达业务失败 —— 因为 {@code /internal/**} 的业务异常会被
- * {@code GlobalExceptionHandler} 直接 rethrow，Feign 侧只能看到 HTTP 500，无法区分失败原因。
+ * 不使用异常表达业务失败 —— 因为 {@code /internal/**} 的异常只会透出
+ * {@code ErrorCode} 的 HTTP 状态码（{@code GlobalExceptionHandler}，ADR-004），
+ * 失败原因细节（如「验证码错误」与「已过期」）无法表达。
+ * 需要区分失败原因的场景必须用结构化返回值，而不是异常。
  *
  * <p><b>安全约定</b>：调用方必须「{@code success=true} 才放行」；
  * 降级（{@link VerificationClientFallback}）一律返回 {@code success=false}，绝不默认放行。

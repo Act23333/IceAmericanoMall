@@ -8,9 +8,16 @@ org.icedamericanomall.common.config.XxlJobConfig
 # RabbitMqConfig 已废弃 (V5.0 → RocketMQ)，保留文件供参考
 org.icedamericanomall.common.aspect.RateLimitAspect
 org.icedamericanomall.common.aspect.GlobalExceptionHandler
+# 管理操作审计（ADR-032 管道一）：@OperationLog → 单行 JSON 到专用 logger "AUDIT"，不落库、零业务依赖
+org.icedamericanomall.common.aspect.OperationLogAspect
 org.icedamericanomall.common.utils.RateLimitUtils
 org.icedamericanomall.common.config.RedisConfig
 org.icedamericanomall.common.filter.TraceIdFilter
 org.icedamericanomall.common.filter.UserContextFilter
 org.icedamericanomall.common.security.PermissionService
 org.icedamericanomall.common.config.MethodSecurityConfig
+# 业务键互斥锁（V5.4 归并：auth/user 的 RedissonDistributedLockAdapter 副本收敛到此处，@ConditionalOnClass 守卫）
+org.icedamericanomall.common.config.DistributedLockConfig
+# 审计字段填充（V5.5 归并：cart/item/logistics/merchant/pay/search/trade 的 MyMetaObjectHandler 副本收敛到此处；
+# user-service 因多填 registerTime 保留自有实现，靠 @ConditionalOnMissingBean 自动退避）
+org.icedamericanomall.common.config.MyMetaObjectHandlerAutoConfiguration

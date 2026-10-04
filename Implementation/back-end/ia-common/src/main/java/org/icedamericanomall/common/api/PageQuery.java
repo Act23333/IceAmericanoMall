@@ -1,4 +1,4 @@
-package org.icedamericanomall.common.domain;
+package org.icedamericanomall.common.api;
 
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -10,7 +10,7 @@ import lombok.experimental.Accessors;
  * @Date: 2026/3/22 15:24
  * @Version: 1.0.0
  * @ProjectName: IcedAmericanoMall
- * @Package: org.icedamericanomall.common.domain
+ * @Package: org.icedamericanomall.common.api
  */
 @Data
 @Accessors(chain = true)

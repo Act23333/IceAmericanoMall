@@ -4,6 +4,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.icedamericanomall.common.constant.SecurityHeaders;
 import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.core.Ordered;
@@ -26,7 +27,7 @@ import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebA
 public class TraceIdFilter extends OncePerRequestFilter {
 
     public static final String TRACE_ID = "traceId";
-    private static final String HEADER = "X-Trace-Id";
+    private static final String HEADER = SecurityHeaders.X_TRACE_ID;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)

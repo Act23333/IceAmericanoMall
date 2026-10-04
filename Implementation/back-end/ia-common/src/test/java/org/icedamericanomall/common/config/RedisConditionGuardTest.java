@@ -48,13 +48,11 @@ class RedisConditionGuardTest {
                             .as("RedisConfig 应被条件注解跳过").isFalse();
                     assertThat(context.containsBean("rateLimitRedisScript"))
                             .as("RedisLuaScriptConfig 应被条件注解跳过").isFalse();
-                    assertThat(context.containsBean("deleteRedisKeyRedisScript")).isFalse();
-                    assertThat(context.containsBean("loginRateLimitRedisScript")).isFalse();
                 });
     }
 
     @Test
-    @DisplayName("类路径有 Redis → 注册 RedisTemplate 与 4 个 Lua 脚本 Bean（守卫未过度收紧）")
+    @DisplayName("类路径有 Redis → 注册 RedisTemplate 与限流 Lua 脚本 Bean（守卫未过度收紧）")
     void shouldRegisterRedisConfigs_whenRedisClassesPresent() {
         new ApplicationContextRunner()
                 .withUserConfiguration(RedisConfig.class, RedisLuaScriptConfig.class)
@@ -63,8 +61,8 @@ class RedisConditionGuardTest {
                     assertThat(context.getStartupFailure()).isNull();
                     assertThat(context.containsBean("redisTemplate")).isTrue();
                     assertThat(context.getBeanNamesForType(RedisScript.class))
-                            .as("4 个 Lua 脚本：del_redisKey / rate_limit / check_limit / login_rate_limit")
-                            .hasSize(4);
+                            .as("仅 rate_limit.lua（V5.3：del_redisKey/check_limit/login_rate_limit 已随零调用清理）")
+                            .hasSize(1);
                 });
     }
 }

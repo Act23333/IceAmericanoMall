@@ -1,5 +1,7 @@
 package org.icedamericanomall.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.io.Serial;
@@ -8,9 +10,9 @@ import java.io.Serializable;
 /**
  * 站内信发送请求 DTO —— 各服务 → notification-service（Feign）。
  *
- * <p><b>状态：契约预留（V5.0 规划）</b>。站内信的落库、已读回执、未读数统计尚未实现，
- * notification-service 收到本请求会返回「通道未实现」业务异常；调用方应按「可失败的通知」
- * 对待（记录 warn 日志即可，不得影响主流程）。
+ * <p><b>状态：已实现（ADR-016 收尾）</b>。站内信由 notification-service 落库
+ * （{@code notification} 表）；已读回执与未读数经公开端点 {@code /api/notifications/**}
+ * 查询维护。发送失败仍按「可失败的通知」对待（记录 warn 日志即可，不得影响主流程）。
  *
  * <p>字段沿用评价互动通知的历史结构（item-service 评价回复 / 点赞场景）。
  */
@@ -21,6 +23,7 @@ public class InAppMessageSendReqCO implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /** 接收者用户 ID */
+    @NotNull(message = "接收者不能为空")
     private Long recipientId;
 
     /** 触发者用户 ID（系统通知可为空） */
@@ -33,6 +36,7 @@ public class InAppMessageSendReqCO implements Serializable {
     private String senderAvatar;
 
     /** 通知类型：REPLY / LIKE / SYSTEM / ORDER ... */
+    @NotBlank(message = "通知类型不能为空")
     private String type;
 
     /** 通知标题 */

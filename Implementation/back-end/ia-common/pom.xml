@@ -183,6 +183,16 @@
             <artifactId>jakarta.validation-api</artifactId>
             <optional>true</optional>
         </dependency>
+
+        <!-- Redisson：业务键互斥锁实现（DistributedLockConfig 条件装配）。
+             optional：不传递给业务服务，仅自行引入 redisson-spring-boot-starter 的服务（auth / user）生效。
+             版本与 authorization-service / user-service 现有声明一致（3.26.0）。 -->
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson-spring-boot-starter</artifactId>
+            <version>3.26.0</version>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 
     <build>

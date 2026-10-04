@@ -2,7 +2,7 @@ package org.icedamericanomall.fallback;
 
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.ProductDetailClient;
-import org.icedamericanomall.common.domain.Result;
+import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.ProductDetailCO;

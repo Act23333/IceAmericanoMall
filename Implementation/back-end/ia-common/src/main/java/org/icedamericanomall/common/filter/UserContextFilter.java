@@ -6,8 +6,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
-import org.icedamericanomall.common.domain.UserInfo;
-import org.icedamericanomall.common.domain.UserContext;
+import org.icedamericanomall.common.constant.SecurityHeaders;
+import org.icedamericanomall.common.security.UserInfo;
+import org.icedamericanomall.common.security.UserContext;
 import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.core.Ordered;
@@ -42,6 +43,13 @@ import java.util.stream.Collectors;
  *   X-Client-Ip      — 客户端IP
  *   X-Tenant-Id      — 租户ID
  * </pre>
+ *
+ * <p><b>为何 {@code clientIp} 不直接复用 {@link org.icedamericanomall.common.utils.IpUtil}</b>：
+ * 本字段是<b>审计/日志（MDC）展示口径</b>，不参与限流，因此刻意只认「网关注入的
+ * {@code X-Client-Ip} + TCP 对端 {@code remoteAddr} 兜底」，<b>不回落到可伪造的
+ * {@code X-Forwarded-For}</b> —— 避免直连场景把客户端自由构造的代理头写进审计链路。
+ * {@code IpUtil} 服务于 {@code @RateLimit(key = "ip")} 等安全维度，两者职责不同、回落链不同，
+ * 故此处保留独立取值逻辑（单一可读来源：网关 {@code UntrustedHeaderSanitizerFilter} 的覆写）。
  */
 @Slf4j
 @Component
@@ -55,16 +63,16 @@ public class UserContextFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain chain)
             throws ServletException, IOException {
-        String userId = request.getHeader("X-User-Id");
+        String userId = request.getHeader(SecurityHeaders.X_USER_ID);
         if (userId != null && !userId.isBlank()) {
             try {
-                String username = request.getHeader("X-Username");
-                String traceId = request.getHeader("X-Trace-Id");
-                String clientIp = request.getHeader("X-Client-Ip");
-                String tenantId = request.getHeader("X-Tenant-Id");
+                String username = request.getHeader(SecurityHeaders.X_USERNAME);
+                String traceId = request.getHeader(SecurityHeaders.X_TRACE_ID);
+                String clientIp = request.getHeader(SecurityHeaders.X_CLIENT_IP);
+                String tenantId = request.getHeader(SecurityHeaders.X_TENANT_ID);
 
-                Set<String> roles = parseCsv(request.getHeader("X-User-Roles"));
-                Set<String> permissions = parseCsv(request.getHeader("X-User-Permissions"));
+                Set<String> roles = parseCsv(request.getHeader(SecurityHeaders.X_USER_ROLES));
+                Set<String> permissions = parseCsv(request.getHeader(SecurityHeaders.X_USER_PERMISSIONS));
 
                 UserInfo userInfo = UserInfo.builder()
                         .userId(Long.valueOf(userId))

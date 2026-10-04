@@ -1,4 +1,4 @@
-package org.icedamericanomall.common.domain;
+package org.icedamericanomall.common.security;
 
 import lombok.Builder;
 import lombok.Getter;
@@ -19,7 +19,7 @@ import java.util.Set;
  * @Date: 2026/7/19 21:51
  * @Version: 1.0.0
  * @ProjectName: back-end
- * @Package: org.icedamericanomall.common.domain
+ * @Package: org.icedamericanomall.common.security
  */
 
 @Builder

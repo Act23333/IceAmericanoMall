@@ -1,5 +1,6 @@
-package org.icedamericanomall.common.domain;
+package org.icedamericanomall.common.api;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.icedamericanomall.common.enums.ErrorCode;
 
@@ -11,7 +12,7 @@ class ResultTest {
     void shouldReturnSuccessWithData() {
         Result<Integer> result = Result.ok(42);
         assertEquals(200, result.getCode());
-        assertEquals(42, result.getData());
+        assertEquals(42, result.getData().intValue());
     }
 
     @Test
@@ -42,5 +43,19 @@ class ResultTest {
         Result<Void> result = Result.error(
                 new org.icedamericanomall.common.exception.CommonException(ErrorCode.USER_NOT_FOUND) {});
         assertEquals(ErrorCode.USER_NOT_FOUND.getCode(), result.getCode());
+    }
+
+    @Test
+    @DisplayName("success(...) 与 ok(...) 等价（AGENTS.md 契约命名，向后兼容）")
+    void shouldDelegateSuccessToOk() {
+        Result<Object> empty = Result.success((Object) null);
+        assertEquals(Result.SUCCESS_CODE, empty.getCode());
+        assertEquals("success", empty.getMsg());
+        assertNull(empty.getData());
+
+        assertEquals("hi", Result.success("hi").getMsg());
+        assertEquals(42, Result.success(42).getData().intValue());
+        assertEquals(42, Result.success("with-data", 42).getData().intValue());
+        assertTrue(Result.success(42).success());
     }
 }

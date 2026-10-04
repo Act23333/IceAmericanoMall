@@ -8,7 +8,7 @@ import org.icedamericanomall.integration.auth.model.WechatMiniLoginReq;
 import org.icedamericanomall.integration.auth.model.WechatMiniLoginResp;
 import org.icedamericanomall.integration.auth.service.thirdparty.WechatMiniThirdParty;
 import org.icedamericanomall.common.enums.ErrorCode;
-import org.icedamericanomall.common.exception.WechatApiException;
+import org.icedamericanomall.integration.WechatApiException;
 import org.icedamericanomall.common.utils.HttpUtils;
 import org.icedamericanomall.common.utils.JsonUtils;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

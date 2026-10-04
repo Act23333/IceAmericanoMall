@@ -6,9 +6,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * 积分域 Feign Client —— 从 UserClient 拆分出的 addPoints。
+ * 积分域 Feign Client —— 积分能力归属 marketing-service（ADR-016 收尾，自 user-service 迁出）。
  */
-@FeignClient(name = "user-service", path = "/internal/points", contextId = "points",
+@FeignClient(name = "marketing-service", path = "/internal/points", contextId = "points",
         fallbackFactory = PointsClientFallback.class)
 public interface PointsClient {
 

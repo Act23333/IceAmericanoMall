@@ -18,12 +18,16 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * @Package: org.icedamericanomall.common.config
  */
 @Configuration
-@ConditionalOnClass(DispatcherServlet.class) //当 Spring 容器中还没有 MybatisPlusInterceptor 类型的 Bean 时，才创建这个 Bean即使 com.example.SomeService 这个类在项目编译时不存在，上面的代码也能正常编译。这是因为 Spring Boot 在解析这个注解时，采用了 ASM 字节码解析技术，不会强制在编译期加载 value 属性中指定的类
+// 守卫：仅 Servlet Web 应用才需要注册拦截器；无 Web（或 WebFlux）环境跳过本配置
+@ConditionalOnClass(DispatcherServlet.class)
 public class WebConfig implements WebMvcConfigurer {
+
+    /** 拦截全部路径（拦截器内自行决定放行策略）。 */
+    private static final String ALL_PATH_PATTERN = "/**";
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         HandlerInterceptor userInteceptor = new AccessLogInterceptor();
-        registry.addInterceptor(userInteceptor).addPathPatterns("/**");
+        registry.addInterceptor(userInteceptor).addPathPatterns(ALL_PATH_PATTERN);
     }
 }

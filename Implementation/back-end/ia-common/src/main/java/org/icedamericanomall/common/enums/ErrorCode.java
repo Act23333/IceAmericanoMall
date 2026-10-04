@@ -13,7 +13,7 @@ public enum ErrorCode {
     UNAUTHORIZED(1011, "未登录", HttpStatus.UNAUTHORIZED),
     TOKEN_EXPIRED(1012, "登录已过期", HttpStatus.UNAUTHORIZED),
     FORBIDDEN(1013, "无权限操作", HttpStatus.FORBIDDEN),
-    FREQUENT_ERROR(1014, "操作过于频繁", HttpStatus.FORBIDDEN),
+    FREQUENT_ERROR(1014, "操作过于频繁", HttpStatus.TOO_MANY_REQUESTS),
     ILLEGAL_REQUEST(1015, "非法请求", HttpStatus.BAD_REQUEST),
     CAPTCHA_REQUIRED(1016, "人机验证失败", HttpStatus.FORBIDDEN),
     ACCOUNT_FROZEN(1017, "用户账号异常", HttpStatus.FORBIDDEN),
@@ -40,6 +40,11 @@ public enum ErrorCode {
     STOCK_INSUFFICIENT(3012, "库存不足", HttpStatus.OK),
     CART_EMPTY(3013, "购物车为空", HttpStatus.OK),
     CROSS_STORE_FORBIDDEN(3014, "暂不支持跨店下单", HttpStatus.OK),
+    SHOP_NOT_FOUND(3015, "店铺不存在", HttpStatus.OK),
+    SKU_NOT_FOUND(3016, "SKU不存在", HttpStatus.OK),
+    HOME_CONFIG_NOT_FOUND(3017, "首页配置不存在", HttpStatus.OK),
+    REVIEW_ALREADY_EXISTS(3018, "该商品已评价", HttpStatus.OK),
+    COUPON_NOT_FOUND(3019, "优惠券不存在", HttpStatus.OK),
     // 秒杀错误 (3020-3029)
     FLASH_SALE_NOT_FOUND(3020, "秒杀活动不存在", HttpStatus.OK),
     FLASH_SALE_NOT_STARTED(3021, "秒杀未开始或已结束", HttpStatus.OK),
@@ -51,6 +56,15 @@ public enum ErrorCode {
     AFTER_SALE_EXISTS(3031, "已有售后申请", HttpStatus.OK),
     APPLICATION_NOT_FOUND(3032, "申请不存在", HttpStatus.OK),
     WITHDRAWAL_NOT_FOUND(3033, "提现申请不存在", HttpStatus.OK),
+    // 通知/物流 (3034-3035)
+    NOTIFICATION_NOT_FOUND(3034, "通知不存在", HttpStatus.OK),
+    LOGISTICS_NOT_FOUND(3035, "物流信息不存在", HttpStatus.OK),
+    REVIEW_NOT_FOUND(3036, "评价不存在", HttpStatus.OK),
+    REVIEW_ALREADY_REPLIED(3037, "该评价已回复", HttpStatus.OK),
+    REVIEW_APPEND_CONFLICT(3038, "追评失败", HttpStatus.OK),
+    REFUND_STATUS_INVALID(3039, "退款状态不支持此操作", HttpStatus.OK),
+    FREIGHT_TEMPLATE_NAME_EXISTS(3040, "运费模板名称已存在", HttpStatus.OK),
+    FREIGHT_TEMPLATE_NOT_FOUND(3041, "运费模板不存在", HttpStatus.OK),
 
     // AI 服务错误 (3100-3199)
     AI_SERVICE_UNAVAILABLE(3100, "AI 服务未启用或 API Key 未配置", HttpStatus.SERVICE_UNAVAILABLE),

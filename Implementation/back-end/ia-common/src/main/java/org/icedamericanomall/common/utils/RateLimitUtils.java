@@ -14,8 +14,6 @@ import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.lang.reflect.Method;
 import java.util.Collections;
@@ -23,7 +21,7 @@ import java.util.Collections;
 import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type.SERVLET;
 
 /**
- * 限流工具（Redis 计数器 + 多级窗口 + SpEL 取键）。
+ * 限流工具（Redis 计数器 + SpEL 取键）。
  *
  * <p>{@code @ConditionalOnClass} 守卫（V5.2 补齐，R-1 遗留项）：
  * ia-common 的 Redis 依赖是 optional。此前本类只有
@@ -32,11 +30,14 @@ import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebA
  * 缺失而 {@code NoClassDefFoundError} 启动失败。补上 Redis 类路径守卫后与
  * {@code RedisConfig} / {@code RedisLuaScriptConfig} 的存活条件完全一致。
  *
- * <p>依赖注入改为<b>构造器注入</b>（V5.2）：原先两个 {@code @Resource} 字段注入违反
+ * <p>依赖注入为<b>构造器注入</b>（V5.2）：原先两个 {@code @Resource} 字段注入违反
  * 「禁止字段注入」硬约束。脚本 Bean 用 {@code @Qualifier} 精确指定 ——
- * Slf4j 之外的三处说明：容器里有 3 个类型同为 {@code RedisScript<Long>} 的 Bean
- * （另两个是 deleteRedisKey/checkLimit），靠参数名兜底不可靠
- * （本类的 {@code parseKey} 注释已说明编译未开 {@code -parameters}），必须显式限定。
+ * 本类的 {@code parseKey} 说明编译未开 {@code -parameters}，靠参数名兜底不可靠，必须显式限定。
+ *
+ * <p><b>V5.3 清理</b>：短信多级限流（{@code checkSmsByPhone} / {@code checkSmsByIp}）与
+ * 删除 Redis 键方法（{@code deleteRedisKeyRedisScript}）已删除 —— 全仓库零调用；
+ * 短信/邮件验证码的限流窗口现由 verification-service 私有 Key 空间承担，
+ * 通用限流一律走 {@code @RateLimit} 注解（{@link RateLimitUtils#checkRateLimit}）。
  */
 @Slf4j
 @Component
@@ -74,47 +75,6 @@ public class RateLimitUtils {
             return false;
         }
         return true;
-    }
-
-    /**
-     * 多级限流检查（用于手机号）
-     * @param phone 手机号
-     * @return true 表示通过，false 表示超限
-     */
-    public boolean checkSmsByPhone(String phone) {
-        // 分钟限流
-        String minuteKey = "sms:minute:" + phone;
-        if (!checkRateLimit(minuteKey, 3, 60)) {
-            return false;
-        }
-        // 小时限流
-        String hourKey = "sms:hour:" + phone;
-        if (!checkRateLimit(hourKey, 10, 3600)) {
-            return false;
-        }
-        // 天限流
-        String dayKey = "sms:day:" + phone;
-        return checkRateLimit(dayKey, 30, 86400);
-    }
-
-    public boolean checkSmsByIp() {
-        ServletRequestAttributes requestAttributes = (ServletRequestAttributes)RequestContextHolder.getRequestAttributes();
-        if (requestAttributes == null) {
-            return false;
-        }
-        String ip = IpUtil.getIpAddr(requestAttributes.getRequest());
-        String redisKey = "sms:ip:" + ip;
-        return checkRateLimit(redisKey, 3, 60);
-    }
-
-    /**
-     * 删除redis键（登录成功后调用）
-     */
-    public void deleteRedisKeyRedisScript(String redisKey) {
-        Boolean result = stringRedisTemplate.delete(redisKey);
-        if (!result) {
-            log.warn("删除失败: key={}", redisKey);
-        }
     }
 
     /**

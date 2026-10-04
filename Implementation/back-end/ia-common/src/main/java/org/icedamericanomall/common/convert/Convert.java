@@ -7,7 +7,7 @@ package org.icedamericanomall.common.convert;
  * @Date: 2026/3/21 16:23
  * @Version: 1.0.0
  * @ProjectName: IcedAmericanoMall
- * @Package: org.icedamericanomall.common.convert
+ * @Package: org.icedamericanomall.common.assembler
  */
 
 @FunctionalInterface

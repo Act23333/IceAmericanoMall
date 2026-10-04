@@ -1,4 +1,4 @@
-package org.icedamericanomall.common.domain;
+package org.icedamericanomall.common.security;
 
 
 /**
@@ -8,7 +8,7 @@ package org.icedamericanomall.common.domain;
  * @Date: 2026/3/21 20:33
  * @Version: 1.0.0
  * @ProjectName: IcedAmericanoMall
- * @Package: org.icedamericanomall.common.domain
+ * @Package: org.icedamericanomall.common.security
  */
 
 public class UserContext {

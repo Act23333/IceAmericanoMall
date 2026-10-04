@@ -7,6 +7,8 @@ import org.icedamericanomall.common.utils.crypto.BlindIndexUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.Arrays;
+
 /**
  * PII 加密密钥装载 —— 启动时初始化 {@link AesGcmUtil}（AES-256-GCM 数据密钥）与
  * {@link BlindIndexUtil}（HMAC-SHA256 盲索引密钥），二密钥分离（ADR-017）。
@@ -15,6 +17,10 @@ import org.springframework.context.annotation.Configuration;
  * （{@code IA_CRYPTO_AES_KEY} / {@code IA_CRYPTO_HMAC_KEY}，Base64 编码的 32 字节密钥）；
  * 未注入时使用内置开发密钥并打印 WARN —— 仅为本地联调可用，<b>严禁用于生产</b>
  * （密钥硬编码在生产等于加密失效，属运维红线）。
+ * 自 V5.3 起该红线由启动期校验兜底：{@code spring.profiles.active} 含 {@code prod}
+ * 且仍在使用内置开发密钥时<b>直接抛异常拒绝启动</b>（fail-fast），非 prod 环境保持 WARN。
+ * 之所以要 fail-fast：开发密钥随代码公开，用它在生产加密 PII 等于「没有加密」，
+ * 而这种配置事故不会自然暴露（系统一切正常，只是密文可被任何人解开）。
  *
  * <p><b>为什么必须存在</b>：两个服务的领域模型/持久化都会借助
  * {@code EncryptedIdentifier.fromPlain(...)} 落三字段密文（user-service 的
@@ -37,23 +43,37 @@ public class CryptoKeyConfig {
     /** 开发缺省 HMAC 盲索引密钥（Base64，32 字节）—— 仅本地联调 */
     private static final String DEV_HMAC_KEY = "aWNlLWFtZXJpY2Fuby1kZXYtaG1hYy1pbmRleC1rZXk=";
 
+    /** 生产 profile 名（命中即禁止内置开发密钥）。 */
+    private static final String PROD_PROFILE = "prod";
+
+    /** 多 profile 分隔符。 */
+    private static final String PROFILE_SEPARATOR = ",";
+
     private final String aesKey;
     private final String hmacKey;
+    private final String activeProfiles;
 
     public CryptoKeyConfig(@Value("${ia.crypto.aes-key:}") String aesKey,
-                           @Value("${ia.crypto.hmac-key:}") String hmacKey) {
+                           @Value("${ia.crypto.hmac-key:}") String hmacKey,
+                           @Value("${spring.profiles.active:}") String activeProfiles) {
         this.aesKey = aesKey;
         this.hmacKey = hmacKey;
+        this.activeProfiles = activeProfiles;
     }
 
     /**
      * 初始化加密工具（AES 密钥与盲索引密钥分离注入）。
      *
-     * @throws IllegalStateException 密钥非 Base64 / 非 32 字节（快速失败，避免半可用状态）
+     * @throws IllegalStateException 生产环境仍在使用内置开发密钥（fail-fast），
+     *                               或密钥非 Base64 / 非 32 字节（避免半可用状态）
      */
     @PostConstruct
     public void initCryptoKeys() {
         boolean devFallback = isBlank(aesKey) || isBlank(hmacKey);
+        if (devFallback && isProdProfile()) {
+            throw new IllegalStateException("生产环境（spring.profiles.active 含 prod）禁止使用内置开发密钥："
+                    + "请注入 IA_CRYPTO_AES_KEY / IA_CRYPTO_HMAC_KEY（Base64 编码的 32 字节密钥）");
+        }
         String resolvedAes = resolveKey(aesKey, DEV_AES_KEY, "AES");
         String resolvedHmac = resolveKey(hmacKey, DEV_HMAC_KEY, "HMAC");
         AesGcmUtil.init(resolvedAes);
@@ -64,6 +84,16 @@ public class CryptoKeyConfig {
         } else {
             log.info("[crypto][init][done] PII 加密密钥已装载（AES-256-GCM + HMAC-SHA256 盲索引）");
         }
+    }
+
+    /** 当前激活 profile 是否包含生产标识（大小写不敏感、支持逗号分隔多 profile）。 */
+    private boolean isProdProfile() {
+        if (isBlank(activeProfiles)) {
+            return false;
+        }
+        return Arrays.stream(activeProfiles.split(PROFILE_SEPARATOR))
+                .map(String::trim)
+                .anyMatch(PROD_PROFILE::equalsIgnoreCase);
     }
 
     /** 取配置值；为空时回退开发密钥并校验密钥长度。 */

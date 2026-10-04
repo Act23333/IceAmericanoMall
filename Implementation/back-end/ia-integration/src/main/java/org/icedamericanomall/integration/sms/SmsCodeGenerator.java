@@ -3,7 +3,12 @@ package org.icedamericanomall.integration.sms;
 import java.security.SecureRandom;
 
 /**
- * 数字验证码生成器 —— 登录 / 注册 / 找回密码链路的唯一验证码来源。
+ * 数字验证码生成器 —— 供 verification-service 的验证码签发使用（{@code CodeGeneratorAdapter} 委托本类）。
+ *
+ * <p><b>职责边界（V5.3 澄清）</b>：本类只负责「生成一个数字串」，不是验证码链路的唯一来源 ——
+ * 验证码的签发、存储、限流与校验都在 verification-service（唯一校验出口）；本类也不做
+ * 长度以外的任何校验。历史上此处曾自称「登录/注册/找回密码链路的唯一验证码来源」，
+ * 与实现不符（既无存储也无校验），予以更正。
  *
  * <p>随机源为 {@link SecureRandom}（密码学安全），不使用 {@code Math.random()} /
  * {@code Random}，避免验证码可被预测。

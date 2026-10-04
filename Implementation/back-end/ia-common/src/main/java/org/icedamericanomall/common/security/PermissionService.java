@@ -1,8 +1,8 @@
 package org.icedamericanomall.common.security;
 
 import lombok.extern.slf4j.Slf4j;
-import org.icedamericanomall.common.domain.UserInfo;
-import org.icedamericanomall.common.domain.UserContext;
+import org.icedamericanomall.common.security.UserInfo;
+import org.icedamericanomall.common.security.UserContext;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;

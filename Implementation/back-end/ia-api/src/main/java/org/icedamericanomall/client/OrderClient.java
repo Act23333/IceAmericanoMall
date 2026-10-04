@@ -36,6 +36,12 @@ public interface OrderClient {
     OrderSummaryCO getOrder(@PathVariable String orderNo);
 
     /**
+     * Get order summary by technical id — 供下游（logistics-service）校验订单归属。
+     */
+    @GetMapping("/id/{orderId}")
+    OrderSummaryCO getOrderById(@PathVariable Long orderId);
+
+    /**
      * V4.1: 营销服务调用 — 创建秒杀订单（统一订单中心）。
      * marketing-service 完成 Redis 预扣后，通过此接口委托 trade-service 落库。
      */

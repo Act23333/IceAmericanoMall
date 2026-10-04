@@ -51,6 +51,13 @@ public class OrderClientFallback implements FallbackFactory<OrderClient> {
             }
 
             @Override
+            public OrderSummaryCO getOrderById(Long orderId) {
+                log.error("订单服务降级：按 id 查询订单失败（归属校验 fail-closed，禁止放行）"
+                        + " orderId={}", orderId, cause);
+                throw new BizException(ErrorCode.SYSTEM_BUSY, "订单服务暂不可用，请稍后重试");
+            }
+
+            @Override
             public OrderSummaryCO createOrder(CreateOrderInternalReq req) {
                 log.error("订单服务降级：创建订单失败 userId={}, flashId={}",
                         req == null ? null : req.getUserId(),

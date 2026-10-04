@@ -2,9 +2,29 @@ package org.icedamericanomall.config;
 
 import feign.Logger;
 import feign.RequestInterceptor;
+import org.icedamericanomall.common.constant.SecurityHeaders;
+import org.icedamericanomall.common.security.UserContext;
+import org.icedamericanomall.fallback.AddressClientFallback;
+import org.icedamericanomall.fallback.AfterSaleClientFallback;
+import org.icedamericanomall.fallback.AuthContextClientFallback;
+import org.icedamericanomall.fallback.BalanceClientFallback;
+import org.icedamericanomall.fallback.CartClientFallback;
+import org.icedamericanomall.fallback.CouponClientFallback;
+import org.icedamericanomall.fallback.FreightTemplateClientFallback;
+import org.icedamericanomall.fallback.KnowledgeVectorClientFallback;
+import org.icedamericanomall.fallback.LogisticsClientFallback;
+import org.icedamericanomall.fallback.NotificationClientFallback;
+import org.icedamericanomall.fallback.OrderClientFallback;
+import org.icedamericanomall.fallback.PointsClientFallback;
+import org.icedamericanomall.fallback.ProductDetailClientFallback;
+import org.icedamericanomall.fallback.RefundClientFallback;
+import org.icedamericanomall.fallback.SearchClientFallback;
+import org.icedamericanomall.fallback.SkuClientFallback;
 import org.icedamericanomall.fallback.UserClientFallback;
-import org.icedamericanomall.common.domain.UserContext;
+import org.icedamericanomall.fallback.UserProfileClientFallback;
+import org.icedamericanomall.fallback.VerificationClientFallback;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.env.Environment;
 
 /**
  * 共享 Feign 全局配置（ia-api 提供给各调用方服务）。
@@ -21,13 +41,31 @@ import org.springframework.context.annotation.Bean;
  * <p>注意：本类<b>不加</b> {@code @Configuration}/{@code @Component}。ia-api 是被业务服务
  * 以 jar 方式引入的契约模块，其包不在业务服务的组件扫描范围内；配置类需由
  * {@code defaultConfiguration} / {@code configuration} 显式挂载到调用方的容器里。
+ *
+ * <p><b>V5.3 补强（P1）</b>：19 个 {@code fallbackFactory} 全部在本类登记（V5.5 资金线新增
+ * {@code RefundClientFallback} / {@code AfterSaleClientFallback}；V5.6 履约线新增
+ * {@code FreightTemplateClientFallback}）。
+ * 此前只登记了 {@code UserClientFallback}，其余 14 个仅靠 {@code @Component} —— 而
+ * {@code org.icedamericanomall.fallback} 是否在扫描路径内取决于各服务启动类的
+ * {@code scanBasePackages}，漏配时「熔断开启 + 降级工厂取不到 Bean」会在启动期直接失败
+ * （或更糟：运行期才暴露），属于典型的隐性配置耦合。登记后，「挂载了本配置类的 Feign
+ * 上下文」一定拿得到全部降级工厂，与服务的扫描范围无关。
  */
 public class DefaultFeignConfig {
 
-    @Bean
-    public Logger.Level feignLoggerLevel() {
-        return Logger.Level.FULL;
-    }
+    /** Feign 日志级别属性键。 */
+    private static final String LOGGING_LEVEL_PROPERTY = "feign.logging.level";
+
+    /**
+     * 默认日志级别：{@code BASIC}。
+     *
+     * <p>此前硬编码 {@code FULL} —— {@code FULL} 会把请求/响应<b>体</b>整体写进日志，
+     * 而本项目的 Feign 调用中夹杂手机号、邮箱、验证码、收货地址等 PII，
+     * 等于把敏感数据落进日志文件（违反脱敏要求）。默认 {@code BASIC} 只记录
+     * 方法、URL、状态码与耗时，足以定位问题。
+     * 需要看 body 时显式配置 {@code feign.logging.level=FULL}（仅限 dev 排查）。
+     */
+    private static final Logger.Level DEFAULT_LOGGING_LEVEL = Logger.Level.BASIC;
 
     /**
      * 透传当前登录用户标识：下游服务通过 {@code X-User-Id} 头重建 UserContext。
@@ -38,17 +76,130 @@ public class DefaultFeignConfig {
         return requestTemplate -> {
             var userInfo = UserContext.getUser();
             if (userInfo != null) {
-                requestTemplate.header("X-User-Id", String.valueOf(userInfo.userId()));
+                requestTemplate.header(SecurityHeaders.X_USER_ID, String.valueOf(userInfo.userId()));
             }
         };
     }
 
     /**
-     * 显式注册 UserClient 降级工厂（ia-api 的 {@code fallback} 包不在业务服务扫描范围内，
-     * 若仅靠 {@code @Component} 会拿不到 Bean）。
+     * Feign 日志级别：默认 {@code BASIC}，允许通过 {@code feign.logging.level} 覆盖
+     * （取值 {@code NONE/BASIC/HEADERS/FULL}，大小写不敏感；非法值回落 BASIC）。
+     *
+     * @param environment 调用方环境（属性缺失时使用 {@link #DEFAULT_LOGGING_LEVEL}）
+     * @return 日志级别
      */
+    @Bean
+    public Logger.Level feignLoggerLevel(Environment environment) {
+        return parseLoggingLevel(environment.getProperty(LOGGING_LEVEL_PROPERTY));
+    }
+
+    /** 解析日志级别配置值：空/非法值一律回落 {@code BASIC}（绝不因配置拼错而放开 body 日志）。 */
+    private static Logger.Level parseLoggingLevel(String configured) {
+        if (configured == null || configured.isBlank()) {
+            return DEFAULT_LOGGING_LEVEL;
+        }
+        for (Logger.Level level : Logger.Level.values()) {
+            if (level.name().equalsIgnoreCase(configured.trim())) {
+                return level;
+            }
+        }
+        return DEFAULT_LOGGING_LEVEL;
+    }
+
+    // ==================== Feign 降级工厂（全部 19 个 Client，逐个显式登记） ====================
+
+    @Bean
+    public AddressClientFallback addressClientFallback() {
+        return new AddressClientFallback();
+    }
+
+    @Bean
+    public AfterSaleClientFallback afterSaleClientFallback() {
+        return new AfterSaleClientFallback();
+    }
+
+    @Bean
+    public AuthContextClientFallback authContextClientFallback() {
+        return new AuthContextClientFallback();
+    }
+
+    @Bean
+    public BalanceClientFallback balanceClientFallback() {
+        return new BalanceClientFallback();
+    }
+
+    @Bean
+    public CartClientFallback cartClientFallback() {
+        return new CartClientFallback();
+    }
+
+    @Bean
+    public CouponClientFallback couponClientFallback() {
+        return new CouponClientFallback();
+    }
+
+    @Bean
+    public FreightTemplateClientFallback freightTemplateClientFallback() {
+        return new FreightTemplateClientFallback();
+    }
+
+    @Bean
+    public KnowledgeVectorClientFallback knowledgeVectorClientFallback() {
+        return new KnowledgeVectorClientFallback();
+    }
+
+    @Bean
+    public LogisticsClientFallback logisticsClientFallback() {
+        return new LogisticsClientFallback();
+    }
+
+    @Bean
+    public NotificationClientFallback notificationClientFallback() {
+        return new NotificationClientFallback();
+    }
+
+    @Bean
+    public OrderClientFallback orderClientFallback() {
+        return new OrderClientFallback();
+    }
+
+    @Bean
+    public PointsClientFallback pointsClientFallback() {
+        return new PointsClientFallback();
+    }
+
+    @Bean
+    public ProductDetailClientFallback productDetailClientFallback() {
+        return new ProductDetailClientFallback();
+    }
+
+    @Bean
+    public RefundClientFallback refundClientFallback() {
+        return new RefundClientFallback();
+    }
+
+    @Bean
+    public SearchClientFallback searchClientFallback() {
+        return new SearchClientFallback();
+    }
+
+    @Bean
+    public SkuClientFallback skuClientFallback() {
+        return new SkuClientFallback();
+    }
+
     @Bean
     public UserClientFallback userClientFallback() {
         return new UserClientFallback();
+    }
+
+    @Bean
+    public UserProfileClientFallback userProfileClientFallback() {
+        return new UserProfileClientFallback();
+    }
+
+    @Bean
+    public VerificationClientFallback verificationClientFallback() {
+        return new VerificationClientFallback();
     }
 }

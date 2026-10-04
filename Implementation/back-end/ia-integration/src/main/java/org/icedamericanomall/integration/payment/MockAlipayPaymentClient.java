@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -17,11 +18,21 @@ import java.util.Map;
  *
  * <p>真实接入：新增一个 {@code @ConditionalOnProperty(name = "alipay.enabled", havingValue = "true")}
  * 的实现即可（{@link AlipayProperties} 已预留 {@code appId} / 密钥 / 网关等字段）。
+ *
+ * <p><b>退款 / 对账 Mock 口径（F1 / F4）</b>：退款<b>同步成功</b>（{@code settled=true}）——
+ * 与支付宝真实「同步返回退款结果」的语义一致，故不存在微信那样的异步退款回调分支；
+ * 账单返回两条样例流水，供本地打通对账链路。
  */
 @Slf4j
 @Component
 @ConditionalOnProperty(name = "alipay.enabled", havingValue = "false", matchIfMissing = true)
 public class MockAlipayPaymentClient implements AlipayPaymentClient {
+
+    /** Mock 渠道退款单号前缀。 */
+    static final String MOCK_CHANNEL_REFUND_NO_PREFIX = "mock-ali-rfd-";
+
+    /** Mock 渠道交易号前缀。 */
+    static final String MOCK_CHANNEL_TXN_NO_PREFIX = "mock-ali-txn-";
 
     @Override
     public String initiatePayment(String orderNo, int amount, String description) {
@@ -36,7 +47,25 @@ public class MockAlipayPaymentClient implements AlipayPaymentClient {
     }
 
     @Override
+    public ChannelRefundResult refund(String payOrderNo, String refundNo, int refundAmount, int orderAmount,
+                                      String reason) {
+        log.info("===== MOCK ALIPAY REFUND ===== payOrderNo={}, refundNo={}, refundAmount={}, orderAmount={}",
+                payOrderNo, refundNo, refundAmount, orderAmount);
+        return ChannelRefundResult.settled(MOCK_CHANNEL_REFUND_NO_PREFIX + refundNo);
+    }
+
+    @Override
+    public List<ChannelBillItem> billDownload(String billDate) {
+        List<ChannelBillItem> items = List.of(
+                new ChannelBillItem("MOCK-ALI-PAY-0001", MOCK_CHANNEL_TXN_NO_PREFIX + billDate + "-1", 6600),
+                new ChannelBillItem("MOCK-ALI-PAY-0002", MOCK_CHANNEL_TXN_NO_PREFIX + billDate + "-2", 8800));
+        log.info("[MockAlipay] 账单下载: billDate={}, rows={}（样例账单）", billDate, items.size());
+        return items;
+    }
+
+    @Override
     public String queryStatus(String payOrderNo) {
         return "SUCCESS";
     }
 }
+
