@@ -4,7 +4,7 @@
 graph TB
     %% --- Users ---
     User["👤 用户<br/>(浏览器/App)"]
-    Seller["👤 商家<br/>(浏览器)"]
+    Merchant["👤 商家<br/>(浏览器)"]
     Admin["👤 管理员<br/>(浏览器)"]
 
     %% --- External ---
@@ -20,7 +20,8 @@ graph TB
 
     %% --- Core Services ---
     Auth["🔐 auth-service<br/>认证授权<br/>OAuth2 + JWT"]
-    UserSvc["👥 user-service<br/>用户/地址/商家"]
+    UserSvc["👥 user-service<br/>用户/地址/资料"]
+    MerchantSvc["🏪 merchant-service<br/>商家/店铺<br/>1 商家 N 店铺（shop 表）"]
     Item["📦 item-service<br/>商品/SPU/SKU/类目"]
     Cart["🛒 cart-service<br/>购物车"]
     Trade["📋 trade-service<br/>订单管理"]
@@ -38,12 +39,13 @@ graph TB
 
     %% --- Connections: Users → Gateway ---
     User -->|HTTPS| Gateway
-    Seller -->|HTTPS| Gateway
+    Merchant -->|HTTPS| Gateway
     Admin -->|HTTPS| Gateway
 
     %% --- Gateway → Services ---
     Gateway -->|路由| Auth
     Gateway -->|路由| UserSvc
+    Gateway -->|路由| MerchantSvc
     Gateway -->|路由| Item
     Gateway -->|路由| Cart
     Gateway -->|路由| Trade
@@ -53,6 +55,7 @@ graph TB
     %% --- Service Registry ---
     Auth -.->|注册| Nacos
     UserSvc -.->|注册| Nacos
+    MerchantSvc -.->|注册| Nacos
     Item -.->|注册| Nacos
     Cart -.->|注册| Nacos
     Trade -.->|注册| Nacos
@@ -82,6 +85,7 @@ graph TB
     %% --- Shared ---
     Auth -.-> IACommon
     UserSvc -.-> IACommon
+    MerchantSvc -.-> IACommon
     Item -.-> IACommon
     Cart -.-> IACommon
     Trade -.-> IACommon
@@ -90,6 +94,7 @@ graph TB
 
     Auth -.-> IAApi
     UserSvc -.-> IAApi
+    MerchantSvc -.-> IAApi
     Item -.-> IAApi
     Cart -.-> IAApi
     Trade -.-> IAApi

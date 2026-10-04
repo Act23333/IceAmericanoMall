@@ -1,7 +1,7 @@
 # 14 — 服务配置指南
 
 > 从零搭建 IceAmericanoMall 所需的全部组件：Docker 容器编排、中间件配置、第三方平台注册、微服务环境变量。
-> 最后更新: 2026-09-30
+> 最后更新: 2026-10-03（数据库整治同步：Initialize.sql 全量快照语义、迁移文件三段式新名 V1.1.2、建库流程修订；第六轮边界重构同步：端口表补 merchant-service 9550；遗留风险清零批次：Sentinel 生效键（trade，ADR-028）、gateway.ws.token-paths（ADR-026）、RAG 配置项（ai.rag.* / search.embedding.* / search.knowledge-vector.*，T14））
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增中间件/配置项/端口时
 
 ---
@@ -20,7 +20,7 @@
 └──────────────────────────────────────────────────────────────┘
                            ↑ 内部网络 (172.20.0.0/16)
 ┌──────────────────────────────────────────────────────────────┐
-│             12 个微服务 (Spring Boot + Nacos 注册发现)          │
+│             15 个微服务 (Spring Boot + Nacos 注册发现)          │
 │  gateway │ auth │ user │ item │ cart │ trade │ pay │ ...     │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -67,7 +67,7 @@ docker compose exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} icedamericano_m
 | 组件        | 容器名                   | 端口             | 网络      | 说明           |
 | --------- | --------------------- | -------------- | ------- | ------------ |
 | Nginx     | ia-nginx              | **80**         | 宿主机     | 反向代理 + 限流    |
-| Gateway   | gate-service          | **8080**       | backend | API 统一入口     |
+| Gateway   | gateway-service       | **8080**       | backend | API 统一入口     |
 | Auth      | authorization-service | **9000**       | backend | OAuth2 + JWT |
 | User      | user-service          | **8081**       | backend | 以 application.yml 为准 |
 | Item      | item-service          | **8082**       | backend | 商品/类目/SKU    |
@@ -78,8 +78,10 @@ docker compose exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} icedamericano_m
 | Logistics | logistics-service     | **8087**       | backend | 物流           |
 | AI        | ai-service            | **8089**       | backend | AI 助手        |
 | Marketing | marketing-service     | **8090**       | backend | 优惠券+秒杀       |
-| Notification | notification-service | **9400**     | backend | 短信/邮件纯通道（V5.2） |
+| Notification | notification-service | **9400**     | backend | 短信/邮件/站内信（站内信落库，2026-10） |
 | Verification | verification-service | **9401**     | backend | 验证码/人机验证收口（V5.2） |
+| Wallet    | wallet-service        | **9500**       | backend | 余额账户（2026-10 新增） |
+| Merchant  | merchant-service      | **9550**       | backend | 商家域：入驻申请/审核、店铺档案、公开店铺页、关注（2026-10 第六轮新增） |
 | MySQL     | ia-mysql              | **3306**       | 宿主机     | 数据库          |
 | Redis     | ia-redis              | **6379**       | 宿主机     | 缓存+限流        |
 | Nacos     | ia-nacos              | **8848/9848**  | 宿主机     | 注册+配置中心      |
@@ -94,7 +96,7 @@ docker compose exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} icedamericano_m
 
 ### 4.1 MySQL 9.0
 
-**为什么需要：** 全部业务数据存储（用户/商品/订单/支付等 11+ 张表）
+**为什么需要：** 全部业务数据存储（用户/商品/订单/支付等 40 张表；`Initialize.sql` 为全量最新快照）
 
 **Docker 配置要点：**
 
@@ -112,7 +114,7 @@ docker compose exec mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} icedamericano_m
 ```ini
 innodb_buffer_pool_size=512M            # 生产建议为物理内存 50%-70%
 innodb_flush_log_at_trx_commit=2        # 性能优先（1=最安全，2=性能好）
-max_connections=500                     # 预留给 12 个微服务的连接池
+max_connections=500                     # 预留给 15 个微服务的连接池
 binlog_format=ROW                       # 为 Canal CDC 主从同步准备
 slow_query_log=1                         # 慢查询监控
 ```
@@ -121,10 +123,10 @@ slow_query_log=1                         # 慢查询监控
 
 ```bash
 # 自动执行 (Docker 首次启动)
-# database/Initialize.sql → /docker-entrypoint-initdb.d/01-init.sql
-# 手动执行迁移:
-docker compose exec mysql mysql -u root -p icedamericano_mall < database/migrations/V1.1__add_points.sql
-# ... 按版本号顺序执行
+# database/Initialize.sql → /docker-entrypoint-initdb.d/01-init.sql（全量最新快照，40 张表，一次装库到位）
+# 存量库升级（新装库跳过，按版本号顺序执行全部 28 个文件至 V5.4；文件名三段式版本号）:
+docker compose exec mysql mysql -u root -p icedamericano_mall < database/migrations/V1.1.2__add_points.sql
+# 示例：原 V1.1__add_points.sql 已重命名去重为 V1.1.2__add_points.sql
 ```
 
 **分布式扩展：**
@@ -182,7 +184,7 @@ AOF (增量):    每秒 fsync 一次 (everysec)，rewrite 触发: 增长 100% �
 
 ### 4.3 Nacos 2.4（注册中心 + 配置中心）
 
-**为什么需要：** 12 个微服务的服务发现、健康检查、配置热更新
+**为什么需要：** 15 个微服务的服务发现、健康检查、配置热更新
 
 **Docker 配置要点：**
 
@@ -381,9 +383,9 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
 
 ---
 
-### 5.2 阿里云短信（user-service）
+### 5.2 阿里云短信（verification-service → notification-service 投递链）
 
-> ⚠️ **能力已收口 verification-service**（ADR-016）：user-service 侧直连短信的发码代码引用已删（本节 yml 键位暂保留）；签名/模板/AccessKey 现由 verification-service → notification-service 投递链路使用。
+> ⚠️ **能力已收口 verification-service**（ADR-016；2026-10 后 user-service `/api/user/code` 端点已整体下线）：各调用方侧直连短信的发码代码引用已删（本节 yml 键位暂保留）；签名/模板/AccessKey 现由 verification-service → notification-service 投递链路使用。
 
 **注册步骤：**
 
@@ -405,9 +407,9 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
 
 ---
 
-### 5.3 极验人机验证（user-service）
+### 5.3 极验人机验证（verification-service 收口）
 
-> ⚠️ **能力已收口 verification-service**（ADR-016）：user-service 侧直连极验的代码引用已删（本节 yml 键位暂保留）；人机验证四要素由调用方透传 verification-service 裁决（authorization-service / user-service 同一模式）。
+> ⚠️ **能力已收口 verification-service**（ADR-016；2026-10 边界重构后为唯一出口）：各调用方侧直连极验的代码引用已删（本节 yml 键位暂保留）；人机验证由调用方以厂商中立参数集（`provider` + `params`，GEETEST 时 key 为四要素）透传 verification-service 裁决。
 
 **注册步骤：**
 
@@ -454,21 +456,26 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
 
 **部署**：Docker Compose 一键启动 Langfuse（`docker compose --profile observability up langfuse`）
 
-#### 5.4.4 RAG 组件配置（V2.5）
+#### 5.4.4 RAG 知识库向量链路（2026-10 接线，T14）
 
-| 组件 | 配置方式 | 说明 |
-|------|---------|------|
-| ES 向量索引 | `spring.elasticsearch.*` | 复用已有 ES，`dense_vector` 字段 dims=1536 |
-| BGE-Reranker | Docker 独立服务 | `bge-reranker-v2-base`, FastAPI + sentence-transformers, ~200MB 显存 |
-| Embedding (API) | `spring.ai.openai.embedding.*` | DeepSeek Embedding API，模型 `text-embedding-3-small`，1536维 |
+> 默认全关闭 = 与接线前现状一致；任一环节未就绪仅降级（fail-open），不阻断知识库 CRUD 与客服应答。链路与向量索引归属见 02-Architecture §3.4。
 
-**V3.0 迁移到 Milvus**：配置 `spring.ai.vectorstore.milvus.*`（host/port/collection），Milvus 容器通过 `docker compose --profile ai up milvus` 启动。
+| 配置项 | 服务 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `ai.rag.enabled` | ai-service | `false`（环境变量 `AI_RAG_ENABLED`） | 知识库 RAG 总开关：开启后知识库增删改经 Feign 同步向量索引 + 客服应答带 `sellerId` 时检索注入 prompt |
+| `ai.rag.top-k` | ai-service | `5` | 检索送入 LLM 的上下文条数 |
+| `ai.rag.reranker.enabled` / `base-url` | ai-service | `false` / `http://localhost:8001` | BGE-reranker（V3.0 Docker 部署后再开启） |
+| `ai.http.connect-timeout` / `ai.http.read-timeout` | ai-service | `2s` / `10s` | 出站 HTTP 超时（Embedding / Reranker 共用 RestClient，`AiRestClientConfig`） |
+| `search.embedding.*` | search-service | `enabled=false`（`RAG_EMBEDDING_ENABLED`）等 | OpenAI 兼容 Embedding API：`base-url`（`RAG_EMBEDDING_BASE_URL`）、`path=/embeddings`、`model`（`RAG_EMBEDDING_MODEL`，默认 `text-embedding-3-small`）、`api-key`（`RAG_EMBEDDING_API_KEY`）、`dims`（`RAG_EMBEDDING_DIMS`，默认 1536，**dense_vector dims 的唯一来源**）；未配置（enabled=false 或 api-key 空）= 摄取端点返回 0（不报错，等价「向量链路未接入」） |
+| `search.knowledge-vector.*` | search-service | `index-name=knowledge_vectors` / `default-top-k=5` / `max-chunks=50` | 知识库向量索引（索引归 search-service ES 域）：物理索引名、缺省 topK 兜底、单条知识最大 chunk 数 |
+
+**启用顺序（ES/Embedding 就绪后）**：① search-service 配 `RAG_EMBEDDING_*` 并确认 ES 可达 → ② ai-service 置 `AI_RAG_ENABLED=true` → ③ 知识库增删改触发摄取（成功后回填 `embedding_id=es:{knowledgeId}`）→ ④ 客服应答检索注入。**V3.0 迁移到 Milvus**（前瞻）：`spring.ai.vectorstore.milvus.*`（host/port/collection），容器 `docker compose --profile ai up milvus`。
 
 #### 5.4.5 RestClient（V3.2）
 
 **Bean 定义**: `ia-common/.../JsonConfig.restClient()` — 全局 RestClient Bean（Spring Boot 3.2+ 标准）。
 **使用者**: `EmbeddingService` (DeepSeek Embedding API)、`RAGRetriever` (ES 向量搜索)、`RerankerService` (BGE-reranker)。
-**超时配置**: 默认无超时限制，如需配置注入 `RestClient.Builder.requestFactory()` 自定义。
+**超时配置**: ai-service 出站 RestClient 经 `AiRestClientConfig` 施加 `ai.http.connect-timeout`(2s) / `ai.http.read-timeout`(10s)（见 §5.4.4）；其他使用者如需超时注入 `RestClient.Builder.requestFactory()` 自定义。
 **说明**: 已完全替代 RestTemplate，项目中不再使用 `new RestTemplate()`。
 
 ---
@@ -567,12 +574,20 @@ ia-common `CryptoKeyConfig`（自动装配）为全部启用 PII 三字段模型
 | `search.elasticsearch.enabled=true` | ES 全文检索（关闭 → DB LIKE）              |
 | `rabbitmq.enabled=true`             | MQ 异步事件（关闭 → Feign 同步）             |
 | `xxl.job.enabled=true`              | XXL-Job 调度（关闭 → @Scheduled）        |
-| `sentinel.enabled=true`             | Sentinel 限流熔断（关闭 → @RateLimit AOP） |
+| `spring.cloud.sentinel.enabled`（trade-service，yml 已置 `true`） | Sentinel 下单入口流控/熔断（规则由 `SentinelConfig` 注册、**已生效**，ADR-028；**Dashboard 默认关**；键名写错会静默不加载）；其余服务走 resilience4j Feign 熔断（ADR-022） |
 | `minio.enabled=true`                | MinIO 真实存储（关闭 → Mock 占位 URL）       |
 | `ai.enabled=true`                   | Spring AI Agent（关闭 → 降级提示）         |
+| `ai.rag.enabled=true`（`AI_RAG_ENABLED`） | 知识库 RAG 向量链路（ai-service；默认 false=现状；配置见 §5.4.4） |
+| `RAG_EMBEDDING_ENABLED=true`（+ `RAG_EMBEDDING_BASE_URL/MODEL/API_KEY`） | search-service 侧 Embedding 摄取（默认关闭：摄取端点返回 0 降级；配置见 §5.4.4） |
 | `seata.enabled=true`                | Seata 分布式事务（关闭 → 手动 Saga）          |
-| `websocket.enabled=true`            | WebSocket 实时推送                     |
+| ~~`websocket.enabled`~~（已移除）      | 原网关 WebSocket 实时推送开关——**组件已删除（2026-10，能力未采用）**；IM 实时通道由 ai-service STOMP `/ws/chat` 承载 |
 | `AUTH_LEGACY_MIGRATION_ENABLED=true`（yml: `auth.legacy-migration.enabled`） | authorization-service 启动时执行一次存量凭证/PII 迁移（见 §6.5；默认 false，迁移完成后置回 false） |
+
+### 7.3 网关关键配置项（2026-10 增量）
+
+| 配置键 | 服务 | 默认值 | 说明 |
+| ------------------------------ | ---------- | ------------- | ---------------------------------------- |
+| `gateway.ws.token-paths`       | gateway    | `/ws/chat/**` | WS 握手 query token 换头路径（[ADR-026](../adr/026-ws-handshake-query-token-edge-swap.md)）：命中路径、且入站无 `Authorization`、且 query 含非空 `token` 时，换写 `Authorization: Bearer` 并**剔出该参数**（令牌不落下游）；配成宽泛模式（如 `/**`）会把任意接口的 `token` 参数当令牌，由配置评审与默认值约束；前端 SockJS/STOMP 每个传输请求 URL 需带 `?token=<accessToken>` |
 
 ---
 
@@ -582,14 +597,14 @@ ia-common `CryptoKeyConfig`（自动装配）为全部启用 PII 三字段模型
 Step 1  cp .env.example .env && 编辑密码
 Step 2  docker compose up -d                      → MySQL + Redis + Nacos
 Step 3  docker compose ps (确认全部 healthy)
-Step 4  docker compose exec mysql mysql ... < database/Initialize.sql           → 11 张业务表
+Step 4  docker compose exec mysql mysql ... < database/Initialize.sql           → 40 张业务表（全量最新快照，一次装库到位）
 Step 5  docker compose exec mysql mysql ... < database/middleware/nacos-mysql.sql  → Nacos 12 张表
-Step 6  执行 database/migrations/V*.sql             → 按版本顺序迁移
+Step 6  仅存量库升级：按版本顺序执行 database/migrations/V*.sql（V1.1.0 → V5.4；新装库跳过——Initialize.sql 已是全量）
 Step 7  docker compose --profile v1.1 up -d        → ES + MQ + XXL-Job + MinIO
 Step 8  docker compose exec mysql mysql ... < database/middleware/xxl-job-mysql.sql → XXL-Job 7 张表
 Step 9  mvn -f Implementation/back-end/pom.xml clean install -DskipTests
 Step 10 按顺序启动微服务 (gateway/auth/user/item/cart/trade/pay/...)
-Step 11 访问 http://localhost:8848/nacos           → 确认 12 个服务已注册
+Step 11 访问 http://localhost:8848/nacos           → 确认 15 个服务已注册
 Step 12 配置第三方平台密钥 (.env) + 开启功能开关 (application.yml)
 Step 13 测试: POST /api/auth/login → 获取 Token → 调用各接口
 ```

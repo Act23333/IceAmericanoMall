@@ -29,7 +29,7 @@ ADR-007 为 verification-service 定下了「安全优先 fail-closed」的降�
 补充约束：
 
 1. **全量覆盖**：15 个 Client 全部声明 `fallbackFactory`，并统一补 `contextId`（同名服务多 Client 必须区分，否则 `IllegalStateException: Multiple Feign Clients with the same name`）。
-2. **不全局开启熔断**：`fallbackFactory` 只在服务自行打开 `spring.cloud.openfeign.circuitbreaker.enabled=true` 时生效。是否启用熔断是各服务对下游可用性容忍度的运行时决策，ia-api 只声明契约侧语义，不替服务决定（当前仅 authorization-service 开启）。
+2. **不全局开启熔断**：`fallbackFactory` 只在服务自行打开 `spring.cloud.openfeign.circuitbreaker.enabled=true` 时生效。是否启用熔断是各服务对下游可用性容忍度的运行时决策，ia-api 只声明契约侧语义，不替服务决定（**发布时**仅 authorization-service 开启；2026-10-03 已扩至 8 服务，见文末补记与 [ADR-022](./022-feign-circuitbreaker-enablement-marketing-ai.md)）。
 3. **降级日志为 ERROR 级**：降级是可观测性事件，WARN 不足以触发告警；日志须带可定位的业务键且禁止打印完整手机号 / 邮箱。
 4. **Bean 扫描前提**：启用熔断的服务必须把 `org.icedamericanomall.fallback` 纳入 `scanBasePackages`，否则启动期报 `No fallback instance of type ... found`。
 
@@ -45,9 +45,13 @@ ADR-007 为 verification-service 定下了「安全优先 fail-closed」的降�
 
 - ✅ 15/15 Client 具备降级实现且语义显式化；`package-info` 内维护「逐 Client 降级语义速查表」作为单一事实来源
 - ✅ 修复 3 处「静默成功即数据不一致」的潜在事故（超卖 / 钱货两空 / 重复下单）与 3 处错误信息污染
-- ✅ 本轮为**纯声明式变更**：未开启熔断的服务行为完全不变（仓内仅 authorization-service 开启，且它只使用原已挂载的 3 个 Client）
+- ✅ 本轮为**纯声明式变更**：未开启熔断的服务行为完全不变（**发布时**仓内仅 authorization-service 开启，且它只使用原已挂载的 3 个 Client；2026-10-03 状态见补记）
 - ⚠️ 启用熔断的服务若漏配 `scanBasePackages` 会启动失败（属 fail-fast，已在 package-info 与各 Client Javadoc 标注）
 - ⚠️ 未做实机熔断验证（需先开启 circuitbreaker），建议后续在 authorization-service 上以 Chaos 方式验证降级路径
+
+## 补记（2026-10-03）
+
+「当前仅 authorization-service 开启熔断」的事实陈述已于 2026-10-03 过期。经三轮修复（含 [ADR-022](./022-feign-circuitbreaker-enablement-marketing-ai.md)）后，**已开启 `spring.cloud.openfeign.circuitbreaker.enabled=true` 的服务清单为：authorization / user / merchant / verification / marketing / ai / pay / logistics（8 个）**，统一参数口径 TimeLimiter 5s + 失败率阈值 50%。trade-service 维持 `feign.sentinel.enabled`（其 SentinelConfig 属性键不匹配、规则从未注册——降级可用、熔断参数未生效）。
 
 ## 日期
 

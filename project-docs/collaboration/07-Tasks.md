@@ -1,6 +1,7 @@
 # 07 — 任务分解文档
 
 > 来源：`doc/项目的分析流程/IcedAmericanoMall的MVP.md`、`doc/IDEA.md`、`doc/项目的分析流程/01.用户需求捕获.md`
+> 最后更新: 2026-10-03（§八 追加遗留风险清零批次交付记录：WS 握手鉴权/黑名单写入/Sentinel 修复/渠道回调协议/RAG 接线/审计双管道/种子脚本重写/契约收口，ADR-026~029 + ADR-032；§七 V4.0 DDD 架构升级块补状态标注；§八 追加工具类收口批次交付记录：账号掩码归并/网关 IP 解析器更名消歧/MetaObjectHandler 8→1/SecurityHeaders 常量化/PageDTO 删除，ADR-034 + ADR-030）
 > 归属域: collaboration | Owner: doc-engineer | 更新触发条件: 任务状态变化时
 
 ---
@@ -203,7 +204,7 @@ Scenario: 注册幂等保护
 Scenario: 获取个人信息
   Given 持有有效 JWT
   When GET /api/user/info
-  Then 返回昵称、头像、手机号（脱敏）、余额
+  Then 返回昵称、头像、手机号（脱敏）（余额经 `GET /api/wallet` 单独获取）
 
 Scenario: 新增收货地址
   Given 持有有效 JWT
@@ -213,18 +214,18 @@ Scenario: 新增收货地址
 
 Scenario: 每日签到
   Given 今天尚未签到
-  When POST /api/user/sign
+  When POST /api/sign
   Then 返回签到成功 + 获得积分数
   And 连续签到 N 天，积分递增
 
 Scenario: 重复签到的幂等保护
   Given 今天已签到
-  When POST /api/user/sign
+  When POST /api/sign
   Then 返回 "今日已签到"
 
 Scenario: 接口限流
   Given 同一 IP 1 秒内请求获取验证码接口超过 3 次
-  When 第 4 次 POST /api/user/sms-code
+  When 第 4 次 POST /api/verification/codes
   Then 返回 429 "请求过于频繁"
 ```
 
@@ -390,7 +391,7 @@ Scenario: 查看商品详情
 
 - [x] T5.1 Docker Compose 增强（+ES/RabbitMQ/XXL-Job/MinIO profile）
 - [x] T5.2 XXL-Job 集成（XxlJobConfig + @XxlJob + @Scheduled 双模）
-- [x] T5.6 RabbitMQ 集成（DomainEvent 4 类 + RabbitMqConfig + EventPublisher + 消费者）
+- [x] T5.6 RabbitMQ 集成（DomainEvent 4 类 + RabbitMqConfig + EventPublisher + 消费者）→ **V4.0 起 RocketMQ 全面替代，RabbitMqConfig 已移除**（现役事件类：`OrderCreatedEvent` / `OrderShippedEvent`，见 03-Domain-Model §八）
 - [x] T5.7 Sentinel 集成（Gateway + Trade 限流熔断规则）
 - [x] T5.8 MinIO 集成（StorageClient + MinioStorageClient + MockStorageClient）
 - [x] T5.9 GitHub Actions CI/CD（ci.yml: build → test → package）
@@ -399,11 +400,13 @@ Scenario: 查看商品详情
 
 ## 四、V1.2 详细任务 — 运营工具 + AI助手
 
-### T1.2-V1.2 WebSocket 实时推送
+### T1.2-V1.2 WebSocket 实时推送 🗑️ 已删除（2026-10）
 
-- [x] WebSocketConfig + WebSocketNotifyController
-- [x] OrderStatusChangedEvent 领域事件
-- [x] @ConditionalOnProperty(websocket.enabled=true)
+> gateway-service 的 `WebSocketConfig` + `WebSocketNotifyController` 与 `OrderStatusChangedEvent` 领域事件已删除（能力未采用）。实时通道现状：IM 由 ai-service STOMP `/ws/chat` 承载；站内信由 notification-service 落库触达。
+
+- [x] ~~WebSocketConfig + WebSocketNotifyController~~ → 已删除（gateway-service）
+- [x] ~~OrderStatusChangedEvent 领域事件~~ → 已删除（全仓无该类）
+- [x] ~~@ConditionalOnProperty(websocket.enabled=true)~~ → 开关已移除
 
 ### T2.1-V1.2 首页装修
 
@@ -421,10 +424,13 @@ Scenario: 查看商品详情
 
 - [x] AdminController: GET /api/trade/admin/stats/trend（30天订单趋势）
 
-### T3.2-V1.2 操作日志
+### T3.2-V1.2 操作日志 📌 AOP 写入侧已删除（2026-10）
 
-- [x] operation_log 表 + @OperationLog 注解 + OperationLogAspect（AOP 自动记录）
-- [x] AdminLogController: GET /api/admin/log
+> `@OperationLog` 注解 + `OperationLogAspect` 已删除（**能力未采用**：`operation_log` 表已无写入方）。表保留（deprecated 历史数据），`GET /api/admin/log` 查询端点保留可读历史。
+
+- [x] operation_log 表（保留，无新增写入）
+- [x] ~~@OperationLog 注解 + OperationLogAspect（AOP 自动记录）~~ → 已删除
+- [x] AdminLogController: GET /api/admin/log（保留，读历史）
 
 ### T6-V1.2 AI商品助手
 
@@ -440,11 +446,13 @@ Scenario: 查看商品详情
 
 ## 五、V2.0 详细任务 — 平台化
 
-### T3.2-V2.0 商家入驻流程
+### T3.2-V2.0 商家入驻流程 🗑️ 已退役（2026-10 第六轮边界重构）
 
-- [x] seller_application 表 + SellerApplicationEntity/Mapper
-- [x] SellerApplicationController（POST /api/seller/apply + GET 查询）
-- [x] AdminApplicationController（审核列表 + 通过/拒绝）
+> trade-service 平行入驻流程整体退役删除（SellerApplicationController / AdminApplicationController / ApplicationService / SellerApplicationEntity / Mapper），原因：与商家域入驻流程平行重复，且网关 `/api/seller/**`、`/api/admin/**` 均路由不到 trade（早已不可达）。`seller_application` 表保留在库作数据备份；现行入驻/审核归 merchant-service（`POST /api/seller/apply`、`GET /api/admin/seller/pending`、`PUT /api/admin/seller/{id}/approve`，审批自动授予 ROLE_SELLER）。
+
+- [x] seller_application 表 + SellerApplicationEntity/Mapper（已退役，表保留）
+- [x] SellerApplicationController（POST /api/seller/apply + GET 查询）（已退役）
+- [x] AdminApplicationController（审核列表 + 通过/拒绝）（已退役）
 
 ### T3.2-V2.0 售后系统
 
@@ -583,16 +591,18 @@ Scenario: 查看商品详情
 - **事务表补偿替代 Seata** (V4.2): Saga + MQ + 本地事务表 → 去 Seata 组件
 - **PG 替代 MySQL** (V4.1): PG 完全兼容 MySQL 语法(MyBatis-Plus PG 方言) → 去 MySQL 组件
 
-### V4.0 — DDD 架构升级 🔵
+### V4.0 — DDD 架构升级 ✅ 已交付（2026-10 边界重构与 ADR-023/025 收口，部分口径被取代）
 
-> **现状**: 仅 trade-service(3)/pay-service(2) 有 Manager 层。其余 7 模块采用三层(Controller→Service→Mapper)。
-> **目标**: 全模块统一四层 DDD (Controller→Manager→Service→Mapper)，符合 CLAUDE.md 规范。
+> **现状**: 仅 trade-service(3)/pay-service(2) 有 Manager 层。其余 7 模块采用三层(Controller→Service→Mapper)。 —— ✅ 已取代（现状已翻转为两种形态并存：四层 DDD 服务 `app/*Manager` 全量落地，trade 编排层为 `manager/`，轻量 COLA 服务保持 `app/`+经典目录）
+> **目标**: 全模块统一四层 DDD (Controller→Manager→Service→Mapper)，符合 CLAUDE.md 规范。 —— ✅ 已取代（「全模块统一四层」经 ADR-025 修正为「两种形态并存定稿，轻量 COLA 服务不做跨形态迁移」）
 
-- **user-service**: 31处Controller→Mapper/Redis → Manager层补齐 + UserManager/SignManager 拆分
-- **item-service**: ProductDetailController→Mapper → ProductService 封装
-- **ai-service**: 8处Controller→Redis/Mapper → AIManager 编排层
-- **cart/auth/logistics/search/marketing**: 各模块 Manager 层新建
-- **Service→Feign**: 7模块 Feign调用上移到 Manager 层
+- **user-service**: 31处Controller→Mapper/Redis → Manager层补齐 + UserManager/SignManager 拆分 —— ✅ 已交付（ADR-016/017 四层 DDD；UserManager 经 ADR-025 拆为 UserQuery/UserAdmin/UserProvisionManager；签到域于 2026-10 ③ 轮迁 marketing-service）
+- **item-service**: ProductDetailController→Mapper → ProductService 封装 —— ✅ 已交付（轻量 COLA 收口：控制器归位 `adapter/web/ProductController` 等，`app/ReviewManager` 编排层落地）
+- **ai-service**: 8处Controller→Redis/Mapper → AIManager 编排层 —— ✅ 已交付（`app/AiManager`；聊天/知识库 Manager 随 2026-10 ④ 轮并入客服域）
+- **cart/auth/logistics/search/marketing**: 各模块 Manager 层新建 —— ✅ 已交付（cart `CartManager` / auth `AuthManager`+`app/rbac/*` / logistics `LogisticsManager` / marketing `MarketingManager`+`SignManager`）；其中 search-service —— ✅ 已取代（ADR-025 明确维持轻量形态，不建编排层）
+- **Service→Feign**: 7模块 Feign调用上移到 Manager 层 —— ✅ 已交付（Feign 调用已收敛至编排层，并固化进 `09-constraints.md` 硬约束）
+
+> **本计划已于 2026-10 边界重构与 ADR-023/025 落地取代，现状见 [02-Architecture §4](../backend/02-Architecture.md)。**
 
 ### V4.0 — 大数据全链路学习 🔵
 
@@ -647,7 +657,7 @@ Scenario: 查看商品详情
 - **结构化SKU**: `sku_spec_dimension`/`sku_spec_option` 表 + spec_json 替换 spec 字符串
 - **原价/到手价**: sku 增加 `original_price`，到手价=price-original_price
 - **立即购买**: `POST /api/trade/order/direct { skuId, quantity, addressId }`
-- **关注商家**: `store_follow` 表 + `/api/shop/follow/{sellerId}`
+- **关注商家**: Redis Set 关注关系（`shop:followers:{sellerId}` / `user:follow:shops:{userId}`，2026-10 第六轮归 merchant-service；无 MySQL 表）+ `/api/shop/follow/{sellerId}`
 - **评论增强**: media_urls(JSON)替代 images 字符串，增加 helpful_count，筛选端点
 - **评论摘要**: 均分+星级分布+总评数，`GET /api/item/review/product/{id}/summary`
 - **购物车分组**: `GET /api/cart/grouped` 按 seller 分组
@@ -706,6 +716,18 @@ Scenario: 查看商品详情
 ---
 
 ## 八、当前进度摘要
+
+> **2026-10-03 交付记录（结构规范化 + 数据库整治 + 商家/店铺 1:N 拆分）**：①**结构规范化（T8）**——全部 15 个业务服务 + 3 个共享模块（共 18 Maven 模块）的 adapter 层按受众统一（`web`/`admin`/`internal` + `request`/`response`/`convert`，ADR-023），轻量 COLA 服务的 Web 契约类迁出 `domain/`（domain 包删除、实体顶层 `entity/`），并清理死代码（FieldPermission/OperationLog 两套 AOP、3 个零调用 Lua 脚本、gateway 废弃配置类）；②**数据库整治（T0）**——`Initialize.sql` 重建为全量最新快照（40 表）、28 个迁移重命名去重（12 个三段式版本号）、RBAC 种子幂等；③**商家/店铺 1:N 拆分（ADR-019）**——`seller` 瘦身为身份+生命周期、新增 `shop` 表、默认店铺兼容解析、网关 `/api/shops/**` 补挂。附带 P0/P1 修复：SKU 原子扣减（ADR-020）、购物车读时回填（ADR-021）、Feign 熔断扩至 8 服务（ADR-022）、分布式锁归并 ia-common（ADR-024）、网关限流/黑名单/白名单方法级收紧、`/internal/**` 异常返回真实 HTTP 状态码（ADR-004 修订）。全仓 590 项测试 0 失败。
+
+> **2026-10-03 交付记录（方案 2 结构收口，[ADR-025](../adr/025-domain-aggregate-packaging-and-app-usecase-granularity.md)）**：四层 DDD 服务 `domain/model` 按聚合分包（authorization `userauth`+`rbac`、user `user`/`address`/`favorite`、merchant `merchant`/`shop`、notification `inapp`+`channel`；单聚合平铺、跨族共享值对象留根、聚合私有枚举下沉——例外条款见 ADR-025）+ `app` 层 Manager 按用例族收敛（user `UserManager` → `UserQueryManager`/`UserAdminManager`/`UserProvisionManager`；notification `NotificationManager` → `ChannelDispatchManager`/`InAppMessageManager`；marketing `CouponService` → `CouponClaimService`/`CouponUsageService`）。HTTP 契约零变化，590 项测试保持 0 失败。
+
+> **2026-10-03 交付记录（遗留风险清零批次，[ADR-026](../adr/026-ws-handshake-query-token-edge-swap.md)~[ADR-029](../adr/029-channel-callback-protocol-over-result-envelope.md) + [ADR-032](../adr/032-operation-audit-dual-pipeline.md)）**：①**WS 握手鉴权（ADR-026）**——网关新增 `WsHandshakeTokenFilter`（WebFilter，order -900）：握手 query `token` 换写 `Authorization: Bearer` 并剔出参数（不落下游），`/ws/chat/**` 维持 `authenticated()`，实时客服通道恢复可用；②**jti 黑名单写侧（ADR-027）**——authorization-service 登出/重置密码写 `auth:blacklist:{jti}`（TTL=max(剩余有效期,1s)，fail-open；契约键 auth 写/网关只读），网关 `JwtBlacklistFilter` 读侧从死代码变为有效防线；③**trade Sentinel 接线修复（ADR-028）**——激活键对齐 `spring.cloud.sentinel.enabled`（此前写错导致规则静默不注册），`createOrder` flow QPS 100 + 异常比例 0.5 规则生效，blockHandler 抛 `FREQUENT_ERROR`(429)，Dashboard 保持默认关；④**渠道回调协议（ADR-029）**——微信 v3 裸 JSON（成功 200 + `SUCCESS`；失败 500 + `FAIL` 触发重推；幂等命中仍 SUCCESS）、支付宝裸串 `success`，契约面由 05 文档同步；⑤**RAG 接线（T14）**——`ai.rag.enabled` 渐进启用：知识库 CRUD → Feign 向量摄取（search-service 分块 + Embedding → 索引 `knowledge_vectors`）→ 客服应答 `RAGRetriever` topK 注入，全链路 fail-open（默认关闭=现状）；⑥**审计双管道（ADR-032）**——`@OperationLog` + 切面恢复（JSON→`AUDIT` logger，`AutoConfiguration.imports` 全服务装配；12 个管理端写端点已铺设注解）+ user 域 `operation_log` 显式落库恢复（`AdminLogController` 查询范围收窄为 user 域）；⑦**开发种子脚本重写（T12）**——`database/seed-data.js` 适配 V5.2/V5.4 schema（PII 三字段 + user_auth 凭证 + seller/shop），种子账号密码统一 `Dev123456`（替换不可登录占位；**未实跑**），`fix-comments.js` 已删除；⑧**契约收口**——`WithdrawalVO` 提现账号商家端脱敏/管理端明文（落 12-Security-Model §6.4）、`userCouponIds` 删除（多券待 PRD）、`AddressResp.updateTime` 删除、售后 type 1/2 校验。遗留验证项（按 ADR 记录）：登出后旧 access token 端到端 401 验证、RAG 全链路联调、seed 脚本实跑。
+
+> **2026-10-03 交付记录（工具类收口批次，[ADR-034](../adr/034-cross-module-utility-consolidation-and-boundaries.md) + [ADR-030](../adr/030-metaobjecthandler-consolidation-autoconfig.md)）**：①**账号掩码归并（ADR-034）**——trade 本地 `SensitiveMaskUtil` 删除，账号掩码规则上提 ia-common `DesensitizeUtil.maskAccount`（≤4 全遮 / >4 保留末 4 位，规则由 ia-common 单测锁定；trade MapStruct 表达式改指本类），ai-service `ContentSafetyFilter` 手机号掩码改调 `DesensitizeUtil.maskPhone`（maskPhone/maskEmail 签名零改动）；②**网关 IP 解析器更名消歧（ADR-034）**——`ClientIpUtil` → `EdgePeerIpResolver`（边缘 TCP 对端口径，绝不信任 XFF 等代理头；与 ia-common `IpUtil`「下游信任边缘注入头」两处 Javadoc 双向互链、明示不可合并理由；`IpUtil` 代理头回落分支复核为**非死代码**——dev 直连/解析失败兜底仍命中，已注释保留）；③**MetaObjectHandler 8→1 收口（ADR-030）**——ia-common 新增 `AuditFieldMetaObjectHandler`（`MyMetaObjectHandlerAutoConfiguration` 自动装配：`@ConditionalOnClass` 守卫 + `@ConditionalOnMissingBean` 退避，注册 `AutoConfiguration.imports`），cart/item/logistics/merchant/pay/search/trade 七份副本删除；user-service 因额外填充 `registerTime` 保留自有实现（退避共存）；authorization/marketing/notification/wallet/ai 五服务首次获得应用侧真实填充（口径统一，非 HTTP 契约变化）；④**头名常量化（ADR-034）**——ia-common 新增 `SecurityHeaders`（14 个可信上下文头/代理头名称，含可信/可伪造/追踪三类信任边界注释），替换 ia-common/ia-api/gateway/ai-service 8 个文件的字面量（值逐字不变，HTTP 契约零变化）；⑤**`PageDTO` 删除**——ia-common 零调用类清理（与 notification `PageResult` 的层级差异登记见 ADR-034）。相关模块测试全绿（clean run 记录见 ADR-034/030）；HTTP 契约零变化。
+
+> **2026-10-03 交付记录（多粒度令牌吊销，[ADR-031](../adr/031-multi-granularity-token-revocation.md)，修订 [ADR-027](../adr/027-jwt-blacklist-writer-and-contract-key.md)）**：①**tokenVer 用户级版本（T19）**——access token 新增 `ver` claim（登录与 refresh 换发走同一签发链路，均写入当前 `auth:tokenver:{userId}` 版本；键缺失 / 无 claim 均按 0，存量令牌零迁移）；②**网关合并校验**——`JwtBlacklistFilter`（order -700，类名保留）一次 MGET 合并 `auth:blacklist:{jti}` + `auth:tokenver:{userId}`：黑名单命中或版本不一致 → 401，版本键缺失跳过比对，fail-open 与「每请求一次 Redis 往返」口径不变；③**触发点重排**——登出=jti 黑名单（**不变**）；改密/重置密码=版本 INCR + 全端拆 refresh 会话（替换「拉黑当前请求令牌」）；管理端禁用=user-service `UserAdminManager` 经 `AuthContextClient.revokeUserTokens` → `POST /internal/auth/token-version/revoke`（版本 INCR + 全端拆会话；调用在本地事务之后、降级 fail-open）；④**契约键**——`auth:tokenver:{userId}` 与 `user:info:` / `user:perms:` / `auth:blacklist:` 同级豁免（auth 写 / 网关只读，**不设 TTL**——过期会复活已吊销令牌），豁免清单落 09-constraints §四。**ADR-027 两项残余风险（改密后其他设备存活、管理端禁用不拆会话）关闭**；相关模块测试全绿。遗留验证项（按 ADR-031 记录）：改密/禁用后旧 access token 端到端 401 未实机验证。
+
+> **2026-10-03 交付记录（P0 四项资金/履约批次，[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)/[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)/[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：①**退款资金流（F1，ADR-035）**——售后审核同意触发三通道原路退回（BALANCE 退钱包+流水 / WECHAT v3 退款+异步回调 / ALIPAY mock 同步），`refund_order`（V5.5）`uk_after_sale` 幂等锚点、`refund_no` 贯穿渠道幂等键与钱包流水号，退款成功经 I42 条件回写激活 `REFUNDED(5)` 死状态；wallet-service 首次具备流水能力（`wallet_transaction`，幂等键 `transaction_no`，入账与流水同事务）；②**渠道对账（F4，ADR-036）**——日终账单比对四态差异（匹配/渠道多/本地多/金额不一致）只落库记录不调账，`uk_date_channel` + 先删后写幂等，日终 XXL-Job dev 默认关；③**运费模型（F2，ADR-037）**——`freight_template` + `product.freight_template_id` + `orders.post_fee`（V5.6），**金额不变式升级 V2：`payAmount = totalAmount − discountAmount + postFee`**（`totalAmount` 仍 = Σ subTotal，运费不进商品小计），Phase 1 同单取最高费率模板计一次 + 满额包邮阈值，秒杀单免邮，I43 模板查询 fail-closed（不降级为免邮）；④**拆单发货（F3，ADR-037）**——`order_logistics` 改代理主键 `id` + `package_no`（`uk_order_package`，`order_id` 转 1:N 外键，T0「主键约定偏差」消除），`order_item.package_no` 发货标记，部分发货停留待发货、全部发货转待收货（不新增订单状态）；⑤**退款触发纠正（ADR-037）**——仅退款（type=2）审核同意即触发，退货退款（type=1）在商家确认收到退货（`confirm-return`，APPROVED→RETURNED）后触发，I42 回写来源扩展为 APPROVED|RETURNED → REFUNDED。数据库 45 表 / 30 迁移（V1.1.0→V5.6）；测试全量通过（最终计数以主控构建校准为准）。遗留验证项（按 ADR-036 记录）：真实渠道账单解析未做端到端验证。
 
 ### 版本完成状态
 

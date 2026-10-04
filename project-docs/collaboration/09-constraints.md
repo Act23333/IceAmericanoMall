@@ -20,9 +20,9 @@
 | MapStruct | **1.5.5.Final** | Lombok 必须在 processor path 中先于 MapStruct |
 | Lombok | **1.18.42** | scope=provided，子模块需显式声明 |
 | JJWT | **0.13.0** | |
-| Redisson | **3.26.0** | 分布式锁在 `authorization-service`（登录并发控制），非 ia-common |
-| 微信支付 SDK | **0.2.17** | wechatpay-java，封装在 `ia-common` client 层 |
-| 阿里云短信 SDK | **3.1.0** | dysmsapi20170525，封装在 `ia-common` client 层 |
+| Redisson | **3.26.0** | 分布式锁能力**已归并 ia-common 共享内核**（`common/lock/DistributedLock` + `RedissonDistributedLockAdapter`，`@ConditionalOnClass` 条件装配；[ADR-024](../adr/024-distributed-lock-consolidation-in-ia-common.md)）——调用方 authorization-service（登录/建档）、user-service（幂等建档）按业务键串行查建；服务内重复副本已删，禁止再建副本 |
+| 微信支付 SDK | **0.2.17** | wechatpay-java，封装在 `ia-integration` payment 模块 |
+| 阿里云短信 SDK | **3.1.0** | dysmsapi20170525，封装在 `ia-integration` sms 模块 |
 | ElasticSearch | **7.17.25** | search-service 双实现（ES + MySQL fallback），opt-in via `search.elasticsearch.enabled` |
 
 **子模块版本原则**：所有版本号在父 POM `<dependencyManagement>` 中统一管理，子模块只声明 groupId:artifactId，不加 version。
@@ -31,7 +31,7 @@
 
 | 组件 | 预计版本 | 引入时机 | 替换目标 |
 |------|---------|---------|---------|
-| Sentinel | 与 SCA 绑定 | V1.1 | 补充 `@RateLimit`，增加熔断降级 |
+| Sentinel | 与 SCA 绑定 | V1.1 | 补充 `@RateLimit`，增加熔断降级 —— **trade-service 已落地**（`spring.cloud.sentinel.enabled` 激活键 + `SentinelConfig` 规则注册，[ADR-028](../adr/028-trade-sentinel-wiring-over-resilience4j.md)）；其余服务走 resilience4j Feign 熔断（ADR-022） |
 | Seata | 2.x | V1.1 | 替换手动 Saga 补偿 |
 | XXL-Job | 2.4+ | V1.1 | 替换 `@Scheduled` 定时任务 |
 | SkyWalking | 9.x | V1.1 | 新增，无替换 |
@@ -64,8 +64,9 @@ Controller → Manager → Service → Domain(Service) → Mapper → DB
 ### 2.2 模块依赖约束
 
 ```
-ia-common  ←  所有服务（单向依赖，ia-common 不依赖任何服务）
-ia-api     ←  服务间 Feign 调用（ia-api 只依赖 ia-common）
+ia-common      ← 所有模块（单向依赖，ia-common 不依赖任何业务模块）
+ia-api         ← 服务间 Feign 调用（ia-api 只依赖 ia-common）
+ia-integration ← 需要第三方集成的服务（第三方 SDK 收口；只依赖 ia-common）
 ```
 
 - `ia-common` **不得**依赖任何业务服务模块
@@ -74,11 +75,18 @@ ia-api     ←  服务间 Feign 调用（ia-api 只依赖 ia-common）
 
 ### 2.3 包名与 Bean 注册约束（V5.2）
 
-- 全模块统一基础包 `org.icedamericanomall`；服务实现必须按服务分段：`org.icedamericanomall.<service>`（user/item/cart/trade/pay/logistics/search/ai/marketing/gateway/auth/notification/verification）
+- 全模块统一基础包 `org.icedamericanomall`；服务实现必须按服务分段：`org.icedamericanomall.<service>`（user/item/cart/trade/pay/logistics/search/ai/marketing/gateway/auth/notification/verification/wallet/merchant）
 - 共享模块专用段：`ia-common` = `org.icedamericanomall.common`、`ia-integration` = `org.icedamericanomall.integration.*`、`ia-api` = `org.icedamericanomall.{client,config,dto,fallback}`
 - **禁止**在任何模块内创建与其他服务段重名的子包（如非 auth 模块出现 `auth/`——V5.1 迁移期曾因此产生拆分包冲突）
 - 服务启动类必须声明显式 `scanBasePackages`（本服务段 + 实际用到的 `org.icedamericanomall.fallback` / `integration` 子包；不要扫 `org.icedamericanomall.config`，ia-api 的 `DefaultFeignConfig` 仅由需要的服务显式 import）
 - ia-integration 第三方客户端注册"**AutoConfiguration.imports 或组件扫描二选一**"：同一组 Bean 只允许一个来源；imports 条目的 FQCN 必须与真实类路径逐字一致（大小写敏感，jar/Docker 形态下错误条目会启动失败）
+- **审计字段填充器（`MetaObjectHandler`）已归并 ia-common 共享内核唯一实现**：`AuditFieldMetaObjectHandler` 经 `MyMetaObjectHandlerAutoConfiguration` 自动装配（`@ConditionalOnClass` 守卫 + `@ConditionalOnMissingBean(MetaObjectHandler.class)` 退避，注册 `AutoConfiguration.imports`；[ADR-030](../adr/030-metaobjecthandler-consolidation-autoconfig.md)）——cart/item/logistics/merchant/pay/search/trade 七份服务内副本已删，**新服务禁止自建填充器副本，除非有特有字段**（user-service 例外：额外填充 `registerTime`，保留自有实现并经退避共存）
+
+### 2.4 adapter 层与契约对象约束（V5.3，[ADR-023](../adr/023-adapter-layer-structure-and-request-object-naming.md)）
+
+- **adapter 子包仅六类**：`web` / `admin` / `internal`（按受众分组）+ `request` / `response` / `assembler`——禁止按聚合/服务名分子包（如 `adapter/seller/`），禁止控制器直接平铺在 `adapter/` 根下（转换器包 2026-10 由 `convert` 更名 `assembler`，见 ADR-038）
+- **入参对象必须为类型化 `XxxReq`**（`@Validated` + 字段校验注解，`adapter/request/`）；**禁止 `@RequestBody Map<String,Object>` 与裸标量 body**（字段拼错不报错、无类型与校验约束）
+- **VO 不得暴露技术字段**：`version` / `cipher` / `hash` / 内部状态列等禁止出参；出参一律为 `adapter/response/` 下强类型 `XxxVO`（面向展示裁剪）
 
 ---
 
@@ -230,10 +238,12 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 | 敏感信息脱敏 | 日志中禁止打印密码/Token/手机号完整值 |
 | 内部接口隔离 | `/internal/**` 路径仅限集群内调用，Gateway 必须拦截外部请求 |
 | 越权防护 | 商家只能操作自己的商品/订单；用户只能操作自己的数据 |
-| CORS | 跨域配置统一在 gate-service，业务服务不配置 CORS |
-| 限流 | 发短信、登录、注册 等接口必须加 `@RateLimit` |
-| 验证码 Redis Key 契约 | `sms:code:{target}`(TTL 5min)、`sms:limit:{target}`(60s)、`email:code:`/`email:limit:` 同构、失败计数 `sms:fail:`/`email:fail:`(30min)。写入方：user-service（过渡期直发）与 verification-service；校验一律经 verification-service（V5.2）。改动前缀/TTL 必须三端同步（守护测试 `verification-service/.../VerificationContractTest` 会红灯） |
+| CORS | 跨域配置统一在 gateway-service，业务服务不配置 CORS |
+| 限流 | 发短信、登录、注册 等接口必须加 `@RateLimit`；限流键含方法维度（`rate:limit:{类.方法}:{业务键}`，V5.3 修正），超限返回 `FREQUENT_ERROR`(429) |
+| 验证码存储（verification-service 私有） | `sms:code:{target}`(TTL 5min)、`sms:limit:`、`email:code:` 等同构键与失败计数为 verification-service **服务私有 Key 空间**，仅该服务读写；签发/校验/消费一律经 `/internal/verification/**` 在线完成（fail-closed）。原「三端同步」要求已随边界重构解除（守护测试 `verification-service/.../VerificationContractTest` 随服务保留） |
+| 服务间状态传递 | ❌ 禁止以共享 Redis Key 作为跨服务契约（原 `sms:code:` 跨服务契约已解除）；跨服务一律走 Feign 在线调用，各服务 Key 空间互不直读。**唯一例外：显式豁免契约键（仅限「auth 写、网关只读」）**——`user:info:{userId}` / `user:perms:{userId}`（ADR-018）、`auth:blacklist:{jti}`（[ADR-027](../adr/027-jwt-blacklist-writer-and-contract-key.md)，TTL=max(access token 剩余有效期, 1s)）与 `auth:tokenver:{userId}`（[ADR-031](../adr/031-multi-granularity-token-revocation.md)，**不设 TTL**——TTL 过期会复活已吊销令牌）；第三方服务不得读写，改名或改 TTL 语义必须两侧同步发布 |
 | 校验降级 fail-closed | verification-service 不可用时，验证码/人机验证一律拒绝放行（Feign fallback 返回失败），禁止降级为"跳过校验"；Feign 熔断已启用（resilience4j），TimeLimiter 不得低于 5s |
+| 审计日志 PII | `@OperationLog` 审计**默认不记参数值**：`recordParams=true` 仅限「路径/查询参数且只含标识/状态」的端点，输出「类型 + id 摘要」且截断 200 字符；失败路径仅记异常类名（不含 message）；审计落库（user 域 `operation_log`）走**显式业务调用**，注解只写日志不落库（[ADR-032](../adr/032-operation-audit-dual-pipeline.md)） |
 
 ---
 
@@ -242,6 +252,7 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 | 规则 | 说明 |
 |------|------|
 | 金额存储 | `INT`，单位「分」。计算时用 `int` 乘除，禁止用 `float/double/BigDecimal` |
+| 金额不变式 V2 | `payAmount = totalAmount − discountAmount + postFee`（`totalAmount` 仍 = Σ `order_item.subTotal`，**运费不进商品小计**、单列 `orders.post_fee` 下单快照；秒杀单 `postFee = 0`；运费模板查询 I43 **fail-closed**，故障不得降级为免邮，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)） |
 | 主键对外 | API 返回业务标识（`userId`, `orderNo`），不暴露技术主键 `id` |
 | 地址/商品快照 | 下单时必须复制到订单表，不引用原表。防止用户/商家修改后历史数据变更 |
 | 软删除 | 需要可恢复的数据使用 `@TableLogic`，硬删除需评审 |
@@ -250,26 +261,18 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 
 ---
 
-## 六、MVP 范围约束
+## 六、范围边界（2026-10 边界重构后基线）
 
-**MVP 可以做的**：
-- user, address, seller, category, product, sku, order, order_item, cart, pay_order, order_logistics 相关功能
-- 手机号+验证码注册/登录、密码登录
-- 多级商品分类、商品列表/详情（含全文搜索）
-- 购物车 CRUD
-- 下单支付（微信支付）
-- 商家后台（商品/订单管理、发货）
-- 管理员后台（查看/管理）
+**已交付基线**：完整交易闭环（注册→浏览→购物车→下单→支付→发货→收货）+ V1.x–V4.x 扩展（优惠券/秒杀/积分账本+签到/钱包余额/站内信/人工 IM+AI 客服/商家知识库/评价/收藏/浏览历史/售后/结算/入驻审核/ES 搜索/首页装修/RBAC）。
 
-**MVP 不可以做的**（留给后续迭代）：
-- 拼团（团购）、积分商城
-- 首页装修、广告位
-- 在线客服、售后工单
-- 对账、结算、发票
-- 小程序/App
-- 复杂营销活动
+**未实现（启动前须评审补规格）**：
 
-**原则**：MVP 只做能跑通「注册→浏览商品→加入购物车→下单→支付→商家发货→用户确认收货」完整闭环的最小功能集。
+- 拼团/团购、发票（渠道对账已于 V5.5 落地——四态差异只记录不调账，[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)，移出本清单）
+- 小程序/App 端
+- 知识图谱（NebulaGraph，V3.x 前瞻）
+- 多币种
+
+**原则**：先保证「注册→浏览商品→加入购物车→下单→支付→商家发货→用户确认收货」闭环及其已交付扩展的稳定性；新增功能先过 05 契约与 ADR 流程。
 
 ---
 

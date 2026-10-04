@@ -14,7 +14,7 @@ Phase 1 (MVP)              Phase 1.5 (完善)               Phase 2 (平台化) 
 核心交易闭环               精细化运营 + AI                平台生态                       知识驱动
 用户→商品→购物车→下单→支付  优惠券/秒杀/积分/搜索/AI商品助手  商家入驻/财务结算/客服(含AI客服)  知识图谱/RAG+KG混合检索/场景化推荐
                                                                         
-现在所处阶段：V4.5 营销活动完善（多维度优惠券+秒杀+订单类型策略模式）—— 14 模块。下一阶段：Phase 5 前端 + V5.0 智能升级
+现在所处阶段：六轮微服务边界重构完成（新增 wallet/merchant/verification/notification/ai/marketing 等服务边界）—— 18 模块（15 服务 + 3 共享库）。下一阶段：Phase 5 前端迁移
 
 ### V4.0-V4.5 关键里程碑
 
@@ -70,19 +70,17 @@ Given-When-Then 限界上下文/聚合     请求/响应契约      单元测试
 
 ## 三、微服务创建顺序
 
-新微服务按 **从下往上** 顺序创建，确保依赖清晰：
+新微服务按 **四层 DDD 自内向外** 顺序创建（[ADR-038](../adr/038-full-ddd-migration.md)），确保依赖清晰：
 
 ```
 1. 数据库表设计 & 创建 (DDL)
-2. entity — 数据库实体映射 (MyBatis-Plus)
-3. mapper — 数据访问接口 (继承 BaseMapper)
-4. dto / vo — 数据传输对象
-5. service + impl — 业务逻辑（先接口，后实现）
-6. manager — 编排逻辑（如涉及多服务/分布式）
-7. converter — MapStruct 转换器
-8. controller — REST 接口
-9. config — 服务配置
-10. 编写测试 — TDD 循环
+2. domain — 领域模型（model/<聚合>/ 聚合根/实体/值对象、domain/service 纯函数、repository 仓储端口、enums；零框架依赖）
+3. infrastructure/persistence — PO + Mapper + RepositoryImpl（实现仓储端口；多语句写的 @Transactional 落在本层）
+4. infrastructure/adapter — Redis/HTTP 防腐适配（有外部依赖时）
+5. app — XxxManager 用例编排（Feign / 分布式锁 / 限流 / 幂等只允许出现在本层）
+6. adapter — web/admin/internal Controller + request(XxxReq) / response(XxxVO) / assembler(MapStruct)
+7. infrastructure/config — 服务配置
+8. 编写测试 — TDD 循环（命名：should_期望行为_when_条件）
 ```
 
 ---
@@ -120,22 +118,20 @@ public class UserController {
 }
 ```
 
-### 4.3 Service 层规范
+### 4.3 应用层（Manager）规范
 
 ```java
 @Service
 @RequiredArgsConstructor
-public class UserServiceImpl implements UserService {
-    private final UserMapper userMapper;
-    private final PasswordEncoder passwordEncoder;
+public class UserProvisionManager {              // app/ 用例编排层
+    private final UserRepository userRepository; // domain/ 仓储端口，实现在 infrastructure/persistence
+    private final DistributedLock distributedLock;
 
-    @Override
-    public UserDTO register(UserRegisterDTO dto) {
-        // ✅ 业务逻辑编排
-        // ✅ 调用 Mapper 做数据操作
-        // ✅ 使用 Converter 做对象转换
-        // ❌ 不处理 HTTP 请求参数校验（Controller 已做）
-        // ❌ 不直接操作 Redis / 分布式锁（交给 Manager）
+    public UserVO register(UserRegisterReq req) {
+        // ✅ 用例编排：聚合装配、调仓储端口落库、发领域事件
+        // ✅ 分布式锁 / Feign / MQ 只出现在这一层
+        // ❌ 不触碰 Mapper/PO（持久化细节收口在 RepositoryImpl）
+        // ❌ 不处理 HTTP 细节（Controller 已完成参数校验）
     }
 }
 ```
@@ -145,7 +141,7 @@ public class UserServiceImpl implements UserService {
 | 层 | 模式 | 正确示例 | 错误示例 |
 |---|------|---------|----------|
 | Mapper | `select`/`insert`/`update`/`delete` + 条件 | `selectByPhone`, `updateStatusById` | `getUser`, `findByPhone` |
-| Service | 业务动词 + 领域名词 | `register`, `getUserById`, `pageUsers`, `disableUser` | `insertUser`, `queryUser` |
+| Manager（app） | 业务动词 + 领域名词 | `register`, `getUserById`, `pageUsers`, `disableUser` | `insertUser`, `queryUser` |
 | Controller | HTTP+资源 / 业务动词 | `register` (POST), `getUser` (GET), `deleteAddress` (DELETE) | `doRegister`, `get` |
 
 ---
@@ -254,7 +250,7 @@ services:
 
 | 问题 | 决策 | 详见文档 |
 |------|------|---------|
-| 用什么分层架构？ | Alibaba 轻量化 DDD 精简版 | 02-Architecture §4 |
+| 用什么分层架构？ | 四层 DDD（全服务统一，ADR-038 收口） | 02-Architecture §4 |
 | Manager 层放什么？ | 分布式锁、限流、幂等、多服务编排 | 02-Architecture §4.2 |
 | 金额怎么存？ | INT 类型，单位「分」 | 04-Data-Model §1 |
 | 主键用自增还是 UUID？ | 数据库内用自增ID，对外用 UUID | 04-Data-Model §1 |

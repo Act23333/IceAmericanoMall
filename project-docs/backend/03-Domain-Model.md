@@ -1,7 +1,7 @@
 # 03 — 领域模型文档 (DDD Domain Model)
 
 > 来源：`doc/项目的分析流程/03.领域建模.md`、`doc/项目的分析流程/00.用户分析.md`、`doc/IDEA.md`
-> 最后更新: 2026-09-30
+> 最后更新: 2026-10-03（**P0 四项落地批次（[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)/[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)/[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：金额不变式 **V2**（`payAmount = totalAmount − discountAmount + postFee`，§3.7/§四 同步）；§六 词汇表新增九条：运费模板/运费/满额包邮阈值/商家默认模板/包裹与包裹号/部分发货/确认收到退货/原路退回/对账四态差异；订单状态口径补「部分发货停留待发货」（§3.7/待发货条目）；物流聚合 1:N 包裹化（§3.11 约定偏差消除）。此前——结构规范化 + 数据库整治 + 1:N 拆分同步：Shop 聚合拆分（ADR-019）、SKU 原子扣减（ADR-020）、购物车读时回填（ADR-021）、售后/物流状态机与词汇表修订、`domain/model` 聚合分包同步（ADR-025）；§十 图表说明同步 IA_UML/IA_E-R（Merchant/Shop）；遗留风险清零批次词汇补遗：握手令牌/契约键/吊销名单/向量索引/向量摄取/审计双管道/AUDIT 审计日志/收款账号脱敏，RAGRetriever 接线注记（T14）；工具类收口批次词汇补遗：边缘对端地址（ADR-034）+ 收款账号脱敏掩码单点定义注记；多粒度令牌吊销批次（T19，[ADR-031](../adr/031-multi-granularity-token-revocation.md)，修订 ADR-027）词汇补遗：令牌版本/用户级吊销/全端下线三条新增，契约键与吊销名单条目更新）
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/变更聚合、端口、领域服务、领域事件时
 
 ---
@@ -18,7 +18,7 @@
 │  │              │  │              │  │               │  │ (✅ V2.0)    │  │
 │  │ 用户(User)   │  │ 商品(Product)│  │ 订单(Orders)  │  │              │  │
 │  │ 地址(Addr)   │  │ 规格(SKU)    │  │ 订单项(Item)  │  │ 商品向量索引  │  │
-│  │ 商家(Seller) │  │ 类目(Cat)    │  │ 购物车(Cart)  │  │ Embedding    │  │
+│  │ 商家(Merchant)│  │ 类目(Cat)    │  │ 购物车(Cart)  │  │ Embedding    │  │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬────────┘  └──────┬───────┘  │
 │         │                 │                  │                  │          │
 │  ┌──────┴───────┐  ┌──────┴───────┐  ┌──────┴────────┐  ┌──────┴───────┐  │
@@ -39,24 +39,33 @@
 └──────────────────────────────────────────────────────────┘
 ```
 
+> **2026-10 第六轮**：商家上下文（Merchant Ctx）随 merchant-service 独立——入驻申请/审核、店铺档案（`seller` 表所有权）、公开店铺页、店铺关注自用户上下文迁出（聚合/领域服务见 §3.3、§七）。
+
 ### 上下文映射 (Context Map)
 
 | 上游    | 下游    | 关系          | 实现                            |
 | ----- | ----- | ----------- | ----------------------------- |
 | 用户上下文 | 认证上下文 | 客户/供应商（开放主机服务） | user-service 提供 `/internal/user/getOrCreate` 幂等建档（ADR-006）；**`user_auth` 凭证唯一所有权归认证上下文**（V5.2，[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)），认证侧不再经 Feign 写 user 域凭证 |
 | 用户上下文 | 订单上下文 | 客户/供应商      | trade-service 调用 user-service |
+| 用户上下文 | 商家上下文 | 客户/供应商 | merchant-service 入驻申请/店铺查询；聚合间只存 `userId`（ADR-006）；2026-10 第六轮自用户上下文迁出 |
+| 商家上下文 | 认证上下文 | 客户/供应商 | 入驻审批通过经 `AuthContextClient.setUserRole` 授予 ROLE_SELLER（ADR-018 缝合点，授权域即时失效权限缓存） |
 | 商品上下文 | 订单上下文 | 客户/供应商      | item-service 提供商品信息           |
-| 订单上下文 | 支付上下文 | 发布/订阅       | 订单事件通过 **RabbitMQ** 触发支付（V1.1） |
-| 订单上下文 | 物流上下文 | 发布/订阅       | 支付成功后通过 **RabbitMQ** 触发物流（V1.1） |
-| 订单上下文 | 通知上下文 | 发布/订阅       | 状态变更通过 **WebSocket** 实时推送（V1.2） |
+| 订单上下文 | 支付上下文 | 发布/订阅       | 订单创建事件 `order.created` 经 RocketMQ `domain-event-topic` 投递（trade→pay 已落地） |
+| 订单上下文 | 物流上下文 | 客户/供应商 + 发布/订阅 | 物流记录创建经 Feign（trade→logistics，**幂等**）；发货事件 `order.shipped` 经 RocketMQ 投递（已落地） |
+| 订单上下文 | 通知上下文 | 发布/订阅       | （2026-10 核对）原 gateway WebSocket 推送组件已删除、能力未采用；站内信触达由 notification-service 提供，IM 实时通道由 ai-service STOMP `/ws/chat` 承载 |
 | 商品上下文 | AI搜索上下文 | 客户/供应商  | ai-service 调用 search-service + item-service |
 | 用户上下文 | AI客服上下文 | 客户/供应商  | ai-service 调用 user-service + trade-service |
 | 用户上下文 | 营销上下文 | 客户/供应商      | marketing-service 发放优惠券给用户     |
 | 订单上下文 | 营销上下文 | 客户/供应商      | 下单时校验并使用优惠券；**秒杀订单创建归属订单上下文**（trade-service），营销上下文仅负责秒杀活动管理 + Redis 预扣库存 |
+| 认证/用户上下文 | 验证上下文 | 客户/供应商 | verification-service 签发/校验/人机验证（唯一出口，fail-closed；ADR-007/016、2026-10 边界重构） |
+| 验证上下文 | 触达上下文 | 客户/供应商 | notification-service 短信/邮件通道投递；站内信经 `/internal/notify/in-app` 落库 |
+| 用户/支付上下文 | 资金上下文 | 客户/供应商 | wallet-service 余额账户（`/internal/balance/deduct`；pay-service 余额渠道经 `BalanceClient` 调用） |
 | AI搜索上下文 | AI客服上下文 | 共享内核 (Embedding) | 向量检索能力复用                      |
 | AI搜索上下文 | 知识图谱     | 发布/订阅（V3.0+） | 商品实体关系抽取 → 图谱更新              |
 
 > **V4.1 限界上下文调整**：秒杀订单创建从营销上下文移至订单上下文。trade-service 的 `OrderCreateStrategy` 策略模式统一处理 NORMAL/DIRECT/FLASH_SALE/PRESALE 四种订单类型。marketing-service 仅负责秒杀活动管理（活动配置、库存预热）和 Redis Lua 预扣库存，不再直接创建订单。
+
+> **2026-10 边界重构（五轮）**：新增/明确 验证上下文（verification-service）、触达上下文（notification-service）、资金上下文（wallet-service）；签到/积分并入营销上下文；人工 IM 与商家知识库并入 AI 客服上下文（ai-service）；RBAC 归认证上下文（ADR-018）。**第六轮**：商家上下文（Merchant Ctx）随 merchant-service 独立（入驻/店铺/关注自用户上下文迁出）。服务↔域完整归属见 [02-Architecture §3.1](./02-Architecture.md)。
 
 ---
 
@@ -65,7 +74,7 @@
 | 类型      | 上下文               | 说明         |
 | ------- | ----------------- | ---------- |
 | **核心域** | 订单上下文、支付上下文       | 核心竞争力，交易闭环 |
-| **支撑域** | 用户上下文、商品上下文、AI搜索上下文 | 必不可少但非差异化  |
+| **支撑域** | 用户上下文、商家上下文、商品上下文、AI搜索上下文 | 必不可少但非差异化  |
 | **通用域** | 认证上下文、搜索上下文、物流上下文、营销上下文 | 可用通用方案实现   |
 | **创新域** | AI客服上下文 (🟡 GATED)、知识图谱 (⚪ V3.x) | 差异化竞争力，智能体验  |
 
@@ -87,12 +96,12 @@
 | avatar       | URL    | 头像        |
 | gender       | 枚举     | 性别：0-未知 / 1-男 / 2-女（V5.2 新增） |
 | birthday     | 日期     | 生日（V5.2 新增） |
-| balance      | 金额     | 账户余额（分）      |
+| ~~balance~~  | 金额     | ⚠️ **已迁出（2026-10）**：余额归资金上下文 wallet-service（`wallet_account`，V5.3 存量迁移）；`user.balance` 列冻结保留，代码不再读写 |
 | memberLevel  | 字符串    | 会员等级：NORMAL/SILVER/GOLD/PLATINUM（V5.2 新增；不开放用户自改） |
 | status       | 枚举     | 正常(1) / 禁用(0) |
 | createTime / updateTime | 日期时间 | 审计时间（注册语义由 createTime 承担） |
 
-> **行为（内聚聚合根，不散落 Service）**：`assertActive()` 启停、`assertBalanceSufficient()` 余额不变量、`changeNickname` / `changeAvatar`、`changeGender` / `changeBirthday` / `changeMemberLevel`（含取值校验）、`changePhone` / `changeEmail`（格式校验 + 归一化 + `EncryptedIdentifier` 三字段整体替换）。
+> **行为（内聚聚合根，不散落 Service）**：`assertActive()` 启停、`changeNickname` / `changeAvatar`、`changeGender` / `changeBirthday` / `changeMemberLevel`（含取值校验）、`changePhone` / `changeEmail`（格式校验 + 归一化 + `EncryptedIdentifier` 三字段整体替换）。余额相关行为（原 `assertBalanceSufficient`）随余额迁出（→ wallet-service，`wallet_account` 表；扣减不变式由仓储条件 UPDATE 承载，无独立领域聚合实体，[ADR-025](../adr/025-domain-aggregate-packaging-and-app-usecase-granularity.md)）。
 > **状态机**：正常 ⇄ 禁用，启/停迁移内聚于 User 实体方法（领域纯净，规则不散落 Service；ADR-016）。
 > **role_type 退役（V5.2）**：聚合不再持有角色类型字段；`roleType` 兼容字段由 RBAC 五表角色编码派生（`RoleTypeDerivation`，见 §七），权限唯一权威为 RBAC 五表。
 
@@ -109,19 +118,36 @@
 | isDefault                     | 布尔  | 默认地址标记   |
 | label                         | 字符串 | 标签（家/公司） |
 
-### 3.3 商家 (Seller) — 用户上下文实体
+### 3.3 商家 (Merchant) — 商家上下文聚合根
+
+> 归属 merchant-service（商家域，2026-10 第六轮自用户上下文迁出）。**V5.4 起 `seller` 表瘦身为「商家身份 + 生命周期」**，店铺档案拆至 `shop` 表（1 商家 : N 店铺，[ADR-019](../adr/019-merchant-shop-1n-split.md)，见 04-Data-Model §3.3）。
 
 | 属性                                   | 类型  | 说明            |
 | ------------------------------------ | --- | ------------- |
-| sellerId                             | 标识  | 商家唯一标识        |
-| userId                               | 关联  | 关联用户（一对一）     |
-| shopName                             | 字符串 | 店铺名称          |
-| shopLogo                             | URL | 店铺 logo       |
-| contactPhone                         | 字符串 | 联系电话          |
-| province/city/district/detailAddress | 字符串 | 发货地址          |
-| status                               | 枚举  | PENDING(0,审核中) / NORMAL(1,正常) / FROZEN(2,冻结) |
+| id                                   | 标识  | 技术主键（仅持久化层使用；业务唯一键为用户关联 `userId`） |
+| userId                               | 关联  | 关联用户（一对一，跨上下文只存 ID）     |
+| status                               | 枚举  | `MerchantStatusEnum`：PENDING(0,审核中) / NORMAL(1,正常) / FROZEN(2,冻结) |
+| createTime / updateTime              | 日期时间 | 审计时间           |
 
-> **状态机**：PENDING → NORMAL / FROZEN；准入由领域服务 `SellerRegistrar` 保障「一用户一商家」（`seller.user_id` 唯一，ADR-016）。
+> **行为（内聚聚合根）**：工厂 `apply(userId)`（新建 PENDING）；`approve()`（→NORMAL，幂等）/ `freeze()`（→FROZEN，幂等）/ `unfreeze()`（仅 FROZEN→NORMAL）；`isActive()` / `isPending()` / `isFrozen()`。**`updateShopInfo` 已移除（店铺资料归 Shop 聚合）**；状态迁移只经聚合方法（管理端审核走 `MerchantManager.updateStatus`，仓储不再提供状态直写入口）。
+> **状态机**：PENDING(0) → NORMAL(1) / FROZEN(2)；冻结/解冻为幂等迁移。准入由领域服务 `MerchantRegistrar` 保障「一用户至多一个商家」（`seller.user_id` 唯一，ADR-016）；并发重复申请由仓储捕获唯一键冲突翻译为 `USER_ALREADY_EXISTS`（原裸 500 修复）。
+> **命名注记（2026-10 第六轮）**：领域类已改名 `Merchant`（聚合根 `Merchant` / `MerchantStatusEnum` / `MerchantRegistrar`）并随商家域整体迁出 user-service；持久化 PO `MerchantPO` 映射瘦身后的 `seller` 表。对外入驻端点 `POST /api/seller/apply`（原 `/api/seller/register` 更名，语义为「入驻申请」；**前端契约已变化**）。
+
+#### 3.3.1 店铺 (Shop) — 商家上下文聚合根（V5.4 拆分）
+
+> 店铺档案与商家生命周期解耦：**商家正常 ≠ 每个店铺都正常**。申请 = 商家 + 默认店铺成对创建（同一事务）；审核 = 两个聚合同步生效（商户 approve + 店铺 approve + 经 `AuthContextClient` 授予 ROLE_SELLER，方法不声明事务——禁事务内调 Feign，幂等重试收敛）。
+
+| 属性                                   | 类型  | 说明            |
+| ------------------------------------ | --- | ------------- |
+| shopId                               | 标识  | 技术主键（`shop.id`） |
+| merchantId                           | 关联  | 所属商家（→ `seller.id`，聚合间只持 ID，不持对象引用） |
+| shopName / shopLogo                  | 字符串 / URL | 店铺名称 / logo（`uk_merchant_shop_name` 业务唯一键） |
+| contactPhone                         | 字符串 | 联系电话          |
+| province/city/district/detailAddress | 字符串 | 发货地址（公开页只到省市区，不暴露明细） |
+| status                               | 枚举  | 店铺状态：0-审核中 / 1-正常 / 2-冻结（`approve` / `freeze` / `unfreeze` / `isNormal` 内聚实体） |
+| createTime / updateTime              | 日期时间 | 审计时间           |
+
+> **默认店铺口径**：遗留 `sellerId`（= 商家 `user_id`）经「该商家 `shop.id` 最小者」解析为默认店铺（应用层 `ShopManager` 唯一解析点，Phase A 兼容期）；店铺资料更新在持久化层带 `id + merchant_id` 双条件（越权写 0 行）。公开可见 = `shop.status=1`。下沉到下游的 `seller_id`（商品/订单/优惠券/结算/知识库）在 Phase B 前维持 `user_id` 口径不变。
 
 ### 3.4 商品 (Product/SPU) — 商品上下文聚合根
 
@@ -152,12 +178,12 @@
 | stock     | 整数  | 库存数量             |
 | stockType | 枚举  | 库存类型：LIMITED(1,限量)/UNLIMITED(2,不限量)/PRESALE(3,预售) |
 | isHot     | 布尔  | 热销标识             |
-| hotReason | 字符串 | 热销原因（如"月销10万+"）  |
+| hotReason | 字符串 | 热销原因枚举码：discount / new_arrival / best_seller / clearance（`HotReasonEnum` 归一，非法值丢弃） |
 | salesTags | JSON字符串 | 销售标签（继承自Product，可覆盖） |
 | image     | URL | 规格专属图片           |
 | soldCount | 整数  | 该规格销量            |
 | status    | 枚举  | 可售 / 停售          |
-| version   | 整数  | 乐观锁版本号（并发库存扣减） |
+| version   | 整数  | 版本列——**V5.4（[ADR-020](../adr/020-sku-stock-atomic-sql-deduction.md)）起降级为库存变更自增审计**；并发控制由单条原子 SQL（`UPDATE ... WHERE stock >= ?`，行数为唯一判定）保证，不再依赖 `@Version` 拦截器语义 |
 
 ### 3.6 类目 (Category) — 商品上下文实体
 
@@ -180,10 +206,11 @@
 | orderType                  | 枚举   | 订单类型：NORMAL(1,购物车下单)/DIRECT(2,立即购买)/FLASH_SALE(3,秒杀)/PRESALE(4,预售) — 驱动策略模式（V4.1） |
 | userId                     | 关联   | 买家                      |
 | sellerId                   | 关联   | 商家（一个订单属于一个商家）          |
-| totalAmount                | 金额   | 总金额                     |
-| payAmount                  | 金额   | 实付金额                    |
+| totalAmount                | 金额   | 订单原价 = Σ order_item.subTotal（**运费不进商品小计**，ADR-037） |
+| payAmount                  | 金额   | 实付金额，**不变式 V2**：`payAmount = totalAmount − discountAmount + postFee` |
 | discountAmount             | 金额   | 优惠金额（优惠券/满减等）        |
-| status                     | 枚举   | 待付款(1)→待发货(2)→待收货(3)→已完成(4)→已取消(5)→待评价→待审核(6) |
+| postFee                    | 金额   | 运费（分）：下单时按运费模板计价并**快照**（Phase 1 取最高费率模板计一次 + 满额包邮阈值；秒杀单恒 0；ADR-037） |
+| status                     | 枚举   | `OrderStatusEnum`：待付款(1)→待发货(2)→待收货(3)→已完成(4)；已取消(5)；待评价(6)。流转由「条件更新 + 生命周期 Manager」强制（不可回退）；**部分发货停留待发货(2)，全部明细发货后才转待收货(3)**（不新增状态，ADR-037） |
 | paymentType                | 枚举   | 支付宝 / 微信 / 余额           |
 | receiverName/Phone/Address | 快照   | 收货信息快照（address 最长 500 字符）|
 | createTime                 | 日期时间 | 下单时间                    |
@@ -191,7 +218,7 @@
 | consignTime                | 日期时间 | 发货时间                    |
 | endTime                    | 日期时间 | 完成时间                    |
 | closeTime                  | 日期时间 | 关闭时间                    |
-| version                    | 整数   | 乐观锁版本号（防并发更新丢失）       |
+| version                    | 整数   | 乐观锁版本号（防并发更新丢失；`@Version` + ia-common `OptimisticLockerInnerInterceptor`，V5.3 注册）       |
 
 ### 3.8 订单项 (OrderItem) — 订单上下文实体（组合关系）
 
@@ -205,6 +232,7 @@
 | price       | 金额快照 | 下单时单价  |
 | quantity    | 整数   | 数量     |
 | subTotal    | 金额   | 小计     |
+| packageNo   | 整数   | 包裹号：发货时标记本明细归属包裹（对应 `order_logistics.package_no`）；NULL=未发货，一明细只发一次（ADR-037） |
 | image       | 快照   | 商品图片快照 |
 
 ### 3.9 购物车项 (Cart) — 订单上下文实体
@@ -216,6 +244,8 @@
 | skuId    | 关联  | SKU    |
 | quantity | 整数  | 数量     |
 | selected | 布尔  | 是否选中   |
+
+> **读时回填（V5.4，[ADR-021](../adr/021-cart-readtime-enrichment-in-app-layer.md)）**：购物车表不存商品快照；商品名/规格/图片/单价/小计/总价/selectedPrice/allSelected 一律由应用层 `CartManager` 读时一次批量查询回填（单一事实来源 = item-service）。`quantity ≤ 0` 的更新语义 = 删除该行；并发加购撞唯一键 → 重读合并（幂等）。
 
 ### 3.10 支付订单 (PayOrder) — 支付上下文聚合根
 
@@ -234,13 +264,18 @@
 
 ### 3.11 订单物流 (OrderLogistics) — 物流上下文实体
 
+> **拆单发货（V5.6，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：一订单 : N 包裹——`id` 代理主键 + `orderId` 普通外键 + `packageNo` 包裹号（`uk_order_package(order_id, package_no)`，存量回填 =1）；原「主键直用 orderId（一对一）」约定偏差已消除。包裹记录创建 `(order_id, package_no)` 幂等，重复发货事件不产生第二条物流记录。
+
 | 属性                                   | 类型  | 说明         |
 | ------------------------------------ | --- | ---------- |
-| orderId                              | 标识  | 订单 ID（一对一） |
+| id                                   | 标识  | 技术主键（V5.6 代理主键） |
+| orderId                              | 关联  | 所属订单（1:N 外键，一单多包裹） |
+| packageNo                            | 整数  | 包裹号（同订单从 1 递增；与 `order_item.packageNo` 对应） |
 | logisticsNumber                      | 字符串 | 物流单号       |
 | logisticsCompany                     | 字符串 | 物流公司       |
 | contact/mobile                       | 快照  | 收件人信息快照    |
 | province/city/district/street/detail | 快照  | 地址快照       |
+| status                               | 枚举  | `LogisticsStatusEnum`：PENDING(1,待揽收) → SHIPPED(2,运输中) → DELIVERED(3,已签收) ↔ RETURNED(4,已退回)；**单调迁移（不可回退），同态重放幂等空操作**（`canTransitTo` 只放行合法迁移） |
 
 ### 3.12 优惠券 (Coupon) — 营销上下文聚合根（V4.0+ 多维度模型）
 
@@ -325,22 +360,26 @@
 
 | 聚合   | 聚合根            | 内部实体               | 不变量                            |
 | ---- | -------------- | ------------------ | ------------------------------ |
-| 用户聚合 | User           | Address (1:N)      | 一个用户可有多个地址；一个用户最多成为一个商家        |
+| 用户聚合 | User           | Address (1:N)      | 一个用户可有多个地址        |
+| 商家聚合 | Merchant       | —                  | 一个用户至多一个商家（`seller.user_id` 唯一 + `MerchantRegistrar`）；状态机 PENDING→NORMAL/FROZEN；归 merchant-service（2026-10 第六轮迁出） |
+| 店铺聚合 | Shop           | —                  | 1 商家 : N 店铺（`uk_merchant_shop_name(merchant_id, shop_name)`）；店铺状态机独立于商家生命周期；默认店铺 = 该商家 `shop.id` 最小者（V5.4，[ADR-019](../adr/019-merchant-shop-1n-split.md)） |
 | 商品聚合 | Product        | SKU (1:N)          | SKU 不能脱离 Product 存在于订单中；库存不能为负 |
-| 订单聚合 | Orders         | OrderItem (1:N，组合) | 订单总额 = 所有订单项小计之和 - 优惠金额；订单项不能脱离订单     |
+| 订单聚合 | Orders         | OrderItem (1:N，组合) | **不变式 V2**：`payAmount = totalAmount − discountAmount + postFee`；`totalAmount` = Σ 订单项小计（运费不进小计，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）；订单项不能脱离订单     |
 | 支付聚合 | PayOrder       | —                  | 支付金额 = 关联订单应付金额                |
-| 物流聚合 | OrderLogistics | —                  | 物流必须关联已支付订单                    |
+| 物流聚合 | OrderLogistics | —                  | 物流必须关联已支付订单；1 订单 : N 包裹（`package_no` 区分，ADR-037） |
 | 营销聚合 | Coupon         | UserCoupon (1:N)   | 优惠券总发行量 >= 已领取量 >= 已使用量；用户优惠券不能脱离 Coupon 存在 |
+| 资金聚合 | 无独立领域实体（`wallet_account` 条件 UPDATE 承载余额扣减） | — | 余额扣减不变量（不足拒绝扣减），wallet-service（2026-10 新增；ADR-025 明确 `domain/model` 为空、不强行造聚合） |
 
-**user-service 聚合划分结论（V5.2 DDD 四层重构落地，见 [ADR-016](../adr/016-user-service-ddd-and-sms-migration.md)）**——包结构 `org.icedamericanomall.user.{adapter, app, domain, infrastructure}`，app 编排层按聚合 13 个子包（user/address/seller/signin/sms/rbac/points/favorite/history/notification/chat/knowledge/oplog），infrastructure/persistence 按聚合 11 个持久化子包（signin/sms 为 Redis 存储、无表）：
+**user-service 聚合划分结论（V5.2 四层重构 + 2026-10 边界重构后现状，见 [ADR-016](../adr/016-user-service-ddd-and-sms-migration.md)、[ADR-025](../adr/025-domain-aggregate-packaging-and-app-usecase-granularity.md)）**——包结构 `org.icedamericanomall.user.{adapter, app, domain, infrastructure}`，`domain/model` 按聚合 3 子包（user/address/favorite），app 编排层 7 个子包（user/address/favorite/history/oplog/rbac/port；user 子包下原 `UserManager` 已按用例族拆为 `UserQueryManager`（读取+统计）/ `UserAdminManager`（管理端运营）/ `UserProvisionManager`（幂等开通）），infrastructure/persistence 按聚合 5 个持久化子包（user/address/favorite/history/oplog）：
 
 | 层级 | 聚合/模块 | 落地形态 |
 | ---- | -------- | -------- |
-| 核心域聚合 | User / Address / Seller | 纯 POJO 聚合根 + 业务规则内聚实体方法（User 启停/余额不变量 + 资料变更行为 `changePhone`/`changeEmail` 等，凭证已移交认证上下文 ADR-017、Address `assertOwnedBy` 归属断言、Seller 状态机）；仓储按业务键操作（Address 更新/删除/标默认以 `{userId, id}` 为 WHERE，SQL 级越权兜底）；`UserProvisioner` 幂等建档（getOrCreate，新建分支统一发建档奖励） |
-| 支撑域模块 | signin / sms / rbac | 无完整聚合，规则内聚领域服务（`SignInPointsPolicy` 签到积分 + Redis Bitmap、`SmsCodeVerifier` 验证码校验） |
-| 外围 CRUD | points / favorite / history / notification / chat / knowledge | 无跨实体不变量，按 CQRS 读路径直用持久化读模型（DO 不出持久化层、不出 Controller）——记录在案的务实取舍（ADR-016 决策一·5） |
+| 核心域聚合 | User / Address | 纯 POJO 聚合根 + 业务规则内聚实体方法（User 启停/资料变更行为 `changePhone`/`changeEmail` 等，凭证已移交认证上下文 ADR-017、Address `assertOwnedBy` 归属断言）；仓储按业务键操作（Address 更新/删除/标默认以 `{userId, id}` 为 WHERE，SQL 级越权兜底）；`UserProvisioner` 幂等建档（getOrCreate，新建分支统一发建档奖励） |
+| 支撑域模块 | rbac | `RoleTypeDerivation`（roleType 五表派生读路径）+ 角色设置经 `AuthContextClient` 委托授权域（ADR-018） |
+| 外围 CRUD | favorite / history / oplog | 无跨实体不变量，按 CQRS 读路径直用持久化读模型（DO 不出持久化层、不出 Controller）——记录在案的务实取舍（ADR-016 决策一·5） |
 
-> 领域端口（domain/port）：`DistributedLock`（Redisson）/ `SignInStore`（Redis Bitmap）/ `SmsCodeStore`（Redis `sms:code:`）/ `NewUserRewardService`（新用户建档奖励，V5.2 ADR-017）；`PasswordVerifier` 端口与适配器已随凭证移交认证上下文删除（ADR-017）。跨上下文防腐网关（domain/gateway）：`VerificationGateway` / `WechatOAuthGateway`。微信换取已移出事务边界（唯一本地事务为 UserRegistrar 注册链路，ADR-016）。
+> 领域端口（domain/port）：`DistributedLock`（Redisson）/ `NewUserRegistrar`（注册链路）/ `NewUserRewardService`（新用户建档奖励，V5.2 ADR-017）。原 `SignInStore`（→ marketing-service）、`SmsCodeStore`、`PasswordVerifier`（ADR-017）均已不在 user 域；防腐网关（Verification/WechatOAuth）随边界重构删除。微信换取已移出事务边界（唯一本地事务为注册链路，ADR-016）。
+> **2026-10 边界重构迁出记录**：signin（→ marketing）、sms 校验链（→ verification，含 `000000` 后门整体删除）、points（→ marketing）、notification（→ notification-service）、chat / knowledge（→ ai-service）、rbac 写侧（→ authorization-service，ADR-018）、seller/店铺档案/店铺关注（→ merchant-service，第六轮）。
 
 ---
 
@@ -359,7 +398,10 @@
 | 中文术语     | 英文                       | 定义              |
 | -------- | ------------------------ | --------------- |
 | 用户       | User                     | 平台的注册消费者        |
-| 商家       | Seller                   | 拥有店铺的用户         |
+| 商家       | Merchant（原 Seller，2026-10 第六轮更名） | 拥有店铺的用户；聚合/领域服务归商家上下文（merchant-service）；持久化 `seller` 表**仅承载身份+生命周期**（id/user_id/status/审计列，V5.4 瘦身） |
+| 店铺       | Shop                     | 商家经营单元：1 商家 : N 店铺（`shop` 表，V5.4 拆分，[ADR-019](../adr/019-merchant-shop-1n-split.md)）；店铺档案（名称/logo/联系电话/发货地址）与状态机内聚在 Shop 聚合，独立于商家生命周期 |
+| 店铺状态     | Shop Status              | 0-审核中 / 1-正常 / 2-冻结；**公开可见 = shop.status=1** |
+| 默认店铺     | Default Shop             | 遗留 `sellerId`（= 商家 user_id）解析为「该商家 `shop.id` 最小者」；解析只在应用层 `ShopManager` 一处实现（Phase A 兼容期） |
 | 管理员      | Admin                    | 平台运营管理者         |
 | 商品 (SPU) | Product                  | 标准产品单元，同一款商品的抽象 |
 | 规格 (SKU) | SKU (Stock Keeping Unit) | 具体销售单元（如某颜色某尺寸） |
@@ -371,27 +413,57 @@
 | 物流单      | Logistics                | 发货后的物流追踪记录      |
 | 快照       | Snapshot                 | 下单时复制的商品/地址信息副本 |
 | 待付款      | Pending Payment          | 订单已生成等待支付的初始状态  |
-| 待发货      | Pending Shipment         | 支付完成后等待商家发货     |
+| 待发货      | Pending Shipment         | 支付完成后等待商家发货；**部分发货停留本状态**（全部明细均有 packageNo 后才转待收货，不新增状态，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)） |
 | 待收货      | Pending Receipt          | 商家已发货等待用户确认     |
 | 已完成      | Completed                | 用户确认收货，交易完成     |
 | 已取消      | Cancelled                | 交易关闭（超时或用户主动取消） |
-| 待审核      | Pending Review           | 售后申请提交后等待商家/平台审核处理 |
+| 待审核      | Pending Review           | 售后申请提交后等待商家/平台审核处理；售后状态为 `AfterSaleStatusEnum` 六态：1-待审核 → 2-同意 →（4-已退货）→ 5-已退款 → 6-已完成；3-拒绝为分支态（一单一售后，`uk_order_user`） |
+| 秒杀库存预热   | Flash Stock Pre-warm     | 秒杀库存双保险：活动流转到「进行中」时**显式预热**（平均分配到热点分片并写哨兵）；每次预扣前**惰性兜底**（分片与哨兵都不存在时按 DB 剩余库存原子重建，哨兵防重复重置）——未预热场次不会永远命中「售罄」 |
+| 抢券补偿     | Coupon Grab Compensation | 抢券通道 Redis 预扣成功后 DB 落库失败时，回滚 Redis（INCR 归还库存 + SREM 撤销去重标记），防止券永久少一个名额（`CouponGrabLuaScript` 补偿通道，幂等） |
+| 秒杀商品无店铺归属 | Flash Sale - No Shop Ownership | 秒杀为平台活动，秒杀订单 `sellerId` 固定为 0（marketing 与 trade 的跨服务约定；`MarketingManager.FLASH_SALE_NO_SELLER_ID`） |
+| 最低价      | Minimum Price (minPrice) | 商品列表项的起售价：一次批量查询 + 内存聚合出各 SPU 在售 SKU 最低价（`getMinPriceMapByProductIds`）；`sort=price` 由数据库按在售 SKU 最低价排序，列表项不再挂完整 SKU 列表（[ADR-020](../adr/020-sku-stock-atomic-sql-deduction.md)） |
+| 购物车读时回填  | Cart Read-time Enrichment | 购物车只存 `(user_id, sku_id, quantity, selected)`；商品名/规格/图片/单价/小计/总价由应用层 `CartManager` 在读时一次批量查询（`SkuClient.getSkuListByIds`）回填计算（[ADR-021](../adr/021-cart-readtime-enrichment-in-app-layer.md)） |
+| 全选状态     | allSelected              | 购物车非空 **且** 每项 `selected=true` **且** 每项都能取到单价（可计价）才为 true；SKU 下架/删除项不计入总价并使 `allSelected=false` |
+| 原子扣减     | Atomic Deduction         | 库存变更只走单条原子 SQL（校验条件内嵌 WHERE：`stock >= ?`），以受影响行数为唯一判定；不限量 SKU（stock_type=2）只动销量（[ADR-020](../adr/020-sku-stock-atomic-sql-deduction.md)） |
+| 领域分页结果   | PageResult               | 领域层分页模型（record：records/total/pageNum/pageSize），不泄漏 MyBatis-Plus `IPage` 到领域层（notification-service `domain/model` 引入） |
 | 优惠券      | Coupon                   | 营销工具，用户领取后可在下单时抵扣 |
 | 优惠券类别  | Coupon Category          | PLATFORM(平台券)/SHOP(店铺券)/FLASH_SALE(秒杀券)/EXCLUSIVE(专属券) |
 | 秒杀        | Flash Sale               | 限时限量的促销活动，库存通过 Redis Lua 原子扣减 |
 | 订单类型    | Order Type               | NORMAL(购物车)/DIRECT(立即购买)/FLASH_SALE(秒杀)/PRESALE(预售)，驱动下单策略 |
-| 通知通道      | Notification Channel     | 短信/邮件/站内信的发送通道（IN_APP 契约预留未实现），归 notification-service（V5.2） |
+| 通知通道      | Notification Channel     | 短信/邮件/站内信发送通道；站内信已落库（`notification` 表，公开 `/api/notifications/**`、内部 `/internal/notify/in-app`），归 notification-service（V5.2；2026-10 补齐落库） |
 | 验证通道      | Verification Channel     | SMS / EMAIL，验证码签发与校验的通道维度，归 verification-service（V5.2） |
 | 验证场景      | Verification Scene       | LOGIN / REGISTER / RESET_PASSWORD，决定验证码文案与有效期策略 |
 | 校验结果码     | Verification Result Code | SUCCESS/CODE_MISMATCH/CODE_EXPIRED/TOO_MANY_ATTEMPTS/RATE_LIMITED/SEND_FAILED/SERVICE_UNAVAILABLE/CAPTCHA_FAILED/NOT_SUPPORTED/PARAM_INVALID——结构化结果码（而非异常）用于内部 Feign 校验契约 |
 | 校验收口      | Verification Convergence | 验证码与人机验证统一由 verification-service 裁决（fail-closed：服务不可用即拒绝），调用方不自行校验 |
 | 邮箱地址      | EmailAddress             | 认证上下文值对象：trim+小写归一化 + 格式校验 + HMAC 盲索引，保证盲索引/Redis Key/建号标识三方对齐（V5.2 邮箱登录） |
 | 建档      | Provisioning             | 用户档案幂等创建/回查：按业务唯一键（user_id/手机号/微信 openid）查无则建、唯一键冲突回查重放，由领域服务 UserProvisioner 承载（getOrCreate 语义，ADR-006/016） |
-| 灰度后门  | Gray-release Bypass      | 灰度联调期刻意保留的验证码放行入口：万能码 `000000` + 宽松校验（严格比对分支暂关闭）；恢复路径见 ADR-016，真实短信通道全面接入前不得上线生产 |
-| 重发限流  | Reissue Rate Limiting    | 同一手机号验证码重发的最小间隔（60 秒窗口），由 verification-service 签发侧执行；user-service 本地分级限流（`sms:minute/hour/day:` 独立键空间）与之互补（ADR-016） |
+| ~~灰度后门~~ | ~~Gray-release Bypass~~  | **已退役（2026-10 边界重构）**：user-service 本地验证码校验链（含万能码 `000000` + 宽松校验）已整体删除；验证码签发/校验一律经 verification-service 在线完成 |
+| 重发限流  | Reissue Rate Limiting    | 同一手机号验证码重发的最小间隔（60 秒窗口），由 verification-service 签发侧执行；原 user-service 本地分级限流（`sms:minute/hour/day:`）已随 `/api/user/code` 删除（2026-10），对外发码限流由签发窗口 + 网关/端点限流承担 |
 | 建档奖励      | Provisioning Reward      | 新用户建档时统一发放的一次性积分奖励（200 分、类型 2）：注册 / 短信首登 / 邮箱首登 / 微信登录共用建档漏斗（`UserProvisioner` 新建分支），已存在用户不发，失败仅 WARN 不阻断建档；V5.2 起取代"仅微信新用户"语义，"回归登录奖励（>30 天 100 分）"退役（ADR-017） |
 | 盲索引定位     | Blind Index Lookup       | 敏感标识（手机号/邮箱）的等值查询方式：对归一化明文算 HMAC-SHA256（盲索引密钥）得不可逆哈希入唯一索引——密文不可比较，等值查询一律按 hash 定位（user 表 `phone_hash`/`email_hash`，user_auth 表 `identifier_hash`） |
-| 头剥离       | Header Sanitization      | 网关在过滤器链最早处（order -1100，`UntrustedHeaderSanitizerFilter`）无条件移除入站 X-User-Id/X-Username/X-User-Roles/X-User-Permissions/X-Tenant-Id/X-Client-Ip；可信上下文头只由网关在 JWT 验证后注入，X-Trace-Id 保留透传（ADR-017） |
+| 头剥离       | Header Sanitization      | 网关在过滤器链最早处（order -1100，`UntrustedHeaderSanitizerFilter`）无条件移除入站 X-User-Id/X-Username/X-User-Roles/X-User-Permissions/X-Tenant-Id/X-Client-Ip，并剥离可伪造代理头（X-Forwarded-For/X-Real-IP/Forwarded）、按真实对端覆写 X-Client-Ip；可信上下文头只由网关在 JWT 验证后注入，X-Trace-Id 保留透传（ADR-017） |
+| 余额账户     | Wallet Account           | 资金上下文账户：余额（分）与扣减不变量（不足拒绝扣减，由仓储条件 UPDATE 判定）；表 `wallet_account`（V5.3），归 wallet-service（2026-10 自 user 表迁出；无独立领域实体，ADR-025 不强行造） |
+| 握手令牌     | Handshake Token          | WS 握手经 URL query 携带的 access token（`?token=...`）：浏览器 WebSocket 握手无法自定义 `Authorization` 头，由网关 `WsHandshakeTokenFilter`（WebFilter，order -900）换写为 `Authorization: Bearer` 并**剔出该参数**后再进安全链；鉴权口径与普通接口一致（签名 + 时效 + 吊销校验：jti 黑名单 + 用户级令牌版本，[ADR-031](../adr/031-multi-granularity-token-revocation.md)），令牌不落下游（[ADR-026](../adr/026-ws-handshake-query-token-edge-swap.md)） |
+| 契约键       | Contract Key             | 被显式豁免「跨服务不得共享 Redis Key」约束的跨服务 Redis 键，仅限「**auth 写、网关只读**」：`user:info:{userId}` / `user:perms:{userId}`（[ADR-018](../adr/018-unified-identity-rbac-ownership.md)，权限缓存）、`auth:blacklist:{jti}`（[ADR-027](../adr/027-jwt-blacklist-writer-and-contract-key.md)，吊销名单）与 `auth:tokenver:{userId}`（[ADR-031](../adr/031-multi-granularity-token-revocation.md)，用户级令牌版本，不设 TTL）；任何第三方服务不得读写，改名/改 TTL 语义必须两侧同步发布（豁免清单见 [09-constraints §四](../collaboration/09-constraints.md)） |
+| 吊销名单     | Blacklist                | access token 的 jti 黑名单（**单 token 粒度**）：**登出**成功由 authorization-service 写入 `auth:blacklist:{jti}`（TTL=max(剩余有效期,1s)），网关 `JwtBlacklistFilter`（order -700）**键存在即 401**（fail-open）；WS 与 HTTP 共用同一口径。**改密/重置密码、管理端禁用已改走用户级吊销**（原「改密仅拉黑当前令牌、禁用不拆会话」两条残余窗口已由 [ADR-031](../adr/031-multi-granularity-token-revocation.md) 关闭） |
+| 令牌版本     | Token Version (tokenVer) | access token 的 `ver` claim + Redis 键 `auth:tokenver:{userId}`（**不设 TTL**）：登录与 refresh 换发（同一签发链路）写入**签发时刻**的当前版本（`INCR` 产出）；键缺失 = `0`、token 无 `ver` claim = `0`（存量令牌零迁移）。不设 TTL 是刻意语义——版本键若过期，读侧视为 `0`，「版本落后」的已吊销令牌会被**重新放行**；仅「被吊销过」的用户各留一个常驻键（[ADR-031](../adr/031-multi-granularity-token-revocation.md)） |
+| 用户级吊销   | User-level Revocation    | 以「该用户全部令牌」为粒度的吊销，**改密 / 重置密码**与**管理端禁用**时执行：**① `auth:tokenver:{userId}` INCR（该用户此前签发的全部 access token 即刻 401）+ ② 按 `PlatformEnum` 全端拆除 refresh 会话（断开续期通道）**——两者必须同时做：只拆会话则已签发 access token 存活至过期，只推版本则旧 refresh 可换发出「新版本」令牌。管理端禁用经 user-service（`UserAdminManager`）`AuthContextClient.revokeUserTokens` → `POST /internal/auth/token-version/revoke`（降级 fail-open，不阻断禁用主流程；[ADR-031](../adr/031-multi-granularity-token-revocation.md)） |
+| 全端下线     | All-device Logout        | 用户级吊销的可感知效果：该用户**全部端/设备**的 access token 经网关即刻 401、全部 refresh 会话被拆（旧 refresh 无法换发新令牌），由改密/重置密码/管理端禁用触发（[ADR-031](../adr/031-multi-granularity-token-revocation.md)）。单端登出（jti 黑名单 + 本端会话）不属此列；若产品需要「登出全部设备」，应复用 `revokeUserTokens` 而非扩大登出入口语义（ADR-031 残余风险记录） |
+| 向量索引     | Knowledge Vector Index   | 知识库 chunk 的 ES 索引 `knowledge_vectors`（dense_vector，每 chunk 一 doc，按 knowledgeId 先删后写幂等），**归 search-service（ES 域）所有**：分块 + Embedding + 索引读写均在该服务完成，ai-service 只提交原文、取回 chunk 文本（见 02-Architecture §3.4） |
+| 向量摄取     | Vector Ingest            | 知识库写入 → 向量索引的同步链路：知识库 CRUD → Feign `/internal/search/vector/knowledge/upsert` → search-service 分块（`DocumentChunker`）+ Embedding → `knowledge_vectors` → 回填 `merchant_knowledge_base.embedding_id = es:{knowledgeId}`；默认关闭（`ai.rag.enabled=false`），全链路 fail-open |
+| 审计双管道   | Audit Dual Pipeline      | 管理操作留痕的两条管道（[ADR-032](../adr/032-operation-audit-dual-pipeline.md)）：①**`AUDIT` JSON 日志**——`@OperationLog` + 切面全平台输出（ELK 采集，覆盖全量管理写操作）；②**`operation_log` 落库**——仅 user 域管理操作显式写入（`AdminLogController` 查询）。注解只写日志、不落库；两处口径需人工对齐 |
+| AUDIT 审计日志 | AUDIT Audit Log        | 专用 logger `AUDIT` 输出的**单行 JSON** 审计事件（timestamp / module / action / method / user / success / costMs；失败仅记异常类名；**默认不记参数值**），经既有 ELK 管道采集入 ES；查询「全平台谁改了什么」的入口（ADR-032） |
+| 收款账号脱敏 | Masked Payout Account    | 提现单出参口径（V5.4）：**商家端只返回脱敏号 `bankAccountMasked`（如 `****1234`），明文字段恒为 null；管理端（已有权限保护）返回明文**以满足打款核对；装配差异由 Converter（`toSellerVO` / `toVO`）承担（12-Security-Model §6.4）；掩码规则由 ia-common `DesensitizeUtil.maskAccount` 单点定义（≤4 全遮 / >4 保留末 4 位，[ADR-034](../adr/034-cross-module-utility-consolidation-and-boundaries.md)） |
+| 边缘对端地址 | Edge Peer Address | 网关 `EdgePeerIpResolver` 的 TCP 对端口径：只取连接对端地址、**绝不读任何入站代理头**（XFF 等已在链路入口被剥离），用于网关限流 Key / AI 配额 Key 并覆写 `X-Client-Ip` 下发；与下游消费的「客户端 IP」（ia-common `IpUtil` 只信网关注入头）分属两种口径、不可合并（[ADR-034](../adr/034-cross-module-utility-consolidation-and-boundaries.md)） |
+| 运费模板 | Freight Template | 商家在商品域配置的运费计价模板（`freight_template`，V5.6 已建）：固定运费 `fee` + 满额包邮阈值 `free_threshold` + 启用状态（Phase 1 计费方式仅 1-固定运费）；归属 item-service（`/api/item/freight-template/**`），商品经 `product.freight_template_id` 绑定（`ON DELETE SET NULL` 自动回落默认模板，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)） |
+| 运费 | postFee | 订单金额一等项（`orders.post_fee`，V5.6 已建）：下单时按 Phase 1 口径计价并**快照**（模板后续改价/停用不影响已建订单）；同单同商家、取各生效模板中 `fee` 最高者计一次；秒杀单（orderType=3）恒 0；模板查询（I43）**fail-closed**——查询失败下单失败，不默认免邮（[ADR-011](../adr/011-feign-fallback-degradation-semantics.md) 判别型定类，ADR-037） |
+| 满额包邮阈值 | Free Threshold | `freight_template.free_threshold`（分）：0 = 不参与满额包邮；>0 时订单商品总额（`totalAmount`）达到该值则 `postFee = 0`（用**被选中模板**的阈值判定，ADR-037） |
+| 商家默认模板 | Merchant Default Freight Template | 商品未绑定模板（NULL）或绑定模板已停用/已删时的回落：该商家**最早创建的启用模板**（I43 返回集合兜底补入 `isDefault` 行）；商家无任何启用模板时 `postFee = 0`（不阻断下单，ADR-037） |
+| 包裹/包裹号 | Package / packageNo | 拆单发货（V5.6 已建）的物流单元：`order_logistics` 一订单 N 条包裹记录（1:N，`uk_order_package(order_id, package_no)`，存量回填 =1）；`order_item.packageNo` 标记明细归属包裹（NULL=未发货，**一明细只发一次**）（ADR-037） |
+| 部分发货 | Partial Shipment | 只发部分明细的发货形态：订单**停留待发货(2)**（`consignTime` 首包写入、status 不动），全部明细均有 packageNo 后才转待收货(3)——不新增订单状态，复用既有状态机（ADR-037） |
+| 确认收到退货 | Confirm Return | 退货退款（type=1）的放款前置：管理端 `PUT /api/admin/after-sale/{id}/confirm-return` 将售后单 `APPROVED(2) → RETURNED(4)`，**之后才触发退款**（货到放款）；仅退款（type=2）仍在审核同意后触发（[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)/ADR-037） |
+| 原路退回 | Original-route Refund | 退款按原支付渠道退回（[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)）：BALANCE 本地入账（`wallet_transaction` 幂等）、WECHAT v3 退款 + 异步回调（PAY6）确认、ALIPAY（mock）同步；一次退款 = 一行 `refund_order`（`uk_after_sale` 幂等锚点，`refund_no` 贯穿渠道幂等键与钱包流水号），退款成功才迁移 `REFUNDED(5)` |
+| 对账四态差异 | Reconciliation Four-state Diff | 渠道账单 ↔ 本地成功支付流水的比对结果（[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)）：1-匹配 / 2-渠道有本地无 / 3-本地有渠道无 / 4-金额不一致；Phase 1 **只落库记录供管理端处置、不自动调账**（`uk_date_channel` + 先删后写幂等，日终 XXL-Job dev 默认关） |
 
 ---
 
@@ -402,19 +474,19 @@
 | 领域服务                | 职责                 | 所在上下文 |
 | ------------------- | ------------------ | ----- |
 | `UserProvisioner` | 用户幂等建档：查/建 user + 默认角色 + 新用户建档奖励（`NewUserRewardService`，已存在用户不发），业务唯一键冲突回查重放（ADR-016/017） | 用户上下文 |
-| `SellerRegistrar` | 商家准入：一用户一商家唯一性校验 + PENDING→NORMAL/FROZEN 状态机（ADR-016） | 用户上下文 |
-| `SignInPointsPolicy` | 每日签到积分规则（Redis Bitmap 签到，策略为纯 POJO） | 用户上下文 |
-| `SmsCodeVerifier` | 短信验证码本地校验（读 `sms:code:` 契约；含 `000000` 灰度后门，恢复路径见 ADR-016） | 用户上下文 |
+| `MerchantRegistrar` | 商家准入：一用户至多一个商家唯一性校验；状态迁移 PENDING→NORMAL/FROZEN 内聚于 `Merchant` 实体方法（ADR-016）。2026-10 第六轮随商家域迁 merchant-service | 商家上下文 |
+| `SignInPointsPolicy` | 每日签到积分规则（10/15/20 递增，纯 POJO；2026-10 迁入 marketing-service，配套 `SignInStore`/`SignManager`） | 营销上下文 |
+| `SmsCodeVerifier`（已删除） | 原 user-service 本地验证码校验（含 `000000` 灰度后门）——2026-10 边界重构整体删除；校验一律经 verification-service（`/internal/verification/code/verify`） | — |
 | `RoleTypeDerivation` | roleType 兼容字段派生：按 RBAC 五表角色编码派生（ADMIN→2 / SELLER→1 / 其余→0），`user.role_type` 列退役、五表为唯一口径（V5.2 ADR-017） | 用户上下文 |
 | `PasswordVerifier`（端口） | 密码哈希比较（BCrypt）；V5.2 起密码能力收敛认证上下文（user 域端口与适配器已删除，ADR-017） | 认证上下文 |
 | `LoginTokenService` | JWT RS256 签发、Access Token + Refresh Token 双Token模式 | 认证上下文 |
 | `LoginStrategy` (接口) | 登录策略接口：`support(IdentityType, CredentialType)` + `login(LoginReq)` | 认证上下文 |
 | `LoginStrategyFactory` | 注入 `List<LoginStrategy>`，按 identityType+credentialType 分发 | 认证上下文 |
 | `LoginContext` | 登录门面：分布式锁(Redisson) + 失败计数(Lua) + 策略执行 | 认证上下文 |
-| `StockManager`      | 库存扣减、回滚（下单锁定/取消释放） | 商品上下文 |
-| `AmountCalculator`  | 订单总价计算、优惠分摊、运费计算     | 订单上下文 |
-| `OrderStateMachine` | 订单状态流转控制           | 订单上下文 |
-| `PaymentRouter`     | 根据支付方式路由到不同渠道      | 支付上下文 |
+| `StockManager`（已退役）      | 库存扣减、回滚（下单锁定/取消释放）——**无独立领域服务类**：由 item-service `SkuServiceImpl` + `SkuMapper` 单条原子 SQL 承载（条件内嵌 WHERE，行数判定，[ADR-020](../adr/020-sku-stock-atomic-sql-deduction.md)） | 商品上下文 |
+| `AmountCalculator`（未独立成类）  | 订单总价/小计计算内聚于下单策略（`NormalCartOrderStrategy` 等）与 `OrderCreationManager` | 订单上下文 |
+| `OrderStateMachine`（未独立成类） | 订单状态流转控制：`OrderStatusEnum` + 条件更新 + `OrderLifecycleManager`（取消/确认收货/发货/超时）与 `OrderCreationManager`（下单） | 订单上下文 |
+| `PaymentChannelRouter` | 根据支付方式路由到不同渠道（WECHAT/ALIPAY→渠道客户端；BALANCE→`BalanceClient`→wallet-service） | 支付上下文 |
 | `OrderCreateStrategy` (接口) | 统一订单创建策略接口：`support(OrderType)` + `createOrder(CreateOrderReq)`（V4.1） | 订单上下文 |
 | `NormalCartOrderStrategy` | 购物车下单策略：校验购物车→校验SKU→校验地址→扣库存→创建订单（V4.1） | 订单上下文 |
 | `DirectOrderStrategy` | 立即购买策略：单个SKU直接下单，跳过购物车（V4.1） | 订单上下文 |
@@ -422,11 +494,11 @@
 | `CouponClaimLuaScript` | Redis Lua 脚本：优惠券领取去重（SISMEMBER），适用所有券类型（V4.0） | 营销上下文 |
 | `CouponGrabLuaScript` | Redis Lua 脚本：抢券原子库存扣减 + 去重（DECR + SISMEMBER），用于 NEED_GRAB 类型券（V4.0） | 营销上下文 |
 | `FlashSaleLuaScript` | Redis Lua 脚本：秒杀热 Key 分片库存扣减，防超卖（V4.0） | 营销上下文 |
-| `EventPublisher`   | 领域事件投递（RabbitMQ, V1.1） | 全局（ia-common） |
-| `NotificationService` | WebSocket 实时推送（V1.2） | 通知上下文 |
-| `DistributedScheduler` | 分布式定时任务协调（XXL-Job, V1.1） | 全局 |
+| `EventPublisher`   | 领域事件投递：RocketMQ `domain-event-topic`（`order.created` trade→pay、`order.shipped` 已落地；`payment.succeeded` 常量预留未实现；原 RabbitMQ 通道已移除） | 全局（ia-common） |
+| ~~`NotificationService`~~ | 原规划 WebSocket 实时推送（V1.2）——**能力未采用（2026-10 清理）**：gateway WebSocketConfig/WebSocketNotifyController 已删除；站内信触达由 notification-service（`notification` 表，`/api/notifications/**`）承载，IM 实时通道由 ai-service STOMP `/ws/chat` 承载 | — |
+| `DistributedScheduler` | 分布式定时任务协调：XXL-Job 已落地（如 trade `AbnormalOrderJob.scanAbnormalOrders` 异常订单兜底；`@Scheduled` 保留单机兜底） | 全局 |
 | `ProductVectorizer` | 商品信息 → Embedding 向量（🟡 GATED, ai.enabled=false） | AI搜索上下文 |
-| `RAGRetriever`     | 多路召回 + 重排序（🟡 GATED, ai.enabled=false）       | AI客服上下文 |
+| `RAGRetriever`     | 多路召回（KNN + BM25）→ RRF 融合 → 重排序 → 上下文组装；`retrieveForSeller` **已接入客服应答链路**（`ai.rag.enabled` 渐进启用；失败/无命中返回 null 降级为无 RAG），商品召回管线供 `RAGSearchTool`（V5.4 接线，见 02-Architecture §3.4） | AI客服上下文 |
 | `AgentPlanner`     | ReAct 推理 + 工具链编排（🟡 GATED, ai.enabled=false：LangChain4j AiServices） | AI搜索上下文 |
 | `HandoffManager`   | 人机转交决策（🟡 GATED, ai.enabled=false）           | AI客服上下文 |
 | `SessionManager`   | Per-User 会话隔离 + Redis 持久化（🟡 GATED, ai.enabled=false） | AI客服/AI搜索上下文 |
@@ -436,16 +508,16 @@
 
 ## 八、领域事件
 
-> MVP 阶段通过 Feign 同步调用；V1.1 引入 **RabbitMQ** 后全部改为异步发布/订阅。
+> **2026-10 现状**：跨服务即时动作走 **Feign 同步调用**（补偿必须幂等）；领域事件通道为 **RocketMQ `domain-event-topic`**（事件契约定义于 ia-common：`OrderCreatedEvent` 已落地 trade→pay、`OrderShippedEvent` 已落地）。`payment.succeeded` 仅保留 `RocketMqTopics` 常量（事件类已删除，**未实现**）；原 RabbitMQ 领域事件通道（`RabbitMqConfig`）已随重构移除。
 
-| 事件 | 触发场景 | 消费者 | 投递方式 | 可靠性 |
+| 事件 | 触发场景 | 消费者 | 投递方式 | 状态 |
 |------|---------|--------|---------|--------|
-| `OrderCreated` | 用户提交订单 | 支付上下文（发起支付） | RabbitMQ (V1.1) | Publisher Confirm + 持久化 |
-| `OrderPaid` | 支付成功回调 | 物流上下文（准备发货）、通知服务（推送） | RabbitMQ (V1.1) | 同上 |
-| `OrderShipped` | 商家发货 | 通知服务（**WebSocket** 推送物流信息, V1.2） | RabbitMQ (V1.1) | 同上 |
-| `OrderCompleted` | 用户确认收货 | 积分上下文（下单积分奖励） | RabbitMQ (V1.1) | 同上 |
-| `UserRegistered` | 新用户注册 | 营销上下文（新用户奖励） | RabbitMQ (V1.1) | 同上 |
-| `OrderCancelled` | 订单超时/手动取消 | 商品上下文（库存回滚补偿） | Feign 同步（MVP）/ RabbitMQ (V1.1) | 补偿必须幂等 |
+| `OrderCreated`（`order.created`） | 用户提交订单 | 支付上下文（发起支付） | RocketMQ domain-event-topic | ✅ 已落地 |
+| `OrderShipped`（`order.shipped`） | 商家发货 | 物流/触达侧扩展 | RocketMQ domain-event-topic | ✅ 已落地（trade 发布） |
+| `payment.succeeded` | 支付成功回调 | 物流上下文（准备发货）、通知服务（推送） | RocketMQ（常量预留） | ❌ 未实现（`PaymentSucceededEvent` 已删） |
+| `OrderCompleted` | 用户确认收货 | 积分上下文（下单积分奖励） | — | ❌ 未实现；当前由 trade 确认收货时经 `PointsClient` Feign 同步发放积分 |
+| `UserRegistered` | 新用户注册 | 营销上下文（新用户奖励） | — | ❌ 未实现；当前建档奖励由 `UserProvisioner` 新建分支本地发放 |
+| `OrderCancelled` | 订单超时/手动取消 | 商品上下文（库存回滚补偿） | Feign 同步 | 补偿必须幂等（`restoreStock` 行数 0 → WARN 幂等返回） |
 
 ---
 
@@ -467,4 +539,5 @@
 
 | 图表   | 文件                     | 说明                                       |
 | ---- | ---------------------- | ---------------------------------------- |
-| 领域类图 | `drawio/IA_UML.drawio` | 13 个实体类 + 关联关系（User/Address/Seller/Product/Sku/Category/Orders/OrderItem/Cart/PayOrder/OrderLogistics/KnowledgeNode/AgentSession） |
+| 领域类图 | `drawio/IA_UML.drawio` | 12 个实体类 + 关联关系（User/Address/Merchant/Shop/Product/Sku/Category/Order/OrderDetail/Cart/PayOrder/OrderLogistics）；Merchant–Shop 1:N（ADR-019），Merchant 与 User 关联 |
+| ER 图 | `drawio/IA_E-R.drawio` | 物理表关系（12 张表）；`seller` 表瘦身为 5 列（id/user_id/status/create_time/update_time，物理表名保留、领域类已更名 Merchant），店铺档案拆至 `shop` 表（1 商家 : N 店铺，uk_merchant_shop_name / idx_merchant_status，ADR-019） |

@@ -2,7 +2,7 @@
 
 > 本文档定义 AI 编码助手（Claude Code 等）在冰美商城项目中的行为规范。
 > 所有代码生成必须遵循本文档 + 项目文档体系。
-> 最后更新: 2026-09-30
+> 最后更新: 2026-10-03（同步 ADR-025：domain/model 聚合分包 + app/Manager 用例族粒度；修复章节编号重复：测试生成规则顺延为「八」、禁止事项为「九」；同步 ADR-030：审计字段填充器共享内核唯一实现口径落「九」——新服务禁自建填充器副本）
 > 归属域: collaboration | Owner: doc-engineer | 更新触发条件: 分层/命名/约束模板变化时
 
 ---
@@ -135,6 +135,13 @@ public class XxxManager {
 - 跨服务 Feign 调用聚合
 - 事务组合（多表/多服务）
 
+**Manager 粒度（[ADR-025](../adr/025-domain-aggregate-packaging-and-app-usecase-granularity.md)，强制）**：
+
+- 一个 Manager 只归属**一个聚合或一个用例族**；一个类混装多个用例族必须拆（如"读取 / 管理端运营 / 跨服务开通"属三类用例族，不得共用一个类）；
+- 类超 300 行必拆；拆分后沿用 `XxxManager` 命名（用例族 + Manager），**不采用** `XxxCmdExe` / `XxxQryExe`；
+- Controller 注入面随拆分调整，**URL 与报文不变**；`@Transactional(rollbackFor = Exception.class)` 随原方法迁移，不丢失、不新增；
+- 已单一职责的 Manager 不动（避免无收益 churn）。参考：user `UserManager` → `UserQueryManager`（读取+统计）/ `UserAdminManager`（管理端运营）/ `UserProvisionManager`（幂等开通）；notification `NotificationManager` → `ChannelDispatchManager` / `InAppMessageManager`；marketing `CouponService` → `CouponClaimService` / `CouponUsageService`。
+
 ### 3.3 Service 层（原子业务）
 
 ```java
@@ -186,6 +193,26 @@ public interface XxxConverter {
 
 **注意**：Lombok 必须排在 MapStruct 之前（已在父 POM 配置），否则编译报错。
 
+### 3.6 Domain 层（四层 DDD 服务专属，零框架依赖）
+
+`domain/model` 按聚合分包（[ADR-025](../adr/025-domain-aggregate-packaging-and-app-usecase-granularity.md)）：一个聚合一个包，包边界 = 聚合边界 = 未来服务拆分边界。
+
+```
+domain/
+├── model/
+│   └── <聚合名小写>/   ← 聚合根 / 实体 / 值对象（如 user/、address/、shop/、userauth/）
+├── service/            ← 跨聚合领域服务（如 UserProvisioner）
+├── repository/         ← 仓储接口（按业务键操作；不出现 Mapper / PO 等框架类型）
+├── port/               ← 端口（框架无关接口，实现放 infrastructure）
+└── enums/              ← 服务级共享枚举
+```
+
+- 例外①：服务只有 1 个聚合（或单族值对象）时保持平铺，不强行嵌套（如 verification `model/VerificationCode` / `model/VerificationPolicy`）；
+- 例外②：跨能力族共享、被 app/infrastructure 消费的值对象留 `model/` 根，不为单类造包（如 authorization `LoginSpec` / `EmailAddress`）；
+- 例外③：枚举默认留 `domain/enums/`；仅聚合私有状态机随聚合下沉（如 merchant `ShopStatusEnum` → `model/shop/`）；
+- 无领域模型的模块不强行造聚合（ai / marketing 无 `domain/model`；wallet 余额不变式由仓储条件 UPDATE 承载）；
+- **零框架依赖**：domain 包内禁止 Spring / MyBatis / Feign import（ADR-005）；Mapper / PO / Converter 只允许出现在 `infrastructure/persistence`。
+
 ---
 
 ## 四、对象转换规则
@@ -213,6 +240,7 @@ Feign 调用:      XxxCO (ia-api 定义) ← Feign 出入参 = XxxCO
 | ---------- | ------------------------------------------ | ----------------------------------------------------------- |
 | Mapper     | `select`/`insert`/`update`/`delete` + by条件 | `selectByPhone`, `updateStatusById`                         |
 | Service    | 业务动词 + 领域名词                                | `register`, `getUserById`, `pageUsers`, `disableUser`       |
+| Manager（编排） | 用例族名词 + `Manager`（一个 Manager 一个聚合/用例族，[ADR-025](../adr/025-domain-aggregate-packaging-and-app-usecase-granularity.md)） | `UserQueryManager`, `UserProvisionManager`, `ChannelDispatchManager` |
 | Controller | HTTP-资源风格                                  | `getUser`(GET), `createProduct`(POST), `updateAddress`(PUT) |
 | 内部控制器      | 同上 + `/internal/` 路径前缀                     | `getUserById`(GET /internal/user/{id})                      |
 
@@ -296,7 +324,7 @@ public Result<UserEntity> getUser(@PathVariable Long id) { return Result.success
 
 ---
 
-## 七、测试生成规则 (TDD)
+## 八、测试生成规则 (TDD)
 
 ### 单元测试模板
 
@@ -338,7 +366,7 @@ Scenario: 成功注册
 
 ---
 
-## 八、绝对不能做的事情
+## 九、绝对不能做的事情
 
 1. **跳过文档直接写代码**——必须先查 `project-docs/` 确认规格
 2. **在 Controller 写业务逻辑**——包括 Redis 操作、锁操作、业务判断
@@ -347,6 +375,7 @@ Scenario: 成功注册
 5. **手写 set/get/BeanUtils.copyProperties**——必须用 MapStruct Converter
 6. **破坏分层依赖方向**——禁止 Controller→Mapper, Service→Controller, Domain→Infra
 7. **硬编码魔法值**——状态码、配置值、错误消息 全部提取到常量/枚举/ErrorCode
-8. **大方法**——超过 50 行的方法必须拆分；超过 300 行的类必须拆分
+8. **大方法 / 混合职责**——超过 50 行的方法必须拆分；超过 300 行的类必须拆分；一个 Manager 混装多个聚合/用例族必须按用例族拆分（ADR-025，如 `UserManager` 拆为读取 / 管理端 / 开通三类）
 9. **金额用浮点数**——所有金额必须用 `Integer`（分），计算/存储/传输一律如此
 10. **内部接口包装异常**——`/internal/**` 路径不得包装 `Result`，必须直接抛异常
+11. **重造共享内核已有能力**——审计字段填充（`createTime`/`updateTime`）由 ia-common `AuditFieldMetaObjectHandler` 自动装配统一提供（`@ConditionalOnMissingBean` 退避，[ADR-030](../adr/030-metaobjecthandler-consolidation-autoconfig.md)）；**新服务禁止自建 `MetaObjectHandler` 副本，除非有特有字段**（如 user-service 的 `registerTime`，退避共存）

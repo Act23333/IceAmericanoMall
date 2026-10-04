@@ -52,6 +52,42 @@ Real 侧：@ConditionalOnClass(<SDK 类>) + @ConditionalOnProperty(name = "<ns>.
 
 2026-09-29
 
+## 修订
+
+### V5.3（2026-10-03）：空串缺陷已修复（不采用原「enabled 默认 false」迁移路径）
+
+审计进一步确认：本 ADR 记录的风险低估了 —— 「`merchant-id` 键恒存在但值为空串」不只是
+「对空值敏感」，而是**干净环境 pay-service 启动即崩**：真实实现被装配（空串算「存在」），
+其 `@PostConstruct` 用空 merchantId + 不存在的私钥路径构建 SDK 抛异常；Mock 又因
+`havingValue = "false"` 不匹配空串而不装配。即两条分支同时不成立。
+
+**落地方式（改动了原迁移路径的第 2、3 步）**：不引入 `enabled` 默认 `false`（那会把已配置
+环境变量的现网从 Real 翻转成 Mock，正是本 ADR 要避免的资金事故），改为**读值判空 + 可选 kill-switch**：
+
+```java
+// WechatPayConditions（ia-integration）
+static boolean isRealPayEnabled(Environment env) {
+    String merchantId = env.getProperty("wechat.pay.merchant-id");
+    if (merchantId == null || merchantId.isBlank()) return false;   // 空串/空白 → Mock
+    return !"false".equalsIgnoreCase(env.getProperty("wechat.pay.enabled")); // 显式关闭开关
+}
+```
+
+- `merchant-id` 非空且未显式关闭 → Real（与迁移前行为一致，不翻转）；
+- `merchant-id` 空/缺失/全空白 → Mock（修复启动崩溃）；
+- `wechat.pay.enabled=false` → 强制 Mock（显式 kill-switch，供演练/故障处置）；
+- 两个条件严格互补，保证任何配置下恰好一个 `PaymentClient`。
+
+**与 ADR-013 原计划的差异**：第 1 步（yml 增加 `enabled`）仍需主控在 pay-service 落地
+（建议 `enabled: ${WECHAT_PAY_ENABLED:}`，空 = 自动），但**不再是激活真实支付的必要前提**；
+第 2 步「`enabled=true` 但未配商户号时直接 Bean 缺失」未采用 —— 缺商户号属于配置缺失，
+静默落 Mock 比启动失败更符合现有 pay-service 的部署约定（且启动失败会拖垮整个支付服务）。
+验证方式仍遵循第 4 步：Mock 环境 + Real 配置、Real 环境 + Real 配置两种组合各跑一遍启动与下单。
+
+**回归测试**：`ia-integration` 的 `WechatPaymentClientWiringTest` 覆盖
+「缺失 / 空串 / 空串+enabled=true → 仅 Mock」「merchant-id 非空 → Real 条件成立」
+「enabled=false → 强制 Mock」「全空白 → Mock」。
+
 ## 参考
 
 - `Implementation/back-end/ia-integration/src/main/java/org/icedamericanomall/integration/payment/WechatPaymentClient.java`

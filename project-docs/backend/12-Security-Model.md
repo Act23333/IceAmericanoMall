@@ -2,7 +2,7 @@
 
 > 来源：`doc/methodology/09-security-modeling.md`（方法论模板）
 > 关联：`02-Architecture.md`（安全架构）、`collaboration/09-constraints.md`（安全约束）
-> 最后更新: 2026-09-30
+> 最后更新: 2026-10-03（遗留风险清零批次：WS 握手鉴权闭合（ADR-026）、jti 吊销写侧与残余风险（ADR-027）、提现收款账号出参脱敏落地（V5.4 §6.4）、审计日志 PII 默认口径（ADR-032）；多粒度令牌吊销批次（T19，[ADR-031](../adr/031-multi-granularity-token-revocation.md)，修订 ADR-027）：S4 更新为改密/禁用即时全端失效（残余仅 Redis fail-open 窗口）、认证层补 tokenVer；P0 资金线批次（[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)/[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)）：§四 新增资金安全控制行——退款三通道幂等与渠道对账兜底）
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 认证/加密/脱敏方案变更时
 
 ---
@@ -42,6 +42,7 @@
 | S1 | 使用伪造 JWT 访问接口 | 🔴 高 | RS256 签名验证，公钥通过 JWKS 暴露，Gateway 统一验签 |
 | S2 | 使用他人 Token 操作 | 🔴 高 | Token 中包含 userId，后端校验 Token 主体与资源归属一致 |
 | S3 | 支付回调方伪造 | 🔴 高 | 回调签名验证 + 回调 IP 白名单 |
+| S4 | 使用已登出/已改密/已禁用账号的 access token 继续访问 | 🟡 中 | 三级吊销（[ADR-031](../adr/031-multi-granularity-token-revocation.md)，修订 [ADR-027](../adr/027-jwt-blacklist-writer-and-contract-key.md)）：**登出**写 `auth:blacklist:{jti}`（TTL=剩余有效期）；**改密/重置密码、管理端禁用**执行用户级吊销（`auth:tokenver:{userId}` INCR + 全端拆 refresh 会话），该用户已签发 access token **即刻全端失效**；网关 `JwtBlacklistFilter` 一次 MGET 合并校验（黑名单命中或版本不一致 → 401，fail-open）。**残余风险仅剩 Redis 故障窗口 fail-open 放行**（令牌签名 + 时效仍兜底；另有未实机验证项，见 ADR-031） |
 
 ### T — Tampering（篡改）
 
@@ -75,11 +76,11 @@
 | # | 威胁 | 严重度 | 对策 |
 |---|------|--------|------|
 | D1 | 短信接口被恶意调用 | 🔴 高 | `@RateLimit(key="ip", limit=10, period=1min)` — 每 IP 每分钟 10 次 |
-| D2 | 登录接口被爆破 | 🔴 高 | `@RateLimit` 待实现 — 计划登录失败锁定 + Geetest 人机验证 |
+| D2 | 登录接口被爆破 | 🔴 高 | 密码强度 + `@RateLimit` + 登录失败计数风控 + 人机验证（verification-service，fail-closed） |
 | D3 | 商品查询被刷 | 🟡 中 | `@RateLimit(limit=100, period=60)` + 缓存 |
-| D4 | 大流量打垮 Gateway | 🟡 中 | Sentinel 限流 + 熔断降级（⚠️ V1.1 计划，当前未部署） |
-| D5 | WebSocket 连接耗尽 | 🟡 中 | 心跳检测 + 最大连接数限制 + Token 认证（⚠️ V1.2 计划，WebSocket 未实现） |
-| D6 | 分布式任务重复调度 | 🟡 中 | XXL-Job 路由策略（⚠️ V1.1 计划，当前使用 @Scheduled 单机运行） |
+| D4 | 大流量打垮 Gateway | 🟡 中 | 网关 IP 限流（`RequestRateLimiter`：auth 20/s·burst 40、verification 5/s·burst 10）+ Feign 熔断（resilience4j，8 服务已启用，[ADR-022](../adr/022-feign-circuitbreaker-enablement-marketing-ai.md)）+ trade-service 下单入口 Sentinel 流控/熔断已生效（[ADR-028](../adr/028-trade-sentinel-wiring-over-resilience4j.md)） |
+| D5 | WebSocket 连接耗尽 | 🟡 中 | 心跳检测 + 最大连接数限制 + Token 认证；IM 实时通道为 ai-service STOMP `/ws/chat`，**握手鉴权已闭合（2026-10，[ADR-026](../adr/026-ws-handshake-query-token-edge-swap.md)）**：`/ws/chat/**` 不进白名单（维持 `authenticated()`），网关 `WsHandshakeTokenFilter`（WebFilter，order -900）把握手 URL query 中的 `token` 换写为 `Authorization: Bearer` 并**剔出该参数**后进安全链——签名 + 时效 + 吊销校验（jti 黑名单 + 用户级版本，[ADR-031](../adr/031-multi-granularity-token-revocation.md)）与普通接口同口径 |
+| D6 | 分布式任务重复调度 | 🟡 中 | XXL-Job 路由策略（⚠️ 部分任务仍以 @Scheduled 单机兜底运行） |
 
 ### E — Elevation of Privilege（权限提升）
 
@@ -88,7 +89,7 @@
 | E1 | 普通用户调用管理员接口 | 🔴 高 | Gateway 拦截 `/admin/**`，校验角色为 ADMIN |
 | E2 | 商家操作其他商家的商品 | 🔴 高 | Manager 层校验 `product.sellerId == currentUser.sellerId` |
 | E3 | 通过 `/internal/**` 绕过认证 | 🔴 高 | Gateway 禁止 `/internal/**` 被外网访问 + 内网 Feign 拦截器 |
-| E4 | 消息队列被注入伪造事件 | 🔴 高 | RabbitMQ 生产者和消费者双向 TLS 认证（⚠️ V1.1 计划，当前未部署） |
+| E4 | 消息队列被注入伪造事件 | 🔴 高 | RocketMQ（V4.0 替代 RabbitMQ）生产/消费鉴权与网络隔离（TLS 按部署配置） |
 | E5 | XXL-Job 执行器被伪造 | 🟡 中 | 执行器 AccessToken 认证（⚠️ V1.1 计划，当前未部署） |
 | E6 | 对象存储直传绕过业务校验 | 🟡 中 | MinIO/OSS Pre-signed URL 短时有效（⚠️ V1.1 计划，当前未部署） |
 | E7 | 伪造 `X-User-Id` / `X-User-Roles` 等上下文头（公开路径无 JWT 也直通下游，`UserContextFilter` 照常重建为用户上下文） | 🔴 高 | 网关 `UntrustedHeaderSanitizerFilter`（order = -1100，过滤器链最早）**无条件**剥离入站 X-User-Id/X-Username/X-User-Roles/X-User-Permissions/X-Tenant-Id/X-Client-Ip；可信上下文头只由网关在 JWT 验证后注入（`UserContextHeaderFilter`，V5.2 ADR-017） |
@@ -102,8 +103,8 @@
 | A01: Broken Access Control | **高** | Manager 层资源归属校验 + Gateway 角色拦截 |
 | A02: Cryptographic Failures | **中** | BCrypt + RS256 JWT + TLS 1.3 + JWT 密钥轮换（§五）+ PII 静态加密（§六，V5.2 user 表 phone/email 三字段模型已激活）+ PII 密钥管理（§5.4，生产 KMS）+ Vault 密钥管理（⚠️ 计划） |
 | A03: Injection | **高** | MyBatis-Plus 参数化查询 + 排序字段白名单校验 |
-| A04: Insecure Design | **中** | 本文档（威胁建模）+ ADR 记录关键决策 + Seata/Sentinel 安全配置 |
-| A05: Security Misconfiguration | **中** | 生产配置关闭 stacktrace + CORS 白名单 + Sentinel 规则审计 |
+| A04: Insecure Design | **中** | 本文档（威胁建模）+ ADR 记录关键决策 + 未部署组件（Seata 等）不作为安全边界依赖（Sentinel 已限 trade 单服务、规则进程内，ADR-028） |
+| A05: Security Misconfiguration | **中** | 生产配置关闭 stacktrace + CORS 白名单 + 网关限流/熔断参数集中外置审计 |
 | A06: Vulnerable Components | **低** | Maven 版本锁定 + GitHub Dependabot 定期扫描 |
 | A07: Identification Failures | **高** | 密码强度策略 + @RateLimit 防爆破 + Geetest 人机验证 |
 | A08: Software Integrity Failures | **低** | GitHub Actions CI/CD 构建签名 |
@@ -117,22 +118,25 @@
 | 控制层 | 机制 | 覆盖威胁 |
 |--------|------|---------|
 | 传输层 | HTTPS (TLS 1.3) + Nginx 反向代理 | T1-T4, I1-I6 |
-| 认证层 | JWT RS256 + JWKS；密码凭证唯一落点 `user_auth.credential`（authorization-service，user.password 退役，V5.2 ADR-017） | S1, S2 |
+| 认证层 | JWT RS256 + JWKS；密码凭证唯一落点 `user_auth.credential`（authorization-service，user.password 退役，V5.2 ADR-017）；**三级吊销（[ADR-031](../adr/031-multi-granularity-token-revocation.md)，修订 ADR-027）：登出写 `auth:blacklist:{jti}`（TTL=剩余有效期）；改密/重置密码、管理端禁用推进 `auth:tokenver:{userId}`（不设 TTL）+ 全端拆 refresh 会话；网关 `JwtBlacklistFilter` 一次 MGET 合并校验** | S1, S2, S4 |
 | 鉴权层 | RBAC + 资源归属校验；user-service 双层越权防范（聚合实体归属断言 + 仓储 SQL WHERE userId 兜底，ADR-016）；`roleType` 由 RBAC 五表派生、`role_type` 列退役（ADR-017） | E1, E2, E7, I1, I2 |
 | 网关头卫生层 | `UntrustedHeaderSanitizerFilter`（-1100）入站可信头无条件剥离，仅网关 JWT 验证后回注（V5.2 ADR-017） | E7 |
+| WS 握手层 | `WsHandshakeTokenFilter`（WebFilter，order -900）：握手 query `token` 换写 `Authorization` 头并剔出参数，鉴权仍单一出口（`/ws/chat/**` 维持 `authenticated()`）；令牌不落下游服务/日志（ADR-026） | D5, S2 |
 | 输入层 | 参数校验 + 白名单 | A03-Injection |
-| 限流层 | @RateLimit (Redis Lua) + Sentinel 熔断 | D1-D4 |
-| 发码/校验链路 | 短信发码与人机验证收口 verification-service，Feign 熔断 fail-closed（依赖不可用即失败，绝不静默成功）；user-service 本地分级限流（`sms:minute/hour/day:`）与远端 60 秒重发窗口互补（ADR-016） | D1 |
-| 数据层 | DO/DTO/VO 隔离 + AES-256 PII 加密 | I6, A02 |
-| 审计层 | 操作日志 + 不可变日志表 | R1, R2 |
+| 限流层 | @RateLimit (Redis Lua，键含方法维度) + 网关 RequestRateLimiter（IP 限流）+ Feign 熔断（resilience4j，8 服务，ADR-022） | D1-D4 |
+| 校验链路 | 验证码发码/校验与人机验证唯一出口为 verification-service（调用方不再本地校验、不共享 Redis Key；人机验证契约厂商中立 `provider`+`params`）；Feign 熔断 fail-closed（依赖不可用即失败，绝不静默成功） | D1 |
+| 数据层 | DO/DTO/VO 隔离 + AES-256 PII 加密；出参脱敏（提现收款账号商家端 masked / 管理端明文，§6.4） | I6, A02 |
+| 审计层 | **审计双管道（ADR-032）**：① `AUDIT` JSON 日志（`@OperationLog`，全平台；**PII 默认安全——默认不记参数值**、失败仅记异常类名）；② user 域 `operation_log` 台账（显式落库） | R1, R2 |
+| 资金安全层 | **退款三通道原路退回幂等（[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)）**：`refund_order.uk_after_sale` 一售后单一次退款 + `refund_no` 贯穿渠道幂等键与钱包流水号 + 状态机条件更新，退款回调复用微信 v3 验签 + AES-GCM 解密（ADR-033）；**渠道对账兜底（[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)）**：日终账单四态差异只记录不调账（`uk_date_channel` 先删后写幂等），作为退款/支付资金链路的人工兜底出口 | S3, T4 |
 | 运维层 | Gateway 路由控制 + `/internal/**` 隔离 | E3 |
 | 密钥层 | JWT 密钥轮换 + Vault/K8s Secret | S1, S2, A02 |
 | 加密层 | AES-256-GCM PII 加密（user 表 phone/email 三字段模型已激活，V5.2）+ HMAC 盲索引列（uk_phone_hash / uk_email_hash） | A02, 个保法合规 |
-| 消息层 | RabbitMQ TLS + 生产/消费双向认证 (V1.1) | E4 |
+| 消息层 | RocketMQ（V4.0 全面替代 RabbitMQ；TLS/鉴权按部署配置） | E4 |
 | 调度层 | XXL-Job AccessToken + 执行器注册校验 (V1.1) | E5 |
 | 存储层 | MinIO/OSS Pre-signed URL + 防盗链 (V1.1) | E6 |
 
-> ⚠️ **灰度期已知豁免**：user-service `SmsCodeVerifier` 本地校验保留 `000000` 万能码旁路（严格比对分支暂关闭），迁移与恢复路径见 [ADR-016](../adr/016-user-service-ddd-and-sms-migration.md)；V5.2 认证边界收敛后该 `sms:code:` 读路径**原样保留**（`/internal/auth/**` 登录端点下线不影响此读契约，[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)）。真实短信通道全面接入并执行恢复路径前，**不得上线生产环境**。
+> ✅ **已修复（2026-10 边界重构）**：user-service 本地验证码校验链（连同 `000000` 万能码旁路与 `sms:code:` 跨服务读契约）已整体删除，发码端点 `/api/user/code` 下线；验证码签发/消费一律经 verification-service 在线完成（ADR-016 遗留项已注销）。
+> **客户端 IP（2026-10）**：ia-common `IpUtil` 修复历史缺陷（原 `X-Forwarded-For` 长度 > 15 才拆分，两段 IP 恰 15 字符时整串返回）；客户端 IP 统一走 `IpUtil` 解析。
 
 ---
 
@@ -238,6 +242,17 @@ UNIQUE KEY `uk_email_hash` (`email_hash`)
 
 查询流程：`用户输入手机号 → 归一化 → HMAC(手机号) → WHERE phone_hash = hash → 查到记录 → AES-GCM 解密 phone_cipher`。密钥未装载时 `EncryptedIdentifier.fromPlain` 抛 `CryptoException`（启动期经 `CryptoKeyConfig` 装载，见 §5.4）；user-service `phone_hash` 与 authorization-service `identifier_hash` 必须使用同一盲索引密钥（跨服务定位一致）。
 
+### 6.4 出参脱敏落地（V5.4）：提现收款账号
+
+> 提现收款账号按「**明文不下商家端**」落地（平衡：审核端需完整账号核对打款，商家端只看脱敏号）。装配差异由 Converter 承担（`TradeConverter#toSellerVO` / `#toVO`），两端共用同一 `WithdrawalVO`（trade-service `adapter/response/WithdrawalVO`）。
+
+| 端 | 端点 | 出参口径 |
+| :--- | :--- | :--- |
+| 商家端 | `/api/seller/finance/withdrawal`、`/api/seller/finance/withdrawal/page` | 只返回脱敏号 `bankAccountMasked`（保留末 4 位，如 `****1234`）；明文字段 `bankAccount` 恒为 `null` |
+| 管理端 | `/api/admin/finance/withdrawal/page`（已有权限保护） | `bankAccount` + `bankAccountMasked` 均返回（打款核对需要完整账号） |
+
+`WithdrawalVO` 的审计字段（如 `updateTime`）从不出参；`id` / `adminRemark` / `createTime` 为审核与展示所需保留。
+
 ---
 
 ## 七、隐私合规（等保 2.0 + 个保法）
@@ -245,7 +260,7 @@ UNIQUE KEY `uk_email_hash` (`email_hash`)
 | 要求 | 落实措施 |
 |------|---------|
 | 数据分类分级 | PII（手机号/地址）→ 敏感级，加密存储；交易数据 → 机密级，访问控制 |
-| 数据最小化 | 日志脱敏，不记录明文手机号/密码/Token |
+| 数据最小化 | 日志脱敏，不记录明文手机号/密码/Token；审计日志（`@OperationLog`）**默认不记参数值**（开启也只出「类型 + id 摘要」且截断至 200 字符；失败仅记异常类名，ADR-032） |
 | 用户数据可删除 | user 表支持软删除（`deleted` 字段），满足「被遗忘权」 |
 | 访问审计 | 所有 `/admin/**` 操作 + PII 访问记录审计日志 |
 | 导出限制 | 管理后台导出用户数据需二次验证 + 操作理由 |

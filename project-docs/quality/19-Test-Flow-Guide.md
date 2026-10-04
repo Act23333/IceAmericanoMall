@@ -1,6 +1,6 @@
 # 19 — 测试流程说明书
 
-> 最后更新: 2026-07-22 | 覆盖版本: V3.2 | 大厂对标: 阿里五层测试金字塔
+> 最后更新: 2026-10-03（微信回调冒烟断言对齐渠道协议应答，ADR-029）| 覆盖版本: V3.2 | 大厂对标: 阿里五层测试金字塔
 > 归属域: quality | Owner: doc-engineer | 更新触发条件: 测试实操流程变更时
 
 ---
@@ -66,7 +66,7 @@ docker exec -it ia-mysql mysql -uroot -p123456 icedmall -e "SHOW TABLES;" | wc -
 # 全量编译 (跳过测试)
 mvn clean install -DskipTests
 
-# 预期: BUILD SUCCESS, 14/14 模块
+# 预期: BUILD SUCCESS, 18/18 模块
 ```
 
 ---
@@ -419,9 +419,16 @@ assert_ok "健康检查" 200 "$(curl -s "$BASE/actuator/health")" "UP"
 assert_ok "商品搜索" 200 "$(curl -s "$BASE/api/search/product?keyword=test&size=5")" "records"
 assert_ok "热词"     200 "$(curl -s "$BASE/api/search/hot?limit=10")" "data"
 
-# 支付回调
-assert_ok "微信回调" 200 "$(curl -s -X POST "$BASE/api/pay/callback/wechat" \
-  -H "Content-Type: application/json" -d '{}')" "code"
+# 支付回调（ADR-029：应答为渠道协议裸 JSON，非平台 Result 信封）
+# 空/非法报文 → HTTP 500 + {"code":"FAIL"}（非 200 是渠道重推信号；合法报文才应 200 + SUCCESS）
+# 冒烟阶段无法构造微信 v3 合法签名，故按「非法报文」分支断言
+WX_STATUS=$(curl -s -o /tmp/wx_callback.json -w "%{http_code}" \
+  -X POST "$BASE/api/pay/callback/wechat" -H "Content-Type: application/json" -d '{}')
+if [ "$WX_STATUS" = "500" ] && grep -q '"code":"FAIL"' /tmp/wx_callback.json; then
+  echo "✅ 微信回调（空报文 → 500/FAIL，触发渠道重推）"; ((PASS++))
+else
+  echo "❌ 微信回调（预期 500/FAIL，实际 HTTP $WX_STATUS: $(cat /tmp/wx_callback.json)）"; ((FAIL++))
+fi
 
 echo ""
 echo "=== 结果: $PASS 通过, $FAIL 失败 ==="

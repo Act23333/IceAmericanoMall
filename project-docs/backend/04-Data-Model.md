@@ -1,7 +1,7 @@
 # 04 — 数据模型文档
 
 > 来源：`doc/项目的分析流程/04.数据建模.md`、`doc/项目代码/数据库/Initialize.sql.md`、`doc/项目的分析流程/03.领域建模.md`、`drawio/IA_E-R.drawio`
-> 最后更新: 2026-09-30
+> 最后更新: 2026-10-03（**P0 四项落地同步（V5.5/V5.6 已建，ADR-035/036/037）**：§十二 12.1–12.4 状态由"规划"收敛为"已建"——退款资金流（refund_order/wallet_transaction，F1）、渠道对账（reconciliation_batch/detail，F4）随 `V5.5__refund_wallet_tx_and_reconciliation.sql` 落库；运费模型（freight_template + product/orders 增量，F2）、拆单发货（order_logistics 主键与包裹改造 + order_item.package_no，F3）随 `V5.6__freight_template_and_package_split.sql` 落库；全库 **45 张表、30 个迁移（V1.1.0→V5.6）**；金额不变式定稿 **V2：`payAmount = totalAmount − discountAmount + postFee`**；§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 规划标注同步收敛；§3.11「主键约定偏差」注记**清除**（代理主键 id 已补，ADR-037）；§12.3 纠错删除「order_id 转 UNIQUE uk_order_id」自相矛盾表述（实现为**普通外键 + uk_order_package**，未建单列唯一键）。此前——V5.6 规格先行：新增 §十二 四组 P0 规划表——refund_order/wallet_transaction/reconciliation_batch/reconciliation_detail（**V5.5 资金线迁移**）、freight_template 及 product/orders/order_logistics/order_item 变更（**V5.6 履约线迁移**），§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 补规划增量标注，金额不变式变更为 `payAmount = totalAmount − discountAmount + postFee`；规划表均未建库，以"🆕 V5.6 规划"标注，实现落库后本注记同步收敛。此前：数据库整治 + 1:N 拆分同步：seller 瘦身/shop 表（V5.4，ADR-019）、product/review 实际列修正、after_sale/order_logistics 补注、Initialize.sql 全量快照语义、迁移三段式版本号；遗留风险清零批次：`auth:blacklist:{jti}` 契约键注记（ADR-027）、`operation_log` 写入方恢复（ADR-032 管道二）、`merchant_knowledge_base.embedding_id` 口径 `es:{knowledgeId}`）
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/变更表结构时必须同步
 
 ---
@@ -12,15 +12,17 @@
 |------|------|
 | **主键策略** | 见下方「主键决策矩阵」 |
 | **金额** | 统一使用 `INT`，单位为「分」 |
+| **金额不变式** | **V2（当前实现，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：`payAmount = totalAmount − discountAmount + postFee`；旧口径（V5.6 前）：`payAmount = totalAmount − discountAmount`。`totalAmount` 仍严格 = Σ `order_item.subTotal`（运费不进商品小计），运费单列入 `orders.post_fee`、下单时快照——详见 §十二 12.2 |
 | **布尔** | 使用 `TINYINT`，1-是 / 0-否 |
 | **状态枚举** | 使用 `TINYINT` + 注释说明枚举值 |
 | **审计字段** | 所有表包含 `create_time` 和 `update_time` |
 | **快照模式** | 订单相关的用户/商品/地址信息在下单时复制到订单表，保证历史可追溯 |
-| **乐观锁** | 并发写入热点表（orders、sku）使用 `version` INT 字段 + MyBatis-Plus `@Version`，防止丢失更新 |
+| **乐观锁** | `orders`：`version` INT + MyBatis-Plus `@Version`（乐观锁拦截器已在 ia-common 注册，V5.3 补齐）；`sku`：**并发控制改为单条原子 SQL**（`WHERE stock >= ?`，行数判定），`version` 仅作库存变更自增审计（[ADR-020](../adr/020-sku-stock-atomic-sql-deduction.md)）；`user`：`version` 防并发覆盖（V3.2） |
 | **字符集** | `utf8mb4` + `utf8mb4_unicode_ci` |
 | **引擎** | InnoDB |
 | **JSON 扩展** | 使用 `JSON` 列类型（`expand_json`）预留灵活性 |
-| **乐观锁** | `user` 表使用 `version` 字段 + MyBatis-Plus `@Version` 防并发覆盖（V3.2） |
+
+> **数据库目录与装库语义（2026-10 整治）**：脚本目录 `Implementation/back-end/database/`。**`Initialize.sql` 为全量最新快照（45 张表，一次装库到位）**；`migrations/`（30 个版本化文件，V1.1.0 → V5.6）是**存量库升级路径**——新装库无需执行迁移，存量库按版本号顺序应用（同版本号共存文件已重命名去重：12 个迁移改为三段式 `V<major>.<minor>.<patch>__desc.sql`）。RBAC 种子与基线一致且幂等：`ROLE_ADMIN` 持有 `*:*:*` 超管权限。
 
 ### 主键决策矩阵
 
@@ -78,24 +80,36 @@
 ```
 user ───1:N─── address
   │
-  └──1:1─── seller
+  └──1:1─── seller（商家身份 + 生命周期）
+              │
+              ├──1:N─── shop（店铺档案，V5.4 拆分，ADR-019）
               │
               └──1:N─── product ───1:N─── sku
                            │                  │
+                           ├──0:N─── freight_template（运费模板，V5.6 已建，product.freight_template_id 可空回落商家默认）
                            │                  │
        ┌───────────────────┘                  │
        │                                      │
        ▼                                      ▼
     orders ───1:N─── order_item ───N:1─── (sku 快照)
        │
-       ├──1:1─── order_logistics
+       ├──1:N─── order_logistics（V5.6 已建：1:1 → 1:N 拆单发货，按 package_no 区分包裹）
        │
-       └──1:1─── pay_order (通过 order_no 关联)
+       ├──1:1─── pay_order (通过 order_no 关联)
+       │            │
+       │            └──1:N─── refund_order（退款单，V5.5 已建；经 after_sale_id 关联售后单，1 售后单 : 1 退款单）
+       │
+       └──(对账，无外键) reconciliation_batch/detail（V5.5 已建，按 pay_order_no 比对）
        
 cart ───N:1─── user
 cart ───N:1─── sku
 
 user ───1:N─── user_auth (authorization-service 认证凭证聚合, V5.1；V5.2 起凭证唯一所有权归 auth，ADR-017)
+user ───1:1─── wallet_account (wallet-service 资金域, V5.3；user.balance 列冻结)
+  │
+  └──1:N─── wallet_transaction (钱包流水，V5.5 已建；幂等键 transaction_no)
+user ───1:N─── notification (notification-service 触达域, V5.0；2026-10 所有权迁入)
+user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮所有权迁入；V5.4 起仅身份+生命周期)
 ```
 
 ---
@@ -126,7 +140,7 @@ user ───1:N─── user_auth (authorization-service 认证凭证聚合, 
 | member_level | VARCHAR(20) | NOT NULL, DEFAULT 'NORMAL' | 会员等级：NORMAL/SILVER/GOLD/PLATINUM（V5.2 新增） |
 | register_time | DATETIME | NOT NULL | 注册时间（审计列，metaObjectHandler 填充；领域语义由 create_time 承担） |
 | status | TINYINT | NOT NULL, DEFAULT 1 | 1-正常，0-禁用 |
-| balance | INT | NOT NULL, DEFAULT 0 | 余额（分） |
+| balance | INT | NOT NULL, DEFAULT 0 | ⚠️ **deprecated（2026-10 边界重构）**：余额迁至 wallet-service `wallet_account`（V5.3 存量迁移）；列保留冻结，代码停止读写 |
 | role_type | TINYINT | NOT NULL, DEFAULT 0 | ⚠️ **deprecated V5.2**：角色唯一权威为 RBAC 五表（sys_user_role），兼容字段由五表派生（RoleTypeDerivation），观察期后删列 |
 | version | INT | NOT NULL, DEFAULT 0 | 乐观锁版本号（V3.2 @Version） |
 | last_login_time | DATETIME | NULL | ⚠️ **deprecated V5.2**：登录链路已退出 user 上下文，停止写入，观察期后删列 |
@@ -135,7 +149,7 @@ user ───1:N─── user_auth (authorization-service 认证凭证聚合, 
 
 索引：`uk_user_id`, `uk_phone_hash`（V2.5）, `uk_email_hash`（V5.2 新增）, `uk_wx_openid`；`uk_phone` 已随明文手机号退役删除（V5.2）。
 
-> **V5.2 迁移说明**：结构变更脚本 `database/migrations/V5.2__user_profile_split_and_encryption.sql`。`Initialize.sql` 为历史基线（仍含 `uk_phone` 等旧形态），V5.2 形态需按版本顺序应用迁移获得。本 DDL **只做结构变更**：①新增资料列 gender / birthday / member_level；②PII 三字段激活（phone_cipher/phone_mask 补齐，email 三列新增）；③唯一索引 `uk_phone` → `uk_phone_hash` + `uk_email_hash`（盲索引唯一，明文列退役）；④旧列（password / wx_openid / role_type / 明文 phone / last_login_time）注释标 **deprecated**，代码停止读写，观察期后另行 DDL 删列。**数据搬迁由 authorization-service 存量迁移器执行**（`LegacyCredentialMigrationRunner`，开关 `auth.legacy-migration.enabled` 默认 false）：①user.password → `user_auth.credential`（PHONE 行）后置 NULL；②user.phone 明文 → 三列后置 NULL；③user.wx_openid → `user_auth` WECHAT 行（identifier_plain，本轮不清理列）；幂等可重跑、逐条独立事务、失败 WARN 不中断；前置条件为 PII 密钥已装载（`CryptoKeyConfig`）。
+> **V5.2 迁移说明**：结构变更脚本 `database/migrations/V5.2__user_profile_split_and_encryption.sql`。`Initialize.sql` 已是**全量最新快照**（V5.2 形态：已含 `uk_phone_hash` / `uk_email_hash` 唯一索引，明文列仅为带 deprecated 注释的保留列），**存量库**按版本顺序应用迁移升级。本 DDL **只做结构变更**：①新增资料列 gender / birthday / member_level；②PII 三字段激活（phone_cipher/phone_mask 补齐，email 三列新增）；③唯一索引 `uk_phone` → `uk_phone_hash` + `uk_email_hash`（盲索引唯一，明文列退役）；④旧列（password / wx_openid / role_type / 明文 phone / last_login_time）注释标 **deprecated**，代码停止读写，观察期后另行 DDL 删列。**数据搬迁由 authorization-service 存量迁移器执行**（`LegacyCredentialMigrationRunner`，开关 `auth.legacy-migration.enabled` 默认 false）：①user.password → `user_auth.credential`（PHONE 行）后置 NULL；②user.phone 明文 → 三列后置 NULL；③user.wx_openid → `user_auth` WECHAT 行（identifier_plain，本轮不清理列）；幂等可重跑、逐条独立事务、失败 WARN 不中断；前置条件为 PII 密钥已装载（`CryptoKeyConfig`）。
 
 ### 3.2 address（收货地址表）
 
@@ -159,22 +173,42 @@ user ───1:N─── user_auth (authorization-service 认证凭证聚合, 
 
 外键：`fk_address_user` → user.id ON DELETE CASCADE
 
-### 3.3 seller（商家表）
+### 3.3 seller（商家表）与 shop（店铺表）
+
+> **V5.4 拆分（[ADR-019](../adr/019-merchant-shop-1n-split.md)）**：`seller` 瘦身为「商家身份 + 生命周期」，7 个店铺资料列整体迁至新表 `shop`（1 商家 : N 店铺）；表所有权归 merchant-service（商家域）。领域类 `Merchant` / `Shop`（见 03-Domain-Model §3.3/§3.3.1）。
+
+**`seller`（商家身份表，V5.4 瘦身后）**
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK | 技术主键 |
-| user_id | BIGINT | FK → user.id, UNIQUE, NOT NULL | 关联用户（1:1） |
+| user_id | BIGINT | FK → user.id, UNIQUE (`uk_user_id`), NOT NULL | 关联用户（1:1，一个用户至多一个商家） |
+| status | TINYINT | NOT NULL, DEFAULT 0 | 0-审核中，1-正常，2-冻结 |
+| create_time | DATETIME | NOT NULL | 创建时间 |
+| update_time | DATETIME | NOT NULL | 更新时间 |
+
+外键：`fk_seller_user` → user.id ON DELETE RESTRICT
+
+**`shop`（店铺表，V5.4 新增，12 列）**
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | 技术主键（`shopId` 口径） |
+| merchant_id | BIGINT | FK → seller.id (`fk_shop_merchant`), NOT NULL | 所属商家 |
 | shop_name | VARCHAR(100) | NOT NULL | 店铺名称 |
 | shop_logo | VARCHAR(255) | NULL | 店铺 logo |
 | contact_phone | VARCHAR(20) | NOT NULL | 联系电话 |
-| province/city/district | VARCHAR(50) | NOT NULL | 发货地址 |
+| province | VARCHAR(50) | NOT NULL | 发货省 |
+| city | VARCHAR(50) | NOT NULL | 发货市 |
+| district | VARCHAR(50) | NOT NULL | 发货区/县 |
 | detail_address | VARCHAR(200) | NOT NULL | 详细地址 |
-| status | TINYINT | DEFAULT 0 | 0-审核中，1-正常，2-冻结 |
-| create_time | DATETIME | NOT NULL | |
-| update_time | DATETIME | NOT NULL | |
+| status | TINYINT | NOT NULL, DEFAULT 0 | 0-审核中，1-正常，2-冻结；公开可见 = 1 |
+| create_time | DATETIME | NOT NULL | 创建时间 |
+| update_time | DATETIME | NOT NULL | 更新时间 |
 
-外键：`fk_seller_user` → user.id ON DELETE RESTRICT
+索引：`uk_merchant_shop_name(merchant_id, shop_name)`（业务唯一键）、`idx_merchant_status(merchant_id, status)`
+
+> **默认店铺口径**：遗留 `sellerId`（= 商家 `user_id`）经「该商家 `shop.id` 最小者」解析为默认店铺（应用层 `ShopManager` 唯一解析点，Phase A 兼容期）；存量迁移时每个商家生成一个店铺。下游表（product/orders/coupon/settlement/merchant_knowledge_base）的 `seller_id` 在 Phase B 前维持 `user_id` 口径不变（`fk_product_seller` 等外键不受影响）。
 
 ### 3.4 category（类目表）
 
@@ -200,7 +234,7 @@ user ───1:N─── user_auth (authorization-service 认证凭证聚合, 
 | category_id | BIGINT | FK → category.id, NOT NULL | 所属类目 |
 | name | VARCHAR(200) | NOT NULL | 商品名称 |
 | main_image | VARCHAR(255) | NULL | 主图 URL |
-| images | JSON | NULL | 多图URL列表 (V3.5) |
+| images | VARCHAR(2000) | NULL | 多图URL列表（JSON 数组**文本**，V3.5；非 JSON 列类型） |
 | video_url | VARCHAR(500) | NULL | 视频URL (V3.5) |
 | attributes | JSON | NULL | 规格参数K-V (V3.5) |
 | description | TEXT | NULL | 图文描述（HTML） |
@@ -209,9 +243,10 @@ user ───1:N─── user_auth (authorization-service 认证凭证聚合, 
 | view_count | INT | DEFAULT 0 | 浏览次数 (V3.5) |
 | comment_count | INT | DEFAULT 0 | 总评论数 |
 | is_ad | TINYINT | DEFAULT 0 | 广告商品标记 |
-| service_tags | JSON | NULL | 售后标签 (V3.5) |
+| service_tags | VARCHAR(500) | NULL | 售后标签（JSON 数组**文本**，V3.5；非 JSON 列类型） |
 | sales_tags | JSON | NULL | 商品级销售标签 (V4.0) |
 | status | TINYINT | DEFAULT 1 | 1-上架，2-下架，3-删除 |
+| freight_template_id | BIGINT | FK → freight_template.id, NULL（**V5.6 已建**） | 绑定运费模板；NULL → 用商家默认模板（该商家**最早创建的启用模板**）；模板被删除时经 `ON DELETE SET NULL` 自动回落。见 §十二 12.2 |
 | publish_time | DATETIME | NULL | 发布时间 |
 | create_time | DATETIME | NOT NULL | |
 | update_time | DATETIME | NOT NULL | |
@@ -238,7 +273,7 @@ user ───1:N─── user_auth (authorization-service 认证凭证聚合, 
 | hot_reason | VARCHAR(50) | NULL | 热销原因: discount/new_arrival/best_seller/clearance (V4.0) |
 | sales_tags | JSON | NULL | 销售标签JSON: ["限时优惠","新品"] (V4.0) |
 | status | TINYINT | DEFAULT 1 | 1-可售，0-停售 |
-| version | INT | NOT NULL, DEFAULT 0 | 乐观锁版本号 |
+| version | INT | NOT NULL, DEFAULT 0 | 版本列——**库存变更自增审计**；并发控制由原子 SQL（`WHERE stock >= ?`）保证，不注册 `@Version` 拦截器语义（[ADR-020](../adr/020-sku-stock-atomic-sql-deduction.md)） |
 | create_time | DATETIME | NOT NULL | |
 | update_time | DATETIME | NOT NULL | |
 
@@ -253,9 +288,10 @@ user ───1:N─── user_auth (authorization-service 认证凭证聚合, 
 | user_id | BIGINT | FK → user.id, NOT NULL | 买家 |
 | seller_id | BIGINT | FK → seller.id, NOT NULL | 商家 |
 | order_type | TINYINT | NOT NULL, DEFAULT 1 | 订单类型: 1=NORMAL购物车, 2=DIRECT立即购买, 3=FLASH_SALE秒杀, 4=PRESALE预售 (V4.1) |
-| total_amount | INT | NOT NULL | 总金额（分） |
-| pay_amount | INT | NOT NULL | 实付金额（分） |
+| total_amount | INT | NOT NULL | 总金额（分）＝ Σ order_item.subTotal（不含运费） |
+| pay_amount | INT | NOT NULL | 实付金额（分）。**不变式 V2（已生效，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：`payAmount = totalAmount − discountAmount + postFee`（旧口径无 `postFee` 项，见 §十二 12.2） |
 | discount_amount | INT | NOT NULL, DEFAULT 0 | 优惠金额（分） |
+| post_fee | INT | NOT NULL, DEFAULT 0（**V5.6 已建**） | 运费（分）；下单时按 §十二 12.2 计价规则计算并快照，Phase 1 同单同商家、取商品绑定模板中 fee 最高者计一次 |
 | status | TINYINT | NOT NULL | 1-待付款，2-待发货，3-待收货，4-已完成，5-已取消，6-待评价 |
 | payment_type | TINYINT | NULL | 1-支付宝，2-微信，3-余额 |
 | receiver_name | VARCHAR(50) | NOT NULL | 收货人快照 |
@@ -284,6 +320,7 @@ user ───1:N─── user_auth (authorization-service 认证凭证聚合, 
 | price | INT | NOT NULL | 单价快照（分） |
 | quantity | INT | NOT NULL | 数量 |
 | sub_total | INT | NOT NULL | 小计（分） |
+| package_no | INT | NULL（**V5.6 已建**） | 包裹号——发货时标记本明细归属包裹（对应 `order_logistics.package_no`）；NULL=尚未发货；一明细只发一次（写入后不可重复发货） |
 | image | VARCHAR(255) | NULL | 图片快照 |
 | create_time | DATETIME | NOT NULL | |
 | update_time | DATETIME | NOT NULL | |
@@ -325,19 +362,28 @@ user ───1:N─── user_auth (authorization-service 认证凭证聚合, 
 | create_time | DATETIME | NOT NULL | |
 | update_time | DATETIME | NOT NULL | |
 
+> **幂等口径（2026-10 补注）**：支付成功处理走**条件更新**——`markSuccessIfPending(payOrderNo)` 仅在 `status=待支付` 时置成功（`UPDATE ... WHERE pay_order_no = ? AND status = ?`），条件未命中返回 false（重复回调 / 超时取消后的回调不重复处理，与 `pay_order_no` 唯一约束互为兜底）。
+> **退款关联（V5.5 已建，[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)）**：本表同域子表 `refund_order`（退款单，`pay_order_no` 关联；三通道原路退回，`uk_after_sale` 一售后单一次退款幂等锚点）——见 §十二 12.1；同域对账两表 `reconciliation_batch` / `reconciliation_detail`（四态差异只记录不调账，§十二 12.4）。
+
 ### 3.11 order_logistics（订单物流表）
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
-| order_id | BIGINT | PK + FK → orders.id | 订单 ID（1:1） |
+| id | BIGINT | PK, AUTO_INCREMENT | 技术主键（V5.6 代理主键） |
+| order_id | BIGINT | FK → orders.id, NOT NULL | 订单 ID（V5.6 起 **1:N 外键**，一单多包裹） |
+| package_no | INT | NOT NULL, DEFAULT 1 | 包裹号（唯一约束 `uk_order_package(order_id, package_no)`，存量回填 =1） |
 | logistics_number | VARCHAR(50) | NOT NULL | 物流单号 |
 | logistics_company | VARCHAR(50) | NOT NULL | 物流公司 |
 | contact | VARCHAR(50) | NOT NULL | 收件人快照 |
 | mobile | VARCHAR(20) | NOT NULL | 电话快照 |
 | province/city/district/street | VARCHAR | NOT NULL | 地址快照 |
 | detail | VARCHAR(200) | NOT NULL | 详细地址快照 |
+| status | INT | NOT NULL, DEFAULT 1 | 物流状态：1-待揽收(PENDING)，2-运输中(SHIPPED)，3-已签收(DELIVERED)，4-已退回(RETURNED)（V1.1.1） |
 | create_time | DATETIME | NOT NULL | |
 | update_time | DATETIME | NOT NULL | |
+
+> **状态迁移约束（2026-10 补注）**：物流状态**单调迁移、不可回退**（PENDING→SHIPPED→DELIVERED↔RETURNED）；同态重放视为幂等空操作（成功返回，不重复落库）；应用层经 `LogisticsStatusEnum.canTransitTo` 校验后才更新。
+> **V5.6 已建（拆单发货，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：原「主键复用 order_id」约定偏差已收敛——①新增代理主键 `id BIGINT AUTO_INCREMENT`，`order_id` 转为**普通外键**（**不建单列唯一键**——1:N 语义下单列唯一会禁止一单多包裹）；②新增 `package_no INT NOT NULL DEFAULT 1`，唯一约束 `uk_order_package(order_id, package_no)`，**存量数据回填 package_no=1**；③1:1 升级为 **1:N**（一订单多包裹，每包裹一条物流记录）。见 §十二 12.3。
 
 ### 3.12 user_auth（用户认证凭证表，V5.1）
 
@@ -364,6 +410,8 @@ user ───1:N─── user_auth (authorization-service 认证凭证聚合, 
 **敏感数据三字段模型**：敏感标识（手机号/邮箱）密文 `identifier_cipher` + 盲索引 `identifier_hash` + 脱敏 `identifier_mask` 三列分离——密文可解密还原、盲索引支撑等值查询（不可逆）、脱敏值仅供展示。非敏感标识（openid/用户名）直接存 `identifier_plain`。两个唯一索引均含可为 NULL 的列，利用 MySQL 唯一索引多 NULL 特性：敏感类型只有 hash 入索引、非敏感类型只有 plain 入索引，同一 `(identity_type)` 下两类记录互不冲突，天然支撑幂等 upsert（`INSERT ... ON DUPLICATE KEY UPDATE`）。
 
 **Repository 业务键约定**：领域仓储 `UserAuthRepository` 仅提供 `insert` / `updateByUserIdAndType` / `upsert` / `findByIdentity` / `findByIdentityHash` / `findFirstByUnionId` / `findByUserId(AndType)`，技术主键 `id` 不出持久化层；解绑通过 `status=0` 状态更新（软删除），不物理删除。
+
+> **配套 Redis 契约键（[ADR-027](../adr/027-jwt-blacklist-writer-and-contract-key.md)）**：`auth:blacklist:{jti}` —— 登出 / 重置密码成功由 authorization-service 写入（值语义：**键存在即已吊销**；TTL = max(access token 剩余有效期, 1s)），网关 `JwtBlacklistFilter` **只读**（Redis 异常 fail-open）。该键为**网关依赖的跨服务契约键**（与 `user:info:` / `user:perms:` 同级，豁免「跨服务不得共享 Redis Key」约束，见 [09-constraints §四](../collaboration/09-constraints.md)）；非表结构，随本表所在认证上下文一并记录。
 
 ---
 
@@ -405,7 +453,8 @@ public void createOrder(OrderDTO dto) {
 - `product` → `sku`：一对多（CASCADE）
 - `orders` → `order_item`：一对多组合（CASCADE）
 - `orders` ↔ `pay_order`：通过 `order_no` 关联（非外键约束）
-- `orders` ↔ `order_logistics`：一对一
+- `orders` ↔ `order_logistics`：一对多（V5.6 已建——按 `package_no` 区分包裹，代理主键 `id` + `uk_order_package`，见 §十二 12.3）
+- `pay_order` → `refund_order`（V5.5 已建）：通过 `pay_order_no` 关联；`refund_order.after_sale_id` UNIQUE（一售后单一次退款，见 §十二 12.1）
 - `cart` → `user` + `sku`：多对一
 
 ---
@@ -413,6 +462,8 @@ public void createOrder(OrderDTO dto) {
 ## 七、V1.1+ 扩展表
 
 ### 7.1 V1.1 积分 & 评价 & 收藏
+
+> 表所有权（2026-10 边界重构）：`points_log` 归**营销域 marketing-service**（积分账本；写入经 `/internal/points/add`，签到积分由 marketing 本地发放）。
 
 **`points_log`** — 积分变动日志
 | 字段 | 类型 | 说明 |
@@ -482,15 +533,20 @@ public void createOrder(OrderDTO dto) {
 | image / link_url | VARCHAR(255) | |
 | sort_order | INT | |
 
-**`operation_log`** — 操作审计日志
+**`operation_log`** — 操作审计日志（user 域管理操作台账）
+
+> **写入方恢复（2026-10，[ADR-032](../adr/032-operation-audit-dual-pipeline.md) 管道二）**：仅 **user 域管理操作**（用户启用/禁用、角色授予）经应用层 `OperationLogManager.record(userId, module, action, content)` **显式落库**（不经 AOP；`@OperationLog` 只写审计日志、不写本表）。`updateStatus` 状态变更与留痕同事务；`setUserRole` 审计独立事务（禁事务内调 Feign）。`GET /api/admin/log` 查询范围收窄为 user 域管理操作；全平台审计走 `AUDIT` JSON 日志管道（ELK 采集）——本表**不再是**全平台审计台账。
+
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK | |
-| user_id | BIGINT | |
-| action | VARCHAR(50) | |
-| target / detail | VARCHAR(100)/(500) | |
-| ip | VARCHAR(45) | |
-| create_time | DATETIME | |
+| user_id | BIGINT | 操作者用户ID |
+| username | VARCHAR(50) | 操作者用户名（当前 `UserContext`，取不到留空） |
+| action | VARCHAR(50) | `MODULE:ACTION`（表无 module 列，模块限定词并入；常量 `OperationAuditConstants`） |
+| target | VARCHAR(100) | **未被写入方使用**（历史行仍有值）；收敛（补 module 列或废弃 target）需 DDL，见 ADR-032 |
+| detail | VARCHAR(500) | 动作 + 目标标识摘要（不含敏感值） |
+| ip | VARCHAR(45) | 当前 `UserContext` 取值（取不到留空） |
+| create_time | DATETIME | 列默认值 CURRENT_TIMESTAMP |
 
 **`coupon`** — 优惠券模板（V1.1 迁移时加入，V1.2 添加 seller_id，V4.0 升级为五维模型）
 
@@ -538,11 +594,16 @@ public void createOrder(OrderDTO dto) {
 | user_id | BIGINT | |
 | type | TINYINT | 1=退货退款, 2=仅退款 |
 | reason | VARCHAR(500) | |
-| status | TINYINT | 1=待审核→2=同意→4=已退货→5=已退款 |
+| status | TINYINT | **AfterSaleStatusEnum 六态**：1=待审核 → 2=同意 →（4=已退货）→ 5=已退款 → 6=已完成；3=拒绝（分支态） |
 | refund_amount | INT | |
 | logistics_number | VARCHAR(50) | 退货物流单号 |
 
-**`seller_application`** — 商家入驻申请
+> **V5.5/V5.6 已建（买家退款资金流，[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)/[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：状态 5=已退款（REFUNDED）已激活——pay-service 退款成功后经 `PUT /internal/trade/after-sale/{id}/refunded` 条件回写（**来源 APPROVED(2) | RETURNED(4) → REFUNDED(5)**，0 行=幂等空操作）；退款处理中/失败时售后单停留 2=同意（APPROVED），失败单可重试。退款触发时机（ADR-037 纠正）：**仅退款（type=2）审核同意即触发；退货退款（type=1）在商家确认收到退货后触发**（`PUT /api/admin/after-sale/{id}/confirm-return`，APPROVED→RETURNED）。每张售后单至多一次退款（退款单 `uk_after_sale` 唯一约束兜底，天然幂等）。退款金额在申请时已校验 ≤ 订单实付（`payAmount`）。退款单见 §十二 12.1。
+
+**`seller_application`** — 商家入驻申请 ⚠️ **deprecated（2026-10 第六轮）**
+
+> trade-service 平行入驻流程已退役删除（SellerApplicationController / AdminApplicationController / ApplicationService / SellerApplicationEntity / Mapper；原因：与商家域入驻流程平行重复，且网关 `/api/seller/**`、`/api/admin/**` 均路由不到 trade，早已不可达）。表保留在库作数据备份，DDL 保留于 `V2.0__add_after_sale_application.sql`；现行入驻以 merchant-service `seller` 表为准（见 03-Domain-Model §3.3）。
+
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK | |
@@ -572,6 +633,41 @@ public void createOrder(OrderDTO dto) {
 | amount | INT | 提现金额（分） |
 | status | TINYINT | 1=待审核, 2=已打款, 3=拒绝 |
 | bank_account / bank_name | VARCHAR(50)/(100) | |
+
+> **归属说明（2026-10 增量核对）**：`withdrawal` 归 **trade-service 结算域，暂不迁 wallet-service**——提现单与结算单（`settlement`）属同一聚合族的级联：提现审核通过（`PAID_OUT`）会将卖家结算单级联置为已打款（`WithdrawalServiceImpl.review` → `SettlementService.markSellerSettlementsPaidOut`）；与 C 端用户余额（`wallet_account`，wallet-service）是不同业务。此前「提现是钱包域迁移候选」的判断作废。
+
+### 7.5 V5.0 站内信（`notification`，notification-service 所有）
+
+> 表名不变；2026-10 边界重构后所有权归 notification-service（触达域）。公开读写 `/api/notifications/**`；内部投递 `/internal/notify/in-app`（self-send 忽略，`sender_name` 由调用方传入、不再反查档案）。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK | |
+| recipient_id | BIGINT | 接收者用户ID |
+| sender_id | BIGINT NULL | 发送者用户ID（NULL=系统） |
+| sender_name | VARCHAR(100) | 发送者名称（用户名或店铺名，由调用方传入） |
+| sender_avatar | VARCHAR(255) | 发送者头像 |
+| type | VARCHAR(32) | LIKE / REPLY / APPEND / FOLLOW / ORDER / SYSTEM |
+| title | VARCHAR(200) | 通知标题 |
+| content | VARCHAR(500) | 通知摘要 |
+| link_url | VARCHAR(500) | 跳转链接 |
+| is_read | TINYINT | 0=未读, 1=已读 |
+| create_time | DATETIME | |
+
+索引: `idx_recipient_read` (`recipient_id`, `is_read`), `idx_recipient_time` (`recipient_id`, `create_time`), `idx_type` (`type`)
+
+### 7.6 V5.3 钱包账户（`wallet_account`，wallet-service 所有）
+
+> 资金域迁出 user 的落地表：存量自 `user.balance` 幂等迁移（唯一键冲突跳过）；`user.balance` 列保留冻结、代码不再读写。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | |
+| user_id | BIGINT UNIQUE NOT NULL | 用户ID（`uk_user_id`） |
+| balance | INT NOT NULL DEFAULT 0 | 余额（分） |
+| create_time / update_time | DATETIME | |
+
+> **V5.5 已建关联（买家退款资金流，[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)）**：本域流水表 `wallet_transaction`（余额每笔变动留痕，幂等键 `transaction_no`；退款入账 = pay-service 余额渠道退款经 `POST /internal/balance/refund` 触发）——见 §十二 12.1。
 
 ---
 
@@ -605,7 +701,7 @@ public void createOrder(OrderDTO dto) {
 
 ## 九、AI 服务数据模型 (V2.5+)
 
-> ⚠️ 以下 `merchant_knowledge_base`、`ai_evaluation`、`ai_token_usage` 为 **V3.x 计划表**，当前未创建迁移文件。
+> 状态（2026-10 核对）：`merchant_knowledge_base` **已建（V3.4 迁移）**，所有权归 ai-service（客服域，2026-10 迁入）；`ai_evaluation`、`ai_token_usage` 仍为计划表（未创建迁移文件）。
 
 > AI 数据表为 V2.5 新增，支撑会话管理、消息持久化和知识库功能。完整设计见 [13-AI-Technology-Selection.md](./13-AI-Technology-Selection.md)。
 
@@ -641,7 +737,7 @@ public void createOrder(OrderDTO dto) {
 
 索引: `idx_conversation_id` (`conversation_id`)
 
-### 9.2 知识库 (V3.x 计划)
+### 9.2 知识库 (V3.4 已建)
 
 **`merchant_knowledge_base`** — 商家 AI 知识库
 
@@ -652,7 +748,7 @@ public void createOrder(OrderDTO dto) {
 | title | VARCHAR(200) NOT NULL | 知识条目标题 |
 | content | TEXT NOT NULL | 知识内容（FAQ/政策/产品说明） |
 | category | VARCHAR(30) NOT NULL | 分类: `FAQ` / `POLICY` / `PRODUCT` / `ANNOUNCEMENT` |
-| embedding_id | VARCHAR(64) | ES/Milvus 向量ID（用于检索后定位原文） |
+| embedding_id | VARCHAR(64) | 向量索引归属标识，口径 **`es:{knowledgeId}`**（摄取成功后回填：该知识的 chunk 已入 search-service 的 `knowledge_vectors` 索引；稳定可反查、不随切片策略变化）；向量链路默认关闭（`ai.rag.enabled=false`）时保持 NULL（见 02-Architecture §3.4） |
 | status | TINYINT DEFAULT 1 | 1=草稿, 2=已发布, 3=已归档 |
 | create_time | DATETIME DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 | update_time | DATETIME ON UPDATE CURRENT_TIMESTAMP | 更新时间 |
@@ -692,7 +788,9 @@ public void createOrder(OrderDTO dto) {
 
 ---
 
-## 十、买家-商家消息数据模型 (V3.3 计划)
+## 十、买家-商家消息数据模型（V3.3；2026-10 所有权归 ai-service）
+
+> 表所有权（2026-10 边界重构）：`chat_message` 归 AI 客服域 ai-service（人工 IM 会话；STOMP `/ws/chat` + REST `/api/chat/**` 由其提供）。
 
 ### 10.1 chat_message（聊天消息）
 
@@ -735,13 +833,161 @@ public void createOrder(OrderDTO dto) {
 
 ### 11.1 已落库的 product/sku/review 字段
 
-**`product` 表已新增** (V3.5 migration): images(JSON多图)/video_url(VARCHAR)/attributes(JSON规格参数)/service_tags(JSON售后标签)/view_count(INT浏览数)
-**`sku` 表已新增** (V3.5 migration): original_price(INT, 原价分)
-**`review` 表已修改** (V3.5 migration): images→media_urls(JSON) + is_anonymous(TINYINT) + helpful_count(INT)
+**`product` 表已新增** (V3.5 migration)：`images` VARCHAR(2000)（多图，JSON 数组文本）/`video_url` VARCHAR(500)/`attributes` JSON（规格参数）/`service_tags` VARCHAR(500)（售后标签，JSON 数组文本）/`view_count` INT（浏览数）；V4.0 追加 `sales_tags` JSON（商品级销售标签）。
+**`sku` 表已新增** (V3.5 migration)：`original_price` INT（原价，分；V4.0 另增 stock_type/is_hot/hot_reason VARCHAR(50)/sales_tags JSON）。
+**`review` 表实际列**（V3.5 基线 + V5.0.2 增强，与早期文档"media_urls/is_anonymous/helpful_count"不符，以本节为准）：`sku_id`、`images` VARCHAR(500)（逗号分隔）、`reply`/`reply_time`（商家回复）、`append_content`/`append_media_urls`/`append_time`（追评）、`like_count`（点赞数）、`tags` VARCHAR(500)（评价标签 JSON 数组文本）；唯一约束 `uk_order_user(order_id, user_id)`。
 
 ### 11.2 已建表
 
 **`product_view_log`** — 商品浏览记录 (user_id/product_id/view_time), idx_product_time
-**`store_follow`** — 店铺关注 (user_id+seller_id 联合主键)
+**`store_follow`** — 店铺关注：**无 MySQL 表**（实现为 Redis Set，非表；2026-10 第六轮随商家域归 merchant-service，私有 Key `shop:followers:{sellerId}` / `user:follow:shops:{userId}`）
 **`sku_spec_dimension`** — SKU规格维度 (product_id/name/sort_order) (计划)
 **`sku_spec_option`** — SKU规格选项 (dimension_id/value/image) (计划)
+
+---
+
+## 十二、V5.5/V5.6 新增表与变更（P0 四项，已建库）
+
+> **已建（2026-10-03 落地同步）**：本节四组表已随 `V5.5__refund_wallet_tx_and_reconciliation.sql`（资金线）与 `V5.6__freight_template_and_package_split.sql`（履约线）迁移落库并实现——F1 退款资金流（ADR-035）、F4 渠道对账（ADR-036）、F2 运费模型 + F3 拆单发货（ADR-037）及退款触发纠正；正文与 §3.5/§3.7/§3.8/§3.10/§3.11 的"🆕 V5.6 规划"标注已收敛为"已建"。API 契约见 `05-API-Specification.md` §4.4.9 / §4.7.3 / §4.13.14 / §4.14.15-17（"规划中"标注由 product-manager 收口中）。
+>
+> **迁移批次**（数据库三段式版本号，与 05 契约版本 V5.6.0 是两套序列）：
+>
+> | 迁移批次 | 表/变更 | 迁移文件（已落地） |
+> | --- | --- | --- |
+> | **V5.5 资金线** | `refund_order`、`wallet_transaction`（F1）+ `reconciliation_batch`、`reconciliation_detail`（F4） | `V5.5__refund_wallet_tx_and_reconciliation.sql` |
+> | **V5.6 履约线** | `freight_template` 新表 + `product.freight_template_id` / `orders.post_fee`（F2）+ `order_logistics` 主键与包裹改造、`order_item.package_no`（F3） | `V5.6__freight_template_and_package_split.sql` |
+>
+> 全部新表遵循 §一 约定：`INT` 分、`TINYINT` 状态枚举、审计列 `create_time`/`update_time`、`utf8mb4` + InnoDB、技术主键 `id AUTO_INCREMENT` + 业务唯一键（主键决策矩阵）。
+
+### 12.1 F1 买家退款资金流（V5.5 资金线迁移）
+
+**`refund_order`** — 退款单（**归属 pay-service**；V5.5 新建，三通道原路退回，[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)）
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
+| refund_no | CHAR(36) | UNIQUE (`uk_refund_no`), NOT NULL | 退款单号（业务唯一键，UUID；对外与幂等重试的定位键） |
+| order_no | VARCHAR(64) | NOT NULL | 关联订单号（`orders.order_no`，无外键，与 `pay_order.biz_order_no` 同口径） |
+| pay_order_no | VARCHAR(64) | NOT NULL | 关联支付单号（`pay_order.pay_order_no`） |
+| after_sale_id | BIGINT | NOT NULL, UNIQUE (`uk_after_sale`) | 关联售后单（`after_sale.id`）——**一售后单一次退款**，唯一约束天然幂等：同 `afterSaleId` 重复请求返回既有退款单 |
+| user_id | BIGINT | NOT NULL | 买家用户ID |
+| channel | VARCHAR(16) | NOT NULL | 退款渠道：`WECHAT` / `ALIPAY` / `BALANCE`（与原支付渠道一致，原路退回） |
+| refund_amount | INT | NOT NULL | 退款金额（分）；申请时已校验 ≤ 订单实付 `payAmount`（`PARAM_ERROR(1101)`） |
+| status | TINYINT | NOT NULL, DEFAULT 0 | 0-处理中，1-成功，2-失败（失败可经管理端重试） |
+| channel_refund_no | VARCHAR(64) | NULL | 渠道退款单号（微信 `refund_id` 等，回调回填） |
+| fail_reason | VARCHAR(255) | NULL | 失败原因（渠道返回或系统错误摘要，不含敏感细节） |
+| create_time | DATETIME | NOT NULL | 创建时间 |
+| update_time | DATETIME | NOT NULL | 更新时间 |
+
+索引：`uk_refund_no(refund_no)`、`uk_after_sale(after_sale_id)`、`idx_order_no(order_no)`（按订单查退款）
+
+> **状态口径**：退款**处理中/失败**时售后单停留 `APPROVED(2)`（可重试）；仅**成功**回写售后单 `REFUNDED(5)`（trade 经 `PUT /internal/trade/after-sale/{id}/refunded`，**来源 `APPROVED(2) | RETURNED(4)` 条件迁移**，0 行=幂等空操作）。余额渠道：本地同步入账（`wallet_transaction` 幂等）；微信/支付宝渠道：异步回调确认（微信退款回调复用 ADR-033 验签+AES-GCM 解密口径与 ADR-029 裸 JSON 应答协议）。
+
+**`wallet_transaction`** — 钱包流水（**归属 wallet-service**；余额每笔变动留痕，V5.5 新建，wallet 首次具备流水能力）
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
+| transaction_no | CHAR(36) | UNIQUE (`uk_transaction_no`), NOT NULL | 流水号（**幂等键**，UUID；重复请求按唯一约束/先查判定，幂等成功） |
+| user_id | BIGINT | NOT NULL | 用户ID（`wallet_account.user_id` 口径） |
+| type | TINYINT | NOT NULL | 1-收入，2-支出 |
+| amount | INT | NOT NULL | 变动金额（分，恒正；方向由 type 表达） |
+| biz_no | VARCHAR(64) | NOT NULL | 业务关联号（退款流水=退款单号 `refund_no`；支出流水=订单号等） |
+| remark | VARCHAR(100) | NULL | 摘要（如"售后退款"） |
+| create_time | DATETIME | NOT NULL | 创建时间 |
+| update_time | DATETIME | NOT NULL | 更新时间（§一 审计列约定） |
+
+索引：`uk_transaction_no(transaction_no)`、`idx_user_time(user_id, create_time)`（流水分页查询）
+
+> **入账原子性**：入账与流水写入同事务（`wallet_account.balance` 增量 + `wallet_transaction` 插入）；`transaction_no` 冲突视为重复请求，顺序重放幂等返回成功（不重复加余额）；真并发撞唯一键时抛异常令本次「加余额 + 写流水」整体回滚（管理端重试即幂等收敛，资金不重复入账——有意取舍见 ADR-035「后果」）。
+
+### 12.2 F2 运费模型（V5.6 履约线迁移）
+
+**`freight_template`** — 运费模板（**归属 item-service** 商品域）
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
+| template_no | CHAR(36) | UNIQUE (`uk_template_no`), NOT NULL | 模板业务编号（UUID） |
+| seller_id | BIGINT | NOT NULL | 商家ID——**口径 = 商家 `user_id`**（与 `product.seller_id` 等下游口径一致，ADR-019 Phase A） |
+| template_name | VARCHAR(50) | NOT NULL | 模板名称；同商家内唯一 `uk_seller_template(seller_id, template_name)` |
+| charge_mode | TINYINT | NOT NULL, DEFAULT 1 | 计费方式：1-固定运费（**Phase 1 唯一值**，为 Phase 2 模板/重量计费预留） |
+| fee | INT | NOT NULL | 固定运费（分，≥0） |
+| free_threshold | INT | NOT NULL, DEFAULT 0 | 满额包邮阈值（分）；**0 = 不参与满额包邮**（>0 时订单商品总额达到该值则运费为 0） |
+| status | TINYINT | NOT NULL, DEFAULT 1 | 1-启用，0-停用（停用模板不参与计价） |
+| create_time | DATETIME | NOT NULL | 创建时间 |
+| update_time | DATETIME | NOT NULL | 更新时间 |
+
+索引：`uk_template_no(template_no)`、`uk_seller_template(seller_id, template_name)`、`idx_seller_status(seller_id, status)`（商家默认模板解析：该商家**最早创建的启用模板**，`WHERE seller_id=? AND status=1 ORDER BY id ASC LIMIT 1`）
+
+**既有表增量（同迁移批次）**：
+
+| 表 | 变更 | 说明 |
+| --- | --- | --- |
+| `product` | 新增 `freight_template_id BIGINT NULL`，FK `fk_product_freight_template` → `freight_template.id` **ON DELETE SET NULL** | NULL/模板被删 → 回落商家默认模板；见 §3.5 |
+| `orders` | 新增 `post_fee INT NOT NULL DEFAULT 0` | 下单时计算并**快照**（模板后续改价不影响已建订单）；见 §3.7 |
+
+**计价规则（Phase 1 口径，与 05 §4.4.9/§4.6.1 契约同步）**：
+
+1. **金额不变式变更（旧→新）**：
+   - 旧：`payAmount = totalAmount − discountAmount`
+   - 新：`payAmount = totalAmount − discountAmount + postFee`
+   - `totalAmount` 仍 = Σ `order_item.subTotal`（不含运费）；`postFee` 单列快照。（02-Architecture §六 与 03-Domain-Model §四 已同步 V2 口径。）
+2. **同单同商家**：跨店下单已被禁止（`CROSS_STORE_FORBIDDEN(3014)`），一单内商品同商家，运费计一次。
+3. **取最高者计一次**：取订单内各商品**绑定模板**中 `fee` 最高者计一次运费（不按商品叠加）。
+4. **满额包邮**：订单商品总额（`totalAmount`）≥ 该模板 `free_threshold`（>0）时 `postFee = 0`。
+5. **默认模板回落**：商品未绑定模板（NULL）或绑定模板**已停用**时，用商家默认模板（最早创建的启用模板）；商家无任何启用模板时 `postFee = 0`（Phase 1 兜底，不阻断下单）。
+6. 秒杀订单（orderType=3，无店铺归属）`postFee = 0`。
+
+### 12.3 F3 拆单发货（V5.6 履约线迁移）
+
+**`order_logistics` 改造**（1:1 → 1:N，存量库迁移含数据回填）：
+
+| 变更 | DDL 要点 | 说明 |
+| --- | --- | --- |
+| 新增代理主键 | `id BIGINT AUTO_INCREMENT`，**PRIMARY KEY (id)**；`order_id` 转为**普通外键**（`fk_logistics_order` 关系保留；**不建 `uk_order_id` 单列唯一键**——1:N 语义下单列唯一会禁止一单多包裹，原稿该表述已纠错删除） | 收敛 §3.11「主键复用 order_id」约定偏差；一单多包裹后按 `package_no` 区分包裹 |
+| 新增包裹号 | `package_no INT NOT NULL DEFAULT 1`；`UNIQUE KEY uk_order_package(order_id, package_no)` | 同一订单包裹号从 1 递增；**存量数据回填 `package_no = 1`** |
+| 语义变更 | `order_id` 由「1:1 主键」变为「1:N 外键」 | 每次发货（包裹）插入一条物流记录，字段口径（快照列/状态机）不变 |
+
+**`order_item` 增量**：
+
+| 表 | 变更 | 说明 |
+| --- | --- | --- |
+| `order_item` | 新增 `package_no INT NULL` | 发货时标记明细归属包裹（对应 `order_logistics.package_no`）；NULL=未发货；**一明细只发一次**（重复发货同一 sku 被拒，`ORDER_STATUS_INVALID(3010)`）；`KEY idx_order_package(order_id, package_no)` 支撑按包裹聚合明细 |
+
+> **订单状态口径**：部分发货订单保持"待发货(2)"；**全部明细**均有 `package_no` 后才迁移"待收货(3)"（不新增订单状态，复用 §九 状态机）。空 `skuIds` = 全量发货（单包裹语义兼容）。
+
+### 12.4 F4 渠道对账（V5.5 资金线迁移）
+
+**`reconciliation_batch`** — 对账批次（**归属 pay-service**）
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
+| bill_date | DATE | NOT NULL | 账单日 |
+| channel | VARCHAR(16) | NOT NULL | 对账渠道：`WECHAT` / `ALIPAY`（Phase 1 两渠道；余额渠道本地闭环不参与对账） |
+| status | TINYINT | NOT NULL, DEFAULT 0 | 0-处理中，1-完成，2-失败 |
+| channel_total | INT | NULL | 渠道账单总额（分，账单解析后回填） |
+| local_total | INT | NULL | 本地支付成功总额（分，`pay_order.status=成功` 按日汇总） |
+| create_time | DATETIME | NOT NULL | 创建时间 |
+| update_time | DATETIME | NOT NULL | 更新时间 |
+
+索引：`uk_date_channel(bill_date, channel)`（**同日同渠道一批次**——重复执行先删后写的幂等锚点，并兜底并发重复触发）
+
+**`reconciliation_detail`** — 对账差异明细（**归属 pay-service**）
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
+| batch_id | BIGINT | FK → reconciliation_batch.id, NOT NULL | 所属批次 |
+| pay_order_no | VARCHAR(64) | NOT NULL | 本地支付单号（比对键） |
+| channel_txn_id | VARCHAR(64) | NULL | 渠道交易号（渠道账单有则回填） |
+| channel_amount | INT | NULL | 渠道账单金额（分；渠道无此单为 NULL） |
+| local_amount | INT | NULL | 本地金额（分；本地无此单为 NULL） |
+| result | TINYINT | NOT NULL | 比对结果：1-匹配，2-渠道有本地无，3-本地有渠道无，4-金额不一致 |
+| create_time | DATETIME | NOT NULL | 创建时间 |
+| update_time | DATETIME | NOT NULL | 更新时间（§一 审计列约定） |
+
+索引：`idx_batch_result(batch_id, result)`（管理端按差异类型筛选）
+
+> **Phase 1 口径**：差异仅**落库记录供管理端查看**（§4.13.14 AD44-AD46），**不自动调账**；日终任务由 XXL-Job 触发（dev 默认关闭），渠道账单下载经 ia-integration（Phase 1 mock 返回样例账单）。**重复执行同日对账幂等**：同 `(bill_date, channel)` 先删旧批次与明细再重写（`uk_date_channel` 兜底并发重复触发）。

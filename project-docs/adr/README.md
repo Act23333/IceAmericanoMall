@@ -21,3 +21,26 @@
 | [015](./015-package-and-contract-naming.md)        | 应用层包名 `app` + 契约对象 `XxxCO` 命名规范 | 2026-10-01 |
 | [016](./016-user-service-ddd-and-sms-migration.md) | user-service DDD 四层重构 + 短信直发链路迁移 verification-service | 2026-10-01 |
 | [017](./017-user-domain-split-and-auth-boundary.md) | user 域资料/凭证分离（PII 加密）+ 认证边界收敛（user_auth 唯一所有权）+ RBAC 收尾 | 2026-10-01 |
+| [018](./018-unified-identity-rbac-ownership.md) | 统一身份 + RBAC 归属授权域 + 用户档案域边界收敛 | 2026-10-02 |
+| [019](./019-merchant-shop-1n-split.md) | 商家 / 店铺 1:N 拆分（seller 瘦身 + shop 承载店铺档案） | 2026-10-03 |
+| [020](./020-sku-stock-atomic-sql-deduction.md) | SKU 库存扣减/恢复改用单条原子 SQL（放弃 version 读-比-写） | 2026-10-03 |
+| [021](./021-cart-readtime-enrichment-in-app-layer.md) | 购物车商品信息与金额在读时由应用层编排回填 | 2026-10-03 |
+| [022](./022-feign-circuitbreaker-enablement-marketing-ai.md) | marketing-service / ai-service 开启 Feign 熔断（resilience4j）与参数口径 | 2026-10-03 |
+| [023](./023-adapter-layer-structure-and-request-object-naming.md) | 四层服务 adapter 层结构统一（按受众分子包 + 入参对象化 `XxxReq`） | 2026-10-03 |
+| [024](./024-distributed-lock-consolidation-in-ia-common.md) | 业务键互斥锁能力归并到 ia-common 共享内核（条件装配） | 2026-10-03 |
+| [025](./025-domain-aggregate-packaging-and-app-usecase-granularity.md) | 领域模型按聚合分包 + 应用层 Manager 按用例族收敛粒度 | 2026-10-03 |
+| [026](./026-ws-handshake-query-token-edge-swap.md) | WebSocket 握手鉴权 —— 网关边缘 query token 换头 | 2026-10-03 |
+| [027](./027-jwt-blacklist-writer-and-contract-key.md) | access token 吊销 —— jti 黑名单写侧语义与契约键豁免 | 2026-10-03 |
+| [028](./028-trade-sentinel-wiring-over-resilience4j.md) | trade-service 走 Sentinel 接线修复而非迁移 resilience4j | 2026-10-03 |
+| [029](./029-channel-callback-protocol-over-result-envelope.md) | 渠道回调协议优先于平台 Result 信封（微信 v3 裸 JSON + 500 触发重推） | 2026-10-03 |
+| [030](./030-metaobjecthandler-consolidation-autoconfig.md) | MyMetaObjectHandler 收口 ia-common 自动装配唯一实现（user 自有变体退避共存） | 2026-10-03 |
+| [031](./031-multi-granularity-token-revocation.md) | 多粒度 token 吊销 —— 用户级令牌版本 `auth:tokenver:{userId}` + 全端会话拆除（网关合并为一次 MGET；收敛 ADR-027 残余风险） | 2026-10-03 |
+| [032](./032-operation-audit-dual-pipeline.md) | 操作审计双管道 —— JSON 审计日志（全服务）+ `operation_log` 落库（仅 user 域） | 2026-10-03 |
+| [033](./033-wechat-callback-decrypt-in-adapter.md) | 微信 v3 回调验签 + AES-GCM 解密 + 字段提取归通道适配层（修复 out_trade_no 断链） | 2026-10-03 |
+| [034](./034-cross-module-utility-consolidation-and-boundaries.md) | 账号掩码归并 ia-common + 网关对端 IP 解析器更名 `EdgePeerIpResolver` + 「必要差异」登记 | 2026-10-03 |
+| [035](./035-refund-fund-flow-and-refunded-activation.md) | 买家退款资金流 —— 三通道原路退回、`refund_order` 幂等锚点与 `REFUNDED` 状态机激活（F1） | 2026-10-03 |
+| [036](./036-channel-reconciliation-record-only-and-rewrite-idempotency.md) | 渠道对账 —— 四态差异只记录不调账、先删后写幂等与账单适配口径（F4） | 2026-10-03 |
+| [037](./037-freight-model-package-split-and-refund-trigger.md) | 履约线 —— 金额不变式 V2（`payAmount` 计入 `postFee`）+ 运费模板计价口径 + 拆单发货包语义 + 退款触发时机纠正（修订 ADR-035） | 2026-10-03 |
+| [038](./038-full-ddd-migration.md) | 全面四层 DDD 收口（废止轻量双轨；14 业务服务全部落地） | 2026-10-03 |
+| [039](./039-ai-service-ddd-completion.md) | ai-service 四层收口完成（游离包归位 + 仓储归位，49→52 测试） | 2026-10-04 |
+| [040](./040-ia-common-shared-kernel-package-rename.md) | ia-common 共享内核包更名（domain 拆分归位 api / security） | 2026-10-04 |

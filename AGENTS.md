@@ -45,19 +45,19 @@ mvn -f Implementation/back-end/pom.xml clean install -DskipTests
 # Build a single service (and its dependencies)
 mvn -f Implementation/back-end/pom.xml -pl user-service -am clean install
 
-# Run tests (77 tests across 7 modules, 0 failures)
+# Run tests (911 tests across all 18 modules, 0 failures, 1 pre-existing @Disabled skip — strict four-layer DDD everywhere, ADR-038/039)
 mvn -f Implementation/back-end/pom.xml test
 
 # Run tests for a specific module
 mvn -f Implementation/back-end/pom.xml -pl trade-service test
 
 # Before running any service, build shared modules first:
-mvn -f Implementation/back-end/pom.xml -pl ia-common,ia-api -am clean install -DskipTests
+mvn -f Implementation/back-end/pom.xml -pl ia-common,ia-api,ia-integration -am clean install -DskipTests
 
 # Run a service (pattern: mvn -f <service-dir> -DskipTests spring-boot:run)
 mvn -f Implementation/back-end/user-service -DskipTests spring-boot:run          # port configured per-service
 mvn -f Implementation/back-end/authorization-service -DskipTests spring-boot:run  # port 9000
-mvn -f Implementation/back-end/gate-service -DskipTests spring-boot:run           # port 8080
+mvn -f Implementation/back-end/gateway-service -DskipTests spring-boot:run           # port 8080
 ```
 
 ### Runtime prerequisites
@@ -68,13 +68,13 @@ Running services locally requires these to be up:
 | ---------- | ---------------------------------------------------- | --------------------------------------------------------- |
 | Nacos      | `application.yml` — `spring.cloud.nacos.server-addr` | Default: `192.168.10.128:8848`                            |
 | Redis      | `application.yml` — `spring.data.redis.host`         | Used for token caching, rate limiting (Lua scripts)       |
-| MySQL      | `application.yml` — `spring.datasource.url`          | Schema: `Implementation/back-end/database/Initialize.sql` |
+| MySQL      | `application.yml` — `spring.datasource.url`          | Schema: `Implementation/back-end/database/Initialize.sql`（**全量最新快照，45 张表**，装库一次到位）+ `database/migrations/`（**存量库升级路径**，V1.1.0→V5.6 三段式版本号，按版本顺序应用；新装库无需迁移） |
 
-There are currently no Docker Compose or infra-as-code files. Each developer sets these up manually.
+Docker Compose infra exists: `Implementation/back-end/docker-compose.yml` + `docker/` (MySQL / Redis / Nacos / ES / RocketMQ / MinIO / Prometheus / Grafana / ELK / SkyWalking). Backend service processes run locally (IDE / CLI), not via compose.
 
 ## Architecture Overview
 
-IceAmericanoMall is a B2B2C e-commerce platform (similar to Taobao/JD) built as a distributed microservices system. **Backend MVP is 100% complete** (35/35 PRD features, 62 API endpoints). The core transaction flow (register → browse → cart → order → pay → ship → confirm) is fully implemented end-to-end.
+IceAmericanoMall is a B2B2C e-commerce platform (similar to Taobao/JD) built as a distributed microservices system. **Backend is fully implemented** (35/35 PRD features; 18 Maven modules, ~184 HTTP endpoints, 911 tests green (all services strict four-layer DDD, ADR-038/039)). The core transaction flow (register → browse → cart → order → pay → ship → confirm) is implemented end-to-end; module boundaries were finalized in the 2026-10 boundary refactor, round 6 (merchant-service) included (see `project-docs/backend/02-Architecture.md` §3).
 
 ### Technical Stack
 
@@ -93,58 +93,63 @@ IceAmericanoMall is a B2B2C e-commerce platform (similar to Taobao/JD) built as 
 ### Service Map
 
 ```
-gate-service (API Gateway — Spring Cloud Gateway + Nacos)             ✅ COMPLETE
-  ├── authorization-service (OAuth2 auth server, login/register, JWT) ✅ COMPLETE
-  ├── user-service (user CRUD, addresses, sign-in, seller, admin)     ✅ COMPLETE
-  ├── ia-api (shared Feign client interfaces + DTOs)                  ✅ COMPLETE
-  ├── ia-common (shared lib: exceptions, Result, utils, config)       ✅ COMPLETE
-  ├── item-service (products/SKUs/categories, stock)                  ✅ COMPLETE
-  ├── cart-service (shopping cart, dedup merge)                       ✅ COMPLETE
-  ├── trade-service (orders, Saga compensation, OrderManager)         ✅ COMPLETE
-  ├── pay-service (WeChat Pay, callback, timeout)                     ✅ COMPLETE
-  ├── logistics-service (shipping records, status tracking)           ✅ COMPLETE (V1.1: courier API)
-  └── search-service (ElasticSearch search)                           🟡 SKELETON (V1.1)
+gateway-service (API Gateway — Spring Cloud Gateway + Nacos + JWT/header filters) ✅ COMPLETE
+  ├── authorization-service (auth + RBAC: login, user_auth credentials,            ✅ COMPLETE
+  │                          sys_* role/permission management, permission cache)
+  ├── user-service (profile domain: profile/avatar/address;                        ✅ COMPLETE
+  │                 favorite/history/oplog)
+  ├── merchant-service (merchant domain: onboarding apply/approve — approve        ✅ COMPLETE
+  │                    auto-grants ROLE_SELLER; merchant identity (`seller` table)
+  │                    + shop profile (`shop` table, 1:N — ADR-019)/public pages;
+  │                    store follow (Redis Sets))
+  ├── verification-service (codes + captcha — the sole verification outlet)        ✅ COMPLETE
+  ├── notification-service (SMS/email/in-app; in-app messages persisted)           ✅ COMPLETE
+  ├── wallet-service (balance account — NEW in 2026-10 boundary refactor)          ✅ COMPLETE
+  ├── marketing-service (coupons, flash sales, points ledger, sign-in)             ✅ COMPLETE
+  ├── ai-service (AI assistant/CS + human IM chat + merchant knowledge base)       ✅ COMPLETE
+  ├── item-service (products/SKUs/categories/reviews, stock)                       ✅ COMPLETE
+  ├── cart-service (shopping cart, dedup merge)                                    ✅ COMPLETE
+  ├── trade-service (orders, Saga compensation, OrderManager; after-sale)          ✅ COMPLETE
+  ├── pay-service (WeChat Pay, callback, multi-channel incl. balance)              ✅ COMPLETE
+  ├── logistics-service (shipping records, status tracking)                        ✅ COMPLETE
+  ├── search-service (ES full search + MySQL LIKE fallback, dual impl)             ✅ COMPLETE
+  └── ia-api / ia-common / ia-integration (shared modules)                         ✅ COMPLETE
 ```
 
-**Status legend**: ✅ COMPLETE = business logic fully implemented, compiles, tested | 🟡 SKELETON = minimal scaffold only, no business logic
+**Status legend**: ✅ COMPLETE = business logic fully implemented, compiles, tested | 🟡 SKELETON = minimal scaffold only (none currently — every module is implemented)
 
-`ia-common` is the shared kernel — it defines `Result<T>`, `ErrorCode` enum, exception hierarchy (`CommonException`, `BadRequestException`, `BizException`, `DBException`, `ForbiddenException`, `UnauthorizedException`), `@RateLimit` annotation + `RateLimitAspect`, `GlobalExceptionHandler`, Lua scripts (`rate_limit.lua`, `check_limit.lua`, `login_rate_limit.lua`, `del_redisKey.lua`), MyBatis-Plus config, Json config. (V5.2: SMS/Geetest third-party integration moved out of ia-common into `ia-integration`.)
+`ia-common` is the shared kernel — it defines `Result<T>` (in `common/api`, ADR-040; identity holders `UserContext`/`UserInfo` live in `common/security`), `ErrorCode` enum, exception hierarchy (`CommonException`, `BadRequestException`, `BizException`, `DBException`, `ForbiddenException`, `UnauthorizedException`), `@RateLimit` annotation + `RateLimitAspect` (rate-limit key includes method dimension: `rate:limit:{Class.method}:{key}`, FREQUENT_ERROR=429), `GlobalExceptionHandler` (`/internal/**` errors return real HTTP status + minimal `{"code","msg"}` JSON; `ConstraintViolationException` → 400), `common/lock/DistributedLock` + `RedissonDistributedLockAdapter` (conditional; ADR-024 — auth/user copies deleted), `OptimisticLockerInnerInterceptor` (registered V5.3), Lua scripts (`lua/rate_limit.lua` only — `check_limit`/`login_rate_limit`/`del_redisKey` were zero-call and removed), `CryptoKeyConfig` (PII AES/HMAC key loading), `IpUtil` (client-IP resolution, trusts gateway-injected `X-Client-Ip`), `@OperationLog` + `OperationLogAspect` (audit-only aspect, ADR-032: single-line JSON to logger `AUDIT`, registered via `AutoConfiguration.imports`, zero business dependencies, params not recorded by default), `AuditFieldMetaObjectHandler` (audit-field fill for `createTime`/`updateTime`; auto-registered via `MyMetaObjectHandlerAutoConfiguration` with `@ConditionalOnMissingBean` back-off, ADR-030 — seven service copies deleted, user-service keeps its own variant for `registerTime`), `SecurityHeaders` (14 trusted/proxy header-name constants with trust-boundary docs, ADR-034), `DesensitizeUtil` mask family (`maskPhone`/`maskEmail`/`maskAccount` — single definition for masking rules, ADR-034), MyBatis-Plus config, Json config. (V5.2: SMS/Geetest third-party integration moved out of ia-common into `ia-integration`; V5.3: dead SMS/`FieldPermission` AOP code removed; V5.4: `@OperationLog` audit aspect restored for the audit dual pipeline — the `operation_log` DB ledger is written explicitly by user-service only, not by the aspect.)
 
-`ia-api` contains Feign client interfaces (e.g., `UserClient`, `SkuClient`), shared DTOs, and fallback implementations so services can call each other without duplicating contract definitions.
+`ia-api` contains 15 Feign client interfaces (e.g., `UserClient`, `SkuClient`, `AuthContextClient`, `BalanceClient`, `NotificationClient`, `PointsClient`, `VerificationClient`), shared DTOs, and fallback implementations so services can call each other without duplicating contract definitions.
 
-**Package naming note (V5.2 unified)**: All modules share the base package `org.icedamericanomall`. Service implementations are segmented by service: `org.icedamericanomall.<service>` (e.g., `user`, `item`, `auth`, `gateway`); shared modules live in dedicated segments: `ia-common` = `org.icedamericanomall.common`, `ia-integration` = `org.icedamericanomall.integration.*`, `ia-api` = `org.icedamericanomall.{client,config,dto,fallback}`. Never create a sub-package in one module that shares a name with another service's segment (e.g., an `auth/` package inside item-service). Because service base packages no longer cover shared-module packages, service main classes must declare explicit `scanBasePackages` for ia-api fallback / ia-integration beans they use (see ADR-009).
+**Package naming note (V5.2 unified)**: All modules share the base package `org.icedamericanomall`. Service implementations are segmented by service: `org.icedamericanomall.<service>` (e.g., `user`, `item`, `auth`, `gateway`, `wallet`); shared modules live in dedicated segments: `ia-common` = `org.icedamericanomall.common`, `ia-integration` = `org.icedamericanomall.integration.*`, `ia-api` = `org.icedamericanomall.{client,config,dto,fallback}`. Never create a sub-package in one module that shares a name with another service's segment (e.g., an `auth/` package inside item-service). Because service base packages no longer cover shared-module packages, service main classes must declare explicit `scanBasePackages` for ia-api fallback / ia-integration beans they use (see ADR-009).
 
-### Package Structure (Alibaba Lightweight DDD)
+### Package Structure (strict four-layer DDD — unified since ADR-038)
 
-Each service follows this package layout (minimal version for small/medium services):
+All 14 business services follow the same four-layer layout; the lightweight COLA shape (top-level `service/` `mapper/` `entity/` `convert/` `job/` `consumer/` `producer/` `strategy/` packages) no longer exists anywhere (ADR-038 abolished ADR-023's "two shapes" clause).
 
 ```
 org.icedamericanomall.<service>
-├── controller/    — REST endpoints, param validation (no business logic, no Redis/lock ops)
-├── manager/       — Flow orchestration, distributed locks, rate limiting, multi-service aggregation
-├── service/       — Atomic business logic, single-domain operations
-│   └── impl/      — Service implementations
-├── domain/
-│   ├── dto/       — req/resp/feign DTOs
-│   ├── entity/    — DB-mapped DOs (MyBatis-Plus entities)
-│   └── vo/        — Frontend view objects
-├── mapper/        — MyBatis-Plus BaseMapper interfaces
-├── convert/       — MapStruct converters (Entity ↔ DTO/VO)
-├── config/        — Service-specific Spring config
-├── constants/     — Enums and constants (may also be named `enums/`)
-├── group/         — Validation group marker interfaces (CreateGroup, UpdateGroup)
-├── aspect/        — Service-local AOP aspects
-├── exception/     — Service-specific exceptions (rare; prefer ia-common exceptions)
-└── util/          — Service-local utilities
+├── adapter/           — REST endpoints by audience: web / admin / internal
+│   └── …              — + request (XxxReq) / response (XxxVO) / assembler (MapStruct, renamed from convert)
+├── app/               — orchestration managers, one per use-case family (complex families get sub-packages,
+│                        e.g. marketing app/{coupon,flash,points,sign}, trade app/{order,aftersale,finance,dashboard})
+├── domain/            — model/<aggregate>/ / service/ (pure functions) / repository/ (ports) / port/ / enums/ (framework-free)
+└── infrastructure/    — persistence/ (PO + Mapper + RepositoryImpl; multi-statement writes carry @Transactional here),
+                          adapter/ (Redis/HTTP anti-corruption), messaging/ (producer+consumer), scheduler/ (jobs), config/
 ```
 
 **Key rules:**
 
-- Controller: only param validation + call service + wrap in `Result`. Never write business logic or operate Redis/locks directly.
-- `manager/` is the prescribed layer for orchestration, distributed locks, and multi-service aggregation. Currently **trade-service** has implemented `OrderManager` (full Saga orchestration: cart→SKU→address→stock→order). Other services delegate cross-cutting concerns to `ia-common`'s `@RateLimit` aspect.
-- `domain/entity` DOs must NOT leak to controller or external services — always convert to DTO/VO.
+- Controller: only param validation + call Manager + wrap in `Result`. Never write business logic or operate Redis/locks directly. Controllers do not hold converters — Managers return VOs.
+- Orchestration, distributed locks, multi-service aggregation, Feign and MQ live in the app layer (`app/*Manager` or sub-package Managers, e.g. trade `OrderCreationManager` full Saga: validate→buildOrder→deductStock→persist→afterCreate). Controllers stay thin. One Manager per aggregate/use-case family; split mixed-responsibility classes (ADR-025).
+- Adapter packages are organized by audience only: `adapter/web` / `adapter/admin` / `adapter/internal`, plus `adapter/request` / `adapter/response` / `adapter/assembler` (ADR-023, package renamed from `convert` per user decision 2026-10). Inbound bodies must be typed `XxxReq` with validation (never `Map`/raw scalar bodies); VOs must not expose technical fields (`version`/`cipher`/`hash`).
+- Domain aggregates are plain POJOs (no Spring/MyBatis/Feign imports); persistence POs keep MyBatis annotations (`@TableName`/`@Version`/`@TableField`). PO↔aggregate conversion is inlined in the RepositoryImpl (static toPO/toDomain); aggregates never leak past the app layer.
+- State-machine transitions use conditional updates (`UPDATE ... WHERE id=? AND status=expected`) owned by RepositoryImpl — explicit SQL on the Mapper when the invariant needs to be contractual (trade `AfterSaleMapper.updateStatusConditionally`, `OrderItemMapper.markPackageShipped`).
+- Managers that call Feign must NOT be `@Transactional` (hard constraint); multi-statement local writes sink `@Transactional` into the repository impl (pay `ReconciliationRepositoryImpl` precedent). Managers may carry `@Transactional` only when the whole method is local.
+- Persistence POs must NOT leak to controller or external services — always convert to DTO/VO.
 - Inter-service calls use `ia-api` Feign interfaces; request/response use dedicated Feign DTOs.
-- Internal endpoints (path contains `/internal/`) bypass `Result` wrapping on exceptions so callers receive raw HTTP errors.
+- Internal endpoints (path contains `/internal/`) bypass `Result` wrapping on exceptions: business exceptions return the real HTTP status + minimal `{"code","msg"}` JSON (ADR-004, revised V5.3).
 - Validation groups (`CreateGroup`/`UpdateGroup`) are marker interfaces in `group/` for conditional `@Validated` checks.
 
 ### Naming Conventions
@@ -162,6 +167,9 @@ org.icedamericanomall.<service>
 - **Rate limiting**: `@RateLimit` annotation + `RateLimitAspect` in `ia-common` using Lua scripts on Redis. Gateway-level rate limiting also configured via `RequestRateLimiter` filter.
 - **JWT**: authorization-service supports both HS256 and RS256; public keys exposed via JWKS endpoint at `/oauth2/jwks`.
 - **Password encoding**: BCrypt via Spring Security's `PasswordEncoder`.
+- **Captcha (vendor-neutral)**: callers send `provider` + `params` (`CaptchaVerifyReqCO`) to verification-service — vendor field unpacking exists only inside verification-service; never share verification Redis keys across services.
+- **Adapter structure (ADR-023)**: `adapter/` 按受众分组 —— `web`（前台与商家端）/ `admin`（`/api/admin/**`）/ `internal`（`/internal/**`），配 `request`（`XxxReq`）/ `response`（`XxxVO`）/ `assembler`（MapStruct）子包；入参禁止 `Map`/裸标量 body。
+- **Feign circuit breaker**: resilience4j (`spring.cloud.openfeign.circuitbreaker.enabled=true`, TimeLimiter 5s, failure-rate 50%) enabled in authorization / user / merchant / verification / marketing / ai / pay / logistics (ADR-011/022); trade keeps `feign.sentinel.enabled` with its rules now **registered and active** — `SentinelConfig` is keyed on `spring.cloud.sentinel.enabled` (previously mis-keyed, so rules never registered; fixed per ADR-028): flow QPS 100 + exception-ratio 0.5 degrade on `createOrder`, blockHandler → `FREQUENT_ERROR` 429; dashboard stays off.
 - **Annotation processing order**: Lombok must precede MapStruct in the compiler annotation processor chain (configured in parent POM).
 - **DTO validation groups**: `CreateGroup`/`UpdateGroup` marker interfaces in `group/` package for conditional `@Validated` checks.
 
@@ -195,7 +203,7 @@ public Result<UserVO> getUser(@PathVariable Long id) {
 // ❌ Service calling Feign directly
 @Service
 public class OrderServiceImpl {
-    private final UserClient userClient;  // NO — belongs in Manager
+    private final UserClient userClient;  // NO — belongs in the orchestration layer (Manager)
 }
 
 // ❌ Money as float/double/BigDecimal
@@ -212,35 +220,37 @@ throw new BadRequestException(ErrorCode.USER_NOT_FOUND);
 
 ### What's Already Implemented
 
-#### ✅ 完全实现 (11 modules — business logic complete, compiles, tested)
+#### ✅ 完全实现 (18 modules — business logic complete, compiles, tested)
 
 | Module | Key Features | Test Count |
 |--------|-------------|------------|
-| `ia-common` | `Result<T>`, `ErrorCode` enum, 6 exception types, `GlobalExceptionHandler`, `@RateLimit` + AOP, Lua scripts (rate_limit/check_limit/login_rate_limit), Aliyun SMS SDK (`@ConditionalOnProperty` switch), Geetest captcha, JWT utils, MyBatis-Plus config | 8 |
-| `ia-api` | Feign clients: `UserClient`, `SkuClient`, `LogisticsClient`, `OrderClient`; shared DTOs; fallback factories | 0 |
-| `gate-service` | Spring Cloud Gateway routes (all services), `JwtAuthenticationFilter` (userId/username header forwarding), `SecurityConfig` (public path whitelist), rate limiting | 0 |
-| `authorization-service` | Password + SMS login (single endpoint, `loginType` param), registration, JWT HS256/RS256 issuance, JWKS endpoint, refresh token rotation, logout (Token blacklist), rate limiting, distributed lock (Redisson) | 0 |
-| `user-service` | Registration (password+SMS), login validation, profile update (null-safe partial), address CRUD + default management, daily sign-in (Redis Bitmap), seller registration + shop management, admin user/role/status management, Aliyun SMS + Geetest captcha | 9 |
-| `item-service` | Product CRUD + paginated list (search/sort/filter), category tree (level-1), SKU management, stock deduction/restore with **optimistic locking** (`@Version`), internal Feign endpoints for stock operations | 5 |
-| `cart-service` | Add to cart (SKU dedup merge), quantity update (≤0 → delete), select/deselect toggle, clear cart, total/selected-price calculation, internal endpoints for order creation | 12 |
-| `trade-service` | **OrderManager** (Saga orchestration: cart→SKU→address→stock→order), order CRUD, cancel (stock restore), confirm receipt, ship (→logistics Feign), seller dashboard, admin dashboard/order-list, `OrderTimeoutJob` (`@Scheduled`) | 16 |
-| `pay-service` | WeChat Pay API v3 Native payment, callback with signature verification, idempotent processing, payment timeout (`PayTimeoutJob`), order status sync via Feign | 14 |
-| `logistics-service` | Logistics record creation (via Feign from trade-service), status tracking (PENDING→SHIPPED→DELIVERED→RETURNED), internal status update endpoint, DB migration SQL | 13 |
-| `database` | Full MySQL schema (`Initialize.sql`) with 11 tables; migration SQL for logistics status | 0 |
+| `ia-common` | `Result<T>`, `ErrorCode`, 6 exception types, `GlobalExceptionHandler` (`/internal/**` → real HTTP status + minimal JSON; `ConstraintViolationException` → 400), `@RateLimit` + AOP (method-scoped key), `common/lock/DistributedLock` (ADR-024), `lua/rate_limit.lua` only, `CryptoKeyConfig` (PII keys), `IpUtil` client-IP (trusts gateway `X-Client-Ip`), `AuditFieldMetaObjectHandler` audit-field fill (auto-registered, ADR-030; user-service keeps its own `registerTime` variant), `SecurityHeaders` header constants (ADR-034), `DesensitizeUtil` mask family (ADR-034), MyBatis-Plus config (+ `OptimisticLockerInnerInterceptor`) | 61 |
+| `ia-api` | 15 Feign clients (`UserClient`, `SkuClient`, `AuthContextClient`, `BalanceClient`, `NotificationClient`, `PointsClient`, `VerificationClient`, ...); shared DTOs; fallback factories (ADR-011) | 14 |
+| `ia-integration` | Third-party SDK hub: WeChat Pay v3 / Alipay mock / Aliyun SMS / email (SMTP+Mock) / Geetest v4 / MinIO / WeChat OAuth | 52 |
+| `gateway-service` | Spring Cloud Gateway routes (17 route blocks / 34 path predicates; `/api/shops/**` + `/api/home/**` patched 2026-10; **`/api/admin/pay/**` admin route to pay-service, precedes `/api/admin/**` — ADR-035/036**), `JwtBlacklistFilter` (reactive, order -700, fail-open; one MGET merging `auth:blacklist:{jti}` + `auth:tokenver:{userId}` per ADR-031; write side in authorization-service), `WsHandshakeTokenFilter` (WebFilter, order -900: swaps WS handshake `?token=` into `Authorization: Bearer` and strips the query param, ADR-026), `UntrustedHeaderSanitizerFilter` (order -1100, strips XFF + overwrites `X-Client-Ip`), method-level GET-only whitelist, auth/verification Redis `RequestRateLimiter`, `AiTokenQuotaFilter` | 74 |
+| `authorization-service` | Login (password/SMS/email/WeChat) + register + reset-password, `user_auth` credential ownership, **RBAC five tables + `user:perms:` cache (write / evict / warm-up)**, JWKS, refresh rotation, **tokenVer revocation (password reset / admin disable → all-device logout via `revokeUserTokens`, ADR-031)**, `AuthContextClient` internal contract | 136 |
+| `user-service` | Profile (PII-encrypted phone/email), avatar upload, address CRUD + default, favorite/history, **`operation_log` audit ledger writer for user-domain admin ops (status/role changes, ADR-032 pipe 2)**, idempotent `getOrCreate` provisioning | 56 |
+| `merchant-service` | Merchant onboarding (`POST /api/seller/apply`, approve auto-grants ROLE_SELLER via `AuthContextClient`), merchant identity (`seller` table) + **shop profile (`shop` table, 1 merchant : N shops, ADR-019)**, public shop pages (`/api/shop/{sellerId}` legacy + `/api/shops/{shopId}`), store follow (Redis Sets), admin review (`/api/admin/seller/**`) | 48 |
+| `verification-service` | Code issue/verify (single outlet, fail-closed) + captcha (`provider`+`params` vendor-neutral contract) | 25 |
+| `notification-service` | SMS/email channel delivery + **in-app messages persisted (`notification` table, `/api/notifications/**`, self-send ignored)** | 9 |
+| `wallet-service` | Balance account (`wallet_account`), **balance transactions (`wallet_transaction`, idempotent `transaction_no`, refund credit via `/internal/balance/refund` — ADR-035)**, `GET/POST /api/wallet(/recharge)`, `/internal/balance/deduct` (consumed by pay-service balance channel) | 15 |
+| `marketing-service` | Coupons (5-dimension model, Lua grab + DB-failure compensation), flash sales (**`/api/flash/buy` → Manager: Lua pre-deduct (explicit warm-up + lazy fallback) → Feign order → MQ stats**), **points ledger (`points_log`, `/internal/points/add`)**, **sign-in (Redis Bitmap, 10/15/20 policy)** | 49 |
+| `ai-service` | AI assistant + customer service, **human IM chat (STOMP `/ws/chat` + REST `/api/chat/**`, sender identity from session Principal)**, **merchant knowledge base (`/api/seller/knowledge`)**, **RAG wiring (opt-in via `ai.rag.enabled`; vectors ingested to search-service `knowledge_vectors`, retriever injects topK into CS replies, fail-open — T14)**, domain ports (6) + infrastructure anti-corruption adapters + LangChain4j agents/tools under `infrastructure/{agent,adapter/tool,rag,routing}` (four-layer close-out, ADR-039) | 52 |
+| `item-service` | Product CRUD + paginated list (with `minPrice`), category tree, SKU management, **stock via single-statement atomic SQL deduction (ADR-020)**, **freight templates (`freight_template` CRUD `/api/item/freight-template/**` + product binding + internal I43 pricing query, ADR-037)**, reviews, home config, internal Feign endpoints | 51 |
+| `cart-service` | Add to cart (SKU dedup merge, concurrent-insert idempotent merge), quantity update (≤0 → delete), select/deselect toggle, clear cart, **read-time view assembly (`CartManager` batch enrichment + `allSelected` semantics, ADR-021)**, internal endpoints | 23 |
+| `trade-service` | **OrderManager** (Saga: cart→SKU→address→stock→order), order CRUD, cancel/confirm/ship, **freight pricing (`PostageCalculator` pure function, max-fee-once + free-shipping threshold, flash-sale free; I43 fail-closed) + package-split shipping (`order_item.package_no`, partial shipment stays 待发货 — ADR-037)**, after-sale (6-state enum) **with refund triggering (review for type=2, confirm-return for type=1)**, settlement, seller/admin dashboards, timeout cancel (RocketMQ delay + `AbnormalOrderJob` XXL-Job fallback) | 121 |
+| `pay-service` | WeChat Pay API v3, callback verification, idempotent processing (`markSuccessIfPending` conditional update), multi-channel routing (WECHAT/ALIPAY/BALANCE→BalanceClient), **refund execution (`RefundManager` 3-channel original-route refund, `refund_order` `uk_after_sale` idempotency — ADR-035)**, **channel reconciliation (4-state diff record-only, pure comparer in `domain/service/ReconciliationComparer`, ADR-036)**, timeout job (four-layer close-out; `@MapperScan` fix) | 76 |
+| `logistics-service` | Logistics records (via Feign from trade), status tracking (PENDING→SHIPPED→DELIVERED↔RETURNED, monotonic + idempotent same-state replay), internal update endpoint | 28 |
+| `search-service` | ES full search + MySQL LIKE fallback (dual impl, ES opt-in via `search.elasticsearch.enabled`; `ProductDocument` vs `ProductSearchVO` split) | 21 |
+| `database` | `Initialize.sql` full snapshot (45 tables) + 30 versioned migrations (V1.1.0→V5.6; upgrade path for existing DBs) | 0 |
 
-#### 🟡 骨架 (1 module — scaffold only, no business logic)
+#### 🔵 Roadmap status
 
-| Module | Status | Plan |
-|--------|--------|------|
-| `search-service` | Correct `SearchApplication` main class, `application.yml` configured, dependencies added. No controllers, services, or mappers. | V1.1 — ElasticSearch integration |
+Authoritative roadmap: `project-docs/backend/02-Architecture.md` §七. Delivered in V1.x–V4.x (verified in repo): Docker Compose dev stack, RocketMQ (replacing RabbitMQ), ElasticSearch search, MinIO storage, WebSocket/STOMP chat, Prometheus/Grafana/ELK/SkyWalking configs, GitHub Actions CI (`.github/workflows/ci.yml`). Not yet implemented: K8s orchestration, Seata, ShardingSphere, Canal CDC, multi-instance Nacos cluster.
 
-#### 🔵 V1.1 规划但未实现
+#### ⚪ Not built (do not start without a PRD/spec update)
 
-Docker Compose, XXL-Job, SkyWalking, Prometheus/Grafana, ELK, RabbitMQ, Sentinel, MinIO, Canal, ShardingSphere, GitHub Actions CI/CD, WebSocket.
-
-#### ⚪ V2.0+ 规划但未实现
-
-Coupons, flash sales, after-sales, AI customer service, knowledge graph, multi-level categories, store decoration, reconciliation, invoices, mini-program.
+Group buys (拼团/团购), invoices (发票), mini-program/App, knowledge graph (NebulaGraph — V3.x forward-looking), multi-currency (多币种). If asked to build these, flag that they are beyond the current implemented surface. (Channel reconciliation 对账 was delivered in V5.5 — ADR-036, removed from this list.)
 
 ### Hard Constraints (from `project-docs/collaboration/09-constraints.md`)
 
@@ -251,9 +261,10 @@ These are non-negotiable rules. Violating any of them = PR rejection.
 | Transactions | `@Transactional(rollbackFor = Exception.class)` — never omit `rollbackFor` |
 | Money | `INTEGER` (cents). Never `float`/`double`/`BigDecimal` for amounts |
 | Method size | ≤ 50 lines. Class ≤ 300 lines. Split if exceeded |
-| Internal APIs | `/internal/**` path = raw exception passthrough, NEVER wrap in `Result` |
+| Internal APIs | `/internal/**` business exceptions = real HTTP status + minimal `{"code","msg"}` JSON (no `Result` wrap) |
 | Soft delete | Use `@TableLogic` for recoverable data; hard delete requires review |
-| Service → Feign | ❌ Forbidden. Feign calls belong in `manager/` layer |
+| Service → Feign | ❌ Forbidden. Feign calls belong in the orchestration layer (`manager/` or `app/*Manager`) |
+| Cross-service state | ❌ No shared Redis keys between services (old `sms:code:` cross-service contract dissolved); verification via verification-service only, balance ops via wallet-service |
 | Exceptions | Only `ia-common` exceptions (`BadRequestException`, `BizException`, etc.). Never bare `RuntimeException` |
 | Magic values | All status codes, config values, error messages → constants/enums/ErrorCode |
 
@@ -261,14 +272,16 @@ These are non-negotiable rules. Violating any of them = PR rejection.
 
 | Invariant | Rule |
 |---|---|
-| Order total | `totalAmount = Σ(orderItem.subTotal) - discountAmount` |
-| Stock non-negative | `sku.stock >= 0` — check before deduct, rollback on cancel |
-| Optimistic locking | `orders` and `sku` tables use `version` column + `@Version` |
+| Order total | `payAmount = totalAmount − discountAmount + postFee` (V2, ADR-037); `totalAmount` still = Σ(orderItem.subTotal) — freight never enters item subtotals, snapshotted in `orders.post_fee`; flash-sale orders carry `postFee = 0` |
+| Stock non-negative | `sku.stock >= 0` — enforced by the atomic `UPDATE ... WHERE stock >= ?` (0 rows = failure, ADR-020); stock restored on cancel/timeout (idempotent) |
+| Optimistic locking | `orders` uses `version` + `@Version` (interceptor registered in ia-common); `sku` uses single-statement atomic SQL instead (ADR-020) — its `version` column is audit-only |
 | Snapshot at order time | `product_name`, `price`, `sku_spec`, `image`, receiver info — all copied into `order_item`/`orders`; never reference live tables |
-| One user → one seller max | Check `seller.user_id` uniqueness before creating seller |
+| One user → one merchant max | Enforced by `MerchantRegistrar` (merchant-service) + `seller.user_id` unique key |
 | Cart dedup | `(user_id, sku_id)` unique — same SKU increments quantity, never creates second row |
-| Order status flow | 待付款→待发货→待收货→已完成→已取消→待评价 (see `OrderStateMachine` in 03-Domain-Model §7) |
-| Internal APIs | `/internal/**` = raw exceptions (no `Result` wrap), called only within cluster by Feign |
+| Order status flow | 待付款→待发货→待收货→已完成→已取消→待评价 (see `OrderStatusEnum` + `OrderLifecycleManager`, 03-Domain-Model §7) |
+| Internal APIs | `/internal/**` = real HTTP status + minimal `{"code","msg"}` JSON on business exceptions (no `Result` wrap), called only within cluster by Feign |
+| Wallet ops | Balance changes go through wallet-service (`/internal/balance/deduct`); `user.balance` is frozen (never read/write) |
+| Verification outlet | Code/captcha checks go through verification-service only — no local checks, no shared Redis keys |
 
 ### Test Conventions
 
@@ -286,7 +299,7 @@ void shouldReturnToken_whenNewPhoneAndValidCode() { ... }
 - Service/Domain unit tests use JUnit 5 + Mockito (`@ExtendWith(MockitoExtension.class)`)
 - Controller integration tests use `@SpringBootTest` + Testcontainers
 
-**Current test coverage**: 77 unit tests across 7 modules (0 failures). Modules with zero tests: authorization-service, gate-service, ia-api, search-service, database. All existing tests are entity/enum/DTO validation or Mockito-based service tests. No `@SpringBootTest` integration tests exist yet.
+**Current test coverage**: 911 tests across all 18 Maven modules (0 failures, 1 pre-existing `@Disabled` skip; `database` ships SQL only and carries no tests). Tests are mostly JUnit 5 + Mockito unit tests; several services carry self-contained H2-backed persistence tests (`UserProvisioningH2Test` in user, `OrderRepositoryImplH2Test` in trade, `FlashSaleManagerH2Test` in marketing — manual MyBatis-Plus wiring against repository impls). No `@SpringBootTest`/Testcontainers integration tests yet.
 
 **MyBatis-Plus testing limitation**: Methods using `lambdaQuery()`/`lambdaUpdate()` chains cannot be unit-tested with Mockito mocks (the mapper proxy's `currentModelClass()` reads generic type info lost on Mockito proxies). These methods require `@SpringBootTest` with H2 or Testcontainers. Methods using only standard `BaseMapper` methods (`save()`, `getById()`, `updateById()`) are fully testable with Mockito.
 
@@ -301,20 +314,20 @@ void shouldReturnToken_whenNewPhoneAndValidCode() { ... }
 - [ ] `mvn clean install -DskipTests` passes
 - [ ] BDD scenario covered by ≥1 test
 
-### MVP Scope Boundaries
+### Scope Boundaries (post-2026-10 boundary refactor)
 
-**In scope**: user registration/login, address CRUD, sign-in, category (1-level), product/SKU browsing, cart, order, payment (WeChat), seller admin, admin dashboard.
+**In scope (all delivered)**: the full MVP flow plus V-series expansions — registration/login (password/SMS/email/WeChat), profile/address/merchant/shop/store-follow, sign-in & points ledger, coupons & flash sales, wallet balance, in-app notifications, IM & AI customer service + merchant knowledge base, orders/payment (WeChat/Alipay-mock/balance)/logistics, after-sales, settlement, seller & admin consoles, reviews/favorites/browsing history, ES search, home decoration, RBAC.
 
-**Out of scope** (do NOT build): coupons, flash sales, group buys, points (except sign-in), homepage decoration, AI customer service, after-sales tickets, reconciliation/settlement, invoices, mini-program/app, multi-level categories, ElasticSearch full-text search, complex marketing. If asked to build these, flag that they're post-MVP.
+**Out of scope / not built** (flag as future work before starting): group buys, invoices, mini-program/app, knowledge graph, multi-currency. See the roadmap status above and `project-docs/backend/02-Architecture.md`.
 
 ### Database
 
-Single MySQL schema (`Initialize.sql`) with tables: `user`, `address`, `seller`, `category`, `product`, `sku`, `order`, `order_item`, `cart`, `pay_order`, `order_logistics`. Every table uses a technical `BIGINT AUTO_INCREMENT` primary key and a business unique identifier (UUID-based) where needed. Monetary values are stored as `INT` (cents). Orders store address snapshots (not foreign keys) to preserve historical data.
+Single MySQL schema under `Implementation/back-end/database/`. **`Initialize.sql` is the full current snapshot (45 tables)** — one-shot install; the **30 versioned migrations** (`database/migrations/`, V1.1.0 → V5.6, three-segment version naming, latest `V5.6__freight_template_and_package_split.sql`) are the **upgrade path for existing databases** (apply in version order; fresh installs skip them). Tables include `user`/`address`/`seller`/`shop`/`category`/`product`/`sku`/`orders`/`order_item`/`cart`/`pay_order`/`refund_order`/`wallet_transaction`/`reconciliation_batch`/`order_logistics`/`freight_template`/`user_auth`/`wallet_account`/`notification`/`points_log`/`chat_message`/`merchant_knowledge_base`/`sys_*` RBAC tables etc. Every table uses a technical `BIGINT AUTO_INCREMENT` primary key and a business unique identifier (UUID-based) where needed (the former `order_logistics` PK deviation — `order_id` as PK — was resolved in V5.6: surrogate `id` PK + `uk_order_package(order_id, package_no)`, ADR-037). Monetary values are stored as `INT` (cents). Orders store address snapshots (not foreign keys) to preserve historical data. RBAC seed: `ROLE_ADMIN` holds the `*:*:*` super permission (idempotent with the V3.0 baseline).
 
 ### Project Documentation
 
 - `doc/methodology/` — Generic analysis methodology (11-phase pipeline: BDD→DDD→SDD→TDD→SPC), reusable for any project
-- `project-docs/adr/` — Architecture Decision Records: why DDD layering, dual primary keys, DO/DTO/VO isolation, internal API exception passthrough were chosen
+- `project-docs/adr/` — Architecture Decision Records (001–040): DDD layering, dual primary keys, DO/DTO/VO isolation, internal API exception passthrough, unified identity + RBAC ownership (ADR-018), merchant/shop 1:N (ADR-019), SKU atomic SQL (ADR-020), cart read-time enrichment (ADR-021), Feign circuit breaker enablement (ADR-022), adapter layer structure (ADR-023), distributed lock consolidation (ADR-024), aggregate packaging (ADR-025), WS handshake token swap (ADR-026), jti blacklist (ADR-027), trade Sentinel wiring (ADR-028), channel callback protocol (ADR-029), MyMetaObjectHandler consolidation (ADR-030), multi-granularity token revocation (ADR-031), audit dual pipeline (ADR-032), cross-module utility consolidation (ADR-034), refund fund flow (ADR-035), channel reconciliation record-only (ADR-036), freight model + package split + refund trigger (ADR-037), full four-layer DDD unification (ADR-038), ai-service DDD completion (ADR-039), ia-common shared-kernel package rename (ADR-040), etc.
 - `project-docs/` — IceAmericanoMall-specific deliverables (PRD, Architecture, Domain Model, API Spec, Data Model, Workflow, Test Strategy, Security Model)
 - `project-docs/collaboration/08-agents.md` — **AI coding instructions** (layer templates, naming, test patterns, forbidden patterns). Read before writing any code.
 - `project-docs/collaboration/09-constraints.md` — **Hard constraints & anti-patterns** (version locks, layer rules, security rules, coding rules). Check before committing.
