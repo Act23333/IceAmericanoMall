@@ -132,12 +132,15 @@
 - **运费模板无「按件/按重」计费**：`charge_mode` 目前仅 1（固定运费），Phase 2 扩展需再走一版契约与迁移；
 - **I43 无缓存**：每次下单一次跨服务查询（商品件数不放大往返，但高频下单会成为 item-service 的读热点），
   可后续在 trade 侧加短 TTL 本地缓存（Caffeine，仅适合不变数据，模板可变需带失效）；
+  **→ 已收敛（2026-10-04，[ADR-041](./041-refund-resume-aftersale-guard-freight-cache.md)）**：trade 侧 Caffeine 60s TTL 本地缓存（key=sellerId），fail-closed 保持。
 - **`confirm-return` 是新增管理端端点**：若管理端页面未同步，退货退款单会停在 `APPROVED`（退款不触发）——
   状态可见、可重试，不会误放款（fail-safe 方向正确）；
 - **`review` 对 `RETURNED` 无守卫**：管理员仍可把 `RETURNED` 售后单改回其它状态（ADR-035 仅守 `REFUNDED`）。
   资金不会重复（`uk_after_sale` 兜底），但状态语义可被管理端扰动 —— 留待后续统一收紧售后状态机；
+  **→ 已收敛（2026-10-04，[ADR-041](./041-refund-resume-aftersale-guard-freight-cache.md)）**：review 禁改来源扩至 RETURNED（`REFUND_STATUS_INVALID`），RETURNED 唯一合法去向是 I42 回写资金终态。
 - **契约偏差待同步**：§4.14.17 降级口径、§4.4.9 错误码（3006/1103 → 3040/3041）与列表分页形态三处，
   实现已按 ADR/规格语义取舍，需由 doc-engineer / product-manager 回写 05 契约。
+  **→ 已同步（05 规格 V5.6.1 落地说明）**：降级口径 fail-closed、错误码 3040/3041、FT3 非分页均已进正文。
 
 ## 日期
 

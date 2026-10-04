@@ -123,11 +123,13 @@ I40/I42 两端均为 camelCase，无此问题（契约中已注明）。
   而 `RETURNED(4) → REFUNDED(5)` 这条边（退货退款）不在本次范围内——退货退款售后单走到
   `RETURNED` 后，退款成功回写会是「0 行幂等空操作」，售后单停在 `RETURNED`。
   需后续任务补齐（或在 status 条件中加入 `RETURNED`），本次严格按契约实现未擅自放宽；
+  **→ 已关闭（ADR-037 §4）**：`markRefunded` 来源已扩展为 `APPROVED|RETURNED`，两条边共用资金终态。
 - **pay 侧看不到售后单**：I40 的「售后单不存在 → NO_RESOURCE_FOUND」在 pay 侧以
   **支付单存在性 + 金额 ≤ 支付单金额**代理校验（pay 不持有售后域）。售后单的存在性由 trade 侧保证；
 - **`BALANCE` 渠道无回调兜底**：若「wallet 入账成功」后 `markSuccessIfProcessing` 本地失败，
   退款单会停在处理中且没有回调来推进（AD43 只允许失败单重试）。该窗口需要本地库不可用才出现，
   属极端情形；已在对账（F4）里留了人工兜底的手工处置入口；
+  **→ 已收敛（2026-10-04，[ADR-041](./041-refund-resume-aftersale-guard-freight-cache.md)）**：悬挂补偿任务（`RefundResumeJob`）对处理中单做渠道查询收敛（微信）/幂等重放（余额/支付宝），与 PAY6 回调互为冗余。
 - **I41 并发同号入账：wallet 侧选择「抛出让本地事务回滚」而非「直接返回成功」**。
   规格（04 §十二 12.1）表述为「`transaction_no` 冲突视为重复请求，直接幂等返回成功」，
   实现分两段：**顺序重放**（`existsByTransactionNo` 命中）按规格幂等成功返回；
