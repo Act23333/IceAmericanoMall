@@ -40,9 +40,34 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
+
+        <!-- 客服域（ADR-016 收尾）：买卖家人工会话 STOMP WebSocket -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
+        <!-- 站内会话与商家知识库落库（chat_message / merchant_knowledge_base） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <!-- Feign 熔断降级：开启 spring.cloud.openfeign.circuitbreaker.enabled 后，
+             4 个 ia-api 客户端（Order/ProductDetail/Search/UserProfile）的 fallbackFactory
+             才会真正生效；版本由 Spring Cloud 2025.0.1 BOM 管理 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
         </dependency>
         <!-- Spring AI: DeepSeek via OpenAI-compatible API -->
         <dependency>

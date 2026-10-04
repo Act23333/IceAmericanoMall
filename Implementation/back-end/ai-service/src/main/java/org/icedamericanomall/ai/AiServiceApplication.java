@@ -1,5 +1,7 @@
 package org.icedamericanomall.ai;
 
+import org.apache.ibatis.annotations.Mapper;
+import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.openfeign.EnableFeignClients;
@@ -21,6 +23,8 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
         "org.icedamericanomall.fallback"
 })
 @EnableFeignClients(basePackages = "org.icedamericanomall.client")
+@MapperScan(basePackages = "org.icedamericanomall.ai.infrastructure.persistence",
+        annotationClass = Mapper.class)
 public class AiServiceApplication {
     public static void main(String[] args) {
         SpringApplication.run(AiServiceApplication.class, args);

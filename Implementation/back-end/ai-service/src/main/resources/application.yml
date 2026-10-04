@@ -4,10 +4,22 @@ server:
 spring:
   application:
     name: ai-service
+  # 站内会话 / 商家知识库落库（chat_message / merchant_knowledge_base）
+  datasource:
+    url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: ${hm.db.pw:root}
   cloud:
     nacos:
       server-addr: ${ia.nacos.host:192.168.10.128}:8848
+    # Feign 熔断降级：开启后 ia-api 各客户端（Order/ProductDetail/Search/UserProfile）
+    # 的 fallbackFactory 真实生效（依赖 resilience4j starter）
+    openfeign:
+      circuitbreaker:
+        enabled: true
   data:
+    # Spring Boot 3.x 只认 spring.data.redis.*
     redis:
       host: ${ia.redis.host:192.168.10.128}
       port: 6379
@@ -55,11 +67,46 @@ ai:
     complexity-threshold: 3            # 复杂度>=3路由到Qwen
     daily-token-quota: 50000           # 每用户每日Token配额
   rag:
+    # 知识库 RAG 总开关 —— 默认 false = 行为与现状一致（ES/Embedding 就绪后再打开）。
+    # 打开后：① 知识库 create/update/delete 会经 Feign 同步 search-service 的 knowledge_vectors 索引；
+    #        ② 客服应答在请求带 sellerId 时先检索该商家知识并拼进 prompt。
+    # 任一环节失败只记 WARN 并降级，绝不阻断知识库 CRUD 与客服应答。
+    enabled: ${AI_RAG_ENABLED:false}
+    top-k: 5                           # 检索送入 LLM 的上下文条数
     reranker:
       enabled: false                   # V3.0.0: BGE-reranker Docker 部署后开启
       base-url: http://localhost:8001  # BGE-reranker 服务地址
   memory:
     ttl: 24h                           # Redis ChatMemory TTL
+  # 出站 HTTP 超时（Embedding / Reranker 共用的 RestClient，见 AiRestClientConfig）
+  http:
+    connect-timeout: 2s
+    read-timeout: 10s
+  # 买家-商家 IM 的 STOMP 握手来源白名单（默认仅本地开发地址）
+  websocket:
+    allowed-origins:
+      - http://localhost:5173
+      - http://127.0.0.1:5173
+      - http://localhost:3000
+      - http://127.0.0.1:3000
+
+# Feign 熔断参数（配套 spring.cloud.openfeign.circuitbreaker.enabled=true）
+# 说明：Spring Cloud 从 resilience4j 注册表读取默认配置，未配置时 TimeLimiter 默认仅 1 秒，
+# 会把商品/搜索类慢查询误判为失败并走降级（降级返回值会让 Agent 工具拿到空数据），
+# 因此这里显式放宽超时并给出熔断阈值（与 authorization-service 口径一致）。
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 20                        # 统计窗口（调用次数）
+        minimum-number-of-calls: 10                    # 达到该调用数才开始计算失败率
+        failure-rate-threshold: 50                     # 失败率阈值（%）
+        wait-duration-in-open-state: 30s               # 熔断打开后保持时长
+        permitted-number-of-calls-in-half-open-state: 3 # 半开状态试探调用数
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 5s                           # 单次 Feign 调用上限（缺省 1s 过短）
 
 # 可观测性：Actuator 健康检查 + Prometheus 指标端点（V2.4）
 management:
