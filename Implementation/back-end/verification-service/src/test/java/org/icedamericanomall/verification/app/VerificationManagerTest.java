@@ -9,6 +9,8 @@ import org.icedamericanomall.verification.domain.enums.VerificationOutcome;
 import org.icedamericanomall.verification.domain.service.VerificationCodeIssuer;
 import org.icedamericanomall.verification.domain.service.VerificationCodeVerifier;
 import org.junit.jupiter.api.DisplayName;
+
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -82,7 +84,8 @@ class VerificationManagerTest {
         when(captchaVerifyService.verify(eq("GEETEST"), any())).thenReturn(true);
 
         boolean passed = verificationManager.verifyCaptcha(new CaptchaVerifyCommand(
-                null, "lot-1", "output", "token", "1700000000000", "127.0.0.1"));
+                null, Map.of("lotNumber", "lot-1", "captchaOutput", "output",
+                "passToken", "token", "genTime", "1700000000000"), "127.0.0.1"));
 
         assertTrue(passed);
         verify(captchaVerifyService).verify(eq("GEETEST"), any());

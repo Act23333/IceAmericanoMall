@@ -7,6 +7,8 @@ import org.icedamericanomall.verification.domain.model.VerificationCode;
 import org.icedamericanomall.verification.domain.model.VerificationPolicy;
 import org.icedamericanomall.verification.domain.port.CodeGenerator;
 import org.icedamericanomall.verification.domain.repository.VerificationCodeRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 验证码签发领域服务（纯 POJO，由基础设施层 {@code DomainBeanConfig} 装配）。
@@ -23,6 +25,8 @@ import org.icedamericanomall.verification.domain.repository.VerificationCodeRepo
  * <p>注意：本服务只负责「签发 + 投递」，不负责校验（见 {@link VerificationCodeVerifier}）。
  */
 public class VerificationCodeIssuer {
+
+    private static final Logger log = LoggerFactory.getLogger(VerificationCodeIssuer.class);
 
     private final VerificationCodeRepository repository;
     private final CodeGenerator codeGenerator;
@@ -64,6 +68,8 @@ public class VerificationCodeIssuer {
         } catch (RuntimeException e) {
             repository.removeCode(channel, target);
             repository.releaseSendQuota(channel, target);
+            log.error("[verify][issue][rollback] 验证码投递失败，已回滚验证码与限流 channel={}, requestId={}",
+                    channel, requestId, e);
             return IssuedCode.fail(VerificationOutcome.SEND_FAILED);
         }
 

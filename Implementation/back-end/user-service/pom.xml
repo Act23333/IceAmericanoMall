@@ -81,6 +81,16 @@
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
         </dependency>
 
+        <!-- Feign 熔断降级（R6/V5.4）：本服务使用 Feign（AuthContextClient 等，契约在 ia-api），
+             此前未开熔断。开启 spring.cloud.openfeign.circuitbreaker.enabled 后
+             ia-api 的 fallbackFactory 真实生效（降级 Bean 由 scanBasePackages 的
+             org.icedamericanomall.fallback 提供，ADR-009）。
+             版本交由 spring-cloud-dependencies BOM 管理，不写版本号。 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
@@ -114,17 +124,14 @@
             <artifactId>thumbnailator</artifactId>
             <version>0.4.20</version>
         </dependency>
-        <!-- Redisson: 业务键互斥锁（DomainBeanConfig 装配 DistributedLock 端口，镜像 authorization-service） -->
+        <!-- Redisson: 提供 RedissonClient，供 ia-common 的 DistributedLockConfig 条件装配
+             DistributedLock（V5.4 起锁实现归并到 ia-common，本服务不再保留副本） -->
         <dependency>
             <groupId>org.redisson</groupId>
             <artifactId>redisson-spring-boot-starter</artifactId>
             <version>3.26.0</version>
         </dependency>
         <!-- V3.3: WebSocket STOMP 消息系统 -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-websocket</artifactId>
-        </dependency>
     </dependencies>
 
     <build>

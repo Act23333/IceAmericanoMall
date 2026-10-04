@@ -7,7 +7,7 @@ import lombok.Getter;
  *
  * <p>持久化口径为 Integer code（user 表 {@code gender TINYINT}），
  * 报文口径同为 Integer（{@code /api/user/info}）；领域内以本枚举表达，
- * DO 字段保持原始类型，枚举 ⇄ code 映射由 {@code UserConverter} 显式承担。
+ * PO 字段保持原始类型，枚举 ⇄ code 映射由 {@code UserConverter} 显式承担。
  */
 @Getter
 public enum GenderEnum {

@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 
 /**
- * marketing-service 启动类（优惠券 / 秒杀）。
+ * marketing-service 启动类（优惠券 / 秒杀 / 积分 / 签到）。
  *
  * <p><b>组件扫描范围</b>：基础包随包名归位收窄为 {@code org.icedamericanomall.marketing}，
  * 共享模块的 Bean 不再落进默认扫描路径，故显式声明。
@@ -16,13 +16,15 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
  *   <li>{@code org.icedamericanomall.marketing} —— 本服务</li>
  *   <li>{@code org.icedamericanomall.fallback} —— ia-api 的 Feign 降级工厂</li>
  * </ul>
+ *
+ * <p><b>持久化扫描</b>：Mapper 已随 DDD 分层迁入 {@code infrastructure/persistence/**}。
  */
 @SpringBootApplication(scanBasePackages = {
         "org.icedamericanomall.marketing",
         "org.icedamericanomall.fallback"
 })
 @EnableFeignClients(basePackages = "org.icedamericanomall.client")
-@MapperScan("org.icedamericanomall.marketing.mapper")
+@MapperScan("org.icedamericanomall.marketing.infrastructure.persistence")
 public class MarketingApplication {
     public static void main(String[] args) {
         SpringApplication.run(MarketingApplication.class, args);

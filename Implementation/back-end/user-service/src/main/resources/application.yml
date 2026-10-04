@@ -19,6 +19,10 @@ spring:
     openfeign:
       okhttp:
         enabled: true
+      # Feign 熔断降级（R6/V5.4）：开启后 ia-api 的 fallbackFactory 真实生效
+      # （降级 Bean 由 scanBasePackages 的 org.icedamericanomall.fallback 提供，ADR-009）
+      circuitbreaker:
+        enabled: true
   data:
     redis:
       host: ${ia.redis.host:192.168.10.128}
@@ -87,3 +91,21 @@ minio:
   access-key: minioadmin
   secret-key: minioadmin
   bucket: icedmall
+
+# Feign 熔断参数（配套 spring.cloud.openfeign.circuitbreaker.enabled=true；与 authorization-service 同口径）
+# 说明：Spring Cloud 从 resilience4j 注册表读取默认配置，未配置时 TimeLimiter 默认仅 1 秒，
+# 会把「设置用户角色」等写库慢调用误判为失败并走降级（降级是 fail-closed，等于业务失败），
+# 因此这里显式放宽超时并给出熔断阈值。
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 20                       # 统计窗口（调用次数）
+        minimum-number-of-calls: 10                    # 达到该调用数才开始计算失败率
+        failure-rate-threshold: 50                     # 失败率阈值（%）
+        wait-duration-in-open-state: 30s               # 熔断打开后保持时长
+        permitted-number-of-calls-in-half-open-state: 3 # 半开状态试探调用数
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 5s                           # 单次 Feign 调用上限（缺省 1s 过短）

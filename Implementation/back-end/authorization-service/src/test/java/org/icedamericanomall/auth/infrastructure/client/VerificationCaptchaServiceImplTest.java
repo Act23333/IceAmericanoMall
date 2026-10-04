@@ -17,6 +17,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -54,10 +56,11 @@ class VerificationCaptchaServiceImplTest {
         assertTrue(passed);
         ArgumentCaptor<CaptchaVerifyReqCO> captor = ArgumentCaptor.forClass(CaptchaVerifyReqCO.class);
         verify(verificationClient).verifyCaptcha(captor.capture());
-        assertEquals("lot-1", captor.getValue().getLotNumber());
-        assertEquals("output-1", captor.getValue().getCaptchaOutput());
-        assertEquals("pass-1", captor.getValue().getPassToken());
-        assertEquals("1700000000000", captor.getValue().getGenTime());
+        Map<String, String> params = captor.getValue().getParams();
+        assertEquals("lot-1", params.get("lotNumber"));
+        assertEquals("output-1", params.get("captchaOutput"));
+        assertEquals("pass-1", params.get("passToken"));
+        assertEquals("1700000000000", params.get("genTime"));
         assertEquals("127.0.0.1", captor.getValue().getClientIp());
     }
 
@@ -107,7 +110,10 @@ class VerificationCaptchaServiceImplTest {
     }
 
     private CaptchaVerifyParam param(String provider) {
-        return new CaptchaVerifyParam(provider, "lot-1", "output-1", "pass-1",
-                "1700000000000", "127.0.0.1");
+        return new CaptchaVerifyParam(provider, Map.of(
+                "lotNumber", "lot-1",
+                "captchaOutput", "output-1",
+                "passToken", "pass-1",
+                "genTime", "1700000000000"), "127.0.0.1");
     }
 }

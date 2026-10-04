@@ -7,7 +7,7 @@ import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.exception.DBException;
 import org.icedamericanomall.user.adapter.request.AddressReq;
 import org.icedamericanomall.user.adapter.response.AddressResp;
-import org.icedamericanomall.user.domain.model.Address;
+import org.icedamericanomall.user.domain.model.address.Address;
 import org.icedamericanomall.user.domain.repository.AddressRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;

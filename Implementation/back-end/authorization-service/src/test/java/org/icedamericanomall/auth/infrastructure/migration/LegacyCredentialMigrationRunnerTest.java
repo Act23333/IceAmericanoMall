@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.core.config.GlobalConfig;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.h2.Driver;
-import org.icedamericanomall.auth.domain.model.UserAuth;
+import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
 import org.icedamericanomall.auth.domain.repository.UserAuthRepository;
 import org.icedamericanomall.auth.infrastructure.persistence.userauth.UserAuthMapper;
 import org.icedamericanomall.auth.infrastructure.persistence.userauth.UserAuthRepositoryImpl;

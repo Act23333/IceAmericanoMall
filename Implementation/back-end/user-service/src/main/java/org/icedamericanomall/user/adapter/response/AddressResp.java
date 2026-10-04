@@ -1,13 +1,20 @@
 package org.icedamericanomall.user.adapter.response;
 
 import lombok.Data;
-import org.icedamericanomall.user.domain.model.Address;
+import org.icedamericanomall.user.domain.model.address.Address;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 收货地址响应 VO（JSON 报文与重构前逐字段一致）。
+ * 收货地址响应 VO（JSON 报文与重构前逐字段一致，{@code updateTime} 除外 —— 见下）。
+ *
+ * <p><b>字段收缩（V5.4）</b>：删除 {@code updateTime}。裁决依据：前端全仓对该字段
+ * <b>只声明不消费</b> —— {@code Implementation/front-end/packages/api/types/index.ts} 的
+ * {@code AddressResp} 接口声明了 {@code updateTime}，但 {@code apps/web}、{@code apps/miniprogram}
+ * 与 {@code packages/**} 中<b>无任何读取点</b>（无 {@code .updateTime} 访问、无解构取值）。
+ * 按安全模型 12.3「最小暴露面」收窄出参，删除不产生任何已证实的消费方影响。
+ * 领域模型 {@code Address} 仍保留 {@code updateTime}（内部审计口径不变），仅出参不再投影。
  */
 @Data
 public class AddressResp {
@@ -46,8 +53,6 @@ public class AddressResp {
 
     private LocalDateTime createTime;
 
-    private LocalDateTime updateTime;
-
     /** 领域模型 → 响应 VO。 */
     public static AddressResp from(Address address) {
         AddressResp resp = new AddressResp();
@@ -65,7 +70,6 @@ public class AddressResp {
         resp.setLongitude(address.getLongitude());
         resp.setLatitude(address.getLatitude());
         resp.setCreateTime(address.getCreateTime());
-        resp.setUpdateTime(address.getUpdateTime());
         return resp;
     }
 }

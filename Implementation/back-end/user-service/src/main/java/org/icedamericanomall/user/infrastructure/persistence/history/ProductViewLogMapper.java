@@ -4,10 +4,10 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
-import org.icedamericanomall.user.infrastructure.persistence.history.ProductViewLogDO;
+import org.icedamericanomall.user.infrastructure.persistence.history.ProductViewLogPO;
 
 @Mapper
-public interface ProductViewLogMapper extends BaseMapper<ProductViewLogDO> {
+public interface ProductViewLogMapper extends BaseMapper<ProductViewLogPO> {
 
     /** 记录浏览（重复浏览更新 view_time） */
     @Insert("INSERT INTO product_view_log (user_id, product_id, view_time) VALUES (#{userId}, #{productId}, NOW()) "

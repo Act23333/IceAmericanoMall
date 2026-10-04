@@ -1,7 +1,8 @@
 package org.icedamericanomall.marketing.adapter.internal;
 
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.marketing.service.CouponService;
+import org.icedamericanomall.marketing.app.coupon.CouponClaimManager;
+import org.icedamericanomall.marketing.app.coupon.CouponUsageManager;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -13,20 +14,21 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class InternalCouponController {
 
-    private final CouponService couponService;
+    private final CouponUsageManager couponUsageManager;
+    private final CouponClaimManager couponClaimManager;
 
     /** V4.2: 使用优惠券，返回实际抵扣金额（分）。新增 orderType+sellerId 用于类别/店铺校验。 */
     @PostMapping("/use")
     public int use(@RequestParam Long userId, @RequestParam Long userCouponId,
                    @RequestParam String orderNo, @RequestParam Integer orderAmount,
                    @RequestParam Integer orderType, @RequestParam Long sellerId) {
-        return couponService.useCoupon(userId, userCouponId, orderNo, orderAmount, orderType, sellerId);
+        return couponUsageManager.useCoupon(userId, userCouponId, orderNo, orderAmount, orderType, sellerId);
     }
 
     /** 按订单号回滚优惠券。 */
     @PostMapping("/rollback")
     public void rollback(@RequestParam String orderNo) {
-        couponService.rollbackByOrderNo(orderNo);
+        couponUsageManager.rollbackByOrderNo(orderNo);
     }
 
     /**
@@ -35,6 +37,6 @@ public class InternalCouponController {
      */
     @PostMapping("/grant")
     public void grant(@RequestParam Long userId, @RequestParam String couponId) {
-        couponService.grantAfterPayment(userId, couponId);
+        couponClaimManager.grantAfterPayment(userId, couponId);
     }
 }

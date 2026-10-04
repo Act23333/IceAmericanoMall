@@ -2,7 +2,7 @@ package org.icedamericanomall.user.infrastructure.adapter;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.icedamericanomall.user.app.points.PointsManager;
+import org.icedamericanomall.client.PointsClient;
 import org.icedamericanomall.user.domain.port.NewUserRewardService;
 import org.springframework.stereotype.Component;
 
@@ -29,7 +29,7 @@ public class NewUserRewardServiceAdapter implements NewUserRewardService {
     /** 积分来源描述（展示用） */
     private static final String SOURCE_WELCOME = "新用户建档奖励";
 
-    private final PointsManager pointsManager;
+    private final PointsClient pointsClient;
 
     @Override
     public void award(Long userId) {
@@ -37,7 +37,7 @@ public class NewUserRewardServiceAdapter implements NewUserRewardService {
             return;
         }
         try {
-            pointsManager.addPoints(userId, POINTS_WELCOME, POINTS_TYPE_REWARD, SOURCE_WELCOME);
+            pointsClient.addPoints(userId, POINTS_WELCOME, POINTS_TYPE_REWARD, SOURCE_WELCOME);
             log.info("[user][welcome-reward][done] userId={}, points={}", userId, POINTS_WELCOME);
         } catch (Exception e) {
             log.warn("[user][welcome-reward][fail] userId={}, points={}", userId, POINTS_WELCOME, e);

@@ -1,69 +1,82 @@
 package org.icedamericanomall.user.app.user;
 
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.common.domain.UserInfo;
-import org.icedamericanomall.common.enums.ErrorCode;
-import org.icedamericanomall.common.exception.BizException;
-import org.icedamericanomall.user.app.port.UserSecurityCache;
-import org.icedamericanomall.user.domain.model.User;
-import org.icedamericanomall.user.domain.repository.RoleRepository;
-import org.icedamericanomall.user.domain.repository.UserRepository;
+import lombok.extern.slf4j.Slf4j;
+import org.icedamericanomall.client.AuthContextClient;
+import org.icedamericanomall.dto.AuthContextCO;
+import org.icedamericanomall.user.adapter.response.UserInfoResp;
+import org.icedamericanomall.user.app.rbac.RoleTypeDerivation;
 import org.springframework.stereotype.Component;
 
-import java.util.HashSet;
-import java.util.Optional;
 import java.util.Set;
 
 /**
- * 用户安全上下文装配（应用层）—— 角色/权限聚合 + 两级缓存写入。
+ * 用户安全上下文装配（应用层，ADR-018）—— 角色/权限经 ia-api {@link AuthContextClient}
+ * 稳定契约调 authorization-service（RBAC 五表归属授权域，本服务不再直读 sys_* 表）。
  *
- * <p><b>跨服务契约（网关实时权限依赖，勿改）</b>：写 {@code user:info:{userId}}（JSON）与
- * {@code user:perms:{userId}}（SET，含 ROLE_ 角色），TTL 均 30 分钟；
- * 网关 {@code UserContextHeaderFilter} 读取后注入 X-User-Roles / X-User-Permissions。
- * 缓存读写在 {@link UserSecurityCache} 端口之后（Redis 实现）。
+ * <p>{@code user:perms / user:info} 缓存的写入与失效由 authorization-service 负责
+ * （登录预热 + 授权变更失效 + 本契约调用时回填）；远端不可用时降级返回空集合
+ * ——表现为"无角色/无权限"，绝不默认放行。
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class UserInfoManager {
 
-    private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
-    private final UserSecurityCache userSecurityCache;
+    private final AuthContextClient authContextClient;
+    private final UserQueryManager userQueryManager;
 
     /**
-     * 加载用户安全上下文（缓存优先，未命中则查库聚合后回填）。
+     * 装配当前用户信息 + RBAC 上下文（公开端点 {@code GET /api/user/info} 专用）。
      *
-     * @param userId 用户技术主键（跨服务口径）
-     * @return 用户安全上下文（含角色 + 聚合权限）
-     * @throws BizException 用户不存在
+     * <p>先取基础资料（用户不存在 / 已冻结即抛业务异常），再合并角色与权限；
+     * 角色/权限远端不可用时由 {@link #loadContext(Long)} 降级为空集合，
+     * 不阻断基本信息返回。编排细节（降级、roleType 派生）收敛于此，Controller 一行调用。
+     *
+     * @param userId 当前登录用户 ID
+     * @return 含角色与权限的用户信息
      */
-    public UserInfo loadUserById(Long userId) {
-        // 1. 先查缓存
-        Optional<UserInfo> cached = userSecurityCache.findUserInfo(userId);
-        if (cached.isPresent()) {
-            return cached.get();
+    public UserInfoResp getUserInfoWithRbac(Long userId) {
+        UserInfoResp resp = userQueryManager.getByUserId(userId);
+        AuthContextCO context = loadContext(userId);
+        if (context.getRoles() != null && !context.getRoles().isEmpty()) {
+            resp.setRoles(context.getRoles());
+            // V5.2: roleType 兼容字段 —— 由五表角色编码派生（不再读 user.role_type 列）
+            resp.setRoleType(RoleTypeDerivation.fromRoleCodes(context.getRoles()));
         }
+        if (context.getPermissions() != null && !context.getPermissions().isEmpty()) {
+            resp.setPermissions(context.getPermissions());
+        }
+        return resp;
+    }
 
-        // 2. 缓存未命中，查库聚合
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BizException(ErrorCode.USER_NOT_FOUND));
-        Set<String> roles = roleRepository.findRoleCodesByUserId(userId);
-        Set<String> perms = new HashSet<>();
-        perms.addAll(roleRepository.findDirectPermissionCodesByUserId(userId));
-        perms.addAll(roleRepository.findRolePermissionCodesByUserId(userId));
+    /**
+     * 读取用户授权上下文（角色 + 权限；远端同时回填网关权限缓存）。
+     *
+     * <p>降级语义：远端不可用返回空集合（调用方据此填充响应，不阻断基本信息返回）。
+     */
+    public AuthContextCO loadContext(Long userId) {
+        try {
+            AuthContextCO context = authContextClient.context(userId);
+            if (context == null) {
+                return emptyContext(userId);
+            }
+            return AuthContextCO.builder()
+                    .userId(userId)
+                    .roles(context.getRoles() == null ? Set.of() : context.getRoles())
+                    .permissions(context.getPermissions() == null ? Set.of() : context.getPermissions())
+                    .build();
+        } catch (Exception e) {
+            log.warn("[user][rbac][load][fail] userId={}: {}", userId, e.getMessage());
+            return emptyContext(userId);
+        }
+    }
 
-        UserInfo userInfo = UserInfo.builder()
-                .userId(user.getId())
-                .username(user.getNickname())
-                .roles(roles)
-                .permissions(perms)
+    private AuthContextCO emptyContext(Long userId) {
+        return AuthContextCO.builder()
+                .userId(userId)
+                .roles(Set.of())
+                .permissions(Set.of())
                 .build();
-
-        // 3. 写缓存：user:info JSON + user:perms SET（角色以 ROLE_ 前缀并入权限集合）
-        Set<String> permissionSet = new HashSet<>(perms);
-        permissionSet.addAll(roles);
-        userSecurityCache.store(userInfo, permissionSet);
-
-        return userInfo;
     }
 }

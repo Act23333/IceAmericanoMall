@@ -7,6 +7,7 @@ import org.icedamericanomall.dto.NotificationSendReqCO;
 import org.icedamericanomall.verification.domain.enums.VerificationChannel;
 import org.icedamericanomall.verification.domain.gateway.NotificationGateway;
 import org.icedamericanomall.verification.domain.model.VerificationCode;
+import org.icedamericanomall.verification.domain.model.VerificationPolicy;
 import org.springframework.stereotype.Component;
 
 /**
@@ -17,19 +18,18 @@ import org.springframework.stereotype.Component;
  * 领域层只表达「把验证码投递到目标」。
  *
  * <p>文案约定：短信模板变量固定为 {@code code}（见 ia-integration 的 {@code AliyunSmsClient}），
- * 因此短信正文直接投递验证码本身；邮件则带主题与说明文案。
+ * 因此短信正文直接投递验证码本身、不设主题；邮件正文中的有效期由领域策略
+ * {@link VerificationPolicy#codeTtl()} 生成，避免与真实 TTL 脱节。
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class NotificationGatewayImpl implements NotificationGateway {
 
-    /** 第三方短信模板只声明了 code 一个变量，故短信正文就是验证码 */
-    private static final String SMS_SUBJECT = null;
-
     private static final String EMAIL_SUBJECT = "冰美商城验证码";
 
     private final NotificationClient notificationClient;
+    private final VerificationPolicy verificationPolicy;
 
     @Override
     public void sendVerificationCode(VerificationCode code, String requestId, String scene) {
@@ -39,14 +39,21 @@ public class NotificationGatewayImpl implements NotificationGateway {
         request.setScene(scene);
 
         if (code.channel() == VerificationChannel.SMS) {
-            request.setSubject(SMS_SUBJECT);
+            // 短信主题由第三方模板决定，此处留空；正文即验证码（模板唯一变量 code）
             request.setContent(code.code());
             notificationClient.sendSms(request);
             return;
         }
 
         request.setSubject(EMAIL_SUBJECT);
-        request.setContent("您的验证码是 " + code.code() + "，5 分钟内有效。如非本人操作请忽略本邮件。");
+        request.setContent(buildEmailContent(code));
         notificationClient.sendEmail(request);
+    }
+
+    /** 邮件正文（有效期取自领域策略 TTL，随配置变化）。 */
+    private String buildEmailContent(VerificationCode code) {
+        long minutes = verificationPolicy.codeTtl().toMinutes();
+        return "您的验证码是 " + code.code() + "，" + minutes
+                + " 分钟内有效。如非本人操作请忽略本邮件。";
     }
 }

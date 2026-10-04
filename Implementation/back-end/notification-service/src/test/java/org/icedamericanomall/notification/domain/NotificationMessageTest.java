@@ -1,12 +1,11 @@
 package org.icedamericanomall.notification.domain;
 
-import org.icedamericanomall.notification.domain.model.EmailMessage;
-import org.icedamericanomall.notification.domain.model.SmsMessage;
+import org.icedamericanomall.notification.domain.model.channel.EmailMessage;
+import org.icedamericanomall.notification.domain.model.channel.SmsMessage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
@@ -36,7 +35,7 @@ class NotificationMessageTest {
                 () -> new EmailMessage("a@b.com", " ", "正文", "req-2", "LOGIN"));
         assertThrows(IllegalArgumentException.class,
                 () -> new EmailMessage("a@b.com", "主题", null, "req-2", "LOGIN"));
-        EmailMessage message = new EmailMessage("a@b.com", "登录验证码", "验证码 123456", "req-2", "LOGIN");
-        assertEquals("EMAIL", message.channelCode());
+        assertDoesNotThrow(
+                () -> new EmailMessage("a@b.com", "登录验证码", "验证码 123456", "req-2", "LOGIN"));
     }
 }

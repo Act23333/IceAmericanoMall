@@ -16,6 +16,11 @@ spring:
       password: nacos
       discovery:
         enabled: true
+    # Feign 熔断降级：开启后 @FeignClient 的 fallbackFactory 真实生效
+    # （OrderClient 归属校验降级为 fail-closed，依赖 resilience4j starter）
+    openfeign:
+      circuitbreaker:
+        enabled: true
   data:
     redis:
       host: ${ia.redis.host:192.168.10.128}
@@ -61,3 +66,21 @@ knife4j:
 springdoc:
   api-docs:
     enabled: true
+
+# Feign 熔断参数（配套 spring.cloud.openfeign.circuitbreaker.enabled=true）
+# 说明：Spring Cloud 从 resilience4j 注册表读取默认配置；不配置时 TimeLimiter 默认仅 1 秒，
+# 会把「查询订单归属」等慢调用误判为失败并走 fail-closed 降级（用户被误判越权/订单不存在），
+# 因此与 authorization-service 保持一致，显式放宽超时并给出熔断阈值。
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 20                        # 统计窗口（调用次数）
+        minimum-number-of-calls: 10                    # 达到该调用数才开始计算失败率
+        failure-rate-threshold: 50                     # 失败率阈值（%）
+        wait-duration-in-open-state: 30s               # 熔断打开后保持时长
+        permitted-number-of-calls-in-half-open-state: 3 # 半开状态试探调用数
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 5s                           # 单次 Feign 调用上限（缺省 1s 过短）

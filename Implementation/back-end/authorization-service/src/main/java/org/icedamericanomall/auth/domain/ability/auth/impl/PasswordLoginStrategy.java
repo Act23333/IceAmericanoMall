@@ -4,7 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.auth.domain.ability.auth.LoginStrategy;
 import org.icedamericanomall.auth.domain.enums.CredentialTypeEnum;
 import org.icedamericanomall.auth.domain.model.LoginSpec;
-import org.icedamericanomall.auth.domain.model.UserAuth;
+import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
 import org.icedamericanomall.auth.domain.port.PasswordVerifier;
 import org.icedamericanomall.auth.domain.repository.UserAuthRepository;
 import org.icedamericanomall.common.enums.ErrorCode;

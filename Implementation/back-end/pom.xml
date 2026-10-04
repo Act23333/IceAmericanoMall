@@ -31,6 +31,8 @@
         <module>marketing-service</module>
         <module>notification-service</module>
         <module>verification-service</module>
+        <module>wallet-service</module>
+        <module>merchant-service</module>
     </modules>
 
     <!--实现 Maven 的配置继承-->

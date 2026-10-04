@@ -1,45 +1,66 @@
 package org.icedamericanomall.item.adapter.admin;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.item.domain.entity.HomeConfigEntity;
-import org.icedamericanomall.item.service.HomeConfigService;
-import org.icedamericanomall.common.domain.Result;
+import org.icedamericanomall.common.annotation.OperationLog;
+import org.icedamericanomall.common.api.Result;
+import org.icedamericanomall.item.adapter.request.HomeConfigReq;
+import org.icedamericanomall.item.adapter.response.HomeConfigVO;
+import org.icedamericanomall.item.app.HomeConfigManager;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.icedamericanomall.common.enums.ErrorCode;
-import org.icedamericanomall.common.exception.BizException;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
+/**
+ * 管理后台 — 首页装修配置。
+ *
+ * <p><b>审计（ADR-032 管道一）</b>：三个写操作标注 {@code @OperationLog}，产出单行 JSON 审计日志
+ * （logger {@code AUDIT}，经 ELK 采集，不落库）；含请求体的端点默认不记参数值（PII 安全默认），
+ * 仅路径标识的删除端点开启参数摘要。
+ */
 @RestController
 @PreAuthorize("@ss.hasPermi('user:admin')")
 @RequestMapping("/api/admin/home")
 @RequiredArgsConstructor
 public class AdminHomeController {
 
-    private final HomeConfigService homeConfigService;
+    /** 审计模块：商品域首页装修。 */
+    private static final String MODULE_ITEM_HOME = "ITEM_HOME";
 
+    /** 审计动作：新增首页配置。 */
+    private static final String ACTION_CREATE_HOME_CONFIG = "CREATE_HOME_CONFIG";
+
+    /** 审计动作：更新首页配置。 */
+    private static final String ACTION_UPDATE_HOME_CONFIG = "UPDATE_HOME_CONFIG";
+
+    /** 审计动作：删除首页配置。 */
+    private static final String ACTION_DELETE_HOME_CONFIG = "DELETE_HOME_CONFIG";
+
+    private final HomeConfigManager homeConfigManager;
+
+    @OperationLog(module = MODULE_ITEM_HOME, action = ACTION_CREATE_HOME_CONFIG, description = "新增首页配置")
     @PostMapping
-    public Result<HomeConfigEntity> create(@RequestBody HomeConfigEntity entity) {
-        homeConfigService.save(entity);
-        return Result.ok(entity);
+    public Result<HomeConfigVO> create(@Valid @RequestBody HomeConfigReq req) {
+        return Result.ok(homeConfigManager.createConfig(req));
     }
 
+    @OperationLog(module = MODULE_ITEM_HOME, action = ACTION_UPDATE_HOME_CONFIG, description = "更新首页配置")
     @PutMapping("/{id}")
-    public Result<HomeConfigEntity> update(@PathVariable Long id, @RequestBody HomeConfigEntity entity) {
-        if (homeConfigService.getById(id) == null)
-            throw new BizException(ErrorCode.USER_NOT_FOUND, "配置不存在");
-        entity.setId(id);
-        homeConfigService.updateById(entity);
-        return Result.ok(entity);
+    public Result<HomeConfigVO> update(@PathVariable Long id, @Valid @RequestBody HomeConfigReq req) {
+        return Result.ok(homeConfigManager.updateConfig(id, req));
     }
 
+    @OperationLog(module = MODULE_ITEM_HOME, action = ACTION_DELETE_HOME_CONFIG, description = "删除首页配置",
+            recordParams = true)
     @DeleteMapping("/{id}")
-    public Result<?> delete(@PathVariable Long id) {
-        homeConfigService.removeById(id);
+    public Result<Void> delete(@PathVariable Long id) {
+        homeConfigManager.deleteConfig(id);
         return Result.ok();
     }
 
     @GetMapping
-    public Result<?> list() {
-        return Result.ok(homeConfigService.list());
+    public Result<List<HomeConfigVO>> list() {
+        return Result.ok(homeConfigManager.listAll());
     }
 }

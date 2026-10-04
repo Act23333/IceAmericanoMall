@@ -13,23 +13,21 @@ import org.icedamericanomall.common.utils.crypto.BlindIndexUtil;
 import org.icedamericanomall.dto.UserAuthCO;
 import org.icedamericanomall.user.adapter.response.UserInfoResp;
 import org.icedamericanomall.user.app.rbac.RoleTypeDerivation;
-import org.icedamericanomall.user.domain.model.User;
-import org.icedamericanomall.user.domain.port.DistributedLock;
+import org.icedamericanomall.user.domain.model.user.User;
+import org.icedamericanomall.common.lock.DistributedLock;
 import org.icedamericanomall.user.domain.port.NewUserRewardService;
-import org.icedamericanomall.user.domain.repository.RoleRepository;
 import org.icedamericanomall.user.domain.repository.UserRepository;
 import org.icedamericanomall.user.domain.service.UserProvisioner;
 import org.icedamericanomall.user.infrastructure.config.MyMetaObjectHandler;
-import org.icedamericanomall.user.infrastructure.persistence.rbac.PermissionMapper;
-import org.icedamericanomall.user.infrastructure.persistence.rbac.RoleMapper;
-import org.icedamericanomall.user.infrastructure.persistence.rbac.RoleRepositoryImpl;
-import org.icedamericanomall.user.infrastructure.persistence.user.UserDO;
+import org.icedamericanomall.user.infrastructure.persistence.user.UserPO;
 import org.icedamericanomall.user.infrastructure.persistence.user.UserMapper;
 import org.icedamericanomall.user.infrastructure.persistence.user.UserRepositoryImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.util.Base64;
@@ -48,19 +46,20 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 幂等建档 H2 集成测试（V5.2 资料/凭证分离后）—— UserManager + UserProvisioner +
- * 真实 UserRepositoryImpl / UserRegistrar / RoleRepository（H2），锁与奖励为替身。
+ * 幂等建档 H2 集成测试（ADR-018 后，ADR-025 按用例族拆分）—— UserProvisionManager +
+ * UserAdminManager + UserProvisioner + 真实 UserRepositoryImpl / UserRegistrar（H2），锁与奖励为替身。
  *
- * <p>验证：PHONE/EMAIL 建档写三字段 PII（明文列不写）、默认昵称/角色、建档奖励仅新建分支；
- * WECHAT 身份不落 user 表（幂等由调用方 user_auth 保证）；roleType 由五表角色批量派生。
+ * <p>验证：PHONE/EMAIL 建档写三字段 PII（明文列不写）、默认昵称、建档奖励仅新建分支；
+ * WECHAT 身份不落 user 表；roleType 由授权域角色批量派生（{@code AuthContextClient} 替身）。
+ * 默认 RBAC 角色授予已随 RBAC 迁至 authorization-service（读时兜底），不在本服务。
  */
-@DisplayName("幂等建档 H2 集成测试（UserManager + UserProvisioner）")
+@DisplayName("幂等建档 H2 集成测试（UserProvisionManager + UserAdminManager + UserProvisioner）")
 class UserProvisioningH2Test {
 
-    private UserManager userManager;
+    private UserProvisionManager userProvisionManager;
+    private UserAdminManager userAdminManager;
     private UserMapper userMapper;
-    private RoleMapper roleMapper;
-    private RoleRepository roleRepository;
+    private org.icedamericanomall.client.AuthContextClient authContextClient;
     private NewUserRewardService newUserRewardService;
 
     @BeforeEach
@@ -81,25 +80,17 @@ class UserProvisioningH2Test {
                     member_level VARCHAR(20) DEFAULT 'NORMAL',
                     phone_cipher VARCHAR(512), phone_hash VARCHAR(128), phone_mask VARCHAR(64),
                     email_cipher VARCHAR(512), email_hash VARCHAR(128), email_mask VARCHAR(64),
-                    register_time TIMESTAMP NULL, status INT DEFAULT 1, balance INT DEFAULT 0,
+                    register_time TIMESTAMP NULL, status INT DEFAULT 1,
                     version INT DEFAULT 0,
                     create_time TIMESTAMP NULL,
                     update_time TIMESTAMP NULL
                 )""");
-            stmt.execute("CREATE TABLE sys_role (id BIGINT PRIMARY KEY, code VARCHAR(64))");
-            stmt.execute("CREATE TABLE sys_user_role (user_id BIGINT, role_id BIGINT)");
-            stmt.execute("CREATE TABLE sys_permission (id BIGINT PRIMARY KEY, code VARCHAR(128))");
-            stmt.execute("CREATE TABLE sys_user_permission (user_id BIGINT, permission_id BIGINT)");
-            stmt.execute("CREATE TABLE sys_role_permission (role_id BIGINT, permission_id BIGINT)");
-            stmt.execute("INSERT INTO sys_role (id, code) VALUES (1, 'ROLE_USER'), (4, 'ROLE_ADMIN')");
         }
 
         MybatisConfiguration config = new MybatisConfiguration();
         config.setMapUnderscoreToCamelCase(true);
         config.setDefaultEnumTypeHandler(MybatisEnumTypeHandler.class);
         config.addMapper(UserMapper.class);
-        config.addMapper(RoleMapper.class);
-        config.addMapper(PermissionMapper.class);
         GlobalConfig globalConfig = new GlobalConfig();
         globalConfig.setBanner(false);
         globalConfig.setMetaObjectHandler(new MyMetaObjectHandler());
@@ -111,21 +102,26 @@ class UserProvisioningH2Test {
 
         SqlSessionFactory factory = sqlSessionFactory;
         userMapper = factory.openSession().getMapper(UserMapper.class);
-        roleMapper = factory.openSession().getMapper(RoleMapper.class);
-        PermissionMapper permissionMapper = factory.openSession().getMapper(PermissionMapper.class);
 
         UserRepository userRepository = new UserRepositoryImpl(userMapper);
-        roleRepository = new RoleRepositoryImpl(roleMapper, permissionMapper);
 
         DistributedLock distributedLock = mock(DistributedLock.class);
         when(distributedLock.executeWithLock(anyString(), org.mockito.ArgumentMatchers.any()))
                 .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(1)).get());
         newUserRewardService = mock(NewUserRewardService.class);
 
-        UserRegistrar userRegistrar = new UserRegistrar(userRepository, roleRepository);
+        org.icedamericanomall.user.app.user.UserRegistrar userRegistrar =
+                new org.icedamericanomall.user.app.user.UserRegistrar(userRepository);
         UserProvisioner provisioner = new UserProvisioner(
                 userRepository, distributedLock, userRegistrar, newUserRewardService);
-        userManager = new UserManager(userRepository, provisioner, roleRepository);
+
+        authContextClient = mock(org.icedamericanomall.client.AuthContextClient.class);
+        userProvisionManager = new UserProvisionManager(provisioner);
+        // 审计落库（ADR-032 管道二）在本用例只涉及 pageUsers 读取，审计替身即可；
+        // 事务模板（ADR-031 起 updateStatus 用它圈定本地写入）在本用例不被触发，用真实模板占位
+        userAdminManager = new UserAdminManager(userRepository, authContextClient,
+                mock(org.icedamericanomall.user.app.oplog.OperationLogManager.class),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
     }
 
     private UserAuthCO co(String identifier, IdentityTypeEnum type, String nickname) {
@@ -133,31 +129,25 @@ class UserProvisioningH2Test {
     }
 
     @Test
-    @DisplayName("getOrCreateUser — PHONE 建档：三字段 PII 落列（明文列不写）+ 昵称透传 + 默认角色 + 建档奖励")
+    @DisplayName("getOrCreateUser — PHONE 建档：三字段 PII 落列（明文列不写）+ 昵称透传 + 建档奖励")
     void shouldProvisionPhoneUser_withPiiAndReward() {
-        Long userId = userManager.getOrCreateUser(co("13800138000", IdentityTypeEnum.PHONE, "冰美式用户"));
+        Long userId = userProvisionManager.getOrCreateUser(co("13800138000", IdentityTypeEnum.PHONE, "冰美式用户"));
 
-        UserDO saved = userMapper.selectById(userId);
+        UserPO saved = userMapper.selectById(userId);
         assertNotNull(saved);
         assertEquals("冰美式用户", saved.getUsername(), "昵称透传建档");
         assertNotNull(saved.getPhoneCipher(), "手机号密文落列");
         assertEquals(64, saved.getPhoneHash().length(), "手机号盲索引（HMAC-SHA256）落列");
         assertEquals("138****8000", saved.getPhoneMask(), "手机号脱敏值落列");
         assertEquals("NORMAL", saved.getMemberLevel(), "默认会员等级");
-        // 说明：register_time（NOT NULL 列）由 MyMetaObjectHandler 在 Spring 上下文内填充，
-        // 本测试为手工 MyBatis-Plus 引导（不启容器），故不对填充值断言。
-
-        Long roleRows = userMapper.selectCount(new LambdaQueryWrapper<UserDO>().eq(UserDO::getId, userId));
-        assertEquals(1L, roleRows, "用户行唯一");
-        assertEquals(Set.of("ROLE_USER"), roleRepository.findRoleCodesByUserId(userId), "默认 ROLE_USER 已授予");
         verify(newUserRewardService, times(1)).award(userId);
     }
 
     @Test
     @DisplayName("getOrCreateUser — 同手机号重复调用：命中同一用户，不发第二次奖励")
     void shouldBeIdempotent_whenSamePhone() {
-        Long first = userManager.getOrCreateUser(co("13800138000", IdentityTypeEnum.PHONE, null));
-        Long second = userManager.getOrCreateUser(co("13800138000", IdentityTypeEnum.PHONE, "另一个昵称"));
+        Long first = userProvisionManager.getOrCreateUser(co("13800138000", IdentityTypeEnum.PHONE, null));
+        Long second = userProvisionManager.getOrCreateUser(co("13800138000", IdentityTypeEnum.PHONE, "另一个昵称"));
 
         assertEquals(first, second, "同一手机号必须命中同一用户");
         assertEquals(1L, userMapper.selectCount(null), "不得重复建档");
@@ -167,24 +157,27 @@ class UserProvisioningH2Test {
     @Test
     @DisplayName("getOrCreateUser — EMAIL 建档：按盲索引落三字段，重复调用幂等，批量角色查询可用")
     void shouldProvisionEmailUser_byBlindIndex() {
-        Long first = userManager.getOrCreateUser(co("Buyer@Example.com", IdentityTypeEnum.EMAIL, null));
-        Long second = userManager.getOrCreateUser(co("Buyer@Example.com", IdentityTypeEnum.EMAIL, null));
+        Long first = userProvisionManager.getOrCreateUser(co("Buyer@Example.com", IdentityTypeEnum.EMAIL, null));
+        Long second = userProvisionManager.getOrCreateUser(co("Buyer@Example.com", IdentityTypeEnum.EMAIL, null));
 
         assertEquals(first, second, "同一邮箱（明文入参）必须命中同一用户");
-        UserDO saved = userMapper.selectById(first);
+        UserPO saved = userMapper.selectById(first);
         assertNotNull(saved.getEmailHash());
         assertNotNull(saved.getEmailMask());
 
-        Map<Long, Set<String>> rolesByUser = roleRepository.findRoleCodesByUserIds(Set.of(first));
+        // 角色经授权域批量查询（ADR-018）：替身返回 ROLE_USER
+        when(authContextClient.rolesByUserIds(Set.of(first)))
+                .thenReturn(Map.of(first, Set.of("ROLE_USER")));
+        var rolesByUser = authContextClient.rolesByUserIds(Set.of(first));
         assertEquals(Set.of("ROLE_USER"), rolesByUser.get(first), "批量角色查询（管理后台派生口径）");
     }
 
     @Test
     @DisplayName("getOrCreateUser — WECHAT 身份：user 表不落标识列（凭证归 user_auth），建档发奖励")
     void shouldProvisionWechatUser_withoutIdentityColumn() {
-        Long userId = userManager.getOrCreateUser(co("wx-openid-1", IdentityTypeEnum.WECHAT, "微信用户"));
+        Long userId = userProvisionManager.getOrCreateUser(co("wx-openid-1", IdentityTypeEnum.WECHAT, "微信用户"));
 
-        UserDO saved = userMapper.selectById(userId);
+        UserPO saved = userMapper.selectById(userId);
         assertNotNull(saved);
         assertEquals("微信用户", saved.getUsername());
         assertNull(saved.getPhoneHash(), "WECHAT 不写手机号列");
@@ -193,13 +186,18 @@ class UserProvisioningH2Test {
     }
 
     @Test
-    @DisplayName("pageUsers — roleType 由五表派生：仅 ROLE_USER → 0；追加 ROLE_ADMIN → 2")
-    void shouldDeriveRoleType_fromFiveTables() {
-        Long plainUserId = userManager.getOrCreateUser(co("13900139000", IdentityTypeEnum.PHONE, null));
-        Long adminUserId = userManager.getOrCreateUser(co("13500135000", IdentityTypeEnum.PHONE, null));
-        roleMapper.insertUserRole(adminUserId, 4L); // 追加 ROLE_ADMIN
+    @DisplayName("UserAdminManager.pageUsers — roleType 由授权域角色派生：仅 ROLE_USER → 0；追加 ROLE_ADMIN → 2")
+    void shouldDeriveRoleType_fromAuthRoles() {
+        Long plainUserId = userProvisionManager.getOrCreateUser(co("13900139000", IdentityTypeEnum.PHONE, null));
+        Long adminUserId = userProvisionManager.getOrCreateUser(co("13500135000", IdentityTypeEnum.PHONE, null));
 
-        var page = userManager.pageUsers(1, 10);
+        // 授权域返回的角色编码（替身模拟 sys_user_role 内容；key 为技术主键）
+        when(authContextClient.rolesByUserIds(org.mockito.ArgumentMatchers.anySet()))
+                .thenReturn(Map.of(
+                        plainUserId, Set.of("ROLE_USER"),
+                        adminUserId, Set.of("ROLE_USER", "ROLE_ADMIN")));
+
+        var page = userAdminManager.pageUsers(1, 10);
         Map<String, Integer> roleTypeByUserId = page.getRecords().stream()
                 .collect(java.util.stream.Collectors.toMap(UserInfoResp::getUserId, UserInfoResp::getRoleType));
 
@@ -212,8 +210,8 @@ class UserProvisioningH2Test {
     @Test
     @DisplayName("getOrCreateUser — 奖励仅新建分支触发（重复调用不叠加）")
     void shouldAwardOnlyOnCreation() {
-        Long userId = userManager.getOrCreateUser(co("13700137000", IdentityTypeEnum.PHONE, null));
-        userManager.getOrCreateUser(co("13700137000", IdentityTypeEnum.PHONE, null));
+        Long userId = userProvisionManager.getOrCreateUser(co("13700137000", IdentityTypeEnum.PHONE, null));
+        userProvisionManager.getOrCreateUser(co("13700137000", IdentityTypeEnum.PHONE, null));
 
         verify(newUserRewardService, times(1)).award(userId);
         verify(newUserRewardService, times(1)).award(anyLong());
@@ -221,7 +219,7 @@ class UserProvisioningH2Test {
 
     /** 按技术主键回读领域对象（仅用于取业务 UUID 做断言）。 */
     private User userRepositoryFind(Long id) {
-        UserDO dataObject = userMapper.selectById(id);
+        UserPO dataObject = userMapper.selectById(id);
         return User.builder().id(dataObject.getId()).userId(dataObject.getUserId()).build();
     }
 }

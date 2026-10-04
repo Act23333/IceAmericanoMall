@@ -65,6 +65,16 @@
             <artifactId>spring-cloud-starter-openfeign</artifactId>
         </dependency>
 
+        <!-- Feign 熔断降级（V5.4 熔断铺设）：本服务经 NotificationClient 投递验证码但此前未开熔断。
+             开启 spring.cloud.openfeign.circuitbreaker.enabled 后
+             ia-api 的 NotificationClientFallback（fail-closed：抛 SMS/EMAIL_SEND_FAILED）真实生效
+             （降级 Bean 由 scanBasePackages 的 org.icedamericanomall.fallback 提供，ADR-009/ADR-007）。
+             版本交由 spring-cloud-dependencies BOM 管理，不写版本号。 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>

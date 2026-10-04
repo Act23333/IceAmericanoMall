@@ -3,7 +3,7 @@ package org.icedamericanomall.user.infrastructure.persistence.address;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.user.domain.model.Address;
+import org.icedamericanomall.user.domain.model.address.Address;
 import org.icedamericanomall.user.domain.repository.AddressRepository;
 import org.springframework.stereotype.Repository;
 
@@ -26,8 +26,8 @@ public class AddressRepositoryImpl implements AddressRepository {
     @Override
     public List<Address> findByUserId(Long userId) {
         // 保持迁移前排序语义（无显式 ORDER BY → 主键顺序），避免列表顺序变化影响前端
-        return addressMapper.selectList(new LambdaQueryWrapper<AddressDO>()
-                        .eq(AddressDO::getUserId, userId))
+        return addressMapper.selectList(new LambdaQueryWrapper<AddressPO>()
+                        .eq(AddressPO::getUserId, userId))
                 .stream()
                 .map(AddressConverter::toDomain)
                 .toList();
@@ -40,7 +40,7 @@ public class AddressRepositoryImpl implements AddressRepository {
 
     @Override
     public Address insert(Address address) {
-        AddressDO dataObject = AddressConverter.toDataObject(address);
+        AddressPO dataObject = AddressConverter.toDataObject(address);
         dataObject.setId(null);
         addressMapper.insert(dataObject);
         return AddressConverter.toDomain(dataObject);
@@ -48,34 +48,34 @@ public class AddressRepositoryImpl implements AddressRepository {
 
     @Override
     public int updateByUserIdAndId(Address address) {
-        AddressDO dataObject = AddressConverter.toDataObject(address);
-        return addressMapper.update(dataObject, new LambdaUpdateWrapper<AddressDO>()
-                .eq(AddressDO::getUserId, address.getUserId())
-                .eq(AddressDO::getId, address.getId()));
+        AddressPO dataObject = AddressConverter.toDataObject(address);
+        return addressMapper.update(dataObject, new LambdaUpdateWrapper<AddressPO>()
+                .eq(AddressPO::getUserId, address.getUserId())
+                .eq(AddressPO::getId, address.getId()));
     }
 
     @Override
     public int deleteByUserIdAndId(Long userId, Long id) {
-        return addressMapper.delete(new LambdaQueryWrapper<AddressDO>()
-                .eq(AddressDO::getUserId, userId)
-                .eq(AddressDO::getId, id));
+        return addressMapper.delete(new LambdaQueryWrapper<AddressPO>()
+                .eq(AddressPO::getUserId, userId)
+                .eq(AddressPO::getId, id));
     }
 
     @Override
     public int clearDefault(Long userId) {
-        return addressMapper.update(null, new LambdaUpdateWrapper<AddressDO>()
-                .eq(AddressDO::getUserId, userId)
-                .eq(AddressDO::getDefaulted, true)
-                .set(AddressDO::getDefaulted, false)
-                .set(AddressDO::getUpdateTime, LocalDateTime.now()));
+        return addressMapper.update(null, new LambdaUpdateWrapper<AddressPO>()
+                .eq(AddressPO::getUserId, userId)
+                .eq(AddressPO::getDefaulted, true)
+                .set(AddressPO::getDefaulted, false)
+                .set(AddressPO::getUpdateTime, LocalDateTime.now()));
     }
 
     @Override
     public int markDefault(Long userId, Long id) {
-        return addressMapper.update(null, new LambdaUpdateWrapper<AddressDO>()
-                .eq(AddressDO::getUserId, userId)
-                .eq(AddressDO::getId, id)
-                .set(AddressDO::getDefaulted, true)
-                .set(AddressDO::getUpdateTime, LocalDateTime.now()));
+        return addressMapper.update(null, new LambdaUpdateWrapper<AddressPO>()
+                .eq(AddressPO::getUserId, userId)
+                .eq(AddressPO::getId, id)
+                .set(AddressPO::getDefaulted, true)
+                .set(AddressPO::getUpdateTime, LocalDateTime.now()));
     }
 }

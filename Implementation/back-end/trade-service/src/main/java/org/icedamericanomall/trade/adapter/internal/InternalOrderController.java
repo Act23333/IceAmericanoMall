@@ -1,14 +1,14 @@
 package org.icedamericanomall.trade.adapter.internal;
 
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.trade.domain.entity.OrderEntity;
-import org.icedamericanomall.trade.domain.vo.OrderVO;
 import org.icedamericanomall.dto.CreateOrderInternalReq;
 import org.icedamericanomall.dto.OrderSummaryCO;
-import org.icedamericanomall.trade.enums.OrderTypeEnum;
-import org.icedamericanomall.trade.manager.OrderCreationManager;
-import org.icedamericanomall.trade.service.OrderService;
-import org.icedamericanomall.trade.strategy.OrderCreateContext;
+import org.icedamericanomall.trade.adapter.response.OrderVO;
+import org.icedamericanomall.trade.app.order.OrderCreationManager;
+import org.icedamericanomall.trade.app.order.OrderLifecycleManager;
+import org.icedamericanomall.trade.app.order.OrderQueryManager;
+import org.icedamericanomall.trade.app.order.strategy.OrderCreateContext;
+import org.icedamericanomall.trade.domain.enums.OrderTypeEnum;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -20,38 +20,34 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class InternalOrderController {
 
-    private final OrderService orderService;
+    private final OrderLifecycleManager orderLifecycleManager;
+    private final OrderQueryManager orderQueryManager;
     private final OrderCreationManager orderCreationManager;
 
     /**
      * Update order status — called by pay-service after payment success / timeout.
+     * <p>状态回写走条件更新，仅接受「待付款 → 待发货」与「待付款 → 已取消」两条合法边，
+     * 其余（含重复回写）抛 ORDER_STATUS_INVALID，由调用方感知失败。
      */
     @PutMapping("/{orderNo}/status")
     public void updateOrderStatus(@PathVariable String orderNo, @RequestParam Integer status) {
-        OrderEntity order = orderService.getByOrderNo(orderNo);
-        if (order == null) {
-            return;
-        }
-        orderService.lambdaUpdate()
-                .eq(OrderEntity::getId, order.getId())
-                .set(OrderEntity::getStatus, status)
-                .update();
+        orderLifecycleManager.transitionFromPendingPayment(orderNo, status);
     }
 
     /**
-     * Get order summary for payment initiation — returns totalAmount + status.
+     * Get order summary by order number — returns 原价 + 应付金额 + 状态。
      */
     @GetMapping("/{orderNo}")
     public OrderSummaryCO getOrder(@PathVariable String orderNo) {
-        OrderEntity order = orderService.getByOrderNo(orderNo);
-        if (order == null) {
-            return null;
-        }
-        OrderSummaryCO dto = new OrderSummaryCO();
-        dto.setOrderNo(order.getOrderNo());
-        dto.setTotalAmount(order.getTotalAmount());
-        dto.setStatus(order.getStatus());
-        return dto;
+        return orderQueryManager.getOrderSummary(orderNo);
+    }
+
+    /**
+     * Get order summary by technical id — 供下游（logistics-service）做订单归属校验。
+     */
+    @GetMapping("/id/{orderId}")
+    public OrderSummaryCO getOrderById(@PathVariable Long orderId) {
+        return orderQueryManager.getOrderSummaryById(orderId);
     }
 
     /**
@@ -73,7 +69,9 @@ public class InternalOrderController {
 
         OrderSummaryCO dto = new OrderSummaryCO();
         dto.setOrderNo(vo.getOrderNo());
-        dto.setTotalAmount(vo.getPayAmount());
+        dto.setUserId(vo.getUserId());
+        dto.setTotalAmount(vo.getTotalAmount());
+        dto.setPayAmount(vo.getPayAmount());
         dto.setStatus(vo.getStatus());
         return dto;
     }

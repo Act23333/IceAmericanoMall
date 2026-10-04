@@ -7,7 +7,7 @@ import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.utils.crypto.BlindIndexUtil;
 import org.icedamericanomall.user.domain.exception.DuplicateUserException;
-import org.icedamericanomall.user.domain.model.User;
+import org.icedamericanomall.user.domain.model.user.User;
 import org.icedamericanomall.user.domain.enums.UserStatusEnum;
 import org.icedamericanomall.user.domain.repository.UserRepository;
 import org.springframework.dao.DuplicateKeyException;
@@ -57,7 +57,7 @@ public class UserRepositoryImpl implements UserRepository {
             return Optional.empty();
         }
         return Optional.ofNullable(UserConverter.toDomain(userMapper.selectOne(
-                new LambdaQueryWrapper<UserDO>().eq(UserDO::getPhoneHash, BlindIndexUtil.hmac(phone)).last("LIMIT 1"))));
+                new LambdaQueryWrapper<UserPO>().eq(UserPO::getPhoneHash, BlindIndexUtil.hmac(phone)).last("LIMIT 1"))));
     }
 
     @Override
@@ -66,7 +66,7 @@ public class UserRepositoryImpl implements UserRepository {
             return Optional.empty();
         }
         return Optional.ofNullable(UserConverter.toDomain(userMapper.selectOne(
-                new LambdaQueryWrapper<UserDO>().eq(UserDO::getEmailHash, BlindIndexUtil.hmac(email)).last("LIMIT 1"))));
+                new LambdaQueryWrapper<UserPO>().eq(UserPO::getEmailHash, BlindIndexUtil.hmac(email)).last("LIMIT 1"))));
     }
 
     @Override
@@ -75,12 +75,12 @@ public class UserRepositoryImpl implements UserRepository {
             return Optional.empty();
         }
         return Optional.ofNullable(UserConverter.toDomain(userMapper.selectOne(
-                new LambdaQueryWrapper<UserDO>().eq(UserDO::getUsername, nickname).last("LIMIT 1"))));
+                new LambdaQueryWrapper<UserPO>().eq(UserPO::getUsername, nickname).last("LIMIT 1"))));
     }
 
     @Override
     public User insert(User user) {
-        UserDO dataObject = UserConverter.toDataObject(user);
+        UserPO dataObject = UserConverter.toDataObject(user);
         try {
             userMapper.insert(dataObject);
         } catch (DuplicateKeyException e) {
@@ -96,19 +96,9 @@ public class UserRepositoryImpl implements UserRepository {
 
     @Override
     public int updateStatusById(Long id, UserStatusEnum status) {
-        return userMapper.update(null, new LambdaUpdateWrapper<UserDO>()
-                .eq(UserDO::getId, id)
-                .set(UserDO::getStatus, status == null ? null : status.getCode()));
-    }
-
-    @Override
-    public int deductBalance(Long id, int amount) {
-        return userMapper.deductBalance(id, amount);
-    }
-
-    @Override
-    public int creditBalance(Long id, int amount) {
-        return userMapper.creditBalance(id, amount);
+        return userMapper.update(null, new LambdaUpdateWrapper<UserPO>()
+                .eq(UserPO::getId, id)
+                .set(UserPO::getStatus, status == null ? null : status.getCode()));
     }
 
     @Override
@@ -118,8 +108,8 @@ public class UserRepositoryImpl implements UserRepository {
 
     @Override
     public List<User> findPageDescByCreateTime(int offset, int size) {
-        return userMapper.selectList(new LambdaQueryWrapper<UserDO>()
-                        .orderByDesc(UserDO::getCreateTime)
+        return userMapper.selectList(new LambdaQueryWrapper<UserPO>()
+                        .orderByDesc(UserPO::getCreateTime)
                         .last("LIMIT " + size + " OFFSET " + offset))
                 .stream()
                 .map(UserConverter::toDomain)

@@ -1,6 +1,6 @@
 package org.icedamericanomall.user.domain.port;
 
-import org.icedamericanomall.user.domain.model.User;
+import org.icedamericanomall.user.domain.model.user.User;
 
 /**
  * 新用户建档能力（领域层定义，应用层实现）。

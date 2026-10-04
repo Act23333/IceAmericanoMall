@@ -23,7 +23,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
         "org.icedamericanomall.item",
         "org.icedamericanomall.fallback"
 })
-@MapperScan("org.icedamericanomall.item.mapper")
+@MapperScan("org.icedamericanomall.item.infrastructure.persistence")
 @EnableFeignClients(basePackages = "org.icedamericanomall.client")
 public class ItemApplication {
 

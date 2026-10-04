@@ -2,7 +2,7 @@ package org.icedamericanomall.user.domain.repository;
 
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.user.domain.exception.DuplicateUserException;
-import org.icedamericanomall.user.domain.model.User;
+import org.icedamericanomall.user.domain.model.user.User;
 import org.icedamericanomall.user.domain.enums.UserStatusEnum;
 
 import java.util.List;
@@ -55,16 +55,6 @@ public interface UserRepository {
 
     /** 管理后台：启用/禁用状态迁移。 */
     int updateStatusById(Long id, UserStatusEnum status);
-
-    /**
-     * 原子条件扣减余额（余额支付）：仅当余额充足才更新。
-     *
-     * @return 受影响行数（0 = 余额不足或用户不存在）
-     */
-    int deductBalance(Long id, int amount);
-
-    /** 原子增加余额（充值/退款）。 */
-    int creditBalance(Long id, int amount);
 
     /** 用户总数（管理后台 / 跨服务统计）。 */
     long countAll();

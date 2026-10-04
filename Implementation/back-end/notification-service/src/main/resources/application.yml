@@ -4,6 +4,12 @@ server:
 spring:
   application:
     name: notification-service
+  # 站内信落库（notification 表；ADR-016 收尾，表所有权自 user-service 迁入）
+  datasource:
+    url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: ${hm.db.pw:root}
   cloud:
     nacos:
       server-addr: ${ia.nacos.host:192.168.10.128}:8848
@@ -52,7 +58,7 @@ logging:
     org.icedamericanomall: DEBUG
     org.nolazy: DEBUG
   file:
-    name: C:\Users\18279\Desktop\10\IceAmericanoMall\Implementation\back-end\logs\notification-service\app
+    path: "logs/${spring.application.name}"
   logback:
     rollingpolicy:
       max-file-size: 100MB

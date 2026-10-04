@@ -5,7 +5,7 @@ import org.icedamericanomall.auth.domain.ability.auth.LoginStrategy;
 import org.icedamericanomall.auth.domain.enums.CredentialTypeEnum;
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
 import org.icedamericanomall.auth.domain.model.LoginSpec;
-import org.icedamericanomall.auth.domain.model.UserAuth;
+import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
 import org.icedamericanomall.auth.domain.port.VerificationCodeService;
 import org.icedamericanomall.auth.domain.service.UserAuthProvisioner;
 import org.icedamericanomall.common.enums.ErrorCode;

@@ -3,16 +3,13 @@ package org.icedamericanomall.item.adapter.internal;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.icedamericanomall.item.convert.SkuConverter;
-import org.icedamericanomall.item.domain.dto.StockOpReq;
-import org.icedamericanomall.item.domain.entity.SkuEntity;
 import org.icedamericanomall.dto.SkuCO;
-import org.icedamericanomall.item.service.ProductService;
-import org.icedamericanomall.item.service.SkuService;
+import org.icedamericanomall.item.adapter.request.StockOpReq;
+import org.icedamericanomall.item.app.ProductManager;
+import org.icedamericanomall.item.app.SkuManager;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @Slf4j
 @RestController
@@ -20,29 +17,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class InternalSkuController {
 
-    private final SkuService skuService;
-    private final ProductService productService;
-    private final SkuConverter skuConverter;
+    private final SkuManager skuManager;
+    private final ProductManager productManager;
 
     @GetMapping("/list/batch")
     public List<SkuCO> getSkuListByIds(@RequestParam("ids") List<Long> skuIds) {
-        List<SkuEntity> entities = skuService.getSkuListByIds(skuIds);
-        List<SkuCO> dtos = skuConverter.entitiesToDTOs(entities);
-
-        // Enrich with sellerId and categoryId from associated products
-        List<Long> productIds = entities.stream()
-                .map(SkuEntity::getProductId)
-                .distinct()
-                .toList();
-        Map<Long, Long> productSellerMap = productService.getSellerIdMapByProductIds(productIds);
-        Map<Long, Long> productCategoryMap = productService.getCategoryIdMapByProductIds(productIds);
-
-        for (int i = 0; i < dtos.size(); i++) {
-            SkuEntity entity = entities.get(i);
-            dtos.get(i).setSellerId(productSellerMap.get(entity.getProductId()));
-            dtos.get(i).setCategoryId(productCategoryMap.get(entity.getProductId())); // V4.3
-        }
-        return dtos;
+        return skuManager.getCosByIds(skuIds);
     }
 
     /**
@@ -52,7 +32,7 @@ public class InternalSkuController {
     @PostMapping("/deduct")
     public void deductStock(@RequestBody @Valid List<StockOpReq> items) {
         for (StockOpReq item : items) {
-            skuService.deductStock(item.getSkuId(), item.getQuantity());
+            skuManager.deductStock(item.getSkuId(), item.getQuantity());
         }
     }
 
@@ -63,7 +43,7 @@ public class InternalSkuController {
     @PostMapping("/restore")
     public void restoreStock(@RequestBody @Valid List<StockOpReq> items) {
         for (StockOpReq item : items) {
-            skuService.restoreStock(item.getSkuId(), item.getQuantity());
+            skuManager.restoreStock(item.getSkuId(), item.getQuantity());
         }
     }
 }

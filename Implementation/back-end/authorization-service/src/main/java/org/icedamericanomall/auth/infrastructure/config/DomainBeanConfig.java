@@ -13,7 +13,7 @@ import org.icedamericanomall.auth.domain.ability.risk.impl.AccountFreezeHandler;
 import org.icedamericanomall.auth.domain.ability.risk.impl.CaptchaHandler;
 import org.icedamericanomall.auth.domain.ability.risk.impl.PassHandler;
 import org.icedamericanomall.auth.domain.gateway.UserAccountGateway;
-import org.icedamericanomall.auth.domain.port.DistributedLock;
+import org.icedamericanomall.common.lock.DistributedLock;
 import org.icedamericanomall.auth.domain.port.PasswordVerifier;
 import org.icedamericanomall.auth.domain.port.VerificationCodeService;
 import org.icedamericanomall.auth.domain.port.WechatMiniSessionService;

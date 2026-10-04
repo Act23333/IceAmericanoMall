@@ -33,10 +33,28 @@ import java.util.Date;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * JWT 签发 / 解析工具。
+ *
+ * <p><b>{@code ver} claim（用户级令牌版本，ADR-031）</b>：access token 由
+ * {@code LoginTokenServiceImpl} 在组装 claims 时写入 {@link #TOKEN_VERSION_CLAIM}，
+ * 值为签发时刻该用户的 {@code auth:tokenver:{userId}} 当前版本（键缺失 = {@code 0}）。
+ * 网关把它与 Redis 当前版本比对，不一致即 401 —— 改密 / 重置密码 / 管理端禁用后，
+ * 该用户此前签发的全部 access token 立即失效。兼容规则：无 {@code ver} claim 的存量令牌
+ * 按 {@code 0} 处理（从未被吊销过的用户版本恒为 {@code 0}，因此存量令牌自然可用至过期，无需迁移）；
+ * 本 claim 名是<b>跨服务契约</b>，改名须与 gateway-service 的 {@code JwtBlacklistFilter} 同步发布。
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class JwtUtils {
+
+    /**
+     * 用户级令牌版本 claim 名（跨服务契约，网关读取）。
+     *
+     * <p>取值必须是十进制长整型；缺失按 {@code 0} 处理。
+     */
+    public static final String TOKEN_VERSION_CLAIM = "ver";
 
     private final JwtProperties jwtProperties;
     private final PrivateKey privateKey;

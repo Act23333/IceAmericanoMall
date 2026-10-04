@@ -3,7 +3,7 @@ package org.icedamericanomall.notification.infrastructure.adapter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.integration.email.EmailClient;
-import org.icedamericanomall.notification.domain.model.EmailMessage;
+import org.icedamericanomall.notification.domain.model.channel.EmailMessage;
 import org.icedamericanomall.notification.domain.port.EmailChannelPort;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;

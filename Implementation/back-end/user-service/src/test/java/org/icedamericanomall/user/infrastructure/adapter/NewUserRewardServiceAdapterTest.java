@@ -1,6 +1,6 @@
 package org.icedamericanomall.user.infrastructure.adapter;
 
-import org.icedamericanomall.user.app.points.PointsManager;
+import org.icedamericanomall.client.PointsClient;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,7 +24,7 @@ import static org.mockito.Mockito.verify;
 class NewUserRewardServiceAdapterTest {
 
     @Mock
-    private PointsManager pointsManager;
+    private PointsClient pointsClient;
 
     @InjectMocks
     private NewUserRewardServiceAdapter adapter;
@@ -34,7 +34,7 @@ class NewUserRewardServiceAdapterTest {
     void shouldAwardWelcomePoints() {
         adapter.award(100L);
 
-        verify(pointsManager).addPoints(eq(100L), eq(200), eq(2), eq("新用户建档奖励"));
+        verify(pointsClient).addPoints(eq(100L), eq(200), eq(2), eq("新用户建档奖励"));
     }
 
     @Test
@@ -42,17 +42,17 @@ class NewUserRewardServiceAdapterTest {
     void shouldSkip_whenUserIdNull() {
         adapter.award(null);
 
-        verify(pointsManager, never()).addPoints(anyLong(), anyInt(), anyInt(), anyString());
+        verify(pointsClient, never()).addPoints(anyLong(), anyInt(), anyInt(), anyString());
     }
 
     @Test
     @DisplayName("award — 积分账本异常：只告警不抛出（不阻断建档/登录主链路）")
     void shouldSwallowFailure() {
         doThrow(new RuntimeException("points table down"))
-                .when(pointsManager).addPoints(anyLong(), anyInt(), anyInt(), anyString());
+                .when(pointsClient).addPoints(anyLong(), anyInt(), anyInt(), anyString());
 
         adapter.award(100L);
 
-        verify(pointsManager).addPoints(eq(100L), eq(200), eq(2), eq("新用户建档奖励"));
+        verify(pointsClient).addPoints(eq(100L), eq(200), eq(2), eq("新用户建档奖励"));
     }
 }

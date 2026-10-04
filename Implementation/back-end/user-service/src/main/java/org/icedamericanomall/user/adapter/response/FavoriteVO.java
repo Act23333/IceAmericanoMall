@@ -1,7 +1,7 @@
 package org.icedamericanomall.user.adapter.response;
 
 import lombok.Data;
-import org.icedamericanomall.user.infrastructure.persistence.favorite.FavoriteDO;
+import org.icedamericanomall.user.domain.model.favorite.Favorite;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
@@ -18,13 +18,13 @@ public class FavoriteVO implements Serializable {
     private Long productId;
     private LocalDateTime createTime;
 
-    /** 持久化对象 → 视图对象。 */
-    public static FavoriteVO from(FavoriteDO dataObject) {
+    /** 领域模型 → 视图对象。 */
+    public static FavoriteVO from(Favorite favorite) {
         FavoriteVO vo = new FavoriteVO();
-        vo.setId(dataObject.getId());
-        vo.setUserId(dataObject.getUserId());
-        vo.setProductId(dataObject.getProductId());
-        vo.setCreateTime(dataObject.getCreateTime());
+        vo.setId(favorite.getId());
+        vo.setUserId(favorite.getUserId());
+        vo.setProductId(favorite.getProductId());
+        vo.setCreateTime(favorite.getCreateTime());
         return vo;
     }
 }

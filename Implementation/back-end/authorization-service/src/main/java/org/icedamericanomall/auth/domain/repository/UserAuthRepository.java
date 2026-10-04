@@ -1,6 +1,6 @@
 package org.icedamericanomall.auth.domain.repository;
 
-import org.icedamericanomall.auth.domain.model.UserAuth;
+import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 
 import java.util.List;

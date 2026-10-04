@@ -10,6 +10,8 @@ import org.icedamericanomall.verification.domain.enums.VerificationChannel;
 import org.icedamericanomall.verification.domain.enums.VerificationOutcome;
 import org.icedamericanomall.verification.domain.service.VerificationCodeIssuer;
 import org.icedamericanomall.verification.domain.service.VerificationCodeVerifier;
+import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.utils.crypto.DesensitizeUtil;
 import org.springframework.stereotype.Component;
 
@@ -36,6 +38,25 @@ public class VerificationManager {
     private final VerificationCodeIssuer verificationCodeIssuer;
     private final VerificationCodeVerifier verificationCodeVerifier;
     private final CaptchaVerifyService captchaVerifyService;
+
+    /**
+     * 签发验证码（可选人机验证前置）。
+     *
+     * <p>公开端点防轰炸策略：请求携带人机验证参数时先做二次校验
+     * （未通过 fail-closed 抛 {@code CAPTCHA_ERROR}），未携带则依赖 IP 限流
+     * 与按目标 60 秒重发限流兜底。内部服务调用（参数集为空）不受影响。
+     *
+     * @param command       签发命令
+     * @param captchaVerify 人机验证命令（参数集为空 = 未携带，跳过）
+     * @return 领域签发结果
+     */
+    public VerificationCodeIssuer.IssuedCode issueCode(CodeIssueCommand command,
+                                                       CaptchaVerifyCommand captchaVerify) {
+        if (!captchaVerify.params().isEmpty() && !verifyCaptcha(captchaVerify)) {
+            throw new BizException(ErrorCode.CAPTCHA_ERROR, "人机验证未通过");
+        }
+        return issueCode(command);
+    }
 
     /**
      * 签发验证码（生成 → 存储 → 投递）。

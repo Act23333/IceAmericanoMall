@@ -4,6 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import lombok.extern.jackson.Jacksonized;
+
+import java.io.Serial;
 import java.io.Serializable;
 
 /**
@@ -22,8 +24,12 @@ import java.io.Serializable;
 @Jacksonized //试用Builder构造器来反序列化
 @ToString(callSuper = true)
 public class WechatMiniLoginReq extends BaseLoginReq implements Serializable {
+    @Serial
+    private static final long serialVersionUID = 1L;
+
     @NotBlank(message = "code 不能为空")
     private String code;
+
     private String phoneCode;
 //    private String nickname;
 //    private String avatarUrl;

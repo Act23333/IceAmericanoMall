@@ -1,7 +1,7 @@
 package org.icedamericanomall.auth.infrastructure.migration;
 
 import lombok.extern.slf4j.Slf4j;
-import org.icedamericanomall.auth.domain.model.UserAuth;
+import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
 import org.icedamericanomall.auth.domain.repository.UserAuthRepository;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.model.EncryptedIdentifier;

@@ -1,27 +1,26 @@
 package org.icedamericanomall.auth.app;
 
-import org.icedamericanomall.auth.app.command.EmailCodeCommand;
 import org.icedamericanomall.auth.app.command.LoginCommand;
 import org.icedamericanomall.auth.app.dto.CaptchaVerifyParam;
-import org.icedamericanomall.auth.app.dto.IssuedCodeDTO;
 import org.icedamericanomall.auth.app.dto.TokenGenerateParam;
 import org.icedamericanomall.auth.app.dto.TokenPair;
 import org.icedamericanomall.auth.app.port.CaptchaService;
 import org.icedamericanomall.auth.app.port.LoginSecurityService;
 import org.icedamericanomall.auth.app.port.LoginTokenService;
 import org.icedamericanomall.auth.app.port.RiskControlService;
-import org.icedamericanomall.auth.app.port.VerificationCodeIssueService;
+import org.icedamericanomall.auth.app.port.TokenBlacklistService;
+import org.icedamericanomall.auth.app.port.TokenVersionService;
 import org.icedamericanomall.auth.domain.ability.auth.LoginStrategy;
 import org.icedamericanomall.auth.domain.ability.auth.LoginStrategyFactory;
 import org.icedamericanomall.auth.domain.ability.risk.RiskHandlerFactory;
+import org.icedamericanomall.auth.app.rbac.SecurityContextManager;
 import org.icedamericanomall.auth.domain.enums.CredentialTypeEnum;
 import org.icedamericanomall.auth.domain.enums.PlatformEnum;
 import org.icedamericanomall.auth.domain.enums.RiskLevel;
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
-import org.icedamericanomall.auth.domain.enums.VerificationSceneEnum;
 import org.icedamericanomall.auth.domain.gateway.UserAccountGateway;
 import org.icedamericanomall.auth.domain.model.RiskAssessment;
-import org.icedamericanomall.auth.domain.model.UserAuth;
+import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
 import org.icedamericanomall.auth.domain.port.PasswordVerifier;
 import org.icedamericanomall.auth.domain.port.VerificationCodeService;
 import org.icedamericanomall.auth.domain.repository.UserAuthRepository;
@@ -63,9 +62,9 @@ import static org.mockito.Mockito.when;
 /**
  * AuthManager 用例编排单元测试（R3 人机验证闭环 + 邮箱发码 + V5.2 注册/重置密码本地闭环）。
  *
- * <p>只验证编排：人机验证的四种状态（未携带 / 未启用 / 参数残缺 / 校验不通过）、
- * 邮箱发码的归一化与转发、注册（验证码 → 建档 → 凭证 → 签发）与重置密码
- * （验证码 → 盲索引定位 → 写新哈希）的编排顺序，业务规则本身在领域层测试。
+ * <p>只验证编排：人机验证的状态（未携带 / 未启用 / 校验不通过 / 参数残缺 fail-closed）、
+ * 注册（验证码 → 建档 → 凭证 → 签发）与重置密码（验证码 → 盲索引定位 → 写新哈希）
+ * 的编排顺序，业务规则本身在领域层测试。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AuthManager 单元测试")
@@ -105,7 +104,13 @@ class AuthManagerTest {
     private VerificationCodeService verificationCodeService;
 
     @Mock
-    private VerificationCodeIssueService verificationCodeIssueService;
+    private SecurityContextManager securityContextManager;
+
+    @Mock
+    private TokenBlacklistService tokenBlacklistService;
+
+    @Mock
+    private TokenVersionService tokenVersionService;
 
     @InjectMocks
     private AuthManager authManager;
@@ -183,17 +188,18 @@ class AuthManagerTest {
     }
 
     @Test
-    @DisplayName("登录 — 验证参数残缺 → 参数错误，绝不当作未携带而放行")
+    @DisplayName("登录 — 验证参数残缺 → verification-service 校验失败（fail-closed），CAPTCHA_ERROR")
     void shouldRejectLogin_whenCaptchaParamIncomplete() {
         when(captchaService.isEnabled()).thenReturn(true);
+        when(captchaService.verify(any(CaptchaVerifyParam.class))).thenReturn(false);
         CaptchaVerifyParam partial = new CaptchaVerifyParam(
-                "GEETEST", "lot-1", null, null, null, "127.0.0.1");
+                "GEETEST", Map.of("lotNumber", "lot-1"), "127.0.0.1");
 
         BizException exception = assertThrows(BizException.class,
                 () -> authManager.login(command(partial)));
 
-        assertEquals(ErrorCode.PARAM_ERROR, exception.getErrorCode());
-        verify(captchaService, never()).verify(any(CaptchaVerifyParam.class));
+        assertEquals(ErrorCode.CAPTCHA_ERROR, exception.getErrorCode());
+        verify(captchaService).verify(any(CaptchaVerifyParam.class));
         verifyNoInteractions(strategyFactory);
     }
 
@@ -206,62 +212,6 @@ class AuthManagerTest {
 
         verifyNoInteractions(captchaService);
         verify(strategyFactory).getStrategy(IdentityTypeEnum.USERNAME, CredentialTypeEnum.PASSWORD);
-    }
-
-    // ========== 邮箱验证码签发用例 ==========
-
-    @Test
-    @DisplayName("邮箱发码 — 邮箱归一化后转发校验服务，返回有效期")
-    void shouldIssueEmailCode_withNormalizedEmail() {
-        when(verificationCodeIssueService.issueCode(
-                VerificationChannelEnum.EMAIL, "buyer@example.com", VerificationSceneEnum.LOGIN))
-                .thenReturn(new IssuedCodeDTO(300));
-
-        IssuedCodeDTO issued = authManager.sendEmailCode(EmailCodeCommand.builder()
-                .email(" Buyer@Example.COM ")
-                .scene(VerificationSceneEnum.LOGIN)
-                .clientIp("127.0.0.1")
-                .build());
-
-        assertEquals(300, issued.expireSeconds());
-        verify(verificationCodeIssueService).issueCode(
-                VerificationChannelEnum.EMAIL, "buyer@example.com", VerificationSceneEnum.LOGIN);
-    }
-
-    @Test
-    @DisplayName("邮箱发码 — 场景缺省为 LOGIN")
-    void shouldDefaultSceneToLogin_whenAbsent() {
-        when(verificationCodeIssueService.issueCode(
-                VerificationChannelEnum.EMAIL, "buyer@example.com", VerificationSceneEnum.LOGIN))
-                .thenReturn(new IssuedCodeDTO(300));
-
-        authManager.sendEmailCode(EmailCodeCommand.builder().email("buyer@example.com").build());
-
-        verify(verificationCodeIssueService).issueCode(
-                VerificationChannelEnum.EMAIL, "buyer@example.com", VerificationSceneEnum.LOGIN);
-    }
-
-    @Test
-    @DisplayName("邮箱发码 — 邮箱格式非法 → 参数错误，不打校验服务")
-    void shouldRejectIssue_whenEmailInvalid() {
-        BizException exception = assertThrows(BizException.class,
-                () -> authManager.sendEmailCode(EmailCodeCommand.builder().email("bad-email").build()));
-
-        assertEquals(ErrorCode.PARAM_ERROR, exception.getErrorCode());
-        verifyNoInteractions(verificationCodeIssueService);
-    }
-
-    @Test
-    @DisplayName("邮箱发码 — 校验服务拒绝（重发过频）→ 透传业务异常")
-    void shouldPropagateException_whenIssueRejected() {
-        when(verificationCodeIssueService.issueCode(
-                VerificationChannelEnum.EMAIL, "buyer@example.com", VerificationSceneEnum.LOGIN))
-                .thenThrow(new BizException(ErrorCode.FREQUENT_ERROR, "邮件发送过于频繁，请稍后再试"));
-
-        BizException exception = assertThrows(BizException.class, () -> authManager.sendEmailCode(
-                EmailCodeCommand.builder().email("buyer@example.com").build()));
-
-        assertEquals(ErrorCode.FREQUENT_ERROR, exception.getErrorCode());
     }
 
     // ========== V5.2：注册 / 重置密码（认证边界收敛） ==========
@@ -322,7 +272,40 @@ class AuthManagerTest {
     }
 
     @Test
-    @DisplayName("重置密码 — 手机号未注册 → USER_NOT_FOUND（与历史语义一致）")
+    @DisplayName("重置密码 — 成功后用户级吊销：推进令牌版本 + 拆除该用户全部 refresh 会话（ADR-031）")
+    void shouldRevokeUserTokens_whenResetPassword() {
+        UserAuth existing = UserAuth.builder().userId(100L).identityType(IdentityTypeEnum.PHONE)
+                .credential("$2a$old").build();
+        when(userAuthRepository.findByIdentityHash(IdentityTypeEnum.PHONE, BlindIndexUtil.hmac("13800138000")))
+                .thenReturn(Optional.of(existing));
+        when(passwordVerifier.encode("NewPw123!")).thenReturn("$2a$new");
+
+        authManager.resetPassword(org.icedamericanomall.auth.app.command.ResetPasswordCommand.builder()
+                .phone("13800138000").code("123456").newPassword("NewPw123!").build());
+
+        verify(tokenVersionService).incrementVersion(100L);
+        verify(loginTokenService).revokeAllSessions(100L);
+        verify(tokenBlacklistService, never()).blacklist(any());
+    }
+
+    @Test
+    @DisplayName("重置密码 — 匿名改密同样触发用户级吊销（userId 取自凭证行，不依赖请求令牌）")
+    void shouldRevokeUserTokens_whenResetPasswordAnonymous() {
+        UserAuth existing = UserAuth.builder().userId(100L).identityType(IdentityTypeEnum.PHONE)
+                .credential("$2a$old").build();
+        when(userAuthRepository.findByIdentityHash(IdentityTypeEnum.PHONE, BlindIndexUtil.hmac("13800138000")))
+                .thenReturn(Optional.of(existing));
+        when(passwordVerifier.encode("NewPw123!")).thenReturn("$2a$new");
+
+        authManager.resetPassword(org.icedamericanomall.auth.app.command.ResetPasswordCommand.builder()
+                .phone("13800138000").code("123456").newPassword("NewPw123!").build());
+
+        verify(tokenVersionService).incrementVersion(100L);
+        verify(loginTokenService).revokeAllSessions(100L);
+    }
+
+    @Test
+    @DisplayName("重置密码 — 手机号未注册 → USER_NOT_FOUND（与历史语义一致），不吊销任何令牌")
     void shouldRejectReset_whenPhoneNotRegistered() {
         when(userAuthRepository.findByIdentityHash(IdentityTypeEnum.PHONE, BlindIndexUtil.hmac("13900139000")))
                 .thenReturn(Optional.empty());
@@ -333,6 +316,58 @@ class AuthManagerTest {
 
         assertEquals(ErrorCode.USER_NOT_FOUND, exception.getErrorCode());
         verify(userAuthRepository, never()).updateByUserIdAndType(any());
+        verifyNoInteractions(tokenVersionService, tokenBlacklistService);
+    }
+
+    // ========== ADR-031：内部端点用户级吊销 ==========
+
+    @Test
+    @DisplayName("内部吊销 — 推进令牌版本 + 拆除全部 refresh 会话（管理端禁用即时下线）")
+    void shouldRevokeVersionAndSessions_whenInternalRevokeCalled() {
+        when(tokenVersionService.incrementVersion(7L)).thenReturn(3L);
+
+        authManager.revokeUserTokens(7L);
+
+        verify(tokenVersionService).incrementVersion(7L);
+        verify(loginTokenService).revokeAllSessions(7L);
+    }
+
+    @Test
+    @DisplayName("内部吊销 — 无 refresh 会话可拆时依旧推进版本（两步动作独立，互不短路）")
+    void shouldStillIncrementVersion_whenNoSessionsToRevoke() {
+        authManager.revokeUserTokens(9L);
+
+        verify(tokenVersionService).incrementVersion(9L);
+        verify(loginTokenService).revokeAllSessions(9L);
+        verifyNoInteractions(tokenBlacklistService);
+    }
+
+    // ========== ADR-027：登出拉黑 access token ==========
+
+    @Test
+    @DisplayName("登出 — 吊销 refresh 会话 + 拉黑当前 access token（Bearer 前缀已剥离）")
+    void shouldRevokeSessionAndBlacklistToken_whenLogout() {
+        authManager.logout("refresh-token-1", "Bearer access-token-1");
+
+        verify(loginTokenService).logout("refresh-token-1");
+        verify(tokenBlacklistService).blacklist("access-token-1");
+    }
+
+    @Test
+    @DisplayName("登出 — 未携带 Authorization → 仅吊销 refresh 会话，拉黑传 null（实现内跳过）")
+    void shouldOnlyRevokeSession_whenLogoutWithoutAuthorization() {
+        authManager.logout("refresh-token-1", null);
+
+        verify(loginTokenService).logout("refresh-token-1");
+        verify(tokenBlacklistService).blacklist(null);
+    }
+
+    @Test
+    @DisplayName("登出 — Authorization 非 Bearer 前缀 → 视为无令牌（传 null，不误把 Basic 值当令牌拉黑）")
+    void shouldNotStripPrefix_whenAuthorizationNotBearer() {
+        authManager.logout("refresh-token-1", "Basic abc");
+
+        verify(tokenBlacklistService).blacklist(null);
     }
 
     // ========== 脚手架 ==========
@@ -361,6 +396,10 @@ class AuthManagerTest {
     }
 
     private CaptchaVerifyParam captchaParam() {
-        return new CaptchaVerifyParam("GEETEST", "lot-1", "output-1", "pass-1", "1700000000000", "127.0.0.1");
+        return new CaptchaVerifyParam("GEETEST", Map.of(
+                "lotNumber", "lot-1",
+                "captchaOutput", "output-1",
+                "passToken", "pass-1",
+                "genTime", "1700000000000"), "127.0.0.1");
     }
 }

@@ -39,4 +39,19 @@ public interface LoginTokenService {
      * @param refreshToken 刷新令牌
      */
     void logout(String refreshToken);
+
+    /**
+     * 拆除用户在<b>全部端</b>的 refresh 会话（用户级吊销的会话侧动作，见 ADR-031）。
+     *
+     * <p>与 {@link #logout(String)} 的单端语义互补：改密 / 重置密码 / 管理端禁用时，
+     * 除推进令牌版本号（access token 侧）外，还须拆除该用户各端的 refresh 会话，
+     * 否则持旧 refresh token 的设备仍可轮换出新的 access token。
+     *
+     * <p>会话键形状 {@code login:user:refresh:{userId}:{deviceType}} 中的 {@code deviceType}
+     * 取值域即 {@link org.icedamericanomall.auth.domain.enums.PlatformEnum}（无平台时为
+     * {@code UNKNOWN}），故按枚举全端遍历拆除，不使用 {@code KEYS}/{@code SCAN}。
+     *
+     * @param userId 用户技术主键
+     */
+    void revokeAllSessions(Long userId);
 }

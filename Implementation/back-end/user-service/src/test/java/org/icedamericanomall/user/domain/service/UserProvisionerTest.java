@@ -2,8 +2,8 @@ package org.icedamericanomall.user.domain.service;
 
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.user.domain.exception.DuplicateUserException;
-import org.icedamericanomall.user.domain.model.User;
-import org.icedamericanomall.user.domain.port.DistributedLock;
+import org.icedamericanomall.user.domain.model.user.User;
+import org.icedamericanomall.common.lock.DistributedLock;
 import org.icedamericanomall.user.domain.port.NewUserRegistrar;
 import org.icedamericanomall.user.domain.port.NewUserRewardService;
 import org.icedamericanomall.user.domain.repository.UserRepository;

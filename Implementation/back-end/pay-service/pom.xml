@@ -95,5 +95,12 @@
             <groupId>org.apache.rocketmq</groupId>
             <artifactId>rocketmq-spring-boot-starter</artifactId>
         </dependency>
+        <!-- Feign 熔断降级：开启 spring.cloud.openfeign.circuitbreaker.enabled 后，
+             @FeignClient 的 fallbackFactory（OrderClient/BalanceClient 全 fail-closed）才会真正生效；
+             版本由 Spring Cloud 2025.0.1 BOM 管理，不在此写死版本号 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+        </dependency>
     </dependencies>
 </project>

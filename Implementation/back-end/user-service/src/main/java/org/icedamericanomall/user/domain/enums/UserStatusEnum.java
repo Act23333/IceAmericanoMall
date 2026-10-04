@@ -7,7 +7,7 @@ import org.icedamericanomall.common.exception.BadRequestException;
  * 用户状态（领域枚举，纯 POJO —— 无 MyBatis 注解）。
  *
  * <p>取值与 {@code user.status} 列一致：{@code 1}=正常，{@code 0}=禁用。
- * 持久化层用 {@code Integer} 映射该列，DO ↔ 领域模型转换在
+ * 持久化层用 {@code Integer} 映射该列，PO ↔ 领域模型转换在
  * {@code infrastructure/persistence/user/UserConverter} 完成，
  * 避免把 ORM 的 {@code @EnumValue} 依赖带进领域层。
  */

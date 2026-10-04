@@ -1,6 +1,6 @@
 package org.icedamericanomall.notification.app.command;
 
-import org.icedamericanomall.notification.domain.model.EmailMessage;
+import org.icedamericanomall.notification.domain.model.channel.EmailMessage;
 
 /**
  * 邮件发送命令（应用层入参）。

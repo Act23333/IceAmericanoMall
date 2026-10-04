@@ -43,10 +43,7 @@ public class VerificationCaptchaServiceImpl implements CaptchaService {
     public boolean verify(CaptchaVerifyParam param) {
         CaptchaVerifyReqCO request = new CaptchaVerifyReqCO();
         request.setProvider(resolveProvider(param));
-        request.setLotNumber(param.lotNumber());
-        request.setCaptchaOutput(param.captchaOutput());
-        request.setPassToken(param.passToken());
-        request.setGenTime(param.genTime());
+        request.setParams(param.params());
         request.setClientIp(param.clientIp());
 
         CaptchaVerifyRespCO response = verificationClient.verifyCaptcha(request);

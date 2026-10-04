@@ -11,10 +11,10 @@ import java.util.Optional;
  */
 public enum VerificationChannel {
 
-    /** 短信通道：验证码写入 {@code sms:code:{target}}，与 user-service 直发链路互通 */
+    /** 短信通道：验证码写入 {@code sms:code:{target}}（本服务私有键空间） */
     SMS("SMS"),
 
-    /** 邮件通道：验证码写入 {@code email:code:{target}} */
+    /** 邮件通道：验证码写入 {@code email:code:{target}}（本服务私有键空间） */
     EMAIL("EMAIL"),
     ;
 

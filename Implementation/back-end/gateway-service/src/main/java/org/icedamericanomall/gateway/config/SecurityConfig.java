@@ -4,7 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
-import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -22,77 +22,113 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import java.util.Arrays;
 import java.util.List;
 
+/**
+ * 网关安全配置（WebFlux 响应式安全链）。
+ *
+ * <p>职责边界：网关只做<b>认证</b>（验 JWT 签名 + 时效 + 吊销）+ 注入用户上下文，
+ * <b>不做</b>权限判定（授权由各微服务依据 {@code X-User-Roles} 自行判定）。
+ *
+ * <p>白名单口径：
+ * <ul>
+ *   <li>{@link #PUBLIC_WRITE_PATHS} —— 匿名可写的公开端点（登录/注册/发码/第三方回调）；</li>
+ *   <li>{@link #PUBLIC_GET_PATHS} —— 仅 GET 匿名放行；同路径写方法（秒杀下单、商品/分类维护、
+ *       店铺关注等）一律要求认证。</li>
+ * </ul>
+ */
 @Configuration
 @EnableWebFluxSecurity
 public class SecurityConfig {
 
-    @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}")
-    private String jwkSetUri;
+    /** 认证服务 JWKS 地址（默认本地开发；生产用环境变量覆盖）。 */
+    private final String jwkSetUri;
 
+    /** CORS 放行来源白名单（逗号分隔，仅开发默认值；生产必须显式配置）。 */
+    private final List<String> allowedOriginPatterns;
+
+    public SecurityConfig(
+            @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:http://localhost:9000/oauth2/jwks}")
+            String jwkSetUri,
+            @Value("${gateway.cors.allowed-origin-patterns:http://localhost:5173,http://127.0.0.1:5173}")
+            List<String> allowedOriginPatterns) {
+        this.jwkSetUri = jwkSetUri;
+        this.allowedOriginPatterns = allowedOriginPatterns;
+    }
+
+    /**
+     * 匿名可写的公开端点（方法与路径同时匹配）。
+     *
+     * <p>{@code /api/pay/callback/**} 保持匿名：第三方支付回调不带 JWT，靠签名自证。
+     */
+    static final String[] PUBLIC_WRITE_PATHS = {
+            "/api/auth/web/login",
+            "/api/auth/web/wechat/login",
+            "/api/auth/wechat/mini/login",
+            "/api/auth/register",
+            "/api/auth/refresh",
+            "/api/auth/logout",
+            "/api/auth/reset-password",
+            "/api/verification/codes",
+            "/api/pay/callback/**"
+    };
+
+    /**
+     * 浏览类只读路径：<b>仅 GET</b> 匿名放行。
+     *
+     * <p>同路径的写方法一律落到 {@code authenticated()}，例如
+     * {@code POST /api/flash/buy}（秒杀下单）、{@code POST /api/item/product}（商品维护）、
+     * {@code POST /api/item/category}（分类维护）、{@code POST|DELETE /api/shop/follow}（店铺关注）。
+     */
+    static final String[] PUBLIC_GET_PATHS = {
+            "/api/item/**",
+            "/api/home/**",
+            "/api/search/**",
+            "/api/shop/**",
+            "/api/shops/**",
+            "/api/flash/**",
+            "/api/coupon/template"
+    };
+
+    /**
+     * JWT 解码器：仅做签名 + 时间戳校验。
+     *
+     * <p>吊销（jti 黑名单）校验不在解码器内 —— 早期实现于 TokenValidator 中
+     * {@code .block()} 等待 Redis，会让每个认证请求阻塞 Netty 事件循环；现已下沉为
+     * {@link org.icedamericanomall.gateway.filter.JwtBlacklistFilter}（安全链之后、路由之前，非阻塞）。
+     */
     @Bean
     @Primary
-    public ReactiveJwtDecoder reactiveJwtDecoder(ReactiveStringRedisTemplate redisTemplate) {
-        // 1. 使用公钥创建 NimbusReactiveJwtDecoder
+    public ReactiveJwtDecoder reactiveJwtDecoder() {
         NimbusReactiveJwtDecoder jwtDecoder = NimbusReactiveJwtDecoder.withJwkSetUri(jwkSetUri).build();
-        // 2. 构建一个委托验证器，将默认验证器与自定义验证其组合
-        OAuth2TokenValidator<Jwt> defaultValidator = new JwtTimestampValidator(); // 校验过期时间
-        OAuth2TokenValidator<Jwt> blacklistValidator = new JwtBlacklistValidator(redisTemplate);
-        OAuth2TokenValidator<Jwt> validator = new DelegatingOAuth2TokenValidator<>(
-                List.of(defaultValidator, blacklistValidator)
-        );
-
-        // 3. 将组合后的验证器设置到 Decoder 中
+        OAuth2TokenValidator<Jwt> validator = new DelegatingOAuth2TokenValidator<Jwt>(new JwtTimestampValidator());
         jwtDecoder.setJwtValidator(validator);
-
         return jwtDecoder;
     }
+
+    /**
+     * 安全过滤链：CORS 放行 + 方法级白名单 + 其余请求强制认证。
+     *
+     * <p>WebSocket 握手（{@code /ws/chat/**}）：浏览器发起握手时无法自定义 {@code Authorization}
+     * 头，故该路径<b>刻意不进白名单</b>（维持 {@code authenticated()}），由边缘过滤器
+     * {@link org.icedamericanomall.gateway.filter.WsHandshakeTokenFilter} 先把 query 中的
+     * {@code token} 换写成 {@code Authorization: Bearer} 再进入本安全链 —— 目的路径可达
+     * 且鉴权口径与普通接口一致（签名 + 时效 + jti 吊销）。见 ADR-026。
+     */
     @Bean
     public SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http, ReactiveJwtDecoder reactiveJwtDecoder) {
         http
                 .cors(Customizer.withDefaults())
                 .authorizeExchange(exchanges -> exchanges
                         // CORS 预检请求全部放行（浏览器 OPTIONS 不带 JWT）
-                        .pathMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
-                        // 内部服务间调用路径 — 网关直接放行（生产环境需网络隔离）在微服务架构中，网关不仅仅是外部流量的入口，更应被视为整个系统流量的中央管控点。让内部请求也经过网关，本质上是为了标准化和集中化所有流量的治理
-//                        .pathMatchers("/internal/**").permitAll()
-                        // 公开路径：认证、注册、发码、支付回调
-                        // 注：/api/auth/login*、/api/auth/captcha/sms 是 V5.1 前的历史路径，
-                        // 服务端已无对应端点（保留仅为不改变既有放行行为，前端迁移后可删除）
-                        .pathMatchers(
-                                "/api/auth/login",
-                                "/api/auth/login/phone",
-                                "/api/auth/login/wechat",
-                                // V5.1 认证服务实际公开端点（AuthController）
-                                "/api/auth/web/login",
-                                "/api/auth/web/wechat/login",
-                                "/api/auth/wechat/mini/login",
-                                "/api/auth/email/code",
-                                "/api/auth/register",
-                                "/api/auth/refresh",
-                                "/api/auth/logout",
-                                "/api/auth/reset-password",
-                                "/api/auth/captcha/sms",
-                                "/api/user/code",
-                                "/api/pay/callback/wechat",
-                                "/api/pay/callback/**"
-                        ).permitAll()
-                        // 商品浏览公开（列表、详情、分类、评价、店铺、秒杀、领券中心）+ AI + 首页
-                        .pathMatchers(
-                                "/api/item/category/**",
-                                "/api/item/product/**",
-                                "/api/item/review/product/**",
-                                "/api/home/**",
-                                "/api/search/**",
-                                "/api/shop/**",
-                                "/api/flash",
-                                "/api/flash/**",
-                                "/api/coupon/template",
-                                "/api/ai/**"
-                        ).permitAll()
+                        .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // 匿名可写的公开端点：登录/注册/刷新/发码/第三方支付回调
+                        .pathMatchers(PUBLIC_WRITE_PATHS).permitAll()
+                        // 浏览类公开端点：仅 GET 放行，写方法落到 authenticated()
+                        .pathMatchers(HttpMethod.GET, PUBLIC_GET_PATHS).permitAll()
+                        // AI 导购/客服匿名可用（额度由 AiTokenQuotaFilter 按 userId/IP 维度控制）
+                        .pathMatchers("/api/ai/**").permitAll()
                         // 其他所有请求都需要认证
                         .anyExchange().authenticated()
                 )
-//                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwtSpec -> jwtSpec.jwtDecoder(reactiveJwtDecoder)) // 指定使用自定义的 Decoder
                 )
@@ -100,10 +136,15 @@ public class SecurityConfig {
         return http.build();
     }
 
+    /**
+     * CORS 过滤器：来源白名单来自配置（默认仅本地开发地址）。
+     *
+     * <p>{@code allowCredentials=true} 时禁止使用通配符 {@code "*"}，否则浏览器会拒绝响应。
+     */
     @Bean
     public CorsWebFilter corsWebFilter() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedOriginPatterns(allowedOriginPatterns);
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

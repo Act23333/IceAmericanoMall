@@ -1,17 +1,17 @@
 package org.icedamericanomall.user.infrastructure.persistence.address;
 
-import org.icedamericanomall.user.domain.model.Address;
+import org.icedamericanomall.user.domain.model.address.Address;
 
 /**
- * {@code AddressDO} ↔ 领域对象 {@link Address} 转换器（基础设施层内部，纯静态转换）。
+ * {@code AddressPO} ↔ 领域对象 {@link Address} 转换器（基础设施层内部，纯静态转换）。
  */
 public final class AddressConverter {
 
     private AddressConverter() {
     }
 
-    /** DO → 领域对象（输入为 null 时返回 null）。 */
-    public static Address toDomain(AddressDO dataObject) {
+    /** PO → 领域对象（输入为 null 时返回 null）。 */
+    public static Address toDomain(AddressPO dataObject) {
         if (dataObject == null) {
             return null;
         }
@@ -34,12 +34,12 @@ public final class AddressConverter {
                 .build();
     }
 
-    /** 领域对象 → DO（输入为 null 时返回 null）。 */
-    public static AddressDO toDataObject(Address address) {
+    /** 领域对象 → PO（输入为 null 时返回 null）。 */
+    public static AddressPO toDataObject(Address address) {
         if (address == null) {
             return null;
         }
-        AddressDO dataObject = new AddressDO();
+        AddressPO dataObject = new AddressPO();
         dataObject.setId(address.getId());
         dataObject.setUserId(address.getUserId());
         dataObject.setReceiver(address.getReceiver());

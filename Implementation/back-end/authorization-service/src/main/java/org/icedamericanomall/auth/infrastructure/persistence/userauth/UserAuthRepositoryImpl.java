@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.auth.domain.enums.UserAuthStatusEnum;
 import org.icedamericanomall.auth.domain.exception.DuplicateIdentityException;
-import org.icedamericanomall.auth.domain.model.UserAuth;
+import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
 import org.icedamericanomall.auth.domain.repository.UserAuthRepository;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
@@ -31,7 +31,7 @@ public class UserAuthRepositoryImpl implements UserAuthRepository {
 
     @Override
     public UserAuth insert(UserAuth userAuth) {
-        UserAuthDO dataObject = UserAuthConverter.toDataObject(userAuth);
+        UserAuthPO dataObject = UserAuthConverter.toDataObject(userAuth);
         try {
             userAuthMapper.insert(dataObject);
         } catch (DuplicateKeyException e) {
@@ -46,16 +46,16 @@ public class UserAuthRepositoryImpl implements UserAuthRepository {
             throw new BizException(ErrorCode.PARAM_ERROR,
                     "更新 UserAuth 必须携带 userId + identityType 业务键");
         }
-        UserAuthDO dataObject = UserAuthConverter.toDataObject(userAuth);
+        UserAuthPO dataObject = UserAuthConverter.toDataObject(userAuth);
         return userAuthMapper.update(dataObject,
-                new LambdaUpdateWrapper<UserAuthDO>()
-                        .eq(UserAuthDO::getUserId, userAuth.getUserId())
-                        .eq(UserAuthDO::getIdentityType, userAuth.getIdentityType().name()));
+                new LambdaUpdateWrapper<UserAuthPO>()
+                        .eq(UserAuthPO::getUserId, userAuth.getUserId())
+                        .eq(UserAuthPO::getIdentityType, userAuth.getIdentityType().name()));
     }
 
     @Override
     public UserAuth upsert(UserAuth userAuth) {
-        UserAuthDO dataObject = UserAuthConverter.toDataObject(userAuth);
+        UserAuthPO dataObject = UserAuthConverter.toDataObject(userAuth);
         userAuthMapper.upsert(dataObject);
         return UserAuthConverter.toDomain(dataObject);
     }
@@ -65,21 +65,21 @@ public class UserAuthRepositoryImpl implements UserAuthRepository {
         if (identifierPlain == null) {
             return Optional.empty();
         }
-        UserAuthDO dataObject = userAuthMapper.selectOne(
-                new LambdaQueryWrapper<UserAuthDO>()
-                        .eq(UserAuthDO::getIdentityType, type.name())
-                        .eq(UserAuthDO::getIdentifierPlain, identifierPlain)
-                        .eq(UserAuthDO::getStatus, UserAuthStatusEnum.ACTIVE.getCode()));
+        UserAuthPO dataObject = userAuthMapper.selectOne(
+                new LambdaQueryWrapper<UserAuthPO>()
+                        .eq(UserAuthPO::getIdentityType, type.name())
+                        .eq(UserAuthPO::getIdentifierPlain, identifierPlain)
+                        .eq(UserAuthPO::getStatus, UserAuthStatusEnum.ACTIVE.getCode()));
         return Optional.ofNullable(UserAuthConverter.toDomain(dataObject));
     }
 
     @Override
     public Optional<UserAuth> findByIdentityHash(IdentityTypeEnum type, String identifierHash) {
-        UserAuthDO dataObject = userAuthMapper.selectOne(
-                new LambdaQueryWrapper<UserAuthDO>()
-                        .eq(UserAuthDO::getIdentityType, type.name())
-                        .eq(UserAuthDO::getIdentifierHash, identifierHash)
-                        .eq(UserAuthDO::getStatus, UserAuthStatusEnum.ACTIVE.getCode()));
+        UserAuthPO dataObject = userAuthMapper.selectOne(
+                new LambdaQueryWrapper<UserAuthPO>()
+                        .eq(UserAuthPO::getIdentityType, type.name())
+                        .eq(UserAuthPO::getIdentifierHash, identifierHash)
+                        .eq(UserAuthPO::getStatus, UserAuthStatusEnum.ACTIVE.getCode()));
         return Optional.ofNullable(UserAuthConverter.toDomain(dataObject));
     }
 
@@ -88,10 +88,10 @@ public class UserAuthRepositoryImpl implements UserAuthRepository {
         if (unionId == null || unionId.isBlank()) {
             return Optional.empty();
         }
-        UserAuthDO dataObject = userAuthMapper.selectOne(
-                new LambdaQueryWrapper<UserAuthDO>()
-                        .eq(UserAuthDO::getUnionId, unionId)
-                        .eq(UserAuthDO::getStatus, UserAuthStatusEnum.ACTIVE.getCode())
+        UserAuthPO dataObject = userAuthMapper.selectOne(
+                new LambdaQueryWrapper<UserAuthPO>()
+                        .eq(UserAuthPO::getUnionId, unionId)
+                        .eq(UserAuthPO::getStatus, UserAuthStatusEnum.ACTIVE.getCode())
                         .last("LIMIT 1"));
         return Optional.ofNullable(UserAuthConverter.toDomain(dataObject));
     }
@@ -99,9 +99,9 @@ public class UserAuthRepositoryImpl implements UserAuthRepository {
     @Override
     public List<UserAuth> findByUserId(Long userId) {
         return userAuthMapper.selectList(
-                        new LambdaQueryWrapper<UserAuthDO>()
-                                .eq(UserAuthDO::getUserId, userId)
-                                .eq(UserAuthDO::getStatus, UserAuthStatusEnum.ACTIVE.getCode()))
+                        new LambdaQueryWrapper<UserAuthPO>()
+                                .eq(UserAuthPO::getUserId, userId)
+                                .eq(UserAuthPO::getStatus, UserAuthStatusEnum.ACTIVE.getCode()))
                 .stream()
                 .map(UserAuthConverter::toDomain)
                 .toList();
@@ -109,11 +109,11 @@ public class UserAuthRepositoryImpl implements UserAuthRepository {
 
     @Override
     public Optional<UserAuth> findByUserIdAndType(Long userId, IdentityTypeEnum type) {
-        UserAuthDO dataObject = userAuthMapper.selectOne(
-                new LambdaQueryWrapper<UserAuthDO>()
-                        .eq(UserAuthDO::getUserId, userId)
-                        .eq(UserAuthDO::getIdentityType, type.name())
-                        .eq(UserAuthDO::getStatus, UserAuthStatusEnum.ACTIVE.getCode()));
+        UserAuthPO dataObject = userAuthMapper.selectOne(
+                new LambdaQueryWrapper<UserAuthPO>()
+                        .eq(UserAuthPO::getUserId, userId)
+                        .eq(UserAuthPO::getIdentityType, type.name())
+                        .eq(UserAuthPO::getStatus, UserAuthStatusEnum.ACTIVE.getCode()));
         return Optional.ofNullable(UserAuthConverter.toDomain(dataObject));
     }
 }

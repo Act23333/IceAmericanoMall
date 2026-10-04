@@ -1,7 +1,7 @@
 package org.icedamericanomall.auth.app.dto;
 
 import lombok.Builder;
-import org.icedamericanomall.auth.domain.model.UserAuth;
+import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
 
 /**
  * 登录结果（应用层出参，供适配层转换为 VO）。

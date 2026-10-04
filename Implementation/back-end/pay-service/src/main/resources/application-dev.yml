@@ -23,6 +23,9 @@ wechat:
     merchant-serial-number: ""
     api-v3-key: ""
     notify-url: ""
+    # 退款结果通知地址（F1：Mock 模式忽略；真实商户须指向网关可公网访问的
+    # /api/pay/callback/wechat-refund，与支付通知 notify-url 分离）
+    refund-notify-url: ""
 
 logging:
   level:

@@ -27,7 +27,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         "org.icedamericanomall.pay",
         "org.icedamericanomall.fallback"
 })
-@MapperScan("org.icedamericanomall.pay.mapper")
+@MapperScan("org.icedamericanomall.pay.infrastructure.persistence")
 @EnableFeignClients(basePackages = "org.icedamericanomall.client")
 @EnableScheduling
 public class PayApplication {

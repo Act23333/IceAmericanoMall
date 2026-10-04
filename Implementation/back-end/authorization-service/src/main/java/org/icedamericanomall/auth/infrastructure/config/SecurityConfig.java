@@ -32,6 +32,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**", "/oauth2/**").permitAll()
                         // 内部健康检查
                         .requestMatchers("/actuator/**").permitAll()
+                        // 服务间 Feign 内部端点（RBAC/授权上下文，生产环境网络隔离）
+                        .requestMatchers("/internal/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .csrf(AbstractHttpConfigurer::disable)

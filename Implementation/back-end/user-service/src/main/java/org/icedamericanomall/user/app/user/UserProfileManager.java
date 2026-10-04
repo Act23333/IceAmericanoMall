@@ -8,7 +8,7 @@ import org.icedamericanomall.user.adapter.request.UpdateProfileReq;
 import org.icedamericanomall.user.adapter.response.UserInfoResp;
 import org.icedamericanomall.user.app.port.AvatarStorage;
 import org.icedamericanomall.user.domain.enums.GenderEnum;
-import org.icedamericanomall.user.domain.model.User;
+import org.icedamericanomall.user.domain.model.user.User;
 import org.icedamericanomall.user.domain.repository.UserRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;

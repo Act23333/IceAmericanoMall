@@ -37,6 +37,18 @@
             <artifactId>ia-api</artifactId>
         </dependency>
 
+        <!-- 站内信落库（ADR-016 收尾：in-app 通道由契约预留转为实现，表所有权迁入本服务） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

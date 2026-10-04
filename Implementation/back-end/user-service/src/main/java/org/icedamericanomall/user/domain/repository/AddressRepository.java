@@ -1,6 +1,6 @@
 package org.icedamericanomall.user.domain.repository;
 
-import org.icedamericanomall.user.domain.model.Address;
+import org.icedamericanomall.user.domain.model.address.Address;
 
 import java.util.List;
 import java.util.Optional;

@@ -1,6 +1,6 @@
 package org.icedamericanomall.notification.domain.port;
 
-import org.icedamericanomall.notification.domain.model.SmsMessage;
+import org.icedamericanomall.notification.domain.model.channel.SmsMessage;
 
 /**
  * 短信投递能力（领域端口，基础设施层用 ia-integration 的 {@code SmsClient} 实现）。

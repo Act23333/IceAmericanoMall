@@ -8,7 +8,8 @@ import org.icedamericanomall.auth.app.port.CaptchaService;
 import org.icedamericanomall.auth.app.port.LoginSecurityService;
 import org.icedamericanomall.auth.app.port.LoginTokenService;
 import org.icedamericanomall.auth.app.port.RiskControlService;
-import org.icedamericanomall.auth.app.port.VerificationCodeIssueService;
+import org.icedamericanomall.auth.app.port.TokenBlacklistService;
+import org.icedamericanomall.auth.app.port.TokenVersionService;
 import org.icedamericanomall.auth.domain.ability.auth.LoginStrategyFactory;
 import org.icedamericanomall.auth.domain.ability.auth.impl.PasswordLoginStrategy;
 import org.icedamericanomall.auth.domain.ability.risk.RiskHandlerFactory;
@@ -19,9 +20,10 @@ import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
 import org.icedamericanomall.auth.domain.exception.DuplicateIdentityException;
 import org.icedamericanomall.auth.domain.gateway.UserAccountGateway;
 import org.icedamericanomall.auth.domain.model.LoginSpec;
-import org.icedamericanomall.auth.domain.model.UserAuth;
-import org.icedamericanomall.auth.domain.port.DistributedLock;
+import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
+import org.icedamericanomall.common.lock.DistributedLock;
 import org.icedamericanomall.auth.domain.port.PasswordVerifier;
+import org.icedamericanomall.auth.app.rbac.SecurityContextManager;
 import org.icedamericanomall.auth.domain.port.VerificationCodeService;
 import org.icedamericanomall.auth.domain.repository.UserAuthRepository;
 import org.icedamericanomall.auth.domain.service.UserAuthProvisioner;
@@ -120,7 +122,9 @@ class RegisterThenPasswordLoginTest {
                 mock(RiskControlService.class),
                 mock(CaptchaService.class),
                 verificationCodeService,
-                mock(VerificationCodeIssueService.class));
+                mock(SecurityContextManager.class),
+                mock(TokenBlacklistService.class),
+                mock(TokenVersionService.class));
     }
 
     @Test

@@ -1,14 +1,14 @@
 package org.icedamericanomall.auth.infrastructure.persistence.userauth;
 
 import org.icedamericanomall.auth.domain.enums.UserAuthStatusEnum;
-import org.icedamericanomall.auth.domain.model.UserAuth;
+import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.model.EncryptedIdentifier;
 
 /**
- * DO ↔ 领域对象转换器（基础设施层内部，纯静态转换，不使用反射）。
+ * PO ↔ 领域对象转换器（基础设施层内部，纯静态转换，不使用反射）。
  */
 public final class UserAuthConverter {
 
@@ -16,12 +16,12 @@ public final class UserAuthConverter {
     }
 
     /**
-     * DO → 领域对象。
+     * PO → 领域对象。
      *
      * @param dataObject 持久化对象（可为 null）
      * @return 领域对象（输入为 null 时返回 null）
      */
-    public static UserAuth toDomain(UserAuthDO dataObject) {
+    public static UserAuth toDomain(UserAuthPO dataObject) {
         if (dataObject == null) {
             return null;
         }
@@ -49,16 +49,16 @@ public final class UserAuthConverter {
     }
 
     /**
-     * 领域对象 → DO。
+     * 领域对象 → PO。
      *
      * @param userAuth 领域对象（可为 null）
      * @return 持久化对象（输入为 null 时返回 null）
      */
-    public static UserAuthDO toDataObject(UserAuth userAuth) {
+    public static UserAuthPO toDataObject(UserAuth userAuth) {
         if (userAuth == null) {
             return null;
         }
-        UserAuthDO dataObject = new UserAuthDO();
+        UserAuthPO dataObject = new UserAuthPO();
         dataObject.setId(userAuth.getId());
         dataObject.setUserId(userAuth.getUserId());
         dataObject.setIdentityType(userAuth.getIdentityType() == null

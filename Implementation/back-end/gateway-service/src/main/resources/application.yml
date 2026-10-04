@@ -1,14 +1,10 @@
 server:
   port: 8080
-  servlet:
-    context-path: /
 spring:
   main:
     allow-bean-definition-overriding: true # 开启bean覆盖
   application:
     name: gateway-service
-#  profiles:
-#    active: dev
   data:
     redis:
       client-name: gateway-service
@@ -32,27 +28,57 @@ spring:
       server:
         webflux:
           routes:
-            # 认证服务路由
+            # 认证服务路由（登录/注册/刷新等匿名端点）—— 按客户端 IP 限流，防撞库刷号
             - id: auth-service
               uri: lb://authorization-service
               predicates: [Path=/api/auth/**]
-            # 用户服务路由（带限流）
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@ipKeyResolver}"
+                    redis-rate-limiter.replenishRate: ${gateway.rate-limit.auth.replenish-rate:20}
+                    redis-rate-limiter.burstCapacity: ${gateway.rate-limit.auth.burst-capacity:40}
+                    redis-rate-limiter.requestedTokens: 1
+            # 校验服务路由（验证码签发）—— 按客户端 IP 更严格限流，防短信轰炸
+            - id: verification-service
+              uri: lb://verification-service
+              predicates: [Path=/api/verification/**]
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@ipKeyResolver}"
+                    redis-rate-limiter.replenishRate: ${gateway.rate-limit.verification.replenish-rate:5}
+                    redis-rate-limiter.burstCapacity: ${gateway.rate-limit.verification.burst-capacity:10}
+                    redis-rate-limiter.requestedTokens: 1
+            # 通信服务路由（站内信通知中心，需登录）
+            - id: notification-service
+              uri: lb://notification-service
+              predicates: [Path=/api/notifications/**]
+            # 用户服务路由（资料/地址/收藏等，需登录）
             - id: user-service
               uri: lb://user-service
               predicates: [Path=/api/user/**]
-            # 商品服务路由
+            # 商品服务路由（含首页配置/首页管理，须先于 /api/admin/** 声明）
             - id: item-service
               uri: lb://item-service
-              predicates: [Path=/api/item/**]
+              predicates:
+                - Path=/api/item/**
+                - Path=/api/home/**
+                - Path=/api/admin/home/**
             # 购物车服务路由
             - id: cart-service
               uri: lb://cart-service
               predicates: [Path=/api/cart/**]
-            # 交易服务路由
+            # 交易服务路由（含售后/财务，须先于 /api/admin/**、/api/seller/** 声明）
             - id: trade-service
               uri: lb://trade-service
-              predicates: [Path=/api/trade/**]
-            # 支付服务路由
+              predicates:
+                - Path=/api/trade/**
+                - Path=/api/after-sale/**
+                - Path=/api/admin/after-sale/**
+                - Path=/api/admin/finance/**
+                - Path=/api/seller/finance/**
+            # 支付服务路由（/api/pay/callback/** 为第三方回调，匿名且签名自证）
             - id: pay-service
               uri: lb://pay-service
               predicates: [Path=/api/pay/**]
@@ -66,32 +92,101 @@ spring:
               predicates:
                 - Path=/api/coupon/**
                 - Path=/api/flash/**
+                - Path=/api/points/**
+                - Path=/api/sign/**
+                - Path=/api/admin/coupon/**
+                - Path=/api/seller/coupon/**
+            # 钱包服务路由（余额账户，需登录）
+            - id: wallet-service
+              uri: lb://wallet-service
+              predicates:
+                - Path=/api/wallet/**
+            # 授权服务路由（RBAC 角色与权限管理，须先于 /api/admin/** 声明，ADR-018）
+            - id: auth-admin-routes
+              uri: lb://authorization-service
+              predicates:
+                - Path=/api/admin/roles/**
+                - Path=/api/admin/permissions/**
+            # 商家审核路由（须先于 /api/admin/** 声明）
+            - id: merchant-admin-routes
+              uri: lb://merchant-service
+              predicates:
+                - Path=/api/admin/seller/**
+            # 支付管理路由（F1 退款重试 AD43 + F4 渠道对账 AD44-AD46，须先于 /api/admin/** 声明）
+            #   未声明时会被兜底路由 /api/admin/** 送到 user-service 而 404
+            - id: pay-admin-routes
+              uri: lb://pay-service
+              predicates:
+                - Path=/api/admin/pay/**
             # 管理员路由
             - id: admin-user-routes
               uri: lb://user-service
               predicates: [Path=/api/admin/**]
-            # 商家路由
-            - id: seller-user-routes
-              uri: lb://user-service
-              predicates: [Path=/api/seller/**]
+            # AI 服务路由（客服域：人工会话 IM / 商家知识库，须先于 /api/seller/** 声明；另含 AI 导购 /api/ai/**）
+            - id: ai-service
+              uri: lb://ai-service
+              predicates:
+                - Path=/api/chat/**
+                - Path=/ws/chat/**
+                - Path=/api/seller/knowledge/**
+                - Path=/api/ai/**
+            # 商家域路由（入驻/店铺资料/店铺公开页/关注）
+            #   /api/shop/**  = 商家 user_id 口径（遗留兼容，ADR-019）
+            #   /api/shops/** = 店铺 shopId 口径（新规范公开店铺页，仅 GET 匿名）
+            - id: merchant-service
+              uri: lb://merchant-service
+              predicates:
+                - Path=/api/seller/**
+                - Path=/api/shop/**
+                - Path=/api/shops/**
             # 搜索服务路由
             - id: search-service
               uri: lb://search-service
               predicates: [Path=/api/search/**]
-            - id: ai-service
-              uri: lb://ai-service
-              predicates: [Path=/api/ai/**]
   security:
    oauth2:
     resourceserver:
         jwt:
-#          jwk-set-uri: http://authorization-server:9000/oauth2/jwks
-          jwk-set-uri: http://localhost:9000/oauth2/jwks
+          # 认证服务 JWKS 地址：容器/多环境部署用环境变量覆盖，避免硬编码
+          jwk-set-uri: ${GATEWAY_JWKS_URI:http://localhost:9000/oauth2/jwks}
+
+# ── 网关自定义配置（阈值/白名单全部外置，代码内无魔法值）──
+gateway:
+  rate-limit:
+    # RedisRateLimiter 口径（令牌桶按客户端 IP 维度）：
+    #   replenish-rate = 稳态每秒放行数（令牌补充速率）
+    #   burst-capacity = 瞬时突发上限（桶容量），建议 >= replenish-rate
+    auth:
+      replenish-rate: 20
+      burst-capacity: 40
+    verification:
+      replenish-rate: 5
+      burst-capacity: 10
+  ai-quota:
+    # AI 导购每日额度（有身份按 userId、无身份按客户端 IP），单位为估算 Token
+    daily-limit: 50000
+    # Token 估算口径：请求体字节数 × 系数
+    bytes-to-tokens-factor: 2
+    # 无 Content-Length 时的默认估算值
+    default-tokens: 100
+    reject-message: "AI 助手今日使用额度已达上限，请明天再来"
+  body-cache:
+    # POST/PUT/PATCH 请求体缓存（修复 WebFlux 安全链下的 body 丢失）
+    enabled: true
+    max-bytes: 2097152 # 2MB，超限返回 413
+  ws:
+    # WebSocket 握手路径（逗号分隔）：浏览器 WS 握手无法自定义 Authorization 头，
+    # 由 WsHandshakeTokenFilter 把 ?token= 换成 Authorization: Bearer 并剔除该 query 参数。
+    # 鉴权仍由安全链完成（/ws/chat/** 维持 authenticated()，不在白名单内）。见 ADR-026。
+    token-paths: /ws/chat/**
+  cors:
+    # CORS 放行来源白名单（逗号分隔，仅开发默认值；生产必须显式配置为前端域名）
+    allowed-origin-patterns: http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000
 
 logging:
   level:
-    org.springframework.security: DEBUG
-    org.springframework.cloud.gateway: DEBUG
+    org.springframework.security: INFO
+    org.springframework.cloud.gateway: INFO
 
 # 可观测性：Actuator 健康检查 + Prometheus 指标端点（V2.4）
 management:
@@ -115,4 +210,3 @@ knife4j:
     discover:
       enabled: true
       version: openapi3
-

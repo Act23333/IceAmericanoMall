@@ -1,7 +1,7 @@
 package org.icedamericanomall.user.adapter.response;
 
 import lombok.Data;
-import org.icedamericanomall.user.domain.model.User;
+import org.icedamericanomall.user.domain.model.user.User;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -54,9 +54,6 @@ public class UserInfoResp {
     /** 注册时间 */
     private LocalDateTime registerTime;
 
-    /** 商城余额（单位：分） */
-    private Integer balance;
-
     /** 角色类型: 0-普通用户, 1-商家, 2-管理员（兼容字段，五表派生） */
     private Integer roleType;
 
@@ -79,7 +76,6 @@ public class UserInfoResp {
         resp.setMemberLevel(user.getMemberLevel() == null ? null : user.getMemberLevel().getCode());
         resp.setStatus(user.getStatus() == null ? null : user.getStatus().getCode());
         resp.setRegisterTime(user.getCreateTime());
-        resp.setBalance(user.getBalance());
         return resp;
     }
 }

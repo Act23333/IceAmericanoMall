@@ -7,7 +7,7 @@ import java.util.Map;
 
 /**
  * Token 生成参数 —— {@code LoginTokenService} 端口的专用入参。
- * <p>不是领域实体，不是 DO，是应用层的值对象（跟随端口归属应用层）。
+ * <p>不是领域实体，不是 PO，是应用层的值对象（跟随端口归属应用层）。
  */
 @Builder
 public record TokenGenerateParam(
@@ -27,11 +27,14 @@ public record TokenGenerateParam(
         Map<String, Object> extraClaims
 ) {
 
+    /** 平台未知时使用的会话端类型（会话键 {@code login:user:refresh:{userId}:{deviceType}} 的兜底取值）。 */
+    public static final String UNKNOWN_DEVICE_TYPE = "UNKNOWN";
+
     public TokenGenerateParam {
         extraClaims = extraClaims == null ? Map.of() : Map.copyOf(extraClaims);
     }
 
     public String deviceType() {
-        return platform != null ? platform.name() : "UNKNOWN";
+        return platform != null ? platform.name() : UNKNOWN_DEVICE_TYPE;
     }
 }

@@ -7,6 +7,7 @@ import org.icedamericanomall.auth.app.dto.SessionCheckDTO;
 import org.icedamericanomall.auth.app.dto.TokenGenerateParam;
 import org.icedamericanomall.auth.app.dto.TokenPair;
 import org.icedamericanomall.auth.app.port.LoginTokenService;
+import org.icedamericanomall.auth.app.port.TokenVersionService;
 import org.icedamericanomall.auth.domain.enums.PlatformEnum;
 import org.icedamericanomall.auth.domain.model.RefreshTokenInfo;
 import org.icedamericanomall.auth.infrastructure.constant.RedisKeyConstants;
@@ -19,8 +20,10 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.StringJoiner;
@@ -35,6 +38,8 @@ import java.util.concurrent.TimeUnit;
  *   <li>会话 Key：{@code login:user:refresh:{userId}:{deviceType}}，同端互斥（覆盖旧会话）</li>
  *   <li>反查索引：{@code login:user:token:key:{refreshToken}} → 会话 Key</li>
  *   <li>accessToken 不落库，靠 jti 与会话中的 jti 比对判断是否被踢</li>
+ *   <li>accessToken 携带 {@code ver} claim（签发时刻的用户令牌版本，键缺失 = {@code 0}），
+ *       供网关做用户级吊销比对（ADR-031）</li>
  * </ul>
  */
 @Slf4j
@@ -52,6 +57,7 @@ public class LoginTokenServiceImpl implements LoginTokenService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final JwtUtils jwtUtils;
     private final JwtProperties jwtProperties;
+    private final TokenVersionService tokenVersionService;
 
     @Override
     public TokenPair createLoginResponse(TokenGenerateParam tokenGenerateParam) {
@@ -217,6 +223,41 @@ public class LoginTokenServiceImpl implements LoginTokenService {
         log.info("登出吊销 Refresh Token — 会话Key={}", sessionKey);
     }
 
+    @Override
+    public void revokeAllSessions(Long userId) {
+        if (userId == null) {
+            log.warn("[auth][revoke-all-sessions] userId 缺失，跳过会话拆除");
+            return;
+        }
+        int removed = 0;
+        for (String deviceType : allDeviceTypes()) {
+            String sessionKey = refreshTokenKey(userId, deviceType);
+            RefreshTokenInfo info = (RefreshTokenInfo) redisTemplate.opsForValue().get(sessionKey);
+            if (info == null || info.getRefreshToken() == null || info.getRefreshToken().isBlank()) {
+                continue;
+            }
+            revokeSession(info.getRefreshToken());
+            removed++;
+        }
+        log.info("[auth][revoke-all-sessions] 用户级会话拆除完成: userId={}, removed={}", userId, removed);
+    }
+
+    /**
+     * 会话端类型取值域：{@link PlatformEnum} 全量 + 无平台时的
+     * {@link TokenGenerateParam#UNKNOWN_DEVICE_TYPE} 兜底。
+     *
+     * <p>会话键按 deviceType 分片，端类型受枚举约束（有界），故按枚举遍历拆除，
+     * 避免 {@code KEYS}/{@code SCAN} 这类全库扫描。
+     */
+    private static List<String> allDeviceTypes() {
+        List<String> deviceTypes = new ArrayList<>(PlatformEnum.values().length + 1);
+        for (PlatformEnum platform : PlatformEnum.values()) {
+            deviceTypes.add(platform.name());
+        }
+        deviceTypes.add(TokenGenerateParam.UNKNOWN_DEVICE_TYPE);
+        return deviceTypes;
+    }
+
     /** accessToken 是否仍为当前会话（jti 未被后续登录覆盖） */
     private boolean isAccessTokenValid(String sessionKey, String jti) {
         RefreshTokenInfo info = (RefreshTokenInfo) redisTemplate.opsForValue().get(sessionKey);
@@ -227,13 +268,17 @@ public class LoginTokenServiceImpl implements LoginTokenService {
     }
 
     /**
-     * 构建 JWT claims：userId、deviceType、deviceId、platform。
+     * 构建 JWT claims：userId、deviceType、deviceId、platform、ver。
      * <p>jti 由 {@link JwtUtils} 自动加入；权限信息不放 JWT（网关层实时查询）。
+     *
+     * <p>{@code ver} = 签发时刻该用户的令牌版本（{@code auth:tokenver:{userId}}，键缺失 = {@code 0}），
+     * 登录与 refresh 换发走同一链路，故两者都带当前版本（ADR-031）。
      */
     private Map<String, Object> buildClaims(TokenIssueParam issueParam) {
         Map<String, Object> claims = new HashMap<>();
         claims.put(CLAIM_USER_ID, issueParam.userId());
         claims.put(CLAIM_DEVICE_TYPE, issueParam.deviceType());
+        claims.put(JwtUtils.TOKEN_VERSION_CLAIM, tokenVersionService.currentVersion(issueParam.userId()));
         if (issueParam.deviceId() != null) {
             claims.put(CLAIM_DEVICE_ID, issueParam.deviceId());
         }
