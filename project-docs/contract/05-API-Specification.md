@@ -924,12 +924,12 @@ Feature: 运费模型（F2）
 
 | #   | 方法   | 路径                                   | 认证  | 请求                                                                                   | 响应               | 阶段     |
 | --- | ---- | ------------------------------------ | --- | ------------------------------------------------------------------------------------ | ---------------- | ------ |
-| T1  | POST | `/api/trade/order`                   | 🔒  | `CreateOrderReq { addressId(必填), userCouponId?(单券, 可选) }`（**V5.4 契约收缩**：删除从未被读取的 `cartItemIds`/`remark`；**V5.5 已决**：删除未接线的 `userCouponIds`，多券叠加移入 §十二 roadmap；下单商品恒取服务端购物车已勾选项；`addressId` `@NotNull`，缺失 → 400 `PARAM_ERROR`） | `OrderVO`        | ✅ V4.4 |
+| T1  | POST | `/api/trade/order`                   | 🔒  | `CreateOrderReq { addressId(必填), userCouponId?(单券, 可选), remark?(买家留言, ≤200, 可选) }`（**V5.4 契约收缩**：删除从未被读取的 `cartItemIds` 与死字段 `remark`；**V5.7 重新立项**：`remark` 作为真实买家留言回归——落 `orders.remark` 快照并随 OrderVO 回显；**V5.5 已决**：删除未接线的 `userCouponIds`，多券叠加移入 §十二 roadmap；下单商品恒取服务端购物车已勾选项；`addressId` `@NotNull`，缺失 → 400 `PARAM_ERROR`） | `OrderVO`        | ✅ V4.4 |
 | T2  | GET  | `/api/trade/order/{orderNo}`         | 🔒  | Path: `orderNo` (String)                                                             | `OrderVO`        | ✅      |
 | T3  | GET  | `/api/trade/order/page`              | 🔒  | Query: `status?`, `keyword?`, `startDate?`, `endDate?`, `page`(1), `size`(20)        | `IPage<OrderVO>` | ✅      |
 | T4  | POST | `/api/trade/order/{orderNo}/cancel`  | 🔒  | Path: `orderNo` (String), Body: `{ reason? }`                                        | `Void`           | ✅      |
 | T5  | POST | `/api/trade/order/{orderNo}/confirm` | 🔒  | Path: `orderNo` (String)                                                             | `Void`           | ✅      |
-| T6  | POST | `/api/trade/order/direct`            | 🔒  | `DirectOrderReq { skuId(Long, 必填), quantity(≥1, 缺省1), addressId(必填), userCouponId?(单券, 可选) }`（**V5.5 已决**：删除未接线的 `userCouponIds`） | `OrderVO`        | ✅ V4.0 |
+| T6  | POST | `/api/trade/order/direct`            | 🔒  | `DirectOrderReq { skuId(Long, 必填), quantity(≥1, 缺省1), addressId(必填), userCouponId?(单券, 可选), remark?(买家留言, ≤200, 可选——V5.7) }`（**V5.5 已决**：删除未接线的 `userCouponIds`） | `OrderVO`        | ✅ V4.0 |
 
 **`CreateOrderReq`**:
 
@@ -953,6 +953,7 @@ Feature: 运费模型（F2）
   "payAmount": 24400,
   "discountAmount": 2000,
   "postFee": 800,
+  "remark": "请包装牢固，谢谢",
   "status": 1,
   "orderType": 1,
   "receiverName": "张三",
@@ -1705,13 +1706,13 @@ Feature: 买家退款资金流（F1）
 
 #### 4.13.13 Admin Flash Sale Management (🆕 V5.0 计划 — 保持未实现)
 
-> ⚠️ **V5.4 现状确认**：AD40-AD42 仍为**未实现**——当前无秒杀激活/编辑入口，秒杀库存走 Redis 惰性预热兜底（`MarketingManager`）。前端请勿对接。
+> **V5.7 已实现**：AD40-AD42 管理端秒杀活动管理上线（创建/编辑/删除；活动状态由 `startTime`/`endTime` 时间窗推导，库存继续走 Redis 惰性预热兜底）。历史 V5.4「未实现」告警作废。错误口径：字段非法（`flashPrice`≤0 / `stock`≤0 / `endTime`≤`startTime`）→ 400 `PARAM_ERROR(1101)`；活动不存在 → `NO_RESOURCE_FOUND(1103)`；进行中活动删除 → 400 `PARAM_ERROR`。
 
 | #    | 方法     | 路径                      | 认证  | 请求                                            | 响应            | 阶段     |
 | ---- | ------ | ----------------------- | --- | --------------------------------------------- | ------------- | ------ |
-| AD40 | POST   | `/api/admin/flash`      | 🔑  | `FlashSaleCreateReq`                          | `FlashSaleVO` | ⚪ V5.0 |
-| AD41 | PUT  | `/api/admin/flash/{id}` | 🔑  | Path: `id` (Long), Body: `FlashSaleUpdateReq` | `Void`        | ⚪ V5.0 |
-| AD42 | DELETE | `/api/admin/flash/{id}` | 🔑  | Path: `id` (Long)                             | `Void`        | ⚪ V5.0 |
+| AD40 | POST   | `/api/admin/flash`      | 🔑  | `FlashSaleCreateReq { productId(必填), skuId(必填), flashPrice(必填, >0, 分), stock(必填, >0), startTime(必填), endTime(必填, >startTime) }` | `FlashSaleVO`（活动状态由时间窗推导：1未开始/2进行中/3已结束） | ✅ V5.7 |
+| AD41 | PUT  | `/api/admin/flash/{id}` | 🔑  | Path: `id` (Long), Body: `FlashSaleUpdateReq`（同 CreateReq 字段全可选，null-safe 局部更新；已结束活动不可编辑） | `Void`        | ✅ V5.7 |
+| AD42 | DELETE | `/api/admin/flash/{id}` | 🔑  | Path: `id` (Long)                             | `Void`（**进行中活动禁删** → 400；物理删除，表无逻辑删除列） | ✅ V5.7 |
 
 #### 4.13.14 AdminPayController — `/api/admin/pay` (pay-service)
 
@@ -1927,9 +1928,11 @@ Feature: 渠道对账（F4）
 | ---- | ---- | ------------------------ | ------------------------------------------------- | -------- | ------- |
 | I30  | POST | `/internal/notify/sms`   | `NotificationSendReqCO { target, content/templateParams…, requestId, traceId }` | `void`   | ✅ V5.2  |
 | I31  | POST | `/internal/notify/email` | `NotificationSendReqCO { target, subject, content, requestId }` | `void`   | ✅ V5.2  |
-| I32  | POST | `/internal/notify/in-app` | `InAppMessageSendReqCO`（站内信，契约预留）              | `void`（当前抛"通道未实现"） | ⚪ V5.0 |
+| I32  | POST | `/internal/notify/in-app` | `InAppMessageSendReqCO`（recipientId/type/title/content/linkUrl 等） | `void`（**落库持久化**，self-send 忽略） | ✅ V5.5 |
 
 > ⚠️ 旧 `POST /internal/notify/send`（`Map` 弱类型，`sendSmsCode`）**已废弃**，由强类型 I30-I32 取代（破坏性契约变更）。
+>
+> **业务触达接线（V5.7，[ADR-042](../adr/042-buyer-notification-wiring.md)）**：支付成功（pay）/ 包裹发货（trade）/ 退款成功（pay）/ 售后审核结果（trade）四个业务事件 → 站内信（I32，收件人=买家 userId），由状态变更服务在**本地事务外** fail-open 发送（复用 item `ReviewManager` / merchant `StoreFollowManager` 先例，每服务一个触达协作器收敛样板）；SMS/email 模板 Phase 2（需渠道模板审批），MQ 事件化解耦留 roadmap。
 
 #### 4.14.13 InternalVerificationController — `/internal/verification` (verification-service:9401, 🆕 V5.2)
 
@@ -2376,6 +2379,7 @@ data: [DONE]
 | **V5.5.1** | **2026-10-03** | **多粒度令牌吊销（ADR-031）契约同步**：①§3.5 吊销口径升级为三级粒度模型（单 token jti 黑名单 / 全用户 tokenVer 版本号 / refresh 会话拆除）——`POST /api/auth/reset-password` 由"按 jti 拉黑当前令牌"改为**用户级令牌版本吊销**（`INCR auth:tokenver:{userId}` + 拆除该用户全部 refresh 会话，**全端下线**，已发 access token 立即失效），**不再消费 Authorization 头**（客户端无需改动）；登出仍为单 token jti 黑名单（口径不变）；管理端禁用用户（`PUT /api/admin/user/{id}/status`）经 ia-api `AuthContextClient.revokeUserTokens` 触发同款吊销，**即时全端下线**；②§4.14.14 新增内部端点 I39 `POST /internal/auth/token-version/revoke`（Body `TokenRevokeCO { userId: Long }`，返回 void，raw 异常透出不包 Result；调用方 user-service，降级 fail-open）；③网关 `JwtBlacklistFilter` 以一次 `MGET auth:blacklist:{jti} auth:tokenver:{userId}` **合并校验**（每请求 Redis 往返不变，Redis 异常 fail-open）：黑名单命中 401、`ver` claim 与版本键不一致 401、版本键缺失跳过比对；存量无 `ver` claim 令牌按 `0` 自然过期，**无需迁移**；`auth:tokenver:{userId}` 不设 TTL、成为第 4 个跨服务契约键（auth 写 / 网关只读豁免，ADR-031 §7）；④§4.1 A4/A5 注记同步修订；⑤补录待办：ADR-018 授权上下文三端点（`GET /internal/auth/context/{userId}`、`GET /internal/auth/roles?userIds=`、`PUT /internal/auth/user/{id}/role`，ia-api `AuthContextClient`）代码已实现但尚未收录 §4.14 端点目录 |
 | **V5.6.0** | **2026-10-03** | **P0 功能规格先行（✅ 已实现——落地情况与实现偏差收敛见 V5.6.1 行）**：①**F1 买家退款资金流**：§4.7.3 新增 PAY6 `POST /api/pay/callback/wechat-refund`（微信退款回调，复用 ADR-033 验签/AES-GCM 解密与 ADR-029 裸 JSON 应答协议）、§4.14.15 I40 `POST /internal/pay/refund`（trade 售后审核同意后经编排层触发；同 afterSaleId 幂等，uk_after_sale 一售后单一次退款）、§4.14.3 I41 `POST /internal/balance/refund`（transaction_no 幂等入账；本节归属由 user-service 更正为 wallet-service——文档漂移修复）、§4.14.16 I42 `PUT /internal/trade/after-sale/{id}/refunded`（APPROVED→REFUNDED 条件迁移，激活死状态 REFUNDED）、AD43 `POST /api/admin/pay/refund/{refundNo}/retry`（失败单重试，3039）；状态口径：退款处理中/失败售后单停留 APPROVED，成功才 REFUNDED；②**F2 运费模型**：§4.4.9 新增 FT1-FT4 商家运费模板 CRUD——**路径定 `/api/item/freight-template/**`（item-service）**，规避 `/api/seller/**` 路由到 merchant-service 的归属冲突（零网关改动）；§4.14.17 I43 模板批量查询（trade 计价）；**金额不变式变更（旧→新）**：`payAmount = totalAmount − discountAmount` → `payAmount = totalAmount − discountAmount + postFee`（§4.6.1 OrderVO、§4.14.7 金额口径同步）；③**F3 拆单发货**：T12 `ShipOrderReq` 增量 `skuIds[]`（部分发货保持待发货，全量发货转待收货）、L1 `GET /api/logistics/{orderId}` **响应由单对象改为列表**（按 packageNo 升序，破坏性变更）、OrderVO.items 增量 `packageNo`；④**F4 渠道对账**：§4.13.14 新增 AD44/AD45 对账批次/差异查询 + AD46 手动触发（同日幂等先删后写，Phase 1 仅记录差异不自动调账）；§二 新增 `3039 REFUND_STATUS_INVALID`（V5.6.1 勘误：本行原记码号有误，实为 3039）；⑤§六 路由表补 `/api/admin/pay/**` → pay-service（**新增网关路由，须先于 /api/admin/** 声明**）与 `/api/item/freight-template/**` 明确行；§七 补商家端运费模板/管理端对账映射；§八 补 RefundVO/ReconciliationBatchVO/ReconciliationDetailVO/FreightTemplateVO；§九 补拆单发货状态口径注记；数据模型配套见 04-Data-Model §十二（V5.5 资金线：refund_order/wallet_transaction/reconciliation 两表；V5.6 履约线：freight_template + product/orders/order_logistics/order_item 变更）；⑥§4.7.1 PAY2 与 §12.2 的"out_trade_no 断链修复进行中"表述过时，按 ADR-033 已落地更正为已完成 |
 | **V5.6.1** | **2026-10-03** | **V5.6 全量落地同步 + 实现方上报偏差收敛（以实现为准，ADR-035/036/037；四个 P0 功能实现完成且全量测试通过）**：①**规划标注转已实现**：V5.6.0 全部 🆕 规划条目改 ✅——FT1-FT4（§4.4.9）、PAY6（§4.7.3）、AD43-AD46（§4.13.14）、I40-I43（§4.14.15-17）、T12 `skuIds` 增量、L1 列表化、`OrderVO.postFee` / `OrderItemVO.packageNo` / `LogisticsVO.packageNo`（"字段上线前报文不含该键"等过渡期表述全部移除）；**新增端点 AD47** `PUT /api/admin/after-sale/{id}/confirm-return`（§4.13.5，端点总数 215+ → 229+）；②**退款触发点纠正（ADR-037）**：AD17 `review` 同意仅对 **type=2 仅退款** 触发退款；**type=1 退货退款**在 AD47 确认收到退货（条件迁移 APPROVED→RETURNED；已 REFUNDED → 3039 守卫、已 RETURNED 幂等空操作、非 type=1 → 1101）后触发；I42 回写来源扩为 `APPROVED|RETURNED → REFUNDED`（§4.7.3 触发链路、§4.6.4 状态口径、§4.14.15/16、§九 同步）；③**错误码勘误**：`REFUND_STATUS_INVALID` 实现预置为 **3039**（原草拟码号全文勘误清零——§二/§4.7.3 BDD/§4.13.14 与 V5.6.0 行内旧记一并更正为 3039）；§4.4.9 错误语义改按 ia-common 预置——重名 → **3040 FREIGHT_TEMPLATE_NAME_EXISTS**、模板不存在/**非本商家**（含商品绑定他人模板，防探测）→ **3041 FREIGHT_TEMPLATE_NOT_FOUND**（原草拟 3006/1103/403 语义不符作废）；§二 补 3039/3040/3041 三行；④**I41 幂等语义细化（ADR-035）**：顺序重放幂等成功；真并发同号 → 抛异常使「加余额+写流水」整体回滚，pay 侧退款单置失败(2)、AD43 重试收敛，资金不双记；⑤**I43 降级口径改 fail-closed（ADR-037）**：模板查询失败 → 下单抛错，**不得默认免邮**（原草拟"降级为空 → postFee=0"作废）；返回口径补**兜底补入默认模板**（`isDefault=true`）与响应字段 `isDefault`；FT3 明确 `GET /api/item/freight-template/list` → `List<FreightTemplateVO>`（无分页，含停用模板按创建顺序，维持定稿）；⑥**AD46 响应改 `List<ReconciliationBatchVO>`**（channel 缺省=当日全部渠道一次多条，指定单渠道时长度 1，ADR-036），补「账单拉取失败落 status=2 失败批次」口径；⑦§4.14.7/§九 拆单发货与金额不变式 `payAmount = totalAmount − discountAmount + postFee` 落地标注（总不变式已实现）；§六 `/api/admin/pay/**` 专属路由标注已落地（网关 application.yml 已声明）；F1-F4 BDD 标注转"已实现"，F1 补退货退款触发场景 |
+| **V5.7.0** | **2026-10-04** | **P1 第一批（消息触达 + 订单留言 + 秒杀管理端）契约先行**：①§4.6.1 T1/T6 请求增量 `remark?`（买家留言 ≤200，可选）+ `OrderVO` 增量 `remark`（**V5.4 删除的死字段 remark 重新立项接线**，落 `orders.remark` 快照）；②§4.13.14 AD40-AD42 管理端秒杀活动管理定稿并实现标注（`FlashSaleCreateReq { productId, skuId, flashPrice, stock, startTime, endTime }` / `FlashSaleUpdateReq` null-safe 局部更新 / 进行中禁删；错误口径 1101/1103）；③§4.14.12 I32 站内信行勘误（V5.5 已落库实现，非"契约预留"）+ 业务触达矩阵注记（支付成功/发货/退款成功/售后审核结果 → 站内信，事务外 fail-open，[ADR-042](../adr/042-buyer-notification-wiring.md)）；数据模型见 04 §3.7 / §十二（V5.7 迁移 `orders.remark`） |
 
 ---
 

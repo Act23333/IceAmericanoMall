@@ -292,6 +292,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 | pay_amount | INT | NOT NULL | 实付金额（分）。**不变式 V2（已生效，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：`payAmount = totalAmount − discountAmount + postFee`（旧口径无 `postFee` 项，见 §十二 12.2） |
 | discount_amount | INT | NOT NULL, DEFAULT 0 | 优惠金额（分） |
 | post_fee | INT | NOT NULL, DEFAULT 0（**V5.6 已建**） | 运费（分）；下单时按 §十二 12.2 计价规则计算并快照，Phase 1 同单同商家、取商品绑定模板中 fee 最高者计一次 |
+| remark | VARCHAR(200) | NULL（**V5.7 已建**） | 买家留言快照（下单时随单快照，Phase 1 不提供修改端点） |
 | status | TINYINT | NOT NULL | 1-待付款，2-待发货，3-待收货，4-已完成，5-已取消，6-待评价 |
 | payment_type | TINYINT | NULL | 1-支付宝，2-微信，3-余额 |
 | receiver_name | VARCHAR(50) | NOT NULL | 收货人快照 |
@@ -856,6 +857,7 @@ public void createOrder(OrderDTO dto) {
 > | --- | --- | --- |
 > | **V5.5 资金线** | `refund_order`、`wallet_transaction`（F1）+ `reconciliation_batch`、`reconciliation_detail`（F4） | `V5.5__refund_wallet_tx_and_reconciliation.sql` |
 > | **V5.6 履约线** | `freight_template` 新表 + `product.freight_template_id` / `orders.post_fee`（F2）+ `order_logistics` 主键与包裹改造、`order_item.package_no`（F3） | `V5.6__freight_template_and_package_split.sql` |
+> | **V5.7 订单留言** | `orders.remark VARCHAR(200) NULL`（买家留言快照，T1/T6 请求增量） | `V5.7__order_remark.sql` |
 >
 > 全部新表遵循 §一 约定：`INT` 分、`TINYINT` 状态枚举、审计列 `create_time`/`update_time`、`utf8mb4` + InnoDB、技术主键 `id AUTO_INCREMENT` + 业务唯一键（主键决策矩阵）。
 

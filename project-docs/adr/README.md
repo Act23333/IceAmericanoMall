@@ -45,3 +45,4 @@
 | [039](./039-ai-service-ddd-completion.md) | ai-service 四层收口完成（游离包归位 + 仓储归位，49→52 测试） | 2026-10-04 |
 | [040](./040-ia-common-shared-kernel-package-rename.md) | ia-common 共享内核包更名（domain 拆分归位 api / security） | 2026-10-04 |
 | [041](./041-refund-resume-aftersale-guard-freight-cache.md) | P0 资金线风险收敛 —— 退款悬挂补偿、售后审核守卫收紧、I43 计价缓存 | 2026-10-04 |
+| [042](./042-buyer-notification-wiring.md) | 买家消息触达接线 —— 四事件站内信、事务外 fail-open、单出口 notification-service | 2026-10-04 |
