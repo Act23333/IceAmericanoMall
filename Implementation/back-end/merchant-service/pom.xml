@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.nolazy</groupId>
+        <artifactId>IcedAmericanoMall</artifactId>
+        <version>1.0</version>
+    </parent>
+
+    <artifactId>merchant-service</artifactId>
+    <description>商家域服务：入驻申请/审核、店铺档案、店铺公开页、店铺关注（自 user-service 边界重构迁出）</description>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <!-- 共享库：异常体系统一走 ia-common（ErrorCode / 全局异常处理 / ss 鉴权 Bean） -->
+        <dependency>
+            <groupId>org.nolazy</groupId>
+            <artifactId>ia-common</artifactId>
+        </dependency>
+
+        <!-- 审批通过 → 授予卖家角色（授权域稳定契约）；关注通知 → notification-service -->
+        <dependency>
+            <groupId>org.nolazy</groupId>
+            <artifactId>ia-api</artifactId>
+        </dependency>
+
+        <!-- 店铺/商家档案落库（seller 表所有权迁入本服务，表名不变） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- 店铺关注关系（Redis Set） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+
+        <!-- Feign 熔断降级（V5.4 熔断铺设）：本服务使用 Feign（AuthContextClient / NotificationClient，
+             契约在 ia-api）此前未开熔断。开启 spring.cloud.openfeign.circuitbreaker.enabled 后
+             ia-api 的 fallbackFactory 真实生效（降级 Bean 由 scanBasePackages 的
+             org.icedamericanomall.fallback 提供，ADR-009）。
+             版本交由 spring-cloud-dependencies BOM 管理，不写版本号。 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

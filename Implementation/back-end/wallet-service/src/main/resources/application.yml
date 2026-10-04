@@ -1,0 +1,43 @@
+server:
+  port: 9500
+
+spring:
+  application:
+    name: wallet-service
+  # 余额账户表（wallet_account；ADR：余额域自 user-service 迁出，user.balance 列保留不再读写）
+  datasource:
+    url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: ${hm.db.pw:root}
+  cloud:
+    nacos:
+      server-addr: ${ia.nacos.host:192.168.10.128}:8848
+      username: nacos
+      password: nacos
+      discovery:
+        enabled: true
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+
+logging:
+  level:
+    org.icedamericanomall: DEBUG
+  file:
+    path: "logs/${spring.application.name}"
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      max-history: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}

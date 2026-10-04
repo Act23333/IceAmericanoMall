@@ -1,0 +1,67 @@
+server:
+  port: 9550
+
+spring:
+  application:
+    name: merchant-service
+  # 档案落库：seller（商家身份 + 生命周期）+ shop（店铺档案，1 商家 : N 店铺；ADR-019 / V5.4）
+  datasource:
+    url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: ${hm.db.pw:root}
+  cloud:
+    nacos:
+      server-addr: ${ia.nacos.host:192.168.10.128}:8848
+      username: nacos
+      password: nacos
+      discovery:
+        enabled: true
+    # Feign 熔断降级（V5.4 熔断铺设）：开启后 ia-api 的 fallbackFactory 真实生效
+    # （降级 Bean 由 scanBasePackages 的 org.icedamericanomall.fallback 提供，ADR-009）
+    openfeign:
+      circuitbreaker:
+        enabled: true
+  # JSON 契约与迁出前（user-service 默认策略）保持一致：驼峰字段名
+  data:
+    redis:
+      host: ${ia.redis.host:192.168.10.128}
+      port: 6379
+      password: ${ia.redis.password:}
+
+logging:
+  level:
+    org.icedamericanomall: DEBUG
+  file:
+    name: C:\Users\18279\Desktop\10\IceAmericanoMall\Implementation\back-end\logs\merchant-service\app
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      max-history: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# Feign 熔断参数（配套 spring.cloud.openfeign.circuitbreaker.enabled=true；与 authorization-service 同口径）
+# 说明：Spring Cloud 从 resilience4j 注册表读取默认配置，未配置时 TimeLimiter 默认仅 1 秒，
+# 会把「审批通过 → 授予卖家角色」等写库慢调用误判为失败并走降级（降级是 fail-closed，等于业务失败），
+# 因此这里显式放宽超时并给出熔断阈值。
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 20                       # 统计窗口（调用次数）
+        minimum-number-of-calls: 10                    # 达到该调用数才开始计算失败率
+        failure-rate-threshold: 50                     # 失败率阈值（%）
+        wait-duration-in-open-state: 30s               # 熔断打开后保持时长
+        permitted-number-of-calls-in-half-open-state: 3 # 半开状态试探调用数
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 5s                           # 单次 Feign 调用上限（缺省 1s 过短）
