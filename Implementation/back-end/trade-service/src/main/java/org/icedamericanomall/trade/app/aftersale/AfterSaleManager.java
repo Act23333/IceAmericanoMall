@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.exception.ForbiddenException;
+import org.icedamericanomall.trade.app.TradeEventNotifier;
 import org.icedamericanomall.trade.adapter.assembler.TradeConverter;
 import org.icedamericanomall.trade.adapter.request.AfterSaleApplyReq;
 import org.icedamericanomall.trade.adapter.response.AfterSaleVO;
@@ -52,6 +53,7 @@ public class AfterSaleManager {
     private final OrderRepository orderRepository;
     private final RefundManager refundManager;
     private final TradeConverter tradeConverter;
+    private final TradeEventNotifier tradeEventNotifier;
 
     /** 用户提交售后申请（含重复/订单状态/金额校验）。 */
     @Transactional(rollbackFor = Exception.class)
@@ -113,6 +115,9 @@ public class AfterSaleManager {
         entity.setStatus(target.getCode());
         entity.setAdminRemark(remark);
         afterSaleRepository.update(entity);
+
+        // 买家触达（ADR-042）：审核结果站内信（本方法无事务，落库成功后 fail-open 发送）
+        tradeEventNotifier.notifyAfterSaleReviewed(entity, remark);
 
         // 仅退款（type=2）在审核同意时立即退款；退货退款待「确认收到退货」后再退款
         if (target == AfterSaleStatusEnum.APPROVED

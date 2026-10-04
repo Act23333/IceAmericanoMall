@@ -2,9 +2,11 @@ package org.icedamericanomall.pay.app;
 
 import org.icedamericanomall.client.AfterSaleClient;
 import org.icedamericanomall.client.BalanceClient;
+import org.icedamericanomall.client.NotificationClient;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.BalanceRefundCO;
+import org.icedamericanomall.dto.InAppMessageSendReqCO;
 import org.icedamericanomall.dto.RefundCreateCO;
 import org.icedamericanomall.dto.RefundResultCO;
 import org.icedamericanomall.integration.payment.ChannelRefundResult;
@@ -28,11 +30,14 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -45,6 +50,7 @@ import static org.mockito.Mockito.when;
  * 同售后单重复请求幂等、失败停留 APPROVED 可重试（含 3025）、退款金额超实付被拒。
  * Feign（余额/渠道/售后回写）与领域服务全部打桩；出参装配用真实 MapStruct 转换器
  * （{@code RefundConverterImpl}），锁死 Domain → CO/VO 的字段子集口径。
+ * 退款成功收口走真实 {@link PayEventNotifier}（ADR-042），锁死「I42 回写 + 买家触达」到 Feign 客户端。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("RefundManager 退款编排单元测试（F1）")
@@ -61,13 +67,15 @@ class RefundManagerTest {
     @Mock PaymentChannelRouter channelRouter;
     @Mock BalanceClient balanceClient;
     @Mock AfterSaleClient afterSaleClient;
+    @Mock NotificationClient notificationClient;
 
     private RefundManager refundManager;
 
     @BeforeEach
     void setUp() {
         refundManager = new RefundManager(refundOrderService, payOrderService, channelRouter,
-                balanceClient, afterSaleClient, new RefundConverterImpl());
+                balanceClient, new RefundConverterImpl(),
+                new PayEventNotifier(notificationClient, afterSaleClient));
     }
 
     private RefundCreateCO request() {
@@ -176,6 +184,63 @@ class RefundManagerTest {
         refundManager.handleWechatRefundCallback(Map.of("Wechatpay-Signature", "sig"), "{\"resource\":{}}");
 
         verify(refundOrderService).markSuccessIfProcessing(REFUND_NO, "5000099");
+        verify(afterSaleClient).markRefunded(AFTER_SALE_ID);
+    }
+
+    @Test
+    @DisplayName("退款成功触达 — 回调置成功：买家收到 REFUND_SUCCESS 站内信（订单号+退款金额+原路渠道）")
+    void shouldNotifyBuyerRefundSuccess_whenWechatCallbackConfirmed() {
+        when(channelRouter.parseWechatRefundCallback(any(), anyString()))
+                .thenReturn(new WechatRefundCallbackResult(REFUND_NO, true, "5000099", "SUCCESS"));
+        when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(refundOrder(0, "WECHAT"));
+        when(refundOrderService.markSuccessIfProcessing(REFUND_NO, "5000099")).thenReturn(true);
+
+        refundManager.handleWechatRefundCallback(Map.of(), "{}");
+
+        ArgumentCaptor<InAppMessageSendReqCO> captor = ArgumentCaptor.forClass(InAppMessageSendReqCO.class);
+        verify(notificationClient).sendInAppMessage(captor.capture());
+        InAppMessageSendReqCO message = captor.getValue();
+        assertEquals("REFUND_SUCCESS", message.getType());
+        assertEquals(100L, message.getRecipientId());
+        assertTrue(message.getContent().contains("ORD-1"), "内容须含订单号: " + message.getContent());
+        assertTrue(message.getContent().contains("128.00"), "内容须含退款金额(元): " + message.getContent());
+        assertTrue(message.getContent().contains("微信支付"), "内容须含原路渠道: " + message.getContent());
+        assertEquals("/orders/ORD-1", message.getLinkUrl());
+        // I42 回写与买家触达同路收口
+        verify(afterSaleClient).markRefunded(AFTER_SALE_ID);
+    }
+
+    @Test
+    @DisplayName("触达失败不侵染结算 — NotificationClient 抛异常：退款单仍置成功、售后单仍回写")
+    void shouldStillSettleRefund_whenBuyerNotificationFails() {
+        doThrow(new RuntimeException("notification-service down"))
+                .when(notificationClient).sendInAppMessage(any(InAppMessageSendReqCO.class));
+        when(refundOrderService.getByAfterSaleId(AFTER_SALE_ID)).thenReturn(null);
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(payOrder("BALANCE", AMOUNT));
+        when(refundOrderService.createProcessing(any(), anyString(), anyString(), any(), anyString(), anyInt()))
+                .thenReturn(refundOrder(0, "BALANCE"));
+        when(refundOrderService.markSuccessIfProcessing(anyString(), any())).thenReturn(true);
+        when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(refundOrder(1, "BALANCE"));
+
+        assertDoesNotThrow(() -> refundManager.refund(request()));
+
+        verify(refundOrderService).markSuccessIfProcessing(eq(REFUND_NO), any());
+        verify(afterSaleClient).markRefunded(AFTER_SALE_ID);
+    }
+
+    @Test
+    @DisplayName("收件人缺失 — 退款单无 userId：不发买家站内信，I42 回写照常")
+    void shouldSkipBuyerMessage_whenRecipientMissing() {
+        RefundOrder noBuyer = refundOrder(0, "WECHAT");
+        noBuyer.setUserId(null);
+        when(channelRouter.parseWechatRefundCallback(any(), anyString()))
+                .thenReturn(new WechatRefundCallbackResult(REFUND_NO, true, "5000099", "SUCCESS"));
+        when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(noBuyer);
+        when(refundOrderService.markSuccessIfProcessing(REFUND_NO, "5000099")).thenReturn(true);
+
+        refundManager.handleWechatRefundCallback(Map.of(), "{}");
+
+        verifyNoInteractions(notificationClient);
         verify(afterSaleClient).markRefunded(AFTER_SALE_ID);
     }
 

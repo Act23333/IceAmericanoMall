@@ -1,11 +1,14 @@
 package org.icedamericanomall.trade.app.aftersale;
 
+import org.icedamericanomall.client.NotificationClient;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.exception.ForbiddenException;
+import org.icedamericanomall.dto.InAppMessageSendReqCO;
 import org.icedamericanomall.trade.adapter.assembler.TradeConverterImpl;
 import org.icedamericanomall.trade.adapter.request.AfterSaleApplyReq;
 import org.icedamericanomall.trade.adapter.response.AfterSaleVO;
+import org.icedamericanomall.trade.app.TradeEventNotifier;
 import org.icedamericanomall.trade.domain.enums.AfterSaleStatusEnum;
 import org.icedamericanomall.trade.domain.enums.AfterSaleTypeEnum;
 import org.icedamericanomall.trade.domain.enums.OrderStatusEnum;
@@ -38,6 +41,8 @@ import static org.mockito.Mockito.*;
  *   <li>确认收到退货（含幂等重复确认）后触发退款（pay-service 侧 uk_after_sale 兜底）；</li>
  *   <li>触发发生在状态落库<b>之后</b>（事务外 Feign）。</li>
  * </ol>
+ *
+ * <p>审核结果买家触达（ADR-042）经真实 {@link TradeEventNotifier} 打通到 NotificationClient。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AfterSaleManager 售后编排单元测试")
@@ -46,13 +51,14 @@ class AfterSaleManagerTest {
     @Mock private OrderRepository orderRepository;
     @Mock private AfterSaleRepository afterSaleRepository;
     @Mock private RefundManager refundManager;
+    @Mock private NotificationClient notificationClient;
 
     private AfterSaleManager manager;
 
     @BeforeEach
     void setUp() {
         manager = new AfterSaleManager(afterSaleRepository, orderRepository,
-                refundManager, new TradeConverterImpl());
+                refundManager, new TradeConverterImpl(), new TradeEventNotifier(notificationClient));
     }
 
     private Order order(int status, int payAmount) {
@@ -271,6 +277,49 @@ class AfterSaleManagerTest {
 
         verify(afterSaleRepository).update(pending);
         verify(refundManager, never()).triggerRefund(anyLong());
+    }
+
+    @Test
+    @DisplayName("审核触达 — 落库后买家收到 AFTER_SALE_REVIEWED 站内信（结论+备注+订单链接）")
+    void shouldNotifyBuyer_whenReviewPersisted() {
+        AfterSale pending = new AfterSale();
+        pending.setId(9L);
+        pending.setOrderNo("ORD-1");
+        pending.setUserId(100L);
+        pending.setType(AfterSaleTypeEnum.RETURN_REFUND.getCode());
+        pending.setStatus(AfterSaleStatusEnum.PENDING.getCode());
+        when(afterSaleRepository.findById(9L)).thenReturn(pending);
+
+        manager.review(9L, AfterSaleStatusEnum.APPROVED.getCode(), "凭证已核实");
+
+        ArgumentCaptor<InAppMessageSendReqCO> captor = ArgumentCaptor.forClass(InAppMessageSendReqCO.class);
+        verify(notificationClient).sendInAppMessage(captor.capture());
+        InAppMessageSendReqCO message = captor.getValue();
+        assertEquals("AFTER_SALE_REVIEWED", message.getType());
+        assertEquals(100L, message.getRecipientId());
+        assertTrue(message.getContent().contains("同意"), "内容须含审核结论: " + message.getContent());
+        assertTrue(message.getContent().contains("凭证已核实"), "内容须含审核备注: " + message.getContent());
+        assertEquals("/orders/ORD-1", message.getLinkUrl());
+        // 退货退款（type=1）审核同意不触发退款
+        verify(refundManager, never()).triggerRefund(anyLong());
+    }
+
+    @Test
+    @DisplayName("触达失败不侵染审核 — NotificationClient 抛异常：审核仍落库、无异常外溢")
+    void shouldStillPersistReview_whenBuyerNotificationFails() {
+        doThrow(new RuntimeException("notification-service down"))
+                .when(notificationClient).sendInAppMessage(any(InAppMessageSendReqCO.class));
+        AfterSale pending = new AfterSale();
+        pending.setId(9L);
+        pending.setOrderNo("ORD-1");
+        pending.setUserId(100L);
+        pending.setType(AfterSaleTypeEnum.REFUND_ONLY.getCode());
+        pending.setStatus(AfterSaleStatusEnum.PENDING.getCode());
+        when(afterSaleRepository.findById(9L)).thenReturn(pending);
+
+        assertDoesNotThrow(() -> manager.review(9L, AfterSaleStatusEnum.REJECTED.getCode(), "不符"));
+
+        verify(afterSaleRepository).update(pending);
     }
 
     // ==================== 退款成功回写（I42，F1） ====================

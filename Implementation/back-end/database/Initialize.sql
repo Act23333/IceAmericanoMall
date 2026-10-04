@@ -12,7 +12,7 @@
 --       V1.1.0 → V1.1.1 → V1.1.2 → V1.1.3 → V1.2.0 → V1.2.1 → V1.2.2 → V2.0 →
 --       V2.1 → V2.2 → V2.5.0 → V2.5.1 → V3.0 → V3.2 → V3.3 → V3.4 → V3.5 →
 --       V3.7 → V4.0 → V4.1 → V4.3 → V5.0.0 → V5.0.1 → V5.0.2 → V5.1 → V5.2 →
---       V5.3 → V5.4 → V5.5 → V5.6。中断重跑前请先确认目标对象是否已创建/修改（多数 DDL 非幂等）。
+--       V5.3 → V5.4 → V5.5 → V5.6 → V5.7。中断重跑前请先确认目标对象是否已创建/修改（多数 DDL 非幂等）。
 --
 -- 【设计说明】（大厂规范约定，代码/文档需与此保持一致）
 --   1) 软删除策略：当前**未启用** MyBatis-Plus `@TableLogic`，也没有统一的
@@ -319,6 +319,7 @@ CREATE TABLE `orders` (
                          `pay_amount` INT NOT NULL COMMENT '实付金额（分）',
                          `discount_amount` INT NOT NULL DEFAULT 0 COMMENT '优惠金额（分）',
                          `post_fee` INT NOT NULL DEFAULT 0 COMMENT '运费（分），下单时按运费模板计算并快照（V5.6）',
+                         `remark` VARCHAR(200) NULL COMMENT '买家留言',
                          `status` TINYINT NOT NULL COMMENT '状态：1-待付款，2-待发货，3-待收货，4-已完成，5-已取消，6-待评价',
                          `payment_type` TINYINT DEFAULT NULL COMMENT '支付类型：1-支付宝，2-微信，3-余额',
                          `receiver_name` VARCHAR(50) NOT NULL COMMENT '收货人姓名（快照）',

@@ -72,6 +72,7 @@ class OrderCreationManagerTest {
                     user_id BIGINT NOT NULL, seller_id BIGINT NOT NULL,
                     total_amount INT DEFAULT 0, pay_amount INT DEFAULT 0, discount_amount INT DEFAULT 0,
                     post_fee INT DEFAULT 0,
+                    remark VARCHAR(200),
                     status INT DEFAULT 1, order_type INT DEFAULT 1, payment_type INT DEFAULT 1,
                     receiver_name VARCHAR(50), receiver_phone VARCHAR(20), receiver_address VARCHAR(200),
                     version INT DEFAULT 0,
@@ -257,6 +258,59 @@ class OrderCreationManagerTest {
         assertEquals(1000, saved.getPayAmount());
         // 秒杀不查运费模板
         verify(freightPostageResolver, never()).resolve(any(), anyList(), anyInt());
+    }
+
+    // ==================== V5.7 买家留言 remark（随单快照） ====================
+
+    @Test
+    @DisplayName("createOrder(NORMAL) — V5.7 买家留言：随单快照落库且 VO 回显")
+    void shouldPersistAndEchoRemark_whenCartOrderWithRemark() {
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        c.setRemark("请包装牢固，谢谢");
+        OrderVO vo = orderManager.createOrder(c);
+
+        // Then 聚合/PO（经仓储往返）携带 remark
+        Order saved = orderRepository.findByOrderNo(vo.getOrderNo());
+        assertEquals("请包装牢固，谢谢", saved.getRemark());
+        // And VO 回显
+        assertEquals("请包装牢固，谢谢", vo.getRemark());
+    }
+
+    @Test
+    @DisplayName("createOrder(DIRECT) — V5.7 买家留言：直购单同样随单快照落库且 VO 回显")
+    void shouldPersistAndEchoRemark_whenDirectOrderWithRemark() {
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+
+        OrderCreateContext c = ctx(OrderTypeEnum.DIRECT);
+        c.setSkuId(1000L);
+        c.setQuantity(1);
+        c.setRemark("放前台驿站即可");
+        OrderVO vo = orderManager.createOrder(c);
+
+        Order saved = orderRepository.findByOrderNo(vo.getOrderNo());
+        assertEquals("放前台驿站即可", saved.getRemark());
+        assertEquals("放前台驿站即可", vo.getRemark());
+    }
+
+    @Test
+    @DisplayName("createOrder(NORMAL) — V5.7 未传买家留言：remark 落库为 null 不报错")
+    void shouldPersistNullRemark_whenRemarkAbsent() {
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        OrderVO vo = orderManager.createOrder(c);
+
+        Order saved = orderRepository.findByOrderNo(vo.getOrderNo());
+        assertNotNull(saved, "订单应正常落库");
+        assertNull(saved.getRemark(), "未传留言应落库为 null");
+        assertNull(vo.getRemark());
     }
 
     @Test

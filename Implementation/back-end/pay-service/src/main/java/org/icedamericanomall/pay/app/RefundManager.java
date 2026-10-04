@@ -2,7 +2,6 @@ package org.icedamericanomall.pay.app;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.icedamericanomall.client.AfterSaleClient;
 import org.icedamericanomall.client.BalanceClient;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BadRequestException;
@@ -33,6 +32,8 @@ import java.util.Map;
  * <p><b>事务纪律</b>：本类方法一律<b>不</b>加 {@code @Transactional} ——
  * 渠道调用（Wallet/微信/支付宝）与回写 trade 都是 Feign，事务内调 Feign 属硬约束违规。
  * 需要事务的写入下沉到 {@link RefundOrderRepository} 的条件更新。
+ * 退款成功的售后单回写（I42）与买家站内信触达（ADR-042）统一委托
+ * {@link PayEventNotifier}（事务外 fail-open）。
  *
  * <pre>
  * Scenario: 余额渠道退款
@@ -63,8 +64,8 @@ public class RefundManager {
     private final PayOrderRepository payOrderService;
     private final PaymentChannelRouter channelRouter;
     private final BalanceClient balanceClient;
-    private final AfterSaleClient afterSaleClient;
     private final RefundConverter refundConverter;
+    private final PayEventNotifier payEventNotifier;
 
     /**
      * 发起退款（I40）—— 同售后单幂等。
@@ -171,7 +172,7 @@ public class RefundManager {
             log.info("退款回调重复（退款单非处理中），忽略: refundNo={}", refundNo);
             return;
         }
-        notifyAfterSaleRefunded(refundOrder.getAfterSaleId());
+        payEventNotifier.onRefundSuccess(refundOrder);
     }
 
     /** 执行渠道退款：成功同步置成功；处理中保持；失败置失败并向上透出（fail-closed）。 */
@@ -234,7 +235,7 @@ public class RefundManager {
         }
         RefundOrder refundOrder = refundOrderService.getByRefundNo(refundNo);
         if (refundOrder != null) {
-            notifyAfterSaleRefunded(refundOrder.getAfterSaleId());
+            payEventNotifier.onRefundSuccess(refundOrder);
         }
     }
 
@@ -244,21 +245,6 @@ public class RefundManager {
      */
     void markFailedWithReason(String refundNo, String failReason) {
         refundOrderService.markFailedIfProcessing(refundNo, abbreviate(failReason));
-    }
-
-    /**
-     * 回写 trade 售后单为 REFUNDED（I42）。
-     *
-     * <p><b>fail-open</b>：状态回写丢失不阻断退款主流程（由对账/管理端重试收敛）；
-     * {@code AfterSaleClientFallback} 本身即 fail-open，此处再加一层防御避免任何异常影响退款落账。
-     */
-    private void notifyAfterSaleRefunded(Long afterSaleId) {
-        try {
-            afterSaleClient.markRefunded(afterSaleId);
-            log.info("退款成功，售后单已回写 REFUNDED: afterSaleId={}", afterSaleId);
-        } catch (Exception e) {
-            log.warn("退款成功但售后单回写失败（fail-open，待对账/重试收敛）: afterSaleId={}", afterSaleId, e);
-        }
     }
 
     /** 入参防御（应用层）。 */

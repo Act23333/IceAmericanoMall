@@ -44,6 +44,9 @@ public class OrderPO implements Serializable {
     /** 运费（分）—— 下单时按运费模板计算并<b>快照</b>（V5.6，ADR-037）：模板后续改价/停用不影响已建订单。 */
     private Integer postFee;
 
+    /** 买家留言快照（V5.7）—— 下单时随单落库，Phase 1 不提供修改端点。 */
+    private String remark;
+
     private Integer status;
     private Integer orderType;
     private Integer paymentType;
@@ -71,6 +74,7 @@ public class OrderPO implements Serializable {
     public void setPayAmount(Integer v) { this.payAmount = v; }
     public void setDiscountAmount(Integer v) { this.discountAmount = v; }
     public void setPostFee(Integer v) { this.postFee = v; }
+    public void setRemark(String v) { this.remark = v; }
     public void setStatus(Integer v) { this.status = v; }
     public void setOrderType(Integer v) { this.orderType = v; }
     public void setPaymentType(Integer v) { this.paymentType = v; }

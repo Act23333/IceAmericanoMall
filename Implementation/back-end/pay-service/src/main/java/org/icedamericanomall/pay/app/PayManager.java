@@ -27,7 +27,8 @@ import java.util.Map;
  *
  * <p><b>事务纪律</b>：本类方法一律<b>不</b>加 {@code @Transactional}（事务内调 Feign 属硬约束违规），
  * 需要事务的只是单条 SQL，下沉到 {@link PayOrderRepository} 的领域方法；Feign（余额扣款、
- * 通知订单状态）全在事务外执行。
+ * 通知订单状态）全在事务外执行。支付成功的买家站内信触达（ADR-042）委托
+ * {@link PayEventNotifier}，同样事务外 fail-open。
  *
  * <pre>
  * Scenario: 微信/支付宝发起
@@ -53,6 +54,7 @@ public class PayManager {
     private final PayOrderConverter payOrderConverter;
     private final OrderClient orderClient;
     private final PaymentChannelRouter channelRouter;
+    private final PayEventNotifier payEventNotifier;
 
     /**
      * 发起支付（微信/支付宝/余额）。
@@ -130,6 +132,7 @@ public class PayManager {
         }
         payOrder.markPaid(LocalDateTime.now());
         notifyOrderPaid(orderNo);
+        payEventNotifier.notifyPaySuccess(payOrder);
         return payOrder;
     }
 
@@ -196,6 +199,7 @@ public class PayManager {
             return;
         }
         notifyOrderPaid(payOrder.getBizOrderNo());
+        payEventNotifier.notifyPaySuccess(payOrder);
     }
 
     /**

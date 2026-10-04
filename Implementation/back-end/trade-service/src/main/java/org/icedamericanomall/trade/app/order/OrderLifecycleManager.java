@@ -10,6 +10,7 @@ import org.icedamericanomall.trade.domain.model.order.OrderItem;
 import org.icedamericanomall.dto.CreateLogisticsCO;
 import org.icedamericanomall.dto.StockOpCO;
 import org.icedamericanomall.trade.infrastructure.messaging.DomainEventProducer;
+import org.icedamericanomall.trade.app.TradeEventNotifier;
 import org.icedamericanomall.trade.domain.repository.OrderRepository;
 import org.icedamericanomall.trade.domain.model.order.ShipPackageResult;
 import org.icedamericanomall.common.event.OrderShippedEvent;
@@ -42,16 +43,19 @@ public class OrderLifecycleManager {
     private final LogisticsClient logisticsClient;
     private final PointsClient pointsClient;
     private final DomainEventProducer eventProducer;
+    private final TradeEventNotifier tradeEventNotifier;
 
     public OrderLifecycleManager(OrderRepository orderRepository, SkuClient skuClient,
                                   CouponClient couponClient, LogisticsClient logisticsClient,
-                                  PointsClient pointsClient, DomainEventProducer eventProducer) {
+                                  PointsClient pointsClient, DomainEventProducer eventProducer,
+                                  TradeEventNotifier tradeEventNotifier) {
         this.orderRepository = orderRepository;
         this.skuClient = skuClient;
         this.couponClient = couponClient;
         this.logisticsClient = logisticsClient;
         this.pointsClient = pointsClient;
         this.eventProducer = eventProducer;
+        this.tradeEventNotifier = tradeEventNotifier;
     }
 
     public void cancelOrder(String orderNo, Long userId) {
@@ -78,8 +82,8 @@ public class OrderLifecycleManager {
 
     /**
      * 商家发货（V5.6 拆单发货，F3）—— 本地事务（明细打包裹号 + 订单状态迁移）在 service 层完成，
-     * 本方法在其<b>返回后</b>于事务外做两件非本地库动作：创建物流记录（Feign，fail-open 记日志）、
-     * 发布 order.shipped 事件（MQ，非关键路径）。
+     * 本方法在其<b>返回后</b>于事务外做三件非本地库动作：创建物流记录（Feign，fail-open 记日志）、
+     * 买家发货触达（站内信，ADR-042，fail-open）、发布 order.shipped 事件（MQ，非关键路径）。
      *
      * <p>Feign 严禁进事务（硬约束），故「发货事实落库」与「物流记录创建」两层分离：
      * 后者失败不回滚前者（{@code order_logistics} 非事实源，可由对账/重试补齐）。
@@ -113,6 +117,8 @@ public class OrderLifecycleManager {
             log.error("物流记录创建失败，需人工处理: orderId={}, packageNo={}",
                     result.orderId(), result.packageNo(), e);
         }
+        // 买家触达（ADR-042）：发货站内信（事务外 fail-open，失败不影响主流程）
+        tradeEventNotifier.notifyOrderShipped(order, result.packageNo());
         // RocketMQ: 发布订单发货事件 (非关键路径，失败不影响主流程)
         try {
             eventProducer.publishOrderShipped(new OrderShippedEvent(

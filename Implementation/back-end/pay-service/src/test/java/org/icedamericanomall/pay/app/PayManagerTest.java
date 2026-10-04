@@ -1,6 +1,9 @@
 package org.icedamericanomall.pay.app;
 
+import org.icedamericanomall.client.AfterSaleClient;
+import org.icedamericanomall.client.NotificationClient;
 import org.icedamericanomall.client.OrderClient;
+import org.icedamericanomall.dto.InAppMessageSendReqCO;
 import org.icedamericanomall.pay.adapter.assembler.PayOrderConverter;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
 import org.icedamericanomall.pay.adapter.response.PayOrderVO;
@@ -14,7 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.icedamericanomall.common.enums.ErrorCode;
@@ -30,7 +33,8 @@ import static org.mockito.Mockito.*;
 
 /**
  * PayManager 支付编排单元测试 —— 微信/支付宝/余额三渠道；Feign / 支付渠道 / 领域服务全部打桩。
- * 重点覆盖：扣款金额口径（payAmount）、回调幂等（受影响行数分支）、超时分支、余额补偿。
+ * 重点覆盖：扣款金额口径（payAmount）、回调幂等（受影响行数分支）、超时分支、余额补偿、
+ * 支付成功买家触达（ADR-042，经真实 PayEventNotifier 打通到 NotificationClient）。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("PayManager 支付编排单元测试")
@@ -40,7 +44,10 @@ class PayManagerTest {
     @Mock PayOrderConverter payOrderConverter;
     @Mock OrderClient orderClient;
     @Mock PaymentChannelRouter channelRouter;
-    @InjectMocks PayManager payManager;
+    @Mock NotificationClient notificationClient;
+    @Mock AfterSaleClient afterSaleClient;
+
+    private PayManager payManager;
 
     /** 原价 12900，应付 11900（已抵扣 1000 优惠券）。 */
     private OrderSummaryCO summary(int totalAmount, int payAmount) {
@@ -54,6 +61,13 @@ class PayManagerTest {
         PayOrder p = new PayOrder();
         p.setId(1L); p.setBizOrderNo("ORD-1"); p.setPayOrderNo("PAY-1"); p.setStatus(status);
         return p;
+    }
+
+    @BeforeEach
+    void setUp() {
+        // 真实触达协作器（ADR-042）：锁死「条件置成功 → 买家触达」全链路到 NotificationClient
+        payManager = new PayManager(payOrderService, payOrderConverter, orderClient, channelRouter,
+                new PayEventNotifier(notificationClient, afterSaleClient));
     }
 
     @BeforeEach
@@ -195,6 +209,47 @@ class PayManagerTest {
         when(payOrderService.markSuccessIfPending("PAY-1", "SUCCESS")).thenReturn(true);
 
         payManager.handleWechatCallback(Map.of("Wechatpay-Signature", "sig"), "{\"id\":\"EV-1\"}");
+
+        verify(payOrderService).markSuccessIfPending("PAY-1", "SUCCESS");
+        verify(orderClient).updateOrderStatus("ORD-1", 2);
+    }
+
+    @Test
+    @DisplayName("支付成功触达 — 条件置成功命中：买家收到 PAY_SUCCESS 站内信（订单号+实付金额+订单链接）")
+    void shouldNotifyBuyerPaySuccess_whenConfirmPaidHits() {
+        when(channelRouter.parseWechatCallback(anyMap(), anyString()))
+                .thenReturn(wechatResult("PAY-1", true, "SUCCESS"));
+        PayOrder paid = payOrder(PayStatusEnum.PENDING_PAY.getCode());
+        paid.setBizUserId(100L);
+        paid.setAmount(11900);
+        when(payOrderService.getByPayOrderNo("PAY-1")).thenReturn(paid);
+        when(payOrderService.markSuccessIfPending("PAY-1", "SUCCESS")).thenReturn(true);
+
+        payManager.handleWechatCallback(Map.of(), "body");
+
+        ArgumentCaptor<InAppMessageSendReqCO> captor = ArgumentCaptor.forClass(InAppMessageSendReqCO.class);
+        verify(notificationClient).sendInAppMessage(captor.capture());
+        InAppMessageSendReqCO message = captor.getValue();
+        assertEquals("PAY_SUCCESS", message.getType());
+        assertEquals(100L, message.getRecipientId());
+        assertTrue(message.getContent().contains("ORD-1"), "内容须含订单号: " + message.getContent());
+        assertTrue(message.getContent().contains("119.00"), "内容须含实付金额(元): " + message.getContent());
+        assertEquals("/orders/ORD-1", message.getLinkUrl());
+    }
+
+    @Test
+    @DisplayName("触达失败不侵染主流程 — NotificationClient 抛异常：支付仍置成功、订单仍通知待发货")
+    void shouldStillConfirmPaid_whenBuyerNotificationFails() {
+        when(channelRouter.parseWechatCallback(anyMap(), anyString()))
+                .thenReturn(wechatResult("PAY-1", true, "SUCCESS"));
+        PayOrder paid = payOrder(PayStatusEnum.PENDING_PAY.getCode());
+        paid.setBizUserId(100L);
+        when(payOrderService.getByPayOrderNo("PAY-1")).thenReturn(paid);
+        when(payOrderService.markSuccessIfPending("PAY-1", "SUCCESS")).thenReturn(true);
+        doThrow(new RuntimeException("notification-service down"))
+                .when(notificationClient).sendInAppMessage(any(InAppMessageSendReqCO.class));
+
+        assertDoesNotThrow(() -> payManager.handleWechatCallback(Map.of(), "body"));
 
         verify(payOrderService).markSuccessIfPending("PAY-1", "SUCCESS");
         verify(orderClient).updateOrderStatus("ORD-1", 2);

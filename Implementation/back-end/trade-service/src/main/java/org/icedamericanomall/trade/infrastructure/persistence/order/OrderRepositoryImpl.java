@@ -435,6 +435,7 @@ public class OrderRepositoryImpl implements OrderRepository {
         order.setPayAmount(po.getPayAmount());
         order.setDiscountAmount(po.getDiscountAmount());
         order.setPostFee(po.getPostFee());
+        order.setRemark(po.getRemark());
         order.setStatus(po.getStatus());
         order.setOrderType(po.getOrderType());
         order.setPaymentType(po.getPaymentType());
@@ -462,6 +463,7 @@ public class OrderRepositoryImpl implements OrderRepository {
         po.setPayAmount(order.getPayAmount());
         po.setDiscountAmount(order.getDiscountAmount());
         po.setPostFee(order.getPostFee());
+        po.setRemark(order.getRemark());
         po.setStatus(order.getStatus());
         po.setOrderType(order.getOrderType());
         po.setPaymentType(order.getPaymentType());

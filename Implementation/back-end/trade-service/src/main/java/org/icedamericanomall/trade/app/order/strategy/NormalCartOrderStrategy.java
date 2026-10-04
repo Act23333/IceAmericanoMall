@@ -217,6 +217,7 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
         order.setUserId(ctx.getUserId());
         order.setSellerId(ctx.getSellerId());
         order.setStatus(OrderStatusEnum.PENDING_PAYMENT.getCode());
+        order.setRemark(ctx.getRemark()); // V5.7: 买家留言随单快照（无留言渠道的订单类型为 null）
         int totalAmount = 0;
         for (var snap : ctx.getSnapshots()) {
             totalAmount += snap.getPrice() * snap.getQuantity();

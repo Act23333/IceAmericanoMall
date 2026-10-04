@@ -2,8 +2,11 @@ package org.icedamericanomall.trade.app.order;
 
 import org.icedamericanomall.client.CouponClient;
 import org.icedamericanomall.client.LogisticsClient;
+import org.icedamericanomall.client.NotificationClient;
 import org.icedamericanomall.client.PointsClient;
 import org.icedamericanomall.client.SkuClient;
+import org.icedamericanomall.dto.InAppMessageSendReqCO;
+import org.icedamericanomall.trade.app.TradeEventNotifier;
 import org.icedamericanomall.trade.domain.model.order.Order;
 import org.icedamericanomall.trade.domain.model.order.OrderItem;
 import org.icedamericanomall.trade.domain.enums.OrderStatusEnum;
@@ -27,6 +30,7 @@ import static org.mockito.Mockito.*;
 /**
  * OrderLifecycleManager 单元测试 —— 超时取消的幂等分支：
  * 条件更新未命中（受影响行数=0）时不得回滚库存/优惠券，避免并发双重复原。
+ * 发货买家触达（ADR-042）经真实 {@link TradeEventNotifier} 打通到 NotificationClient。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("OrderLifecycleManager 取消编排单元测试")
@@ -38,13 +42,14 @@ class OrderLifecycleManagerTest {
     @Mock private LogisticsClient logisticsClient;
     @Mock private PointsClient pointsClient;
     @Mock private DomainEventProducer eventProducer;
+    @Mock private NotificationClient notificationClient;
 
     private OrderLifecycleManager manager;
 
     @BeforeEach
     void setUp() {
         manager = new OrderLifecycleManager(orderRepository, skuClient, couponClient,
-                logisticsClient, pointsClient, eventProducer);
+                logisticsClient, pointsClient, eventProducer, new TradeEventNotifier(notificationClient));
     }
 
     private Order order() {
@@ -139,6 +144,47 @@ class OrderLifecycleManagerTest {
 
         assertDoesNotThrow(() -> manager.shipOrder("ORD-1", 9L, "SF001", "顺丰", null));
 
+        verify(eventProducer).publishOrderShipped(any());
+    }
+
+    @Test
+    @DisplayName("发货触达 — 物流创建后买家收到 ORDER_SHIPPED 站内信（订单号+包裹号+订单链接）")
+    void shouldNotifyBuyer_whenPackageShipped() {
+        Order shipped = order();
+        shipped.setStatus(OrderStatusEnum.PENDING_RECEIPT.getCode());
+        shipped.setReceiverName("张三");
+        shipped.setReceiverPhone("13800138000");
+        when(orderRepository.shipPackage("ORD-1", 9L, List.of(1000L)))
+                .thenReturn(new ShipPackageResult(1L, 2, List.of(1000L), true));
+        when(orderRepository.findByOrderNo("ORD-1")).thenReturn(shipped);
+
+        manager.shipOrder("ORD-1", 9L, "SF002", "顺丰", List.of(1000L));
+
+        ArgumentCaptor<InAppMessageSendReqCO> captor = ArgumentCaptor.forClass(InAppMessageSendReqCO.class);
+        verify(notificationClient).sendInAppMessage(captor.capture());
+        InAppMessageSendReqCO message = captor.getValue();
+        assertEquals("ORDER_SHIPPED", message.getType());
+        assertEquals(100L, message.getRecipientId());
+        assertTrue(message.getContent().contains("ORD-1"), "内容须含订单号: " + message.getContent());
+        assertTrue(message.getContent().contains("第 2 个包裹"), "内容须含包裹号: " + message.getContent());
+        assertEquals("/orders/ORD-1", message.getLinkUrl());
+        verify(eventProducer).publishOrderShipped(any());
+    }
+
+    @Test
+    @DisplayName("触达失败不侵染发货 — NotificationClient 抛异常：物流创建与事件发布照常完成")
+    void shouldStillCompleteShipping_whenBuyerNotificationFails() {
+        Order shipped = order();
+        shipped.setStatus(OrderStatusEnum.PENDING_RECEIPT.getCode());
+        when(orderRepository.shipPackage("ORD-1", 9L, null))
+                .thenReturn(new ShipPackageResult(1L, 1, List.of(1000L), true));
+        when(orderRepository.findByOrderNo("ORD-1")).thenReturn(shipped);
+        doThrow(new RuntimeException("notification-service down"))
+                .when(notificationClient).sendInAppMessage(any(InAppMessageSendReqCO.class));
+
+        assertDoesNotThrow(() -> manager.shipOrder("ORD-1", 9L, "SF001", "顺丰", null));
+
+        verify(logisticsClient).createLogistics(any());
         verify(eventProducer).publishOrderShipped(any());
     }
 }

@@ -49,6 +49,12 @@ public class OrderVO implements Serializable {
      */
     private Integer postFee;
 
+    /**
+     * 买家留言快照（V5.7）—— 下单时随单快照落 {@code orders.remark} 并在此回显，
+     * Phase 1 不提供修改端点；秒杀等无留言渠道的订单为 {@code null}。
+     */
+    private String remark;
+
     /** 状态码，见 {@link org.icedamericanomall.trade.domain.enums.OrderStatusEnum}。 */
     private Integer status;
 

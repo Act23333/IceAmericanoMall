@@ -142,22 +142,24 @@ class OrderModelTest {
         assertNull(order.getCloseTime()); // 未取消
     }
 
-    // ==================== CreateOrderReq（V5.3/V5.4 契约收缩后形状） ====================
+    // ==================== CreateOrderReq（V5.4 收缩 + V5.7 remark 重新立项后的形状） ====================
 
     @Test
-    @DisplayName("CreateOrderReq — 下单入参只保留 addressId + 单券 userCouponId（多券字段已移除）")
+    @DisplayName("CreateOrderReq — 下单入参仅 addressId + 单券 userCouponId + 买家留言 remark（V5.7）")
     void shouldKeepOnlyAddressAndSingleCoupon_whenCreateOrderReqBuilt() {
         var req = new CreateOrderReq();
         req.setAddressId(1L);
         req.setUserCouponId(5L);
+        req.setRemark("请包装牢固，谢谢");
 
         assertEquals(1L, req.getAddressId());
         assertEquals(5L, req.getUserCouponId());
-        // 契约收缩：请求体不再承载购物车项 ID、备注与多券列表
+        assertEquals("请包装牢固，谢谢", req.getRemark());
+        // V5.4 收缩（cartItemIds/多券移除）+ V5.7 重新立项 remark：请求体恒为三业务字段
         long businessFields = java.util.Arrays.stream(CreateOrderReq.class.getDeclaredFields())
                 .filter(f -> !java.lang.reflect.Modifier.isStatic(f.getModifiers()))
                 .count();
-        assertEquals(2, businessFields, "字段仅剩 addressId/userCouponId");
+        assertEquals(3, businessFields, "字段仅剩 addressId/userCouponId/remark（V5.7）");
         // 多券为 roadmap（需 PRD），当前请求体不暴露 userCouponIds
         assertTrue(java.util.Arrays.stream(CreateOrderReq.class.getDeclaredFields())
                         .noneMatch(f -> "userCouponIds".equals(f.getName())),

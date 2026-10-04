@@ -35,6 +35,7 @@ public class OrderController {
         ctx.setUserId(userId);
         ctx.setOrderType(OrderTypeEnum.NORMAL);
         ctx.setAddressId(req.getAddressId());
+        ctx.setRemark(req.getRemark());
         ctx.setUserCouponId(req.getUserCouponId());
         return Result.ok(orderCreationManager.createOrder(ctx));
     }
@@ -49,6 +50,7 @@ public class OrderController {
         ctx.setSkuId(req.getSkuId());
         ctx.setQuantity(req.getQuantity());
         ctx.setAddressId(req.getAddressId());
+        ctx.setRemark(req.getRemark());
         ctx.setUserCouponId(req.getUserCouponId());
         return Result.ok(orderCreationManager.createOrder(ctx));
     }

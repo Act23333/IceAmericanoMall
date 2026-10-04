@@ -31,6 +31,8 @@ public class OrderCreateContext {
 
     // === 通用 ===
     private Long addressId;
+    /** 买家留言（V5.7，可选，≤200）—— 随 {@code buildBaseOrder} 快照进订单聚合。 */
+    private String remark;
     private Long userCouponId;            // @Deprecated V4.3: 单券，保留兼容
     private List<Long> userCouponIds;     // V4.3: 多券支持
     private AddressCO address;

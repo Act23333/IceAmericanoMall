@@ -1,6 +1,8 @@
 package org.icedamericanomall.marketing.adapter.assembler;
 
 import org.icedamericanomall.marketing.adapter.request.CouponCreateReq;
+import org.icedamericanomall.marketing.adapter.request.FlashSaleCreateReq;
+import org.icedamericanomall.marketing.adapter.request.FlashSaleUpdateReq;
 import org.icedamericanomall.marketing.adapter.response.CouponVO;
 import org.icedamericanomall.marketing.adapter.response.FlashBuyVO;
 import org.icedamericanomall.marketing.adapter.response.FlashSaleVO;
@@ -14,7 +16,10 @@ import org.icedamericanomall.marketing.domain.model.coupon.Coupon;
 import org.icedamericanomall.marketing.domain.model.coupon.UserCoupon;
 import org.icedamericanomall.marketing.domain.model.flash.FlashSale;
 import org.icedamericanomall.marketing.domain.model.points.PointsLog;
+import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
+import org.mapstruct.MappingTarget;
+import org.mapstruct.NullValuePropertyMappingStrategy;
 import org.mapstruct.ReportingPolicy;
 
 import java.util.List;
@@ -51,6 +56,21 @@ public interface MarketingConverter {
 
     /** 秒杀聚合列表 → 视图对象列表。 */
     List<FlashSaleVO> toFlashSaleVOList(List<FlashSale> flashSales);
+
+    /** 秒杀创建请求 → 秒杀聚合（status/soldCount/version 由创建编排推导回填，AD40）。 */
+    FlashSale toDomain(FlashSaleCreateReq req);
+
+    /**
+     * 秒杀编辑请求 → 就地合并到已取聚合（V5.7 AD41）。
+     *
+     * <p>MapStruct 更新语义默认会把源侧 null 覆盖到目标，这里显式
+     * {@code NullValuePropertyMappingStrategy.IGNORE} 保证「null-safe 局部更新」契约口径。
+     *
+     * @param req       编辑请求（字段全可选）
+     * @param flashSale 已取出的场次聚合（被合并目标）
+     */
+    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    void mergeFlashSaleUpdate(FlashSaleUpdateReq req, @MappingTarget FlashSale flashSale);
 
     /** 秒杀购买结果 → 视图对象。 */
     FlashBuyVO toFlashBuyVO(FlashBuyResult result);

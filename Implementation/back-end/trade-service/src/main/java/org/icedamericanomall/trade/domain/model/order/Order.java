@@ -25,6 +25,13 @@ import java.time.LocalDateTime;
 @Data
 public class Order {
 
+    /**
+     * 买家留言最大长度（V5.7）—— 编译期常量，供适配层 {@code @Size(max = ...)} 注解
+     * 与单元测试共用，避免魔法值双写漂移（注解只接受编译期常量，故为
+     * {@code public static final int}）。
+     */
+    public static final int REMARK_MAX_LENGTH = 200;
+
     private Long id;
     private String orderNo;
     private Long userId;
@@ -35,6 +42,12 @@ public class Order {
 
     /** 运费（分）—— 下单时按运费模板计算并<b>快照</b>（V5.6，ADR-037）。 */
     private Integer postFee;
+
+    /**
+     * 买家留言快照（V5.7）—— 下单时随单落库（T1/T6 请求增量，≤ {@link #REMARK_MAX_LENGTH}，
+     * 可选），Phase 1 不提供修改端点；秒杀等无留言渠道的订单类型为 {@code null}。
+     */
+    private String remark;
 
     private Integer status;
     private Integer orderType;

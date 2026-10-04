@@ -46,6 +46,23 @@ public class FlashSaleRepositoryImpl implements FlashSaleRepository {
                 .setSql("sold_count = sold_count + 1")) > 0;
     }
 
+    @Override
+    public void save(FlashSale flashSale) {
+        FlashSalePO po = toPO(flashSale);
+        flashSaleMapper.insert(po);
+        flashSale.setId(po.getId());
+    }
+
+    @Override
+    public void update(FlashSale flashSale) {
+        flashSaleMapper.updateById(toPO(flashSale));
+    }
+
+    @Override
+    public void deleteById(Long id) {
+        flashSaleMapper.deleteById(id);
+    }
+
     // ==================== PO <-> 聚合 ====================
 
     static FlashSale toDomain(FlashSalePO po) {
