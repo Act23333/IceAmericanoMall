@@ -10,6 +10,6 @@ CREATE TABLE IF NOT EXISTS `flash_order_log`
     `error_msg`   VARCHAR(500) NULL COMMENT '失败原因',
     `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX `idx_order_no` (`order_no`),
+    -- order_no 已是 UNIQUE（隐式索引），无需再建重复的 idx_order_no
     INDEX `idx_status_time` (`status`, `create_time`)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '秒杀订单事务日志(幂等+兜底)';
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '秒杀订单事务日志(幂等+兜底)';

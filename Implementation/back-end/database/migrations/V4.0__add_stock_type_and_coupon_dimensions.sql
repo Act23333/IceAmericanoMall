@@ -10,8 +10,10 @@ ALTER TABLE `sku`
     ADD COLUMN `hot_reason`  VARCHAR(50) NULL COMMENT '热销原因: discount/new_arrival/best_seller/clearance',
     ADD COLUMN `sales_tags`  JSON NULL COMMENT '销售标签JSON: ["限时优惠","新品"]';
 
+-- product.sales_tags 已由 V3.5 以 VARCHAR(500) 建立，此处升级为 JSON（避免重复 ADD COLUMN 报 1060）
+-- 注意: 存量若为逗号分隔等非 JSON 文本，MODIFY 将失败（Error 3140），需先清洗为合法 JSON 数组或置 NULL
 ALTER TABLE `product`
-    ADD COLUMN `sales_tags`  JSON NULL COMMENT '商品级销售标签';
+    MODIFY COLUMN `sales_tags` JSON NULL COMMENT '商品级销售标签';
 
 -- === Coupon: Multi-dimensional model (JD standard) ===
 ALTER TABLE `coupon`

@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS `review` (
     KEY `idx_product_id` (`product_id`),
     KEY `idx_user_id` (`user_id`),
     UNIQUE KEY `uk_order_user` (`order_id`, `user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品评价';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品评价';
 
 -- V1.1: 商品收藏
 CREATE TABLE IF NOT EXISTS `favorite` (
@@ -22,4 +22,4 @@ CREATE TABLE IF NOT EXISTS `favorite` (
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY `uk_user_product` (`user_id`, `product_id`),
     KEY `idx_user_id` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品收藏';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品收藏';

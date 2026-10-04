@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS `flash_sale` (
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY `idx_time` (`start_time`, `end_time`),
     KEY `idx_product` (`product_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='秒杀活动';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='秒杀活动';
 
 -- V1.2: 首页装修
 CREATE TABLE IF NOT EXISTS `home_config` (
@@ -29,4 +29,4 @@ CREATE TABLE IF NOT EXISTS `home_config` (
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY `idx_slot` (`slot`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='首页配置';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='首页配置';

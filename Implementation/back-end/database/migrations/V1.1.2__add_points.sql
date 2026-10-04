@@ -8,4 +8,4 @@ CREATE TABLE IF NOT EXISTS `points_log` (
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY `idx_user_id` (`user_id`),
     KEY `idx_create_time` (`create_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='积分变动日志';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='积分变动日志';

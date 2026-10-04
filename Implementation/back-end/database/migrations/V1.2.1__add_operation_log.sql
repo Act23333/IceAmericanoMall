@@ -11,4 +11,4 @@ CREATE TABLE IF NOT EXISTS `operation_log` (
     KEY `idx_user_id` (`user_id`),
     KEY `idx_action` (`action`),
     KEY `idx_create_time` (`create_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作日志';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='操作日志';

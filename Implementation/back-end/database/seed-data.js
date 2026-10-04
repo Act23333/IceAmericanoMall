@@ -1,240 +1,570 @@
 /**
- * 冰美商城 — 种子数据脚本 V5.0
+ * =====================================================================
+ * 冰美商城 — 本地开发种子数据脚本（V5.4 重写版）
+ * =====================================================================
  *
- * 用法: node seed-data.js
+ * 用法:
+ *   npm install            # 仓库根目录，装 mysql2 / bcryptjs（package.json 已声明）
+ *   node seed-data.js      # 写入本地 dev 库
  *
- * 图片: picsum.photos 真实照片 CDN，同一 seed 永远返回同一张图
- * 数据库: 本地 Windows MySQL
+ *   连接可用环境变量覆盖（缺省对齐 services 的 application.yml）:
+ *     SEED_DB_HOST (默认 192.168.10.128)
+ *     SEED_DB_PORT (默认 3306)
+ *     SEED_DB_USER (默认 root)
+ *     SEED_DB_PASS (默认 root)
+ *     SEED_DB_NAME (默认 icedamericano_mall)
+ *
+ * ---------------------------------------------------------------------
+ * ⚠️⚠️  仅限本地开发，禁止流向共享 / 测试 / 预发 / 生产环境  ⚠️⚠️
+ * ---------------------------------------------------------------------
+ *   1. 本脚本写入 **可登录的弱口令账号**（见下方 DEV_PASSWORD 常量）；
+ *   2. 本脚本写入的 PII 密文使用 **内置开发密钥**（下方 DEV_AES_KEY /
+ *      DEV_HMAC_KEY），与 ia-common `CryptoKeyConfig.DEV_AES_KEY /
+ *      DEV_HMAC_KEY` 逐字节一致 —— 该密钥随源码公开，等于"没有加密"；
+ *   3. 任何非本地环境请改用运维注入的强口令账号 + KMS 密钥
+ *      （IA_CRYPTO_AES_KEY / IA_CRYPTO_HMAC_KEY），并删除本脚本产物。
+ *
+ * ---------------------------------------------------------------------
+ * 密钥 / 算法口径（与 Java 实现 1:1 对齐，详见文件末尾"口径对照表"）
+ * ---------------------------------------------------------------------
+ *   AES 数据密钥    base64("ice-americano-dev-aes-key-32byte")  —— CryptoKeyConfig.DEV_AES_KEY
+ *   HMAC 索引密钥   base64("ice-americano-dev-hmac-index-key")  —— CryptoKeyConfig.DEV_HMAC_KEY
+ *   phone_cipher    AES-256-GCM；密文串 = base64( iv[12] || ciphertext || tag[16] )
+ *                   （AesGcmUtil.encrypt：12 字节随机 IV + 128-bit tag，GCM 无 AAD）
+ *   phone_hash      HMAC-SHA256(明文, HMAC_KEY) 的 **小写十六进制**（64 字符）
+ *                   （BlindIndexUtil.hmac：HexFormat.formatHex）
+ *   phone_mask      DesensitizeUtil.maskPhone：前 3 位 + "****" + 后 4 位
+ *   credential      BCrypt（Spring Security BCryptPasswordEncoder，强度 10）
+ *                   注：bcryptjs v3.0.3 固定输出 $2b$10$ 前缀（minor 参数已废弃）；
+ *                   Spring Security 的 BCryptPattern = \A\$2(a|y|b)?\$\d\d\$[./0-9A-Za-z]{53}，
+ *                   显式接受 a/y/b 三种版本标记，故 bcryptjs 生成的哈希可直接被
+ *                   PasswordVerifierAdapter（BCryptPasswordEncoder.matches）校验通过。
+ *
+ * 密码常量声明：
+ *   所有种子账号统一密码 = DEV_PASSWORD（下方常量，= "Dev123456"）。
+ *   满足 RegisterReq 口令正则 ^(?![0-9]+$)(?![a-zA-Z]+$)[0-9a-zA-Z!@#$%^&*]{6,20}$
+ *
+ * ---------------------------------------------------------------------
+ * 幂等策略（可重复执行，结果确定）
+ * ---------------------------------------------------------------------
+ *   单连接 + 单事务包裹：
+ *     Phase 1  DELETE  —— 按固定业务键（user_id / product_id / sku_id …）
+ *                          以「子表 → 父表」顺序删除本脚本自有数据（不含无关数据）。
+ *                          依赖链守卫：先删 orders/order_item（RESTRICT 指向
+ *                          user/seller/sku），否则旧订单会阻塞商家/商品删除。
+ *     Phase 2  INSERT  —— 重建；user 自增主键回收后 seller.id 显式取 seller.user_id
+ *                          同一值（见"主键口径"注释），保证 product.seller_id 口径。
+ *   参考数据（category / sys_role / sys_permission / sys_role_permission）不删，
+ *     走 INSERT ... ON DUPLICATE KEY UPDATE（与 Initialize.sql §九 同风格），
+ *     避免因他人数据引用而触发 RESTRICT。
+ *
+ * ---------------------------------------------------------------------
+ * 主键口径（V5.4 Phase A 的关键约束）
+ * ---------------------------------------------------------------------
+ *   下游表（product / orders / coupon / settlement / knowledge_base）的
+ *   seller_id 在 Phase B 前维持「商家 user_id」口径（见 03-Domain-Model §3.3.1、
+ *   04-Data-Model §3.3）：item-service 建品时 seller_id = UserContext.getUserId()。
+ *   但 product.seller_id 上的外键 `fk_product_seller` 要求该值同时存在于 seller.id。
+ *   故本脚本 INSERT seller 时 **显式指定 id = 该商家的 user.id**，使
+ *   seller.id === seller.user_id —— 同时满足外键与 user_id 口径，且
+ *   `GET /api/shop/{sellerId}`（sellerId = user_id）→ 默认店铺解析成立。
+ *
+ * 表结构权威：database/Initialize.sql（全量快照，40 表终态）。
+ * =====================================================================
  */
 
-const mysql = require('mysql2/promise');
-const bcrypt = require('bcryptjs');
+'use strict';
 
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const mysql = require('mysql2/promise');
+
+/* =====================================================================
+   一、连接配置（可用环境变量覆盖）
+   ===================================================================== */
 const DB = {
-  host: '192.168.10.128',
-  port: 3306,
-  user: 'root',
-  password: 'root',
-  database: 'icedamericano_mall',
+  host: process.env.SEED_DB_HOST || '192.168.10.128',
+  port: Number(process.env.SEED_DB_PORT || 3306),
+  user: process.env.SEED_DB_USER || 'root',
+  password: process.env.SEED_DB_PASS || 'root',
+  database: process.env.SEED_DB_NAME || 'icedamericano_mall',
+  charset: 'utf8mb4',
 };
 
-/* ================================================================
-   图片生成函数 — picsum.photos (全球CDN, 真实照片, seed固定)
-   ================================================================ */
-function mainImg(seed)  { return `https://picsum.photos/seed/${seed}/400/400`; }
-function gallery(seed)  { return JSON.stringify([
-  `https://picsum.photos/seed/${seed}a/800/800`,
-  `https://picsum.photos/seed/${seed}b/800/800`,
-  `https://picsum.photos/seed/${seed}c/800/800`
-]); }
-function skuImg(seed)   { return `https://picsum.photos/seed/${seed}/400/400`; }
+/* =====================================================================
+   二、加密口径常量（与 CryptoKeyConfig.DEV_* 逐字节一致，勿改）
+   ===================================================================== */
+const DEV_AES_KEY_B64 = 'aWNlLWFtZXJpY2Fuby1kZXYtYWVzLWtleS0zMmJ5dGU=';  // base64(32B)
+const DEV_HMAC_KEY_B64 = 'aWNlLWFtZXJpY2Fuby1kZXYtaG1hYy1pbmRleC1rZXk='; // base64(32B)
 
-/* ================================================================
-   数据定义
-   ================================================================ */
+const AES_KEY = Buffer.from(DEV_AES_KEY_B64, 'base64');
+const HMAC_KEY = Buffer.from(DEV_HMAC_KEY_B64, 'base64');
+const AES_IV_BYTES = 12;   // AesGcmUtil: new byte[12]
+const GCM_TAG_BYTES = 16;  // GCMParameterSpec(128, iv)
 
-const CATEGORIES = [
-  { id: 1, name: '居家生活', parentId: null, level: 1, sortOrder: 1 },
-  { id: 2, name: '服饰穿搭', parentId: null, level: 1, sortOrder: 2 },
-  { id: 3, name: '数码好物', parentId: null, level: 1, sortOrder: 3 },
-  { id: 4, name: '美食饮品', parentId: null, level: 1, sortOrder: 4 },
-  { id: 5, name: '文具书籍', parentId: null, level: 1, sortOrder: 5 },
-  { id: 6, name: '运动户外', parentId: null, level: 1, sortOrder: 6 },
-];
+/** BCrypt 强度（与 SecurityConfig 的 new BCryptPasswordEncoder() 缺省 10 一致）。 */
+const BCRYPT_ROUNDS = 10;
 
-const USERS = [
-  { userId: 'u_buyer_001', username: 'buy123', phone: '13800001111', roleType: 1, status: 1, balance: 100000 },
-  { userId: 'u_seller_001', username: 'sell123', phone: '13800002222', roleType: 2, status: 1, balance: 0 },
-  { userId: 'u_seller_002', username: 'sell456', phone: '13800003333', roleType: 2, status: 1, balance: 0 },
-  { userId: 'u_admin_001', username: 'admin', phone: '13800000000', roleType: 3, status: 1, balance: 0 },
-];
+/** 种子账号统一密码（仅本地开发；满足注册口令正则） */
+const DEV_PASSWORD = 'Dev123456';
 
-const SELLERS = [
-  { businessUserId: 'u_seller_001', shopName: '冰美精选家居', contactPhone: '13800002222', province: '浙江省', city: '杭州市', district: '西湖区', detailAddress: '文三路 138 号', status: 1 },
-  { businessUserId: 'u_seller_002', shopName: '数码生活馆', contactPhone: '13800003333', province: '广东省', city: '深圳市', district: '南山区', detailAddress: '科技园路 88 号', status: 1 },
-];
+/* =====================================================================
+   三、PII 三字段工具（Node 内置 crypto 实现 Java 口径）
+   ===================================================================== */
 
-const ADDRESSES = [
-  { businessUserId: 'u_buyer_001', receiver: '张三', phone: '13800001111', province: '北京市', city: '北京市', district: '朝阳区', street: '建国路', detail: '88 号 1201 室', isDefault: 1, label: '家' },
-  { businessUserId: 'u_buyer_001', receiver: '张三', phone: '13800001111', province: '上海市', city: '上海市', district: '浦东新区', street: '张江路', detail: '科技园区 5 号楼', isDefault: 0, label: '公司' },
-];
-
-// seed必须纯字母数字, picsum不支持连字符
-const S = (n) => 'p' + n; // product seed: p1, p2, ...
-const K = (n) => 's' + n; // sku seed: s1, s2, ...
-
-let pi = 0, ki = 0;
-const P = (seed, sellerId, categoryId, name, brand, desc, sold, cmt) => ({
-  productId: `prod_${String(++pi).padStart(3,'0')}`, sellerId, categoryId, name, brand,
-  imgSeed: S(pi), description: desc, soldCount: sold, commentCount: cmt, status: 1, skus: []
-});
-const SKU = (spec, price, origPrice, stock, sold) => ({
-  skuId: `sku_${String(++ki).padStart(3,'0')}`, spec, price, originalPrice: origPrice,
-  stock, soldCount: sold, status: 1, imgSeed: K(ki)
-});
-
-const PRODUCTS = [];
-// 居家生活 (catId=1)
-let p = P(S(1), 1, 1, '手工陶瓷茶杯 — 天青釉', '冰美精选', '景德镇匠人手工拉坯，1280°C 高温烧制。杯壁轻薄如纸，釉色温润如玉。', 1280, 86);
-p.skus.push(SKU('天青 / 标准 (200ml)', 12800, 15800, 50, 320), SKU('月白 / 标准 (200ml)', 12800, 15800, 30, 180), SKU('天青 / 大号 (350ml)', 16800, 19800, 20, 90));
-PRODUCTS.push(p);
-
-p = P(S(1), 1, 1, '原木台灯 — 黑胡桃木', '冰美精选', '北美黑胡桃木底座，暖白 LED 光源，触摸三档调光。', 860, 52);
-p.skus.push(SKU('黑胡桃木 / 暖白光', 26800, 29800, 35, 200)); PRODUCTS.push(p);
-
-p = P(S(1), 1, 1, '亚麻编织毯 — 天然本色', '冰美精选', '100% 欧洲亚麻，手工编织。透气吸湿，四季皆宜。', 450, 31);
-p.skus.push(SKU('米白 / 130×170cm', 18800, 22800, 40, 150), SKU('浅灰 / 130×170cm', 18800, 22800, 25, 80), SKU('米白 / 170×230cm', 25800, 29800, 15, 60));
-PRODUCTS.push(p);
-
-// 服饰穿搭 (catId=2)
-p = P(S(1), 2, 2, '棉麻围巾 — 手工植物染', '冰美精选', '新疆长绒棉 + 亚麻混纺，天然靛蓝植物染色。', 2100, 145);
-p.skus.push(SKU('靛蓝 / 180×50cm', 8900, 12800, 80, 900), SKU('茜草红 / 180×50cm', 8900, 12800, 60, 500)); PRODUCTS.push(p);
-
-p = P(S(1), 2, 2, '手工皮革托特包', '冰美精选 × 植鞣革', '意大利植鞣革，手工缝线。随使用逐渐包浆变色。', 620, 48);
-p.skus.push(SKU('棕色 / 中号', 39800, 45800, 15, 120), SKU('黑色 / 大号', 45800, 52800, 10, 80)); PRODUCTS.push(p);
-
-p = P(S(1), 2, 2, '极简腕表 — 超薄石英', '冰美精选', '日本精工石英机芯，316L 不锈钢表壳，蓝宝石玻璃表镜。', 340, 28);
-p.skus.push(SKU('银色 / 黑色表带', 69800, 79800, 20, 90), SKU('玫瑰金 / 棕色表带', 76800, 86800, 12, 55)); PRODUCTS.push(p);
-
-// 数码好物 (catId=3)
-p = P(S(1), 2, 3, '真无线降噪耳机 — 40dB ANC', '冰美声学', '混合主动降噪，40dB 深度。LDAC 高清传输，40h续航。', 3200, 256);
-p.skus.push(SKU('曜石黑', 59900, 69900, 100, 1500), SKU('云雾白', 59900, 69900, 80, 1200)); PRODUCTS.push(p);
-
-p = P(S(1), 2, 3, '氮化镓充电器 — 65W 三口', '冰美科技', 'GaN 第三代半导体，65W 大功率，2C1A 三口同时充。', 1800, 132);
-p.skus.push(SKU('白色 / 65W', 12900, 15900, 150, 800)); PRODUCTS.push(p);
-
-p = P(S(1), 2, 3, '便携蓝牙音箱 — 360°环绕声', '冰美声学', '360°全向发声，IP67 防尘防水，20h续航。', 950, 78);
-p.skus.push(SKU('森林绿', 29900, 35900, 45, 300), SKU('午夜蓝', 29900, 35900, 35, 250)); PRODUCTS.push(p);
-
-// 美食饮品 (catId=4)
-p = P(S(1), 1, 4, '明前龙井 — 西湖一级产区', '冰美茶集', '西湖龙井一级保护区，明前采摘。豆香浓郁，回甘悠长。', 560, 67);
-p.skus.push(SKU('50g 小罐装', 19800, 25800, 30, 200), SKU('100g 礼盒装', 35800, 42800, 15, 80)); PRODUCTS.push(p);
-
-p = P(S(1), 1, 4, '手冲咖啡豆 — 耶加雪菲 G1', '冰美咖啡', '埃塞俄比亚耶加雪菲 G1，水洗处理。柑橘、茉莉花香。', 780, 92);
-p.skus.push(SKU('浅烘 / 200g', 6800, 8800, 60, 350), SKU('中烘 / 200g', 6800, 8800, 45, 280)); PRODUCTS.push(p);
-
-// 文具书籍 (catId=5)
-p = P(S(1), 1, 5, '手工绑带笔记本 — A5 方格', '冰美文具', '意大利植鞣革封面，可替换内芯。80g无酸纸。', 1200, 105);
-p.skus.push(SKU('棕色 / 方格内页', 12800, 15800, 70, 600), SKU('黑色 / 空白内页', 12800, 15800, 50, 400)); PRODUCTS.push(p);
-
-p = P(S(1), 1, 5, '黄铜制图笔 — 0.5mm', '冰美文具', '全黄铜笔身，德国施密特笔芯。随使用形成独特包浆。', 680, 44);
-p.skus.push(SKU('黄铜原色 / 0.5mm', 4800, 6800, 100, 400)); PRODUCTS.push(p);
-
-// 运动户外 (catId=6)
-p = P(S(1), 2, 6, '钛合金运动水壶 — 500ml', '冰美户外', '纯钛材质，120g。双层真空保冷12h。', 1500, 120);
-p.skus.push(SKU('钛原色 / 500ml', 22800, 26800, 55, 700), SKU('钛原色 / 750ml', 26800, 30800, 30, 350)); PRODUCTS.push(p);
-
-p = P(S(1), 2, 6, '天然橡胶瑜伽垫 — 5mm', '冰美运动', '斯里兰卡天然橡胶，PU面层。干湿防滑，可降解。', 2300, 189);
-p.skus.push(SKU('深灰 / 5mm', 32800, 39800, 40, 1000), SKU('墨绿 / 5mm', 32800, 39800, 25, 650)); PRODUCTS.push(p);
-
-// 花瓶
-p = P(S(1), 1, 1, '日式手工玻璃花瓶', '冰美精选', '东京手工吹制玻璃，每一只都独一无二。', 380, 26);
-p.skus.push(SKU('透明 / 高 20cm', 9800, 12800, 25, 200)); PRODUCTS.push(p);
-
-
-/* ================================================================
-   主流程
-   ================================================================ */
-
-async function seed() {
-  const conn = await mysql.createConnection(DB);
-  console.log('✅ 已连接 MySQL');
-
-  // 先清空所有业务表（按FK依赖顺序）
-  console.log('清空旧数据...');
-  await conn.execute('SET FOREIGN_KEY_CHECKS=0');
-  const [tables] = await conn.query('SHOW TABLES');
-  for (const row of tables) {
-    const t = Object.values(row)[0];
-    try { await conn.execute(`DELETE FROM \`${t}\``); } catch {}
-    try { await conn.execute(`ALTER TABLE \`${t}\` AUTO_INCREMENT=1`); } catch {}
-  }
-  await conn.execute('SET FOREIGN_KEY_CHECKS=1');
-  console.log('旧数据已清空');
-
-  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-  const PASS = bcrypt.hashSync('Test1234', 10);
-
-  // ── 用户 ──
-  console.log('\n--- 用户 ---');
-  const userIdMap = {};
-  for (const u of USERS) {
-    const [result] = await conn.query(
-      `INSERT INTO user (user_id, username, phone, password, role_type, status, balance, register_time, create_time, update_time)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [u.userId, u.username, u.phone, PASS, u.roleType, u.status, u.balance, now, now, now]
-    );
-    userIdMap[u.userId] = result.insertId;
-    console.log(`  user: ${u.username} (id=${result.insertId})`);
-  }
-
-  // ── 分类 ──
-  console.log('\n--- 分类 ---');
-  for (const c of CATEGORIES) {
-    await conn.query(
-      `INSERT INTO category (id, name, parent_id, level, sort_order, create_time, update_time) VALUES (?,?,?,?,?,?,?)`,
-      [c.id, c.name, c.parentId, c.level, c.sortOrder, now, now]
-    );
-    console.log(`  ${c.name}`);
-  }
-
-  // ── 商家 ──
-  console.log('\n--- 商家 ---');
-  const sellerIdMap = {};
-  let si = 1;
-  for (const s of SELLERS) {
-    const realUserId = userIdMap[s.businessUserId];
-    const [result] = await conn.query(
-      `INSERT INTO seller (user_id, shop_name, contact_phone, province, city, district, detail_address, status, create_time, update_time)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [realUserId, s.shopName, s.contactPhone, s.province, s.city, s.district, s.detailAddress, s.status, now, now]
-    );
-    sellerIdMap[si++] = result.insertId;
-    console.log(`  ${s.shopName} (seller.id=${result.insertId})`);
-  }
-
-  // ── 商品 + SKU ──
-  console.log('\n--- 商品 ---');
-  let totalSkus = 0;
-  for (const p of PRODUCTS) {
-    const realSellerId = sellerIdMap[p.sellerId];
-    const imgMain = mainImg(p.imgSeed);
-    const imgGallery = gallery(p.imgSeed);
-    const [result] = await conn.query(
-      `INSERT INTO product (product_id, seller_id, category_id, name, brand, main_image, images, description, sold_count, comment_count, is_ad, status, publish_time, create_time, update_time)
-       VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?,?)`,
-      [p.productId, realSellerId, p.categoryId, p.name, p.brand, imgMain, imgGallery, p.description, p.soldCount, p.commentCount, p.status, now, now, now]
-    );
-    const dbProductId = result.insertId;
-
-    for (const sku of p.skus) {
-      await conn.query(
-        `INSERT INTO sku (sku_id, product_id, spec, price, original_price, stock, image, sold_count, status, version, create_time, update_time)
-         VALUES (?,?,?,?,?,?,?,?,?,0,?,?)`,
-        [sku.skuId, dbProductId, sku.spec, sku.price, sku.originalPrice, sku.stock, skuImg(sku.imgSeed), sku.soldCount, sku.status, now, now]
-      );
-      totalSkus++;
-    }
-    console.log(`  ${p.name} (+${p.skus.length} SKU) — ${imgMain}`);
-  }
-  console.log(`  总计: ${PRODUCTS.length} 款商品, ${totalSkus} 个 SKU`);
-
-  // ── 地址 ──
-  console.log('\n--- 地址 ---');
-  for (const a of ADDRESSES) {
-    const realUserId = userIdMap[a.businessUserId];
-    await conn.query(
-      `INSERT INTO address (user_id, receiver, phone, province, city, district, street, detail, is_default, label, create_time, update_time)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [realUserId, a.receiver, a.phone, a.province, a.city, a.district, a.street, a.detail, a.isDefault, a.label, now, now]
-    );
-    console.log(`  ${a.receiver} — ${a.province}${a.city} ${a.detail}`);
-  }
-
-  await conn.end();
-  console.log('\n✅ 种子数据写入完成!');
-  console.log('  买家: buy123 / Test1234');
-  console.log('  卖家: sell123 / Test1234');
+/**
+ * AES-256-GCM 加密 —— 对齐 AesGcmUtil.encrypt。
+ * 输出 base64( iv[12] || ciphertext || tag[16] )，其中 tag 为 128-bit。
+ * @param {string} plain 明文
+ * @returns {string} Base64 密文
+ */
+function aesEncrypt(plain) {
+  const iv = crypto.randomBytes(AES_IV_BYTES);
+  const cipher = crypto.createCipheriv('aes-256-gcm', AES_KEY, iv);
+  const body = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, body, tag]).toString('base64');
 }
 
-seed().catch(e => { console.error('❌', e); process.exit(1); });
+/**
+ * HMAC-SHA256 盲索引 —— 对齐 BlindIndexUtil.hmac（小写十六进制）。
+ * @param {string} plain 明文
+ * @returns {string} 64 字符小写 hex
+ */
+function hmacIndex(plain) {
+  return crypto.createHmac('sha256', HMAC_KEY).update(plain, 'utf8').digest('hex');
+}
+
+/** 手机号脱敏 —— 对齐 DesensitizeUtil.maskPhone：前 3 + "****" + 后 4。 */
+function maskPhone(phone) {
+  if (!phone || phone.length < 11) return phone;
+  return phone.slice(0, 3) + '****' + phone.slice(7);
+}
+
+/** 邮箱脱敏 —— 对齐 DesensitizeUtil.maskEmail。 */
+function maskEmail(email) {
+  if (!email || !email.includes('@')) return email;
+  const [name, domain] = email.split('@');
+  return name.length <= 2 ? `***@${domain}` : `${name.slice(0, 2)}***@${domain}`;
+}
+
+/** 通用脱敏 —— 对齐 DesensitizeUtil.mask（按手机号/邮箱自动选择）。 */
+function maskIdentifier(value) {
+  if (!value) return value;
+  if (/^1[3-9]\d{9}$/.test(value)) return maskPhone(value);
+  if (value.includes('@')) return maskEmail(value);
+  return value;
+}
+
+/**
+ * 构造 user_auth 行（敏感标识：PHONE / EMAIL）。
+ * 三字段：identifier_cipher / identifier_hash / identifier_mask。
+ */
+function sensitiveAuth(userId, identityType, raw, credential) {
+  return {
+    userId,
+    identityType,
+    identifierPlain: null,
+    identifierCipher: aesEncrypt(raw),
+    identifierHash: hmacIndex(raw),
+    identifierMask: maskIdentifier(raw),
+    credential,
+  };
+}
+
+/** 构造 user_auth 行（非敏感标识：USERNAME，明文入库）。 */
+function plainAuth(userId, identityType, plain, credential) {
+  return {
+    userId,
+    identityType,
+    identifierPlain: plain,
+    identifierCipher: null,
+    identifierHash: null,
+    identifierMask: null,
+    credential,
+  };
+}
+
+/* =====================================================================
+   四、种子数据定义
+   ===================================================================== */
+
+/** 图片：picsum.photos，同一 seed 稳定返回同一张图（seed 仅字母数字）。 */
+const mainImg = (seed) => `https://picsum.photos/seed/${seed}/400/400`;
+const gallery = (seed) => JSON.stringify([
+  `https://picsum.photos/seed/${seed}a/800/800`,
+  `https://picsum.photos/seed/${seed}b/800/800`,
+  `https://picsum.photos/seed/${seed}c/800/800`,
+]);
+const skuImg = (seed) => `https://picsum.photos/seed/${seed}/400/400`;
+
+/** 一级类目（ID 固定，走 upsert，不删除）。 */
+const CATEGORIES = [
+  { id: 1, name: '居家生活', sortOrder: 1 },
+  { id: 2, name: '服饰穿搭', sortOrder: 2 },
+  { id: 3, name: '数码好物', sortOrder: 3 },
+  { id: 4, name: '美食饮品', sortOrder: 4 },
+  { id: 5, name: '文具书籍', sortOrder: 5 },
+  { id: 6, name: '运动户外', sortOrder: 6 },
+];
+
+/**
+ * 用户（4 角色全覆盖：1 管理员 + 2 买家 + 2 商家）。
+ * roleType 采用**对外派生口径**（RoleTypeDerivation：0=普通用户 / 1=商家 / 2=管理员）。
+ * 注意：user.role_type 列 V5.2 起已 deprecated（代码不读写，权限唯一权威为
+ * sys_user_role 五表）；此处写入仅为终态快照一致性 + 兼容旧读路径，权限实际由
+ * 下方 sys_user_role 授予。
+ */
+const USERS = [
+  { userId: 'admin-001',    username: 'admin',   phone: '13900000000', email: null,                  roleType: 2, status: 1, nickname: '平台管理员' },
+  { userId: 'u_buyer_001',  username: 'buy123',  phone: '13800001111', email: 'buyer1@dev.local',    roleType: 0, status: 1, nickname: '张三' },
+  { userId: 'u_buyer_002',  username: 'buy456',  phone: '13800002222', email: 'buyer2@dev.local',    roleType: 0, status: 1, nickname: '李四' },
+  { userId: 'u_seller_001', username: 'sell123', phone: '13800003333', email: null,                  roleType: 1, status: 1, nickname: '冰美家居旗舰' },
+  { userId: 'u_seller_002', username: 'sell456', phone: '13800004444', email: null,                  roleType: 1, status: 1, nickname: '数码生活馆' },
+];
+
+/** 钱包余额（分）——user.balance 已冻结，余额归 wallet_account（V5.3）。 */
+const WALLET = {
+  'admin-001': 0,
+  'u_buyer_001': 100000,  // 1000.00 元
+  'u_buyer_002': 50000,   // 500.00 元
+  'u_seller_001': 0,
+  'u_seller_002': 0,
+};
+
+/** sys_user_role 授予：买家→ROLE_USER(1)；商家→ROLE_SELLER(3)+ROLE_USER(1)；管理员→ROLE_ADMIN(4)。 */
+const ROLE_USER_ID = 1;
+const ROLE_SELLER_ID = 3;
+const ROLE_ADMIN_ID = 4;
+
+/**
+ * 商家（seller 5 列终态）+ 默认店铺（shop）。
+ * merchantUserId → seller.user_id（= seller.id，见文件头"主键口径"）。
+ */
+const MERCHANTS = [
+  {
+    merchantUserId: 'u_seller_001',
+    shop: { shopName: '冰美精选家居', contactPhone: '13800003333', province: '浙江省', city: '杭州市', district: '西湖区', detailAddress: '文三路 138 号' },
+  },
+  {
+    merchantUserId: 'u_seller_002',
+    shop: { shopName: '数码生活馆', contactPhone: '13800004444', province: '广东省', city: '深圳市', district: '南山区', detailAddress: '科技园路 88 号' },
+  },
+];
+
+/** 地址（买家）。 */
+const ADDRESSES = [
+  { buyerUserId: 'u_buyer_001', receiver: '张三', phone: '13800001111', province: '北京市', city: '北京市', district: '朝阳区', street: '建国路', detail: '88 号 1201 室', isDefault: 1, label: '家' },
+  { buyerUserId: 'u_buyer_001', receiver: '张三', phone: '13800001111', province: '上海市', city: '上海市', district: '浦东新区', street: '张江路', detail: '科技园 5 号楼', isDefault: 0, label: '公司' },
+  { buyerUserId: 'u_buyer_002', receiver: '李四', phone: '13800002222', province: '广东省', city: '广州市', district: '天河区', street: '天河路', detail: '300 号 808 室', isDefault: 1, label: '家' },
+];
+
+/**
+ * 商品 + SKU：每商家 3 款在售商品（status=1），价格单位为分，库存非负。
+ * sellerRef 指向 MERCHANTS[].merchantUserId。
+ */
+const PRODUCTS = [
+  // ---- 商家 1（冰美精选家居）----
+  {
+    productId: 'prod_seed_001', sellerRef: 'u_seller_001', categoryId: 1,
+    name: '手工陶瓷茶杯 — 天青釉', brand: '冰美精选', soldCount: 1280, commentCount: 86,
+    description: '景德镇匠人手工拉坯，1280°C 高温烧制。杯壁轻薄如纸，釉色温润如玉。',
+    skus: [
+      { skuId: 'sku_seed_001', spec: '天青 / 标准 (200ml)', price: 12800, originalPrice: 15800, stock: 50, soldCount: 320 },
+      { skuId: 'sku_seed_002', spec: '月白 / 标准 (200ml)', price: 12800, originalPrice: 15800, stock: 30, soldCount: 180 },
+      { skuId: 'sku_seed_003', spec: '天青 / 大号 (350ml)', price: 16800, originalPrice: 19800, stock: 20, soldCount: 90 },
+    ],
+  },
+  {
+    productId: 'prod_seed_002', sellerRef: 'u_seller_001', categoryId: 1,
+    name: '原木台灯 — 黑胡桃木', brand: '冰美精选', soldCount: 860, commentCount: 52,
+    description: '北美黑胡桃木底座，暖白 LED 光源，触摸三档调光。',
+    skus: [
+      { skuId: 'sku_seed_004', spec: '黑胡桃木 / 暖白光', price: 26800, originalPrice: 29800, stock: 35, soldCount: 200 },
+    ],
+  },
+  {
+    productId: 'prod_seed_003', sellerRef: 'u_seller_001', categoryId: 4,
+    name: '手冲咖啡豆 — 耶加雪菲 G1', brand: '冰美咖啡', soldCount: 780, commentCount: 92,
+    description: '埃塞俄比亚耶加雪菲 G1，水洗处理。柑橘与茉莉花香。',
+    skus: [
+      { skuId: 'sku_seed_005', spec: '浅烘 / 200g', price: 6800, originalPrice: 8800, stock: 60, soldCount: 350 },
+      { skuId: 'sku_seed_006', spec: '中烘 / 200g', price: 6800, originalPrice: 8800, stock: 45, soldCount: 280 },
+    ],
+  },
+  // ---- 商家 2（数码生活馆）----
+  {
+    productId: 'prod_seed_004', sellerRef: 'u_seller_002', categoryId: 3,
+    name: '真无线降噪耳机 — 40dB ANC', brand: '冰美声学', soldCount: 3200, commentCount: 256,
+    description: '混合主动降噪 40dB，LDAC 高清传输，40h 续航。',
+    skus: [
+      { skuId: 'sku_seed_007', spec: '曜石黑', price: 59900, originalPrice: 69900, stock: 100, soldCount: 1500 },
+      { skuId: 'sku_seed_008', spec: '云雾白', price: 59900, originalPrice: 69900, stock: 80, soldCount: 1200 },
+    ],
+  },
+  {
+    productId: 'prod_seed_005', sellerRef: 'u_seller_002', categoryId: 2,
+    name: '棉麻围巾 — 手工植物染', brand: '冰美精选', soldCount: 2100, commentCount: 145,
+    description: '新疆长绒棉 + 亚麻混纺，天然靛蓝植物染色。',
+    skus: [
+      { skuId: 'sku_seed_009', spec: '靛蓝 / 180×50cm', price: 8900, originalPrice: 12800, stock: 80, soldCount: 900 },
+      { skuId: 'sku_seed_010', spec: '茜草红 / 180×50cm', price: 8900, originalPrice: 12800, stock: 60, soldCount: 500 },
+    ],
+  },
+  {
+    productId: 'prod_seed_006', sellerRef: 'u_seller_002', categoryId: 6,
+    name: '钛合金运动水壶 — 500ml', brand: '冰美户外', soldCount: 1500, commentCount: 120,
+    description: '纯钛材质 120g，双层真空保冷 12h。',
+    skus: [
+      { skuId: 'sku_seed_011', spec: '钛原色 / 500ml', price: 22800, originalPrice: 26800, stock: 55, soldCount: 700 },
+      { skuId: 'sku_seed_012', spec: '钛原色 / 750ml', price: 26800, originalPrice: 30800, stock: 30, soldCount: 350 },
+    ],
+  },
+];
+
+const SEED_USER_IDS = USERS.map((u) => u.userId);
+const SEED_PRODUCT_IDS = PRODUCTS.map((p) => p.productId);
+const SEED_SKU_IDS = PRODUCTS.flatMap((p) => p.skus.map((s) => s.skuId));
+const SEED_SHOP_NAMES = MERCHANTS.map((m) => m.shop.shopName);
+
+/* =====================================================================
+   五、执行主流程（可注入 conn，便于静态验证 / 测试）
+   ===================================================================== */
+
+/** 空数组跳过（否则 mysql2 会生成非法的 `IN ()`）。 */
+async function deleteIn(conn, sqlPrefix, ids) {
+  if (!ids.length) return;
+  await conn.query(`${sqlPrefix} (?)`, [ids]);
+}
+
+/**
+ * 写入种子数据（单事务；幂等）。调用方负责连接生命周期。
+ * @param {import('mysql2/promise').Connection} conn 已建立的连接
+ */
+async function seed(conn) {
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+  await conn.beginTransaction();
+  try {
+    // ========== Phase 0：定位既有 seed 主键（幂等删除用） ==========
+    const userIds = await selectIds(conn, 'SELECT id FROM `user` WHERE user_id IN (?)', [SEED_USER_IDS]);
+    const sellerIds = userIds.length
+      ? await selectIds(conn, 'SELECT id FROM `seller` WHERE user_id IN (?)', [userIds])
+      : [];
+    const productIds = await selectIds(conn, 'SELECT id FROM `product` WHERE product_id IN (?)', [SEED_PRODUCT_IDS]);
+    const skuIds = productIds.length
+      ? await selectIds(conn, 'SELECT id FROM `sku` WHERE product_id IN (?)', [productIds])
+      : [];
+    const orderIds = (userIds.length || sellerIds.length)
+      ? await selectIds(conn,
+        'SELECT id FROM `orders` WHERE user_id IN (?) OR seller_id IN (?)',
+        [userIds.length ? userIds : [0], sellerIds.length ? sellerIds : [0]])
+      : [];
+
+    // ========== Phase 1：按业务键删除（子 → 父） ==========
+    console.log('清空本脚本自有的种子数据（子 → 父）...');
+    await deleteIn(conn, 'DELETE FROM `order_item` WHERE order_id IN', orderIds);
+    await deleteIn(conn, 'DELETE FROM `order_logistics` WHERE order_id IN', orderIds);
+    await deleteIn(conn, 'DELETE FROM `orders` WHERE id IN', orderIds);
+    await deleteIn(conn, 'DELETE FROM `cart` WHERE user_id IN', userIds);
+    await deleteIn(conn, 'DELETE FROM `sku` WHERE id IN', skuIds);
+    await deleteIn(conn, 'DELETE FROM `product` WHERE id IN', productIds);
+    await deleteIn(conn, 'DELETE FROM `shop` WHERE merchant_id IN', sellerIds);
+    await deleteIn(conn, 'DELETE FROM `seller` WHERE id IN', sellerIds);
+    await deleteIn(conn, 'DELETE FROM `address` WHERE user_id IN', userIds);
+    await deleteIn(conn, 'DELETE FROM `wallet_account` WHERE user_id IN', userIds);
+    await deleteIn(conn, 'DELETE FROM `user_auth` WHERE user_id IN', userIds);
+    await deleteIn(conn, 'DELETE FROM `sys_user_role` WHERE user_id IN', userIds);
+    await deleteIn(conn, 'DELETE FROM `user` WHERE id IN', userIds);
+
+    // ========== Phase 2a：参考数据 upsert（不删除） ==========
+    for (const c of CATEGORIES) {
+      await conn.query(
+        `INSERT INTO \`category\` (id, name, parent_id, level, sort_order, create_time, update_time)
+         VALUES (?, ?, NULL, 1, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE name = VALUES(name), sort_order = VALUES(sort_order), update_time = VALUES(update_time)`,
+        [c.id, c.name, c.sortOrder, now, now]);
+    }
+    console.log(`  类目 upsert: ${CATEGORIES.length}`);
+
+    // ========== Phase 2b：用户（资料 + 三字段 PII） ==========
+    const bcryptHash = bcrypt.hashSync(DEV_PASSWORD, BCRYPT_ROUNDS); // bcryptjs v3 → $2b$10$（Spring 接受）
+    const userIdMap = {}; // businessUserId -> user.id（技术主键）
+    const authRows = [];  // 收集 user_auth 行，待 user 落库后批量写入
+
+    for (const u of USERS) {
+      const [result] = await conn.query(
+        `INSERT INTO \`user\`
+           (user_id, username, phone_cipher, phone_hash, phone_mask,
+            email_cipher, email_hash, email_mask,
+            avatar, gender, member_level, register_time, status, role_type, version,
+            create_time, update_time)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, 'NORMAL', ?, ?, ?, 0, ?, ?)`,
+        [
+          u.userId, u.username,
+          aesEncrypt(u.phone), hmacIndex(u.phone), maskPhone(u.phone),
+          u.email ? aesEncrypt(u.email) : null,
+          u.email ? hmacIndex(u.email) : null,
+          u.email ? maskEmail(u.email) : null,
+          now, u.status, u.roleType, now, now,
+        ]);
+      const uid = result.insertId;
+      userIdMap[u.userId] = uid;
+
+      // user_auth：USERNAME（明文）+ PHONE（敏感三字段）；有邮箱再补 EMAIL 行
+      authRows.push(plainAuth(uid, 'USERNAME', u.username, bcryptHash));
+      authRows.push(sensitiveAuth(uid, 'PHONE', u.phone, bcryptHash));
+      if (u.email) authRows.push(sensitiveAuth(uid, 'EMAIL', u.email, bcryptHash));
+
+      // 钱包账户（余额单位：分）
+      await conn.query(
+        `INSERT INTO \`wallet_account\` (user_id, balance, create_time, update_time) VALUES (?, ?, ?, ?)`,
+        [uid, WALLET[u.userId] || 0, now, now]);
+    }
+    console.log(`  user: ${USERS.length}（密码统一 ${DEV_PASSWORD}）`);
+    console.log(`  wallet_account: ${USERS.length}`);
+
+    // ========== Phase 2c：user_auth 凭证 ==========
+    for (const a of authRows) {
+      await conn.query(
+        `INSERT INTO \`user_auth\`
+           (user_id, identity_type, identifier_plain, identifier_cipher, identifier_hash,
+            identifier_mask, union_id, credential, status, last_login_time, create_time, update_time)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 1, NULL, ?, ?)`,
+        [a.userId, a.identityType, a.identifierPlain, a.identifierCipher, a.identifierHash,
+          a.identifierMask, a.credential, now, now]);
+    }
+    console.log(`  user_auth: ${authRows.length} 行（USERNAME 明文 + PHONE/EMAIL 三字段）`);
+
+    // ========== Phase 2d：角色授予（sys_user_role） ==========
+    const roleGrants = [];
+    for (const u of USERS) {
+      const uid = userIdMap[u.userId];
+      if (u.roleType === 2) roleGrants.push([uid, ROLE_ADMIN_ID]);
+      else if (u.roleType === 1) roleGrants.push([uid, ROLE_SELLER_ID], [uid, ROLE_USER_ID]);
+      else roleGrants.push([uid, ROLE_USER_ID]);
+    }
+    for (const [uid, roleId] of roleGrants) {
+      await conn.query('INSERT INTO `sys_user_role` (user_id, role_id) VALUES (?, ?)', [uid, roleId]);
+    }
+    console.log(`  sys_user_role: ${roleGrants.length} 行`);
+
+    // ========== Phase 2e：商家 + 默认店铺 ==========
+    const sellerIdByUser = {}; // merchantUserId -> seller.id
+    for (const m of MERCHANTS) {
+      const uid = userIdMap[m.merchantUserId];
+      // 显式 id = user.id：满足 fk_product_seller 与 user_id 口径（见文件头"主键口径"）
+      await conn.query(
+        `INSERT INTO \`seller\` (id, user_id, status, create_time, update_time) VALUES (?, ?, 1, ?, ?)`,
+        [uid, uid, now, now]);
+      sellerIdByUser[m.merchantUserId] = uid;
+
+      await conn.query(
+        `INSERT INTO \`shop\`
+           (merchant_id, shop_name, shop_logo, contact_phone, province, city, district, detail_address,
+            status, create_time, update_time)
+         VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 1, ?, ?)`,
+        [uid, m.shop.shopName, m.shop.contactPhone, m.shop.province, m.shop.city,
+          m.shop.district, m.shop.detailAddress, now, now]);
+    }
+    console.log(`  seller: ${MERCHANTS.length}, shop: ${MERCHANTS.length}（status=1 正常）`);
+
+    // ========== Phase 2f：商品 + SKU ==========
+    let skuTotal = 0;
+    for (const p of PRODUCTS) {
+      const sellerId = sellerIdByUser[p.sellerRef];
+      const [result] = await conn.query(
+        `INSERT INTO \`product\`
+           (product_id, seller_id, category_id, name, main_image, images, description, brand,
+            sold_count, comment_count, is_ad, status, publish_time, create_time, update_time)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?)`,
+        [p.productId, sellerId, p.categoryId, p.name, mainImg(p.productId), gallery(p.productId),
+          p.description, p.brand, p.soldCount, p.commentCount, now, now, now]);
+      const productPk = result.insertId;
+
+      for (const s of p.skus) {
+        await conn.query(
+          `INSERT INTO \`sku\`
+             (sku_id, product_id, spec, price, original_price, stock, image, sold_count, status, version,
+              create_time, update_time)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`,
+          [s.skuId, productPk, s.spec, s.price, s.originalPrice, s.stock, skuImg(s.skuId), s.soldCount, now, now]);
+        skuTotal++;
+      }
+    }
+    console.log(`  product: ${PRODUCTS.length}, sku: ${skuTotal}（status=1 在售）`);
+
+    // ========== Phase 2g：地址 ==========
+    for (const a of ADDRESSES) {
+      await conn.query(
+        `INSERT INTO \`address\`
+           (user_id, receiver, phone, province, city, district, street, detail, is_default, label,
+            create_time, update_time)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [userIdMap[a.buyerUserId], a.receiver, a.phone, a.province, a.city, a.district,
+          a.street, a.detail, a.isDefault, a.label, now, now]);
+    }
+    console.log(`  address: ${ADDRESSES.length}`);
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  }
+}
+
+/** 执行 SELECT 并抽取单列值。 */
+async function selectIds(conn, sql, params) {
+  const [rows] = await conn.query(sql, params);
+  return rows.map((r) => Object.values(r)[0]);
+}
+
+/* =====================================================================
+   六、入口
+   ===================================================================== */
+async function main() {
+  const conn = await mysql.createConnection(DB);
+  console.log(`已连接 MySQL: ${DB.host}:${DB.port}/${DB.database}`);
+  try {
+    await seed(conn);
+    console.log('\n种子数据写入完成（事务已提交）。');
+    console.log('本地开发登录账号（密码统一 Dev123456）:');
+    console.log('  管理员 admin   / 13900000000');
+    console.log('  买家   buy123  / 13800001111');
+    console.log('  买家   buy456  / 13800002222');
+    console.log('  商家   sell123 / 13800003333（店铺：冰美精选家居）');
+    console.log('  商家   sell456 / 13800004444（店铺：数码生活馆）');
+  } finally {
+    await conn.end();
+  }
+}
+
+if (require.main === module) {
+  main().catch((e) => {
+    console.error('种子写入失败（已回滚）:', e);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  seed,
+  DEV_PASSWORD,
+  // 导出工具与数据，便于离线静态验证（不连库）
+  aesEncrypt,
+  hmacIndex,
+  maskPhone,
+  maskEmail,
+  maskIdentifier,
+  USERS,
+  MERCHANTS,
+  PRODUCTS,
+  CATEGORIES,
+  ADDRESSES,
+  WALLET,
+  SEED_USER_IDS,
+  SEED_PRODUCT_IDS,
+  SEED_SKU_IDS,
+  SEED_SHOP_NAMES,
+  DEV_AES_KEY_B64,
+  DEV_HMAC_KEY_B64,
+};

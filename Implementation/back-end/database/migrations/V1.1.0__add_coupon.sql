@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS `coupon` (
     `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=生效, 0=失效',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='优惠券模板';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='优惠券模板';
 
 CREATE TABLE IF NOT EXISTS `user_coupon` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -25,4 +25,4 @@ CREATE TABLE IF NOT EXISTS `user_coupon` (
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY `idx_user_status` (`user_id`, `status`),
     UNIQUE KEY `uk_user_coupon` (`user_id`, `coupon_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户优惠券';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户优惠券';

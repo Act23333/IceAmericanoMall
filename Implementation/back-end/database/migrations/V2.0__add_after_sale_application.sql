@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS `after_sale` (
     `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY `idx_user_id` (`user_id`),
     UNIQUE KEY `uk_order_user` (`order_no`, `user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='售后申请';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='售后申请';
 
 -- V2.0: 商家入驻申请表
 CREATE TABLE IF NOT EXISTS `seller_application` (
@@ -32,4 +32,4 @@ CREATE TABLE IF NOT EXISTS `seller_application` (
     `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY `idx_user_id` (`user_id`),
     KEY `idx_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商家入驻申请';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商家入驻申请';
