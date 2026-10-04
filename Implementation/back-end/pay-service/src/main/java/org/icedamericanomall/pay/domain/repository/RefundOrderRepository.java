@@ -2,6 +2,9 @@ package org.icedamericanomall.pay.domain.repository;
 
 import org.icedamericanomall.pay.domain.model.refundorder.RefundOrder;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 /**
  * 退款单仓储（领域端口）—— 实现方：{@code infrastructure.persistence.RefundOrderRepositoryImpl}。
  *
@@ -27,4 +30,14 @@ public interface RefundOrderRepository {
 
     /** 管理端重试：失败 → 处理中（WHERE status=失败）。 */
     boolean markProcessingIfFailed(String refundNo);
+
+    /**
+     * 悬挂退款补偿（ADR-035 风险收敛）：取创建时间早于 {@code threshold} 的「处理中」退款单，
+     * 按创建时间升序至多 {@code limit} 条（老单优先收敛，单轮批量有界）。
+     *
+     * @param threshold 悬挂判定阈值（创建时间早于该时刻才算悬挂，避开在途渠道处理窗口）
+     * @param limit     单轮最大处理条数
+     * @return 悬挂的「处理中」退款单列表（可能为空）
+     */
+    List<RefundOrder> listStaleProcessing(LocalDateTime threshold, int limit);
 }

@@ -5,6 +5,7 @@ import org.icedamericanomall.client.BalanceClient;
 import org.icedamericanomall.pay.domain.enums.PayChannelEnum;
 import org.icedamericanomall.integration.payment.AlipayPaymentClient;
 import org.icedamericanomall.integration.payment.ChannelBillItem;
+import org.icedamericanomall.integration.payment.ChannelRefundQueryResult;
 import org.icedamericanomall.integration.payment.ChannelRefundResult;
 import org.icedamericanomall.integration.payment.PaymentClient;
 import org.icedamericanomall.integration.payment.WechatCallbackResult;
@@ -25,6 +26,7 @@ import java.util.Map;
  * parseWechatCallback：微信回调整包解析（验签 + 解密 + 提取，见 ADR-033）
  * parseWechatRefundCallback：微信退款回调整包解析（F1，复用同一验签/解密基建）
  * refund：按渠道发起退款（BALANCE 不在此路由）
+ * queryWechatRefund：微信退款单查询（悬挂退款补偿，ADR-035 风险收敛）
  * downloadWechatBill / downloadAlipayBill：渠道账单下载（F4）
  * verifyAlipayCallback：支付宝回调验签（表单参数口径）
  * </pre>
@@ -102,6 +104,17 @@ public class PaymentChannelRouter {
             case BALANCE -> throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
                     "余额退款请走 I41 余额入账路径");
         };
+    }
+
+    /**
+     * 微信退款单查询（悬挂退款补偿任务用，ADR-035 风险收敛）—— 与 PAY6 回调互为冗余的终态确认。
+     *
+     * @param refundNo 商户退款单号（微信 {@code out_refund_no}）
+     * @return 强类型查询结果（渠道退款单号 + 归一化状态，不暴露微信原始状态串）
+     * @throws BizException 查询调用失败（原异常纪律透出，调用方决定是否留待下轮）
+     */
+    public ChannelRefundQueryResult queryWechatRefund(String refundNo) {
+        return wechatClient.queryRefund(refundNo);
     }
 
     /** 下载微信渠道账单（F4）。 */

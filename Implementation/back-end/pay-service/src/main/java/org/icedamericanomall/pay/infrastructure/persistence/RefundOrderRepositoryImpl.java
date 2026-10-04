@@ -9,6 +9,9 @@ import org.icedamericanomall.pay.domain.model.refundorder.RefundOrder;
 import org.icedamericanomall.pay.domain.repository.RefundOrderRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 /**
  * 退款单仓储实现 —— MyBatis-Plus 访问 {@code refund_order} 表，PO ↔ 聚合转换内聚于此。
  * 状态迁移一律条件更新，逻辑自 {@code RefundOrderServiceImpl} 原样收编。
@@ -71,6 +74,12 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
                 .eq(RefundOrderPO::getStatus, RefundStatusEnum.FAILED.getCode())
                 .set(RefundOrderPO::getStatus, RefundStatusEnum.PROCESSING.getCode())
                 .set(RefundOrderPO::getFailReason, null)) > 0;
+    }
+
+    @Override
+    public List<RefundOrder> listStaleProcessing(LocalDateTime threshold, int limit) {
+        return refundOrderMapper.selectStaleProcessing(RefundStatusEnum.PROCESSING.getCode(), threshold, limit)
+                .stream().map(RefundOrderRepositoryImpl::toDomain).toList();
     }
 
     private static RefundOrder toDomain(RefundOrderPO po) {

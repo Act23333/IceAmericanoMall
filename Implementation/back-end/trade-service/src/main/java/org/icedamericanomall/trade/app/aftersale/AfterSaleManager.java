@@ -39,7 +39,8 @@ import java.util.List;
  *   When 提交售后
  *   Then 落库一条"待审核"售后单
  * Scenario: 订单不存在 / 非本人订单 / 状态不允许 / 金额非法 → 拒绝
- * Scenario: 管理员审核非法状态值 → PARAM_ERROR；已退款（资金终态）→ 不可再审核
+ * Scenario: 管理员审核非法状态值 → PARAM_ERROR
+ *   And 已退款（REFUNDED，资金终态）/ 已退货（RETURNED，退款流程进行中）→ 不可再审核
  * </pre>
  */
 @Slf4j
@@ -86,6 +87,10 @@ public class AfterSaleManager {
      * <p>退货退款（type=1）审核同意只落状态，退款待「确认收到退货」后触发（见 {@link #confirmReturn}）。
      * 退款发起失败会把异常上抛（fail-closed）：售后单已停留 APPROVED，管理端可见错误并重试。
      *
+     * <p><b>审核禁改来源（ADR-037 风险收敛）</b>：已退款（REFUNDED，资金终态）与已退货
+     * （RETURNED，退款流程进行中）均不可再被审核改回其它状态——RETURNED 之后的唯一合法去向是
+     * 退款回调回写 REFUNDED（{@link #markRefunded}），管理端审核不得扰动该状态语义。
+     *
      * @param id     售后单 ID
      * @param status 目标状态（2-同意时按类型决定是否触发退款）
      * @param remark 审核备注
@@ -99,6 +104,11 @@ public class AfterSaleManager {
         // V5.5 资金线守卫：已退款是资金终态，禁止再被审核改回其它状态（否则等于「撤销退款」）
         if (AfterSaleStatusEnum.REFUNDED.getCode() == entity.getStatus()) {
             throw new BizException(ErrorCode.REFUND_STATUS_INVALID, "售后单已退款，不可再审核");
+        }
+        // ADR-037 风险收敛：已退货即退货退款流程进行中，审核窗口已关闭，仅剩退款回调回写 REFUNDED
+        if (AfterSaleStatusEnum.RETURNED.getCode() == entity.getStatus()) {
+            throw new BizException(ErrorCode.REFUND_STATUS_INVALID,
+                    "售后单已确认退货、退款流程进行中，不可再审核");
         }
         entity.setStatus(target.getCode());
         entity.setAdminRemark(remark);

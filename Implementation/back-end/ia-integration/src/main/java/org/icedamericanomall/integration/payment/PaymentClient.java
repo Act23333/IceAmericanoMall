@@ -15,8 +15,9 @@ import java.util.Map;
  * 那些字段位于 AES-GCM 解密后的报文中，Key 值契约在适配层之外是无效知识。
  *
  * <p><b>退款与对账（F1 / F4）</b>：退款发起（{@link #refund}）、退款回调解析
- * （{@link #parseWechatRefundCallback}）、渠道账单下载（{@link #billDownload}）同样收口在
- * 本接口——渠道协议知识（退款 API 路径、账单列序、金额计价单位）不越过适配层边界。
+ * （{@link #parseWechatRefundCallback}）、渠道退款查询（{@link #queryRefund}，悬挂补偿）、
+ * 渠道账单下载（{@link #billDownload}）同样收口在本接口——渠道协议知识
+ * （退款 API 路径、账单列序、金额计价单位、原始状态串）不越过适配层边界。
  */
 public interface PaymentClient {
 
@@ -67,6 +68,22 @@ public interface PaymentClient {
      */
     ChannelRefundResult refund(String payOrderNo, String refundNo, int refundAmount, int orderAmount,
                                String reason);
+
+    /**
+     * 按商户退款单号主动查询渠道退款终态（悬挂退款补偿任务用，ADR-035 风险收敛）。
+     *
+     * <p>与 PAY6 回调互为冗余：回调丢失/未达时，由补偿任务凭本查询收敛退款单终态。
+     * 渠道原始状态串在本适配层归一化为 {@link ChannelRefundState} 三值语义，调用方不感知渠道协议细节。
+     *
+     * @param refundNo 商户退款单号（微信 {@code out_refund_no}，重试复用同号）
+     * @return 强类型查询结果（渠道退款单号 + 归一化状态）
+     * @throws UnsupportedOperationException 当前渠道不支持退款查询（default 实现；支付宝等无查询 API 的渠道）
+     * @throws org.icedamericanomall.common.exception.BizException
+     *         {@code BUSINESS_EXECUTION_EXCEPTION} —— 查询调用失败（网络/渠道错误，不允许吞掉伪装成「仍在处理」）
+     */
+    default ChannelRefundQueryResult queryRefund(String refundNo) {
+        throw new UnsupportedOperationException("当前渠道不支持退款查询: " + refundNo);
+    }
 
     /**
      * 下载并解析渠道对账账单（F4）。

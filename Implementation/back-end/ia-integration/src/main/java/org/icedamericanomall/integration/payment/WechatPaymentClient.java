@@ -12,6 +12,7 @@ import com.wechat.pay.java.service.payments.nativepay.model.*;
 import com.wechat.pay.java.service.refund.RefundService;
 import com.wechat.pay.java.service.refund.model.AmountReq;
 import com.wechat.pay.java.service.refund.model.CreateRequest;
+import com.wechat.pay.java.service.refund.model.QueryByOutRefundNoRequest;
 import com.wechat.pay.java.service.refund.model.Refund;
 import com.wechat.pay.java.service.refund.model.Status;
 import jakarta.annotation.PostConstruct;
@@ -235,6 +236,49 @@ public class WechatPaymentClient implements PaymentClient {
     }
 
     /**
+     * 按商户退款单号查询微信 v3 退款终态（悬挂退款补偿任务用，ADR-035 风险收敛）。
+     *
+     * <p>对应微信 v3 {@code GET /v3/refund/domestic/refunds/{out_refund_no}}，走 SDK
+     * {@link RefundService#queryByOutRefundNo(QueryByOutRefundNoRequest)}；{@code refund_status}
+     * 在本适配层归一化（SUCCESS→SUCCESS，CLOSED/ABNORMAL→FAILED，PROCESSING→PROCESSING），
+     * 调用方不接触微信原始状态串。
+     *
+     * @param refundNo 商户退款单号（微信 {@code out_refund_no}）
+     * @return 强类型查询结果
+     * @throws BizException {@code BUSINESS_EXECUTION_EXCEPTION} 查询调用失败（不允许吞掉伪装成「仍在处理」）
+     */
+    @Override
+    public ChannelRefundQueryResult queryRefund(String refundNo) {
+        QueryByOutRefundNoRequest request = new QueryByOutRefundNoRequest();
+        request.setOutRefundNo(refundNo);
+        try {
+            Refund refund = refundService.queryByOutRefundNo(request);
+            ChannelRefundQueryResult result =
+                    new ChannelRefundQueryResult(refund.getRefundId(), toChannelRefundState(refund.getStatus()));
+            log.info("微信退款查询成功: refundNo={}, refundId={}, refundStatus={}",
+                    refundNo, result.refundId(), refund.getStatus());
+            return result;
+        } catch (Exception e) {
+            log.error("微信退款查询失败: refundNo={}", refundNo, e);
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "微信退款查询失败");
+        }
+    }
+
+    /**
+     * 微信 {@code refund_status} → 归一化三值状态（渠道协议知识收口在本适配层）。
+     *
+     * @param status 微信 SDK 退款状态（枚举封闭集，四种取值全覆盖）
+     * @return 归一化状态
+     */
+    static ChannelRefundState toChannelRefundState(Status status) {
+        return switch (status) {
+            case SUCCESS -> ChannelRefundState.SUCCESS;
+            case CLOSED, ABNORMAL -> ChannelRefundState.FAILED;
+            case PROCESSING -> ChannelRefundState.PROCESSING;
+        };
+    }
+
+    /**
      * 下载微信 v3 交易账单并解析为对账条目（F4）。
      *
      * <p>账单未生成（如账单日当天）或下载失败时返回<b>空列表</b>并告警 —— 对账编排据此落
@@ -370,6 +414,18 @@ public class WechatPaymentClient implements PaymentClient {
                     new ChannelBillItem("MOCK-PAY-0002", MOCK_CHANNEL_TXN_NO_PREFIX + billDate + "-2", 12800));
             log.info("[MockWechat] 账单下载: billDate={}, rows={}（样例账单）", billDate, items.size());
             return items;
+        }
+
+        /**
+         * Mock 退款查询：恒返回「处理中」——与 {@link #refund} 的受理口径一致（受理后等回调确认），
+         * Mock 环境不模拟渠道侧异步推进，真实终态由人工回调 / 测试桩驱动；
+         * 保证悬挂补偿任务在 Mock 环境可空跑（查询不报错、不改本地状态）。
+         */
+        @Override
+        public ChannelRefundQueryResult queryRefund(String refundNo) {
+            log.info("[MockWechat] 退款查询: refundNo={}, refundStatus=PROCESSING", refundNo);
+            return new ChannelRefundQueryResult(MOCK_CHANNEL_REFUND_NO_PREFIX + refundNo,
+                    ChannelRefundState.PROCESSING);
         }
 
         @Override

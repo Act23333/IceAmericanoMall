@@ -16,17 +16,22 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link FreightPostageResolver} 单元测试 —— 「订单项 → 生效模板」解析与 Feign 交互
- * （F2 运费模型，V5.6）。
+ * {@link FreightPostageResolver} 单元测试 —— 「订单项 → 生效模板」解析、Feign 交互与
+ * 短 TTL 本地缓存（F2 运费模型，V5.6；缓存为 ADR-037 后果收敛）。
  *
  * <p>解析规则的权威口径来自 I43 返回集合：只有<b>启用</b>模板会被返回，
  * 故「绑定模板已停用/不存在」在调用方表现为「绑定 id 不在返回集合中」→ 回落默认模板。
+ *
+ * <p>缓存用例使用<b>真实 Caffeine 实例</b>（不 mock 缓存），仅 mock {@code FreightTemplateClient}：
+ * 锁死「同 sellerId 只查一次 / 不同 sellerId 各自加载 / 加载失败不缓存（fail-closed 保持，
+ * 下次调用重新发起查询）」三条不变量。
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("FreightPostageResolver — 运费解析（F2）")
+@DisplayName("FreightPostageResolver — 运费解析（F2）+ 短 TTL 缓存")
 class FreightPostageResolverTest {
 
     @Mock private FreightTemplateClient freightTemplateClient;
@@ -57,8 +62,8 @@ class FreightPostageResolverTest {
     }
 
     @Test
-    @DisplayName("查询入参 — 携带 sellerId 与去重后的绑定模板 ID 集合")
-    void shouldPassSellerIdAndDistinctTemplateIds() {
+    @DisplayName("查询入参 — 缓存 miss 时按「sellerId + 空 templateIds」发起 I43 全量查询")
+    void shouldQueryBySellerIdWithEmptyTemplateIds_onCacheMiss() {
         when(freightTemplateClient.query(any())).thenReturn(List.of(template(7L, 800, 0, true)));
 
         resolver().resolve(5L, List.of(snapshot(7L), snapshot(7L), snapshot(null)), 10000);
@@ -66,7 +71,54 @@ class FreightPostageResolverTest {
         ArgumentCaptor<FreightTemplateQueryCO> captor = ArgumentCaptor.forClass(FreightTemplateQueryCO.class);
         org.mockito.Mockito.verify(freightTemplateClient).query(captor.capture());
         assertEquals(5L, captor.getValue().getSellerId());
-        assertEquals(List.of(7L), captor.getValue().getTemplateIds());
+        assertEquals(List.of(), captor.getValue().getTemplateIds());
+    }
+
+    @Test
+    @DisplayName("缓存命中 — 同 sellerId 两次 resolve 仅发起一次 I43 查询，计价结果一致")
+    void shouldQueryOnlyOnce_whenSameSellerResolvedTwice() {
+        when(freightTemplateClient.query(any()))
+                .thenReturn(List.of(template(1L, 600, 0, true), template(7L, 1200, 0, false)));
+        FreightPostageResolver resolver = resolver();
+
+        int first = resolver.resolve(5L, List.of(snapshot(7L)), 10000);
+        int second = resolver.resolve(5L, List.of(snapshot(7L)), 10000);
+
+        assertEquals(1200, first);
+        assertEquals(first, second);
+        org.mockito.Mockito.verify(freightTemplateClient, times(1)).query(any());
+    }
+
+    @Test
+    @DisplayName("缓存按 sellerId 隔离 — 不同商家各自加载，互不串用")
+    void shouldLoadEachSeller_whenDifferentSellerIds() {
+        when(freightTemplateClient.query(any())).thenReturn(List.of(template(1L, 600, 0, true)));
+        FreightPostageResolver resolver = resolver();
+
+        assertEquals(600, resolver.resolve(5L, List.of(snapshot(null)), 10000));
+        assertEquals(600, resolver.resolve(6L, List.of(snapshot(null)), 10000));
+
+        ArgumentCaptor<FreightTemplateQueryCO> captor = ArgumentCaptor.forClass(FreightTemplateQueryCO.class);
+        org.mockito.Mockito.verify(freightTemplateClient, times(2)).query(captor.capture());
+        assertEquals(List.of(5L, 6L),
+                captor.getAllValues().stream().map(FreightTemplateQueryCO::getSellerId).toList());
+    }
+
+    @Test
+    @DisplayName("失败不落缓存 — 查询异常上抛（fail-closed），下一次调用重新发起查询")
+    void shouldRetryQuery_whenPreviousQueryFailed() {
+        when(freightTemplateClient.query(any()))
+                .thenThrow(new BizException(ErrorCode.SYSTEM_BUSY, "运费计算服务暂不可用"));
+        FreightPostageResolver resolver = resolver();
+
+        BizException first = assertThrows(BizException.class,
+                () -> resolver.resolve(5L, List.of(snapshot(null)), 10000));
+        BizException second = assertThrows(BizException.class,
+                () -> resolver.resolve(5L, List.of(snapshot(null)), 10000));
+
+        assertEquals(ErrorCode.SYSTEM_BUSY, first.getErrorCode());
+        assertEquals(ErrorCode.SYSTEM_BUSY, second.getErrorCode());
+        org.mockito.Mockito.verify(freightTemplateClient, times(2)).query(any());
     }
 
     @Test

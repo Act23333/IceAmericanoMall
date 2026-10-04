@@ -46,6 +46,10 @@ import java.util.Map;
  * Scenario: 微信退款回调成功
  *   Then 退款单条件置成功（仅处理中可迁移，重复通知幂等）→ I42 回写售后单
  * </pre>
+ *
+ * <p><b>与 {@link RefundResumeManager} 的关系</b>：悬挂退款补偿（ADR-035 风险收敛）是本用例族的
+ * 并行新增入口，复用 {@link #dispatchAndSettle} / {@link #markSuccessAndNotify} / {@link #markFailedWithReason}
+ * （package-private，同包编排层），不复制结算逻辑；PAY6 / AD43 / execute 既有行为语义不变。
  */
 @Slf4j
 @Component
@@ -174,19 +178,32 @@ public class RefundManager {
     private RefundOrder execute(RefundOrder refundOrder, PayOrder payOrder, String reason) {
         String refundNo = refundOrder.getRefundNo();
         try {
-            ChannelRefundResult result = requestChannel(payOrder, refundOrder, reason);
-            if (result.settled()) {
-                markSuccessAndNotify(refundNo, result.channelRefundNo());
-            } else {
-                log.info("[refund][processing] refundNo={} 渠道已受理，等待回调确认", refundNo);
-            }
+            dispatchAndSettle(refundOrder, payOrder, reason);
         } catch (RuntimeException e) {
-            refundOrderService.markFailedIfProcessing(refundNo, abbreviate(e.getMessage()));
+            markFailedWithReason(refundNo, e.getMessage());
             log.error("[refund][failed] refundNo={}, afterSaleId={}, channel={}",
                     refundNo, refundOrder.getAfterSaleId(), refundOrder.getChannel(), e);
             throw e;
         }
         return refundOrderService.getByRefundNo(refundNo);
+    }
+
+    /**
+     * 发起渠道退款并结算<b>同步</b>终态（共享入口）：同步成功即条件置成功 + 回写售后单；
+     * 处理中保持等回调。渠道异常向上抛出，失败落账口径（是否置失败）由调用方决定 ——
+     * 发起路径 fail-closed 置失败，悬挂补偿路径仅告警留待下轮（渠道状态未知不轻易推翻）。
+     *
+     * @param refundOrder 退款单聚合（含 refundNo / channel / refundAmount）
+     * @param payOrder    原支付单聚合（含 bizUserId / payOrderNo / amount）
+     * @param reason      退款原因摘要（可空）
+     */
+    void dispatchAndSettle(RefundOrder refundOrder, PayOrder payOrder, String reason) {
+        ChannelRefundResult result = requestChannel(payOrder, refundOrder, reason);
+        if (result.settled()) {
+            markSuccessAndNotify(refundOrder.getRefundNo(), result.channelRefundNo());
+        } else {
+            log.info("[refund][processing] refundNo={} 渠道已受理，等待回调确认", refundOrder.getRefundNo());
+        }
     }
 
     /** 按原支付渠道发起退款；余额渠道走 I41 余额入账（本地同步入账）。 */
@@ -206,8 +223,11 @@ public class RefundManager {
                 refundOrder.getRefundAmount(), payOrder.getAmount(), reason);
     }
 
-    /** 条件置成功后回写售后单（命中才回写，重复回调不重复回写）。 */
-    private void markSuccessAndNotify(String refundNo, String channelRefundNo) {
+    /**
+     * 条件置成功后回写售后单（命中才回写，重复回调不重复回写）。
+     * 共享结算入口：PAY6 回调 / 渠道同步终态 / 悬挂补偿（微信查询 SUCCESS、余额/支付宝重放）统一走此方法。
+     */
+    void markSuccessAndNotify(String refundNo, String channelRefundNo) {
         if (!refundOrderService.markSuccessIfProcessing(refundNo, channelRefundNo)) {
             log.info("[refund][duplicate] refundNo={} 非处理中，忽略", refundNo);
             return;
@@ -216,6 +236,14 @@ public class RefundManager {
         if (refundOrder != null) {
             notifyAfterSaleRefunded(refundOrder.getAfterSaleId());
         }
+    }
+
+    /**
+     * 条件置失败并记录失败摘要（共享失败落账入口，仅处理中可迁移）。
+     * 摘要截断与 {@code fail_reason} 列长约束在本处统一收口。
+     */
+    void markFailedWithReason(String refundNo, String failReason) {
+        refundOrderService.markFailedIfProcessing(refundNo, abbreviate(failReason));
     }
 
     /**

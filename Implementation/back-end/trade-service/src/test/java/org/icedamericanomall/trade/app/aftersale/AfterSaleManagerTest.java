@@ -211,6 +211,22 @@ class AfterSaleManagerTest {
     }
 
     @Test
+    @DisplayName("review — 已退货（RETURNED）单不可再审核：抛 REFUND_STATUS_INVALID（ADR-037 风险收敛）")
+    void shouldRejectReview_whenAlreadyReturned() {
+        AfterSale returned = new AfterSale();
+        returned.setId(1L);
+        returned.setStatus(AfterSaleStatusEnum.RETURNED.getCode());
+        when(afterSaleRepository.findById(1L)).thenReturn(returned);
+
+        BizException ex = assertThrows(BizException.class,
+                () -> manager.review(1L, AfterSaleStatusEnum.APPROVED.getCode(), "同意"));
+
+        assertEquals(ErrorCode.REFUND_STATUS_INVALID, ex.getErrorCode());
+        verify(afterSaleRepository, never()).update(any(AfterSale.class));
+        verify(refundManager, never()).triggerRefund(anyLong());
+    }
+
+    @Test
     @DisplayName("review — 审核同意 + 仅退款（type=2）：先落库（事务内）后触发退款（事务外），顺序锁死")
     void shouldTriggerRefundAfterUpdate_whenApprovedAndRefundOnly() {
         AfterSale refundOnly = new AfterSale();
