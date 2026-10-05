@@ -17,6 +17,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
@@ -97,5 +99,28 @@ class SearchControllerTest {
 
         assertEquals(java.util.List.of(), result.getData().getBrands());
         assertEquals(java.util.List.of(), result.getData().getPriceRanges());
+    }
+
+    @Test
+    @DisplayName("suggest — SE5 薄委托 searchManager.suggest（合并/去重/截断在 app 层）")
+    void shouldDelegateSuggest_whenKeywordPresent() {
+        List<String> suggestions = List.of("手机", "手机壳");
+        when(searchManager.suggest("手机")).thenReturn(suggestions);
+
+        Result<List<String>> result = controller().suggest("手机");
+
+        verify(searchManager).suggest("手机");
+        assertSame(suggestions, result.getData());
+    }
+
+    @Test
+    @DisplayName("suggest — keyword 缺失 → 宽松委托（app 层返回空列表，不报 400）")
+    void shouldDelegateNullKeyword_whenSuggestWithoutKeyword() {
+        when(searchManager.suggest(null)).thenReturn(List.of());
+
+        Result<List<String>> result = controller().suggest(null);
+
+        verify(searchManager).suggest(null);
+        assertEquals(List.of(), result.getData());
     }
 }

@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
  * 种草笔记 Controller（F12 内容社区 Phase 1，P28-P33，ADR-048）。
  *
@@ -71,5 +73,12 @@ public class NoteController {
     public Result<Void> delete(@PathVariable Long id) {
         noteManager.delete(UserContext.getUserId(), id);
         return Result.ok();
+    }
+
+    /** P34 相似笔记（I51 kNN 命中本地组装发布态卡；推荐位口径——降级/无命中空列表不报错）。 */
+    @GetMapping("/{id}/similar")
+    public Result<List<NoteCardVO>> similar(@PathVariable Long id,
+                                            @RequestParam(defaultValue = "5") int size) {
+        return Result.ok(noteManager.similarNotes(id, size));
     }
 }

@@ -1,10 +1,13 @@
 package org.icedamericanomall.search.adapter.internal;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.icedamericanomall.dto.NoteVectorHitCO;
+import org.icedamericanomall.dto.NoteVectorUpsertCO;
 import org.icedamericanomall.dto.ProductVectorHitCO;
 import org.icedamericanomall.dto.ProductVectorUpsertCO;
 import org.icedamericanomall.search.adapter.assembler.ProductSearchConverter;
 import org.icedamericanomall.search.app.KnowledgeVectorManager;
+import org.icedamericanomall.search.app.NoteVectorManager;
 import org.icedamericanomall.search.app.ProductVectorManager;
 import org.icedamericanomall.search.app.SearchManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +28,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -34,7 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * InternalSearchController 商品向量端点测试 —— 委托、条件装配降级（0/空列表）与入参校验。
+ * InternalSearchController 商品/笔记向量端点测试 —— 委托、条件装配降级（0/空列表）与入参校验。
  *
  * <p>Mock app 层与 {@link ObjectProvider}（ES 关闭时 Manager Bean 不存在的口径），
  * standalone MockMvc 不起 Spring 上下文。
@@ -45,7 +50,10 @@ class InternalSearchControllerTest {
 
     private static final String UPSERT_URL = "/internal/search/vector/product/upsert";
     private static final String SIMILAR_URL = "/internal/search/vector/product/similar";
+    private static final String NOTE_UPSERT_URL = "/internal/search/vector/note/upsert";
+    private static final String NOTE_SIMILAR_URL = "/internal/search/vector/note/similar";
     private static final Long PRODUCT_ID = 9L;
+    private static final Long NOTE_ID = 9L;
 
     @Mock
     private SearchManager searchManager;
@@ -60,10 +68,16 @@ class InternalSearchControllerTest {
     private ProductVectorManager productVectorManager;
 
     @Mock
+    private NoteVectorManager noteVectorManager;
+
+    @Mock
     private ObjectProvider<KnowledgeVectorManager> knowledgeVectorProvider;
 
     @Mock
     private ObjectProvider<ProductVectorManager> productVectorProvider;
+
+    @Mock
+    private ObjectProvider<NoteVectorManager> noteVectorProvider;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -72,7 +86,8 @@ class InternalSearchControllerTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(new InternalSearchController(
-                searchManager, converter, knowledgeVectorProvider, productVectorProvider)).build();
+                searchManager, converter, knowledgeVectorProvider, productVectorProvider,
+                noteVectorProvider)).build();
     }
 
     @Test
@@ -155,10 +170,106 @@ class InternalSearchControllerTest {
         verifyNoInteractions(productVectorManager);
     }
 
+    @Test
+    @DisplayName("I50 笔记摄取 — Manager 可用 → 委托并返回 1（Req→CO 字段对齐，deleted 透传）")
+    void shouldDelegateToManager_whenNoteUpsertAndVectorEnabled() throws Exception {
+        when(noteVectorProvider.getIfAvailable()).thenReturn(noteVectorManager);
+        when(noteVectorManager.upsert(any(NoteVectorUpsertCO.class))).thenReturn(1);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("noteId", NOTE_ID);
+        body.put("title", "冲咖啡入门指南");
+        body.put("content", "手冲水温 90 度");
+        mockMvc.perform(post(NOTE_UPSERT_URL).contentType("application/json")
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").value(1));
+
+        ArgumentCaptor<NoteVectorUpsertCO> captor = ArgumentCaptor.forClass(NoteVectorUpsertCO.class);
+        verify(noteVectorManager).upsert(captor.capture());
+        assertEquals(NOTE_ID, captor.getValue().getNoteId());
+        assertEquals("冲咖啡入门指南", captor.getValue().getTitle());
+        assertEquals("手冲水温 90 度", captor.getValue().getContent());
+        assertTrue(!captor.getValue().isDeleted());
+    }
+
+    @Test
+    @DisplayName("I50 笔记摄取 — deleted=true 透传（软删/取消发布语义）")
+    void shouldPassThroughDeletedFlag_whenNoteUpsertDeleted() throws Exception {
+        when(noteVectorProvider.getIfAvailable()).thenReturn(noteVectorManager);
+
+        mockMvc.perform(post(NOTE_UPSERT_URL).contentType("application/json")
+                        .content("{\"noteId\":9,\"title\":\"标题\",\"deleted\":true}"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<NoteVectorUpsertCO> captor = ArgumentCaptor.forClass(NoteVectorUpsertCO.class);
+        verify(noteVectorManager).upsert(captor.capture());
+        assertTrue(captor.getValue().isDeleted());
+    }
+
+    @Test
+    @DisplayName("I50 笔记摄取 — ES 关闭（Bean 不存在）→ 返回 0 且不触达 Manager")
+    void shouldReturnZero_whenNoteUpsertAndVectorUnavailable() throws Exception {
+        mockMvc.perform(post(NOTE_UPSERT_URL).contentType("application/json")
+                        .content("{\"noteId\":9,\"title\":\"冲咖啡入门指南\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").value(0));
+
+        verifyNoInteractions(noteVectorManager);
+    }
+
+    @Test
+    @DisplayName("I50 笔记摄取 — 缺 noteId → 400")
+    void shouldReturn400_whenNoteUpsertMissingNoteId() throws Exception {
+        mockMvc.perform(post(NOTE_UPSERT_URL).contentType("application/json")
+                        .content("{\"title\":\"冲咖啡入门指南\"}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(noteVectorManager);
+    }
+
+    @Test
+    @DisplayName("I50 笔记摄取 — 缺 title → 400")
+    void shouldReturn400_whenNoteUpsertMissingTitle() throws Exception {
+        mockMvc.perform(post(NOTE_UPSERT_URL).contentType("application/json")
+                        .content("{\"noteId\":9}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(noteVectorManager);
+    }
+
+    @Test
+    @DisplayName("I51 相似笔记 — Manager 可用 → 委托并返回命中 noteId + score")
+    void shouldDelegateToManager_whenNoteSimilarAndVectorEnabled() throws Exception {
+        when(noteVectorProvider.getIfAvailable()).thenReturn(noteVectorManager);
+        when(noteVectorManager.similar(NOTE_ID, 5)).thenReturn(List.of(
+                noteHitCO(100L, 0.9), noteHitCO(200L, 0.8)));
+
+        mockMvc.perform(get(NOTE_SIMILAR_URL).param("noteId", String.valueOf(NOTE_ID)).param("size", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].noteId").value(100))
+                .andExpect(jsonPath("$[0].score").value(0.9))
+                .andExpect(jsonPath("$[1].noteId").value(200))
+                .andExpect(jsonPath("$[1].score").value(0.8))
+                .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    @DisplayName("I51 相似笔记 — ES 关闭（Bean 不存在）→ 空列表且不触达 Manager")
+    void shouldReturnEmptyList_whenNoteSimilarAndVectorUnavailable() throws Exception {
+        mockMvc.perform(get(NOTE_SIMILAR_URL).param("noteId", String.valueOf(NOTE_ID)))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertEquals("[]",
+                        result.getResponse().getContentAsString()));
+        verifyNoInteractions(noteVectorManager);
+    }
+
     private static ProductVectorHitCO hitCO(Long productId, double score) {
         ProductVectorHitCO co = new ProductVectorHitCO();
         co.setProductId(productId);
         co.setScore(score);
         return co;
+    }
+
+    private static NoteVectorHitCO noteHitCO(Long noteId, double score) {
+        return new NoteVectorHitCO(noteId, score);
     }
 }

@@ -4,14 +4,18 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.KnowledgeVectorClient;
+import org.icedamericanomall.dto.NoteVectorHitCO;
+import org.icedamericanomall.dto.NoteVectorUpsertCO;
 import org.icedamericanomall.dto.ProductVectorHitCO;
 import org.icedamericanomall.dto.ProductVectorUpsertCO;
 import org.icedamericanomall.search.adapter.assembler.ProductSearchConverter;
 import org.icedamericanomall.search.adapter.request.KnowledgeVectorUpsertReq;
+import org.icedamericanomall.search.adapter.request.NoteVectorUpsertReq;
 import org.icedamericanomall.search.adapter.request.ProductVectorUpsertReq;
 import org.icedamericanomall.search.adapter.request.VectorSearchReq;
 import org.icedamericanomall.search.adapter.response.KnowledgeChunkHitVO;
 import org.icedamericanomall.search.app.KnowledgeVectorManager;
+import org.icedamericanomall.search.app.NoteVectorManager;
 import org.icedamericanomall.search.app.ProductVectorManager;
 import org.icedamericanomall.search.app.SearchManager;
 import org.springframework.beans.factory.ObjectProvider;
@@ -26,19 +30,20 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 内部搜索管理接口 — 索引重建 / 向量检索 / 知识库向量摄取 / 商品向量摄取与相似检索。
+ * 内部搜索管理接口 — 索引重建 / 向量检索 / 知识库向量摄取 / 商品与笔记向量摄取与相似检索。
  *
  * <p>内部接口（{@code /internal/**}）按约定不包装 {@code Result}，异常原样透出。
  * Controller 仅做参数解析 + 委托 app 层（{@link SearchManager} / {@link KnowledgeVectorManager}
- * / {@link ProductVectorManager}）。
+ * / {@link ProductVectorManager} / {@link NoteVectorManager}）。
  *
  * <p><b>向量索引归属</b>：{@code knowledge_vectors} 索引（含分块与 Embedding 调用）归本服务所有；
  * ai-service 通过 {@link KnowledgeVectorClient} 提交<b>原文</b>并取回 chunk 文本，不感知维度与切片策略。
- * {@code products} 索引同理归本服务（I47/I48 商品向量推荐，ADR-046）。
+ * {@code products} 索引同理归本服务（I47/I48 商品向量推荐，ADR-046）；
+ * {@code notes} 索引亦然（I50/I51 笔记向量推荐，V5.13，ADR-046 管道第二次复用）。
  *
  * <p><b>渐进启用 / 降级</b>：ES 关闭（{@code search.elasticsearch.enabled=false}）时
- * {@link KnowledgeVectorManager} / {@link ProductVectorManager} 不存在，知识库与商品向量端点
- * 按「未启用」处理（摄取返回 0、删除返回 false、检索返回空），<b>不抛异常</b>，
+ * {@link KnowledgeVectorManager} / {@link ProductVectorManager} / {@link NoteVectorManager} 不存在，
+ * 知识库与商品/笔记向量端点按「未启用」处理（摄取返回 0、删除返回 false、检索返回空），<b>不抛异常</b>，
  * 从而不阻断 ai-service / item-service 的主流程（推荐为纯旁路，fail-open）。
  */
 @Slf4j
@@ -55,6 +60,9 @@ public class InternalSearchController {
 
     /** ES 关闭时无此 Bean，故用 ObjectProvider 软依赖（不阻断启动，按未启用处理）。 */
     private final ObjectProvider<ProductVectorManager> productVectorManager;
+
+    /** ES 关闭时无此 Bean，故用 ObjectProvider 软依赖（不阻断启动，按未启用处理）。 */
+    private final ObjectProvider<NoteVectorManager> noteVectorManager;
 
     @PostMapping("/reindex")
     public Map<String, Object> reindex() {
@@ -151,6 +159,50 @@ public class InternalSearchController {
         return manager.searchKnowledge(req.embedding(), req.size(), req.sellerId()).stream()
                 .map(KnowledgeChunkHitVO::from)
                 .toList();
+    }
+
+    /**
+     * 笔记向量摄取（契约 I50）—— {@code deleted=true} 语义删向量文档，否则单向量幂等覆盖写
+     * （noteId 幂等键，V5.13，ADR-046 管道第二次复用）。
+     *
+     * @return 1=已写入/已删除；0=ES/Embedding 未启用（静默跳过，不报错）
+     */
+    @PostMapping("/vector/note/upsert")
+    public int upsertNoteVector(@RequestBody @Valid NoteVectorUpsertReq req) {
+        NoteVectorManager manager = noteVectorManager.getIfAvailable();
+        if (manager == null) {
+            log.warn("笔记向量摄取未启用（ES 关闭），跳过: noteId={}", req.noteId());
+            return 0;
+        }
+        return manager.upsert(toNoteCO(req));
+    }
+
+    /**
+     * 相似笔记检索（契约 I51）—— 自身向量 kNN，排除自身，只出 {@code noteId + score}
+     * （笔记卡组装与发布态过滤归 item-service，MySQL 是展示真相源）。
+     *
+     * @return 命中列表；ES 关闭/自身无向量 → 空列表
+     */
+    @GetMapping("/vector/note/similar")
+    public List<NoteVectorHitCO> similarNoteVector(
+            @RequestParam("noteId") Long noteId,
+            @RequestParam(value = "size", defaultValue = "5") Integer size) {
+        NoteVectorManager manager = noteVectorManager.getIfAvailable();
+        if (manager == null) {
+            log.warn("笔记向量检索未启用（ES 关闭），按无命中处理: noteId={}", noteId);
+            return List.of();
+        }
+        return manager.similar(noteId, size);
+    }
+
+    /** 适配层入参 → 契约 CO（字段一一对应，纯搬运）。 */
+    private static NoteVectorUpsertCO toNoteCO(NoteVectorUpsertReq req) {
+        NoteVectorUpsertCO co = new NoteVectorUpsertCO();
+        co.setNoteId(req.noteId());
+        co.setTitle(req.title());
+        co.setContent(req.content());
+        co.setDeleted(req.deleted());
+        return co;
     }
 
     /** 适配层入参 → 契约 CO（字段一一对应，纯搬运）。 */

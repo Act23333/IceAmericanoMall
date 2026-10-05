@@ -3,6 +3,7 @@ package org.icedamericanomall.search.app;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.search.domain.gateway.KeywordTracker;
 import org.icedamericanomall.search.domain.gateway.ProductSearchGateway;
+import org.icedamericanomall.search.domain.gateway.ProductSuggestGateway;
 import org.icedamericanomall.search.domain.model.search.ProductSearchHit;
 import org.icedamericanomall.search.domain.model.search.SearchFacets;
 import org.icedamericanomall.search.domain.model.search.SearchPage;
@@ -11,19 +12,31 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 /**
- * 搜索编排（应用层）—— 关键词记录规则 + 委托检索网关。
+ * 搜索编排（应用层）—— 关键词记录规则 + 委托检索网关 + SE5 联想双源合并。
  *
  * <p>职责：非空关键词才记录热搜（规则内聚于此，DB/ES 两条实现链不再各自为政）；
- * 组装 {@link SearchQuery} 委托 {@link ProductSearchGateway}（DB LIKE / ES 条件装配）。
+ * 组装 {@link SearchQuery} 委托 {@link ProductSearchGateway}（DB LIKE / ES 条件装配）；
+ * SE5 联想合并热搜前缀与商品名前缀两源（排序/去重/截断口径内聚于此）。
  */
 @Component
 @RequiredArgsConstructor
 public class SearchManager {
 
+    /** 联想词上限（契约 SE5：≤10）。 */
+    private static final int SUGGEST_LIMIT = 10;
+
+    /**
+     * 联想前缀长度上限（宽松防御：超长入参截断后仍可联想，不视为错误；
+     * 50 字符已覆盖现实搜索前缀，防滥用超长串打满 LIKE/Redis）。
+     */
+    private static final int MAX_SUGGEST_PREFIX_LENGTH = 50;
+
     private final ProductSearchGateway productSearchGateway;
     private final KeywordTracker keywordTracker;
+    private final ProductSuggestGateway productSuggestGateway;
 
     /**
      * 关键词/分类/品牌/价格/排序检索（SE1，非空关键词记录热搜）。
@@ -63,6 +76,39 @@ public class SearchManager {
     /** 热门搜索词 Top-N。 */
     public List<String> getHotKeywords(int limit) {
         return keywordTracker.getHotKeywords(limit);
+    }
+
+    /**
+     * 搜索联想（契约 SE5）：热搜词前缀命中在前 + 商品名前缀在后，精确去重，截 10。
+     *
+     * <p>双源口径：热搜源走 {@link KeywordTracker#getHotKeywordsByPrefix(String, int)}
+     * （Redis，实现方保证异常降级空列表）；商品名源恒走 DB LIKE（{@link ProductSuggestGateway}，
+     * ES 关闭可用）。两源各自 ≤10，合并后按源顺序去重（热搜命中优先展示，同名商品不重复出现）。
+     *
+     * <p>宽松入参口径：keyword 缺失/空白返回空列表（联想是输入辅助，不构成参数错误）；
+     * 超长前缀截断到 {@value MAX_SUGGEST_PREFIX_LENGTH} 字符后照常联想。
+     * 联想不记录热搜（浏览行为非检索行为，避免联想请求污染热搜榜）。
+     *
+     * @param keyword 前缀关键词（可空）
+     * @return 联想词列表（≤10）；无命中为空列表
+     */
+    public List<String> suggest(String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return List.of();
+        }
+        String prefix = truncate(keyword.trim());
+        List<String> hotWords = keywordTracker.getHotKeywordsByPrefix(prefix, SUGGEST_LIMIT);
+        List<String> productNames = productSuggestGateway.suggestNames(prefix, SUGGEST_LIMIT);
+        return Stream.concat(hotWords.stream(), productNames.stream())
+                .distinct()
+                .limit(SUGGEST_LIMIT)
+                .toList();
+    }
+
+    private static String truncate(String prefix) {
+        return prefix.length() > MAX_SUGGEST_PREFIX_LENGTH
+                ? prefix.substring(0, MAX_SUGGEST_PREFIX_LENGTH)
+                : prefix;
     }
 
     /** 我的搜索历史。 */

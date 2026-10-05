@@ -3,8 +3,10 @@ package org.icedamericanomall.item.app.content;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.icedamericanomall.client.NoteVectorClient;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.dto.NoteVectorHitCO;
 import org.icedamericanomall.item.adapter.assembler.NoteConverter;
 import org.icedamericanomall.item.adapter.request.NotePublishReq;
 import org.icedamericanomall.item.adapter.response.NoteCardVO;
@@ -24,17 +26,20 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * 种草笔记编排（应用层）—— F12 内容社区 Phase 1（P28-P33，ADR-048）。
+ * 种草笔记编排（应用层）—— F12 内容社区 Phase 1（P28-P33，ADR-048）+ P34 相似笔记（V5.13）。
  *
  * <p><b>用例族</b>：发布（P28，关联商品存在且在售的跨聚合校验在本层）、流（P29）、
  * 详情（P30，liked 回填 + 商品摘要卡本地装配）、点赞/取消（P31/P32，uk 幂等 + 原子计数）、
- * 作者软删（P33，归属校验）。
+ * 作者软删（P33，归属校验）、相似笔记（P34，I51 kNN 命中由本地组装发布态卡）。
  *
  * <p><b>事务纪律</b>：发布/点赞/取消/软删均为纯本地写，事务边界在本层且显式
- * {@code rollbackFor}；无 Feign 依赖（商品摘要卡同库直查，零跨服务——ADR-048 落位理由）。
+ * {@code rollbackFor}；笔记业务规则零跨服务（商品摘要卡同库直查——ADR-048 落位理由）。
+ * 唯一 Feign 依赖是 V5.13 笔记向量化旁路（ADR-046 管道第二次复用）：摄取/删向量经
+ * {@link NoteVectorManager} 事务外 afterCommit 收口、相似检索 fail-open——笔记主流程零感知。
  * <b>计数纪律</b>：点赞计数增减为仓储单条原子 SQL，本层不做读-改-写。
  */
 @Slf4j
@@ -42,12 +47,19 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class NoteManager {
 
+    /** 相似笔记缺省条数（P34 契约：缺省 5）。 */
+    private static final int DEFAULT_SIMILAR_SIZE = 5;
+    /** 相似笔记单次上限（P34 契约：≤20 归一）。 */
+    private static final int MAX_SIMILAR_SIZE = 20;
+
     private final NoteRepository noteRepository;
     private final NoteLikeRepository noteLikeRepository;
     private final NoteProductRepository noteProductRepository;
     private final ProductRepository productRepository;
     private final SkuManager skuManager;
     private final NoteConverter noteConverter;
+    private final NoteVectorManager noteVectorManager;
+    private final NoteVectorClient noteVectorClient;
 
     /**
      * 发布种草笔记（P28）—— 聚合工厂校验文本/图集不变式，关联商品逐个校验
@@ -67,6 +79,8 @@ public class NoteManager {
         if (!productIds.isEmpty()) {
             noteProductRepository.saveAll(note.getId(), productIds);
         }
+        // 向量摄取钩子（V5.13，ADR-046 第二次复用）：CO 取自本次落库聚合，事务提交后才旁路发送——回滚即不摄取
+        noteVectorManager.ingestAfterCommit(note);
         log.info("[Note] [publish] [ok] userId={}, noteId={}, productCount={}",
                 userId, note.getId(), productIds.size());
         return noteConverter.toVO(note);
@@ -124,6 +138,8 @@ public class NoteManager {
      * 删除笔记（P33）—— 仅作者本人（非本人 → 403）；软删 status=2 后流与详情不可见，
      * 关联 note_product / note_like 保留不清理（软删后不可达）。
      *
+     * <p>软删落库成功后旁路发删向量指令（V5.13，deleted=true，事务提交后生效）。
+     *
      * @throws BizException 笔记不存在或已删除（{@code NO_RESOURCE_FOUND}）、非作者（{@code FORBIDDEN}）
      */
     @Transactional(rollbackFor = Exception.class)
@@ -132,10 +148,59 @@ public class NoteManager {
         note.assertDeletableBy(userId);
         note.softDelete();
         noteRepository.updateStatus(noteId, note.getStatus());
+        noteVectorManager.removeAfterCommit(note);
         log.info("[Note] [delete] [ok] userId={}, noteId={}", userId, noteId);
     }
 
+    /**
+     * 相似笔记（P34）—— I51 kNN 命中 id 由本地组装**发布态**笔记卡：过滤已删/未发布、
+     * 排除自身、按相似度降序（命中序），不足 size 按实际数量返回。
+     *
+     * <p>推荐位口径（对齐 P27 相似商品）：检索降级/无向量/笔记本身不存在 → 空列表，
+     * 不抛 404——相似推荐是纯旁路，缺失不阻断笔记页。
+     *
+     * @param noteId 笔记 id
+     * @param size   期望条数（≤0 归 5，>20 截 20）
+     */
+    public List<NoteCardVO> similarNotes(Long noteId, int size) {
+        int normalized = normalizeSize(size);
+        List<Long> hitIds = similarHitIds(noteId, normalized).stream()
+                .filter(id -> !id.equals(noteId))
+                .toList();
+        if (hitIds.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Note> publishedById = noteRepository.findAllByIds(hitIds).stream()
+                .filter(Note::isPublished)
+                .collect(Collectors.toMap(Note::getId, n -> n, (a, b) -> a));
+        return hitIds.stream()
+                .map(publishedById::get)
+                .filter(Objects::nonNull)
+                .map(noteConverter::toCardVO)
+                .toList();
+    }
+
     // ==================== 私有方法 ====================
+
+    /** I51 相似命中 id（降序）；调用方侧薄防御层——降级/异常一律空列表（fail-open）。 */
+    private List<Long> similarHitIds(Long noteId, int size) {
+        try {
+            return noteVectorClient.similar(noteId, size).stream()
+                    .map(NoteVectorHitCO::getNoteId)
+                    .toList();
+        } catch (Exception e) {
+            log.warn("相似笔记检索失败，推荐位返回空: noteId={}", noteId, e);
+            return List.of();
+        }
+    }
+
+    /** 期望条数归一：≤0 取缺省 5，>20 截 20（P34 契约口径）。 */
+    private static int normalizeSize(int size) {
+        if (size <= 0) {
+            return DEFAULT_SIMILAR_SIZE;
+        }
+        return Math.min(size, MAX_SIMILAR_SIZE);
+    }
 
     /** 载入对外可见笔记（不存在或已软删一律 1103——软删后对读者等同不存在）。 */
     private Note requireVisible(Long noteId) {

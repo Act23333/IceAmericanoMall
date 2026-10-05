@@ -36,8 +36,8 @@ import java.util.stream.Collectors;
  *
  * <p>向量摄取旁路由 {@link ProductRecommendManager} 收口（事务外 afterCommit / 直发）；
  * 相似检索（Feign）与本类其余 Feign 依赖一样只允许出现在应用层。
- * 商品详情促销标签（F10）由 {@link ProductPromotionManager} 收口（ADR-025 用例族拆分），
- * 本类仅详情装配后一行委托填充。
+ * 商品促销标签（F10，P2 详情 V5.11 / P1 列表 V5.13 增量 {@code promotions}）由
+ * {@link ProductPromotionManager} 收口（ADR-025 用例族拆分），本类仅装配后一行委托填充。
  */
 @Slf4j
 @Component
@@ -59,7 +59,7 @@ public class ProductManager {
     private final ProductRecommendManager productRecommendManager;
     private final ProductPromotionManager productPromotionManager;
 
-    /** 商品分页（在售）：sort=price 走最低价排序 SQL，否则销量/广告优先。 */
+    /** 商品分页（在售）：sort=price 走最低价排序 SQL，否则销量/广告优先；行级回填促销角标（P1 V5.13）。 */
     public IPage<ProductVO> pageProducts(Long sellerId, Long categoryId, String keyword,
                                          String sort, String order, int page, int size) {
         IPage<Product> productPage;
@@ -72,6 +72,7 @@ public class ProductManager {
         }
         IPage<ProductVO> voPage = productPage.convert(productConverter::toVO);
         fillMinPrice(voPage.getRecords());
+        fillPromotions(voPage.getRecords());
         return voPage;
     }
 
@@ -204,6 +205,19 @@ public class ProductManager {
         Map<Long, Integer> minPriceMap = skuManager.getMinPriceMapByProductIds(
                 records.stream().map(ProductVO::getId).toList());
         records.forEach(vo -> vo.setMinPrice(minPriceMap.get(vo.getId())));
+    }
+
+    /**
+     * 列表促销角标回填（契约 §4.4 P1 V5.13 增量）：与 P2 详情完全同口径
+     * （同一 {@code tagsFor}），Caffeine 按 sellerId 缓存 60s——列表 N 行跨 M 个 seller
+     * 只打 M 次（同 seller 行共享缓存命中，不打满 marketing）；sellerId 为 null
+     * （商品无归属场景）由 {@code tagsFor} 跳过缓存与远程调用；fail-open 空列表不阻断分页。
+     */
+    private void fillPromotions(List<ProductVO> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        records.forEach(vo -> vo.setPromotions(productPromotionManager.tagsFor(vo.getSellerId())));
     }
 
     /** 商品在售 SKU 的最低价（分），无在售 SKU 时返回 null。 */

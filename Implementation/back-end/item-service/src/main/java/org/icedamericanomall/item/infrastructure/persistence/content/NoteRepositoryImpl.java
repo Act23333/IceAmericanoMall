@@ -38,6 +38,16 @@ public class NoteRepositoryImpl implements NoteRepository {
     }
 
     @Override
+    public List<Note> findAllByIds(List<Long> noteIds) {
+        if (noteIds == null || noteIds.isEmpty()) {
+            return List.of();
+        }
+        return noteMapper.selectList(new LambdaQueryWrapper<NotePO>()
+                        .in(NotePO::getId, noteIds))
+                .stream().map(NoteRepositoryImpl::toDomain).toList();
+    }
+
+    @Override
     public IPage<Note> pagePublished(int page, int size) {
         return noteMapper.selectPage(new Page<>(page, size), new LambdaQueryWrapper<NotePO>()
                         .eq(NotePO::getStatus, Note.STATUS_PUBLISHED)

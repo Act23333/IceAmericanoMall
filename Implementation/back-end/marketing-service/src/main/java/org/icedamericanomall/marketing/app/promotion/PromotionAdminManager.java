@@ -74,6 +74,10 @@ public class PromotionAdminManager {
     public void updatePromotion(Long id, PromotionUpdateReq req) {
         Promotion promotion = requirePromotion(id);
         ensureNotEnded(promotion, LocalDateTime.now(), "已结束的促销活动不可编辑");
+        if (req.getName() != null && req.getName().isBlank()) {
+            // 空白名称归一为 null（= 不更新），防止空串覆盖既有活动名
+            req.setName(null);
+        }
         marketingConverter.mergePromotionUpdate(req, promotion);
         promotion.ensureTimeWindowOrdered();
         promotion.ensureDiscountRuleLegal();

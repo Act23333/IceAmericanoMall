@@ -57,6 +57,16 @@ public class SearchController {
         return Result.ok(searchManager.getHotKeywords(limit));
     }
 
+    /**
+     * 搜索联想（SE5）— 热搜词前缀命中在前 + 商品名前缀在后，去重 ≤10（ES 关闭可用）。
+     * keyword 缺失/空白按宽松口径返回空列表（联想是输入辅助，不视为参数错误，注释见契约）。
+     */
+    @GetMapping("/suggest")
+    public Result<List<String>> suggest(
+            @RequestParam(value = "keyword", required = false) String keyword) {
+        return Result.ok(searchManager.suggest(keyword));
+    }
+
     /** 我的搜索历史 */
     @GetMapping("/history")
     public Result<List<String>> history(

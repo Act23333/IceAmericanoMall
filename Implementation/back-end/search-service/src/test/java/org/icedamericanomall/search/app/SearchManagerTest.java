@@ -3,6 +3,7 @@ package org.icedamericanomall.search.app;
 import org.icedamericanomall.search.domain.enums.SearchSortEnum;
 import org.icedamericanomall.search.domain.gateway.KeywordTracker;
 import org.icedamericanomall.search.domain.gateway.ProductSearchGateway;
+import org.icedamericanomall.search.domain.gateway.ProductSuggestGateway;
 import org.icedamericanomall.search.domain.model.search.SearchQuery;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,18 +14,25 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
- * SearchManager 单元测试 —— SE1 参数透传与热搜记录规则、SE6 facets 委托（只带 keyword/categoryId）。
+ * SearchManager 单元测试 —— SE1 参数透传与热搜记录规则、SE6 facets 委托（只带 keyword/categoryId）、
+ * SE5 联想双源合并（热搜在前 + 商品名在后、去重、截 10、宽松入参）。
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
-@DisplayName("SearchManager — SE1 参数透传 + SE6 facets 委托")
+@DisplayName("SearchManager — SE1 参数透传 + SE6 facets 委托 + SE5 联想合并")
 class SearchManagerTest {
 
     @Mock
@@ -33,8 +41,11 @@ class SearchManagerTest {
     @Mock
     private KeywordTracker keywordTracker;
 
+    @Mock
+    private ProductSuggestGateway productSuggestGateway;
+
     private SearchManager manager() {
-        return new SearchManager(productSearchGateway, keywordTracker);
+        return new SearchManager(productSearchGateway, keywordTracker, productSuggestGateway);
     }
 
     @Test
@@ -95,5 +106,77 @@ class SearchManagerTest {
         ArgumentCaptor<SearchQuery> captor = ArgumentCaptor.forClass(SearchQuery.class);
         verify(productSearchGateway).search(captor.capture());
         assertEquals(SearchSortEnum.RELEVANCE, captor.getValue().sortOrDefault());
+    }
+
+    @Test
+    @DisplayName("suggest — 热搜词前缀在前 + 商品名在后，去空格后委托双源")
+    void shouldMergeHotWordsFirstThenProductNames_whenSuggest() {
+        when(keywordTracker.getHotKeywordsByPrefix("手机", 10)).thenReturn(List.of("手机"));
+        when(productSuggestGateway.suggestNames("手机", 10)).thenReturn(List.of("手机壳", "蓝牙耳机"));
+
+        List<String> suggestions = manager().suggest(" 手机 ");
+
+        assertEquals(List.of("手机", "手机壳", "蓝牙耳机"), suggestions);
+        verify(keywordTracker).getHotKeywordsByPrefix("手机", 10);
+        verify(productSuggestGateway).suggestNames("手机", 10);
+    }
+
+    @Test
+    @DisplayName("suggest — 双源重复词只保留一次（精确去重）")
+    void shouldDeduplicateAcrossSources_whenOverlap() {
+        when(keywordTracker.getHotKeywordsByPrefix("手机", 10)).thenReturn(List.of("手机"));
+        when(productSuggestGateway.suggestNames("手机", 10)).thenReturn(List.of("手机", "手机壳"));
+
+        assertEquals(List.of("手机", "手机壳"), manager().suggest("手机"));
+    }
+
+    @Test
+    @DisplayName("suggest — 合并超 10 条截断为 10（热搜命中优先保留）")
+    void shouldLimitToTen_whenMergedOverflow() {
+        when(keywordTracker.getHotKeywordsByPrefix("机", 10))
+                .thenReturn(List.of("热搜1", "热搜2", "热搜3", "热搜4", "热搜5", "热搜6"));
+        when(productSuggestGateway.suggestNames("机", 10))
+                .thenReturn(List.of("商品1", "商品2", "商品3", "商品4", "商品5", "商品6"));
+
+        List<String> suggestions = manager().suggest("机");
+
+        assertEquals(10, suggestions.size());
+        assertEquals("热搜1", suggestions.get(0));
+        assertEquals("热搜6", suggestions.get(5));
+        assertEquals("商品1", suggestions.get(6));
+        assertEquals("商品4", suggestions.get(9));
+    }
+
+    @Test
+    @DisplayName("suggest — keyword 缺失/空白 → 宽松返回空列表，双源均不触达")
+    void shouldReturnEmptyWithoutSources_whenKeywordBlank() {
+        assertTrue(manager().suggest(null).isEmpty());
+        assertTrue(manager().suggest("   ").isEmpty());
+
+        verifyNoInteractions(keywordTracker, productSuggestGateway);
+    }
+
+    @Test
+    @DisplayName("suggest — 超长前缀截断到 50 字符后照常联想（宽松防御）")
+    void shouldTruncateOverlongPrefix_whenKeywordOverLimit() {
+        String longKeyword = "机".repeat(60);
+        String expectedPrefix = "机".repeat(50);
+        when(keywordTracker.getHotKeywordsByPrefix(expectedPrefix, 10)).thenReturn(List.of());
+        when(productSuggestGateway.suggestNames(expectedPrefix, 10)).thenReturn(List.of("手机"));
+
+        assertEquals(List.of("手机"), manager().suggest(longKeyword));
+        verify(keywordTracker).getHotKeywordsByPrefix(expectedPrefix, 10);
+        verify(productSuggestGateway).suggestNames(expectedPrefix, 10);
+    }
+
+    @Test
+    @DisplayName("suggest — 联想不记录热搜（浏览行为非检索行为，不污染热搜榜）")
+    void shouldNotRecordHotKeyword_whenSuggest() {
+        when(keywordTracker.getHotKeywordsByPrefix(any(), anyInt())).thenReturn(List.of());
+        when(productSuggestGateway.suggestNames(any(), anyInt())).thenReturn(List.of());
+
+        manager().suggest("手机");
+
+        verify(keywordTracker, never()).recordKeyword(any());
     }
 }

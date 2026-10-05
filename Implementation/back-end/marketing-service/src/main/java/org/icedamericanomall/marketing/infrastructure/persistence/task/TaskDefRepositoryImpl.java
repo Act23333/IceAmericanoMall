@@ -1,6 +1,8 @@
 package org.icedamericanomall.marketing.infrastructure.persistence.task;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.marketing.domain.model.task.TaskDef;
 import org.icedamericanomall.marketing.domain.repository.TaskDefRepository;
@@ -29,6 +31,30 @@ public class TaskDefRepositoryImpl implements TaskDefRepository {
                         .eq(TaskDefPO::getStatus, TaskDef.STATUS_ENABLED)
                         .orderByAsc(TaskDefPO::getCode))
                 .stream().map(TaskDefRepositoryImpl::toDomain).toList();
+    }
+
+    /** 管理端分页（AD51）：status 可选过滤，code 升序稳定排序（uk_code 唯一，次序确定）。 */
+    @Override
+    public IPage<TaskDef> page(Integer status, int pageNum, int pageSize) {
+        LambdaQueryWrapper<TaskDefPO> wrapper = new LambdaQueryWrapper<TaskDefPO>()
+                .orderByAsc(TaskDefPO::getCode);
+        if (status != null) {
+            wrapper.eq(TaskDefPO::getStatus, status);
+        }
+        return taskDefMapper.selectPage(new Page<>(pageNum, pageSize), wrapper)
+                .convert(TaskDefRepositoryImpl::toDomain);
+    }
+
+    @Override
+    public void save(TaskDef taskDef) {
+        TaskDefPO po = toPO(taskDef);
+        taskDefMapper.insert(po);
+        taskDef.setId(po.getId());
+    }
+
+    @Override
+    public void update(TaskDef taskDef) {
+        taskDefMapper.updateById(toPO(taskDef));
     }
 
     // ==================== PO <-> 聚合 ====================

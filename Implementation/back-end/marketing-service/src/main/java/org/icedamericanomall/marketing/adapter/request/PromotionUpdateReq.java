@@ -1,6 +1,5 @@
 package org.icedamericanomall.marketing.adapter.request;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -14,16 +13,19 @@ import java.time.LocalDateTime;
  *
  * <p>与 {@link PromotionCreateReq} 同字段但全可选：null 字段不更新（null-safe 局部更新，
  * 合并语义见 {@code MarketingConverter.mergePromotionUpdate}）；
- * {@code @NotBlank}/{@code @Positive} 对 null 放行，仅在传入非法值时拒绝
+ * {@code @Size}/{@code @Positive} 对 null 放行，仅在传入非法值时拒绝
  * （非法 → {@code PARAM_ERROR(1101)} / 400）。「已结束活动不可编辑」守卫在应用层
  * （时间窗实时推导），合并后的满折越界/时间窗无序由聚合不变式守护。
+ *
+ * <p><b>V5.13 修复</b>：{@code name} 原误标 {@code @NotBlank}（对 null 不放行，导致
+ * 更新时不传 name 被 400 拒绝，违背 null-safe 局部更新契约）；现改为纯 {@code @Size}，
+ * 空白串由应用层归一为 null（不更新）。
  */
 @Data
 public class PromotionUpdateReq implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    /** 活动名称（可选，传入时 ≤50 且非空）。 */
-    @NotBlank
+    /** 活动名称（可选；不传/空白 = 不更新，传入时 ≤50）。 */
     @Size(max = 50)
     private String name;
 

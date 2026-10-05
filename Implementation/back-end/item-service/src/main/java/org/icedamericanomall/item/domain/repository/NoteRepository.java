@@ -3,6 +3,8 @@ package org.icedamericanomall.item.domain.repository;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.icedamericanomall.item.domain.model.content.Note;
 
+import java.util.List;
+
 /**
  * 种草笔记仓储（领域端口）—— 实现方：{@code infrastructure.persistence.content.NoteRepositoryImpl}。
  *
@@ -16,6 +18,9 @@ public interface NoteRepository {
 
     /** 按 ID 载入（可为 null；不过滤状态——已删/已发布判定由应用层按用例语义做）。 */
     Note findById(Long noteId);
+
+    /** 按 ID 集合批量载入（不过滤状态——发布态过滤由应用层按用例语义做；P34 相似笔记组装）。 */
+    List<Note> findAllByIds(List<Long> noteIds);
 
     /** 已发布笔记分页（status=1，发布时间倒序，P29 流）。 */
     IPage<Note> pagePublished(int page, int size);

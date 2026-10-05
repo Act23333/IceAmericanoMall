@@ -2,8 +2,10 @@ package org.icedamericanomall.item.app.content;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.icedamericanomall.client.NoteVectorClient;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.dto.NoteVectorHitCO;
 import org.icedamericanomall.item.adapter.assembler.NoteConverter;
 import org.icedamericanomall.item.adapter.request.NotePublishReq;
 import org.icedamericanomall.item.adapter.response.NoteCardVO;
@@ -36,7 +38,8 @@ import static org.mockito.Mockito.*;
 
 /**
  * NoteManager 单元测试 —— F12 种草笔记 P28-P33 编排：发布校验（图集/关联商品）、
- * 流分页、详情装配（liked 两态 + 在售过滤）、点赞 uk 幂等 + 原子计数、作者软删归属。
+ * 流分页、详情装配（liked 两态 + 在售过滤）、点赞 uk 幂等 + 原子计数、作者软删归属；
+ * V5.13 补 P34 相似笔记（发布态过滤 + 排除自身 + fail-open）与向量钩子委托。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("NoteManager 编排单元测试")
@@ -64,12 +67,19 @@ class NoteManagerTest {
     @Mock
     private NoteConverter noteConverter;
 
+    @Mock
+    private NoteVectorManager noteVectorManager;
+
+    @Mock
+    private NoteVectorClient noteVectorClient;
+
     private NoteManager noteManager;
 
     @BeforeEach
     void setUp() {
         noteManager = new NoteManager(noteRepository, noteLikeRepository,
-                noteProductRepository, productRepository, skuManager, noteConverter);
+                noteProductRepository, productRepository, skuManager, noteConverter,
+                noteVectorManager, noteVectorClient);
     }
 
     // ==================== 测试夹具 ====================
@@ -160,6 +170,8 @@ class NoteManagerTest {
         assertEquals(AUTHOR_ID, saved.getUserId());
         assertTrue(saved.getImages().isEmpty());
         verify(noteProductRepository).saveAll(88L, List.of(10L, 20L));
+        // V5.13 向量钩子：发布落库成功后委托协作器（afterCommit 语义归 NoteVectorManager）
+        verify(noteVectorManager).ingestAfterCommit(saved);
     }
 
     @Test
@@ -354,13 +366,16 @@ class NoteManagerTest {
     }
 
     @Test
-    @DisplayName("delete — 作者本人软删：status 落 2（流与详情不可见）")
+    @DisplayName("delete — 作者本人软删：status 落 2（流与详情不可见）+ 删向量钩子委托")
     void shouldSoftDelete_whenAuthorDeletes() {
         when(noteRepository.findById(NOTE_ID)).thenReturn(publishedNote());
 
         noteManager.delete(AUTHOR_ID, NOTE_ID);
 
         verify(noteRepository).updateStatus(NOTE_ID, Note.STATUS_DELETED);
+        ArgumentCaptor<Note> captor = ArgumentCaptor.forClass(Note.class);
+        verify(noteVectorManager).removeAfterCommit(captor.capture());
+        assertEquals(Note.STATUS_DELETED, captor.getValue().getStatus());
     }
 
     @Test
@@ -377,5 +392,59 @@ class NoteManagerTest {
         BizException deleteEx = assertThrows(BizException.class,
                 () -> noteManager.delete(AUTHOR_ID, NOTE_ID));
         assertEquals(ErrorCode.NO_RESOURCE_FOUND, deleteEx.getErrorCode());
+    }
+
+    // ==================== P34 相似笔记（V5.13） ====================
+
+    @Test
+    @DisplayName("similarNotes — 命中含自身与已删笔记：排除自身、过滤未发布、按命中序组装发布态卡")
+    void shouldAssembleSimilarCards_whenHitsContainSelfAndDeleted() {
+        Note similar = publishedNote();
+        similar.setId(6L);
+        Note deleted = publishedNote();
+        deleted.setId(7L);
+        deleted.softDelete();
+        when(noteVectorClient.similar(NOTE_ID, 5)).thenReturn(List.of(
+                new NoteVectorHitCO(NOTE_ID, 0.98),
+                new NoteVectorHitCO(6L, 0.95),
+                new NoteVectorHitCO(7L, 0.90)));
+        when(noteRepository.findAllByIds(List.of(6L, 7L)))
+                .thenReturn(List.of(similar, deleted));
+        when(noteConverter.toCardVO(any())).thenAnswer(inv -> cardOf(inv.getArgument(0)));
+
+        List<NoteCardVO> result = noteManager.similarNotes(NOTE_ID, 5);
+
+        assertEquals(1, result.size());
+        assertEquals(6L, result.get(0).getId());
+    }
+
+    @Test
+    @DisplayName("similarNotes — 客户端异常 → 空列表不抛错（fail-open 推荐位口径）")
+    void shouldReturnEmpty_whenSimilarClientThrows() {
+        when(noteVectorClient.similar(NOTE_ID, 5)).thenThrow(new RuntimeException("search down"));
+
+        assertTrue(noteManager.similarNotes(NOTE_ID, 5).isEmpty());
+        verifyNoInteractions(noteRepository);
+    }
+
+    @Test
+    @DisplayName("similarNotes — 无命中 → 空列表且不触达仓储")
+    void shouldReturnEmpty_whenNoSimilarHits() {
+        when(noteVectorClient.similar(NOTE_ID, 5)).thenReturn(List.of());
+
+        assertTrue(noteManager.similarNotes(NOTE_ID, 5).isEmpty());
+        verify(noteRepository, never()).findAllByIds(any());
+    }
+
+    @Test
+    @DisplayName("similarNotes — size 归一：≤0 取 5、>20 截 20（透传仓储前的命中数一致）")
+    void shouldNormalizeSize_whenSimilarQueried() {
+        when(noteVectorClient.similar(anyLong(), anyInt())).thenReturn(List.of());
+
+        noteManager.similarNotes(NOTE_ID, 0);
+        noteManager.similarNotes(NOTE_ID, 99);
+
+        verify(noteVectorClient).similar(NOTE_ID, 5);
+        verify(noteVectorClient).similar(NOTE_ID, 20);
     }
 }
