@@ -250,7 +250,7 @@ Authoritative roadmap: `project-docs/backend/02-Architecture.md` §七. Delivere
 
 #### ⚪ Not built (do not start without a PRD/spec update)
 
-Invoices (发票), mini-program/App, knowledge graph (NebulaGraph — V3.x forward-looking), multi-currency (多币种). If asked to build these, flag that they are beyond the current implemented surface. (Channel reconciliation 对账 was delivered in V5.5 — ADR-036; group buys 拼团 delivered in V5.14 — ADR-049; both removed from this list. 发票 is the next P3 batch candidate.)
+Invoices (发票), mini-program/App, knowledge graph (NebulaGraph — V3.x forward-looking), multi-currency (多币种). If asked to build these, flag that they are beyond the current implemented surface. (Channel reconciliation 对账 was delivered in V5.5 — ADR-036; group buys 拼团 delivered in V5.14 — ADR-049; both removed from this list. 发票 full PRD drafted — `01-PRD.md` §十五, 🔴 pending review; development only after PRD 定稿 per the two-phase P3 discipline.)
 
 ### Hard Constraints (from `project-docs/collaboration/09-constraints.md`)
 
