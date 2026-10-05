@@ -1,6 +1,6 @@
 # 05 — API 规格文档 (API Specification — SDD)
 
-> **最后更新**: 2026-10-05 | **版本**: V5.14.1 | **端点总数**: 251（方法级映射实测，含 `/internal/**` 51 个；V5.7–V5.14 全量落地：FT/任务/活动中心/装修/笔记/推荐/facets/suggest/拼团/AD48-56/I44-I55/P27-P34 均已实现，详见 §十四 版本行 V5.7.0–V5.14.1） | **已实现**: 全部标注 ✅ 端点 | **公共**: 195+ | **内部**: 39+ | **已实现**: 229+
+> **最后更新**: 2026-10-05 | **版本**: V5.15.0 | **端点总数**: 258（方法级映射实测，含 `/internal/**` 52 个；V5.7–V5.15 全量落地：FT/任务/活动中心/装修/笔记/推荐/facets/suggest/拼团/发票/AD48-60/I44-I56/P27-P34 均已实现，详见 §十四 版本行 V5.7.0–V5.15.0） | **已实现**: 全部标注 ✅ 端点 | **公共**: 195+ | **内部**: 39+ | **已实现**: 229+
 >
 > **V5.6.1 实现落地说明**：V5.6.0 规格先行的四个 P0 功能（F1 买家退款资金流 / F2 运费模型 / F3 拆单发货 / F4 渠道对账）已**全量实现并通过全量测试**，全部 V5.6 规划标注已收敛为"已实现（V5.6）"；实现方上报的规格偏差已按 ADR-035/036/037 收敛进正文（错误码 3039/3040/3041、AD47 confirm-return 退款触发分派、I41 并发幂等、I43 fail-closed、AD46 批次列表）。数据模型见 `04-Data-Model.md` §十二（已建库）。
 > 
@@ -1755,6 +1755,20 @@ Feature: 买家退款资金流（F1）
 > - **错误口径**：字段非法（groupPrice≤0 / requiredMembers<2 / timeLimitHours<1 / endTime≤startTime / 整体已过期）→ 400 `PARAM_ERROR(1101)`；活动不存在 → `NO_RESOURCE_FOUND(1103)`。
 > - 拼团库存不单独建模（活动绑定 SKU，沿用 `sku.stock` 与既有原子扣减 ADR-020）；开团/成团运营统计 Phase 2。
 
+#### 4.13.8e AdminInvoiceController — `/api/admin/invoice` (trade-service, ✅ V5.15)
+
+> **F14 发票管理端（[PRD §十五](../product/01-PRD.md) 已定稿，O7 裁决用平台 AD 系编号）**：Phase 1 **模拟开具**（模拟票号 + 简化 PDF 样票存 MinIO，`InvoiceIssuePort` 防腐为 Phase 2 税局对接留口）；台账导出延 Phase 2。四写 `@OperationLog`。
+
+| #    | 方法   | 路径                                  | 认证 | 请求                                                                     | 响应                 | 阶段      |
+| ---- | ---- | ----------------------------------- | --- | ---------------------------------------------------------------------- | ------------------ | ------- |
+| AD57 | GET  | `/api/admin/invoice/page`             | 🔑  | Query: `status?`, `sellerId?`, `partialRefund?`, `urgeOnly?`, `page`(1), `size`(20) | `IPage<InvoiceVO>`（催开按 urge_time 排序，O10） | ✅ V5.15 |
+| AD58 | PUT  | `/api/admin/invoice/{invoiceNo}/issue` | 🔑  | Path: `invoiceNo`                                                        | `InvoiceVO`（1→2：模拟票号 + PDF 样票） | ✅ V5.15 |
+| AD59 | PUT  | `/api/admin/invoice/{invoiceNo}/void`  | 🔑  | Path: `invoiceNo`                                                        | `Void`（作废，仅待开具 1→4） | ✅ V5.15 |
+| AD60 | PUT  | `/api/admin/invoice/{invoiceNo}/red-flush` | 🔑  | Path: `invoiceNo`, Body: `{ reason(必填) }`                            | `Void`（冲红，仅已开具 2→3；重复幂等） | ✅ V5.15 |
+
+> - **状态守卫**：状态机迁移拒绝 → 400 `PARAM_ERROR(1101)` 带文案；发票不存在 → `NO_RESOURCE_FOUND(1103)`。
+> - **换开语义（PRD D5）**：换开 = 冲红原票（active_flag→NULL）+ 新票待开具（`red_for_id` 关联原票），由买家侧 INV1 对同单重新申请实现。
+
 #### 4.13.9 MerchantCouponController — `/api/seller/coupon` (marketing-service)
 
 | #    | 方法   | 路径                                      | 认证  | 请求                        | 响应               | 阶段  |
@@ -2136,6 +2150,14 @@ Feature: 渠道对账（F4）
 
 > - **逐单闭环**：条件取消（待发货 2→5）+ 恢复库存 + I55 全额退款；单笔失败 try/catch 继续，不中断整团。
 
+#### 4.14.16c InternalTradeInvoiceController — `/internal/trade/invoice` (trade-service, ✅ V5.15)
+
+> **F14 全额退款联动（[PRD §十五 D4](../product/01-PRD.md)）**：调用方 pay-service（退款成功且 `refundAmount` = 支付单**全额**时触发；ia-api `TradeInvoiceClient`，降级 **fail-open + 告警**——触发器语义同 I54：资金终态已定，联动失败依赖管理端"部分退款/异常"筛选人工收敛）。**幂等**：无有效票 = 空操作；已冲红重复触发 = 空操作。
+
+| I56 | POST | `/internal/trade/invoice/void-on-full-refund` | Body: `InvoiceVoidCO { orderNo(必填), sceneRef(必填, 退款幂等键审计用) }` | `void` | ✅（V5.15） |
+
+> - **语义（PRD D4）**：待开具(1) → 自动作废(4)；已开具(2) → 自动冲红(3)（原因 = 系统原因码）；其余状态/无票 → 幂等空操作。部分退款**不**触发（调用方已按全额判定）。
+
 #### 4.14.17 InternalFreightTemplateController — `/internal/item/freight-template` (item-service, ✅ V5.6)
 
 > **已实现（V5.6）**——F2 运费模型：trade 下单计价取模板。调用方：trade-service（下单策略校验阶段经 `FreightPostageResolver` 解析生效模板，Feign 不入事务；ia-api `FreightTemplateClient`）。**降级 fail-closed（ADR-037，按 ADR-011 判别型查询定类；原草拟的"降级为空 → postFee=0"作废）**：模板查询失败 → 抛异常使**下单失败**，**不得默认免邮**——防止"故障伪装成免邮"的资损；「商家无任何启用模板 → `postFee=0`」是合法业务态（解析器空集合短路），与查询失败严格区分。
@@ -2150,13 +2172,19 @@ Feature: 渠道对账（F4）
 
 ### 4.15 发票服务 (🆕 V5.0 计划 — 京东标准)
 
-> 📋 **指引注记**：发票完整 PRD 见 `product/01-PRD.md` §十五（P3 第二批候选，🔴 待评审定稿——评审通过后才进入规格先行/开发，届时本节占位的路径/报文/错误码一并定稿；定稿前不开发、前端不得对接）。
+> 📋 **定稿说明（✅ V5.15）**：发票完整 PRD 已定稿（`product/01-PRD.md` §十五，D1-D7/O1-O10 已裁决），本节 INV1-INV3 由占位转定稿并增量 INV4-INV5；管理端 **AD57-60**（§4.13.8e）；全额退款联动 **I56**（§4.14.16c）。产品决策与开放问题裁决见 PRD §15.2.0。
 
 | #    | 方法   | 路径                     | 认证  | 请求                                                            | 响应                 | 阶段     |
 | ---- | ---- | ---------------------- | --- | ------------------------------------------------------------- | ------------------ | ------ |
-| INV1 | POST | `/api/invoice/apply`   | 🔒  | `{ orderNo, type: PERSONAL\|COMPANY, title, taxNo?, email? }` | `InvoiceVO`        | ⚪ V5.0 |
-| INV2 | GET  | `/api/invoice/history` | 🔒  | Query: `page`(1), `size`(20)                                  | `IPage<InvoiceVO>` | ⚪ V5.0 |
-| INV3 | GET  | `/api/invoice/{id}`    | 🔒  | Path: `id` (Long)                                             | `InvoiceVO`        | ⚪ V5.0 |
+| INV1 | POST | `/api/invoice/apply`   | 🔒  | `InvoiceApplyReq { orderNo(必填), type(必填, 1个人/2企业), titleId?(引用常用抬头), title?(现填, type 必填), taxNo?(企业必填, PII 三字段), email?(可选交付邮箱, PII 三字段) }` | `InvoiceVO`        | ✅ V5.15 |
+| INV2 | GET  | `/api/invoice/history` | 🔒  | Query: `page`(1), `size`(20), `status?`                        | `IPage<InvoiceVO>`（脱敏） | ✅ V5.15 |
+| INV3 | GET  | `/api/invoice/{invoiceNo}` | 🔒  | Path: `invoiceNo`（**占位 `id` 修正为业务键**，对齐"主键不外泄"约束） | `InvoiceVO`（已开具含 `pdfKey` 签名下载地址） | ✅ V5.15 |
+| INV4 | PUT  | `/api/invoice/{invoiceNo}/cancel` | 🔒 | Path: `invoiceNo`                                          | `Void`（买家撤回，仅待开具 1→4） | ✅ V5.15 |
+| INV5 | PUT  | `/api/invoice/{invoiceNo}/urge` | 🔒 | Path: `invoiceNo`                                          | `Void`（催开，24h 限频，O10 最小实现） | ✅ V5.15 |
+
+> - **申请守卫（ADR-004）**：订单不存在/非本人 → `1103`/`FORBIDDEN`；非已完成或超 90 天窗 → 400 `PARAM_ERROR(1101)`；一单一有效票（`uk_order_active`，命中回落/预检）→ 400 `PARAM_ERROR(1101)`"该订单已有有效发票"；企业抬头缺税号 → 400。
+> - **金额口径（PRD D3）**：`amount` = 申请时 `payAmount` 快照（含运费扣优惠，04 §3.7 不变式 V2）。
+> - **InvoiceVO**：`invoiceNo/orderNo/type/title/taxNoMask/emailMask/amount/status/issueTime/partialRefundFlag/pdfKey(签名 URL)/createTime`——不含 cipher/hash 技术字段。
 
 ---
 
@@ -2542,6 +2570,7 @@ data: [DONE]
 | **V5.12.0** | **2026-10-05** | **P2 第四批（店铺装修 / 内容社区 Phase 1）契约先行**：①**F11 店铺装修**——S1c/S1d `/api/seller/shops/{shopId}/decoration`（ShopDecorationVO/Req：公告 + 轮播 ≤5 + 推荐商品位 ≤8；归属校验同 S1b；hotProductIds Phase 1 不校验商品归属）+ SH1 ShopVO 增量 `decoration`；②**F12 内容社区 Phase 1**——新增 P28-P33 `/api/notes/**`（发布/流/详情/点赞取消/作者软删；纯文本+图集 ≤9、关联商品 ≤5 发布时校验在售、点赞 uk 幂等原子计数；落位 item-service，[ADR-048](../adr/048-content-notes-in-item-domain.md)）；数据模型 `shop_decoration`/`note`/`note_product`/`note_like` 按 ADR-045 口径直接入 Initialize.sql 快照（50→54 表）；鉴定体系/富文本/评论 Phase 2 立项 |
 | **V5.13.0** | **2026-10-05** | **P2 Phase 2 挂账收敛批（列表促销角标 / 搜索联想 / 任务运营 / 笔记向量化）契约先行**：①P1 商品分页响应增量 `promotions`（按行 sellerId 聚合店铺促销标签，60s 缓存复用 P2 详情口径，促销可见性从详情延伸到列表）；②SE5 搜索联想转正（热搜词前缀 + 商品名前缀双源 ≤10 去重，Redis+DB 双源 ES 关闭可用）；③任务运营闭环 AD51-53 `/api/admin/task`（列表/创建/编辑：code 唯一、rewardPoints 调整立即生效、停用即触发口失效，三写 `@OperationLog`）；④笔记向量化（ADR-046 管道第二次复用）：I50/I50 `notes` 独立小索引（单向量 title+content，摄取幂等覆盖写+软删删向量）+ I51 相似检索 + P34 相似笔记卡（item 组装发布态）；无 schema 变更 |
 | **V5.14.0** | **2026-10-05** | **P3 第一批（F13 拼团完整闭环）契约先行**：①§4.10.4 新增 M15-M17 `/api/group-buy/**` C 端浏览（活动列表/详情+进行中团列表脱敏/团进度）；②§4.6.1 新增 T27 `POST /api/trade/order/group-buy`（quantity 恒 1，拼团价快照不叠加券/促销/会员，下单不占团位）；③§4.13.8d 新增 AD54-56 管理端拼团活动 CRUD（复用 promotion/flash 先例）；④§4.14.8c 新增 I52 validate/I53 join（均 fail-closed：参团失败触发 trade「取消+恢复库存+I55 退款」闭环）；⑤§4.14.15b 新增 I55 `POST /internal/pay/refund/order`（**无售后单退款命令**；幂等锚点泛化修订 ADR-035 §1：`refund_order.after_sale_id` 改可空 + `biz_ref`/`uk_biz_ref`）；⑥§4.14.16b 新增 I54 `POST /internal/trade/group-buy/refund-team`（结团逐单退款，fail-open）；⑦网关补 `/api/group-buy/**` 路由；数据模型 `group_buy_activity`/`group_team`/`group_team_member` 按 ADR-045 口径直接入 Initialize.sql（54→57 表），[ADR-049](../adr/049-group-buy-full-loop.md) |
+| **V5.15.0** | **2026-10-05** | **P3 第二批（F14 发票）契约先行——完整 PRD 定稿（01-PRD §十五，D1-D7/O1-O10 已裁决）后规格收口**：①§4.15 INV1-INV3 占位转定稿 + 增量 INV4 撤回/INV5 催开（买家端，INV3 修正为业务键 invoiceNo）；②§4.13.8e 新增管理端 **AD57-60**（O7 裁决用平台 AD 惯例编号；模拟开具 `InvoiceIssuePort` 防腐；导出延 Phase 2）；③§4.14.16c 新增 **I56** `POST /internal/trade/invoice/void-on-full-refund`（pay 全额退款 → 自动冲红/作废联动，fail-open 触发器，PRD D4）；④金额口径 = `payAmount` 快照（不变式 V2 对齐）、一单一有效票 `uk_order_active`、税号/邮箱 PII 三字段（O4 从严）；数据模型 `invoice`/`invoice_title` 按 ADR-045 直改 Initialize.sql（57→59 表） |
 
 ---
 

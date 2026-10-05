@@ -1009,3 +1009,10 @@ public void createOrder(OrderDTO dto) {
 | `refund_order`（改造） | `after_sale_id` 改**可空** + 新增 `biz_ref VARCHAR(64) NOT NULL` + `uk_biz_ref` | 幂等锚点泛化（修订 ADR-035 §1）：售后退款 `AS:{id}`、拼团退款 `GB:{orderNo}`；`uk_after_sale` 保留 |
 
 > 计价口径：拼团单不进价格计算中心（`discountAmount=0`，与秒杀同口径，ADR-043）；参团两段式（下单不占团位、支付成功后 I53 入团）与结团退款联动见 ADR-049。
+
+### 12.6 F14 发票（V5.15，[PRD §十五 已定稿](../product/01-PRD.md)，schema 直改 Initialize.sql）
+
+| 表 | 关键列 | 说明 |
+| --- | --- | --- |
+| `invoice` | invoice_no(UK) / order_no / `active_flag` NULL（`uk_order_active` 多 NULL = 一单一有效票，user_auth 先例）/ seller_id（开票主体商家，D1）/ type / title 快照 / tax_no·email **PII 三字段**（O4 从严）/ amount = payAmount 快照（D3）/ status（1待开具 2已开具 3已冲红 4已作废，条件迁移）/ mock_invoice_no + pdf_key（模拟开具，`InvoiceIssuePort` 防腐）/ red_for_id / partial_refund_flag（D4/O6）/ urge_time（O10） | 发票单（买家 INV1-INV5 + 管理端 AD57-60；全额退款自动冲红联动 I56，fail-open） |
+| `invoice_title` | user_id / type / title / tax_no 三字段 / is_default NULL（`uk_user_default` 多 NULL = 一用户至多一条默认）/ deleted（@TableLogic） | 常用抬头（O2 随批简版；发票单为抬头快照，本表仅服务申请体验） |
