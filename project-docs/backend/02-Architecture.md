@@ -1,7 +1,7 @@
 # 02 — 系统架构文档
 
 > 来源：`doc/项目难题/冰美商的最终架构.md`、`doc/项目难题/架构分层、工程结构、微服务规范、分布式设计选择.md`、`doc/IDEA.md`、`doc/项目流程/登录流程详解.md`、`doc/项目的分析流程/IcedAmericanoMall的MVP.md`、`doc/项目难题/大厂的微服务项目结构.md`
-> 最后更新: 2026-10-03（**P0 四项落地批次（[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)/[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)/[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：退款资金流三通道原路退回 + `REFUNDED(5)` 激活（pay `RefundManager`，refund_order 幂等）、渠道对账四态只记录不调账、金额不变式 V2（`payAmount` 计入 `postFee`）运费模型（item 运费模板 + trade `PostageCalculator`）、拆单发货 1:N 包裹（order_logistics 代理主键 + package_no）与退款触发纠正（confirm-return）；网关补挂 `/api/admin/pay/**` 前置路由；数据库 45 表/30 迁移（V1.1.0→V5.6）。此前——多粒度令牌吊销批次（T19，[ADR-031](../adr/031-multi-granularity-token-revocation.md)，修订 ADR-027）：tokenVer 用户级版本吊销（改密/禁用全端下线）+ 网关黑名单/版本一次 MGET 合并 + 管理端禁用闭环，ADR-027 残余风险关闭；结构规范化 + 数据库整治 + 商家/店铺 1:N 拆分同步：adapter 层按受众统一（ADR-023）、Lua/AOP 死代码清理、gateway 限流/黑名单/白名单收紧、Feign 熔断扩至 8 服务（ADR-022）、SKU 原子扣减（ADR-020）、购物车读时回填（ADR-021）、shop 表拆分（ADR-019）、分布式锁归并 ia-common（ADR-024）、domain/model 聚合分包 + app 层用例族收口（ADR-025）；遗留风险清零批次：WS 握手 query token 换头（ADR-026）、jti 黑名单写侧（ADR-027）、trade Sentinel 接线修复（ADR-028）、渠道回调协议（ADR-029）、RAG 向量链路接线（T14）、操作审计双管道（ADR-032）；工具类收口批次（ADR-034 + ADR-030）：§3.3 补 ia-common 审计字段填充器 `AuditFieldMetaObjectHandler`（自动装配+退避）、`SecurityHeaders` 头名常量、`DesensitizeUtil` 掩码族，`IpUtil` 与网关 `EdgePeerIpResolver` 口径分工注记）
+> 最后更新: 2026-10-05（**V5.9→V5.13 五批交付（P2 增长线 + 数据库口径变更，[ADR-045](../adr/045-db-snapshot-single-source.md)/[ADR-046](../adr/046-product-vector-recommendation.md)/[ADR-047](../adr/047-daily-task-system.md)/[ADR-048](../adr/048-content-notes-in-item-domain.md)）**：商品向量推荐（item P27 相似商品卡 + search I47 向量摄取/I48 相似 kNN，`products` 索引 knn mapping + reindex 重建带向量）；搜索 facets 聚合与 brand/minPrice/maxPrice/sort 过滤双链补齐（SE6/SE1）+ 搜索联想（SE5 热搜/商品名前缀双源）；表驱动每日任务体系（`task_def`/`task_record`：M14 任务中心 + I49 幂等完成 + AD51-53 管理端 CRUD）+ 店铺促销引擎（AD48-50 管理端/I44 计价，ADR-043 能力补记）；活动中心（M12/M13 `/api/activity` + M7 券三态计数）与商品促销标签（P2 详情/P1 分页，I44 fail-open + 60s 缓存）；店铺装修（S1c/S1d，`shop_decoration` 1:1）+ 内容社区种草笔记（P28-P34，`note`/`note_product`/`note_like`，item `content` 聚合分包）；会员等级引擎（I45/I46，ADR-044）与 pay 退款悬挂补偿（`RefundResumeJob`，ADR-041）能力补记；网关补挂 `/api/activity/**`、`/api/task/**`、`/api/notes/**`（现 18 路由块 / 38 条 Path 谓词）+ GET 匿名口径；数据库口径切换（ADR-045）：迁移机制废除，`Initialize.sql` 全量唯一结构真相源（54 表）。此前——**P0 四项落地批次（[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)/[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)/[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：退款资金流三通道原路退回 + `REFUNDED(5)` 激活（pay `RefundManager`，refund_order 幂等）、渠道对账四态只记录不调账、金额不变式 V2（`payAmount` 计入 `postFee`）运费模型（item 运费模板 + trade `PostageCalculator`）、拆单发货 1:N 包裹（order_logistics 代理主键 + package_no）与退款触发纠正（confirm-return）；网关补挂 `/api/admin/pay/**` 前置路由；数据库 45 表/30 迁移（V1.1.0→V5.6）。此前——多粒度令牌吊销批次（T19，[ADR-031](../adr/031-multi-granularity-token-revocation.md)，修订 ADR-027）：tokenVer 用户级版本吊销（改密/禁用全端下线）+ 网关黑名单/版本一次 MGET 合并 + 管理端禁用闭环，ADR-027 残余风险关闭；结构规范化 + 数据库整治 + 商家/店铺 1:N 拆分同步：adapter 层按受众统一（ADR-023）、Lua/AOP 死代码清理、gateway 限流/黑名单/白名单收紧、Feign 熔断扩至 8 服务（ADR-022）、SKU 原子扣减（ADR-020）、购物车读时回填（ADR-021）、shop 表拆分（ADR-019）、分布式锁归并 ia-common（ADR-024）、domain/model 聚合分包 + app 层用例族收口（ADR-025）；遗留风险清零批次：WS 握手 query token 换头（ADR-026）、jti 黑名单写侧（ADR-027）、trade Sentinel 接线修复（ADR-028）、渠道回调协议（ADR-029）、RAG 向量链路接线（T14）、操作审计双管道（ADR-032）；工具类收口批次（ADR-034 + ADR-030）：§3.3 补 ia-common 审计字段填充器 `AuditFieldMetaObjectHandler`（自动装配+退避）、`SecurityHeaders` 头名常量、`DesensitizeUtil` 掩码族，`IpUtil` 与网关 `EdgePeerIpResolver` 口径分工注记）
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/下线服务、技术栈变更、ADR 落地时
 
 ---
@@ -195,16 +195,16 @@
 | --- | --- | --- | --- |
 | `gateway-service`          | API 网关：路由转发、统一入口、JWT 校验（含吊销校验：`JwtBlacklistFilter` 一次 MGET 合并 `auth:blacklist:{jti}` + `auth:tokenver:{userId}`，[ADR-031](../adr/031-multi-granularity-token-revocation.md)）、**WS 握手 query token 换头（`WsHandshakeTokenFilter`，WebFilter order -900，ADR-026）**、可信头剥离（含 XFF 剥离与 `X-Client-Ip` 覆写）、IP 限流（auth/verification）、AI Token 配额（`AiTokenQuotaFilter`）、**`/api/admin/pay/**` 前置路由（pay-service 管理端退款/对账，`pay-admin-routes` 须先于 `/api/admin/**` 声明，ADR-035/036）** | P0         | Spring Cloud Gateway + Nacos + Redis                |
 | `authorization-service` | 认证+授权域：OAuth2 登录/注册/找回密码，Token 签发；**`user_auth` 凭证唯一所有权**（[ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)）；**RBAC 五表角色/权限管理与权限缓存（写入/主动失效/登录注册预热）**（[ADR-018](../adr/018-unified-identity-rbac-ownership.md)）；**jti 黑名单写侧（登出拉黑当前 access token，TTL=剩余有效期，[ADR-027](../adr/027-jwt-blacklist-writer-and-contract-key.md)）；tokenVer 用户级版本吊销（改密/重置密码、管理端禁用 → `auth:tokenver:{userId}` INCR + 全端拆 refresh 会话，[ADR-031](../adr/031-multi-granularity-token-revocation.md)）**；`AuthContextClient` 委托契约（含 `revokeUserTokens` 吊销委托）；存量迁移器 `LegacyCredentialMigrationRunner` | P0         | Spring Security + JWT + Redis + Geetest                |
-| `user-service`          | 用户档案域：资料（PII 三字段加密）/头像/地址簿；外围：收藏/浏览历史/操作日志（**`operation_log` 台账写入方恢复：user 域管理操作显式落库，[ADR-032](../adr/032-operation-audit-dual-pipeline.md) 管道二**）。DDD 四层（adapter/app/domain/infrastructure，app 按聚合 7 子包）。**2026-10 边界重构已迁出**：签到/积分→marketing、余额→wallet、站内信→notification、聊天/知识库→ai、RBAC 写侧→auth（ADR-018）、发码/本地校验链（含 `000000` 后门）→删除（→verification）、商家档案与店铺（入驻申请+审批）/店铺关注→merchant-service（第六轮） | P0         | MySQL + Redis（分布式锁取 ia-common 共享内核 `DistributedLock`，ADR-024） |
-| `merchant-service`      | 🆕 商家域：入驻申请/审核（审批通过经 `AuthContextClient.setUserRole` 自动授予 ROLE_SELLER）、商家身份（**`seller` 表仅身份+生命周期**）/店铺档案（**`shop` 表 1 商家:N 店铺**，V5.4 拆分，[ADR-019](../adr/019-merchant-shop-1n-split.md)）/公开店铺页（`GET /api/shops/{shopId}` 新口径 + `GET /api/shop/{sellerId}` 遗留默认店铺别名）/店铺关注（Redis Set，本服务私有 Key：`shop:followers:{shopId}` / `merchant:follow:shops:{userId}`）；DDD 四层（adapter/app/domain/infrastructure），领域类 `Merchant` / `Shop` | P1         | MySQL + Redis                                           |
-| `item-service`          | 商品 (SPU)、规格 (SKU)、类目管理；**库存原子扣减/恢复（单条 SQL，条件内嵌 WHERE，行数为唯一判定，[ADR-020](../adr/020-sku-stock-atomic-sql-deduction.md)）**；**运费模板（`freight_template` 商家端 CRUD `/api/item/freight-template/**` + 商品绑定 `product.freight_template_id` + 内部计价查询 I43，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**；列表页最低价 `minPrice`；V4.0: stockType(LIMITED/UNLIMITED/PRESALE)+isHot+hotReason+salesTags | P1         | MySQL + MinIO/OSS (商品图片，计划 V1.1)                       |
+| `user-service`          | 用户档案域：资料（PII 三字段加密）/头像/地址簿；外围：收藏/浏览历史/操作日志（**`operation_log` 台账写入方恢复：user 域管理操作显式落库，[ADR-032](../adr/032-operation-audit-dual-pipeline.md) 管道二**）；**会员等级引擎（`member_level_rule` 门槛规则 + `member_growth_log` 成长值流水：`uk_order_no` 幂等入账、`MemberLevelPolicy` 重算只升不降；I45 等级权益/I46 成长值，trade 确认收货 fail-open 触发，[ADR-044](../adr/044-member-level-and-benefits.md)）**。DDD 四层（adapter/app/domain/infrastructure，app 按聚合 7 子包）。**2026-10 边界重构已迁出**：签到/积分→marketing、余额→wallet、站内信→notification、聊天/知识库→ai、RBAC 写侧→auth（ADR-018）、发码/本地校验链（含 `000000` 后门）→删除（→verification）、商家档案与店铺（入驻申请+审批）/店铺关注→merchant-service（第六轮） | P0         | MySQL + Redis（分布式锁取 ia-common 共享内核 `DistributedLock`，ADR-024） |
+| `merchant-service`      | 🆕 商家域：入驻申请/审核（审批通过经 `AuthContextClient.setUserRole` 自动授予 ROLE_SELLER）、商家身份（**`seller` 表仅身份+生命周期**）/店铺档案（**`shop` 表 1 商家:N 店铺**，V5.4 拆分，[ADR-019](../adr/019-merchant-shop-1n-split.md)）/公开店铺页（`GET /api/shops/{shopId}` 新口径 + `GET /api/shop/{sellerId}` 遗留默认店铺别名）/店铺关注（Redis Set，本服务私有 Key：`shop:followers:{shopId}` / `merchant:follow:shops:{userId}`）；**店铺装修（`shop_decoration` 与 shop 1:1：公告 + 轮播图 ≤5 + 推荐商品位 ≤8，`GET/PUT /api/seller/shops/{shopId}/decoration`，[ADR-048](../adr/048-content-notes-in-item-domain.md)）**；DDD 四层（adapter/app/domain/infrastructure），领域类 `Merchant` / `Shop` / `ShopDecoration` | P1         | MySQL + Redis                                           |
+| `item-service`          | 商品 (SPU)、规格 (SKU)、类目管理；**库存原子扣减/恢复（单条 SQL，条件内嵌 WHERE，行数为唯一判定，[ADR-020](../adr/020-sku-stock-atomic-sql-deduction.md)）**；**运费模板（`freight_template` 商家端 CRUD `/api/item/freight-template/**` + 商品绑定 `product.freight_template_id` + 内部计价查询 I43，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**；列表页最低价 `minPrice`；**相似商品推荐（P27 详情页相似商品卡，向量装配 fail-open，[ADR-046](../adr/046-product-vector-recommendation.md)）+ 促销标签（P2 详情/P1 分页 `promotions` 角标：I44 活动查询 fail-open + 60s 缓存，[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)）**；**种草笔记（P28-P33 `/api/notes/**`：`note`/`note_product`/`note_like`，`content` 聚合分包；发布/软删笔记向量摄取 afterCommit 钩子 + P34 相似笔记，[ADR-048](../adr/048-content-notes-in-item-domain.md)）；评价完成后每日任务触发（afterCommit，[ADR-047](../adr/047-daily-task-system.md)）**；V4.0: stockType(LIMITED/UNLIMITED/PRESALE)+isHot+hotReason+salesTags | P1         | MySQL + MinIO/OSS (商品图片，计划 V1.1)                       |
 | `cart-service`          | 购物车（读时由应用层 `CartManager` 编排回填商品信息与金额/`allSelected`，[ADR-021](../adr/021-cart-readtime-enrichment-in-app-layer.md)；并发加购唯一键冲突幂等合并）                                | P1         | MySQL + Feign（→item-service 批量取 SKU）                                                  |
 | `trade-service`         | 统一订单中心：OrderTypeEnum(NORMAL/DIRECT/FLASH_SALE/PRESALE)+策略模式(OrderCreateStrategy+OrderCreateContext+OrderCreateStrategyFactory)；Saga补偿；OrderManager编排；售后+结算（**平行入驻审核流程已于第六轮退役**，详见 §10.2）；**运费计价（`PostageCalculator` 纯函数，Phase 1 取最高费率模板计一次 + 满额包邮阈值；秒杀单免邮；I43 fail-closed）+ 拆单发货（`order_item.package_no` 归属标记、部分发货停留待发货，ADR-037）+ 售后退款触发纠正（仅退款审核同意即触发 / 退货退款确认收到退货后触发）**；**下单入口 Sentinel 流控+熔断已生效（`createOrder` QPS 100 / 异常比例 0.5，blockHandler → `FREQUENT_ERROR`(429)，[ADR-028](../adr/028-trade-sentinel-wiring-over-resilience4j.md)）** | P1         | MySQL + RocketMQ (订单超时延迟消息 level=16/30min) + Seata (分布式事务，计划 V1.1) + XXL-Job (兜底，计划 V1.1) |
-| `pay-service`           | 支付处理，微信支付 API v3，多渠道路由(WECHAT/ALIPAY/BALANCE)——余额渠道经 `BalanceClient` → wallet-service；**退款执行（`RefundManager` 三通道原路退回：BALANCE 退钱包 / WECHAT v3 退款+异步回调 / ALIPAY mock 同步；`refund_order` `uk_after_sale` 幂等锚点，[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)）+ 渠道对账（日终账单四态差异只记录不调账，`uk_date_channel` 先删后写幂等，[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)）** | P1         | MySQL + wechatpay-java 0.2.17 + RocketMQ (支付超时延迟消息) |
+| `pay-service`           | 支付处理，微信支付 API v3，多渠道路由(WECHAT/ALIPAY/BALANCE)——余额渠道经 `BalanceClient` → wallet-service；**退款执行（`RefundManager` 三通道原路退回：BALANCE 退钱包 / WECHAT v3 退款+异步回调 / ALIPAY mock 同步；`refund_order` `uk_after_sale` 幂等锚点，[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)）+ 渠道对账（日终账单四态差异只记录不调账，`uk_date_channel` 先删后写幂等，[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)）**；**退款悬挂补偿（`RefundResumeJob`：微信退款查询结算 / 余额·支付宝幂等重放，[ADR-041](../adr/041-refund-resume-aftersale-guard-freight-cache.md)）** | P1         | MySQL + wechatpay-java 0.2.17 + RocketMQ (支付超时延迟消息) |
 | `logistics-service`     | 物流信息管理，状态追踪，快递员API V1.1            | P1         | MySQL + WebSocket (物流状态推送，计划 V1.2)                     |
-| `search-service`        | 商品全文检索：ES双实现(ES全面搜索+DBSearch MySQL LIKE回退)；**ES 文档对象 `ProductDocument`（infrastructure/es）与出参 `ProductSearchVO`（adapter/response）分离**；**知识库向量摄取（`/internal/search/vector/knowledge/upsert`：分块 `DocumentChunker` + Embedding 在本服务完成，索引 `knowledge_vectors` 归 ES 域，见 §3.4）** | P1         | ElasticSearch 7.17 + MySQL LIKE (双实现, @Primary 为 DB)            |
+| `search-service`        | 商品全文检索：ES双实现(ES全面搜索+DBSearch MySQL LIKE回退)；**ES 文档对象 `ProductDocument`（infrastructure/es）与出参 `ProductSearchVO`（adapter/response）分离**；**知识库向量摄取（`/internal/search/vector/knowledge/upsert`：分块 `DocumentChunker` + Embedding 在本服务完成，索引 `knowledge_vectors` 归 ES 域，见 §3.4）**；**商品向量推荐（I47 upsert 摄取 / I48 相似 kNN：`products` 索引 knn mapping、reindex 重建带向量，[ADR-046](../adr/046-product-vector-recommendation.md)）+ 笔记向量（I50/I51，`notes` 索引，[ADR-048](../adr/048-content-notes-in-item-domain.md)）**；**搜索 facets 聚合（SE6）+ brand/minPrice/maxPrice/sort 过滤（SE1，ES+DB 双链对齐）**；**搜索联想（SE5：热搜前缀 + 商品名前缀双源，fail-open）** | P1         | ElasticSearch 7.17 + MySQL LIKE (双实现, @Primary 为 DB)            |
 | `ai-service`            | 客服域：AI 客服 + 人工 IM 会话（STOMP `/ws/chat` + REST `/api/chat/**`，chat_message；2026-10 迁入；**STOMP 发送者身份取自会话 Principal，客户端无法伪造**）+ 商家知识库 RAG（`/api/seller/knowledge`，merchant_knowledge_base；2026-10 迁入；**`ai.rag.enabled` 渐进启用的向量摄取 + RAG 应答接线，见 §3.4**）+ AI 商品助手；LangChain4j AiServices Agent+@Tool+ChatMemory；**domain/port 五接口（Order/ProductDetail/Search/UserProfile/VectorSearch）+ infrastructure/adapter Feign 防腐** | P2         | LangChain4j(Agent) + Spring AI(基建) + DeepSeek V3 + ES向量(P1) |
-| `marketing-service`     | 优惠券V4.0 五维模型(discountType FIXED/PERCENTAGE/CASH_COUPON × couponCategory PLATFORM/SHOP/FLASH_SALE/EXCLUSIVE × grantType FREE_CLAIM/PAID_PURCHASE/INVITATION/AUTO_ISSUE × stockType LIMITED/UNLIMITED × grabType NORMAL/NEED_GRAB/PLATFORM_EXCLUSIVE)；Redis Lua抢券 + **DB落库失败抢券补偿（INCR+SREM 回滚预扣）**；smartClaim智能路由；V4.2 couponCategory+卖家匹配校验；V4.5 Redis SISMEMBER去重；秒杀活动（**`/api/flash/buy` 走 MarketingManager：Redis Lua 预扣（显式预热+惰性兜底）→ Feign 落单（trade）→ RocketMQ 异步统计**；秒杀商品无店铺归属 sellerId=0，平台活动口径）；**积分账本（`points_log`，`/internal/points/add`）+ 签到活动（SignInStore/SignInPointsPolicy/SignManager；2026-10 迁入）**；四层归位（persistence PO 化、`CouponPricing` 领域服务） | P1         | MySQL + Redis + RocketMQ |
+| `marketing-service`     | 优惠券V4.0 五维模型(discountType FIXED/PERCENTAGE/CASH_COUPON × couponCategory PLATFORM/SHOP/FLASH_SALE/EXCLUSIVE × grantType FREE_CLAIM/PAID_PURCHASE/INVITATION/AUTO_ISSUE × stockType LIMITED/UNLIMITED × grabType NORMAL/NEED_GRAB/PLATFORM_EXCLUSIVE)；Redis Lua抢券 + **DB落库失败抢券补偿（INCR+SREM 回滚预扣）**；smartClaim智能路由；V4.2 couponCategory+卖家匹配校验；V4.5 Redis SISMEMBER去重；秒杀活动（**`/api/flash/buy` 走 MarketingManager：Redis Lua 预扣（显式预热+惰性兜底）→ Feign 落单（trade）→ RocketMQ 异步统计**；秒杀商品无店铺归属 sellerId=0，平台活动口径）；**积分账本（`points_log`，`/internal/points/add`）+ 签到活动（SignInStore/SignInPointsPolicy/SignManager；2026-10 迁入）**；**促销引擎（店铺级满减/满折 `promotion`：状态由时间窗实时推导，AD48-50 管理端 `/api/admin/promotion` + I44 计价查询 fail-closed，[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)）**；**每日任务体系（`task_def`/`task_record` 表驱动：M14 任务中心 `/api/task/daily` + I49 幂等完成（`uk_user_task_date`）+ AD51-53 管理端 CRUD `/api/admin/task`，[ADR-047](../adr/047-daily-task-system.md)）**；**活动中心（M12/M13 `/api/activity` 聚合进行中促销 + M7 可领券三态计数）**；四层归位（persistence PO 化、`CouponPricing` 领域服务） | P1         | MySQL + Redis + RocketMQ |
 | `ia-integration`        | 外部集成SDK：微信支付V3、支付宝Mock、阿里云短信、邮件(SMTP+Mock)、极验Geetest V4、MinIO对象存储、微信OAuth（V5.2 起 SMS/Geetest 工具类统一收口于此） | 基础模块       | wechatpay-java + dysmsapi + spring-boot-starter-mail(optional) + MinIO SDK |
 | `ia-common`             | 共享库：异常、Result、工具、注解、i18n；RocketMqTopics；DomainEvents；**`@OperationLog` 审计切面（单行 JSON → logger `AUDIT`，[ADR-032](../adr/032-operation-audit-dual-pipeline.md)）**（V5.2 起 SMS/Geetest 工具已迁出至 ia-integration） | 基础模块       | Hutool + Knife4j + RocketMQ |
 | `ia-api`                | 共享 Feign 接口定义（V5.2：新增 `VerificationClient` fail-closed 降级；`NotificationClient` 强类型化；`AuthClient` 契约随 `/internal/auth/**` 整体退役删除，见 [ADR-017](../adr/017-user-domain-split-and-auth-boundary.md)） | 基础模块       | OpenFeign + LoadBalancer                               |
@@ -239,17 +239,17 @@
 ```
 gateway-service（API 网关：路由 / JWT 校验 / WS 握手换头 / 可信头剥离 / 限流）
   ├── authorization-service   认证+授权域（登录凭证 user_auth / RBAC 五表 / 权限缓存）
-  ├── user-service            用户档案域（资料/地址/收藏/历史）
-  ├── merchant-service        商家域（入驻/店铺/公开页/关注；seller + shop 表 + Redis 关注）
-  ├── item-service            商品域（SPU/SKU/类目/库存/评价/首页装修）
+  ├── user-service            用户档案域（资料/地址/收藏/历史/会员等级）
+  ├── merchant-service        商家域（入驻/店铺/装修/公开页/关注；seller + shop + shop_decoration 表 + Redis 关注）
+  ├── item-service            商品域（SPU/SKU/类目/库存/评价/首页装修/种草笔记/向量推荐）
   ├── cart-service            购物车域
   ├── trade-service           交易域（订单/Saga/售后/结算）
   │     ├── pay-service       支付域（微信/多渠道路由，余额渠道 → wallet）
   │     └── logistics-service 物流域
-  ├── marketing-service       营销域（优惠券/秒杀/积分账本/签到）
+  ├── marketing-service       营销域（优惠券/秒杀/积分账本/签到/促销引擎/每日任务/活动中心）
   ├── wallet-service          资金域（余额账户）
   ├── ai-service              客服域（AI 客服/人工 IM/商家知识库）
-  ├── search-service          搜索域（ES + MySQL LIKE 双实现）
+  ├── search-service          搜索域（ES + MySQL LIKE 双实现 + 向量推荐/搜索联想）
   ├── verification-service    验证域（验证码/人机验证唯一出口）
   │     └── notification-service 触达域（短信/邮件/站内信）
   └── 共享内核：ia-common / ia-api / ia-integration
@@ -382,11 +382,11 @@ org.icedamericanomall.<service>
 
 | 维度 | 规则 | 现状示例（2026-10） |
 | :--- | :--- | :--- |
-| **聚合分包** | `domain/model/<聚合名小写>/` 一个聚合一个包；包边界即聚合边界（未来服务拆分边界） | authorization `model/userauth/`（+ 既有 `model/rbac/`）；user `model/user/`、`model/address/`、`model/favorite/`；merchant `model/merchant/`、`model/shop/`；notification `model/inapp/`（聚合根 `InAppMessage`）+ `model/channel/`（`SmsMessage` / `EmailMessage` 同族通道值对象） |
+| **聚合分包** | `domain/model/<聚合名小写>/` 一个聚合一个包；包边界即聚合边界（未来服务拆分边界） | authorization `model/userauth/`（+ 既有 `model/rbac/`）；user `model/user/`、`model/address/`、`model/favorite/`、`model/member/`（会员等级，ADR-044）；merchant `model/merchant/`、`model/shop/`（含 `ShopDecoration`，ADR-048）；item `model/content/`（种草笔记，ADR-048）；marketing `model/promotion/`（ADR-043）、`model/task/`（ADR-047）；notification `model/inapp/`（聚合根 `InAppMessage`）+ `model/channel/`（`SmsMessage` / `EmailMessage` 同族通道值对象） |
 | **例外① 单聚合平铺** | 仅 1 个聚合（或单族值对象）时保持平铺，不强行嵌套 | verification `model/` 平铺（`VerificationCode` / `VerificationPolicy`） |
 | **例外② 跨族共享值对象** | 登录策略 / 风控 / 会话等多能力族共享、被 app/infrastructure 消费的领域值对象留 `model/` 根，不为单类造包 | authorization `LoginSpec` / `EmailAddress` / `WechatSession` / `RiskAssessment` / `RefreshTokenInfo`；notification `PageResult` 留 `model/` 根 |
 | **例外③ 枚举归属** | 默认留 `domain/enums/`（服务级共享词汇）；仅聚合私有状态机随聚合下沉 | merchant `ShopStatusEnum` → `model/shop/`（仅 Shop 聚合及持久化引用）；`MerchantStatusEnum`（被 app 引用）留 `domain/enums/` |
-| **不强行造** | 无领域模型的模块不强行造聚合 | 全部 14 业务服务均已建 `domain/model`（ai 5 聚合 conversation/knowledge/order/product/userprofile；marketing coupon/flash/points；wallet WalletTransaction；余额不变式仍由仓储条件 UPDATE 承载）；gateway 无业务领域模型不建 |
+| **不强行造** | 无领域模型的模块不强行造聚合 | 全部 14 业务服务均已建 `domain/model`（ai 5 聚合 conversation/knowledge/order/product/userprofile；marketing coupon/flash/points/promotion/task；wallet WalletTransaction；余额不变式仍由仓储条件 UPDATE 承载）；gateway 无业务领域模型不建 |
 | **app 粒度** | 一个 Manager 只归属一个聚合或一个用例族，混装职责必拆（>300 行必拆）；命名沿用 `XxxManager`，**不引入** `CmdExe` / `QryExe`；已单一职责者不动 | user `UserManager` → `UserQueryManager`（读取+统计）/ `UserAdminManager`（管理端运营）/ `UserProvisionManager`（幂等开通）；notification `NotificationManager` → `ChannelDispatchManager`（SMS/Email 投递）/ `InAppMessageManager`（站内信）；marketing `CouponService` → `CouponClaimService`（领取/抢券/支付后发券）/ `CouponUsageService`（核销/回滚/持券查询）；auth `AuthManager`、merchant 三 Manager、wallet `WalletManager`、ai 四 Manager、verification `VerificationManager` 复核后不动 |
 
 > 本次收口为纯结构归位：HTTP 契约（URL / 报文 / 错误码）零变化，590 项测试保持全绿。
@@ -600,7 +600,7 @@ Docker Compose 单机部署 (本地开发)
 
 ## 九、架构合规审计（2026-06-20）
 
-> 2026-10-03 复核：服务模块 18 个、网关路由 17 块 / **34 条 Path 谓词**、测试 **590 项**（0 失败）；RBAC/校验/资金/触达/商家等边界随六轮边界重构迁移（第六轮：merchant-service 拆分 + trade 平行入驻流程退役），本节数字已按代码现状更新；2026-10 增量：孤儿路由补挂（item/marketing/trade 共 7 条 Path 谓词）+ ai-service 重复路由块合并为单一 id + **`/api/shops/**`（店铺 shopId 口径）与 `/api/home/**`（此前遗留缺口关闭）补挂**。
+> 2026-10-03 复核：服务模块 18 个、网关路由 17 块 / **34 条 Path 谓词**、测试 **590 项**（0 失败）；RBAC/校验/资金/触达/商家等边界随六轮边界重构迁移（第六轮：merchant-service 拆分 + trade 平行入驻流程退役），本节数字已按代码现状更新；2026-10 增量：孤儿路由补挂（item/marketing/trade 共 7 条 Path 谓词）+ ai-service 重复路由块合并为单一 id + **`/api/shops/**`（店铺 shopId 口径）与 `/api/home/**`（此前遗留缺口关闭）补挂**；2026-10-05 复核（V5.9→V5.13 后）：网关路由 **18 块 / 38 条 Path 谓词**（task/activity/notes 三路由补挂）、测试 **1317 项**（0 失败）。
 
 ### 9.1 服务划分评估
 
@@ -633,12 +633,12 @@ Docker Compose 单机部署 (本地开发)
 /api/verification/**   → verification-service  （验证码签发公开端点；IP 限流 5/s·burst 10）
 /api/notifications/**  → notification-service  （站内信中心，需登录）
 /api/user/**           → user-service          （档案域）
-/api/item/** + /api/home/** + /api/admin/home/** → item-service （商品/类目/评价 + 首页配置 + 首页装修管理）
+/api/item/** + /api/home/** + /api/notes/** + /api/admin/home/** → item-service （商品/类目/评价 + 首页配置 + 首页装修管理 + 种草笔记）
 /api/cart/**           → cart-service
 /api/trade/** + /api/after-sale/** + /api/admin/after-sale/** + /api/admin/finance/** + /api/seller/finance/** → trade-service （订单/售后/结算；精路由须先于 /api/admin/**、/api/seller/** 声明）
 /api/pay/** + /api/admin/pay/** → pay-service （支付/退款/对账；/api/admin/pay/** = `pay-admin-routes`，须先于 /api/admin/** 声明，ADR-035/036）
 /api/logistics/**      → logistics-service
-/api/coupon/** + /api/flash/** + /api/points/** + /api/sign/** + /api/admin/coupon/** + /api/seller/coupon/** → marketing-service （营销域：优惠券/秒杀/积分/签到）
+/api/coupon/** + /api/flash/** + /api/points/** + /api/sign/** + /api/task/** + /api/activity/** + /api/admin/coupon/** + /api/seller/coupon/** → marketing-service （营销域：优惠券/秒杀/积分/签到 + 每日任务/活动中心）
 /api/wallet/**         → wallet-service        （余额账户，需登录）
 /api/admin/roles/** + /api/admin/permissions/** → authorization-service （须先于 /api/admin/** 声明，ADR-018）
 /api/admin/seller/**   → merchant-service      （商家审核；须先于 /api/admin/** 声明）
@@ -650,9 +650,9 @@ Docker Compose 单机部署 (本地开发)
 
 **路由规则**：精确路径优先匹配，兜底路由放最后。与阿里 API Gateway 的 "精确→前缀→兜底" 策略一致。
 
-**2026-10 增量**：补挂 7 条孤儿 Path 谓词（控制器存在但此前经网关不可达）：`/api/admin/home/**`（item-service）、`/api/admin/coupon/**` + `/api/seller/coupon/**`（marketing-service）、`/api/after-sale/**` + `/api/admin/after-sale/**` + `/api/admin/finance/**` + `/api/seller/finance/**`（trade-service）；重复的 `ai-service` 路由块已合并为单一 id（4 条 Path）；**结构规范化增量**：`/api/shops/**`（店铺 shopId 口径公开页，ADR-019）与 `/api/home/**`（item-service 公开首页配置）已补挂——前者此前仅白名单放行无路由，后者此前为遗留缺口，现均已可达。JWKS（authorization-service `/oauth2/jwks`）不在网关路由内：网关以 `jwk-set-uri` 直连授权服务获取公钥。
+**2026-10 增量**：补挂 7 条孤儿 Path 谓词（控制器存在但此前经网关不可达）：`/api/admin/home/**`（item-service）、`/api/admin/coupon/**` + `/api/seller/coupon/**`（marketing-service）、`/api/after-sale/**` + `/api/admin/after-sale/**` + `/api/admin/finance/**` + `/api/seller/finance/**`（trade-service）；重复的 `ai-service` 路由块已合并为单一 id（4 条 Path）；**结构规范化增量**：`/api/shops/**`（店铺 shopId 口径公开页，ADR-019）与 `/api/home/**`（item-service 公开首页配置）已补挂——前者此前仅白名单放行无路由，后者此前为遗留缺口，现均已可达。**V5.9→V5.13 增量（P2 增长线）**：`/api/task/**` + `/api/activity/**`（marketing-service：每日任务 M14 / 活动中心 M12-M13）与 `/api/notes/**`（item-service：种草笔记）三条路由补挂，现 **18 个路由块 / 38 条 Path 谓词**。JWKS（authorization-service `/oauth2/jwks`）不在网关路由内：网关以 `jwk-set-uri` 直连授权服务获取公钥。
 
-**白名单方法级收紧（2026-10）**：浏览类公开路径（`/api/item/**`、`/api/home/**`、`/api/search/**`、`/api/shop/**`、`/api/shops/**`、`/api/flash/**`、`/api/coupon/template`）**仅 GET 匿名放行**，同路径写方法（如 `POST /api/flash/buy`、`POST /api/item/product`、`POST|DELETE /api/shop/follow`）落到 `authenticated()`；`/api/ai/**` 匿名可用但受 `AiTokenQuotaFilter` 每日 Token 配额约束。**V5.6 注记（待办）**：`/api/item/**` 的 GET 匿名放行使**运费模板读取端点**（`/api/item/freight-template/**`）对匿名可达（内容为商家运费策略）；控制器侧已有 fail-closed 守卫兜底（归属校验 + 仅启用模板出参，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)），**白名单收敛为精确路径**列为待办。
+**白名单方法级收紧（2026-10）**：浏览类公开路径（`/api/item/**`、`/api/home/**`、`/api/search/**`、`/api/shop/**`、`/api/shops/**`、`/api/flash/**`、`/api/coupon/template`、`/api/activity/**`、`/api/notes/**`）**仅 GET 匿名放行**，同路径写方法（如 `POST /api/flash/buy`、`POST /api/item/product`、`POST|DELETE /api/shop/follow`）落到 `authenticated()`；`/api/ai/**` 匿名可用但受 `AiTokenQuotaFilter` 每日 Token 配额约束。**V5.11/V5.12 注**：`/api/activity/**` 与 `/api/notes/**` 进入 GET 匿名白名单（浏览类只读，写方法落 `authenticated()`）；`/api/task/**` 不进白名单（个人任务中心需登录）。**V5.6 注记（待办）**：`/api/item/**` 的 GET 匿名放行使**运费模板读取端点**（`/api/item/freight-template/**`）对匿名可达（内容为商家运费策略）；控制器侧已有 fail-closed 守卫兜底（归属校验 + 仅启用模板出参，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)），**白名单收敛为精确路径**列为待办。
 
 **WS 握手鉴权（2026-10 修复，[ADR-026](../adr/026-ws-handshake-query-token-edge-swap.md)）**：`/ws/chat/**` **不进白名单**（维持 `authenticated()`）；浏览器 WS 握手无法自定义 `Authorization` 头，由 `WsHandshakeTokenFilter`（WebFilter，order **-900**，早于 Spring Security 安全链）把 URL query 中的 `token` 换写为 `Authorization: Bearer` 并**剔出该参数**（不落下游）后再进安全链——签名 + 时效 + 吊销校验（jti 黑名单 + 用户级版本，ADR-031）口径与普通接口完全一致；前端 SockJS/STOMP 的每个传输请求 URL 都需携带 `?token=<accessToken>`；路径范围由 `gateway.ws.token-paths` 配置（默认 `/ws/chat/**`）。
 
@@ -662,10 +662,10 @@ Docker Compose 单机部署 (本地开发)
 | -------- | ---------- | ------------------------------------------------------------ |
 | 服务拆分     | 10/10      | 18 个模块按域归位（2026-10 六轮边界重构）；服务↔域归属见 §3.1 |
 | DDD 分层   | 9/10       | 核心链路合规，边缘接口有已知例外                                             |
-| 网关路由     | 10/10      | 精确路径优先 + 兜底，17 块 / 34 条 Path 谓词覆盖全部服务（2026-10 第六轮 + 孤儿路由补挂 + `/api/shops/**`、`/api/home/**` 增量）                                          |
+| 网关路由     | 10/10      | 精确路径优先 + 兜底，18 块 / 38 条 Path 谓词覆盖全部服务（2026-10 第六轮 + 孤儿路由补挂 + `/api/shops/**`、`/api/home/**` + `/api/task|activity|notes/**` 增量）                                          |
 | 异常处理     | 10/10      | 统一 GlobalExceptionHandler + ErrorCode 体系；`/internal/**` 真实 HTTP 状态码 + 极简 JSON（ADR-004 修订）                     |
 | Feign 契约 | 10/10      | ia-api 集中管理，fallback 全覆盖（统一降级规范见 `ia-api` 的 `fallback/package-info.java`，ADR-011）；8 服务已开启 resilience4j 熔断（ADR-022） |
-| 测试覆盖     | 6/10       | 590 项测试（18 模块全部有测试，0 失败；含 H2 持久化集成测试）                                       |
+| 测试覆盖     | 6/10       | 1317 项测试（18 模块全部有测试，0 失败；含 H2 持久化集成测试）                                       |
 | **综合**   | **9.4/10** | 生产就绪，测试覆盖待提升                                                 |
 
 ---
@@ -706,16 +706,16 @@ Docker Compose 单机部署 (本地开发)
 ```
 gateway-service           (API 网关)                        ✅ 0 controller（纯路由+过滤器）
 authorization-service  (认证+授权: 登录/凭证/RBAC/权限缓存)  ✅ 5 controllers
-user-service           (档案: 资料/地址/收藏/历史)            ✅ 9 controllers
-merchant-service       (商家域: 入驻/店铺/关注)               ✅ 5 controllers
-item-service           (商品/SKU/类目/评价/首页)            ✅ 6 controllers
+user-service           (档案: 资料/地址/收藏/历史/会员等级)            ✅ 10 controllers
+merchant-service       (商家域: 入驻/店铺/装修/关注)               ✅ 5 controllers
+item-service           (商品/SKU/类目/评价/首页/运费模板/笔记)            ✅ 9 controllers
 cart-service           (购物车)                           ✅ 2 controllers
-trade-service          (订单/售后/结算)                     ✅ 9 controllers
-pay-service            (支付/退款/对账: 微信/支付宝Mock/余额)          ✅ 1 controller
+trade-service          (订单/售后/结算)                     ✅ 10 controllers
+pay-service            (支付/退款/对账: 微信/支付宝Mock/余额)          ✅ 4 controllers
 logistics-service      (物流)                             ✅ 2 controllers
-search-service         (搜索: ES+DB 双实现)                 ✅ 2 controllers
+search-service         (搜索: ES+DB 双实现+向量推荐/联想)                 ✅ 2 controllers
 ai-service             (AI 助手/客服/IM/知识库)             ✅ 5 controllers
-marketing-service      (优惠券/秒杀/积分/签到)               ✅ 8 controllers
+marketing-service      (优惠券/秒杀/积分/签到/促销/任务/活动)               ✅ 15 controllers
 notification-service   (短信/邮件/站内信)                   ✅ 2 controllers
 verification-service   (验证码/人机验证)                    ✅ 2 controllers
 wallet-service         (余额账户)                          ✅ 2 controllers
@@ -723,7 +723,7 @@ wallet-service         (余额账户)                          ✅ 2 controllers
 ia-integration         (第三方集成: 微信支付/短信/邮件/极验/MinIO/OAuth)
 ia-common              (异常/Result/工具/AOP/RocketMQ/CryptoKeyConfig)
 ia-api                 (Feign 契约: 15 Client + DTO + fallback)
-database               (SQL: Initialize 全量快照唯一真相源（48 表）；迁移机制已废除，ADR-045)
+database               (SQL: Initialize 全量快照唯一真相源（54 表）；迁移机制已废除，ADR-045)
 ─────────────────────────────────────────────
-18 模块 / 15 服务模块 / 约 193 端点（方法级映射实测）/ 1074 测试（2026-10-05）
+18 模块 / 15 服务模块 / 约 240 端点（方法级映射实测，含 `/internal/**` 47 个）/ 1317 测试（2026-10-05）
 ```

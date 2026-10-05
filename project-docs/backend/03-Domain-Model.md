@@ -1,7 +1,7 @@
 # 03 — 领域模型文档 (DDD Domain Model)
 
 > 来源：`doc/项目的分析流程/03.领域建模.md`、`doc/项目的分析流程/00.用户分析.md`、`doc/IDEA.md`
-> 最后更新: 2026-10-03（**P0 四项落地批次（[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)/[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)/[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：金额不变式 **V2**（`payAmount = totalAmount − discountAmount + postFee`，§3.7/§四 同步）；§六 词汇表新增九条：运费模板/运费/满额包邮阈值/商家默认模板/包裹与包裹号/部分发货/确认收到退货/原路退回/对账四态差异；订单状态口径补「部分发货停留待发货」（§3.7/待发货条目）；物流聚合 1:N 包裹化（§3.11 约定偏差消除）。此前——结构规范化 + 数据库整治 + 1:N 拆分同步：Shop 聚合拆分（ADR-019）、SKU 原子扣减（ADR-020）、购物车读时回填（ADR-021）、售后/物流状态机与词汇表修订、`domain/model` 聚合分包同步（ADR-025）；§十 图表说明同步 IA_UML/IA_E-R（Merchant/Shop）；遗留风险清零批次词汇补遗：握手令牌/契约键/吊销名单/向量索引/向量摄取/审计双管道/AUDIT 审计日志/收款账号脱敏，RAGRetriever 接线注记（T14）；工具类收口批次词汇补遗：边缘对端地址（ADR-034）+ 收款账号脱敏掩码单点定义注记；多粒度令牌吊销批次（T19，[ADR-031](../adr/031-multi-granularity-token-revocation.md)，修订 ADR-027）词汇补遗：令牌版本/用户级吊销/全端下线三条新增，契约键与吊销名单条目更新）
+> 最后更新: 2026-10-05（**V5.9→V5.13 五批交付（P2 增长线，[ADR-045](../adr/045-db-snapshot-single-source.md)/[ADR-046](../adr/046-product-vector-recommendation.md)/[ADR-047](../adr/047-daily-task-system.md)/[ADR-048](../adr/048-content-notes-in-item-domain.md)）**：§一 限界上下文补 V5.9→V5.13 聚合落位注记；§三 新增五节——3.15 促销活动（Promotion，时间窗推导状态，ADR-043）、3.16 每日任务（TaskDef/TaskRecord，`uk_user_task_date` 每日幂等，ADR-047）、3.17 会员等级（MemberLevelRule/MemberGrowthLog，`uk_order_no` 幂等入账 + 只升不降，ADR-044）、3.18 店铺装修（ShopDecoration 与 Shop 1:1，ADR-048）、3.19 种草笔记（Note 内容聚合，软删 + 向量摄取钩子，ADR-048）；§四 聚合表新增四行 + user-service 聚合分包结论同步（domain/model 4 子包）；§六 词汇表新增 11 条（促销引擎/促销标签/每日任务/任务完成记录/会员成长值/会员等级重算/相似商品推荐/种草笔记/店铺装修/搜索联想/活动中心）；§七 领域服务补记 `PricingCalculator`/`PostageCalculator`/`ReconciliationComparer`/`MemberLevelPolicy`/`DocumentChunker` 与向量文本组装纯函数。此前——**P0 四项落地批次（[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)/[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)/[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：金额不变式 **V2**（`payAmount = totalAmount − discountAmount + postFee`，§3.7/§四 同步）；§六 词汇表新增九条：运费模板/运费/满额包邮阈值/商家默认模板/包裹与包裹号/部分发货/确认收到退货/原路退回/对账四态差异；订单状态口径补「部分发货停留待发货」（§3.7/待发货条目）；物流聚合 1:N 包裹化（§3.11 约定偏差消除）。此前——结构规范化 + 数据库整治 + 1:N 拆分同步：Shop 聚合拆分（ADR-019）、SKU 原子扣减（ADR-020）、购物车读时回填（ADR-021）、售后/物流状态机与词汇表修订、`domain/model` 聚合分包同步（ADR-025）；§十 图表说明同步 IA_UML/IA_E-R（Merchant/Shop）；遗留风险清零批次词汇补遗：握手令牌/契约键/吊销名单/向量索引/向量摄取/审计双管道/AUDIT 审计日志/收款账号脱敏，RAGRetriever 接线注记（T14）；工具类收口批次词汇补遗：边缘对端地址（ADR-034）+ 收款账号脱敏掩码单点定义注记；多粒度令牌吊销批次（T19，[ADR-031](../adr/031-multi-granularity-token-revocation.md)，修订 ADR-027）词汇补遗：令牌版本/用户级吊销/全端下线三条新增，契约键与吊销名单条目更新）
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/变更聚合、端口、领域服务、领域事件时
 
 ---
@@ -40,6 +40,7 @@
 ```
 
 > **2026-10 第六轮**：商家上下文（Merchant Ctx）随 merchant-service 独立——入驻申请/审核、店铺档案（`seller` 表所有权）、公开店铺页、店铺关注自用户上下文迁出（聚合/领域服务见 §3.3、§七）。
+> **V5.9→V5.13（P2 增长线）**：营销上下文新增 促销（Promotion，[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)）与 每日任务（TaskDef/TaskRecord，[ADR-047](../adr/047-daily-task-system.md)）聚合；用户上下文新增 会员等级（MemberLevelRule/MemberGrowthLog，[ADR-044](../adr/044-member-level-and-benefits.md)）；商家上下文新增 店铺装修（ShopDecoration，与 Shop 1:1，[ADR-048](../adr/048-content-notes-in-item-domain.md)）；商品上下文新增 内容聚合（Note + note_like/note_product，[ADR-048](../adr/048-content-notes-in-item-domain.md)，`domain/model/content` 分包预留 community-service 拆分）。明细见 §3.15–§3.19、§四。
 
 ### 上下文映射 (Context Map)
 
@@ -354,6 +355,74 @@
 
 > **V5.2 补充**：登录策略矩阵新增 `EmailLoginStrategy`（EMAIL + EMAIL_CODE，验证码经 verification-service 消费后走盲索引查找/创建）；验证码/人机验证校验收口 verification-service（见 ADR-007/008）。
 
+### 3.15 促销活动 (Promotion) — 营销上下文聚合根（V5.8 促销引擎）
+
+> 店铺级满减/满折活动（`promotion` 表，Phase 1 `sellerId` 必填、一单仅触达单商家）。**状态口径**：活动状态由 `startTime`/`endTime` 时间窗实时推导（`deriveStatus`：1-未开始 / 2-进行中 / 3-已结束），落库 `status` 仅为写入时刻快照——I44 计价查询与管理端守卫（已结束禁编 / 进行中禁删）均不信任快照（复用 AD40-42 秒杀管理端先例）。
+
+| 属性 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| id | 标识 | 技术主键 |
+| name | 字符串 | 活动名称 |
+| sellerId | 关联 | 所属店铺（Phase 1 必填） |
+| type | 枚举 | `PromotionTypeEnum`：1-满减 / 2-满折 |
+| threshold | 金额 | 门槛（分） |
+| discountValue | 金额 | 满减 = 减免额（分）；满折 = 折扣率万分比（8500 = 8.5折） |
+| maxDiscount | 金额 | 满折封顶（分，0 = 不封顶） |
+| startTime / endTime | 日期时间 | 活动时间窗（endTime 严格晚于 startTime，聚合不变式） |
+| status | 枚举 | 写入时刻快照（1/2/3），读路径一律按时间窗推导 |
+| version | 整数 | 乐观锁（编辑冲突由 MyBatis-Plus 拦截器拦截） |
+
+> **行为（内聚聚合根）**：`deriveStatus(now)` 时间窗状态推导、`ensureTimeWindowOrdered()` 时间窗有序校验、`ensureDiscountRuleLegal()` 优惠规则校验（类型合法 / 满折不越万分比上限）。管理端 `/api/admin/promotion`（AD48-50），计价查询 I44 由 trade `PricingCalculator` 消费（[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)）；商品侧促销标签（P2/P1）经 I44 fail-open + 60s 缓存组装（见 §六「促销标签」）。
+
+### 3.16 每日任务 (TaskDef / TaskRecord) — 营销上下文聚合（V5.10 表驱动任务体系）
+
+> 表驱动任务（[ADR-047](../adr/047-daily-task-system.md)）：运营加任务 = `task_def` 加一行 seed，代码零改动；任务编码 `code` 为业务唯一键（调用方锚定，如 DAILY_ORDER / DAILY_REVIEW）。完成触发口（I49）幂等：trade 确认收货 / item 评价完成（afterCommit，事务外触发）→ marketing 校验启用状态与每日幂等（fail-open，不阻断主流程）。
+
+| 聚合 | 属性 | 说明 |
+| ---- | ---- | ---- |
+| TaskDef（`task_def`） | id / code / name / type / rewardPoints / status | `code` 业务唯一（`uk_code`）；type=1 每日重置（Phase 1 唯一值）；status 1-启用 / 0-停用（服务端权威校验，停用即回落未完成） |
+| TaskRecord（`task_record`） | id / userId / taskCode / rewardPoints / bizDate / createTime | **`uk_user_task_date` 每日幂等锚点**：同一用户同一任务同一业务日至多一条；`bizDate` 服务端按当天计算（调用方不可传，防伪造刷分）；`rewardPoints` 为完成时刻定义值快照；并发重复插入被唯一键拦截并回落「未完成」 |
+
+### 3.17 会员等级 (MemberLevelRule / MemberGrowthLog) — 用户上下文聚合（V5.9 会员等级引擎）
+
+> 等级门槛规则 + 成长值入账流水（[ADR-044](../adr/044-member-level-and-benefits.md)）。`User.memberLevel`（见 §3.1）为重算结果字段；成长值只在确认收货时按实付金额入账（trade fail-open 触发 I46），等级权益/折扣经 I45 查询（fail-open）。
+
+| 聚合 / 值对象 | 属性 | 说明 |
+| ---- | ---- | ---- |
+| MemberLevelRule（`member_level_rule`，record 值对象） | level / threshold / discountRate / pointsRate / sort | 等级门槛规则行（Phase 1 为 seed 预置，无管理端编辑，改 seed 即生效）；`threshold` 累计成长值门槛（分）为等级比较基准；`discountRate` 折扣率万分比（9800 = 98%）；`pointsRate` 积分倍率百分比（100 = 1 倍） |
+| MemberGrowthLog（`member_growth_log`，聚合根） | id / userId / orderNo / growthAmount / afterLevel / createTime | 成长值入账流水：**`uk_order_no` 幂等锚点**（一订单至多入账一次）；`growthAmount` 只增不扣；`afterLevel` 入账后等级快照 |
+
+> **重算口径（`MemberLevelPolicy` 纯函数，I45）**：目标等级 = max(当前等级, 门槛匹配等级)——**只升不降**；门槛匹配取「累计成长值 ≥ threshold」中门槛最高者；规则缺行按枚举声明序兜底。年度降级考核（周期快照/清零）留 roadmap。
+
+### 3.18 店铺装修 (ShopDecoration) — 商家上下文聚合（V5.12，与 Shop 1:1）
+
+> 与 `shop` 1:1 的装修聚合（`shop_decoration`，`uk_shop` 业务唯一键，[ADR-048](../adr/048-content-notes-in-item-domain.md)）。商家端 `GET/PUT /api/seller/shops/{shopId}/decoration`（S1c/S1d）；公开店铺页（ShopVO）增量返回 decoration。
+
+| 属性 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| shopId | 标识 | 店铺 ID（业务唯一键 `uk_shop`，与 Shop 1:1） |
+| announcement | 字符串 | 店铺公告（≤200，空白归一化为 null） |
+| banners | 列表 | 轮播图 URL（≤5，http(s) 校验） |
+| hotProductIds | 列表 | 推荐商品位（≤8，按 ID 引用商品；Phase 1 不校验商品归属，展示端按需过滤失效/非在售） |
+
+> **持久化口径**：`banners` / `hotProductIds` 以 JSON 字符串列存储（不引入 TypeHandler），JSON ↔ List 互转收口在仓储实现；条数 / URL 格式 / 去重校验内聚聚合（创建即校验 + 归一化）。
+
+### 3.19 种草笔记 (Note) — 商品上下文内容聚合（V5.12 内容社区 Phase 1）
+
+> 内容聚合落位 item 域 `domain/model/content/` 分包（与 review 同构；**包边界 = 未来 community-service 拆分边界**，ADR-025/[ADR-048](../adr/048-content-notes-in-item-domain.md)）。聚合根为 `note` 行；点赞 `note_like`（笔记 × 用户，uk 幂等 + 原子计数）与关联商品 `note_product`（笔记 × 商品，≤5 条）为**聚合内部关联**，只经各自仓储端口访问；笔记与商品按 `productId` 引用、不持对象引用——发布时的商品存在性/在售校验属跨聚合协作，上移应用层编排。
+
+| 属性 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| id | 标识 | 技术主键 |
+| userId | 关联 | 作者 |
+| title | 字符串 | 标题（≤50） |
+| content | 字符串 | 纯文本正文（≤2000；Phase 1 不做富文本/视频） |
+| coverImage / images | URL / 列表 | 封面 / 图集（≤9，得物式九宫格，http(s) 校验） |
+| likeCount | 整数 | 点赞数（uk 幂等 + 原子计数维护） |
+| status | 枚举 | 1-已发布（对外可见）/ 2-已删除（作者软删，流与详情不可见；**发布即上架，无草稿态**） |
+
+> **Phase 1 能力边界（ADR-048）**：发布（逐个校验关联商品存在且在售）/ 分页流 / 详情 / 点赞 / 作者软删 / 相似笔记（P34，向量召回 fail-open）；不做笔记评论、关注流、推荐分发、草稿箱。发布/软删经 afterCommit 钩子触发笔记向量摄取（search I50/I51，`notes` 索引，fail-open）。
+
 ---
 
 ## 四、聚合与聚合根
@@ -361,16 +430,21 @@
 | 聚合   | 聚合根            | 内部实体               | 不变量                            |
 | ---- | -------------- | ------------------ | ------------------------------ |
 | 用户聚合 | User           | Address (1:N)      | 一个用户可有多个地址        |
+| 会员聚合 | MemberGrowthLog（成长值流水）+ MemberLevelRule（门槛规则，record 值对象） | — | 成长值只增不扣（`uk_order_no` 幂等入账）；等级重算只升不降 = max(当前, 门槛匹配)（[ADR-044](../adr/044-member-level-and-benefits.md)） |
 | 商家聚合 | Merchant       | —                  | 一个用户至多一个商家（`seller.user_id` 唯一 + `MerchantRegistrar`）；状态机 PENDING→NORMAL/FROZEN；归 merchant-service（2026-10 第六轮迁出） |
 | 店铺聚合 | Shop           | —                  | 1 商家 : N 店铺（`uk_merchant_shop_name(merchant_id, shop_name)`）；店铺状态机独立于商家生命周期；默认店铺 = 该商家 `shop.id` 最小者（V5.4，[ADR-019](../adr/019-merchant-shop-1n-split.md)） |
+| 店铺装修聚合 | ShopDecoration | —                  | 与 Shop 1:1（`uk_shop`）；轮播图 ≤5 / 推荐商品位 ≤8 / 公告 ≤200，创建即校验 + 归一化（[ADR-048](../adr/048-content-notes-in-item-domain.md)） |
 | 商品聚合 | Product        | SKU (1:N)          | SKU 不能脱离 Product 存在于订单中；库存不能为负 |
+| 内容聚合 | Note           | NoteLike / NoteProduct（聚合内关联） | 一笔记至多关联 5 商品（发布即校验存在且在售）；点赞 uk 幂等 + 原子计数；作者软删（status=2），发布即上架无草稿态（[ADR-048](../adr/048-content-notes-in-item-domain.md)） |
 | 订单聚合 | Orders         | OrderItem (1:N，组合) | **不变式 V2**：`payAmount = totalAmount − discountAmount + postFee`；`totalAmount` = Σ 订单项小计（运费不进小计，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）；订单项不能脱离订单     |
 | 支付聚合 | PayOrder       | —                  | 支付金额 = 关联订单应付金额                |
 | 物流聚合 | OrderLogistics | —                  | 物流必须关联已支付订单；1 订单 : N 包裹（`package_no` 区分，ADR-037） |
 | 营销聚合 | Coupon         | UserCoupon (1:N)   | 优惠券总发行量 >= 已领取量 >= 已使用量；用户优惠券不能脱离 Coupon 存在 |
+| 促销聚合 | Promotion      | —                  | 时间窗有序（endTime 严格晚于 startTime）；满折不越万分比上限；状态由时间窗实时推导，落库 status 仅写入快照（[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)） |
+| 任务聚合 | TaskDef        | TaskRecord (1:N)   | 任务编码 `uk_code` 业务唯一；完成记录 `uk_user_task_date` 每日幂等（一人一任务一业务日至多一条）；bizDate 服务端计算（[ADR-047](../adr/047-daily-task-system.md)） |
 | 资金聚合 | 无独立领域实体（`wallet_account` 条件 UPDATE 承载余额扣减） | — | 余额扣减不变量（不足拒绝扣减），wallet-service（2026-10 新增；ADR-025 明确 `domain/model` 为空、不强行造聚合） |
 
-**user-service 聚合划分结论（V5.2 四层重构 + 2026-10 边界重构后现状，见 [ADR-016](../adr/016-user-service-ddd-and-sms-migration.md)、[ADR-025](../adr/025-domain-aggregate-packaging-and-app-usecase-granularity.md)）**——包结构 `org.icedamericanomall.user.{adapter, app, domain, infrastructure}`，`domain/model` 按聚合 3 子包（user/address/favorite），app 编排层 7 个子包（user/address/favorite/history/oplog/rbac/port；user 子包下原 `UserManager` 已按用例族拆为 `UserQueryManager`（读取+统计）/ `UserAdminManager`（管理端运营）/ `UserProvisionManager`（幂等开通）），infrastructure/persistence 按聚合 5 个持久化子包（user/address/favorite/history/oplog）：
+**user-service 聚合划分结论（V5.2 四层重构 + 2026-10 边界重构后现状，见 [ADR-016](../adr/016-user-service-ddd-and-sms-migration.md)、[ADR-025](../adr/025-domain-aggregate-packaging-and-app-usecase-granularity.md)）**——包结构 `org.icedamericanomall.user.{adapter, app, domain, infrastructure}`，`domain/model` 按聚合 4 子包（user/address/favorite/member，会员等级 ADR-044），app 编排层 8 个子包（user/address/favorite/member/history/oplog/rbac/port；user 子包下原 `UserManager` 已按用例族拆为 `UserQueryManager`（读取+统计）/ `UserAdminManager`（管理端运营）/ `UserProvisionManager`（幂等开通）），infrastructure/persistence 按聚合 6 个持久化子包（user/address/favorite/member/history/oplog）：
 
 | 层级 | 聚合/模块 | 落地形态 |
 | ---- | -------- | -------- |
@@ -464,6 +538,17 @@
 | 确认收到退货 | Confirm Return | 退货退款（type=1）的放款前置：管理端 `PUT /api/admin/after-sale/{id}/confirm-return` 将售后单 `APPROVED(2) → RETURNED(4)`，**之后才触发退款**（货到放款）；仅退款（type=2）仍在审核同意后触发（[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)/ADR-037） |
 | 原路退回 | Original-route Refund | 退款按原支付渠道退回（[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)）：BALANCE 本地入账（`wallet_transaction` 幂等）、WECHAT v3 退款 + 异步回调（PAY6）确认、ALIPAY（mock）同步；一次退款 = 一行 `refund_order`（`uk_after_sale` 幂等锚点，`refund_no` 贯穿渠道幂等键与钱包流水号），退款成功才迁移 `REFUNDED(5)` |
 | 对账四态差异 | Reconciliation Four-state Diff | 渠道账单 ↔ 本地成功支付流水的比对结果（[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)）：1-匹配 / 2-渠道有本地无 / 3-本地有渠道无 / 4-金额不一致；Phase 1 **只落库记录供管理端处置、不自动调账**（`uk_date_channel` + 先删后写幂等，日终 XXL-Job dev 默认关） |
+| 促销引擎 | Promotion Engine | 店铺级满减/满折活动（`promotion`，ADR-043）：门槛 + 满减额/满折率（万分比，8500=8.5折）+ 满折封顶；活动状态由时间窗实时推导（聚合 `deriveStatus`，见 §3.15），落库 status 仅快照——I44 计价与管理端守卫均不信任快照；管理端 `/api/admin/promotion`（AD48-50），计价消费方为 trade `PricingCalculator`（[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)） |
+| 促销标签 | Promotion Tag | 商品详情/列表的进行中促销角标（`promotions` 字段，P2 详情/P1 分页，ADR-043）：item 读时经 I44 查询本商品生效促销组装标签，**fail-open**（查询失败仅缺标签不阻断详情）+ 60s 本地缓存 |
+| 每日任务 | Daily Task | `task_def` 表驱动的运营任务（[ADR-047](../adr/047-daily-task-system.md)）：任务编码 `uk_code` 锚定、type=1 每日重置（Phase 1 唯一值）、启停由服务端权威校验；运营加任务 = 加一行 seed 代码零改动；管理端 CRUD `/api/admin/task`（AD51-53） |
+| 任务完成记录 | Task Record | 每日任务完成流水（`task_record`，I49，[ADR-047](../adr/047-daily-task-system.md)）：`uk_user_task_date` 每日幂等锚点——同一用户同一任务同一业务日至多一条；`bizDate` 服务端按当天计算（调用方不可传，防伪造刷分）；`rewardPoints` 为完成时刻定义值快照；并发重复插入被唯一键拦截并回落「未完成」（幂等回落纪律） |
+| 会员成长值 | Member Growth | 确认收货按实付金额入账的成长值流水（`member_growth_log`，I46，[ADR-044](../adr/044-member-level-and-benefits.md)）：**`uk_order_no` 幂等锚点**（一订单至多入账一次）；trade 确认收货 fail-open 触发；`growthAmount` 只增不扣（年度降级考核留 roadmap） |
+| 会员等级重算 | Member Level Recalc | `MemberLevelPolicy` 纯函数（I45，[ADR-044](../adr/044-member-level-and-benefits.md)）：目标等级 = max(当前等级, 门槛匹配等级)——**只升不降**；门槛匹配取「累计成长值 ≥ threshold」最高者；等级权益/折扣查询 fail-open |
+| 相似商品推荐 | Similar Product Recommendation | 详情页相似商品卡（P27，[ADR-046](../adr/046-product-vector-recommendation.md)）：向量侧 = search I48 kNN（`products` 索引 dense_vector + knn mapping，reindex 重建带向量；摄取 I47 upsert 由商品写路径 afterCommit 触发）；item 装配侧 fail-open（召回失败回退无推荐卡） |
+| 种草笔记 | Content Note | 内容社区 Phase 1（P28-P33，[ADR-048](../adr/048-content-notes-in-item-domain.md)）：`note`/`note_product`/`note_like` 三表，item `domain/model/content` 聚合分包（包边界 = 未来 community-service 拆分边界）；纯文本 ≤2000 + 图集 ≤9 + 关联商品 ≤5（发布即校验存在且在售）；点赞 uk 幂等 + 原子计数；作者软删（status=2，无草稿态）；发布/软删 afterCommit 触发笔记向量摄取（I50/I51，`notes` 索引，fail-open） |
+| 店铺装修 | Shop Decoration | 与 shop 1:1 的装修聚合（`shop_decoration`，`uk_shop`，[ADR-048](../adr/048-content-notes-in-item-domain.md)）：公告 ≤200 + 轮播图 ≤5 + 推荐商品位 ≤8（JSON 列持久化，领域层集中校验条数/URL/去重）；商家端 `GET/PUT /api/seller/shops/{shopId}/decoration`（S1c/S1d）；Phase 1 推荐商品位不校验商品归属 |
+| 搜索联想 | Search Suggestion | 搜索框联想（SE5）：热搜词前缀 + 商品名前缀双源合并去重，fail-open（任一源失败降级单源/空列表） |
+| 活动中心 | Activity Center | 聚合「进行中」促销的活动列表/详情（M12/M13，`/api/activity`，ActivityVO 源自 promotion 时间窗推导——不信任落库 status 快照）；首页活动入口配可领券三态计数（M7） |
 
 ---
 
@@ -494,6 +579,12 @@
 | `CouponClaimLuaScript` | Redis Lua 脚本：优惠券领取去重（SISMEMBER），适用所有券类型（V4.0） | 营销上下文 |
 | `CouponGrabLuaScript` | Redis Lua 脚本：抢券原子库存扣减 + 去重（DECR + SISMEMBER），用于 NEED_GRAB 类型券（V4.0） | 营销上下文 |
 | `FlashSaleLuaScript` | Redis Lua 脚本：秒杀热 Key 分片库存扣减，防超卖（V4.0） | 营销上下文 |
+| `PricingCalculator`（纯函数） | 交易计价中心：促销（I44 fail-closed）→ 会员折扣（I45 fail-open）→ 优惠券核销，叠加 + 择优 + 总额封顶守卫（[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)）；编排入口为 app 层 `PricingService` | 订单上下文 |
+| `PostageCalculator`（纯函数） | 运费计价：同单同商家取最高费率模板计一次 + 满额包邮阈值；秒杀单免邮；模板查询 I43 fail-closed（[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)） | 订单上下文 |
+| `ReconciliationComparer`（纯函数） | 渠道对账比对：渠道账单 ↔ 本地成功流水四态差异判定，只记录不调账（[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)） | 支付上下文 |
+| `MemberLevelPolicy` | 会员等级重算纯函数（I45，[ADR-044](../adr/044-member-level-and-benefits.md)）：门槛匹配 + 只升不降 = max(当前, 匹配)；规则缺行按枚举声明序兜底；配套 `MemberLevelManager`（app 层编排入账与重算） | 用户上下文 |
+| `DocumentChunker` | 知识库文本分块（自 ai-service 迁入；`knowledge_vectors` 摄取链路，见 02-Architecture §3.4） | 搜索上下文 |
+| `ProductVectorTextBuilder` / `NoteVectorTextBuilder`（纯函数） | 商品 / 笔记 → Embedding 输入文本组装（I47 商品向量 / I50 笔记向量摄取链路，[ADR-046](../adr/046-product-vector-recommendation.md)/[ADR-048](../adr/048-content-notes-in-item-domain.md)） | 搜索上下文 |
 | `EventPublisher`   | 领域事件投递：RocketMQ `domain-event-topic`（`order.created` trade→pay、`order.shipped` 已落地；`payment.succeeded` 常量预留未实现；原 RabbitMQ 通道已移除） | 全局（ia-common） |
 | ~~`NotificationService`~~ | 原规划 WebSocket 实时推送（V1.2）——**能力未采用（2026-10 清理）**：gateway WebSocketConfig/WebSocketNotifyController 已删除；站内信触达由 notification-service（`notification` 表，`/api/notifications/**`）承载，IM 实时通道由 ai-service STOMP `/ws/chat` 承载 | — |
 | `DistributedScheduler` | 分布式定时任务协调：XXL-Job 已落地（如 trade `AbnormalOrderJob.scanAbnormalOrders` 异常订单兜底；`@Scheduled` 保留单机兜底） | 全局 |
