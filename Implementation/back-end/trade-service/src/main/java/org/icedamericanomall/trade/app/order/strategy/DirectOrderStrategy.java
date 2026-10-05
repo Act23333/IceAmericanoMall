@@ -2,8 +2,8 @@ package org.icedamericanomall.trade.app.order.strategy;
 
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.client.AddressClient;
-import org.icedamericanomall.client.CouponClient;
 import org.icedamericanomall.client.SkuClient;
+import org.icedamericanomall.trade.app.order.pricing.PricingService;
 import org.icedamericanomall.trade.domain.model.order.Order;
 import org.icedamericanomall.dto.AddressCO;
 import org.icedamericanomall.dto.SkuCO;
@@ -18,6 +18,7 @@ import java.util.List;
 /**
  * V4.1: 立即购买策略（京东标准：商品详情页直接下单）。
  * 校验: 单SKU存在 → 限量库存检查 → 地址快照
+ * 计价: 委托价格计算中心 {@link PricingService}（F5，ADR-043：促销+会员+券统一计价）
  * 后置: 不操作购物车
  */
 @Component
@@ -26,7 +27,7 @@ public class DirectOrderStrategy implements OrderCreateStrategy {
 
     private final SkuClient skuClient;
     private final AddressClient addressClient;
-    private final CouponClient couponClient;
+    private final PricingService pricingService;
     private final FreightPostageResolver freightPostageResolver;
 
     @Override
@@ -71,8 +72,8 @@ public class DirectOrderStrategy implements OrderCreateStrategy {
         order.setOrderType(OrderTypeEnum.DIRECT.getCode());
         int total = ctx.getTotalAmount();
 
-        // V4.3: 多券叠加（与 NormalCartOrderStrategy 共用 applyCoupons）
-        int discount = NormalCartOrderStrategy.applyCoupons(couponClient, ctx, order, total);
+        // F5 价格计算中心（ADR-043）：促销(I44)+会员(I45)+券 统一计价，收编原 applyCoupons
+        int discount = pricingService.calculate(ctx, order);
         // V5.6（F2 运费模型）：运费单列快照；金额不变式 payAmount = total − discount + postFee
         int postFee = freightPostageResolver.resolve(ctx.getSellerId(), ctx.getSnapshots(), total);
 

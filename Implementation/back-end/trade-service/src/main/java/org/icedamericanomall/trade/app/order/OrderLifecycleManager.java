@@ -3,8 +3,11 @@ package org.icedamericanomall.trade.app.order;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.CouponClient;
 import org.icedamericanomall.client.LogisticsClient;
+import org.icedamericanomall.client.MemberClient;
 import org.icedamericanomall.client.SkuClient;
 import org.icedamericanomall.client.PointsClient;
+import org.icedamericanomall.dto.MemberGrowthCO;
+import org.icedamericanomall.dto.MemberLevelCO;
 import org.icedamericanomall.trade.domain.model.order.Order;
 import org.icedamericanomall.trade.domain.model.order.OrderItem;
 import org.icedamericanomall.dto.CreateLogisticsCO;
@@ -25,7 +28,7 @@ import java.util.stream.Collectors;
  *
  * <pre>
  * Scenario: 用户取消 → 回滚库存 + 优惠券
- * Scenario: 确认收货 → 发放积分
+ * Scenario: 确认收货 → 发放积分（会员倍率，I45）+ 成长值入账（I46）
  * Scenario: 商家发货 → 创建物流记录
  * Scenario: 超时未支付 → 逐单取消并回滚
  * </pre>
@@ -36,24 +39,32 @@ public class OrderLifecycleManager {
 
     private static final int POINTS_RATE_DIVISOR = 100;
     private static final int POINTS_TYPE_ORDER_REWARD = 2;
+    /** 积分倍率口径（ADR-044）：pointsRate 为百分比，100 = 1 倍。 */
+    private static final int POINTS_RATE_PERCENT_DIVISOR = 100;
+    /** I45 fail-open 兜底倍率（降级默认 NORMAL = 1 倍，与 MemberClientFallback 口径一致）。 */
+    private static final int DEFAULT_POINTS_RATE = 100;
+    private static final String POINTS_SOURCE_ORDER_REWARD = "下单奖励";
 
     private final OrderRepository orderRepository;
     private final SkuClient skuClient;
     private final CouponClient couponClient;
     private final LogisticsClient logisticsClient;
     private final PointsClient pointsClient;
+    private final MemberClient memberClient;
     private final DomainEventProducer eventProducer;
     private final TradeEventNotifier tradeEventNotifier;
 
     public OrderLifecycleManager(OrderRepository orderRepository, SkuClient skuClient,
                                   CouponClient couponClient, LogisticsClient logisticsClient,
-                                  PointsClient pointsClient, DomainEventProducer eventProducer,
+                                  PointsClient pointsClient, MemberClient memberClient,
+                                  DomainEventProducer eventProducer,
                                   TradeEventNotifier tradeEventNotifier) {
         this.orderRepository = orderRepository;
         this.skuClient = skuClient;
         this.couponClient = couponClient;
         this.logisticsClient = logisticsClient;
         this.pointsClient = pointsClient;
+        this.memberClient = memberClient;
         this.eventProducer = eventProducer;
         this.tradeEventNotifier = tradeEventNotifier;
     }
@@ -67,16 +78,66 @@ public class OrderLifecycleManager {
         }
     }
 
+    /**
+     * 确认收货（订单转 COMPLETED）—— 本地状态迁移后于事务外做两件非本地动作：
+     * <ol>
+     *   <li>发放订单奖励积分（I45 取会员积分倍率，fail-open：查询失败降级 1 倍，不阻断）；</li>
+     *   <li>会员成长值入账（I46 → user-service，fail-open：失败记日志不阻断确认收货，
+     *       幂等锚点 = orderNo，ADR-044）。</li>
+     * </ol>
+     */
     public void confirmReceipt(String orderNo, Long userId) {
         orderRepository.confirmReceiptByUser(orderNo, userId);
         Order order = orderRepository.findByOrderNo(orderNo);
         if (order == null || order.getPayAmount() == null) return;
-        int points = order.getPayAmount() / POINTS_RATE_DIVISOR;
+        awardOrderRewardPoints(order);
+        recordMemberGrowth(order);
+    }
+
+    /** 订单奖励积分发放：points = payAmount / 100 × pointsRate / 100（整数取整，ADR-044 倍率口径）。 */
+    private void awardOrderRewardPoints(Order order) {
+        MemberLevelCO level = memberClient.getLevel(order.getUserId()); // I45 fail-open（降级 1 倍）
+        int pointsRate = resolvePointsRate(level);
+        int points = calculateRewardPoints(order.getPayAmount(), pointsRate);
         if (points <= 0) return;
         try {
-            pointsClient.addPoints(order.getUserId(), points, POINTS_TYPE_ORDER_REWARD, "下单奖励");
+            pointsClient.addPoints(order.getUserId(), points, POINTS_TYPE_ORDER_REWARD,
+                    POINTS_SOURCE_ORDER_REWARD);
         } catch (Exception e) {
-            log.error("下单奖励积分发放失败: orderNo={}", orderNo, e);
+            log.error("下单奖励积分发放失败: orderNo={}", order.getOrderNo(), e);
+        }
+    }
+
+    /** 积分倍率解析：pointsRate 缺失/非法 → 默认 1 倍（fail-open 口径，与 fallback 一致）。 */
+    private int resolvePointsRate(MemberLevelCO level) {
+        if (level == null || level.getPointsRate() == null || level.getPointsRate() <= 0) {
+            return DEFAULT_POINTS_RATE;
+        }
+        return level.getPointsRate();
+    }
+
+    /**
+     * 奖励积分计算（整数取整纪律沿用既有 {@code POINTS_RATE_DIVISOR}：先整除后乘，
+     * 从左到右逐级向下取整）—— {@code (payAmount / 100) × pointsRate / 100}。
+     * long 中间量防 int 溢出（倍率上限 150，payAmount/100 已收敛，正常远不越界）。
+     */
+    static int calculateRewardPoints(int payAmount, int pointsRate) {
+        long base = payAmount / POINTS_RATE_DIVISOR;
+        return (int) (base * pointsRate / POINTS_RATE_PERCENT_DIVISOR);
+    }
+
+    /** I46 成长值入账（fail-open，返回值忽略；payAmount ≤ 0 无成长值可记，跳过）。 */
+    private void recordMemberGrowth(Order order) {
+        if (order.getPayAmount() == null || order.getPayAmount() <= 0) return;
+        try {
+            MemberGrowthCO growth = new MemberGrowthCO();
+            growth.setUserId(order.getUserId());
+            growth.setOrderNo(order.getOrderNo());
+            growth.setPayAmount(order.getPayAmount());
+            memberClient.recordGrowth(growth);
+        } catch (Exception e) {
+            log.warn("会员成长值入账失败（不阻断确认收货，Phase 1 不补账）: orderNo={}",
+                    order.getOrderNo(), e);
         }
     }
 

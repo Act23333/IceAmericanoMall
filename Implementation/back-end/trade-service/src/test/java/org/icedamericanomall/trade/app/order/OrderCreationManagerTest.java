@@ -8,9 +8,12 @@ import org.h2.Driver;
 import org.icedamericanomall.client.AddressClient;
 import org.icedamericanomall.client.CartClient;
 import org.icedamericanomall.client.CouponClient;
+import org.icedamericanomall.client.MemberClient;
+import org.icedamericanomall.client.PromotionClient;
 import org.icedamericanomall.client.SkuClient;
 import org.icedamericanomall.trade.adapter.assembler.OrderConverterImpl;
 import org.icedamericanomall.trade.adapter.response.OrderVO;
+import org.icedamericanomall.trade.app.order.pricing.PricingService;
 import org.icedamericanomall.trade.app.order.strategy.DirectOrderStrategy;
 import org.icedamericanomall.trade.app.order.strategy.FlashSaleOrderStrategy;
 import org.icedamericanomall.trade.app.order.strategy.FreightPostageResolver;
@@ -25,6 +28,9 @@ import org.icedamericanomall.trade.domain.repository.OrderRepository;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.AddressCO;
 import org.icedamericanomall.dto.CartItemCO;
+import org.icedamericanomall.dto.MemberLevelCO;
+import org.icedamericanomall.dto.PromotionCO;
+import org.icedamericanomall.dto.PromotionQueryCO;
 import org.icedamericanomall.dto.SkuCO;
 import org.icedamericanomall.trade.infrastructure.messaging.DomainEventProducer;
 import org.icedamericanomall.trade.infrastructure.messaging.OrderTimeoutPublisher;
@@ -55,6 +61,8 @@ class OrderCreationManagerTest {
     private AddressClient addressClient;
     private SkuClient skuClient;
     private CouponClient couponClient;
+    private PromotionClient promotionClient;
+    private MemberClient memberClient;
     private OrderCreationManager orderManager;
     private FreightPostageResolver freightPostageResolver;
 
@@ -109,14 +117,19 @@ class OrderCreationManagerTest {
         this.addressClient = mock(AddressClient.class);
         this.skuClient = mock(SkuClient.class);
         this.couponClient = mock(CouponClient.class);
+        // V5.8（F5 价格计算中心）：默认桩使促销/会员两源无优惠（mock 默认空集合/null），
+        // 既有用例聚焦下单管道断言；促销/会员叠加用例显式打桩。
+        this.promotionClient = mock(PromotionClient.class);
+        this.memberClient = mock(MemberClient.class);
+        PricingService pricingService = new PricingService(promotionClient, memberClient, couponClient);
         // V5.6（F2 运费模型）：默认桩使运费=0，聚焦既有下单管道断言
         this.freightPostageResolver = mock(FreightPostageResolver.class);
 
         // V4.1: 构造真实策略实例 + 策略工厂（Spring 注入模拟）
         NormalCartOrderStrategy normalStrategy = new NormalCartOrderStrategy(
-                cartClient, skuClient, addressClient, couponClient, freightPostageResolver);
+                cartClient, skuClient, addressClient, pricingService, freightPostageResolver);
         DirectOrderStrategy directStrategy = new DirectOrderStrategy(
-                skuClient, addressClient, couponClient, freightPostageResolver);
+                skuClient, addressClient, pricingService, freightPostageResolver);
         FlashSaleOrderStrategy flashSaleStrategy = new FlashSaleOrderStrategy(skuClient, addressClient);
         OrderCreateStrategyFactory factory = new OrderCreateStrategyFactory(
                 List.of(normalStrategy, directStrategy, flashSaleStrategy));
@@ -349,7 +362,8 @@ class OrderCreationManagerTest {
                 .saveWithItems(any(), anyList());
 
         NormalCartOrderStrategy normalStrategy = new NormalCartOrderStrategy(
-                cartClient, skuClient, addressClient, couponClient, freightPostageResolver);
+                cartClient, skuClient, addressClient,
+                new PricingService(promotionClient, memberClient, couponClient), freightPostageResolver);
         OrderCreateStrategyFactory factory = new OrderCreateStrategyFactory(List.of(normalStrategy));
         OrderCreationManager mgr = newManager(failingRepository, factory);
 
@@ -469,6 +483,127 @@ class OrderCreationManagerTest {
         assertEquals(1000, saved.getPayAmount());   // 秒杀不使用优惠券，应付=原价
         assertEquals(0, saved.getDiscountAmount()); // 秒杀不使用优惠券
         verify(cartClient, never()).deleteByIds(anyLong(), anyList());
+    }
+
+    // ==================== F5 价格计算中心（ADR-043）：促销/会员/券三源叠加 ====================
+
+    private PromotionCO promotion(int type, int threshold, int discountValue, int maxDiscount) {
+        return new PromotionCO(1L, "店铺促销", 9L, type, threshold, discountValue, maxDiscount);
+    }
+
+    @Test
+    @DisplayName("createOrder(NORMAL) — 带促销下单：I44 满减活动生效，discountAmount 命中且 payAmount 扣减")
+    void shouldApplyPromotionDiscount_whenActivePromotionExists() {
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+        // Given 店铺满 10000 减 2000 生效
+        when(promotionClient.queryActive(any(PromotionQueryCO.class)))
+                .thenReturn(List.of(promotion(1, 10000, 2000, 0)));
+
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        OrderVO vo = orderManager.createOrder(c);
+
+        Order saved = orderRepository.findByOrderNo(vo.getOrderNo());
+        assertEquals(10000, saved.getTotalAmount());
+        assertEquals(2000, saved.getDiscountAmount());
+        assertEquals(8000, saved.getPayAmount());
+    }
+
+    @Test
+    @DisplayName("createOrder(NORMAL) — 促销+会员+券三源叠加封顶：合计超 total → discountAmount = total")
+    void shouldCapDiscount_whenThreeSourcesExceedTotal() {
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+        when(promotionClient.queryActive(any(PromotionQueryCO.class)))
+                .thenReturn(List.of(promotion(1, 0, 8000, 0)));
+        // I45 fallback 降级路径模拟：GOLD 98折 + 券 9500 → 合计 17700 > total 10000
+        when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("GOLD", 9800, 120));
+        when(couponClient.useCoupon(anyLong(), anyLong(), anyString(), anyInt(), anyInt(),
+                anyLong(), any(), any())).thenReturn(9500);
+
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        c.setUserCouponId(55L);
+        OrderVO vo = orderManager.createOrder(c);
+
+        Order saved = orderRepository.findByOrderNo(vo.getOrderNo());
+        assertEquals(10000, saved.getDiscountAmount(), "总额守卫封顶为 totalAmount");
+        assertEquals(0, saved.getPayAmount(), "payAmount 恒 ≥ 0");
+    }
+
+    @Test
+    @DisplayName("createOrder(NORMAL) — 无生效促销（空集合合法业务态）：仅券抵扣正常下单")
+    void shouldOrderNormally_whenNoActivePromotions() {
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+        when(promotionClient.queryActive(any(PromotionQueryCO.class))).thenReturn(List.of());
+        when(couponClient.useCoupon(anyLong(), anyLong(), anyString(), anyInt(), anyInt(),
+                anyLong(), any(), any())).thenReturn(3000);
+
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        c.setUserCouponId(55L);
+        OrderVO vo = orderManager.createOrder(c);
+
+        Order saved = orderRepository.findByOrderNo(vo.getOrderNo());
+        assertEquals(3000, saved.getDiscountAmount());
+        assertEquals(7000, saved.getPayAmount());
+    }
+
+    @Test
+    @DisplayName("createOrder(NORMAL) — I44 促销查询失败（fail-closed）：下单失败透传，券未核销、库存未扣")
+    void shouldFailOrder_whenPromotionQueryFails() {
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+        when(promotionClient.queryActive(any(PromotionQueryCO.class)))
+                .thenThrow(new BizException(org.icedamericanomall.common.enums.ErrorCode.SYSTEM_BUSY,
+                        "促销计价服务暂不可用"));
+
+        assertThrows(BizException.class, () -> orderManager.createOrder(ctx(OrderTypeEnum.NORMAL)));
+
+        verify(couponClient, never()).useCoupon(anyLong(), anyLong(), anyString(),
+                anyInt(), anyInt(), anyLong(), any(), any());
+        verify(skuClient, never()).deductStock(anyList());
+    }
+
+    @Test
+    @DisplayName("createOrder(NORMAL) — I45 降级默认 NORMAL：会员不折扣，仅促销/券生效")
+    void shouldNotApplyMemberDiscount_whenMemberLevelFallsBackToNormal() {
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+        when(promotionClient.queryActive(any(PromotionQueryCO.class)))
+                .thenReturn(List.of(promotion(1, 0, 1000, 0)));
+        // fallback 降级默认 NORMAL（10000=不折扣）
+        when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("NORMAL", 10000, 100));
+
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        OrderVO vo = orderManager.createOrder(c);
+
+        Order saved = orderRepository.findByOrderNo(vo.getOrderNo());
+        assertEquals(1000, saved.getDiscountAmount(), "仅促销减免，无会员折扣");
+        assertEquals(9000, saved.getPayAmount());
+    }
+
+    @Test
+    @DisplayName("createOrder(FLASH_SALE) — 秒杀单不进计价中心：不查促销/会员，discountAmount 恒 0")
+    void shouldNotEnterPricingCenter_whenFlashSaleOrder() {
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+
+        OrderCreateContext c = ctx(OrderTypeEnum.FLASH_SALE);
+        c.setSkuId(1000L);
+        c.setQuantity(1);
+        c.setFlashId(99L);
+        c.setFlashPrice(1000);
+        orderManager.createOrder(c);
+
+        verify(promotionClient, never()).queryActive(any(PromotionQueryCO.class));
+        verify(memberClient, never()).getLevel(anyLong());
+        verify(couponClient, never()).useCoupon(anyLong(), anyLong(), anyString(),
+                anyInt(), anyInt(), anyLong(), any(), any());
     }
 
     // ==================== Sentinel blockHandler（流控 / 熔断统一出口） ====================

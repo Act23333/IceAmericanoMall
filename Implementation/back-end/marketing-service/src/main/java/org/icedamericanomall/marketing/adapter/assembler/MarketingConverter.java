@@ -1,13 +1,17 @@
 package org.icedamericanomall.marketing.adapter.assembler;
 
+import org.icedamericanomall.dto.PromotionCO;
 import org.icedamericanomall.marketing.adapter.request.CouponCreateReq;
 import org.icedamericanomall.marketing.adapter.request.FlashSaleCreateReq;
 import org.icedamericanomall.marketing.adapter.request.FlashSaleUpdateReq;
+import org.icedamericanomall.marketing.adapter.request.PromotionCreateReq;
+import org.icedamericanomall.marketing.adapter.request.PromotionUpdateReq;
 import org.icedamericanomall.marketing.adapter.response.CouponVO;
 import org.icedamericanomall.marketing.adapter.response.FlashBuyVO;
 import org.icedamericanomall.marketing.adapter.response.FlashSaleVO;
 import org.icedamericanomall.marketing.adapter.response.PointsBalanceVO;
 import org.icedamericanomall.marketing.adapter.response.PointsLogVO;
+import org.icedamericanomall.marketing.adapter.response.PromotionVO;
 import org.icedamericanomall.marketing.adapter.response.SignResultVO;
 import org.icedamericanomall.marketing.adapter.response.UserCouponVO;
 import org.icedamericanomall.marketing.app.dto.FlashBuyResult;
@@ -16,6 +20,7 @@ import org.icedamericanomall.marketing.domain.model.coupon.Coupon;
 import org.icedamericanomall.marketing.domain.model.coupon.UserCoupon;
 import org.icedamericanomall.marketing.domain.model.flash.FlashSale;
 import org.icedamericanomall.marketing.domain.model.points.PointsLog;
+import org.icedamericanomall.marketing.domain.model.promotion.Promotion;
 import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.MappingTarget;
@@ -71,6 +76,30 @@ public interface MarketingConverter {
      */
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     void mergeFlashSaleUpdate(FlashSaleUpdateReq req, @MappingTarget FlashSale flashSale);
+
+    /** 促销活动聚合 → 视图对象（AD48 创建回执口径）。 */
+    PromotionVO toVO(Promotion promotion);
+
+    /** 促销创建请求 → 促销聚合（status/version/maxDiscount 归一由创建编排负责，AD48）。 */
+    Promotion toDomain(PromotionCreateReq req);
+
+    /**
+     * 促销编辑请求 → 就地合并到已取聚合（V5.8 AD49）。
+     *
+     * <p>MapStruct 更新语义默认会把源侧 null 覆盖到目标，这里显式
+     * {@code NullValuePropertyMappingStrategy.IGNORE} 保证「null-safe 局部更新」契约口径。
+     *
+     * @param req       编辑请求（字段全可选）
+     * @param promotion 已取出的活动聚合（被合并目标）
+     */
+    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    void mergePromotionUpdate(PromotionUpdateReq req, @MappingTarget Promotion promotion);
+
+    /** 促销聚合 → 生效促销契约对象（I44，ia-api {@code PromotionCO}，ADR-043）。 */
+    PromotionCO toCO(Promotion promotion);
+
+    /** 促销聚合列表 → 生效促销契约对象列表（I44）。 */
+    List<PromotionCO> toPromotionCOList(List<Promotion> promotions);
 
     /** 秒杀购买结果 → 视图对象。 */
     FlashBuyVO toFlashBuyVO(FlashBuyResult result);

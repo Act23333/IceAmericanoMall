@@ -4,9 +4,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.AddressClient;
 import org.icedamericanomall.client.CartClient;
-import org.icedamericanomall.client.CouponClient;
 import org.icedamericanomall.client.SkuClient;
-import org.icedamericanomall.dto.CouponStackInfoCO;
+import org.icedamericanomall.trade.app.order.pricing.PricingService;
 import org.icedamericanomall.trade.domain.model.order.Order;
 import org.icedamericanomall.trade.domain.model.order.OrderItem;
 import org.icedamericanomall.dto.AddressCO;
@@ -27,6 +26,7 @@ import java.util.stream.Collectors;
 /**
  * V4.1: 购物车下单策略。
  * 校验: 购物车非空 → SKU批量查询 → 限量库存检查 → 单店铺校验 → 地址快照
+ * 计价: 委托价格计算中心 {@link PricingService}（F5，ADR-043：促销+会员+券统一计价）
  * 后置: 删除已购购物车项
  */
 @Slf4j
@@ -37,7 +37,7 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
     private final CartClient cartClient;
     private final SkuClient skuClient;
     private final AddressClient addressClient;
-    private final CouponClient couponClient;
+    private final PricingService pricingService;
     private final FreightPostageResolver freightPostageResolver;
 
     @Override
@@ -104,7 +104,8 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
         order.setOrderType(OrderTypeEnum.NORMAL.getCode());
 
         int total = ctx.getTotalAmount();
-        int discount = applyCoupons(couponClient, ctx, order, total);
+        // F5 价格计算中心（ADR-043）：促销(I44)+会员(I45)+券 统一计价，收编原 applyCoupons
+        int discount = pricingService.calculate(ctx, order);
         // V5.6（F2 运费模型）：运费单列快照；金额不变式 payAmount = total − discount + postFee
         int postFee = freightPostageResolver.resolve(ctx.getSellerId(), ctx.getSnapshots(), total);
         order.setTotalAmount(total);
@@ -115,83 +116,6 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
 
         fillAddress(ctx, order);
         return order;
-    }
-
-    /**
-     * V4.3: 多券叠加折扣计算（京东标准：逐券抵扣 + 叠加规则校验 + scope 校验）。
-     * package-private static，供 DirectOrderStrategy 复用。
-     */
-    static int applyCoupons(CouponClient client, OrderCreateContext ctx,
-                             Order order, int total) {
-        List<Long> couponIds = resolveCouponIds(ctx);
-        if (couponIds.isEmpty()) return 0;
-
-        // 多券时校验叠加规则
-        if (couponIds.size() > 1) {
-            validateStackRules(client, couponIds);
-        }
-
-        String productIds = buildProductIds(ctx);
-        String categoryIds = buildCategoryIds(ctx);
-
-        int totalDiscount = 0;
-        for (Long userCouponId : couponIds) {
-            Integer applied = client.useCoupon(
-                    ctx.getUserId(), userCouponId, order.getOrderNo(), total - totalDiscount,
-                    ctx.getOrderType().getCode(), ctx.getSellerId(), productIds, categoryIds);
-            totalDiscount += (applied != null ? applied : 0);
-            if (totalDiscount >= total) {
-                totalDiscount = total;
-                break;
-            }
-        }
-        return totalDiscount;
-    }
-
-    static List<Long> resolveCouponIds(OrderCreateContext ctx) {
-        if (ctx.getUserCouponIds() != null && !ctx.getUserCouponIds().isEmpty()) {
-            return ctx.getUserCouponIds();
-        }
-        if (ctx.getUserCouponId() != null) {
-            return List.of(ctx.getUserCouponId());
-        }
-        return List.of();
-    }
-
-    static void validateStackRules(CouponClient client, List<Long> userCouponIds) {
-        List<CouponStackInfoCO> infos = client.batchGet(userCouponIds);
-        if (infos == null || infos.isEmpty()) return; // 降级：不阻断下单
-
-        // V4.3: 互斥券不能与其他券叠加
-        long exclusiveCount = infos.stream()
-                .filter(s -> s.getStackRule() != null && s.getStackRule() == 1).count();
-        if (exclusiveCount > 0 && infos.size() > 1) {
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "互斥券不能与其他优惠券叠加使用");
-        }
-
-        // V4.3: 可叠加券需同 group
-        if (infos.size() > 1) {
-            String firstGroup = infos.get(0).getStackGroup();
-            boolean allSameGroup = infos.stream()
-                    .allMatch(s -> java.util.Objects.equals(s.getStackGroup(), firstGroup));
-            if (!allSameGroup) {
-                throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "不同叠加组的券不能一起使用");
-            }
-        }
-    }
-
-    static String buildProductIds(OrderCreateContext ctx) {
-        return ctx.getSnapshots().stream()
-                .map(s -> s.getProductId() != null ? String.valueOf(s.getProductId()) : "")
-                .filter(s -> !s.isEmpty())
-                .distinct().collect(java.util.stream.Collectors.joining(","));
-    }
-
-    static String buildCategoryIds(OrderCreateContext ctx) {
-        return ctx.getSnapshots().stream()
-                .map(s -> s.getCategoryId() != null ? String.valueOf(s.getCategoryId()) : "")
-                .filter(s -> !s.isEmpty())
-                .distinct().collect(java.util.stream.Collectors.joining(","));
     }
 
     @Override

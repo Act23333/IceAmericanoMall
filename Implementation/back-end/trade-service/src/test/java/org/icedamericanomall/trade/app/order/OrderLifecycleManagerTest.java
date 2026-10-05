@@ -2,10 +2,13 @@ package org.icedamericanomall.trade.app.order;
 
 import org.icedamericanomall.client.CouponClient;
 import org.icedamericanomall.client.LogisticsClient;
+import org.icedamericanomall.client.MemberClient;
 import org.icedamericanomall.client.NotificationClient;
 import org.icedamericanomall.client.PointsClient;
 import org.icedamericanomall.client.SkuClient;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
+import org.icedamericanomall.dto.MemberGrowthCO;
+import org.icedamericanomall.dto.MemberLevelCO;
 import org.icedamericanomall.trade.app.TradeEventNotifier;
 import org.icedamericanomall.trade.domain.model.order.Order;
 import org.icedamericanomall.trade.domain.model.order.OrderItem;
@@ -41,6 +44,7 @@ class OrderLifecycleManagerTest {
     @Mock private CouponClient couponClient;
     @Mock private LogisticsClient logisticsClient;
     @Mock private PointsClient pointsClient;
+    @Mock private MemberClient memberClient;
     @Mock private DomainEventProducer eventProducer;
     @Mock private NotificationClient notificationClient;
 
@@ -49,7 +53,8 @@ class OrderLifecycleManagerTest {
     @BeforeEach
     void setUp() {
         manager = new OrderLifecycleManager(orderRepository, skuClient, couponClient,
-                logisticsClient, pointsClient, eventProducer, new TradeEventNotifier(notificationClient));
+                logisticsClient, pointsClient, memberClient, eventProducer,
+                new TradeEventNotifier(notificationClient));
     }
 
     private Order order() {
@@ -106,6 +111,69 @@ class OrderLifecycleManagerTest {
 
         verify(orderRepository, never()).closeTimeoutOrder(anyLong());
         verify(skuClient, never()).restoreStock(anyList());
+    }
+
+    // ==================== 确认收货：积分倍率（I45）+ 成长值入账（I46，ADR-044） ====================
+
+    @Test
+    @DisplayName("confirmReceipt — GOLD 会员 1.2 倍：points = 10000/100 × 120 / 100 = 120")
+    void shouldApplyGoldPointsMultiplier_whenConfirmReceipt() {
+        when(orderRepository.findByOrderNo("ORD-1")).thenReturn(order());
+        when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("GOLD", 9800, 120));
+
+        manager.confirmReceipt("ORD-1", 100L);
+
+        verify(pointsClient).addPoints(eq(100L), eq(120), eq(2), eq("下单奖励"));
+    }
+
+    @Test
+    @DisplayName("confirmReceipt — NORMAL 会员 1 倍：points = 10000/100 × 100 / 100 = 100")
+    void shouldAwardBasePoints_whenNormalLevel() {
+        when(orderRepository.findByOrderNo("ORD-1")).thenReturn(order());
+        when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("NORMAL", 10000, 100));
+
+        manager.confirmReceipt("ORD-1", 100L);
+
+        verify(pointsClient).addPoints(eq(100L), eq(100), eq(2), eq("下单奖励"));
+    }
+
+    @Test
+    @DisplayName("confirmReceipt — I45 降级（fallback 返回 null）：按默认 1 倍发放，不阻断")
+    void shouldUseDefaultRate_whenMemberLevelMissing() {
+        when(orderRepository.findByOrderNo("ORD-1")).thenReturn(order());
+        when(memberClient.getLevel(100L)).thenReturn(null);
+
+        manager.confirmReceipt("ORD-1", 100L);
+
+        verify(pointsClient).addPoints(eq(100L), eq(100), eq(2), eq("下单奖励"));
+    }
+
+    @Test
+    @DisplayName("confirmReceipt — I46 recordGrowth 收到 userId/orderNo/payAmount（幂等锚点）")
+    void shouldRecordGrowthWithOrderFacts_whenConfirmReceipt() {
+        when(orderRepository.findByOrderNo("ORD-1")).thenReturn(order());
+        when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("NORMAL", 10000, 100));
+
+        manager.confirmReceipt("ORD-1", 100L);
+
+        ArgumentCaptor<MemberGrowthCO> captor = ArgumentCaptor.forClass(MemberGrowthCO.class);
+        verify(memberClient).recordGrowth(captor.capture());
+        MemberGrowthCO growth = captor.getValue();
+        assertEquals(100L, growth.getUserId());
+        assertEquals("ORD-1", growth.getOrderNo());
+        assertEquals(10000, growth.getPayAmount());
+    }
+
+    @Test
+    @DisplayName("confirmReceipt — I46 入账失败 fail-open：不抛异常，积分照常发放（确认收货不被阻断）")
+    void shouldNotBlockConfirmReceipt_whenGrowthRecordingFails() {
+        when(orderRepository.findByOrderNo("ORD-1")).thenReturn(order());
+        when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("NORMAL", 10000, 100));
+        doThrow(new RuntimeException("user-service down")).when(memberClient).recordGrowth(any());
+
+        assertDoesNotThrow(() -> manager.confirmReceipt("ORD-1", 100L));
+
+        verify(pointsClient).addPoints(eq(100L), eq(100), eq(2), eq("下单奖励"));
     }
 
     // ==================== 拆单发货（F3）编排 ====================

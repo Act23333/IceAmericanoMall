@@ -1,6 +1,7 @@
 package org.icedamericanomall.user.domain.repository;
 
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
+import org.icedamericanomall.user.domain.enums.MemberLevelEnum;
 import org.icedamericanomall.user.domain.exception.DuplicateUserException;
 import org.icedamericanomall.user.domain.model.user.User;
 import org.icedamericanomall.user.domain.enums.UserStatusEnum;
@@ -55,6 +56,16 @@ public interface UserRepository {
 
     /** 管理后台：启用/禁用状态迁移。 */
     int updateStatusById(Long id, UserStatusEnum status);
+
+    /**
+     * 会员等级定向更新（F6 成长值入账后的等级迁移，ADR-044；只写 {@code member_level} 列，
+     * 不触碰其余资料列 —— 避免全量 update 与资料编辑在乐观锁上相互踩踏）。
+     *
+     * @param id    用户技术主键（跨服务 user_id 口径，ADR-006）
+     * @param level 目标等级（只升不降的 max 合并由应用层经重算纯函数完成）
+     * @return 影响行数
+     */
+    int updateMemberLevelById(Long id, MemberLevelEnum level);
 
     /** 用户总数（管理后台 / 跨服务统计）。 */
     long countAll();

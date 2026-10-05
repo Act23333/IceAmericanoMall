@@ -7,6 +7,7 @@ import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.utils.crypto.BlindIndexUtil;
 import org.icedamericanomall.user.domain.exception.DuplicateUserException;
+import org.icedamericanomall.user.domain.enums.MemberLevelEnum;
 import org.icedamericanomall.user.domain.model.user.User;
 import org.icedamericanomall.user.domain.enums.UserStatusEnum;
 import org.icedamericanomall.user.domain.repository.UserRepository;
@@ -99,6 +100,15 @@ public class UserRepositoryImpl implements UserRepository {
         return userMapper.update(null, new LambdaUpdateWrapper<UserPO>()
                 .eq(UserPO::getId, id)
                 .set(UserPO::getStatus, status == null ? null : status.getCode()));
+    }
+
+    @Override
+    public int updateMemberLevelById(Long id, MemberLevelEnum level) {
+        // 定向只写 member_level 列（与 updateStatusById 同型）：不触碰其余资料列，
+        // 避免全量 update 与资料编辑在 @Version 乐观锁上相互踩踏（ADR-044）
+        return userMapper.update(null, new LambdaUpdateWrapper<UserPO>()
+                .eq(UserPO::getId, id)
+                .set(UserPO::getMemberLevel, level == null ? null : level.getCode()));
     }
 
     @Override
