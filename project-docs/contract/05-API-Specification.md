@@ -2643,7 +2643,7 @@ data: [DONE]
 | S5 | `GET /api/shop/{sellerId}/products`（店铺商品分页） | **Phase A**：店铺页商品列表用现有 P1 `GET /api/item/product/page` 的 `sellerId` 过滤参数；**shopId 口径待 Phase B**（`product.shop_id` 落地）后重开评估 |
 | T26 | `GET /api/seller/apply`（最新入驻申请） | 未实现；重开需排期 |
 | P6 | `GET /api/item/product/{id}/detail`（商品详情聚合） | 未实现；详情由 P2 `GET /api/item/product/{id}` 返回 `ProductVO` 承担 |
-| INV1-INV3 | `/api/invoice/**`（发票申请/历史/详情，§4.15 ⚪ V5.0 占位） | 未排期；完整 PRD 见 `product/01-PRD.md` §十五（P3 第二批候选，待评审定稿后重开评估） |
+| INV1-INV3 | `/api/invoice/**`（发票申请/历史/详情，§4.15） | ✅ **已定稿并落地（V5.15）**：INV1-5 买家端 + 管理端 AD57-60（§4.13.8e）；完整 PRD 见 `product/01-PRD.md` §十五 |
 
 ### 12.2 未排期字段 / 能力
 
@@ -2652,7 +2652,8 @@ data: [DONE]
 | 售后凭证图 `evidenceImages` | `AfterSaleApplyReq` 不接受该字段；凭证图上传与存储方案待排期 |
 | 多券叠加 `userCouponIds` | 已从下单请求体删除（V5.5）；策略层多券逻辑保留，接线需先出《多券金额分摊规则》PRD（§十一 11.2 O1） |
 | 微信回调 `out_trade_no` 断链修复 | **已完成**（ADR-033 落地：验签+AES-GCM 解密+字段提取收口 ia-integration 通道适配层，V5.5）；PAY2 对外契约不变（§4.7.1） |
-| 知识图谱（RAG+KG 混合检索） | **从未产生契约占位**（无端点/字段挂账）；完整 PRD 见 `../product/01-PRD.md` §十六（P3 候选，🔴 待评审定稿）——定稿前本契约不新增任何 KG 端点/字段（对齐本节门禁口径） |
+| 知识图谱（RAG+KG 混合检索） | ✅ **Phase 1 已定稿并落地（V5.16）**：I57-I59（§4.14.10b）/ P35（§4.4.x）/ AD61-64（§4.13.8f）；完整 PRD 见 `../product/01-PRD.md` §十六；P2 政策问答/可视化随 §16.9 触发器另案 |
+| 多币种（展示换算 + 订单快照锁汇，Phase 1；多币种结算另评审） | **从未产生契约占位**（无端点/字段挂账）；完整 PRD 见 `../product/01-PRD.md` §十七（P3 候选，🔴 待评审定稿）——定稿前本契约不新增任何多币种端点/字段，§1.5 金额约定（Integer 分）零改动（对齐本节门禁口径） |
 
 ---
 

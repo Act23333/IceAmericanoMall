@@ -318,7 +318,7 @@ void shouldReturnToken_whenNewPhoneAndValidCode() { ... }
 
 **In scope (all delivered)**: the full MVP flow plus V-series expansions — registration/login (password/SMS/email/WeChat), profile/address/merchant/shop/store-follow, sign-in & points ledger, coupons & flash sales, wallet balance, in-app notifications, IM & AI customer service + merchant knowledge base, orders/payment (WeChat/Alipay-mock/balance)/logistics, after-sales, settlement, seller & admin consoles, reviews/favorites/browsing history, ES search, home decoration, RBAC.
 
-**Out of scope / not built** (flag as future work before starting): group buys, invoices, mini-program/app, knowledge graph, multi-currency. See the roadmap status above and `project-docs/backend/02-Architecture.md`.
+**Out of scope / not built** (flag as future work before starting): mini-program/app, multi-currency (完整 PRD 已产出待评审——`01-PRD.md` §十七), knowledge graph Phase 2 政策问答/可视化 (触发器见 PRD §16.9). Delivered and removed from this list: 对账 (V5.5) / 拼团 (V5.14) / 发票 (V5.15) / 知识图谱 Phase 1 (V5.16). See the roadmap status above and `project-docs/backend/02-Architecture.md`.
 
 ### Database
 
