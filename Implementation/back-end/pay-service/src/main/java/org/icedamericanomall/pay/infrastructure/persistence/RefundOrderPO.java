@@ -20,10 +20,11 @@ import java.time.LocalDateTime;
  *                ↘ 2-FAILED ──(管理端 AD43 重试)──→ 0-PROCESSING
  *
  * 不变量:
- *   1. after_sale_id 唯一（uk_after_sale）—— 一售后单一次退款，幂等由该唯一约束兜底
- *   2. refund_no 唯一（uk_refund_no）—— 对外定位键与管理端重试定位键
- *   3. 成功迁移只在「处理中」态发生（条件更新），保证回调重复幂等
- *   4. 售后单状态仅在退款成功后回写（PROCESSING / FAILED 时停留 APPROVED）
+ *   1. biz_ref 唯一（uk_biz_ref）—— 统一幂等业务键：售后=AS:{afterSaleId}，拼团=GB:{orderNo}（ADR-049）
+ *   2. after_sale_id 唯一且可空（uk_after_sale）—— 售后场景一售后单一次退款；无售后场景为 null
+ *   3. refund_no 唯一（uk_refund_no）—— 对外定位键与管理端重试定位键
+ *   4. 成功迁移只在「处理中」态发生（条件更新），保证回调重复幂等
+ *   5. 售后单状态仅在退款成功后回写（PROCESSING / FAILED 时停留 APPROVED）；无售后单退款跳过回写
  * </pre>
  */
 @Data
@@ -45,8 +46,11 @@ public class RefundOrderPO implements Serializable {
     /** 关联支付单号（pay_order.pay_order_no）。 */
     private String payOrderNo;
 
-    /** 关联售后单 ID（唯一约束，一售后单一次退款）。 */
+    /** 关联售后单 ID（唯一约束，一售后单一次退款）；无售后单退款（I55 拼团）为 NULL（ADR-049）。 */
     private Long afterSaleId;
+
+    /** 统一幂等业务键（uk_biz_ref）：售后=AS:{afterSaleId}，拼团=GB:{orderNo}（ADR-049）。 */
+    private String bizRef;
 
     /** 买家用户 ID。 */
     private Long userId;

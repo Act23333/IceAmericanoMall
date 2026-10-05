@@ -18,7 +18,9 @@ public enum OrderTypeEnum {
     DIRECT(2, "立即购买"),
     FLASH_SALE(3, "秒杀订单"),
     /** 预售未实现，下单会 PARAM_ERROR（见类注释）。 */
-    PRESALE(4, "预售订单");
+    PRESALE(4, "预售订单"),
+    /** F13 拼团订单（V5.14, ADR-049）：两段式参团 —— 下单不占团位，支付成功后经 I53 自动入团。 */
+    GROUP_BUY(5, "拼团订单");
 
     private final int code;
     private final String desc;

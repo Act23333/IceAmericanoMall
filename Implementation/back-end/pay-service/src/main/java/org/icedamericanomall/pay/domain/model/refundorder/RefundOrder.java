@@ -20,10 +20,12 @@ import java.util.UUID;
  *                ↘ 2-FAILED ──(管理端 AD43 重试)──→ 0-PROCESSING
  *
  * 不变量:
- *   1. after_sale_id 唯一（uk_after_sale）—— 一售后单一次退款，幂等由该唯一约束兜底
- *   2. refund_no 唯一（uk_refund_no）—— 对外定位键与管理端重试定位键
- *   3. 成功迁移只在「处理中」态发生（条件更新），保证回调重复幂等
- *   4. 售后单状态仅在退款成功后回写（PROCESSING / FAILED 时停留 APPROVED）
+ *   1. biz_ref 唯一（uk_biz_ref）—— 统一幂等业务键：售后=AS:{afterSaleId}，拼团=GB:{orderNo}（ADR-049），
+ *      退款发起的幂等由该唯一约束兜底
+ *   2. after_sale_id 唯一且可空（uk_after_sale）—— 售后场景一售后单一次退款；无售后场景（拼团，I55）为 null
+ *   3. refund_no 唯一（uk_refund_no）—— 对外定位键与管理端重试定位键
+ *   4. 成功迁移只在「处理中」态发生（条件更新），保证回调重复幂等
+ *   5. 售后单状态仅在退款成功后回写（PROCESSING / FAILED 时停留 APPROVED）；无售后单退款跳过回写
  * </pre>
  *
  * <p><b>与 {@code PayOrder} 的聚合边界</b>：退款单与支付单是两个聚合，只通过
@@ -47,8 +49,11 @@ public class RefundOrder {
     /** 关联支付单号（{@code pay_order.pay_order_no}）。 */
     private String payOrderNo;
 
-    /** 关联售后单 ID（唯一约束：一售后单一次退款）。 */
+    /** 关联售后单 ID（唯一约束：一售后单一次退款）；无售后单退款（I55 拼团）为 {@code null}。 */
     private Long afterSaleId;
+
+    /** 统一幂等业务键（uk_biz_ref）：售后 = {@code AS:{afterSaleId}}，拼团 = {@code GB:{orderNo}}（ADR-049）。 */
+    private String bizRef;
 
     /** 买家用户 ID。 */
     private Long userId;
@@ -74,11 +79,24 @@ public class RefundOrder {
 
     // ==================== 工厂 ====================
 
+    /** 统一幂等业务键的售后场景前缀（ADR-049）：售后退款 = {@code AS:{afterSaleId}}。 */
+    public static final String BIZ_REF_AFTER_SALE_PREFIX = "AS:";
+
+    /**
+     * 售后退款场景的幂等业务键（{@code uk_biz_ref} 取值）。
+     *
+     * @param afterSaleId 售后单 ID
+     * @return {@code AS:{afterSaleId}}
+     */
+    public static String afterSaleBizRef(long afterSaleId) {
+        return BIZ_REF_AFTER_SALE_PREFIX + afterSaleId;
+    }
+
     /**
      * 创建「处理中」退款单（未落库状态，{@code id} 由仓储回填）。
      *
-     * <p>落库时 {@code uk_refund_no} / {@code uk_after_sale} 是并发下的最终兜底：
-     * 并发重复创建会抛 {@code DuplicateKeyException}，由应用层回落为「返回既有退款单」。
+     * <p>落库时 {@code uk_refund_no} / {@code uk_biz_ref}（售后场景即 {@code AS:{afterSaleId}}）是
+     * 并发下的最终兜底：并发重复创建会抛 {@code DuplicateKeyException}，由应用层回落为「返回既有退款单」。
      *
      * @param afterSaleId  售后单 ID（幂等锚点）
      * @param orderNo      订单号
@@ -93,11 +111,41 @@ public class RefundOrder {
         return RefundOrder.builder()
                 .refundNo(newBusinessId())
                 .afterSaleId(afterSaleId)
+                .bizRef(afterSaleBizRef(afterSaleId))
                 .orderNo(orderNo)
                 .payOrderNo(payOrderNo)
                 .userId(userId)
                 .channel(channel)
                 .refundAmount(refundAmount)
+                .status(RefundStatusEnum.PROCESSING.getCode())
+                .build();
+    }
+
+    /**
+     * 创建「处理中」的无售后单退款单（I55 按订单全额退款，ADR-049；未落库状态，{@code id} 由仓储回填）。
+     *
+     * <p>与 {@link #newProcessing} 并存的独立创建口径：{@code afterSaleId} 恒为 {@code null}，
+     * 幂等锚点改由调用方传入的 {@code bizRef}（拼团场景 = {@code GB:{orderNo}}）承担，
+     * {@code uk_biz_ref} 兜底并发幂等。
+     *
+     * @param orderNo      订单号
+     * @param payOrderNo   支付单号
+     * @param userId       买家用户 ID
+     * @param channel      退款渠道（同原支付渠道）
+     * @param refundAmount 退款金额（分，按订单实付全额）
+     * @param bizRef       统一幂等业务键（uk_biz_ref，不可为空）
+     * @return 处理中的退款单（未落库）
+     */
+    public static RefundOrder newOrderProcessing(String orderNo, String payOrderNo, Long userId,
+                                                 String channel, int refundAmount, String bizRef) {
+        return RefundOrder.builder()
+                .refundNo(newBusinessId())
+                .orderNo(orderNo)
+                .payOrderNo(payOrderNo)
+                .userId(userId)
+                .channel(channel)
+                .refundAmount(refundAmount)
+                .bizRef(bizRef)
                 .status(RefundStatusEnum.PROCESSING.getCode())
                 .build();
     }

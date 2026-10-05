@@ -51,6 +51,7 @@ class OrderLifecycleManagerTest {
     @Mock private TaskClient taskClient;
     @Mock private DomainEventProducer eventProducer;
     @Mock private NotificationClient notificationClient;
+    @Mock private GroupBuyParticipationService groupBuyParticipationService;
 
     private OrderLifecycleManager manager;
 
@@ -58,7 +59,7 @@ class OrderLifecycleManagerTest {
     void setUp() {
         manager = new OrderLifecycleManager(orderRepository, skuClient, couponClient,
                 logisticsClient, pointsClient, memberClient, taskClient, eventProducer,
-                new TradeEventNotifier(notificationClient));
+                new TradeEventNotifier(notificationClient), groupBuyParticipationService);
     }
 
     private Order order() {
@@ -219,6 +220,27 @@ class OrderLifecycleManagerTest {
 
         verify(taskClient).complete(any(TaskCompleteCO.class));
         verify(pointsClient).addPoints(eq(100L), eq(100), eq(2), eq("下单奖励"));
+    }
+
+    // ==================== 支付回写 + F13 拼团参团钩子（ADR-049） ====================
+
+    @Test
+    @DisplayName("transitionFromPendingPayment — 支付成功（1→2）：条件迁移后触发拼团参团钩子")
+    void shouldTriggerParticipation_whenTransitionToPendingShipment() {
+        manager.transitionFromPendingPayment("ORD-1", OrderStatusEnum.PENDING_SHIPMENT.getCode());
+
+        verify(orderRepository).transitionFromPendingPayment("ORD-1",
+                OrderStatusEnum.PENDING_SHIPMENT.getCode());
+        verify(groupBuyParticipationService).participateAfterPayment("ORD-1");
+    }
+
+    @Test
+    @DisplayName("transitionFromPendingPayment — 支付超时（1→5 已取消）：不触发参团钩子")
+    void shouldNotTriggerParticipation_whenTransitionToCancelled() {
+        manager.transitionFromPendingPayment("ORD-1", OrderStatusEnum.CANCELLED.getCode());
+
+        verify(orderRepository).transitionFromPendingPayment("ORD-1", OrderStatusEnum.CANCELLED.getCode());
+        verifyNoInteractions(groupBuyParticipationService);
     }
 
     // ==================== 拆单发货（F3）编排 ====================

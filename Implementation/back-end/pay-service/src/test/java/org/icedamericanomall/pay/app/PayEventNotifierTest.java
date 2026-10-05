@@ -122,6 +122,26 @@ class PayEventNotifierTest {
     }
 
     @Test
+    @DisplayName("无售后单退款泛化（I55，ADR-049）— afterSaleId=null：跳过 I42 回写，REFUND_SUCCESS 站内信照常")
+    void shouldSkipAfterSaleWriteBackButNotifyBuyer_whenAfterSaleIdNull() {
+        RefundOrder orderRefund = refundOrder(BUYER_ID, "WECHAT", AMOUNT);
+        orderRefund.setAfterSaleId(null);
+
+        notifier.onRefundSuccess(orderRefund);
+
+        verify(afterSaleClient, never()).markRefunded(any());
+        ArgumentCaptor<InAppMessageSendReqCO> captor = ArgumentCaptor.forClass(InAppMessageSendReqCO.class);
+        verify(notificationClient).sendInAppMessage(captor.capture());
+        InAppMessageSendReqCO message = captor.getValue();
+        assertEquals("REFUND_SUCCESS", message.getType());
+        assertEquals(BUYER_ID, message.getRecipientId());
+        assertTrue(message.getContent().contains(ORDER_NO), "内容须含订单号: " + message.getContent());
+        assertTrue(message.getContent().contains("128.00"), "内容须含退款金额(元): " + message.getContent());
+        assertTrue(message.getContent().contains("微信支付"), "内容须含原路渠道: " + message.getContent());
+        assertEquals("/orders/" + ORDER_NO, message.getLinkUrl());
+    }
+
+    @Test
     @DisplayName("fail-open — NotificationClient 抛异常：不外溢，退款 I42 回写不受影响")
     void shouldNotPropagate_whenNotificationClientFails() {
         doThrow(new RuntimeException("notification-service down"))

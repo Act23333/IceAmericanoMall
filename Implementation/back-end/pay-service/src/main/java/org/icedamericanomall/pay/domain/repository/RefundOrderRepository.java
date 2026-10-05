@@ -15,12 +15,22 @@ public interface RefundOrderRepository {
     /** 按退款单号取（业务唯一键）。 */
     RefundOrder getByRefundNo(String refundNo);
 
-    /** 按售后单 ID 取（uk_after_sale 幂等锚点）。 */
+    /** 按售后单 ID 取（uk_after_sale 幂等锚点，售后场景）。 */
     RefundOrder getByAfterSaleId(Long afterSaleId);
+
+    /** 按统一幂等业务键取（uk_biz_ref 幂等锚点：售后=AS:{id}，拼团=GB:{orderNo}，ADR-049）。 */
+    RefundOrder getByBizRef(String bizRef);
 
     /** 新增「处理中」退款单（refund_no / 创建口径由聚合工厂内聚），返回回填 id 后的聚合。 */
     RefundOrder createProcessing(Long afterSaleId, String orderNo, String payOrderNo, Long userId,
                                  String channel, int refundAmount);
+
+    /**
+     * 新增「处理中」的无售后单退款单（I55 按订单全额退款，ADR-049）：
+     * {@code after_sale_id = null} + {@code biz_ref} 幂等锚点落库，返回回填 id 后的聚合。
+     */
+    RefundOrder createOrderRefundProcessing(String orderNo, String payOrderNo, Long userId,
+                                            String channel, int refundAmount, String bizRef);
 
     /** 回调/执行置成功（WHERE refundNo + status=处理中），回填渠道退款单号。 */
     boolean markSuccessIfProcessing(String refundNo, String channelRefundNo);

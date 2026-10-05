@@ -29,6 +29,11 @@ public class OrderCreateContext {
     private Long flashId;
     private Integer flashPrice;   // 秒杀价(分)
 
+    // === 拼团专有（F13, T27/ADR-049） ===
+    private Long activityId;      // 拼团活动 id
+    private String teamNo;        // 团号（空 = 开团，非空 = 参团）
+    private Integer groupPrice;   // 拼团价(分)（I52 validate 返回后填充）
+
     // === 通用 ===
     private Long addressId;
     /** 买家留言（V5.7，可选，≤200）—— 随 {@code buildBaseOrder} 快照进订单聚合。 */

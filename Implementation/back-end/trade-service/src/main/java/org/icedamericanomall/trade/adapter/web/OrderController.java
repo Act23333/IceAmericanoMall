@@ -7,6 +7,7 @@ import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.trade.adapter.request.CreateOrderReq;
 import org.icedamericanomall.trade.adapter.request.DirectOrderReq;
+import org.icedamericanomall.trade.adapter.request.GroupBuyOrderReq;
 import org.icedamericanomall.trade.adapter.request.OrderPageReq;
 import org.icedamericanomall.trade.adapter.response.OrderVO;
 import org.icedamericanomall.trade.app.order.OrderCreationManager;
@@ -53,6 +54,15 @@ public class OrderController {
         ctx.setRemark(req.getRemark());
         ctx.setUserCouponId(req.getUserCouponId());
         return Result.ok(orderCreationManager.createOrder(ctx));
+    }
+
+    /**
+     * F13 拼团下单（T27, ADR-049）：两段式参团第一步 —— 下单不占团位（quantity 恒 1，
+     * 拼团价由 I52 服务端下发并快照），支付成功后 trade 自动发起 I53 参团/开团。
+     */
+    @PostMapping("/group-buy")
+    public Result<OrderVO> groupBuyOrder(@Valid @RequestBody GroupBuyOrderReq req) {
+        return Result.ok(orderCreationManager.createGroupBuyOrder(UserContext.getUserId(), req));
     }
 
     /** 订单详情 —— 归属校验下沉至仓储（不存在→ORDER_NOT_FOUND，非本人→FORBIDDEN）。 */

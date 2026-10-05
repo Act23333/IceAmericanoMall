@@ -48,8 +48,9 @@ import java.util.Map;
  *   Then 退款单条件置成功（仅处理中可迁移，重复通知幂等）→ I42 回写售后单
  * </pre>
  *
- * <p><b>与 {@link RefundResumeManager} 的关系</b>：悬挂退款补偿（ADR-035 风险收敛）是本用例族的
- * 并行新增入口，复用 {@link #dispatchAndSettle} / {@link #markSuccessAndNotify} / {@link #markFailedWithReason}
+ * <p><b>与 {@link RefundResumeManager} / {@link OrderRefundManager} 的关系</b>：悬挂退款补偿
+ * （ADR-035 风险收敛）与无售后单退款（I55 按订单全额退款，ADR-049，独立用例族 ADR-025）是并行编排入口，
+ * 复用 {@link #dispatchAndSettle} / {@link #markSuccessAndNotify} / {@link #markFailedWithReason}
  * （package-private，同包编排层），不复制结算逻辑；PAY6 / AD43 / execute 既有行为语义不变。
  */
 @Slf4j
@@ -175,8 +176,12 @@ public class RefundManager {
         payEventNotifier.onRefundSuccess(refundOrder);
     }
 
-    /** 执行渠道退款：成功同步置成功；处理中保持；失败置失败并向上透出（fail-closed）。 */
-    private RefundOrder execute(RefundOrder refundOrder, PayOrder payOrder, String reason) {
+    /**
+     * 执行渠道退款（共享执行入口，package-private）：成功同步置成功；处理中保持；失败置失败并向上透出
+     * （fail-closed）。I40 发起路径与 I55 无售后单退款（{@link OrderRefundManager}）共用，
+     * 不复制失败落账语义。
+     */
+    RefundOrder execute(RefundOrder refundOrder, PayOrder payOrder, String reason) {
         String refundNo = refundOrder.getRefundNo();
         try {
             dispatchAndSettle(refundOrder, payOrder, reason);

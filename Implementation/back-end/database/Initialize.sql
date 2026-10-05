@@ -930,7 +930,8 @@ CREATE TABLE `refund_order` (
     `refund_no`         CHAR(36)     NOT NULL COMMENT '退款单号（业务唯一键，UUID；对外与幂等重试的定位键）',
     `order_no`          VARCHAR(64)  NOT NULL COMMENT '关联订单号（orders.order_no，无外键）',
     `pay_order_no`      VARCHAR(64)  NOT NULL COMMENT '关联支付单号（pay_order.pay_order_no）',
-    `after_sale_id`     BIGINT       NOT NULL COMMENT '关联售后单（after_sale.id）——一售后单一次退款',
+    `after_sale_id`     BIGINT       NULL        COMMENT '关联售后单（after_sale.id）——售后场景退款；拼团等无售后场景为 NULL（ADR-049）',
+    `biz_ref`           VARCHAR(64)  NOT NULL COMMENT '统一幂等业务键：售后=AS:{afterSaleId}，拼团=GB:{orderNo}（ADR-049）',
     `user_id`           BIGINT       NOT NULL COMMENT '买家用户ID',
     `channel`           VARCHAR(16)  NOT NULL COMMENT '退款渠道：WECHAT / ALIPAY / BALANCE（与原支付渠道一致，原路退回）',
     `refund_amount`     INT          NOT NULL COMMENT '退款金额（分），申请时已校验 ≤ 订单实付 payAmount',
@@ -942,6 +943,7 @@ CREATE TABLE `refund_order` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_refund_no` (`refund_no`),
     UNIQUE KEY `uk_after_sale` (`after_sale_id`),
+    UNIQUE KEY `uk_biz_ref` (`biz_ref`),
     KEY `idx_order_no` (`order_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='退款单（pay-service 退款域）';
 
@@ -1201,3 +1203,58 @@ CREATE TABLE `note_like` (
     UNIQUE KEY `uk_note_user` (`note_id`, `user_id`),
     KEY `idx_note` (`note_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='笔记点赞（uk 幂等）';
+
+-- =====================================================================
+-- V5.14 拼团（F13，ADR-049；schema 直改本文件，无迁移文件）
+-- 两段式参团：下单不占团位（未支付走既有 30 分钟超时取消），支付成功后 I53 参团；
+-- 参团竞态由条件更新 + 唯一键兜底；团超时由 GroupBuyExpireJob 结团并联动退款。
+-- =====================================================================
+
+-- 拼团活动（marketing-service 域；管理端 AD54-56，复用 promotion/flash 时间窗推导先例）
+CREATE TABLE `group_buy_activity` (
+    `id`               BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `name`             VARCHAR(50) NOT NULL COMMENT '活动名称',
+    `seller_id`        BIGINT      NOT NULL COMMENT '商家 user_id（店铺级活动）',
+    `product_id`       BIGINT      NOT NULL COMMENT '商品ID',
+    `sku_id`           BIGINT      NOT NULL COMMENT 'SKU ID（拼团仅该 SKU 参与）',
+    `group_price`      INT         NOT NULL COMMENT '拼团价（分，>0）',
+    `required_members` TINYINT     NOT NULL COMMENT '成团人数（≥2）',
+    `time_limit_hours` INT         NOT NULL COMMENT '成团时限（小时，开团后超时未满员即失败）',
+    `start_time`       DATETIME    NOT NULL COMMENT '活动开始时间',
+    `end_time`         DATETIME    NOT NULL COMMENT '活动结束时间',
+    `status`           TINYINT     NOT NULL DEFAULT 1 COMMENT '1=未开始 2=进行中 3=已结束（时间窗推导）',
+    `version`          INT         NOT NULL DEFAULT 0 COMMENT '乐观锁',
+    `create_time`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY `idx_seller_time` (`seller_id`, `start_time`, `end_time`),
+    KEY `idx_status` (`status`, `end_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='拼团活动';
+
+-- 拼团团（成团状态机：1拼团中 2已成团 3已失败；参团条件更新 +1，满员条件置已成团）
+CREATE TABLE `group_team` (
+    `id`               BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `team_no`          VARCHAR(32) NOT NULL COMMENT '团号（业务唯一键，UUID）',
+    `activity_id`      BIGINT      NOT NULL COMMENT '拼团活动ID',
+    `leader_user_id`   BIGINT      NOT NULL COMMENT '团长 user_id（开团者）',
+    `required_members` TINYINT     NOT NULL COMMENT '成团人数（开团时从活动快照）',
+    `current_members`  TINYINT     NOT NULL DEFAULT 0 COMMENT '当前人数（已支付入团成员数）',
+    `status`           TINYINT     NOT NULL DEFAULT 1 COMMENT '1=拼团中 2=已成团 3=已失败（超时未满员）',
+    `expire_time`      DATETIME    NOT NULL COMMENT '成团截止时间（开团时间 + time_limit_hours）',
+    `success_time`     DATETIME    DEFAULT NULL COMMENT '成团时间',
+    `create_time`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_team_no` (`team_no`),
+    KEY `idx_activity_status_expire` (`activity_id`, `status`, `expire_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='拼团团（成团状态机）';
+
+-- 拼团团成员（uk_order_no 幂等锚点：一单一团一次；uk_team_user 防同团重复参团）
+CREATE TABLE `group_team_member` (
+    `id`          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `team_id`     BIGINT      NOT NULL COMMENT '团ID',
+    `user_id`     BIGINT      NOT NULL COMMENT '参团用户 user_id（团长亦入列）',
+    `order_no`    VARCHAR(32) NOT NULL COMMENT '关联拼团订单号（orders.order_no）',
+    `create_time` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_order_no` (`order_no`),
+    UNIQUE KEY `uk_team_user` (`team_id`, `user_id`),
+    KEY `idx_team` (`team_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='拼团团成员';

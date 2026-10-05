@@ -17,6 +17,7 @@ import org.icedamericanomall.dto.StockOpCO;
 import org.icedamericanomall.trade.infrastructure.messaging.DomainEventProducer;
 import org.icedamericanomall.trade.app.TradeEventNotifier;
 import org.icedamericanomall.trade.domain.repository.OrderRepository;
+import org.icedamericanomall.trade.domain.enums.OrderStatusEnum;
 import org.icedamericanomall.trade.domain.model.order.ShipPackageResult;
 import org.icedamericanomall.common.event.OrderShippedEvent;
 import org.springframework.stereotype.Component;
@@ -25,7 +26,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 订单生命周期编排 Manager —— 取消/确认收货/发货/超时取消，含对应的库存与优惠券补偿。
+ * 订单生命周期编排 Manager —— 取消/确认收货/发货/超时取消/支付回写，含对应的库存与优惠券补偿。
  * 下单主流程已拆分至 {@link OrderCreationManager}。
  *
  * <pre>
@@ -33,6 +34,7 @@ import java.util.stream.Collectors;
  * Scenario: 确认收货 → 发放积分（会员倍率，I45）+ 成长值入账（I46）
  * Scenario: 商家发货 → 创建物流记录
  * Scenario: 超时未支付 → 逐单取消并回滚
+ * Scenario: 拼团单支付成功 → I53 参团，失败触发退款闭环（F13, ADR-049）
  * </pre>
  */
 @Slf4j
@@ -58,13 +60,15 @@ public class OrderLifecycleManager {
     private final TaskClient taskClient;
     private final DomainEventProducer eventProducer;
     private final TradeEventNotifier tradeEventNotifier;
+    private final GroupBuyParticipationService groupBuyParticipationService;
 
     public OrderLifecycleManager(OrderRepository orderRepository, SkuClient skuClient,
                                   CouponClient couponClient, LogisticsClient logisticsClient,
                                   PointsClient pointsClient, MemberClient memberClient,
                                   TaskClient taskClient,
                                   DomainEventProducer eventProducer,
-                                  TradeEventNotifier tradeEventNotifier) {
+                                  TradeEventNotifier tradeEventNotifier,
+                                  GroupBuyParticipationService groupBuyParticipationService) {
         this.orderRepository = orderRepository;
         this.skuClient = skuClient;
         this.couponClient = couponClient;
@@ -74,6 +78,7 @@ public class OrderLifecycleManager {
         this.taskClient = taskClient;
         this.eventProducer = eventProducer;
         this.tradeEventNotifier = tradeEventNotifier;
+        this.groupBuyParticipationService = groupBuyParticipationService;
     }
 
     public void cancelOrder(String orderNo, Long userId) {
@@ -217,9 +222,16 @@ public class OrderLifecycleManager {
     /**
      * 支付结果回写（pay-service 内部接口调用）—— 委托仓储条件迁移，
      * 仅允许「待付款 → 待发货」与「待付款 → 已取消」两条合法边。
+     *
+     * <p>F13 拼团（ADR-049）：支付成功（→ 待发货）条件迁移落库后、事务外触发参团钩子——
+     * 非拼团单在协作器内自过滤，拼团单经 I53 join 入团，参团失败走
+     * 「取消 + 恢复库存 + I55 退款」自动闭环，绝不向 pay 回调调用方抛异常。
      */
     public void transitionFromPendingPayment(String orderNo, Integer targetStatus) {
         orderRepository.transitionFromPendingPayment(orderNo, targetStatus);
+        if (targetStatus != null && targetStatus == OrderStatusEnum.PENDING_SHIPMENT.getCode()) {
+            groupBuyParticipationService.participateAfterPayment(orderNo);
+        }
     }
 
     /**

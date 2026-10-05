@@ -63,13 +63,19 @@ public class PayEventNotifier {
      * <p>共享结算入口（PAY6 回调 / 渠道同步终态 / 悬挂补偿）统一经本方法收口；
      * 两步各自独立 try/catch，互不影响，也不影响退款落账。
      *
-     * @param refundOrder 已置成功的退款单聚合（含 afterSaleId / userId / orderNo / refundAmount / channel）
+     * <p><b>无售后单退款泛化（I55，ADR-049）</b>：{@code afterSaleId = null}（拼团等无售后场景）
+     * 跳过 I42 回写（无售后域可回写），买家 {@code REFUND_SUCCESS} 站内信照常发送；
+     * 售后退款（I40）行为不变。
+     *
+     * @param refundOrder 已置成功的退款单聚合（含 afterSaleId 可空 / userId / orderNo / refundAmount / channel）
      */
     public void onRefundSuccess(RefundOrder refundOrder) {
         if (refundOrder == null) {
             return;
         }
-        writeBackAfterSaleRefunded(refundOrder.getAfterSaleId());
+        if (refundOrder.getAfterSaleId() != null) {
+            writeBackAfterSaleRefunded(refundOrder.getAfterSaleId());
+        }
         notifyBuyerRefundSuccess(refundOrder);
     }
 

@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.CouponClient;
 import org.icedamericanomall.client.SkuClient;
 import org.icedamericanomall.trade.adapter.assembler.OrderConverter;
+import org.icedamericanomall.trade.adapter.request.GroupBuyOrderReq;
 import org.icedamericanomall.trade.domain.model.order.Order;
 import org.icedamericanomall.trade.domain.model.order.OrderItem;
 import org.icedamericanomall.trade.adapter.response.OrderVO;
@@ -13,6 +14,7 @@ import org.icedamericanomall.dto.StockOpCO;
 import org.icedamericanomall.trade.infrastructure.messaging.DomainEventProducer;
 import org.icedamericanomall.trade.infrastructure.messaging.OrderTimeoutPublisher;
 import org.icedamericanomall.trade.domain.repository.OrderRepository;
+import org.icedamericanomall.trade.domain.enums.OrderTypeEnum;
 import org.icedamericanomall.trade.app.order.strategy.NormalCartOrderStrategy;
 import org.icedamericanomall.trade.app.order.strategy.OrderCreateContext;
 import org.icedamericanomall.trade.app.order.strategy.OrderCreateStrategy;
@@ -29,13 +31,14 @@ import java.util.List;
 
 /**
  * V4.1: 统一订单创建编排 Manager（京东/淘宝统一订单中心标准）。
- * 所有订单类型（NORMAL/DIRECT/FLASH_SALE/PRESALE）通过策略模式路由到对应处理器。
+ * 所有订单类型（NORMAL/DIRECT/FLASH_SALE/GROUP_BUY/PRESALE）通过策略模式路由到对应处理器。
  * 共享管道: validate → buildOrder → deductStock → persist → afterCreate。
  *
  * <pre>
  * Scenario: 购物车下单 (orderType=NORMAL)
  * Scenario: 立即购买 (orderType=DIRECT)
  * Scenario: 秒杀订单 (orderType=FLASH_SALE, 由 marketing-service Feign 调用)
+ * Scenario: 拼团订单 (orderType=GROUP_BUY, T27 两段式参团第一步，ADR-049)
  * Scenario: 订单创建失败 → Saga 补偿回滚库存 + 已用优惠券
  * </pre>
  */
@@ -150,6 +153,31 @@ public class OrderCreationManager {
                 RESOURCE_CREATE_ORDER, ex.getRuleLimitApp(),
                 ctx == null ? null : ctx.getUserId(), ex);
         throw new BizException(ErrorCode.FREQUENT_ERROR, "下单请求过于频繁，请稍后重试");
+    }
+
+    /**
+     * F13 拼团下单（T27, ADR-049 两段式参团第一步）—— 组装拼团上下文后走统一创建管道。
+     *
+     * <p>quantity 恒 1（一人一单一件）；拼团价由 I52 validate 服务端下发并快照，
+     * 不叠加券/促销/会员（与秒杀同口径，ADR-043）；运费走常规计价。下单<b>不占团位</b>
+     * （未支付走既有 30 分钟超时取消），支付成功后才经 I53 入团
+     * （见 {@code GroupBuyParticipationService#participateAfterPayment}）。
+     *
+     * @param userId 买家 user_id
+     * @param req    拼团下单请求（活动 id 必填；团号可空 = 开团）
+     * @return 新建订单视图（含订单项）
+     * @throws BizException I52 校验失败 / SKU 或地址不存在 / 库存不足 /
+     *                      参团上下文写入失败 / 流控熔断（FREQUENT_ERROR）
+     */
+    public OrderVO createGroupBuyOrder(Long userId, GroupBuyOrderReq req) {
+        OrderCreateContext ctx = new OrderCreateContext();
+        ctx.setUserId(userId);
+        ctx.setOrderType(OrderTypeEnum.GROUP_BUY);
+        ctx.setActivityId(req.getActivityId());
+        ctx.setTeamNo(req.getTeamNo());
+        ctx.setAddressId(req.getAddressId());
+        ctx.setRemark(req.getRemark());
+        return createOrder(ctx);
     }
 
     /** 扣减库存（Feign），失败即终止下单。 */

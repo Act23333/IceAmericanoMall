@@ -87,6 +87,7 @@ public class SecurityConfig {
             "/api/flash/**",
             "/api/coupon/template",
             "/api/activity/**",
+            "/api/group-buy/**",
             "/api/notes/**"
     };
 

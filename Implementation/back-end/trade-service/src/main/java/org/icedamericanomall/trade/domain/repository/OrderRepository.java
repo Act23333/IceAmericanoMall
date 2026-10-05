@@ -87,6 +87,15 @@ public interface OrderRepository {
      */
     boolean closeTimeoutOrder(Long orderId);
 
+    /**
+     * 系统取消已支付订单（F13 拼团退款闭环，ADR-049：条件更新 仅待发货→已取消，无归属校验；
+     * 库存恢复与 I55 退款由编排层 {@code GroupBuyParticipationService} 处理）。
+     *
+     * @param orderNo 订单号
+     * @return true=本次真正完成状态迁移；false=订单非待发货（已取消/已发货等，幂等无操作）
+     */
+    boolean cancelPaidBySystem(String orderNo);
+
     // ==================== 统计读模型（仪表盘/结算，CQRS 直查） ====================
 
     /** 全部订单数。 */

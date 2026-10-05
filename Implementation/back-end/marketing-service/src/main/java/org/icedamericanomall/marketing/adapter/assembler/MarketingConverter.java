@@ -1,15 +1,20 @@
 package org.icedamericanomall.marketing.adapter.assembler;
 
+import org.icedamericanomall.dto.GroupTeamCO;
 import org.icedamericanomall.dto.PromotionCO;
 import org.icedamericanomall.marketing.adapter.request.CouponCreateReq;
 import org.icedamericanomall.marketing.adapter.request.FlashSaleCreateReq;
 import org.icedamericanomall.marketing.adapter.request.FlashSaleUpdateReq;
+import org.icedamericanomall.marketing.adapter.request.GroupBuyCreateReq;
+import org.icedamericanomall.marketing.adapter.request.GroupBuyUpdateReq;
 import org.icedamericanomall.marketing.adapter.request.PromotionCreateReq;
 import org.icedamericanomall.marketing.adapter.request.PromotionUpdateReq;
 import org.icedamericanomall.marketing.adapter.response.ActivityVO;
 import org.icedamericanomall.marketing.adapter.response.CouponVO;
 import org.icedamericanomall.marketing.adapter.response.FlashBuyVO;
 import org.icedamericanomall.marketing.adapter.response.FlashSaleVO;
+import org.icedamericanomall.marketing.adapter.response.GroupBuyActivityVO;
+import org.icedamericanomall.marketing.adapter.response.GroupTeamVO;
 import org.icedamericanomall.marketing.adapter.response.PointsBalanceVO;
 import org.icedamericanomall.marketing.adapter.response.PointsLogVO;
 import org.icedamericanomall.marketing.adapter.response.PromotionVO;
@@ -21,6 +26,8 @@ import org.icedamericanomall.marketing.domain.enums.PromotionTypeEnum;
 import org.icedamericanomall.marketing.domain.model.coupon.Coupon;
 import org.icedamericanomall.marketing.domain.model.coupon.UserCoupon;
 import org.icedamericanomall.marketing.domain.model.flash.FlashSale;
+import org.icedamericanomall.marketing.domain.model.groupbuy.GroupBuyActivity;
+import org.icedamericanomall.marketing.domain.model.groupbuy.GroupTeam;
 import org.icedamericanomall.marketing.domain.model.points.PointsLog;
 import org.icedamericanomall.marketing.domain.model.promotion.Promotion;
 import org.mapstruct.BeanMapping;
@@ -102,6 +109,33 @@ public interface MarketingConverter {
 
     /** 促销聚合列表 → 生效促销契约对象列表（I44）。 */
     List<PromotionCO> toPromotionCOList(List<Promotion> promotions);
+
+    /** 拼团创建请求 → 拼团活动聚合（status/version 由创建编排推导回填，AD54）。 */
+    GroupBuyActivity toDomain(GroupBuyCreateReq req);
+
+    /** 拼团活动聚合 → 视图对象（AD54 创建回执 / M15 列表 / M16 详情口径）。 */
+    GroupBuyActivityVO toVO(GroupBuyActivity activity);
+
+    /**
+     * 拼团编辑请求 → 就地合并到已取聚合（V5.14 AD55）。
+     *
+     * <p>MapStruct 更新语义默认会把源侧 null 覆盖到目标，这里显式
+     * {@code NullValuePropertyMappingStrategy.IGNORE} 保证「null-safe 局部更新」契约口径。
+     *
+     * @param req      编辑请求（字段全可选）
+     * @param activity 已取出的活动聚合（被合并目标）
+     */
+    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    void mergeGroupBuyUpdate(GroupBuyUpdateReq req, @MappingTarget GroupBuyActivity activity);
+
+    /** 拼团团聚合 → 团视图对象（M16 团列表 / M17 团进度；不出任何 userId）。 */
+    GroupTeamVO toVO(GroupTeam team);
+
+    /** 拼团团聚合列表 → 团视图对象列表（M16 详情页最近进行中团，≤10）。 */
+    List<GroupTeamVO> toGroupTeamVOList(List<GroupTeam> teams);
+
+    /** 拼团团聚合 → 团状态契约对象（I53 join 回执，ia-api {@code GroupTeamCO}）。 */
+    GroupTeamCO toCO(GroupTeam team);
 
     /**
      * 促销聚合 → 活动中心视图对象（M12/M13，V5.11 契约定稿）。

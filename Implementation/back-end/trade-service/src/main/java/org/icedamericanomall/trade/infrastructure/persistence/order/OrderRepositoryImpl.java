@@ -339,6 +339,21 @@ public class OrderRepositoryImpl implements OrderRepository {
                         .set(OrderPO::getCloseTime, LocalDateTime.now())) > 0;
     }
 
+    /**
+     * 系统取消已支付订单（F13 拼团退款闭环，ADR-049）—— 条件更新 仅待发货(2)→已取消(5)，
+     * 无归属校验（调用方为系统闭环编排）；单条原子 UPDATE，无需显式事务。
+     * 受影响行数 0 = 订单已非待发货（已取消/已发货等，幂等无操作），由编排层跳过后续补偿。
+     */
+    @Override
+    public boolean cancelPaidBySystem(String orderNo) {
+        return orderMapper.update(null,
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<OrderPO>()
+                        .eq(OrderPO::getOrderNo, orderNo)
+                        .eq(OrderPO::getStatus, OrderStatusEnum.PENDING_SHIPMENT.getCode())
+                        .set(OrderPO::getStatus, OrderStatusEnum.CANCELLED.getCode())
+                        .set(OrderPO::getCloseTime, LocalDateTime.now())) > 0;
+    }
+
     // ==================== 统计读模型（CQRS 直查） ====================
 
     @Override

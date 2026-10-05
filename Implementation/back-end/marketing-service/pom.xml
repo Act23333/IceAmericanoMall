@@ -88,5 +88,11 @@
             <groupId>org.apache.rocketmq</groupId>
             <artifactId>rocketmq-spring-boot-starter</artifactId>
         </dependency>
+        <!-- XXL-Job 拼团结团调度（GroupBuyExpireJob，ADR-049）；执行器注册由 ia-common XxlJobConfig
+             按 xxl.job.enabled 开关控制，dev 默认关闭。版本由父 POM dependencyManagement 管理 -->
+        <dependency>
+            <groupId>com.xuxueli</groupId>
+            <artifactId>xxl-job-core</artifactId>
+        </dependency>
     </dependencies>
 </project>

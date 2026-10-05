@@ -38,10 +38,28 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
     }
 
     @Override
+    public RefundOrder getByBizRef(String bizRef) {
+        return refundOrderMapper.selectList(new LambdaQueryWrapper<RefundOrderPO>()
+                        .eq(RefundOrderPO::getBizRef, bizRef))
+                .stream().findFirst().map(RefundOrderRepositoryImpl::toDomain).orElse(null);
+    }
+
+    @Override
     public RefundOrder createProcessing(Long afterSaleId, String orderNo, String payOrderNo, Long userId,
                                         String channel, int refundAmount) {
         RefundOrder refundOrder = RefundOrder.newProcessing(afterSaleId, orderNo, payOrderNo, userId,
                 channel, refundAmount);
+        RefundOrderPO po = toPO(refundOrder);
+        refundOrderMapper.insert(po);
+        refundOrder.setId(po.getId());
+        return refundOrder;
+    }
+
+    @Override
+    public RefundOrder createOrderRefundProcessing(String orderNo, String payOrderNo, Long userId,
+                                                   String channel, int refundAmount, String bizRef) {
+        RefundOrder refundOrder = RefundOrder.newOrderProcessing(orderNo, payOrderNo, userId,
+                channel, refundAmount, bizRef);
         RefundOrderPO po = toPO(refundOrder);
         refundOrderMapper.insert(po);
         refundOrder.setId(po.getId());
@@ -89,6 +107,7 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
                 .orderNo(po.getOrderNo())
                 .payOrderNo(po.getPayOrderNo())
                 .afterSaleId(po.getAfterSaleId())
+                .bizRef(po.getBizRef())
                 .userId(po.getUserId())
                 .channel(po.getChannel())
                 .refundAmount(po.getRefundAmount())
@@ -107,6 +126,7 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
         po.setOrderNo(refundOrder.getOrderNo());
         po.setPayOrderNo(refundOrder.getPayOrderNo());
         po.setAfterSaleId(refundOrder.getAfterSaleId());
+        po.setBizRef(refundOrder.getBizRef());
         po.setUserId(refundOrder.getUserId());
         po.setChannel(refundOrder.getChannel());
         po.setRefundAmount(refundOrder.getRefundAmount());
