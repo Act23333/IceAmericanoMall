@@ -1,6 +1,6 @@
 # 05 — API 规格文档 (API Specification — SDD)
 
-> **最后更新**: 2026-10-06 | **版本**: V5.16.0 | **端点总数**: 265（方法级映射实测，含 `/internal/**` 55 个；V5.7–V5.16 全量落地：FT/任务/活动中心/装修/笔记/推荐/facets/suggest/拼团/发票/知识图谱/AD48-64/I44-I59/P27-P35 均已实现，详见 §十四 版本行 V5.7.0–V5.16.0） | **已实现**: 全部标注 ✅ 端点 | **公共**: 195+ | **内部**: 39+ | **已实现**: 229+
+> **最后更新**: 2026-10-06 | **版本**: V5.16.1 | **端点总数**: 271（方法级映射实测，含 `/internal/**` 56 个；V5.7–V5.16.1 全量落地：FT/任务/活动中心/装修/笔记/推荐/facets/suggest/拼团/发票/知识图谱/AD48-65/I44-I60/P27-P35 均已实现，详见 §十四 版本行 V5.7.0–V5.16.1） | **已实现**: 全部标注 ✅ 端点 | **公共**: 195+ | **内部**: 39+ | **已实现**: 229+
 >
 > **V5.6.1 实现落地说明**：V5.6.0 规格先行的四个 P0 功能（F1 买家退款资金流 / F2 运费模型 / F3 拆单发货 / F4 渠道对账）已**全量实现并通过全量测试**，全部 V5.6 规划标注已收敛为"已实现（V5.6）"；实现方上报的规格偏差已按 ADR-035/036/037 收敛进正文（错误码 3039/3040/3041、AD47 confirm-return 退款触发分派、I41 并发幂等、I43 fail-closed、AD46 批次列表）。数据模型见 `04-Data-Model.md` §十二（已建库）。
 > 
@@ -1780,6 +1780,7 @@ Feature: 买家退款资金流（F1）
 | AD62 | POST | `/api/admin/kg/rule`            | 🔑  | `PairingRuleReq { srcCategoryId(必填), dstCategoryId(必填), weight?(缺省0), remark? }`                          | `Void`（唯一约束防重 + 类目存在性校验；`@OperationLog`） | ✅ V5.16 |
 | AD63 | PUT  | `/api/admin/kg/rule/{id}`       | 🔑  | null-safe 局部更新（weight / remark / status 启停）                                                                  | `Void`（`@OperationLog`）       | ✅ V5.16 |
 | AD64 | POST | `/api/admin/kg/rebuild`         | 🔑  | —                                                                                                          | `int`（重建边数；幂等可重试；`@OperationLog`）     | ✅ V5.16 |
+| AD65 | GET  | `/api/admin/kg/neighbors`       | 🔑  | Query: `srcType`(必填), `srcId`(必填), `relType?`, `dstType?`, `depth`(缺省1, ≤2), `status?`                      | `List<KgNeighborCO>`（US-KG-5 关系邻居表格化视图：包装 I58 检索面，治理核查用；ES 降级 → 空列表） | ✅ V5.16.1 |
 
 > - **守卫**：悬空类目引用 → 400 `PARAM_ERROR(1101)`；重复规则唯一约束 → DuplicateKey 回落 400（AD51-53 先例）。
 > - **重建口径（US-KG-8）**：按真相源（源表列 + 规则表）全量重建 `kg_edges` 投影，幂等可重试；增量摄取走商品 afterCommit（I57）。
@@ -2183,8 +2184,9 @@ Feature: 渠道对账（F4）
 > **F14 全额退款联动（[PRD §十五 D4](../product/01-PRD.md)）**：调用方 pay-service（退款成功且 `refundAmount` = 支付单**全额**时触发；ia-api `TradeInvoiceClient`，降级 **fail-open + 告警**——触发器语义同 I54：资金终态已定，联动失败依赖管理端"部分退款/异常"筛选人工收敛）。**幂等**：无有效票 = 空操作；已冲红重复触发 = 空操作。
 
 | I56 | POST | `/internal/trade/invoice/void-on-full-refund` | Body: `InvoiceVoidCO { orderNo(必填), sceneRef(必填, 退款幂等键审计用) }` | `void` | ✅（V5.15） |
+| I60 | POST | `/internal/trade/invoice/partial-refund-flag` | Body: `InvoicePartialRefundCO { orderNo(必填), sceneRef(必填) }` | `void` | ✅（V5.16.1） |
 
-> - **语义（PRD D4）**：待开具(1) → 自动作废(4)；已开具(2) → 自动冲红(3)（原因 = 系统原因码）；其余状态/无票 → 幂等空操作。部分退款**不**触发（调用方已按全额判定）。
+> - **语义（PRD D4）**：I56（全额）——待开具(1) → 自动作废(4)；已开具(2) → 自动冲红(3)（原因 = 系统原因码）；**I60（部分，✅ V5.16.1 补缺——US-INV-8"部分退款标记待人工"的触发口）**——该订单有效发票（已开具）置 `partial_refund_flag=1`（幂等；无有效票/待开具票 → 空操作；待开具票遇部分退款无需标记，开具后人工冲红口径不受影响）。**full/partial 判定在 pay 侧**（refundAmount vs 支付单金额），两侧各自 fail-open。其余状态/无票 → 幂等空操作。
 
 #### 4.14.17 InternalFreightTemplateController — `/internal/item/freight-template` (item-service, ✅ V5.6)
 
@@ -2209,6 +2211,10 @@ Feature: 渠道对账（F4）
 | INV3 | GET  | `/api/invoice/{invoiceNo}` | 🔒  | Path: `invoiceNo`（**占位 `id` 修正为业务键**，对齐"主键不外泄"约束） | `InvoiceVO`（已开具含 `pdfKey` 签名下载地址） | ✅ V5.15 |
 | INV4 | PUT  | `/api/invoice/{invoiceNo}/cancel` | 🔒 | Path: `invoiceNo`                                          | `Void`（买家撤回，仅待开具 1→4） | ✅ V5.15 |
 | INV5 | PUT  | `/api/invoice/{invoiceNo}/urge` | 🔒 | Path: `invoiceNo`                                          | `Void`（催开，24h 限频，O10 最小实现） | ✅ V5.15 |
+| INV6 | GET  | `/api/invoice/title/list` | 🔒 | —（本人抬头，默认在前） | `List<InvoiceTitleVO>`（税号只出 mask） | ✅ V5.16.1 |
+| INV7 | POST | `/api/invoice/title` | 🔒 | `InvoiceTitleReq { type(必填, 1个人/2企业), title(必填, ≤100), taxNo?(企业必填, PII 三字段), isDefault?(缺省 false) }` | `InvoiceTitleVO`（新建抬头；`isDefault=1` 时服务端清除旧默认） | ✅ V5.16.1 |
+| INV8 | PUT  | `/api/invoice/title/{id}` | 🔒 | Path: `id` (Long), Body 同 INV7（全量更新语义；归属校验 403） | `Void` | ✅ V5.16.1 |
+| INV9 | DELETE | `/api/invoice/title/{id}` | 🔒 | Path: `id` (Long) | `Void`（软删 @TableLogic；默认抬头删除后不自动递补） | ✅ V5.16.1 |
 
 > - **申请守卫（ADR-004）**：订单不存在/非本人 → `1103`/`FORBIDDEN`；非已完成或超 90 天窗 → 400 `PARAM_ERROR(1101)`；一单一有效票（`uk_order_active`，命中回落/预检）→ 400 `PARAM_ERROR(1101)`"该订单已有有效发票"；企业抬头缺税号 → 400。
 > - **金额口径（PRD D3）**：`amount` = 申请时 `payAmount` 快照（含运费扣优惠，04 §3.7 不变式 V2）。
@@ -2599,6 +2605,7 @@ data: [DONE]
 | **V5.13.0** | **2026-10-05** | **P2 Phase 2 挂账收敛批（列表促销角标 / 搜索联想 / 任务运营 / 笔记向量化）契约先行**：①P1 商品分页响应增量 `promotions`（按行 sellerId 聚合店铺促销标签，60s 缓存复用 P2 详情口径，促销可见性从详情延伸到列表）；②SE5 搜索联想转正（热搜词前缀 + 商品名前缀双源 ≤10 去重，Redis+DB 双源 ES 关闭可用）；③任务运营闭环 AD51-53 `/api/admin/task`（列表/创建/编辑：code 唯一、rewardPoints 调整立即生效、停用即触发口失效，三写 `@OperationLog`）；④笔记向量化（ADR-046 管道第二次复用）：I50/I50 `notes` 独立小索引（单向量 title+content，摄取幂等覆盖写+软删删向量）+ I51 相似检索 + P34 相似笔记卡（item 组装发布态）；无 schema 变更 |
 | **V5.14.0** | **2026-10-05** | **P3 第一批（F13 拼团完整闭环）契约先行**：①§4.10.4 新增 M15-M17 `/api/group-buy/**` C 端浏览（活动列表/详情+进行中团列表脱敏/团进度）；②§4.6.1 新增 T27 `POST /api/trade/order/group-buy`（quantity 恒 1，拼团价快照不叠加券/促销/会员，下单不占团位）；③§4.13.8d 新增 AD54-56 管理端拼团活动 CRUD（复用 promotion/flash 先例）；④§4.14.8c 新增 I52 validate/I53 join（均 fail-closed：参团失败触发 trade「取消+恢复库存+I55 退款」闭环）；⑤§4.14.15b 新增 I55 `POST /internal/pay/refund/order`（**无售后单退款命令**；幂等锚点泛化修订 ADR-035 §1：`refund_order.after_sale_id` 改可空 + `biz_ref`/`uk_biz_ref`）；⑥§4.14.16b 新增 I54 `POST /internal/trade/group-buy/refund-team`（结团逐单退款，fail-open）；⑦网关补 `/api/group-buy/**` 路由；数据模型 `group_buy_activity`/`group_team`/`group_team_member` 按 ADR-045 口径直接入 Initialize.sql（54→57 表），[ADR-049](../adr/049-group-buy-full-loop.md) |
 | **V5.15.0** | **2026-10-05** | **P3 第二批（F14 发票）契约先行——完整 PRD 定稿（01-PRD §十五，D1-D7/O1-O10 已裁决）后规格收口**：①§4.15 INV1-INV3 占位转定稿 + 增量 INV4 撤回/INV5 催开（买家端，INV3 修正为业务键 invoiceNo）；②§4.13.8e 新增管理端 **AD57-60**（O7 裁决用平台 AD 惯例编号；模拟开具 `InvoiceIssuePort` 防腐；导出延 Phase 2）；③§4.14.16c 新增 **I56** `POST /internal/trade/invoice/void-on-full-refund`（pay 全额退款 → 自动冲红/作废联动，fail-open 触发器，PRD D4）；④金额口径 = `payAmount` 快照（不变式 V2 对齐）、一单一有效票 `uk_order_active`、税号/邮箱 PII 三字段（O4 从严）；数据模型 `invoice`/`invoice_title` 按 ADR-045 直改 Initialize.sql（57→59 表） |
+| **V5.16.1** | **2026-10-06** | **P3 需求对账缺口收敛（web 端需求对账：§十五/§十六 用户故事逐条核对，三处缺口补契约）**：①§4.15 新增 **INV6-9** 常用抬头 CRUD（US-INV-2——仓储 `InvoiceTitleRepository` V5.15 已就绪，本次补契约与实现；INV1 的 `titleId` 引用自此可用）；②§4.14.16c 新增 **I60** `partial-refund-flag`（US-INV-8/D4 部分退款自动置标触发口——pay 判定 full→I56 / partial→I60，两侧 fail-open）；③§4.13.8f 新增 **AD65** 管理端关系邻居查询（US-KG-5 表格化核查视图，包装 I58） |
 | **V5.16.0** | **2026-10-06** | **P3 第三批（F15 知识图谱 Phase 1：商品关系导购）契约先行——完整 PRD 定稿（01-PRD §十六，O1 聚焦导购/O2 混合最小形态已裁决）后规格收口**：①§4.14.10b 新增 **I57 edge/upsert（先删后写幂等，哨兵 -1）/ I58 neighbors（≤2 跳 terms，fail-open 空列表）/ I59 edges 清边**（search `kg_edges` 边索引投影；I57-I59 全链路 fail-open 对齐 ADR-046 定类）；②§4.4.x 新增 **P35** `GET /api/item/product/{id}/pairing`（KG 图主召回 → 向量兜底 → 空态，与 P27 同页共存 O6）；③§4.13.8f 新增管理端 **AD61-63** 规则 CRUD + **AD64** 全量重建（裁决增量，兑现 US-KG-8）；④Phase 1 唯一新增 MySQL 表 `pairing_rule`（Initialize.sql 直改 59→60 表）+ ES `kg_edges` 边索引（D1 混合最小形态：MySQL 真相源 + ES 检索面；NebulaGraph 触发器化 §16.9）；⑤网关 `/api/admin/kg/**` 先于兜底声明；LLM 抽取/审核队列/政策问答/可视化均 Phase 2（触发器量化） |
 
 ---
