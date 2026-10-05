@@ -1669,6 +1669,20 @@ Feature: 买家退款资金流（F1）
 > 审计注记（ADR-032）：AD24/AD25 写操作产生审计留痕（ELK AUDIT 日志）。
 | AD26 | GET  | `/api/admin/coupon`                    | 🔑  | Query: `status?`, `couponCategory?`, `page`(1), `size`(20) | `IPage<CouponVO>` | 🆕 ⚪ V5.0 |
 
+#### 4.13.8b AdminPromotionController — `/api/admin/promotion` (marketing-service, ✅ V5.8)
+
+> **F5 促销引擎（[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)）**：店铺级满减/满折活动管理。活动状态由 `startTime`/`endTime` 时间窗推导（1未开始/2进行中/3已结束，复用 AD40-42 秒杀先例）。计价口径：同一订单命中多个生效活动取**减免金额最大者**（同类型不叠加），与会员折扣（I45）、用户券三者可叠加，总额守卫 `discountAmount ≤ totalAmount`。数据模型 `promotion` 见 04 §十二 12.5。
+
+| #    | 方法   | 路径                        | 认证 | 请求                                                                                                                                                                                                | 响应         | 阶段      |
+| ---- | ---- | ------------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------- |
+| AD48 | POST | `/api/admin/promotion`      | 🔑  | `PromotionCreateReq { name(必填, ≤50), sellerId(必填), type(必填, 1满减/2满折), threshold(必填, >0, 分), discountValue(必填, >0), maxDiscount?(缺省0=不封顶, 满折用), startTime(必填), endTime(必填, >startTime) }` | `PromotionVO` | ✅ V5.8 |
+| AD49 | PUT  | `/api/admin/promotion/{id}` | 🔑  | Path: `id` (Long), Body: `PromotionUpdateReq`（同 CreateReq 全可选，null-safe 局部更新；已结束活动不可编辑）                                                                                                            | `Void`       | ✅ V5.8 |
+| AD50 | DELETE | `/api/admin/promotion/{id}` | 🔑  | Path: `id` (Long)                                                                                                                                                                                 | `Void`（**进行中活动禁删** → 400；物理删除） | ✅ V5.8 |
+
+> - **错误口径**：字段非法（`threshold`≤0 / `discountValue`≤0 / 满折 `discountValue`>10000 / `endTime`≤`startTime` / 整体已过期窗口）→ 400 `PARAM_ERROR(1101)`；活动不存在 → `NO_RESOURCE_FOUND(1103)`；进行中删除 / 已结束编辑 → 400 `PARAM_ERROR`。
+> - **C 端商品页促销标签** Phase 2（roadmap）；Phase 1 优惠在下单时自动应用并在 `OrderVO.discountAmount` 体现。
+> - 审计：三写操作标注 `@OperationLog`（ADR-032）。
+
 #### 4.13.9 MerchantCouponController — `/api/seller/coupon` (marketing-service)
 
 | #    | 方法   | 路径                                      | 认证  | 请求                        | 响应               | 阶段  |
@@ -1816,6 +1830,15 @@ Feature: 渠道对账（F4）
 | I8  | GET  | `/internal/user/count`      | —                        | `long`         | ✅      |
 | I9  | POST | `/internal/user/getOrCreate` | `UserAuthCO { identifier, identityType }` | `Long` (userId，必须幂等) | ✅ V5.1 |
 
+#### 4.14.1b InternalMemberController — `/internal/user/member` (user-service, ✅ V5.8)
+
+> **F6 会员等级与权益（[ADR-044](../adr/044-member-level-and-benefits.md)）**：调用方 trade-service——I45 定价中心取会员折扣率（下单计价）、I46 订单完成成长值入账（确认收货后）。**降级 fail-open（与 I43/I44 fail-closed 刻意不同）**：等级是准静态数据，查询失败降级为默认 NORMAL（不折扣/1倍积分）+ 告警——方向是用户少得优惠（体验损失、可补偿）而非平台资损，下单可用性优先；成长值入账失败不阻断交易（Phase 1 不补账）。幂等：I46 以 `orderNo` 唯一键锚定（一单一次成长）。
+
+| I45 | GET  | `/internal/user/member/level?userId=` | Query: `userId` (Long, 必填) | `MemberLevelCO { level(NORMAL/SILVER/GOLD/PLATINUM), discountRate(万分比, 10000=不折扣), pointsRate(百分比, 100=1倍) }` | ✅（V5.8） |
+| I46 | POST | `/internal/user/member/growth` | Body: `MemberGrowthCO { userId(必填), orderNo(必填, 幂等锚点), payAmount(必填, >0, 分=成长值) }` | `MemberLevelCO`（入账后等级权益；重复请求返回当前值） | ✅（V5.8） |
+
+> - **升级口径（Phase 1 只升不降）**：成长值 = 累计实付金额（分），等级重算取 `max(当前等级, 门槛匹配等级)`；年度降级考核留 roadmap。规则 seed：NORMAL(0/不折/1倍)、SILVER(1000元/99折/1.1倍)、GOLD(5000元/98折/1.2倍)、PLATINUM(20000元/95折/1.5倍)，见 04 §十二 12.6。
+
 #### 4.14.2 InternalAddressController — `/internal/address` (user-service)
 
 | #   | 方法  | 路径                       | 请求                | 响应 (原始)       | 阶段  |
@@ -1892,6 +1915,12 @@ Feature: 渠道对账（F4）
 | I22 | POST | `/internal/coupon/use`      | Query: `userId`(Long), `userCouponId`(Long), `orderNo`(String), `orderAmount`(Integer), `orderType?`, `sellerId?` | `int` (抵扣金额，分) | ✅ V4.2 |
 | I23 | POST | `/internal/coupon/rollback` | Query: `orderNo`(String)                                                                                          | `void`         | ✅      |
 | I24 | POST | `/internal/coupon/grant`    | Query: `userId`(Long), `couponId`(String)                                                                         | `void` (支付后发券) | ✅ V4.4 |
+
+#### 4.14.8b InternalPromotionController — `/internal/promotion` (marketing-service, ✅ V5.8)
+
+> **F5 促销引擎**：trade 价格计算中心取生效促销。调用方：trade-service（下单计价，Feign 不入事务；ia-api `PromotionClient`）。**降级 fail-closed（[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)，与 I43 同口径）**：查询失败 → 下单抛错——静默空集合等于「故障伪装成无促销」，用户应得优惠被吞且与促销配置口径价格不一致；「无生效活动 → 空集合」是合法业务态，与查询失败严格区分。
+
+| I44 | POST | `/internal/promotion/query` | Body: `PromotionQueryCO { sellerId(Long, 必填) }` | `List<PromotionCO>`（该商家进行中活动：id/name/sellerId/type/threshold/discountValue/maxDiscount；空集合=无生效活动） | ✅（V5.8） |
 
 #### 4.14.9 InternalLogisticsController — `/internal/logistics` (logistics-service)
 
@@ -2380,6 +2409,7 @@ data: [DONE]
 | **V5.6.0** | **2026-10-03** | **P0 功能规格先行（✅ 已实现——落地情况与实现偏差收敛见 V5.6.1 行）**：①**F1 买家退款资金流**：§4.7.3 新增 PAY6 `POST /api/pay/callback/wechat-refund`（微信退款回调，复用 ADR-033 验签/AES-GCM 解密与 ADR-029 裸 JSON 应答协议）、§4.14.15 I40 `POST /internal/pay/refund`（trade 售后审核同意后经编排层触发；同 afterSaleId 幂等，uk_after_sale 一售后单一次退款）、§4.14.3 I41 `POST /internal/balance/refund`（transaction_no 幂等入账；本节归属由 user-service 更正为 wallet-service——文档漂移修复）、§4.14.16 I42 `PUT /internal/trade/after-sale/{id}/refunded`（APPROVED→REFUNDED 条件迁移，激活死状态 REFUNDED）、AD43 `POST /api/admin/pay/refund/{refundNo}/retry`（失败单重试，3039）；状态口径：退款处理中/失败售后单停留 APPROVED，成功才 REFUNDED；②**F2 运费模型**：§4.4.9 新增 FT1-FT4 商家运费模板 CRUD——**路径定 `/api/item/freight-template/**`（item-service）**，规避 `/api/seller/**` 路由到 merchant-service 的归属冲突（零网关改动）；§4.14.17 I43 模板批量查询（trade 计价）；**金额不变式变更（旧→新）**：`payAmount = totalAmount − discountAmount` → `payAmount = totalAmount − discountAmount + postFee`（§4.6.1 OrderVO、§4.14.7 金额口径同步）；③**F3 拆单发货**：T12 `ShipOrderReq` 增量 `skuIds[]`（部分发货保持待发货，全量发货转待收货）、L1 `GET /api/logistics/{orderId}` **响应由单对象改为列表**（按 packageNo 升序，破坏性变更）、OrderVO.items 增量 `packageNo`；④**F4 渠道对账**：§4.13.14 新增 AD44/AD45 对账批次/差异查询 + AD46 手动触发（同日幂等先删后写，Phase 1 仅记录差异不自动调账）；§二 新增 `3039 REFUND_STATUS_INVALID`（V5.6.1 勘误：本行原记码号有误，实为 3039）；⑤§六 路由表补 `/api/admin/pay/**` → pay-service（**新增网关路由，须先于 /api/admin/** 声明**）与 `/api/item/freight-template/**` 明确行；§七 补商家端运费模板/管理端对账映射；§八 补 RefundVO/ReconciliationBatchVO/ReconciliationDetailVO/FreightTemplateVO；§九 补拆单发货状态口径注记；数据模型配套见 04-Data-Model §十二（V5.5 资金线：refund_order/wallet_transaction/reconciliation 两表；V5.6 履约线：freight_template + product/orders/order_logistics/order_item 变更）；⑥§4.7.1 PAY2 与 §12.2 的"out_trade_no 断链修复进行中"表述过时，按 ADR-033 已落地更正为已完成 |
 | **V5.6.1** | **2026-10-03** | **V5.6 全量落地同步 + 实现方上报偏差收敛（以实现为准，ADR-035/036/037；四个 P0 功能实现完成且全量测试通过）**：①**规划标注转已实现**：V5.6.0 全部 🆕 规划条目改 ✅——FT1-FT4（§4.4.9）、PAY6（§4.7.3）、AD43-AD46（§4.13.14）、I40-I43（§4.14.15-17）、T12 `skuIds` 增量、L1 列表化、`OrderVO.postFee` / `OrderItemVO.packageNo` / `LogisticsVO.packageNo`（"字段上线前报文不含该键"等过渡期表述全部移除）；**新增端点 AD47** `PUT /api/admin/after-sale/{id}/confirm-return`（§4.13.5，端点总数 215+ → 229+）；②**退款触发点纠正（ADR-037）**：AD17 `review` 同意仅对 **type=2 仅退款** 触发退款；**type=1 退货退款**在 AD47 确认收到退货（条件迁移 APPROVED→RETURNED；已 REFUNDED → 3039 守卫、已 RETURNED 幂等空操作、非 type=1 → 1101）后触发；I42 回写来源扩为 `APPROVED|RETURNED → REFUNDED`（§4.7.3 触发链路、§4.6.4 状态口径、§4.14.15/16、§九 同步）；③**错误码勘误**：`REFUND_STATUS_INVALID` 实现预置为 **3039**（原草拟码号全文勘误清零——§二/§4.7.3 BDD/§4.13.14 与 V5.6.0 行内旧记一并更正为 3039）；§4.4.9 错误语义改按 ia-common 预置——重名 → **3040 FREIGHT_TEMPLATE_NAME_EXISTS**、模板不存在/**非本商家**（含商品绑定他人模板，防探测）→ **3041 FREIGHT_TEMPLATE_NOT_FOUND**（原草拟 3006/1103/403 语义不符作废）；§二 补 3039/3040/3041 三行；④**I41 幂等语义细化（ADR-035）**：顺序重放幂等成功；真并发同号 → 抛异常使「加余额+写流水」整体回滚，pay 侧退款单置失败(2)、AD43 重试收敛，资金不双记；⑤**I43 降级口径改 fail-closed（ADR-037）**：模板查询失败 → 下单抛错，**不得默认免邮**（原草拟"降级为空 → postFee=0"作废）；返回口径补**兜底补入默认模板**（`isDefault=true`）与响应字段 `isDefault`；FT3 明确 `GET /api/item/freight-template/list` → `List<FreightTemplateVO>`（无分页，含停用模板按创建顺序，维持定稿）；⑥**AD46 响应改 `List<ReconciliationBatchVO>`**（channel 缺省=当日全部渠道一次多条，指定单渠道时长度 1，ADR-036），补「账单拉取失败落 status=2 失败批次」口径；⑦§4.14.7/§九 拆单发货与金额不变式 `payAmount = totalAmount − discountAmount + postFee` 落地标注（总不变式已实现）；§六 `/api/admin/pay/**` 专属路由标注已落地（网关 application.yml 已声明）；F1-F4 BDD 标注转"已实现"，F1 补退货退款触发场景 |
 | **V5.7.0** | **2026-10-04** | **P1 第一批（消息触达 + 订单留言 + 秒杀管理端）契约先行**：①§4.6.1 T1/T6 请求增量 `remark?`（买家留言 ≤200，可选）+ `OrderVO` 增量 `remark`（**V5.4 删除的死字段 remark 重新立项接线**，落 `orders.remark` 快照）；②§4.13.14 AD40-AD42 管理端秒杀活动管理定稿并实现标注（`FlashSaleCreateReq { productId, skuId, flashPrice, stock, startTime, endTime }` / `FlashSaleUpdateReq` null-safe 局部更新 / 进行中禁删；错误口径 1101/1103）；③§4.14.12 I32 站内信行勘误（V5.5 已落库实现，非"契约预留"）+ 业务触达矩阵注记（支付成功/发货/退款成功/售后审核结果 → 站内信，事务外 fail-open，[ADR-042](../adr/042-buyer-notification-wiring.md)）；数据模型见 04 §3.7 / §十二（V5.7 迁移 `orders.remark`） |
+| **V5.8.0** | **2026-10-05** | **P1 第二批（促销引擎 + 价格计算中心 / 会员等级与权益）契约先行**：①§4.13.8b 新增 AD48-AD50 管理端店铺满减/满折活动管理（`PromotionCreateReq`/`PromotionUpdateReq`，时间窗推导状态、已结束禁编、进行中禁删，复用 AD40-42 先例）；②§4.14.8b 新增 I44 `POST /internal/promotion/query`（trade 定价中心取生效促销，**fail-closed** 与 I43 同口径）；③§4.14.1b 新增 I45 `GET /internal/user/member/level` + I46 `POST /internal/user/member/growth`（会员折扣率/积分倍率 + 成长值入账，**fail-open**，与 I43/I44 刻意不同——[ADR-044](../adr/044-member-level-and-benefits.md)）；④计价口径（[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)）：促销与会员折扣与券三者可叠加、同类型促销取减免最大者、总额守卫 `discountAmount ≤ totalAmount`、秒杀单不叠加（维持 discountAmount=0）、Phase 1 优惠汇总在订单头（item 级分摊与多券 PRD 一并挂账 O1）；数据模型见 04 §十二 12.5/12.6（V5.8 迁移 `promotion`/`member_level_rule`/`member_growth_log`） |
 
 ---
 

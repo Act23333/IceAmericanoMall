@@ -858,8 +858,11 @@ public void createOrder(OrderDTO dto) {
 > | **V5.5 资金线** | `refund_order`、`wallet_transaction`（F1）+ `reconciliation_batch`、`reconciliation_detail`（F4） | `V5.5__refund_wallet_tx_and_reconciliation.sql` |
 > | **V5.6 履约线** | `freight_template` 新表 + `product.freight_template_id` / `orders.post_fee`（F2）+ `order_logistics` 主键与包裹改造、`order_item.package_no`（F3） | `V5.6__freight_template_and_package_split.sql` |
 > | **V5.7 订单留言** | `orders.remark VARCHAR(200) NULL`（买家留言快照，T1/T6 请求增量） | `V5.7__order_remark.sql` |
+> | **V5.8 促销与会员** | `promotion`（F5 满减/满折活动）+ `member_level_rule`、`member_growth_log`（F6 等级规则与成长值流水，含 seed） | `V5.8__promotion_and_member_level.sql` |
 >
 > 全部新表遵循 §一 约定：`INT` 分、`TINYINT` 状态枚举、审计列 `create_time`/`update_time`、`utf8mb4` + InnoDB、技术主键 `id AUTO_INCREMENT` + 业务唯一键（主键决策矩阵）。
+>
+> **V5.8 促销与会员（F5/F6，[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)/[ADR-044](../adr/044-member-level-and-benefits.md)）**：①`promotion`——店铺级满减/满折活动（name/seller_id/type[1满减 2满折]/threshold/discount_value[满减=分；满折=万分比]/max_discount[满折封顶]/start_time/end_time/status[时间窗推导]/version）；②`member_level_rule`——等级规则（level/threshold 成长值门槛/discount_rate 万分比/points_rate 百分比/sort，seed：NORMAL 0/10000/100、SILVER 100000/9900/110、GOLD 500000/9800/120、PLATINUM 2000000/9500/150）；③`member_growth_log`——成长值入账流水（`uk_order_no` 幂等锚点，一单一次成长，只升不降）。计价口径见 §十二 12.5/12.6 与 ADR-043/044。
 
 ### 12.1 F1 买家退款资金流（V5.5 资金线迁移）
 
