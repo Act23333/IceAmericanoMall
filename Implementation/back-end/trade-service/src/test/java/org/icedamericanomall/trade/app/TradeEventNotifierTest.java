@@ -5,6 +5,7 @@ import org.icedamericanomall.dto.InAppMessageSendReqCO;
 import org.icedamericanomall.trade.domain.enums.AfterSaleStatusEnum;
 import org.icedamericanomall.trade.domain.enums.AfterSaleTypeEnum;
 import org.icedamericanomall.trade.domain.model.aftersale.AfterSale;
+import org.icedamericanomall.trade.domain.model.invoice.Invoice;
 import org.icedamericanomall.trade.domain.model.order.Order;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -130,5 +131,61 @@ class TradeEventNotifierTest {
         assertDoesNotThrow(() -> notifier.notifyAfterSaleReviewed(null, "备注"));
 
         verifyNoInteractions(notificationClient);
+    }
+
+    // ==================== 发票触达（F14，ADR-042 矩阵追加事件） ====================
+
+    private Invoice invoice(Long buyerId) {
+        Invoice invoice = new Invoice();
+        invoice.setInvoiceNo("INV-1");
+        invoice.setOrderNo(ORDER_NO);
+        invoice.setUserId(buyerId);
+        return invoice;
+    }
+
+    @Test
+    @DisplayName("发票开具 — 站内信 type=INVOICE_ISSUED，内容含发票号+订单号，链接指向订单")
+    void shouldSendInvoiceIssuedMessage_whenInvoiceIssued() {
+        notifier.notifyInvoiceIssued(invoice(BUYER_ID));
+
+        ArgumentCaptor<InAppMessageSendReqCO> captor = ArgumentCaptor.forClass(InAppMessageSendReqCO.class);
+        verify(notificationClient).sendInAppMessage(captor.capture());
+        InAppMessageSendReqCO message = captor.getValue();
+        assertEquals("INVOICE_ISSUED", message.getType());
+        assertEquals(BUYER_ID, message.getRecipientId());
+        assertTrue(message.getContent().contains("INV-1"), "内容须含发票号: " + message.getContent());
+        assertTrue(message.getContent().contains(ORDER_NO));
+        assertEquals("/orders/" + ORDER_NO, message.getLinkUrl());
+    }
+
+    @Test
+    @DisplayName("发票冲红/作废 — 站内信类型区分，内容含原因（系统原因码/人工原因）")
+    void shouldSendRedFlushedAndVoidedMessages_withReason() {
+        notifier.notifyInvoiceRedFlushed(invoice(BUYER_ID), "SYSTEM_FULL_REFUND:AS-9");
+        notifier.notifyInvoiceVoided(invoice(BUYER_ID), "买家撤回");
+
+        ArgumentCaptor<InAppMessageSendReqCO> captor = ArgumentCaptor.forClass(InAppMessageSendReqCO.class);
+        verify(notificationClient, org.mockito.Mockito.times(2)).sendInAppMessage(captor.capture());
+        InAppMessageSendReqCO redFlushed = captor.getAllValues().get(0);
+        assertEquals("INVOICE_RED_FLUSHED", redFlushed.getType());
+        assertTrue(redFlushed.getContent().contains("SYSTEM_FULL_REFUND:AS-9"));
+        assertEquals("/orders/" + ORDER_NO, redFlushed.getLinkUrl());
+        InAppMessageSendReqCO voided = captor.getAllValues().get(1);
+        assertEquals("INVOICE_VOIDED", voided.getType());
+        assertTrue(voided.getContent().contains("买家撤回"));
+    }
+
+    @Test
+    @DisplayName("发票触达 — 发票为 null 或收件人缺失：跳过；client 异常不外溢（fail-open）")
+    void shouldSkipAndStayOpen_whenInvoiceNotifyDegraded() {
+        assertDoesNotThrow(() -> notifier.notifyInvoiceIssued(null));
+        assertDoesNotThrow(() -> notifier.notifyInvoiceIssued(invoice(null)));
+        assertDoesNotThrow(() -> notifier.notifyInvoiceRedFlushed(null, "原因"));
+        assertDoesNotThrow(() -> notifier.notifyInvoiceVoided(invoice(null), "原因"));
+        verifyNoInteractions(notificationClient);
+
+        doThrow(new RuntimeException("notification-service down"))
+                .when(notificationClient).sendInAppMessage(any(InAppMessageSendReqCO.class));
+        assertDoesNotThrow(() -> notifier.notifyInvoiceIssued(invoice(BUYER_ID)));
     }
 }

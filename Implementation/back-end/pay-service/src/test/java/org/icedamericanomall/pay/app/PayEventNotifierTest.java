@@ -2,9 +2,12 @@ package org.icedamericanomall.pay.app;
 
 import org.icedamericanomall.client.AfterSaleClient;
 import org.icedamericanomall.client.NotificationClient;
+import org.icedamericanomall.client.TradeInvoiceClient;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
+import org.icedamericanomall.dto.InvoiceVoidCO;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
 import org.icedamericanomall.pay.domain.model.refundorder.RefundOrder;
+import org.icedamericanomall.pay.domain.repository.PayOrderRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,31 +26,37 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
- * PayEventNotifier 买家触达协作器单元测试（ADR-042）。
+ * PayEventNotifier 事件副作用协作器单元测试（ADR-042 + I56）。
  *
  * <p>覆盖：支付成功 / 退款成功两事件的站内信字段口径（type/recipient/content/linkUrl）、
  * 退款成功「先 I42 回写、后买家触达」顺序、fail-open（Notification/AfterSale 客户端异常不外溢）、
- * 收件人缺失跳过不发送。
+ * 收件人缺失跳过不发送；全额退款发票联动（I56，PRD D4）：全额触发且参数正确
+ * （orderNo/sceneRef）、部分退款不触发、联动异常不外溢、支付单缺失跳过。
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("PayEventNotifier 买家触达协作器单元测试（ADR-042）")
+@DisplayName("PayEventNotifier 事件副作用协作器单元测试（ADR-042 + I56）")
 class PayEventNotifierTest {
 
     private static final String ORDER_NO = "ORD-1";
+    private static final String PAY_ORDER_NO = "PAY-1";
+    private static final String SCENE_REF = "AS:9";
     private static final long BUYER_ID = 100L;
     private static final long AFTER_SALE_ID = 9L;
     private static final int AMOUNT = 12800;
 
     @Mock private NotificationClient notificationClient;
     @Mock private AfterSaleClient afterSaleClient;
+    @Mock private TradeInvoiceClient tradeInvoiceClient;
+    @Mock private PayOrderRepository payOrderService;
 
     private PayEventNotifier notifier;
 
     @BeforeEach
     void setUp() {
-        notifier = new PayEventNotifier(notificationClient, afterSaleClient);
+        notifier = new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService);
     }
 
     private PayOrder payOrder(Long buyerId, Integer amount) {
@@ -67,6 +76,14 @@ class PayEventNotifierTest {
         refundOrder.setUserId(buyerId);
         refundOrder.setChannel(channel);
         refundOrder.setRefundAmount(amount);
+        return refundOrder;
+    }
+
+    /** 已置成功的售后退款单（补齐 payOrderNo + bizRef，I56 全额判定入参口径）。 */
+    private RefundOrder settledRefundOrder(int refundAmount) {
+        RefundOrder refundOrder = refundOrder(BUYER_ID, "WECHAT", refundAmount);
+        refundOrder.setPayOrderNo(PAY_ORDER_NO);
+        refundOrder.setBizRef(SCENE_REF);
         return refundOrder;
     }
 
@@ -172,5 +189,53 @@ class PayEventNotifierTest {
 
         verifyNoInteractions(notificationClient, afterSaleClient);
         verify(afterSaleClient, never()).markRefunded(any());
+    }
+
+    // ==================== 全额退款发票联动（I56，PRD D4） ====================
+
+    @Test
+    @DisplayName("全额退款发票联动 — 退款金额=支付单全额：voidOnFullRefund 收到 orderNo+sceneRef（bizRef）")
+    void shouldVoidInvoiceOnFullRefund_whenRefundAmountEqualsPaidAmount() {
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder(BUYER_ID, AMOUNT));
+
+        notifier.onRefundSuccess(settledRefundOrder(AMOUNT));
+
+        ArgumentCaptor<InvoiceVoidCO> captor = ArgumentCaptor.forClass(InvoiceVoidCO.class);
+        verify(tradeInvoiceClient).voidOnFullRefund(captor.capture());
+        assertEquals(ORDER_NO, captor.getValue().getOrderNo());
+        assertEquals(SCENE_REF, captor.getValue().getSceneRef());
+    }
+
+    @Test
+    @DisplayName("全额退款发票联动 — 部分退款（退款金额 < 支付单全额）：不触发（D4 Phase 1 人工收敛）")
+    void shouldNotVoidInvoice_whenPartialRefund() {
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder(BUYER_ID, AMOUNT));
+
+        notifier.onRefundSuccess(settledRefundOrder(AMOUNT - 100));
+
+        verifyNoInteractions(tradeInvoiceClient);
+    }
+
+    @Test
+    @DisplayName("全额退款发票联动 — 联动抛异常不外溢：I42 回写与买家触达先行完成，主流程不受影响")
+    void shouldNotPropagate_whenInvoiceVoidFails() {
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder(BUYER_ID, AMOUNT));
+        doThrow(new RuntimeException("trade-service down"))
+                .when(tradeInvoiceClient).voidOnFullRefund(any(InvoiceVoidCO.class));
+
+        assertDoesNotThrow(() -> notifier.onRefundSuccess(settledRefundOrder(AMOUNT)));
+
+        verify(afterSaleClient).markRefunded(AFTER_SALE_ID);
+        verify(notificationClient).sendInAppMessage(any(InAppMessageSendReqCO.class));
+    }
+
+    @Test
+    @DisplayName("全额退款发票联动 — 支付单缺失：无法判定全额，跳过联动（fail-open）")
+    void shouldSkipInvoiceVoid_whenPayOrderMissing() {
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(null);
+
+        notifier.onRefundSuccess(settledRefundOrder(AMOUNT));
+
+        verifyNoInteractions(tradeInvoiceClient);
     }
 }

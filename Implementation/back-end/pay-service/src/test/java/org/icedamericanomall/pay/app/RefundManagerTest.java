@@ -3,10 +3,12 @@ package org.icedamericanomall.pay.app;
 import org.icedamericanomall.client.AfterSaleClient;
 import org.icedamericanomall.client.BalanceClient;
 import org.icedamericanomall.client.NotificationClient;
+import org.icedamericanomall.client.TradeInvoiceClient;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.BalanceRefundCO;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
+import org.icedamericanomall.dto.InvoiceVoidCO;
 import org.icedamericanomall.dto.RefundCreateCO;
 import org.icedamericanomall.dto.RefundResultCO;
 import org.icedamericanomall.integration.payment.ChannelRefundResult;
@@ -68,6 +70,7 @@ class RefundManagerTest {
     @Mock BalanceClient balanceClient;
     @Mock AfterSaleClient afterSaleClient;
     @Mock NotificationClient notificationClient;
+    @Mock TradeInvoiceClient tradeInvoiceClient;
 
     private RefundManager refundManager;
 
@@ -75,7 +78,7 @@ class RefundManagerTest {
     void setUp() {
         refundManager = new RefundManager(refundOrderService, payOrderService, channelRouter,
                 balanceClient, new RefundConverterImpl(),
-                new PayEventNotifier(notificationClient, afterSaleClient));
+                new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService));
     }
 
     private RefundCreateCO request() {
@@ -110,6 +113,13 @@ class RefundManagerTest {
         entity.setRefundAmount(AMOUNT);
         entity.setStatus(status);
         return entity;
+    }
+
+    /** 已置成功的售后退款单（补齐 bizRef=AS:{afterSaleId}，I56 联动入参口径）。 */
+    private RefundOrder settledRefundOrder(String channel) {
+        RefundOrder settled = refundOrder(1, channel);
+        settled.setBizRef(RefundOrder.afterSaleBizRef(AFTER_SALE_ID));
+        return settled;
     }
 
     // ==================== Scenario 1：余额渠道退款成功（同步入账 + 回写售后单） ====================
@@ -415,5 +425,82 @@ class RefundManagerTest {
 
         assertNotNull(result);
         assertEquals(REFUND_NO, result.getRefundNo());
+    }
+
+    // ==================== 全额退款发票联动（I56，PRD D4） ====================
+
+    @Test
+    @DisplayName("全额退款发票联动 — 余额同步结算成功（同步成功路径）：voidOnFullRefund 收到 orderNo+sceneRef")
+    void shouldVoidInvoiceOnFullRefund_whenBalanceSettledSync() {
+        when(refundOrderService.getByAfterSaleId(AFTER_SALE_ID)).thenReturn(null);
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(payOrder("BALANCE", AMOUNT));
+        when(refundOrderService.createProcessing(any(), anyString(), anyString(), any(), anyString(), anyInt()))
+                .thenReturn(refundOrder(0, "BALANCE"));
+        when(refundOrderService.markSuccessIfProcessing(eq(REFUND_NO), any())).thenReturn(true);
+        when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(settledRefundOrder("BALANCE"));
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder("BALANCE", AMOUNT));
+
+        refundManager.refund(request());
+
+        ArgumentCaptor<InvoiceVoidCO> captor = ArgumentCaptor.forClass(InvoiceVoidCO.class);
+        verify(tradeInvoiceClient).voidOnFullRefund(captor.capture());
+        assertEquals(ORDER_NO, captor.getValue().getOrderNo());
+        assertEquals(RefundOrder.afterSaleBizRef(AFTER_SALE_ID), captor.getValue().getSceneRef());
+    }
+
+    @Test
+    @DisplayName("全额退款发票联动 — 微信 PAY6 回调确认成功（回调路径）：voidOnFullRefund 收到 orderNo+sceneRef")
+    void shouldVoidInvoiceOnFullRefund_whenWechatCallbackConfirmed() {
+        when(channelRouter.parseWechatRefundCallback(any(), anyString()))
+                .thenReturn(new WechatRefundCallbackResult(REFUND_NO, true, "5000099", "SUCCESS"));
+        when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(settledRefundOrder("WECHAT"));
+        when(refundOrderService.markSuccessIfProcessing(REFUND_NO, "5000099")).thenReturn(true);
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder("WECHAT", AMOUNT));
+
+        refundManager.handleWechatRefundCallback(Map.of(), "{}");
+
+        ArgumentCaptor<InvoiceVoidCO> captor = ArgumentCaptor.forClass(InvoiceVoidCO.class);
+        verify(tradeInvoiceClient).voidOnFullRefund(captor.capture());
+        assertEquals(ORDER_NO, captor.getValue().getOrderNo());
+        assertEquals(RefundOrder.afterSaleBizRef(AFTER_SALE_ID), captor.getValue().getSceneRef());
+    }
+
+    @Test
+    @DisplayName("全额退款发票联动 — 部分退款结算成功：不触发联动（D4 Phase 1 人工收敛）")
+    void shouldNotVoidInvoice_whenPartialRefundSettled() {
+        RefundCreateCO req = request();
+        req.setRefundAmount(AMOUNT - 1000);
+        when(refundOrderService.getByAfterSaleId(AFTER_SALE_ID)).thenReturn(null);
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(payOrder("BALANCE", AMOUNT));
+        when(refundOrderService.createProcessing(any(), anyString(), anyString(), any(), anyString(), anyInt()))
+                .thenReturn(refundOrder(0, "BALANCE"));
+        when(refundOrderService.markSuccessIfProcessing(eq(REFUND_NO), any())).thenReturn(true);
+        RefundOrder partialSettled = settledRefundOrder("BALANCE");
+        partialSettled.setRefundAmount(AMOUNT - 1000);
+        when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(partialSettled);
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder("BALANCE", AMOUNT));
+
+        refundManager.refund(req);
+
+        verifyNoInteractions(tradeInvoiceClient);
+    }
+
+    @Test
+    @DisplayName("全额退款发票联动 — 联动抛异常 fail-open：退款单仍置成功、售后单仍回写")
+    void shouldStillSettleRefund_whenInvoiceVoidFails() {
+        doThrow(new RuntimeException("trade-service down"))
+                .when(tradeInvoiceClient).voidOnFullRefund(any(InvoiceVoidCO.class));
+        when(refundOrderService.getByAfterSaleId(AFTER_SALE_ID)).thenReturn(null);
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(payOrder("BALANCE", AMOUNT));
+        when(refundOrderService.createProcessing(any(), anyString(), anyString(), any(), anyString(), anyInt()))
+                .thenReturn(refundOrder(0, "BALANCE"));
+        when(refundOrderService.markSuccessIfProcessing(eq(REFUND_NO), any())).thenReturn(true);
+        when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(settledRefundOrder("BALANCE"));
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder("BALANCE", AMOUNT));
+
+        RefundResultCO result = refundManager.refund(request());
+
+        assertEquals(RefundStatusEnum.SUCCESS.getCode(), result.getStatus());
+        verify(afterSaleClient).markRefunded(AFTER_SALE_ID);
     }
 }

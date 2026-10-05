@@ -3,6 +3,7 @@ package org.icedamericanomall.pay.app;
 import org.icedamericanomall.client.AfterSaleClient;
 import org.icedamericanomall.client.NotificationClient;
 import org.icedamericanomall.client.OrderClient;
+import org.icedamericanomall.client.TradeInvoiceClient;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
 import org.icedamericanomall.pay.adapter.assembler.PayOrderConverter;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
@@ -46,6 +47,7 @@ class PayManagerTest {
     @Mock PaymentChannelRouter channelRouter;
     @Mock NotificationClient notificationClient;
     @Mock AfterSaleClient afterSaleClient;
+    @Mock TradeInvoiceClient tradeInvoiceClient;
 
     private PayManager payManager;
 
@@ -67,7 +69,7 @@ class PayManagerTest {
     void setUp() {
         // 真实触达协作器（ADR-042）：锁死「条件置成功 → 买家触达」全链路到 NotificationClient
         payManager = new PayManager(payOrderService, payOrderConverter, orderClient, channelRouter,
-                new PayEventNotifier(notificationClient, afterSaleClient));
+                new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService));
     }
 
     @BeforeEach

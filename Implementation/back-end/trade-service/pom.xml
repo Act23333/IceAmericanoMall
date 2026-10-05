@@ -104,6 +104,17 @@
             <groupId>org.apache.rocketmq</groupId>
             <artifactId>rocketmq-spring-boot-starter</artifactId>
         </dependency>
+        <!-- F14 发票模拟开具：MinIO 样票存储（StorageClient 经 ia-integration 自动配置登记） -->
+        <dependency>
+            <groupId>org.nolazy</groupId>
+            <artifactId>ia-integration</artifactId>
+        </dependency>
+        <!-- F14 发票模拟开具：简化 PDF 样票生成（Boot BOM 不管理 openpdf，版本收敛于此——实测 3.5.4 父 BOM 无该条目） -->
+        <dependency>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
+            <version>2.0.3</version>
+        </dependency>
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>

@@ -3,11 +3,13 @@ package org.icedamericanomall.pay.app;
 import org.icedamericanomall.client.AfterSaleClient;
 import org.icedamericanomall.client.BalanceClient;
 import org.icedamericanomall.client.NotificationClient;
+import org.icedamericanomall.client.TradeInvoiceClient;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BadRequestException;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.BalanceRefundCO;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
+import org.icedamericanomall.dto.InvoiceVoidCO;
 import org.icedamericanomall.dto.OrderRefundCO;
 import org.icedamericanomall.dto.RefundResultCO;
 import org.icedamericanomall.integration.payment.ChannelRefundResult;
@@ -64,6 +66,7 @@ class OrderRefundManagerTest {
     @Mock BalanceClient balanceClient;
     @Mock AfterSaleClient afterSaleClient;
     @Mock NotificationClient notificationClient;
+    @Mock TradeInvoiceClient tradeInvoiceClient;
 
     private OrderRefundManager orderRefundManager;
 
@@ -71,7 +74,7 @@ class OrderRefundManagerTest {
     void setUp() {
         RefundManager refundManager = new RefundManager(refundOrderService, payOrderService, channelRouter,
                 balanceClient, new RefundConverterImpl(),
-                new PayEventNotifier(notificationClient, afterSaleClient));
+                new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService));
         orderRefundManager = new OrderRefundManager(refundOrderService, payOrderService, refundManager,
                 new RefundConverterImpl());
     }
@@ -246,5 +249,26 @@ class OrderRefundManagerTest {
         assertEquals(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, ex.getErrorCode());
         verify(refundOrderService).markFailedIfProcessing(REFUND_NO, "微信退款申请失败");
         verify(afterSaleClient, never()).markRefunded(any());
+    }
+
+    // ==================== 全额退款发票联动（I56，PRD D4） ====================
+
+    @Test
+    @DisplayName("全额退款发票联动 — I55 全额退款同步结算成功：voidOnFullRefund 收到 orderNo+sceneRef(GB 幂等键)")
+    void shouldVoidInvoiceOnFullRefund_whenOrderRefundSettled() {
+        when(refundOrderService.getByBizRef(SCENE_REF)).thenReturn(null);
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(payOrder("BALANCE", AMOUNT));
+        when(refundOrderService.createOrderRefundProcessing(anyString(), anyString(), any(), anyString(),
+                anyInt(), anyString())).thenReturn(refundOrder(0, "BALANCE"));
+        when(refundOrderService.markSuccessIfProcessing(eq(REFUND_NO), any())).thenReturn(true);
+        when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(refundOrder(1, "BALANCE"));
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder("BALANCE", AMOUNT));
+
+        orderRefundManager.refundByOrder(command());
+
+        ArgumentCaptor<InvoiceVoidCO> captor = ArgumentCaptor.forClass(InvoiceVoidCO.class);
+        verify(tradeInvoiceClient).voidOnFullRefund(captor.capture());
+        assertEquals(ORDER_NO, captor.getValue().getOrderNo());
+        assertEquals(SCENE_REF, captor.getValue().getSceneRef());
     }
 }

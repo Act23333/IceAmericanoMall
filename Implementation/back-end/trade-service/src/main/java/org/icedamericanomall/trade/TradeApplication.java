@@ -20,14 +20,19 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
  * </ul>
  *
  * <p>超时关单已全部迁移至 RocketMQ 延迟消息 + XXL-Job 兜底（{@code @XxlJob} 由
- * ia-common 的 {@code XxlJobConfig} 注册执行器，不依赖 Spring {@code @Scheduled}），
- * 故不再开启 {@code @EnableScheduling}。
+ * ia-common 的 {@code XxlJobConfig} 注册执行器，不依赖 Spring {@code @Scheduled}）。
+ *
+ * <p>F14 发票：模拟开具经 ia-integration 的 {@code StorageClient}（MinIO/Mock 条件装配）
+ * 上传样票——ia-integration 客户端 Bean 由其 {@code AutoConfiguration.imports} 登记，
+ * 无需扫描；{@code @MapperScan} 指向 {@code infrastructure.persistence}（该包内全部接口
+ * 均为 MyBatis Mapper，含未标注 {@code @Mapper} 的 {@code OrderMapper}，故不加
+ * {@code annotationClass} 收窄，避免遗漏注册；原 {@code trade.mapper} 包从未存在）。
  */
 @SpringBootApplication(scanBasePackages = {
         "org.icedamericanomall.trade",
         "org.icedamericanomall.fallback"
 })
-@MapperScan("org.icedamericanomall.trade.mapper")
+@MapperScan(basePackages = "org.icedamericanomall.trade.infrastructure.persistence")
 @EnableFeignClients(basePackages = "org.icedamericanomall.client")
 public class TradeApplication {
 

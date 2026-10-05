@@ -1258,3 +1258,61 @@ CREATE TABLE `group_team_member` (
     UNIQUE KEY `uk_team_user` (`team_id`, `user_id`),
     KEY `idx_team` (`team_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='拼团团成员';
+
+-- =====================================================================
+-- V5.15 发票（F14，PRD 01-PRD §十五 已定稿；schema 直改本文件，无迁移文件）
+-- 决策：D1 商家开票（Phase 1 管理端代办模拟开具）/ D3 金额=payAmount 快照 /
+--       D4 全额退款自动冲红 / D5 一单一有效票（uk_order_active 多 NULL）/ O4 税号 PII 三字段。
+-- =====================================================================
+
+-- 发票单（trade-service 域；买家 INV1-INV5 + 管理端 AD57-60；状态机 1待开具 2已开具 3已冲红 4已作废）
+CREATE TABLE `invoice` (
+    `id`                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `invoice_no`          CHAR(36)     NOT NULL COMMENT '发票申请号（业务唯一键，UUID）',
+    `order_no`            VARCHAR(32)  NOT NULL COMMENT '关联订单号（orders.order_no，无外键）',
+    `active_flag`         TINYINT      NULL COMMENT '1=有效（待开具/已开具）；NULL=终态（已冲红/已作废）——与 order_no 组成 uk_order_active，多 NULL 特性实现一单一有效票',
+    `user_id`             BIGINT       NOT NULL COMMENT '买家 user_id',
+    `seller_id`           BIGINT       NOT NULL COMMENT '开票主体商家 user_id（= orders.seller_id，决策 D1）',
+    `type`                TINYINT      NOT NULL COMMENT '抬头类型：1=PERSONAL 2=COMPANY',
+    `title`               VARCHAR(100) NOT NULL COMMENT '抬头快照（个人=姓名；企业=企业名称）',
+    `tax_no_cipher`       VARCHAR(512) NULL COMMENT '企业税号密文（AES-256-GCM，PII 三字段口径 O4）',
+    `tax_no_hash`         VARCHAR(128) NULL COMMENT '企业税号盲索引（HMAC-SHA256）',
+    `tax_no_mask`         VARCHAR(64)  NULL COMMENT '企业税号脱敏展示',
+    `email_cipher`        VARCHAR(512) NULL COMMENT '交付邮箱密文（PII 三字段口径）',
+    `email_hash`          VARCHAR(128) NULL COMMENT '交付邮箱盲索引',
+    `email_mask`          VARCHAR(64)  NULL COMMENT '交付邮箱脱敏展示',
+    `amount`              INT          NOT NULL COMMENT '开票金额（分）= 申请时 payAmount 快照（决策 D3）',
+    `status`              TINYINT      NOT NULL COMMENT '状态：1=待开具 2=已开具 3=已冲红 4=已作废（条件迁移状态机）',
+    `issue_time`          DATETIME     NULL COMMENT '开具时间',
+    `mock_invoice_no`     VARCHAR(64)  NULL COMMENT '模拟票号（Phase 2 语义替换为服务商票号）',
+    `pdf_key`             VARCHAR(255) NULL COMMENT '样票 MinIO objectKey（决策 O5）',
+    `red_for_id`          BIGINT       NULL COMMENT '冲红关联：换开新票指向被冲红原票 id',
+    `red_reason`          VARCHAR(255) NULL COMMENT '冲红/作废原因（自动冲红=系统原因码；人工必填）',
+    `partial_refund_flag` TINYINT      NOT NULL DEFAULT 0 COMMENT '部分退款待人工处理标记（决策 D4/O6）',
+    `urge_time`           DATETIME     NULL COMMENT '最近催开时间（24h 限频判定，O10）',
+    `create_time`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_invoice_no` (`invoice_no`),
+    UNIQUE KEY `uk_order_active` (`order_no`, `active_flag`),
+    KEY `idx_user_id` (`user_id`),
+    KEY `idx_seller_id` (`seller_id`),
+    KEY `idx_status` (`status`),
+    KEY `idx_partial_refund` (`partial_refund_flag`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='发票单（模拟开具 Phase 1）';
+
+-- 常用发票抬头（决策 O2 随批简版；发票单为抬头快照，本表仅服务申请体验）
+CREATE TABLE `invoice_title` (
+    `id`            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `user_id`       BIGINT       NOT NULL COMMENT '所属用户',
+    `type`          TINYINT      NOT NULL COMMENT '1=PERSONAL 2=COMPANY',
+    `title`         VARCHAR(100) NOT NULL COMMENT '抬头（个人=姓名；企业=企业名称）',
+    `tax_no_cipher` VARCHAR(512) NULL COMMENT '企业税号密文（PII 三字段口径）',
+    `tax_no_hash`   VARCHAR(128) NULL COMMENT '企业税号盲索引',
+    `tax_no_mask`   VARCHAR(64)  NULL COMMENT '企业税号脱敏展示',
+    `is_default`    TINYINT      NULL COMMENT '1=默认抬头；uk_user_default 多 NULL → 一用户至多一条默认',
+    `deleted`       TINYINT      NOT NULL DEFAULT 0 COMMENT '软删标记（@TableLogic）',
+    `create_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_user_default` (`user_id`, `is_default`),
+    KEY `idx_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='常用发票抬头';

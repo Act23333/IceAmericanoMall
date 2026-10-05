@@ -3,6 +3,7 @@ package org.icedamericanomall.pay.app;
 import org.icedamericanomall.client.AfterSaleClient;
 import org.icedamericanomall.client.BalanceClient;
 import org.icedamericanomall.client.NotificationClient;
+import org.icedamericanomall.client.TradeInvoiceClient;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.BalanceRefundCO;
@@ -63,6 +64,7 @@ class RefundResumeManagerTest {
     @Mock BalanceClient balanceClient;
     @Mock AfterSaleClient afterSaleClient;
     @Mock NotificationClient notificationClient;
+    @Mock TradeInvoiceClient tradeInvoiceClient;
 
     private RefundResumeManager resumeManager;
 
@@ -70,7 +72,7 @@ class RefundResumeManagerTest {
     void setUp() {
         RefundManager refundManager = new RefundManager(refundOrderService, payOrderService, channelRouter,
                 balanceClient, new RefundConverterImpl(),
-                new PayEventNotifier(notificationClient, afterSaleClient));
+                new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService));
         resumeManager = new RefundResumeManager(refundOrderService, payOrderService, channelRouter, refundManager);
     }
 

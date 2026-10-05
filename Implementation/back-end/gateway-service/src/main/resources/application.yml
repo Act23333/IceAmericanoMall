@@ -70,14 +70,17 @@ spring:
             - id: cart-service
               uri: lb://cart-service
               predicates: [Path=/api/cart/**]
-            # 交易服务路由（含售后/财务，须先于 /api/admin/**、/api/seller/** 声明）
+            # 交易服务路由（含售后/财务/发票，须先于 /api/admin/**、/api/seller/** 声明）
+            #   /api/admin/invoice/**（AD57-60）必须先于兜底 /api/admin/**（admin-user-routes）声明
             - id: trade-service
               uri: lb://trade-service
               predicates:
                 - Path=/api/trade/**
                 - Path=/api/after-sale/**
+                - Path=/api/invoice/**
                 - Path=/api/admin/after-sale/**
                 - Path=/api/admin/finance/**
+                - Path=/api/admin/invoice/**
                 - Path=/api/seller/finance/**
             # 支付服务路由（/api/pay/callback/** 为第三方回调，匿名且签名自证）
             - id: pay-service
