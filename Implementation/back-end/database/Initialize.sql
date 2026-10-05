@@ -1316,3 +1316,23 @@ CREATE TABLE `invoice_title` (
     UNIQUE KEY `uk_user_default` (`user_id`, `is_default`),
     KEY `idx_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='常用发票抬头';
+
+-- =====================================================================
+-- V5.16 知识图谱 Phase 1（F15，PRD 01-PRD §十六 已定稿；D1 混合最小形态——
+-- MySQL 真相源（本表）+ ES kg_edges 边索引投影；schema 直改本文件，无迁移文件）
+-- =====================================================================
+
+-- 类目搭配规则（item-service 域；管理端 AD61-63 治理 + AD64 重建；PAIR_WITH 边唯一新增 MySQL 真相源）
+CREATE TABLE `pairing_rule` (
+    `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `src_category_id` BIGINT      NOT NULL COMMENT '源类目（如：手机）',
+    `dst_category_id` BIGINT      NOT NULL COMMENT '目标类目（如：手机配件）',
+    `weight`          INT         NOT NULL DEFAULT 0 COMMENT '排序权重（越大越靠前）',
+    `remark`          VARCHAR(255) NULL COMMENT '备注',
+    `status`          TINYINT     NOT NULL DEFAULT 1 COMMENT '1=启用 0=停用（停用即时生效于邻居查询）',
+    `create_time`     DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time`     DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_src_dst` (`src_category_id`, `dst_category_id`),
+    KEY `idx_src` (`src_category_id`),
+    KEY `idx_dst` (`dst_category_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='类目搭配规则（KG PAIR_WITH 边真相源，平台级类目粒度）';

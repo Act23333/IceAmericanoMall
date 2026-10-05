@@ -19,6 +19,7 @@ import org.icedamericanomall.item.domain.model.product.Product;
 import org.icedamericanomall.item.domain.model.sku.Sku;
 import org.icedamericanomall.item.domain.repository.ProductRepository;
 import org.icedamericanomall.item.domain.repository.SkuRepository;
+import org.icedamericanomall.item.app.kg.KgEdgeIngestManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +36,7 @@ import java.util.stream.Collectors;
  * 在售 SKU 最低价排序，保证跨页顺序正确。
  *
  * <p>向量摄取旁路由 {@link ProductRecommendManager} 收口（事务外 afterCommit / 直发）；
+ * KG 直建边摄取旁路由 {@link KgEdgeIngestManager} 收口（F15，同款事务纪律）；
  * 相似检索（Feign）与本类其余 Feign 依赖一样只允许出现在应用层。
  * 商品促销标签（F10，P2 详情 V5.11 / P1 列表 V5.13 增量 {@code promotions}）由
  * {@link ProductPromotionManager} 收口（ADR-025 用例族拆分），本类仅装配后一行委托填充。
@@ -58,6 +60,7 @@ public class ProductManager {
     private final ProductVectorClient productVectorClient;
     private final ProductRecommendManager productRecommendManager;
     private final ProductPromotionManager productPromotionManager;
+    private final KgEdgeIngestManager kgEdgeIngestManager;
 
     /** 商品分页（在售）：sort=price 走最低价排序 SQL，否则销量/广告优先；行级回填促销角标（P1 V5.13）。 */
     public IPage<ProductVO> pageProducts(Long sellerId, Long categoryId, String keyword,
@@ -117,14 +120,23 @@ public class ProductManager {
 
         // 向量摄取钩子（ADR-046）：CO 取自本次落库聚合，事务提交后才旁路发送——回滚即不摄取
         productRecommendManager.ingestAfterCommit(saved, onSaleMinPrice(saved.getId()));
+        // KG 直建边摄取钩子（F15，I57）：在售商品在事务提交后旁路摄取
+        // BELONGS_TO / BRAND_OF / SOLD_BY 三类边；PARENT_OF 类目层级边为低频真相，
+        // Phase 1 不做逐次摄取，由 AD64 全量重建统一覆盖（KgEdgeIngestManager 类注释）
+        kgEdgeIngestManager.ingestProductAfterCommit(saved);
     }
 
     /** 上下架/删除状态变更。 */
     public void updateProductStatus(Long productId, Integer status) {
-        if (!productRepository.existsById(productId)) {
+        Product product = productRepository.findById(productId);
+        if (product == null) {
             throw new BizException(ErrorCode.PRODUCT_NOT_FOUND);
         }
         productRepository.updateStatus(productId, status);
+        // KG 直建边口径（F15）：在售持有直建边 / 下架删除清边（I59）——提交后旁路执行，
+        // 聚合先同步新状态再摄取，快照与落库一致
+        product.changeStatus(status);
+        kgEdgeIngestManager.ingestProductAfterCommit(product);
     }
 
     /** 商家编辑商品（归属校验；F2：运费绑定非空即改，须归属当前商家）。 */
@@ -145,6 +157,8 @@ public class ProductManager {
         // 向量摄取钩子（ADR-046）：PATCH 后重读合并态（null 字段保留原值），无活动事务 → 直接旁路发送
         Product merged = productRepository.findById(productId);
         productRecommendManager.ingestAfterCommit(merged, onSaleMinPrice(productId));
+        // KG 直建边摄取钩子（F15，I57）：合并态幂等覆盖写（改类目/品牌/店铺 → 边随真相更新）
+        kgEdgeIngestManager.ingestProductAfterCommit(merged);
     }
 
     /** 商品在售 SKU 视图。 */

@@ -52,6 +52,14 @@ public class ProductRepositoryImpl implements ProductRepository {
                 .convert(ProductRepositoryImpl::toDomain);
     }
 
+    /** 全状态商品分页（AD64 重建真相源扫描）：id 升序保证跨页稳定遍历。 */
+    @Override
+    public IPage<Product> pageAll(int pageNum, int pageSize) {
+        return productMapper.selectPage(new Page<>(pageNum, pageSize),
+                        new LambdaQueryWrapper<ProductPO>().orderByAsc(ProductPO::getId))
+                .convert(ProductRepositoryImpl::toDomain);
+    }
+
     @Override
     public IPage<Product> pageOrderByMinPrice(int page, int size, Long sellerId, Long categoryId,
                                               String keyword, String orderDirection) {

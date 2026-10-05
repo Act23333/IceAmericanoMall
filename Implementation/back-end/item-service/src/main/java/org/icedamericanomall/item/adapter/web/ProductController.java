@@ -9,9 +9,11 @@ import org.icedamericanomall.item.adapter.request.CreateProductReq;
 import org.icedamericanomall.item.adapter.request.ProductPageReq;
 import org.icedamericanomall.item.adapter.request.UpdateProductReq;
 import org.icedamericanomall.item.adapter.response.ProductVO;
+import org.icedamericanomall.item.adapter.response.PairingCardVO;
 import org.icedamericanomall.item.adapter.response.RecommendProductVO;
 import org.icedamericanomall.item.adapter.response.SkuVO;
 import org.icedamericanomall.item.app.ProductManager;
+import org.icedamericanomall.item.app.kg.KgPairingManager;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,6 +24,8 @@ import java.util.List;
  * GET   /api/item/product/page      — 游客/用户/VIP/SVIP 浏览商品列表
  * GET   /api/item/product/{id}      — 商品详情（含完整 SKU）
  * GET   /api/item/product/{id}/skus  — SKU列表
+ * GET   /api/item/product/{id}/similar — 相似商品推荐（P27，向量）
+ * GET   /api/item/product/{id}/pairing — 搭配推荐卡（P35，知识图谱）
  * POST  /api/item/product            — 商家发布商品
  * PUT   /api/item/product/{id}       — 商家编辑商品
  * PUT   /api/item/product/{id}/status — 商家/管理员上下架
@@ -32,6 +36,7 @@ import java.util.List;
 public class ProductController {
 
     private final ProductManager productManager;
+    private final KgPairingManager kgPairingManager;
 
     // ==================== 查询 (游客/用户/VIP/SVIP 共享) ====================
 
@@ -63,6 +68,16 @@ public class ProductController {
     public Result<List<RecommendProductVO>> similar(@PathVariable Long id,
                                                     @RequestParam(required = false) Integer size) {
         return Result.ok(productManager.similarProducts(id, size));
+    }
+
+    /**
+     * 搭配推荐卡（P35，V5.16）—— 图关系召回为主（类目 PAIR_WITH 邻居）、向量相似兜底；
+     * 三态 source=KG/FALLBACK/NONE，恒过滤在售、排除自身；全链路 fail-open 空态不报错。
+     */
+    @GetMapping("/{id}/pairing")
+    public Result<PairingCardVO> pairing(@PathVariable Long id,
+                                         @RequestParam(required = false) Integer limit) {
+        return Result.ok(kgPairingManager.pairing(id, limit));
     }
 
     // ==================== 商家操作 ====================

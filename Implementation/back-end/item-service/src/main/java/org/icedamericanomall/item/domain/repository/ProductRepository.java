@@ -17,6 +17,12 @@ public interface ProductRepository {
     /** 商品分页（在售；sort=sales 按销量 / 缺省广告优先+创建时间倒序）。 */
     IPage<Product> pageOnSale(Long sellerId, Long categoryId, String keyword, String sort, int page, int size);
 
+    /**
+     * 全状态商品分页（不限在售，id 升序稳定遍历）—— AD64 图边全量重建的真相源扫描入口
+     * （在售 upsert 直建边 / 下架删除清边，投影镜像增量摄取口径）。
+     */
+    IPage<Product> pageAll(int pageNum, int pageSize);
+
     /** 商品分页（按在售 SKU 最低价排序，跨页顺序正确；自定义 SQL 在 Mapper）。 */
     IPage<Product> pageOrderByMinPrice(int page, int size, Long sellerId, Long categoryId,
                                        String keyword, String orderDirection);

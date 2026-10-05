@@ -58,7 +58,8 @@ spring:
             - id: user-service
               uri: lb://user-service
               predicates: [Path=/api/user/**]
-            # 商品服务路由（含首页配置/首页管理，须先于 /api/admin/** 声明）
+            # 商品服务路由（含首页配置/首页管理/知识图谱治理，须先于 /api/admin/** 声明）
+            #   /api/admin/kg/**（F15 AD61-64 知识图谱治理）必须先于兜底 /api/admin/**（admin-user-routes）声明（O5，ADR-035/036 先例）
             - id: item-service
               uri: lb://item-service
               predicates:
@@ -66,6 +67,7 @@ spring:
                 - Path=/api/home/**
                 - Path=/api/notes/**
                 - Path=/api/admin/home/**
+                - Path=/api/admin/kg/**
             # 购物车服务路由
             - id: cart-service
               uri: lb://cart-service

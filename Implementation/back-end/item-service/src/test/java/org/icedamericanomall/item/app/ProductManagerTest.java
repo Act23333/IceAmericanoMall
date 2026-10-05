@@ -60,6 +60,9 @@ class ProductManagerTest {
     @Mock
     private PromotionClient promotionClient;
 
+    @Mock
+    private org.icedamericanomall.item.app.kg.KgEdgeIngestManager kgEdgeIngestManager;
+
     private ProductManager productManager;
 
     @BeforeEach
@@ -70,7 +73,7 @@ class ProductManagerTest {
                 freightTemplateManager, new SkuManager(skuRepository,
                 new org.icedamericanomall.item.adapter.assembler.SkuConverterImpl()),
                 productVectorClient, new ProductRecommendManager(productVectorClient),
-                new ProductPromotionManager(promotionClient));
+                new ProductPromotionManager(promotionClient), kgEdgeIngestManager);
     }
 
     @AfterEach
@@ -327,7 +330,7 @@ class ProductManagerTest {
     @Test
     @DisplayName("updateProductStatus — 存在：状态变更落库")
     void shouldUpdateStatus_whenExists() {
-        when(productRepository.existsById(1L)).thenReturn(true);
+        when(productRepository.findById(1L)).thenReturn(productWithId(100L, 1L));
 
         productManager.updateProductStatus(1L, ProductStatusEnum.OFF_SHELF.getCode());
 
@@ -337,7 +340,7 @@ class ProductManagerTest {
     @Test
     @DisplayName("updateProductStatus — 不存在 → PRODUCT_NOT_FOUND")
     void shouldThrowNotFound_whenStatusChangeOnMissing() {
-        when(productRepository.existsById(1L)).thenReturn(false);
+        when(productRepository.findById(1L)).thenReturn(null);
 
         BizException ex = assertThrows(BizException.class,
                 () -> productManager.updateProductStatus(1L, ProductStatusEnum.OFF_SHELF.getCode()));
@@ -347,7 +350,7 @@ class ProductManagerTest {
     @Test
     @DisplayName("updateProductStatus — 上下架不摄取向量（内容未变，下架商品由 P27 组装过滤，ADR-046）")
     void shouldNotIngest_whenUpdateStatus() {
-        when(productRepository.existsById(1L)).thenReturn(true);
+        when(productRepository.findById(1L)).thenReturn(productWithId(100L, 1L));
 
         productManager.updateProductStatus(1L, ProductStatusEnum.OFF_SHELF.getCode());
 
