@@ -250,7 +250,7 @@ Authoritative roadmap: `project-docs/backend/02-Architecture.md` §七. Delivere
 
 #### ⚪ Not built (do not start without a PRD/spec update)
 
-mini-program/App, knowledge graph (NebulaGraph — V3.x forward-looking), multi-currency (多币种). If asked to build these, flag that they are beyond the current implemented surface. (Delivered and removed from this list: channel reconciliation 对账 V5.5 — ADR-036; group buys 拼团 V5.14 — ADR-049; invoices 发票 V5.15 — PRD §十五 定稿. Remaining P3 items each require a full PRD before development per the two-phase discipline.)
+mini-program/App, multi-currency (多币种). If asked to build these, flag that they are beyond the current implemented surface. (Delivered and removed from this list: channel reconciliation 对账 V5.5 — ADR-036; group buys 拼团 V5.14 — ADR-049; invoices 发票 V5.15 — PRD §十五 定稿. Knowledge graph: full PRD drafted — `01-PRD.md` §十六, 🔴 pending review (D1 infra selection recommends MySQL truth-source + ES retrieval plane, NebulaGraph conditional); development only after PRD 定稿 per the two-phase discipline. Remaining P3 items each require a full PRD before development.)
 
 ### Hard Constraints (from `project-docs/collaboration/09-constraints.md`)
 
