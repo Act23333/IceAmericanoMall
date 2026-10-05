@@ -37,6 +37,12 @@ public class ShopVO implements Serializable {
     /** 状态：0=审核中，1=正常，2=冻结 */
     private Integer status;
 
+    /**
+     * 店铺装修（公告/轮播/推荐商品位，SH1 V5.12 增量，ADR-048）。
+     * 未装修为 {@code null}；仅公开店铺页装配（店铺列表不加载）。
+     */
+    private ShopDecorationVO decoration;
+
     /** 领域模型 → 视图对象。 */
     public static ShopVO from(Shop shop, Long sellerUserId) {
         ShopVO vo = new ShopVO();

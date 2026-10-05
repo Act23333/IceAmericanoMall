@@ -1149,3 +1149,55 @@ CREATE TABLE `task_record` (
     UNIQUE KEY `uk_user_task_date` (`user_id`, `task_code`, `biz_date`),
     KEY `idx_user_date` (`user_id`, `biz_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='任务完成记录（每日幂等）';
+
+-- =====================================================================
+-- V5.12 店铺装修（F11）+ 内容社区笔记（F12，ADR-048；按 2026-10-05 口径直接修改本快照）
+-- ---------------------------------------------------------------------
+-- shop_decoration：店铺装修（merchant 域，与 shop 1:1；JSON 以字符串列存储，领域层校验）
+-- note / note_product / note_like：种草笔记（item 域，与 review 同属商品 UGC）
+-- ---------------------------------------------------------------------
+
+CREATE TABLE `shop_decoration` (
+    `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `shop_id`         BIGINT       NOT NULL COMMENT '店铺 id（shop.id，1:1）',
+    `announcement`    VARCHAR(200) DEFAULT NULL COMMENT '店铺公告',
+    `banners`         VARCHAR(2000) DEFAULT NULL COMMENT '轮播图 JSON 数组（≤5 个 URL）',
+    `hot_product_ids` VARCHAR(1000) DEFAULT NULL COMMENT '推荐商品位 JSON 数组（≤8 个 product.id，展示端过滤非在售）',
+    `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_shop` (`shop_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='店铺装修（与 shop 1:1）';
+
+CREATE TABLE `note` (
+    `id`          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `user_id`     BIGINT       NOT NULL COMMENT '作者 user_id',
+    `title`       VARCHAR(50)  NOT NULL COMMENT '标题',
+    `content`     VARCHAR(2000) NOT NULL COMMENT '正文（Phase 1 纯文本）',
+    `cover_image` VARCHAR(255) DEFAULT NULL COMMENT '封面图',
+    `images`      VARCHAR(2000) DEFAULT NULL COMMENT '图集 JSON 数组（≤9 个 URL）',
+    `status`      TINYINT      NOT NULL DEFAULT 1 COMMENT '1=已发布 2=已删除（软删）',
+    `like_count`  INT          NOT NULL DEFAULT 0 COMMENT '点赞数（冗余计数，原子维护）',
+    `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY `idx_status_time` (`status`, `create_time`),
+    KEY `idx_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='种草笔记';
+
+CREATE TABLE `note_product` (
+    `id`         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `note_id`    BIGINT NOT NULL COMMENT '笔记 id',
+    `product_id` BIGINT NOT NULL COMMENT '关联商品 id（≤5，发布时校验存在且在售）',
+    `sort`       INT    NOT NULL DEFAULT 0 COMMENT '展示顺序',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_note_product` (`note_id`, `product_id`),
+    KEY `idx_product` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='笔记关联商品';
+
+CREATE TABLE `note_like` (
+    `id`          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `note_id`     BIGINT NOT NULL COMMENT '笔记 id',
+    `user_id`     BIGINT NOT NULL COMMENT '点赞用户 user_id',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_note_user` (`note_id`, `user_id`),
+    KEY `idx_note` (`note_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='笔记点赞（uk 幂等）';

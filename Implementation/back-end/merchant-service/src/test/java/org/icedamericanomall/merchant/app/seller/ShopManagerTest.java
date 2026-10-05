@@ -10,6 +10,7 @@ import org.icedamericanomall.merchant.domain.model.shop.ShopStatusEnum;
 import org.icedamericanomall.merchant.domain.model.merchant.Merchant;
 import org.icedamericanomall.merchant.domain.model.shop.Shop;
 import org.icedamericanomall.merchant.domain.repository.MerchantRepository;
+import org.icedamericanomall.merchant.domain.repository.ShopDecorationRepository;
 import org.icedamericanomall.merchant.domain.repository.ShopRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,9 @@ class ShopManagerTest {
 
     @Mock
     private MerchantRepository merchantRepository;
+
+    @Mock
+    private ShopDecorationRepository shopDecorationRepository;
 
     @InjectMocks
     private ShopManager shopManager;

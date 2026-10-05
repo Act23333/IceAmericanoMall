@@ -3,7 +3,9 @@ package org.icedamericanomall.merchant.adapter.web;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.merchant.adapter.request.MerchantApplyReq;
+import org.icedamericanomall.merchant.adapter.request.ShopDecorationReq;
 import org.icedamericanomall.merchant.adapter.request.UpdateShopReq;
+import org.icedamericanomall.merchant.adapter.response.ShopDecorationVO;
 import org.icedamericanomall.merchant.adapter.response.ShopVO;
 import org.icedamericanomall.merchant.app.seller.MerchantManager;
 import org.icedamericanomall.merchant.app.seller.ShopManager;
@@ -65,6 +67,39 @@ public class MerchantController {
     @PutMapping("/shops/{shopId}")
     public Result<Void> updateMyShop(@PathVariable Long shopId, @Valid @RequestBody UpdateShopReq req) {
         shopManager.updateMyShop(UserContext.getUserId(), shopId, req);
+        return Result.ok();
+    }
+
+    /**
+     * 查询店铺装修（S1c，ADR-048）。
+     *
+     * <pre>
+     * Scenario: 商家查看自有店铺装修
+     *   Given 商家已登录且目标店铺归属该商家
+     *   When GET /api/seller/shops/{shopId}/decoration
+     *   Then 返回 ShopDecorationVO；未装修时各字段为空值 / 空数组；非本人店铺 → FORBIDDEN
+     * </pre>
+     */
+    @GetMapping("/shops/{shopId}/decoration")
+    public Result<ShopDecorationVO> getDecoration(@PathVariable Long shopId) {
+        return Result.ok(shopManager.getDecoration(UserContext.getUserId(), shopId));
+    }
+
+    /**
+     * 保存店铺装修（S1d，ADR-048）—— PUT 全量替换，UPSERT。
+     *
+     * <pre>
+     * Scenario: 商家保存店铺装修
+     *   Given 商家已登录且目标店铺归属该商家
+     *   When PUT /api/seller/shops/{shopId}/decoration with ShopDecorationReq
+     *   Then 校验（公告 ≤200 / 轮播 ≤5 http(s) / 推荐位 ≤8 去重）并 UPSERT，返回成功；
+     *        非本人店铺 → FORBIDDEN，内容不合法 → 400 PARAM_ERROR
+     * </pre>
+     */
+    @PutMapping("/shops/{shopId}/decoration")
+    public Result<Void> saveDecoration(@PathVariable Long shopId,
+                                       @Valid @RequestBody ShopDecorationReq req) {
+        shopManager.saveDecoration(UserContext.getUserId(), shopId, req);
         return Result.ok();
     }
 

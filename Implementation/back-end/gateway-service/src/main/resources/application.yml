@@ -64,6 +64,7 @@ spring:
               predicates:
                 - Path=/api/item/**
                 - Path=/api/home/**
+                - Path=/api/notes/**
                 - Path=/api/admin/home/**
             # 购物车服务路由
             - id: cart-service
