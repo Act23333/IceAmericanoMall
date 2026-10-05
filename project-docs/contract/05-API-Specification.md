@@ -1,6 +1,6 @@
 # 05 — API 规格文档 (API Specification — SDD)
 
-> **最后更新**: 2026-10-05 | **版本**: V5.15.0 | **端点总数**: 258（方法级映射实测，含 `/internal/**` 52 个；V5.7–V5.15 全量落地：FT/任务/活动中心/装修/笔记/推荐/facets/suggest/拼团/发票/AD48-60/I44-I56/P27-P34 均已实现，详见 §十四 版本行 V5.7.0–V5.15.0） | **已实现**: 全部标注 ✅ 端点 | **公共**: 195+ | **内部**: 39+ | **已实现**: 229+
+> **最后更新**: 2026-10-06 | **版本**: V5.16.0 | **端点总数**: 265（方法级映射实测，含 `/internal/**` 55 个；V5.7–V5.16 全量落地：FT/任务/活动中心/装修/笔记/推荐/facets/suggest/拼团/发票/知识图谱/AD48-64/I44-I59/P27-P35 均已实现，详见 §十四 版本行 V5.7.0–V5.16.0） | **已实现**: 全部标注 ✅ 端点 | **公共**: 195+ | **内部**: 39+ | **已实现**: 229+
 >
 > **V5.6.1 实现落地说明**：V5.6.0 规格先行的四个 P0 功能（F1 买家退款资金流 / F2 运费模型 / F3 拆单发货 / F4 渠道对账）已**全量实现并通过全量测试**，全部 V5.6 规划标注已收敛为"已实现（V5.6）"；实现方上报的规格偏差已按 ADR-035/036/037 收敛进正文（错误码 3039/3040/3041、AD47 confirm-return 退款触发分派、I41 并发幂等、I43 fail-closed、AD46 批次列表）。数据模型见 `04-Data-Model.md` §十二（已建库）。
 > 
@@ -804,6 +804,7 @@ ws(s)://<gateway>/ws/chat/...?token=<accessToken>
 | P32 | DELETE | `/api/notes/{id}/like` | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（未点赞空操作；取消原子 -1 且不为负）                                                | ✅ V5.12 |
 | P33 | DELETE | `/api/notes/{id}`      | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（**仅作者本人**，非本人 → 403；软删 status=2，流与详情不可见）                          | ✅ V5.12 |
 | P34 | GET  | `/api/notes/{id}/similar` | 🌐  | Path: `id` (Long), Query: `size`(缺省5, ≤20)                                                                                          | `List<NoteCardVO>`（相似笔记卡：I51 kNN 命中 id 由 item 组装**发布态**笔记卡、排除自身、按相似度降序；ES 关闭/无命中 → 空列表不报错） | ✅ V5.13 |
+| P35 | GET  | `/api/item/product/{productId}/pairing` | 🌐  | Path: `productId` (Long), Query: `limit`(缺省6, ≤10)                                                                             | `PairingCardVO { source: KG\|FALLBACK\|NONE, items: List<ProductCardVO> }`（**KG 搭配推荐卡**：图主召回（I58 类目 PAIR_WITH 邻居 → item 组装在售商品卡，按规则 weight 与销量排序、排除自身）→ 无规则回退向量相似（FALLBACK）→ 空态（NONE）；全链路 fail-open 不报错；O6 裁决与 P27 同页共存、位次随前端设计） | ✅ V5.16 |
 
 #### 4.4.9 FreightTemplateController — `/api/item/freight-template` (item-service)
 
@@ -1769,6 +1770,20 @@ Feature: 买家退款资金流（F1）
 > - **状态守卫**：状态机迁移拒绝 → 400 `PARAM_ERROR(1101)` 带文案；发票不存在 → `NO_RESOURCE_FOUND(1103)`。
 > - **换开语义（PRD D5）**：换开 = 冲红原票（active_flag→NULL）+ 新票待开具（`red_for_id` 关联原票），由买家侧 INV1 对同单重新申请实现。
 
+#### 4.13.8f AdminKgController — `/api/admin/kg` (item-service, ✅ V5.16)
+
+> **F15 图知识治理（[PRD §十六](../product/01-PRD.md) D6 最小治理面 + O5 裁决 item 管理端）**：类目搭配规则 CRUD（PAIR_WITH 边真相源，Phase 1 唯一新增 MySQL 表 `pairing_rule`）；**AD64 全量重建**为裁决增量（兑现 US-KG-8 重建兜底）。全部写操作 `@OperationLog`；网关 `/api/admin/kg/**` 须先于 `/api/admin/**` 兜底声明（O5）。
+
+| #    | 方法   | 路径                            | 认证 | 请求                                                                                                          | 响应                          | 阶段      |
+| ---- | ---- | ----------------------------- | --- | ----------------------------------------------------------------------------------------------------------- | --------------------------- | -------- |
+| AD61 | GET  | `/api/admin/kg/rule/page`       | 🔑  | Query: `page`(1), `size`(20), `srcCategoryId?`, `dstCategoryId?`, `status?`                                  | `IPage<PairingRuleVO>`        | ✅ V5.16 |
+| AD62 | POST | `/api/admin/kg/rule`            | 🔑  | `PairingRuleReq { srcCategoryId(必填), dstCategoryId(必填), weight?(缺省0), remark? }`                          | `Void`（唯一约束防重 + 类目存在性校验；`@OperationLog`） | ✅ V5.16 |
+| AD63 | PUT  | `/api/admin/kg/rule/{id}`       | 🔑  | null-safe 局部更新（weight / remark / status 启停）                                                                  | `Void`（`@OperationLog`）       | ✅ V5.16 |
+| AD64 | POST | `/api/admin/kg/rebuild`         | 🔑  | —                                                                                                          | `int`（重建边数；幂等可重试；`@OperationLog`）     | ✅ V5.16 |
+
+> - **守卫**：悬空类目引用 → 400 `PARAM_ERROR(1101)`；重复规则唯一约束 → DuplicateKey 回落 400（AD51-53 先例）。
+> - **重建口径（US-KG-8）**：按真相源（源表列 + 规则表）全量重建 `kg_edges` 投影，幂等可重试；增量摄取走商品 afterCommit（I57）。
+
 #### 4.13.9 MerchantCouponController — `/api/seller/coupon` (marketing-service)
 
 | #    | 方法   | 路径                                      | 认证  | 请求                        | 响应               | 阶段  |
@@ -2063,6 +2078,19 @@ Feature: 渠道对账（F4）
 > - **渐进启用/降级**：ES 关闭（`search.elasticsearch.enabled=false`）时知识库向量端点按「未启用」处理——I37 返回 `0`、I38 返回 `false`、I28 知识库检索返回空，**不抛异常**，不阻断 ai-service 的知识库 CRUD。
 > - **商品向量推荐（🆕 V5.9，[ADR-046](../adr/046-product-vector-recommendation.md)）**：I47/I48 复用同一向量底座（`ProductDocument.embedding` + I28 `index=products` kNN）。**单向量不分块**（商品短文本，不走 DocumentChunker）；I47 幂等覆盖写（同 productId 重写整文档，顺带补齐日常增量进 ES 的缺口，与 reindex 全量重建共存）；I48 只出 `productId + score`，**C 端组装归 item**（P27 批量查本地库出新鲜在售商品卡，ES 文档可能滞后）。**全链路 fail-open**：推荐是纯旁路，缺失=体验损失非资损（与 I43/I44 fail-closed 刻意不同，ADR-046）。
 > - 调用方：ai-service（商家知识库 CH10-CH13 增删改后同步摄取/删除向量；RAG 检索见 §4.11.2）。
+
+#### 4.14.10b InternalKgController — `/internal/search/kg` (search-service, ✅ V5.16)
+
+> **F15 知识图谱检索面（[PRD §十六](../product/01-PRD.md) D1 混合最小形态：MySQL 真相源 + ES `kg_edges` 边索引投影）**：调用方 item-service（ia-api `KgClient`，**全链路 fail-open**——I57 降级哨兵 -1、I58 降级空列表、I59 降级空操作；对齐 ADR-046 展示型查询定类与 I47 哨兵先例）。图查询能力边界 **≤2 跳**（PRD §16.4 明示，depth > 2 → 400）。
+
+| #    | 方法   | 路径                              | 请求                                                                                                                                          | 响应                                                                                     | 阶段       |
+| ---- | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------- |
+| I57 | POST | `/internal/search/kg/edge/upsert` | Body: `KgEdgeUpsertCO { srcType(product\|category), srcId(必填), edges: List<KgEdgeItemCO { relType, dstType, dstId, weight?, source, status }> }` | `int`（写入边数；未启用返回 0 / Feign 降级哨兵 -1） | ✅（V5.16） |
+| I58 | GET  | `/internal/search/kg/neighbors` | Query: `srcType`(必填), `srcId`(必填), `relType?`, `dstType?`, `depth`(缺省1, ≤2), `status?`(缺省仅启用) | `List<KgNeighborCO { dstType, dstId, relType, weight, score }>`（无命中/降级 → 空列表） | ✅（V5.16） |
+| I59 | DELETE | `/internal/search/kg/edges` | Query: `srcType`(必填), `srcId`(必填) | `void` | ✅（V5.16） |
+
+> - **I57 幂等**：按 src 先删后写（对齐 I37/I47 模式）；**I58** = terms 往返 ≤2 次（P95 < 200ms 预算，PRD §16.8.3）；**I59** 配合下架清理与重建。
+> - Phase 2：政策问答消费复用 I58（无需新契约）；EXTRACTED 边（source=EXTRACTED + confidence/reviewStatus）字段扩展随 Phase 2 契约。
 
 #### 4.14.11 WebSocketNotifyController — `/internal/ws` (gateway-service)
 
@@ -2571,6 +2599,7 @@ data: [DONE]
 | **V5.13.0** | **2026-10-05** | **P2 Phase 2 挂账收敛批（列表促销角标 / 搜索联想 / 任务运营 / 笔记向量化）契约先行**：①P1 商品分页响应增量 `promotions`（按行 sellerId 聚合店铺促销标签，60s 缓存复用 P2 详情口径，促销可见性从详情延伸到列表）；②SE5 搜索联想转正（热搜词前缀 + 商品名前缀双源 ≤10 去重，Redis+DB 双源 ES 关闭可用）；③任务运营闭环 AD51-53 `/api/admin/task`（列表/创建/编辑：code 唯一、rewardPoints 调整立即生效、停用即触发口失效，三写 `@OperationLog`）；④笔记向量化（ADR-046 管道第二次复用）：I50/I50 `notes` 独立小索引（单向量 title+content，摄取幂等覆盖写+软删删向量）+ I51 相似检索 + P34 相似笔记卡（item 组装发布态）；无 schema 变更 |
 | **V5.14.0** | **2026-10-05** | **P3 第一批（F13 拼团完整闭环）契约先行**：①§4.10.4 新增 M15-M17 `/api/group-buy/**` C 端浏览（活动列表/详情+进行中团列表脱敏/团进度）；②§4.6.1 新增 T27 `POST /api/trade/order/group-buy`（quantity 恒 1，拼团价快照不叠加券/促销/会员，下单不占团位）；③§4.13.8d 新增 AD54-56 管理端拼团活动 CRUD（复用 promotion/flash 先例）；④§4.14.8c 新增 I52 validate/I53 join（均 fail-closed：参团失败触发 trade「取消+恢复库存+I55 退款」闭环）；⑤§4.14.15b 新增 I55 `POST /internal/pay/refund/order`（**无售后单退款命令**；幂等锚点泛化修订 ADR-035 §1：`refund_order.after_sale_id` 改可空 + `biz_ref`/`uk_biz_ref`）；⑥§4.14.16b 新增 I54 `POST /internal/trade/group-buy/refund-team`（结团逐单退款，fail-open）；⑦网关补 `/api/group-buy/**` 路由；数据模型 `group_buy_activity`/`group_team`/`group_team_member` 按 ADR-045 口径直接入 Initialize.sql（54→57 表），[ADR-049](../adr/049-group-buy-full-loop.md) |
 | **V5.15.0** | **2026-10-05** | **P3 第二批（F14 发票）契约先行——完整 PRD 定稿（01-PRD §十五，D1-D7/O1-O10 已裁决）后规格收口**：①§4.15 INV1-INV3 占位转定稿 + 增量 INV4 撤回/INV5 催开（买家端，INV3 修正为业务键 invoiceNo）；②§4.13.8e 新增管理端 **AD57-60**（O7 裁决用平台 AD 惯例编号；模拟开具 `InvoiceIssuePort` 防腐；导出延 Phase 2）；③§4.14.16c 新增 **I56** `POST /internal/trade/invoice/void-on-full-refund`（pay 全额退款 → 自动冲红/作废联动，fail-open 触发器，PRD D4）；④金额口径 = `payAmount` 快照（不变式 V2 对齐）、一单一有效票 `uk_order_active`、税号/邮箱 PII 三字段（O4 从严）；数据模型 `invoice`/`invoice_title` 按 ADR-045 直改 Initialize.sql（57→59 表） |
+| **V5.16.0** | **2026-10-06** | **P3 第三批（F15 知识图谱 Phase 1：商品关系导购）契约先行——完整 PRD 定稿（01-PRD §十六，O1 聚焦导购/O2 混合最小形态已裁决）后规格收口**：①§4.14.10b 新增 **I57 edge/upsert（先删后写幂等，哨兵 -1）/ I58 neighbors（≤2 跳 terms，fail-open 空列表）/ I59 edges 清边**（search `kg_edges` 边索引投影；I57-I59 全链路 fail-open 对齐 ADR-046 定类）；②§4.4.x 新增 **P35** `GET /api/item/product/{id}/pairing`（KG 图主召回 → 向量兜底 → 空态，与 P27 同页共存 O6）；③§4.13.8f 新增管理端 **AD61-63** 规则 CRUD + **AD64** 全量重建（裁决增量，兑现 US-KG-8）；④Phase 1 唯一新增 MySQL 表 `pairing_rule`（Initialize.sql 直改 59→60 表）+ ES `kg_edges` 边索引（D1 混合最小形态：MySQL 真相源 + ES 检索面；NebulaGraph 触发器化 §16.9）；⑤网关 `/api/admin/kg/**` 先于兜底声明；LLM 抽取/审核队列/政策问答/可视化均 Phase 2（触发器量化） |
 
 ---
 

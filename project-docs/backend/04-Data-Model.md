@@ -1016,3 +1016,13 @@ public void createOrder(OrderDTO dto) {
 | --- | --- | --- |
 | `invoice` | invoice_no(UK) / order_no / `active_flag` NULL（`uk_order_active` 多 NULL = 一单一有效票，user_auth 先例）/ seller_id（开票主体商家，D1）/ type / title 快照 / tax_no·email **PII 三字段**（O4 从严）/ amount = payAmount 快照（D3）/ status（1待开具 2已开具 3已冲红 4已作废，条件迁移）/ mock_invoice_no + pdf_key（模拟开具，`InvoiceIssuePort` 防腐）/ red_for_id / partial_refund_flag（D4/O6）/ urge_time（O10） | 发票单（买家 INV1-INV5 + 管理端 AD57-60；全额退款自动冲红联动 I56，fail-open） |
 | `invoice_title` | user_id / type / title / tax_no 三字段 / is_default NULL（`uk_user_default` 多 NULL = 一用户至多一条默认）/ deleted（@TableLogic） | 常用抬头（O2 随批简版；发票单为抬头快照，本表仅服务申请体验） |
+
+### 12.7 F15 知识图谱 Phase 1（V5.16，[PRD §十六 已定稿](../product/01-PRD.md)，schema 直改 Initialize.sql）
+
+| 存储 | 内容 | 说明 |
+| --- | --- | --- |
+| `pairing_rule`（MySQL，**唯一新增表**） | src_category_id / dst_category_id（`uk_src_dst`）/ weight / status | 类目搭配规则 = PAIR_WITH 边真相源（D1 混合最小形态；平台级类目粒度，O3） |
+| `kg_edges`（ES 边索引，投影） | edgeId / srcType/srcId / relType / dstType/dstId / weight / source / status | 直建边（BELONGS_TO/PARENT_OF/BRAND_OF/SOLD_BY 真相=源表列，零新增存储）+ PAIR_WITH（真相=pairing_rule）按 src 先删后写物化；查询能力 ≤2 跳 |
+| 既有三向量索引（不变） | products / knowledge_vectors / notes | P35 混合检索的向量兜底面（图主召回、向量兜底） |
+
+> 降级纪律：KG 全链路 fail-open 纯旁路（对齐 ADR-046/011）；NebulaGraph 引入触发器量化（§16.9，≥2 项才立项）。
