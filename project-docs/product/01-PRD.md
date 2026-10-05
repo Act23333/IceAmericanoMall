@@ -495,3 +495,29 @@ MVP 目标：一个月内可上线，验证平台模式可行性。
   - Given ES 或 Embedding 未启用，When 访问推荐位/保存商品，Then 推荐返回空列表、摄取静默跳过（0），主流程零影响
   - Given search-service 不可用，When 保存商品/访问推荐位，Then Feign 降级（哨兵 -1/空列表），主流程零影响
 - **Phase 2（roadmap）**：「看了又看」（浏览共现统计）、多路召回与排序、推荐位 CTR 埋点、首页推荐流。
+
+---
+
+## 十、V5.10 增量需求要点（P2 第二批：F8 搜索 facet / F9 每日任务体系）
+
+### F8 搜索筛选 facet 与过滤补齐
+
+- **需求**：搜索页提供品牌/价格分布筛选（facet 聚合）；补齐 SE1 契约早已声明但未实现的 `brand/minPrice/maxPrice/sort` 过滤参数。
+- **核心场景（BDD）**：
+  - Given 搜索结果含多个品牌，When 请求搜索 facets，Then 返回各品牌与命中数（降序）
+  - Given 搜索结果分布多价位，When 请求 facets，Then 返回固定档位（0-50/50-100/100-200/200-500/500+ 元）计数
+  - Given `brand=XX&minPrice=10000`，When 搜索，Then 仅返回该品牌且价格 ≥100 元的商品（两链同口径）
+  - Given `sort=price`，When 搜索，Then 结果按价格升序（`newest` 按 publishTime）
+  - Given ES 关闭走 DB 链，When 请求 facets，Then 返回空对象（过滤仍生效）
+- **Phase 2（roadmap）**：动态价格分档、类目 facet、搜索联想（SE5）。
+
+### F9 每日任务体系（Phase 1）
+
+- **需求**：用户完成任务得积分；任务定义表驱动（运营加行即扩展），每日任务每日一次，任务中心可见进度。
+- **核心场景（BDD）**：
+  - Given 用户当日未完成「每日完成 1 笔订单确认」，When 确认收货，Then 任务完成 +20 积分入 points_log（type=3）
+  - Given 当日已完成，When 再次确认收货，Then 幂等返回未完成（不重复发分）
+  - Given 用户查看任务中心，When 请求今日任务，Then 返回任务列表与完成状态
+  - Given 评价落库，When 触发「每日发表 1 条评价」，Then 完成任务 +10 积分
+  - Given marketing 不可用，When 确认收货/发表评价，Then 主流程成功、任务奖励静默丢失（fail-open + 告警）
+- **Phase 2（roadmap）**：管理端任务 CRUD、新手/周期任务类型、任务奖励翻倍活动、删评重评防刷升级。

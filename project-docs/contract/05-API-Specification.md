@@ -1278,11 +1278,12 @@ Feature: 买家退款资金流（F1）
 
 | #   | 方法     | 路径                    | 认证  | 请求                                                                                                                                    | 响应                      | 阶段        |
 | --- | ------ | --------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | --------- |
-| SE1 | GET    | `/api/search/product` | 🌐  | Query: `keyword?`, `categoryId?`, `brand?`, `minPrice?`, `maxPrice?`, `sort?`(sales\|price\|newest\|relevance), `page`(1), `size`(20) | `Page<ProductSearchVO>` | ✅         |
+| SE1 | GET    | `/api/search/product` | 🌐  | Query: `keyword?`, `categoryId?`, `brand?`, `minPrice?`, `maxPrice?`, `sort?`(sales\|price\|newest\|relevance), `page`(1), `size`(20)（**V5.10 补齐实现**：brand/minPrice/maxPrice/sort 过滤此前声明未实现——ES 链 filter+sort，DB 链同口径过滤；`newest` 按 `publishTime`） | `Page<ProductSearchVO>` | ✅         |
 | SE2 | GET    | `/api/search/hot`     | 🌐  | Query: `limit`(10)                                                                                                                    | `List<String>`          | ✅         |
 | SE3 | GET    | `/api/search/history` | 🔒  | Query: `limit`(10)                                                                                                                    | `List<String>`          | ✅         |
 | SE4 | DELETE | `/api/search/history` | 🔒  | —                                                                                                                                     | `Void` (清空搜索历史)         | 🆕 ⚪ V5.0 |
 | SE5 | GET    | `/api/search/suggest` | 🌐  | Query: `keyword` (前缀)                                                                                                                 | `List<String>` (搜索建议)   | 🆕 ⚪ V5.0 |
+| SE6 | GET    | `/api/search/facets`  | 🌐  | Query: `keyword?`, `categoryId?`                                                                                                        | `SearchFacetsVO { brands:[{name,count}], priceRanges:[{min,max,count}] }`（品牌 terms 聚合 + 固定价格档位计数：0-50/50-100/100-200/200-500/500+ 元；**ES 链实现，DB 链返回空对象**） | ✅ V5.10 |
 
 **`ProductSearchVO`** (V5.4: 删除 `embedding` 字段):
 
@@ -1367,6 +1368,14 @@ Feature: 买家退款资金流（F1）
 | M9  | GET  | `/api/flash/{id}`     | 🌐  | Path: `id` (Long)                           | `FlashSaleVO` (秒杀详情)           | 🆕 ⚪ V5.0 |
 | M10 | POST | `/api/flash/buy`      | 🔒  | Query: `flashId` (Long), `addressId` (Long) | `FlashBuyVO`（**V5.4 口径**：`orderNo` 为真实订单号；链路 = Redis 预扣 → trade-service 落单 → MQ 异步统计；秒杀订单 `sellerId=0`——平台活动无店铺归属） | ✅ V4.1    |
 | M11 | GET  | `/api/flash/timeline` | 🌐  | —                                           | `List<FlashSessionVO>` (秒杀时间段) | 🆕 ⚪ V5.0 |
+
+#### 4.10.3 TaskController — `/api/task` (marketing-service, ✅ V5.10)
+
+> **F9 每日任务体系（[ADR-047](../adr/047-daily-task-system.md)）**：表驱动任务定义（`task_def` seed：DAILY_ORDER 确认收货 +20 / DAILY_REVIEW 发表评价 +10）+ 每日幂等完成记录（`uk_user_task_date`）。积分经 `PointsManager` 单出口（`points_log` type=3 任务奖励），与任务记录同事务。
+
+| #   | 方法 | 路径             | 认证 | 请求 | 响应                                                                 | 阶段      |
+| --- | -- | -------------- | --- | --- | ------------------------------------------------------------------ | ------- |
+| M14 | GET | `/api/task/daily` | 🔒  | —   | `List<DailyTaskVO> { code, name, rewardPoints, completed }`（今日任务 + 完成状态） | ✅ V5.10 |
 
 **`FlashSaleVO`**:
 
@@ -1925,6 +1934,12 @@ Feature: 渠道对账（F4）
 
 #### 4.14.9 InternalLogisticsController — `/internal/logistics` (logistics-service)
 
+#### 4.14.8c InternalTaskController — `/internal/task` (marketing-service, ✅ V5.10)
+
+> **F9 任务完成触发口（[ADR-047](../adr/047-daily-task-system.md)）**：调用方——trade（确认收货 → `DAILY_ORDER`）、item（评价落库 → `DAILY_REVIEW`），均**事务外 fail-open**（旁路，与触达接线 ADR-042 同口径：失败仅告警，不影响主流程）。幂等在服务端：同用户同任务同业务日唯一，重复完成返回 `completed=false`。
+
+| I49 | POST | `/internal/task/complete` | Body: `TaskCompleteCO { userId(必填), taskCode(必填) }` | `TaskCompleteResultCO { completed(bool), rewardPoints(int) }`（首次=true+实发积分；重复/任务停用/不存在=false+0） | ✅（V5.10） |
+
 | #   | 方法   | 路径                                     | 请求                                                | 响应 (原始) | 阶段  |
 | --- | ---- | -------------------------------------- | ------------------------------------------------- | ------- | --- |
 | I25 | POST | `/internal/logistics/create`           | `CreateLogisticsCO`                              | `void`  | ✅   |
@@ -2415,6 +2430,7 @@ data: [DONE]
 | **V5.7.0** | **2026-10-04** | **P1 第一批（消息触达 + 订单留言 + 秒杀管理端）契约先行**：①§4.6.1 T1/T6 请求增量 `remark?`（买家留言 ≤200，可选）+ `OrderVO` 增量 `remark`（**V5.4 删除的死字段 remark 重新立项接线**，落 `orders.remark` 快照）；②§4.13.14 AD40-AD42 管理端秒杀活动管理定稿并实现标注（`FlashSaleCreateReq { productId, skuId, flashPrice, stock, startTime, endTime }` / `FlashSaleUpdateReq` null-safe 局部更新 / 进行中禁删；错误口径 1101/1103）；③§4.14.12 I32 站内信行勘误（V5.5 已落库实现，非"契约预留"）+ 业务触达矩阵注记（支付成功/发货/退款成功/售后审核结果 → 站内信，事务外 fail-open，[ADR-042](../adr/042-buyer-notification-wiring.md)）；数据模型见 04 §3.7 / §十二（V5.7 迁移 `orders.remark`） |
 | **V5.8.0** | **2026-10-05** | **P1 第二批（促销引擎 + 价格计算中心 / 会员等级与权益）契约先行**：①§4.13.8b 新增 AD48-AD50 管理端店铺满减/满折活动管理（`PromotionCreateReq`/`PromotionUpdateReq`，时间窗推导状态、已结束禁编、进行中禁删，复用 AD40-42 先例）；②§4.14.8b 新增 I44 `POST /internal/promotion/query`（trade 定价中心取生效促销，**fail-closed** 与 I43 同口径）；③§4.14.1b 新增 I45 `GET /internal/user/member/level` + I46 `POST /internal/user/member/growth`（会员折扣率/积分倍率 + 成长值入账，**fail-open**，与 I43/I44 刻意不同——[ADR-044](../adr/044-member-level-and-benefits.md)）；④计价口径（[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)）：促销与会员折扣与券三者可叠加、同类型促销取减免最大者、总额守卫 `discountAmount ≤ totalAmount`、秒杀单不叠加（维持 discountAmount=0）、Phase 1 优惠汇总在订单头（item 级分摊与多券 PRD 一并挂账 O1）；数据模型见 04 §十二 12.5/12.6（V5.8 迁移 `promotion`/`member_level_rule`/`member_growth_log`） |
 | **V5.9.0** | **2026-10-05** | **P2 第一批（商品向量推荐）契约先行**：①§4.4.x 新增 P27 `GET /api/item/product/{productId}/similar`（相似商品卡，向量相似度降序、恒过滤在售、排除自身，空列表不报错）；②§4.14.10 新增 I47 `POST /internal/search/vector/product/upsert`（商品原文摄取，单向量幂等覆盖写，未启用返回 0/降级哨兵 -1）与 I48 `GET /internal/search/vector/product/similar`（kNN 命中 id+score，组装归 item）；③全链路 fail-open（[ADR-046](../adr/046-product-vector-recommendation.md)）；MySQL 零 schema 变更（向量在 ES，`ProductDocument.embedding` 既有字段） |
+| **V5.10.0** | **2026-10-05** | **P2 第二批（搜索 facet / 每日任务体系）契约先行**：①**F8 搜索 facet**——SE1 声明未实现的 `brand/minPrice/maxPrice/sort` 过滤参数补齐实现（ES 链 filter+sort+publishTime 字段新增，DB 链同口径）；新增 SE6 `GET /api/search/facets`（品牌 terms 聚合 + 固定价格档位计数，独立端点零破坏，DB 链返回空对象）；②**F9 每日任务体系**——新增 M14 `GET /api/task/daily`（今日任务+状态）与 I49 `POST /internal/task/complete`（幂等完成+积分单出口发放，触发方 trade 确认收货/item 评价，事务外 fail-open，[ADR-047](../adr/047-daily-task-system.md)）；数据模型 `task_def`/`task_record` 按 ADR-045 口径直接入 Initialize.sql 快照（无迁移文件） |
 
 ---
 
