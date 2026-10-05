@@ -603,7 +603,7 @@ ws(s)://<gateway>/ws/chat/...?token=<accessToken>
 | #   | 方法   | 路径                              | 认证  | 请求                                                                                                                                              | 响应                 | 阶段  |
 | --- | ---- | ------------------------------- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | --- |
 | P1  | GET  | `/api/item/product/page`        | 🌐  | Query: `categoryId?`, `keyword?`, `brand?`, `minPrice?`, `maxPrice?`, `sort?`(sales\|price\|newest), `order?`(asc\|desc), `page`(1), `size`(20) | `IPage<ProductVO>` | ✅   |
-| P2  | GET  | `/api/item/product/{id}`        | 🌐  | Path: `id` (Long)                                                                                                                               | `ProductVO`        | ✅   |
+| P2  | GET  | `/api/item/product/{id}`        | 🌐  | Path: `id` (Long)                                                                                                                               | `ProductVO`（**V5.11 增量 `promotions`**: `List<PromotionTagVO> { type, name, threshold, discountValue, maxDiscount, endTime }`——该商品所属店铺**进行中**满减/满折标签；fail-open：marketing 不可用/无活动 → 空列表不报错） | `ProductVO`        | ✅   |
 | P3  | POST | `/api/item/product`             | 🏪  | `CreateProductReq { categoryId, name, mainImage?, description?, brand?, skus: [{ spec, price, stock, image?, originalPrice? }] }`               | `Void`             | ✅   |
 | P4  | PUT  | `/api/item/product/{id}`        | 🏪  | Path: `id` (Long), Body: `UpdateProductReq { name?, mainImage?, description?, brand?, categoryId? }`                                            | `Void`             | ✅   |
 | P5  | PUT  | `/api/item/product/{id}/status` | 🏪  | Path: `id` (Long), Query: `status` (Integer: 1上架/0下架)                                                                                           | `Void`             | ✅   |
@@ -1315,7 +1315,7 @@ Feature: 买家退款资金流（F1）
 | M4  | GET  | `/api/coupon/used`             | 🔒  | —                                                          | `List<UserCouponVO>` (已使用/已过期)                     | ✅         |
 | M5  | GET  | `/api/coupon/template`         | 🌐  | —                                                          | `List<CouponVO>` (可领取的券模板)                         | ✅         |
 | M6  | POST | `/api/coupon/available/filter` | 🔒  | `CouponFilterReq { skuIds: [Long], totalAmount: Integer }` | `List<UserCouponVO>` (结算页预过滤)                      | ✅ V4.3    |
-| M7  | GET  | `/api/coupon/count`            | 🔒  | —                                                          | `Map<String,Integer>` `{available, used, expired}` | 🆕 ⚪ V5.0 |
+| M7  | GET  | `/api/coupon/count`            | 🔒  | —                                                          | `Map<String,Integer>` `{available, used, expired}`（我的券三态计数） | ✅ V5.11 |
 
 **`CouponVO`** (券模板；V5.4 按实现修正字段名：`minAmount` / `totalQty` / `issuedQty`):
 
@@ -1413,8 +1413,27 @@ Feature: 买家退款资金流（F1）
 
 | #   | 方法  | 路径                   | 认证  | 请求                                                    | 响应                 | 阶段     |
 | --- | --- | -------------------- | --- | ----------------------------------------------------- | ------------------ | ------ |
-| M12 | GET | `/api/activity`      | 🌐  | Query: `type?`(FULL_REDUCE\|LIMIT_DISCOUNT\|NEW_USER) | `List<ActivityVO>` | ⚪ V5.0 |
-| M13 | GET | `/api/activity/{id}` | 🌐  | Path: `id` (Long)                                     | `ActivityVO`       | ⚪ V5.0 |
+| M12 | GET | `/api/activity`      | 🌐  | Query: `type?`(FULL_REDUCE\|LIMIT_DISCOUNT\|NEW_USER，缺省=全部) | `List<ActivityVO>`（**进行中**活动；数据源=promotion 表：1满减→FULL_REDUCE、2满折→LIMIT_DISCOUNT；**NEW_USER 暂无活动数据源 → 空列表**，Phase 2 接新人礼活动） | ✅ V5.11 |
+| M13 | GET | `/api/activity/{id}` | 🌐  | Path: `id` (Long)                                     | `ActivityVO`（按 promotion id 查详情；不存在 → `NO_RESOURCE_FOUND(1103)`）       | ✅ V5.11 |
+
+**`ActivityVO`**（V5.11 定稿，源自 `promotion` 表进行中活动）:
+
+```json
+{
+  "id": 1,
+  "type": "FULL_REDUCE",
+  "name": "春季家装满减",
+  "sellerId": 5,
+  "threshold": 30000,
+  "discountValue": 4000,
+  "maxDiscount": 0,
+  "startTime": "2026-10-01T00:00:00",
+  "endTime": "2026-10-31T23:59:59"
+}
+```
+
+> - 满减（FULL_REDUCE）：`discountValue` = 减免金额（分）；满折（LIMIT_DISCOUNT）：`discountValue` = 折扣率万分比（8500=8.5折），`maxDiscount` = 封顶减免（0=不封顶）。
+> - 下单计价口径（ADR-043）与活动展示同源（同 `promotion` 表），用户所见即所得。
 
 ---
 
@@ -1929,6 +1948,7 @@ Feature: 渠道对账（F4）
 #### 4.14.8b InternalPromotionController — `/internal/promotion` (marketing-service, ✅ V5.8)
 
 > **F5 促销引擎**：trade 价格计算中心取生效促销。调用方：trade-service（下单计价，Feign 不入事务；ia-api `PromotionClient`）。**降级 fail-closed（[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)，与 I43 同口径）**：查询失败 → 下单抛错——静默空集合等于「故障伪装成无促销」，用户应得优惠被吞且与促销配置口径价格不一致；「无生效活动 → 空集合」是合法业务态，与查询失败严格区分。
+> **调用方扩展（🆕 V5.11）**：item-service 商品详情促销标签（P2 增量 `promotions`）复用本端点——**展示场景由调用方侧 try/catch fail-open 包装**（标签缺失=空列表，不阻断详情页），fallback 仍为 fail-closed 抛异常、语义不变；item 侧按 ADR-041 先例加 60s Caffeine 缓存（促销分钟级生效可接受）。
 
 | I44 | POST | `/internal/promotion/query` | Body: `PromotionQueryCO { sellerId(Long, 必填) }` | `List<PromotionCO>`（该商家进行中活动：id/name/sellerId/type/threshold/discountValue/maxDiscount；空集合=无生效活动） | ✅（V5.8） |
 
@@ -2431,6 +2451,7 @@ data: [DONE]
 | **V5.8.0** | **2026-10-05** | **P1 第二批（促销引擎 + 价格计算中心 / 会员等级与权益）契约先行**：①§4.13.8b 新增 AD48-AD50 管理端店铺满减/满折活动管理（`PromotionCreateReq`/`PromotionUpdateReq`，时间窗推导状态、已结束禁编、进行中禁删，复用 AD40-42 先例）；②§4.14.8b 新增 I44 `POST /internal/promotion/query`（trade 定价中心取生效促销，**fail-closed** 与 I43 同口径）；③§4.14.1b 新增 I45 `GET /internal/user/member/level` + I46 `POST /internal/user/member/growth`（会员折扣率/积分倍率 + 成长值入账，**fail-open**，与 I43/I44 刻意不同——[ADR-044](../adr/044-member-level-and-benefits.md)）；④计价口径（[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)）：促销与会员折扣与券三者可叠加、同类型促销取减免最大者、总额守卫 `discountAmount ≤ totalAmount`、秒杀单不叠加（维持 discountAmount=0）、Phase 1 优惠汇总在订单头（item 级分摊与多券 PRD 一并挂账 O1）；数据模型见 04 §十二 12.5/12.6（V5.8 迁移 `promotion`/`member_level_rule`/`member_growth_log`） |
 | **V5.9.0** | **2026-10-05** | **P2 第一批（商品向量推荐）契约先行**：①§4.4.x 新增 P27 `GET /api/item/product/{productId}/similar`（相似商品卡，向量相似度降序、恒过滤在售、排除自身，空列表不报错）；②§4.14.10 新增 I47 `POST /internal/search/vector/product/upsert`（商品原文摄取，单向量幂等覆盖写，未启用返回 0/降级哨兵 -1）与 I48 `GET /internal/search/vector/product/similar`（kNN 命中 id+score，组装归 item）；③全链路 fail-open（[ADR-046](../adr/046-product-vector-recommendation.md)）；MySQL 零 schema 变更（向量在 ES，`ProductDocument.embedding` 既有字段） |
 | **V5.10.0** | **2026-10-05** | **P2 第二批（搜索 facet / 每日任务体系）契约先行**：①**F8 搜索 facet**——SE1 声明未实现的 `brand/minPrice/maxPrice/sort` 过滤参数补齐实现（ES 链 filter+sort+publishTime 字段新增，DB 链同口径）；新增 SE6 `GET /api/search/facets`（品牌 terms 聚合 + 固定价格档位计数，独立端点零破坏，DB 链返回空对象）；②**F9 每日任务体系**——新增 M14 `GET /api/task/daily`（今日任务+状态）与 I49 `POST /internal/task/complete`（幂等完成+积分单出口发放，触发方 trade 确认收货/item 评价，事务外 fail-open，[ADR-047](../adr/047-daily-task-system.md)）；数据模型 `task_def`/`task_record` 按 ADR-045 口径直接入 Initialize.sql 快照（无迁移文件） |
+| **V5.11.0** | **2026-10-05** | **P2 第三批（活动中心 + 促销可见性）契约先行**：①§4.13.10 M12/M13 活动中心实现定稿（`ActivityVO` 字段定稿：数据源=promotion 进行中活动，1→FULL_REDUCE/2→LIMIT_DISCOUNT，NEW_USER 暂空列表 Phase 2；M13 按 id 详情 1103）；②M7 我的券三态计数实现；③§4.4.x P2 商品详情响应增量 `promotions` 促销标签（item 复用 I44，调用方 fail-open 包装 + 60s Caffeine 缓存，ADR-041 先例；与下单计价同源 promotion 表——用户所见即所得） |
 
 ---
 

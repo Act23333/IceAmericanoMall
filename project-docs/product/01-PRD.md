@@ -521,3 +521,19 @@ MVP 目标：一个月内可上线，验证平台模式可行性。
   - Given 评价落库，When 触发「每日发表 1 条评价」，Then 完成任务 +10 积分
   - Given marketing 不可用，When 确认收货/发表评价，Then 主流程成功、任务奖励静默丢失（fail-open + 告警）
 - **Phase 2（roadmap）**：管理端任务 CRUD、新手/周期任务类型、任务奖励翻倍活动、删评重评防刷升级。
+
+---
+
+## 十一、V5.11 增量需求要点（P2 第三批：F10 活动中心与促销可见性）
+
+### F10 活动中心 + 商品详情促销标签
+
+- **需求**：用户可在活动中心浏览进行中的满减/满折活动（M12/M13，数据源=促销引擎 `promotion` 表，与下单计价同源——所见即所得）；商品详情页展示该店铺进行中的促销标签（P2 响应增量 `promotions`）；我的券三态计数（M7）。
+- **核心场景（BDD）**：
+  - Given 店铺有进行中满 300 减 40 活动，When 请求 `/api/activity`，Then 活动列表含该活动（FULL_REDUCE）
+  - Given `type=LIMIT_DISCOUNT`，When 请求活动列表，Then 仅返回满折类活动
+  - Given `type=NEW_USER`，When 请求活动列表，Then 返回空列表（数据源 Phase 2 接新人礼）
+  - Given 商品所属店铺有进行中促销，When 查看商品详情，Then `promotions` 含促销标签
+  - Given marketing 不可用，When 查看商品详情，Then 详情正常返回、`promotions` 为空（fail-open）
+  - Given 用户持有 3 张可用 1 张已用 2 张过期券，When 请求 M7，Then `{available:3, used:1, expired:2}`
+- **Phase 2（roadmap）**：新人礼活动数据源、商品列表页促销角标、活动页装修位。
