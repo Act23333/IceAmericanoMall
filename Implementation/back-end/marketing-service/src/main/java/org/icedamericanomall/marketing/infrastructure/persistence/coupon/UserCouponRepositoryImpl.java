@@ -67,6 +67,13 @@ public class UserCouponRepositoryImpl implements UserCouponRepository {
                 .eq(UserCouponPO::getStatus, UserCouponStatusEnum.USED.getCode())));
     }
 
+    @Override
+    public long countByUserIdAndStatus(Long userId, UserCouponStatusEnum status) {
+        return userCouponMapper.selectCount(new LambdaQueryWrapper<UserCouponPO>()
+                .eq(UserCouponPO::getUserId, userId)
+                .eq(UserCouponPO::getStatus, status.getCode()));
+    }
+
     // ==================== PO <-> 聚合 ====================
 
     static UserCoupon toDomain(UserCouponPO po) {

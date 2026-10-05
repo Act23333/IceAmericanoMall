@@ -7,6 +7,7 @@ import org.icedamericanomall.marketing.adapter.assembler.MarketingConverter;
 import org.icedamericanomall.marketing.adapter.response.UserCouponVO;
 import org.icedamericanomall.marketing.domain.enums.CouponCategoryEnum;
 import org.icedamericanomall.marketing.domain.enums.OrderTypeEnum;
+import org.icedamericanomall.marketing.domain.enums.UserCouponStatusEnum;
 import org.icedamericanomall.marketing.domain.model.coupon.Coupon;
 import org.icedamericanomall.marketing.domain.model.coupon.UserCoupon;
 import org.icedamericanomall.marketing.domain.repository.CouponRepository;
@@ -15,7 +16,9 @@ import org.icedamericanomall.marketing.domain.service.CouponPricing;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 优惠券核销用例族编排（应用层 · 下单核销/回滚/持券查询）。
@@ -26,6 +29,11 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 public class CouponUsageManager {
+
+    /** M7 三态计数契约键（05-API-Specification §4.10.1 M7，V5.11 定稿）。 */
+    private static final String COUNT_KEY_AVAILABLE = "available";
+    private static final String COUNT_KEY_USED = "used";
+    private static final String COUNT_KEY_EXPIRED = "expired";
 
     private final CouponRepository couponRepository;
     private final UserCouponRepository userCouponRepository;
@@ -39,6 +47,28 @@ public class CouponUsageManager {
     /** 已使用/已过期券列表（按使用时间倒序）。 */
     public List<UserCouponVO> listUsedCoupons(Long userId) {
         return marketingConverter.toUserCouponVOList(userCouponRepository.findUsedByUserId(userId));
+    }
+
+    /**
+     * 我的券三态计数（M7，V5.11 契约定稿）。
+     *
+     * <p>状态口径与列表查询一致（{@code user_coupon.status} 落库态，{@link UserCouponStatusEnum}）：
+     * {@code available}=未使用（1）/ {@code used}=已使用（2）/ {@code expired}=已过期（3）。
+     *
+     * @param userId 当前登录用户 ID
+     * @return 三态计数（键固定 available/used/expired，值非负）
+     */
+    public Map<String, Integer> countMyCoupons(Long userId) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        counts.put(COUNT_KEY_AVAILABLE, toIntCount(userId, UserCouponStatusEnum.UNUSED));
+        counts.put(COUNT_KEY_USED, toIntCount(userId, UserCouponStatusEnum.USED));
+        counts.put(COUNT_KEY_EXPIRED, toIntCount(userId, UserCouponStatusEnum.EXPIRED));
+        return counts;
+    }
+
+    /** 单状态计数（count 返回 long，契约为 Integer）。 */
+    private int toIntCount(Long userId, UserCouponStatusEnum status) {
+        return (int) userCouponRepository.countByUserIdAndStatus(userId, status);
     }
 
     /**

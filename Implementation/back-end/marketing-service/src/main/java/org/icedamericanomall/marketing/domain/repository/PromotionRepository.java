@@ -30,6 +30,19 @@ public interface PromotionRepository {
     List<Promotion> findActiveBySeller(Long sellerId, LocalDateTime now);
 
     /**
+     * 全店铺当前「进行中」的活动集合（M12 活动中心列表，V5.11）。
+     *
+     * <p>与 {@link #findActiveBySeller} 同一<b>时间窗推导口径</b>（{@code start_time ≤ now ≤ end_time}），
+     * 不叠加落库 {@code status} 快照条件；区别仅在去掉 sellerId 过滤（活动中心为跨店铺聚合展示）。
+     * 排序固定为 {@code start_time} 降序（最新活动优先，活动中心展示惯例；次序 {@code id} 降序保证稳定）。
+     * 空集合 = 无生效活动（合法业务态，非查询失败）。
+     *
+     * @param now 判定时刻
+     * @return 进行中活动列表（无则空集合）
+     */
+    List<Promotion> findAllActive(LocalDateTime now);
+
+    /**
      * 新增活动（INSERT；生成的主键回填到聚合，供创建用例组装 VO）。
      *
      * @param promotion 待保存的活动聚合

@@ -94,6 +94,8 @@ spring:
                 - Path=/api/flash/**
                 - Path=/api/points/**
                 - Path=/api/sign/**
+                - Path=/api/task/**
+                - Path=/api/activity/**
                 - Path=/api/admin/coupon/**
                 - Path=/api/seller/coupon/**
             # 钱包服务路由（余额账户，需登录）

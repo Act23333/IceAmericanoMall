@@ -63,7 +63,7 @@ class PricingServiceTest {
     }
 
     private PromotionCO promotion(int type, int threshold, int discountValue, int maxDiscount) {
-        return new PromotionCO(1L, "店铺促销", 9L, type, threshold, discountValue, maxDiscount);
+        return new PromotionCO(1L, "店铺促销", 9L, type, threshold, discountValue, maxDiscount, null);
     }
 
     // ==================== 促销（I44） ====================

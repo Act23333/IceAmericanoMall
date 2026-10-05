@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 用户端优惠券接口。
@@ -63,5 +64,11 @@ public class CouponController {
     @GetMapping("/template")
     public Result<List<CouponVO>> templates() {
         return Result.ok(couponAdminManager.listActiveTemplates());
+    }
+
+    /** 我的券三态计数（M7：available/used/expired，V5.11）。 */
+    @GetMapping("/count")
+    public Result<Map<String, Integer>> count() {
+        return Result.ok(couponUsageManager.countMyCoupons(UserContext.getUserId()));
     }
 }

@@ -488,7 +488,7 @@ class OrderCreationManagerTest {
     // ==================== F5 价格计算中心（ADR-043）：促销/会员/券三源叠加 ====================
 
     private PromotionCO promotion(int type, int threshold, int discountValue, int maxDiscount) {
-        return new PromotionCO(1L, "店铺促销", 9L, type, threshold, discountValue, maxDiscount);
+        return new PromotionCO(1L, "店铺促销", 9L, type, threshold, discountValue, maxDiscount, null);
     }
 
     @Test

@@ -1,10 +1,13 @@
 package org.icedamericanomall.item.app;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.icedamericanomall.client.PromotionClient;
 import org.icedamericanomall.client.ProductVectorClient;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.ProductVectorUpsertCO;
+import org.icedamericanomall.dto.PromotionCO;
+import org.icedamericanomall.dto.PromotionQueryCO;
 import org.icedamericanomall.item.adapter.request.CreateProductReq;
 import org.icedamericanomall.item.adapter.request.UpdateProductReq;
 import org.icedamericanomall.item.adapter.response.ProductVO;
@@ -54,6 +57,9 @@ class ProductManagerTest {
     @Mock
     private ProductVectorClient productVectorClient;
 
+    @Mock
+    private PromotionClient promotionClient;
+
     private ProductManager productManager;
 
     @BeforeEach
@@ -63,7 +69,8 @@ class ProductManagerTest {
                 new org.icedamericanomall.item.adapter.assembler.SkuConverterImpl(),
                 freightTemplateManager, new SkuManager(skuRepository,
                 new org.icedamericanomall.item.adapter.assembler.SkuConverterImpl()),
-                productVectorClient, new ProductRecommendManager(productVectorClient));
+                productVectorClient, new ProductRecommendManager(productVectorClient),
+                new ProductPromotionManager(promotionClient));
     }
 
     @AfterEach
@@ -136,6 +143,42 @@ class ProductManagerTest {
 
         BizException ex = assertThrows(BizException.class, () -> productManager.getProductDetail(1L));
         assertEquals(ErrorCode.PRODUCT_NOT_FOUND, ex.getErrorCode());
+    }
+
+    @Test
+    @DisplayName("getProductDetail — 店铺有进行中促销 → promotions 回填满减/满折标签（V5.11 增量）")
+    void shouldFillPromotions_whenShopHasActivePromotion() {
+        when(productRepository.findById(1L)).thenReturn(product(100L));
+        when(skuRepository.findByProductId(1L)).thenReturn(List.of(
+                org.icedamericanomall.item.domain.model.sku.Sku.builder()
+                        .id(1L).productId(1L).price(599900).status(1).build()));
+        when(promotionClient.queryActive(any(PromotionQueryCO.class))).thenReturn(List.of(
+                new PromotionCO(1L, "满1000减200", 100L, 1, 100000, 20000, 0, null),
+                new PromotionCO(2L, "满500打8.5折", 100L, 2, 50000, 8500, 10000, null)));
+
+        ProductVO vo = productManager.getProductDetail(1L);
+
+        assertEquals(2, vo.getPromotions().size());
+        assertEquals("FULL_REDUCE", vo.getPromotions().get(0).getType());
+        assertEquals("LIMIT_DISCOUNT", vo.getPromotions().get(1).getType());
+        assertEquals(20000, vo.getPromotions().get(0).getDiscountValue());
+    }
+
+    @Test
+    @DisplayName("getProductDetail — 促销查询失败（fail-open）→ 详情正常返回，promotions 为空列表")
+    void shouldStillReturnDetail_whenPromotionQueryFails() {
+        when(productRepository.findById(1L)).thenReturn(product(100L));
+        when(skuRepository.findByProductId(1L)).thenReturn(List.of(
+                org.icedamericanomall.item.domain.model.sku.Sku.builder()
+                        .id(1L).productId(1L).price(599900).status(1).build()));
+        when(promotionClient.queryActive(any(PromotionQueryCO.class)))
+                .thenThrow(new BizException(ErrorCode.SYSTEM_BUSY, "促销服务暂不可用"));
+
+        ProductVO vo = productManager.getProductDetail(1L);
+
+        assertEquals("手机", vo.getName());
+        assertNotNull(vo.getPromotions());
+        assertTrue(vo.getPromotions().isEmpty());
     }
 
     // ==================== createProduct ====================

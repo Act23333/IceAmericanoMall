@@ -29,4 +29,9 @@ public class ProductVO implements Serializable {
     private Long freightTemplateId;
     /** 仅详情页返回完整 SKU 列表；列表页不携带。 */
     private List<SkuVO> skus;
+    /**
+     * 商品详情页促销标签（F10，契约 §4.4.x P2 V5.11 增量）：所属店铺进行中满减/满折活动；
+     * fail-open —— marketing 不可用/无活动 → 空列表，不阻断详情页。列表页不携带。
+     */
+    private List<PromotionTagVO> promotions;
 }

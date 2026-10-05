@@ -36,6 +36,8 @@ import java.util.stream.Collectors;
  *
  * <p>向量摄取旁路由 {@link ProductRecommendManager} 收口（事务外 afterCommit / 直发）；
  * 相似检索（Feign）与本类其余 Feign 依赖一样只允许出现在应用层。
+ * 商品详情促销标签（F10）由 {@link ProductPromotionManager} 收口（ADR-025 用例族拆分），
+ * 本类仅详情装配后一行委托填充。
  */
 @Slf4j
 @Component
@@ -55,6 +57,7 @@ public class ProductManager {
     private final SkuManager skuManager;
     private final ProductVectorClient productVectorClient;
     private final ProductRecommendManager productRecommendManager;
+    private final ProductPromotionManager productPromotionManager;
 
     /** 商品分页（在售）：sort=price 走最低价排序 SQL，否则销量/广告优先。 */
     public IPage<ProductVO> pageProducts(Long sellerId, Long categoryId, String keyword,
@@ -72,7 +75,11 @@ public class ProductManager {
         return voPage;
     }
 
-    /** 商品详情（含全部 SKU 与在售最低价）；DELETED 视为不存在。 */
+    /**
+     * 商品详情（含全部 SKU 与在售最低价、店铺进行中促销标签）；DELETED 视为不存在。
+     * <p>促销标签 fail-open（{@link ProductPromotionManager} 内部已兜底空列表），
+     * 详情主流程绝不因促销查询失败而失败。读操作无事务，Feign 调用不入事务。
+     */
     public ProductVO getProductDetail(Long id) {
         Product product = productRepository.findById(id);
         if (product == null || ProductStatusEnum.DELETED.getCode() == product.getStatus()) {
@@ -82,6 +89,7 @@ public class ProductManager {
         List<Sku> skus = skuRepository.findByProductId(id);
         vo.setSkus(skuConverter.toVOs(skus));
         vo.setMinPrice(minPriceOf(skus));
+        vo.setPromotions(productPromotionManager.tagsFor(product.getSellerId()));
         return vo;
     }
 

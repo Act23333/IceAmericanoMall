@@ -40,4 +40,7 @@ public class PromotionCO implements Serializable {
 
     /** 满折封顶减免额（分）；0=不封顶 */
     private Integer maxDiscount;
+
+    /** 活动截止时间（展示倒计时用，V5.11 增量） */
+    private java.time.LocalDateTime endTime;
 }

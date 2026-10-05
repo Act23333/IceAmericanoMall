@@ -1,5 +1,6 @@
 package org.icedamericanomall.marketing.domain.repository;
 
+import org.icedamericanomall.marketing.domain.enums.UserCouponStatusEnum;
 import org.icedamericanomall.marketing.domain.model.coupon.UserCoupon;
 
 import java.util.List;
@@ -29,4 +30,16 @@ public interface UserCouponRepository {
 
     /** 按订单号取已使用券（回滚用；不存在返回 null）。 */
     UserCoupon findUsedByOrderNo(String orderNo);
+
+    /**
+     * 用户持券按状态计数（M7 我的券三态计数，V5.11）。
+     *
+     * <p>状态口径与列表查询一致：{@code user_coupon.status} 落库态
+     * （1未使用/2已使用/3已过期，{@link UserCouponStatusEnum}）。
+     *
+     * @param userId 用户 ID
+     * @param status 持券状态
+     * @return 该状态下持券数量（无则 0）
+     */
+    long countByUserIdAndStatus(Long userId, UserCouponStatusEnum status);
 }

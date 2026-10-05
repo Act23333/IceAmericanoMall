@@ -37,6 +37,20 @@ public class PromotionRepositoryImpl implements PromotionRepository {
                 .stream().map(PromotionRepositoryImpl::toDomain).toList();
     }
 
+    /**
+     * 全店铺进行中活动（M12 活动中心，V5.11）：同一时间窗推导口径，去掉 sellerId 过滤；
+     * {@code start_time} 降序（最新活动优先），{@code id} 降序为稳定次序兜底。
+     */
+    @Override
+    public List<Promotion> findAllActive(LocalDateTime now) {
+        return promotionMapper.selectList(new LambdaQueryWrapper<PromotionPO>()
+                        .le(PromotionPO::getStartTime, now)
+                        .ge(PromotionPO::getEndTime, now)
+                        .orderByDesc(PromotionPO::getStartTime)
+                        .orderByDesc(PromotionPO::getId))
+                .stream().map(PromotionRepositoryImpl::toDomain).toList();
+    }
+
     @Override
     public void save(Promotion promotion) {
         PromotionPO po = toPO(promotion);

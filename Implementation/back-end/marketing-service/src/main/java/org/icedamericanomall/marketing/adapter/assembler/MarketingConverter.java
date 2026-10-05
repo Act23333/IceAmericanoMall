@@ -6,6 +6,7 @@ import org.icedamericanomall.marketing.adapter.request.FlashSaleCreateReq;
 import org.icedamericanomall.marketing.adapter.request.FlashSaleUpdateReq;
 import org.icedamericanomall.marketing.adapter.request.PromotionCreateReq;
 import org.icedamericanomall.marketing.adapter.request.PromotionUpdateReq;
+import org.icedamericanomall.marketing.adapter.response.ActivityVO;
 import org.icedamericanomall.marketing.adapter.response.CouponVO;
 import org.icedamericanomall.marketing.adapter.response.FlashBuyVO;
 import org.icedamericanomall.marketing.adapter.response.FlashSaleVO;
@@ -16,6 +17,7 @@ import org.icedamericanomall.marketing.adapter.response.SignResultVO;
 import org.icedamericanomall.marketing.adapter.response.UserCouponVO;
 import org.icedamericanomall.marketing.app.dto.FlashBuyResult;
 import org.icedamericanomall.marketing.app.dto.SignResultDTO;
+import org.icedamericanomall.marketing.domain.enums.PromotionTypeEnum;
 import org.icedamericanomall.marketing.domain.model.coupon.Coupon;
 import org.icedamericanomall.marketing.domain.model.coupon.UserCoupon;
 import org.icedamericanomall.marketing.domain.model.flash.FlashSale;
@@ -100,6 +102,37 @@ public interface MarketingConverter {
 
     /** 促销聚合列表 → 生效促销契约对象列表（I44）。 */
     List<PromotionCO> toPromotionCOList(List<Promotion> promotions);
+
+    /**
+     * 促销聚合 → 活动中心视图对象（M12/M13，V5.11 契约定稿）。
+     *
+     * <p>{@code type} 需由数字编码映射为对外契约字符串（1满减→FULL_REDUCE / 2满折→LIMIT_DISCOUNT），
+     * MapStruct 无法自动完成，故用 default 方法显式装配（同 {@link #toPointsBalanceVO} 先例）；
+     * 装配逻辑统一收在适配层转换器中，控制器不手写转换。
+     *
+     * @param promotion 促销活动聚合
+     * @return 活动视图对象（type 为契约字符串；类型未知时为 null，由查询用例保证不会出现）
+     */
+    default ActivityVO toActivityVO(Promotion promotion) {
+        if (promotion == null) {
+            return null;
+        }
+        ActivityVO vo = new ActivityVO();
+        vo.setId(promotion.getId());
+        PromotionTypeEnum typeEnum = PromotionTypeEnum.of(promotion.getType());
+        vo.setType(typeEnum != null ? typeEnum.getContractName() : null);
+        vo.setName(promotion.getName());
+        vo.setSellerId(promotion.getSellerId());
+        vo.setThreshold(promotion.getThreshold());
+        vo.setDiscountValue(promotion.getDiscountValue());
+        vo.setMaxDiscount(promotion.getMaxDiscount());
+        vo.setStartTime(promotion.getStartTime());
+        vo.setEndTime(promotion.getEndTime());
+        return vo;
+    }
+
+    /** 促销聚合列表 → 活动中心视图对象列表（M12；元素装配复用 {@link #toActivityVO}）。 */
+    List<ActivityVO> toActivityVOList(List<Promotion> promotions);
 
     /** 秒杀购买结果 → 视图对象。 */
     FlashBuyVO toFlashBuyVO(FlashBuyResult result);

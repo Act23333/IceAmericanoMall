@@ -76,7 +76,7 @@ class InternalPromotionControllerTest {
     @Test
     @DisplayName("query — 有生效活动 → 原样透出 CO 列表（不包 Result）")
     void shouldReturnRawCoList_whenActivePromotionsExist() throws Exception {
-        PromotionCO co = new PromotionCO(1L, "双11店铺满减", 500L, 2, 10000, 8500, 5000);
+        PromotionCO co = new PromotionCO(1L, "双11店铺满减", 500L, 2, 10000, 8500, 5000, java.time.LocalDateTime.now());
         when(promotionQueryManager.queryActive(any(PromotionQueryCO.class))).thenReturn(List.of(co));
 
         mockMvc.perform(MockMvcRequestBuilders.post("/internal/promotion/query")
