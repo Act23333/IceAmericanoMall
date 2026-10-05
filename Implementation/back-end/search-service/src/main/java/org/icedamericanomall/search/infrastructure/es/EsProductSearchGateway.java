@@ -2,10 +2,9 @@ package org.icedamericanomall.search.infrastructure.es;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.KnnQuery;
-import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
-import co.elastic.clients.elasticsearch._types.query_dsl.MatchQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
+import co.elastic.clients.elasticsearch.core.SearchResponse;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +15,7 @@ import org.icedamericanomall.search.domain.gateway.EmbeddingGateway;
 import org.icedamericanomall.search.domain.gateway.ProductSearchGateway;
 import org.icedamericanomall.search.domain.model.search.ProductSearchHit;
 import org.icedamericanomall.search.domain.model.search.ProductVectorDoc;
+import org.icedamericanomall.search.domain.model.search.SearchFacets;
 import org.icedamericanomall.search.domain.model.search.SearchPage;
 import org.icedamericanomall.search.domain.model.search.SearchQuery;
 import org.icedamericanomall.search.domain.service.ProductVectorTextBuilder;
@@ -35,14 +35,14 @@ import org.springframework.stereotype.Component;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 /**
  * ElasticSearch 检索网关 —— {@code search.elasticsearch.enabled=true} 时激活。
- * ES 7.17 + IK 中文分词，NativeQuery + MatchQuery；kNN 向量检索支持。
+ * ES 8.18 客户端 + IK 中文分词，NativeQuery + MatchQuery；kNN 向量检索支持。
+ * 查询/排序/facet 装配见 {@link ProductSearchRequestBuilder}，文档转换见 {@link ProductEsDocuments}。
  *
  * <p><b>向量写入（I47 / reindex，ADR-046）</b>：索引按 kNN mapping 创建（{@link ProductVectorMapping}）；
  * I47 幂等覆盖写为增量主路径，reindex 全量兜底（逐商品生成向量，单商品失败降级无向量文档）。
@@ -71,32 +71,31 @@ public class EsProductSearchGateway implements ProductSearchGateway {
 
     @Override
     public SearchPage<ProductSearchHit> search(SearchQuery query) {
-        var bool = new BoolQuery.Builder();
-
-        if (query.hasKeyword()) {
-            bool.should(Query.of(q -> q.match(MatchQuery.of(m -> m.field("name").query(query.keyword())))));
-            bool.should(Query.of(q -> q.match(MatchQuery.of(m -> m.field("description").query(query.keyword())))));
-            bool.minimumShouldMatch("1");
-        } else {
-            bool.must(Query.of(q -> q.matchAll(m -> m)));
-        }
-
-        if (query.categoryId() != null) {
-            bool.filter(Query.of(q -> q.term(t -> t.field("categoryId").value(query.categoryId()))));
-        }
-
-        NativeQuery nativeQuery = NativeQuery.builder()
-                .withQuery(Query.of(q -> q.bool(bool.build())))
-                .withPageable(PageRequest.of(query.page() - 1, query.size()))
-                .build();
-
+        NativeQuery nativeQuery = ProductSearchRequestBuilder.buildNativeQuery(query);
         SearchHits<ProductDocument> hits = esOps.search(nativeQuery, ProductDocument.class);
 
         List<ProductSearchHit> records = hits.getSearchHits().stream()
                 .map(SearchHit::getContent)
-                .map(EsProductSearchGateway::toHit)
+                .map(ProductEsDocuments::toHit)
                 .toList();
         return new SearchPage<>(records, hits.getTotalHits(), query.page(), query.size());
+    }
+
+    /**
+     * facet 聚合（SE6）—— 品牌/固定价格档位计数（keyword/categoryId 过滤前分布）。
+     * 聚合失败降级为空 facet（facet 是辅助过滤 UI，不阻断 C 端搜索，异常不透出）。
+     */
+    @Override
+    public SearchFacets facets(SearchQuery query) {
+        try {
+            SearchResponse<ProductDocument> response = esClient.search(
+                    ProductSearchRequestBuilder.buildFacetsRequest(query), ProductDocument.class);
+            return ProductSearchRequestBuilder.parseFacets(response.aggregations());
+        } catch (Exception e) {
+            log.warn("facet 聚合失败（辅助 UI 降级为空对象，不阻断搜索）: keyword={}, 原因: {}",
+                    query.keyword(), e.getMessage());
+            return SearchFacets.empty();
+        }
     }
 
     @Override
@@ -119,7 +118,7 @@ public class EsProductSearchGateway implements ProductSearchGateway {
 
         SearchHits<ProductDocument> hits = esOps.search(query, ProductDocument.class);
         return hits.getSearchHits().stream()
-                .map(hit -> toHit(hit.getContent(), hit.getScore()))
+                .map(hit -> ProductEsDocuments.toHit(hit.getContent(), hit.getScore()))
                 .toList();
     }
 
@@ -145,7 +144,7 @@ public class EsProductSearchGateway implements ProductSearchGateway {
                 float[] embedding = vectorEnabled ? embedQuietly(p) : null;
                 vectorFailures += vectorEnabled && embedding == null ? 1 : 0;
                 bulk.operations(op -> op.index(idx -> idx.index(INDEX_PRODUCTS)
-                        .id(String.valueOf(p.getId())).document(toDocMap(p, priceMap, embedding))));
+                        .id(String.valueOf(p.getId())).document(ProductEsDocuments.toDocMap(p, priceMap, embedding))));
             }
             var resp = esClient.bulk(bulk.build());
             long errors = resp.items().stream().filter(i -> i.error() != null).count();
@@ -162,7 +161,9 @@ public class EsProductSearchGateway implements ProductSearchGateway {
     @Override
     public void upsertVectorDoc(ProductVectorDoc doc) {
         ensureVectorIndex();
-        esOps.save(toDocument(doc));
+        ProductDocument document = ProductEsDocuments.toDocument(doc);
+        applyPublishTimeQuietly(document);
+        esOps.save(document);
     }
 
     @Override
@@ -174,6 +175,23 @@ public class EsProductSearchGateway implements ProductSearchGateway {
             // 索引不存在/读取失败等同「无向量」（fail-open），仅影响相似检索的空结果
             log.warn("商品向量读取失败（按无向量处理）: productId={}, 原因: {}", productId, e.getMessage());
             return Optional.empty();
+        }
+    }
+
+    /**
+     * I47 覆盖写补齐 publishTime（SE1 newest 排序）—— 摄取契约（{@code ProductVectorUpsertCO}）
+     * 无此字段，整文档覆盖写会丢列，故从本地镜像表回填；缺失/读取失败按无值处理
+     * （fail-open，仅影响 newest 排序，不阻断摄取主流程）。
+     */
+    private void applyPublishTimeQuietly(ProductDocument document) {
+        try {
+            ProductPO po = productMapper.selectById(document.getId());
+            if (po != null && po.getPublishTime() != null) {
+                document.setPublishTime(ProductEsDocuments.toEpochMilli(po.getPublishTime()));
+            }
+        } catch (Exception e) {
+            log.warn("商品 publishTime 回填失败（按缺失处理）: productId={}, 原因: {}",
+                    document.getId(), e.getMessage());
         }
     }
 
@@ -240,50 +258,6 @@ public class EsProductSearchGateway implements ProductSearchGateway {
                     product.getId(), product.getName(), e.getMessage());
             return null;
         }
-    }
-
-    /** 商品 PO → ES doc map（embedding 为 null 时不落该字段，即无向量文档）。包内可见以便单测。 */
-    static Map<String, Object> toDocMap(ProductPO p, Map<Long, Integer> priceMap, float[] embedding) {
-        Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("id", p.getId());
-        doc.put("productId", p.getProductId());
-        doc.put("name", p.getName());
-        doc.put("description", p.getDescription());
-        doc.put("brand", p.getBrand());
-        doc.put("categoryId", p.getCategoryId());
-        doc.put("price", priceMap.getOrDefault(p.getId(), 0));
-        doc.put("mainImage", p.getMainImage());
-        doc.put("soldCount", p.getSoldCount());
-        if (embedding != null) {
-            doc.put(ProductVectorMapping.VECTOR_FIELD, toFloatList(embedding));
-        }
-        return doc;
-    }
-
-    /** 领域向量文档 → ES 文档（_id = 商品 id，幂等覆盖；展示字段一并以入参为准）。 */
-    private static ProductDocument toDocument(ProductVectorDoc doc) {
-        ProductDocument document = new ProductDocument();
-        document.setId(doc.productId());
-        document.setProductId(String.valueOf(doc.productId()));
-        document.setName(doc.name());
-        document.setDescription(doc.description());
-        document.setBrand(doc.brand());
-        document.setCategoryId(doc.categoryId());
-        document.setMainImage(doc.mainImage());
-        document.setPrice(doc.price());
-        document.setSoldCount(doc.soldCount());
-        document.setEmbedding(doc.embedding());
-        return document;
-    }
-
-    private static ProductSearchHit toHit(ProductDocument doc) {
-        return toHit(doc, null);
-    }
-
-    private static ProductSearchHit toHit(ProductDocument doc, Float score) {
-        return new ProductSearchHit(doc.getId(), doc.getProductId(), doc.getCategoryId(), doc.getName(),
-                doc.getDescription(), doc.getBrand(), doc.getMainImage(), doc.getPrice(), doc.getSoldCount(),
-                score == null ? null : score.doubleValue());
     }
 
     private static List<Float> toFloatList(float[] array) {

@@ -12,8 +12,10 @@ package org.icedamericanomall.search.infrastructure.es;
  *   <li>{@code index.knn=true} —— 开启 kNN 检索（dense_vector index=true 的前置条件）；</li>
  *   <li>{@code embedding.type=dense_vector, dims=N, index=true, similarity=cosine} ——
  *       与 {@code EmbeddingProperties.dims} 同源（维度单一事实源）；</li>
- *   <li>{@code name/description} 为 text（I28 关键词 match 检索字段），其余展示字段
- *       显式定类型，避免动态映射漂移。</li>
+     *   <li>{@code name/description} 为 text（I28 关键词 match 检索字段），其余展示字段
+     *       显式定类型，避免动态映射漂移；</li>
+     *   <li>{@code publishTime} 为 date（SE1 newest 排序，写入侧用 epoch millis 数值，
+     *       ES date 原生支持且数值可比）。</li>
  * </ul>
  */
 final class ProductVectorMapping {
@@ -55,6 +57,7 @@ final class ProductVectorMapping {
                       "mainImage":   { "type": "keyword" },
                       "price":       { "type": "integer" },
                       "soldCount":   { "type": "integer" },
+                      "publishTime": { "type": "date" },
                       "%s": {
                         "type": "dense_vector",
                         "dims": %d,

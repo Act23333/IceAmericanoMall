@@ -6,9 +6,12 @@ import org.icedamericanomall.client.MemberClient;
 import org.icedamericanomall.client.NotificationClient;
 import org.icedamericanomall.client.PointsClient;
 import org.icedamericanomall.client.SkuClient;
+import org.icedamericanomall.client.TaskClient;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
 import org.icedamericanomall.dto.MemberGrowthCO;
 import org.icedamericanomall.dto.MemberLevelCO;
+import org.icedamericanomall.dto.TaskCompleteCO;
+import org.icedamericanomall.dto.TaskCompleteResultCO;
 import org.icedamericanomall.trade.app.TradeEventNotifier;
 import org.icedamericanomall.trade.domain.model.order.Order;
 import org.icedamericanomall.trade.domain.model.order.OrderItem;
@@ -45,6 +48,7 @@ class OrderLifecycleManagerTest {
     @Mock private LogisticsClient logisticsClient;
     @Mock private PointsClient pointsClient;
     @Mock private MemberClient memberClient;
+    @Mock private TaskClient taskClient;
     @Mock private DomainEventProducer eventProducer;
     @Mock private NotificationClient notificationClient;
 
@@ -53,7 +57,7 @@ class OrderLifecycleManagerTest {
     @BeforeEach
     void setUp() {
         manager = new OrderLifecycleManager(orderRepository, skuClient, couponClient,
-                logisticsClient, pointsClient, memberClient, eventProducer,
+                logisticsClient, pointsClient, memberClient, taskClient, eventProducer,
                 new TradeEventNotifier(notificationClient));
     }
 
@@ -173,6 +177,47 @@ class OrderLifecycleManagerTest {
 
         assertDoesNotThrow(() -> manager.confirmReceipt("ORD-1", 100L));
 
+        verify(pointsClient).addPoints(eq(100L), eq(100), eq(2), eq("下单奖励"));
+    }
+
+    @Test
+    @DisplayName("confirmReceipt — F9 每日任务触发：DAILY_ORDER 携带 userId（ADR-047）")
+    void shouldTriggerDailyOrderTask_whenConfirmReceipt() {
+        when(orderRepository.findByOrderNo("ORD-1")).thenReturn(order());
+        when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("NORMAL", 10000, 100));
+
+        manager.confirmReceipt("ORD-1", 100L);
+
+        ArgumentCaptor<TaskCompleteCO> captor = ArgumentCaptor.forClass(TaskCompleteCO.class);
+        verify(taskClient).complete(captor.capture());
+        assertEquals(100L, captor.getValue().getUserId());
+        assertEquals("DAILY_ORDER", captor.getValue().getTaskCode());
+    }
+
+    @Test
+    @DisplayName("confirmReceipt — 任务触发异常 fail-open：确认收货主流程不受影响（积分/成长值照常）")
+    void shouldNotBlockConfirmReceipt_whenTaskTriggerFails() {
+        when(orderRepository.findByOrderNo("ORD-1")).thenReturn(order());
+        when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("NORMAL", 10000, 100));
+        doThrow(new RuntimeException("marketing-service down")).when(taskClient).complete(any());
+
+        assertDoesNotThrow(() -> manager.confirmReceipt("ORD-1", 100L));
+
+        verify(pointsClient).addPoints(eq(100L), eq(100), eq(2), eq("下单奖励"));
+        verify(memberClient).recordGrowth(any());
+    }
+
+    @Test
+    @DisplayName("confirmReceipt — 任务降级返回 false+0（fallback 口径）：返回值忽略，主流程零感知")
+    void shouldIgnoreDegradedTaskResult_whenConfirmReceipt() {
+        when(orderRepository.findByOrderNo("ORD-1")).thenReturn(order());
+        when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("NORMAL", 10000, 100));
+        when(taskClient.complete(any(TaskCompleteCO.class)))
+                .thenReturn(new TaskCompleteResultCO(false, 0));
+
+        assertDoesNotThrow(() -> manager.confirmReceipt("ORD-1", 100L));
+
+        verify(taskClient).complete(any(TaskCompleteCO.class));
         verify(pointsClient).addPoints(eq(100L), eq(100), eq(2), eq("下单奖励"));
     }
 

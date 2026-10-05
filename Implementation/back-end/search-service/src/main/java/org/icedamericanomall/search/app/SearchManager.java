@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.search.domain.gateway.KeywordTracker;
 import org.icedamericanomall.search.domain.gateway.ProductSearchGateway;
 import org.icedamericanomall.search.domain.model.search.ProductSearchHit;
+import org.icedamericanomall.search.domain.model.search.SearchFacets;
 import org.icedamericanomall.search.domain.model.search.SearchPage;
 import org.icedamericanomall.search.domain.model.search.SearchQuery;
 import org.springframework.stereotype.Component;
@@ -24,12 +25,34 @@ public class SearchManager {
     private final ProductSearchGateway productSearchGateway;
     private final KeywordTracker keywordTracker;
 
-    /** 关键词/分类检索（非空关键词记录热搜）。 */
-    public SearchPage<ProductSearchHit> search(String keyword, Long categoryId, int page, int size) {
+    /**
+     * 关键词/分类/品牌/价格/排序检索（SE1，非空关键词记录热搜）。
+     *
+     * @param keyword   关键词（可空 = 全量浏览）
+     * @param categoryId 分类过滤（可空）
+     * @param brand     品牌精确过滤（可空）
+     * @param minPrice  最低价过滤（可空，分）
+     * @param maxPrice  最高价过滤（可空，分）
+     * @param sort      排序 sales|price|newest|relevance（可空 = relevance）
+     * @param page      页码（1 起）
+     * @param size      每页条数
+     */
+    public SearchPage<ProductSearchHit> search(String keyword, Long categoryId, String brand,
+                                               Integer minPrice, Integer maxPrice, String sort,
+                                               int page, int size) {
         if (keyword != null && !keyword.isBlank()) {
             keywordTracker.recordKeyword(keyword.trim());
         }
-        return productSearchGateway.search(new SearchQuery(keyword, categoryId, page, size));
+        return productSearchGateway.search(
+                new SearchQuery(keyword, categoryId, page, size, brand, minPrice, maxPrice, sort));
+    }
+
+    /**
+     * 搜索 facet 聚合（SE6）—— 品牌与固定价格档位计数。
+     * 只透传 keyword/categoryId（facet 反映过滤前分布，不含 brand/price 过滤）。
+     */
+    public SearchFacets getFacets(String keyword, Long categoryId) {
+        return productSearchGateway.facets(new SearchQuery(keyword, categoryId, 1, 1));
     }
 
     /** 向量语义检索（DB 实现恒返回空页，ES 走 kNN）。 */

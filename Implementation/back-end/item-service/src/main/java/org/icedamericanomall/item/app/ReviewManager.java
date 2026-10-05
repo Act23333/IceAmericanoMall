@@ -4,10 +4,12 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.NotificationClient;
+import org.icedamericanomall.client.TaskClient;
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
+import org.icedamericanomall.dto.TaskCompleteCO;
 import org.icedamericanomall.item.adapter.assembler.ReviewConverter;
 import org.icedamericanomall.item.adapter.request.ReviewCreateReq;
 import org.icedamericanomall.item.adapter.response.ReviewSummaryVO;
@@ -18,16 +20,19 @@ import org.icedamericanomall.item.domain.repository.ProductRepository;
 import org.icedamericanomall.item.domain.repository.ReviewRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 评价编排（应用层）—— 评价用例（发布/分页/汇总/回复/追评/点赞）+ 站内信通知触发。
+ * 评价编排（应用层）—— 评价用例（发布/分页/汇总/回复/追评/点赞）+ 站内信通知触发
+ * + 每日评价任务旁路触发（F9，ADR-047）。
  *
- * <p>跨服务调用（notification-service）只允许出现在本层；回复/追评/点赞的
- * 守卫 SQL（reply IS NULL、本人追评）在仓储实现内。
+ * <p>跨服务调用（notification-service / marketing-service）只允许出现在本层；
+ * 回复/追评/点赞的守卫 SQL（reply IS NULL、本人追评）在仓储实现内。
  */
 @Slf4j
 @Component
@@ -39,13 +44,16 @@ public class ReviewManager {
     private static final String NOTIFY_TITLE_REPLY = "商家回复了你的评价";
     private static final String NOTIFY_TITLE_LIKE = "有人赞了你的评价";
     private static final String PRODUCT_LINK_PREFIX = "/product/";
+    /** F9 每日任务编码（ADR-047 task_def.code seed 常量，对应「每日发表 1 条评价」）。 */
+    private static final String TASK_CODE_DAILY_REVIEW = "DAILY_REVIEW";
 
     private final ReviewRepository reviewRepository;
     private final ProductRepository productRepository;
     private final ReviewConverter reviewConverter;
     private final NotificationClient notificationClient;
+    private final TaskClient taskClient;
 
-    /** 发表评价（同订单同用户去重），并累加商品评论数。 */
+    /** 发表评价（同订单同用户去重），累加商品评论数，并在事务提交后触发每日评价任务（F9）。 */
     @Transactional(rollbackFor = Exception.class)
     public ReviewVO createReview(Long userId, ReviewCreateReq req) {
         if (reviewRepository.countByOrderIdAndUserId(req.getOrderId(), userId) > 0) {
@@ -55,6 +63,7 @@ public class ReviewManager {
                 req.getRating(), req.getContent(), req.getImages());
         reviewRepository.save(review);
         productRepository.incrementCommentCount(req.getProductId());
+        triggerDailyReviewTask(userId);
         return reviewConverter.toVO(review);
     }
 
@@ -191,6 +200,35 @@ public class ReviewManager {
             notificationClient.sendInAppMessage(message);
         } catch (Exception e) {
             log.warn("发送评价通知失败(type={}, recipient={}): {}", type, recipientId, e.getMessage());
+        }
+    }
+
+    /**
+     * 每日评价任务旁路触发（F9 DAILY_REVIEW，ADR-047）—— 评价落库成功后触发。
+     *
+     * <p><b>事务纪律（硬约束：Feign 严禁进事务）</b>：调用点处于 {@code createReview} 的
+     * 写事务内，故对齐 {@link ProductRecommendManager} 摄取先例 —— 有活动事务时注册
+     * {@code afterCommit} 回调（回滚即不触发，提交后才远程调用），无活动事务直接发送。
+     */
+    private void triggerDailyReviewTask(Long userId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            completeDailyReviewTask(userId);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                completeDailyReviewTask(userId);
+            }
+        });
+    }
+
+    /** 任务触发（fail-open）：降级返回 {@code completed=false}（返回值忽略）或异常均只记日志，评价主流程零感知。 */
+    private void completeDailyReviewTask(Long userId) {
+        try {
+            taskClient.complete(new TaskCompleteCO(userId, TASK_CODE_DAILY_REVIEW));
+        } catch (Exception e) {
+            log.warn("每日任务触发失败（不阻断评价主流程）: userId={}", userId, e);
         }
     }
 }

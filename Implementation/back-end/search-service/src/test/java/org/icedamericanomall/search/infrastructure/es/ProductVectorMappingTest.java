@@ -29,6 +29,8 @@ class ProductVectorMappingTest {
         assertTrue(json.contains("\"name\""), "应含 name（I28 关键词检索字段）");
         assertTrue(json.contains("\"description\""), "应含 description（I28 关键词检索字段）");
         assertTrue(json.contains("\"price\""), "应含 price（展示字段）");
+        assertTrue(json.contains("\"publishTime\""), "应含 publishTime（SE1 newest 排序字段）");
+        assertTrue(json.contains("\"type\": \"date\""), "publishTime 应为 date 类型（epoch millis 写入）");
     }
 
     @Test

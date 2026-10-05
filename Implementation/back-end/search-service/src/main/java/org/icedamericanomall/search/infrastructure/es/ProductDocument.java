@@ -30,6 +30,12 @@ public class ProductDocument implements Serializable {
     /** 最低 SKU 价格 (分) */
     private Integer price;
     private Integer soldCount;
+    /**
+     * 上架时间（SE1 newest 排序）—— epoch millis（与 product 表 publish_time 对齐）。
+     * 选 epoch millis 而非 ISO 字符串：ES {@code date} 类型原生支持且数值可比，
+     * 排序无时区/格式歧义；缺失（未回填）时 newest 排序自然靠后。
+     */
+    private Long publishTime;
     /** V2.5.2: 商品描述 Embedding 向量 (dense_vector, 1536维)，仅索引内部使用 */
     private double[] embedding;
 }

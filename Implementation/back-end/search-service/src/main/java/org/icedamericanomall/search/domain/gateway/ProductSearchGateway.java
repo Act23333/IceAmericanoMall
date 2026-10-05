@@ -2,6 +2,7 @@ package org.icedamericanomall.search.domain.gateway;
 
 import org.icedamericanomall.search.domain.model.search.ProductSearchHit;
 import org.icedamericanomall.search.domain.model.search.ProductVectorDoc;
+import org.icedamericanomall.search.domain.model.search.SearchFacets;
 import org.icedamericanomall.search.domain.model.search.SearchPage;
 import org.icedamericanomall.search.domain.model.search.SearchQuery;
 
@@ -20,6 +21,17 @@ public interface ProductSearchGateway {
 
     /** 关键词/分类检索。 */
     SearchPage<ProductSearchHit> search(SearchQuery query);
+
+    /**
+     * 搜索 facet 聚合（SE6）—— 品牌 / 固定价格档位计数。
+     *
+     * <p>只按 {@code keyword}/{@code categoryId} 过滤（不含 brand/price 过滤——facet 反映过滤前分布）；
+     * DB LIKE 实现无聚合能力（facet 是 ES 能力），恒返回 {@link SearchFacets#empty()}。
+     *
+     * @param query 检索条件（仅 keyword/categoryId 生效）
+     * @return facet 计数；无聚合能力或聚合异常时为空对象（辅助 UI 降级，不阻断）
+     */
+    SearchFacets facets(SearchQuery query);
 
     /** 向量语义检索（DB 实现恒返回空列表）。 */
     List<ProductSearchHit> vectorSearch(double[] embedding, int size);

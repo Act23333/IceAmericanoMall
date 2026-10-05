@@ -1114,3 +1114,38 @@ CREATE TABLE `member_growth_log` (
     UNIQUE KEY `uk_order_no` (`order_no`),
     KEY `idx_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会员成长值入账流水（只升不降）';
+
+-- =====================================================================
+-- V5.10 每日任务体系（F9，ADR-047；按 2026-10-05 口径直接修改本快照，无迁移文件）
+-- ---------------------------------------------------------------------
+-- task_def：任务定义（表驱动，Phase 1 seed 两个每日任务；运营扩展直接加行）
+-- task_record：任务完成记录（uk_user_task_date 每日幂等锚点，一用户一任务一天一次）
+-- 积分发放经 PointsManager 单出口（points_log type=3 任务奖励），与任务记录同事务。
+-- ---------------------------------------------------------------------
+
+CREATE TABLE `task_def` (
+    `id`           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `code`         VARCHAR(32)  NOT NULL COMMENT '任务编码（DAILY_ORDER/DAILY_REVIEW，调用方锚定）',
+    `name`         VARCHAR(50)  NOT NULL COMMENT '任务名称',
+    `type`         TINYINT      NOT NULL DEFAULT 1 COMMENT '1=每日重置（Phase 1 唯一值）',
+    `reward_points` INT         NOT NULL COMMENT '完成奖励积分',
+    `status`       TINYINT      NOT NULL DEFAULT 1 COMMENT '1=启用 0=停用',
+    `create_time`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='任务定义（表驱动）';
+
+INSERT IGNORE INTO `task_def` (`code`, `name`, `type`, `reward_points`, `status`) VALUES
+    ('DAILY_ORDER',  '每日完成 1 笔订单确认', 1, 20, 1),
+    ('DAILY_REVIEW', '每日发表 1 条评价',     1, 10, 1);
+
+CREATE TABLE `task_record` (
+    `id`            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `user_id`       BIGINT      NOT NULL COMMENT '用户 user_id',
+    `task_code`     VARCHAR(32) NOT NULL COMMENT '任务编码',
+    `reward_points` INT         NOT NULL COMMENT '实发积分',
+    `biz_date`      DATE        NOT NULL COMMENT '业务日（每日重置锚点）',
+    `create_time`   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_user_task_date` (`user_id`, `task_code`, `biz_date`),
+    KEY `idx_user_date` (`user_id`, `biz_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='任务完成记录（每日幂等）';

@@ -11,12 +11,17 @@ import org.icedamericanomall.item.domain.model.review.Review;
 import org.icedamericanomall.item.domain.repository.ProductRepository;
 import org.icedamericanomall.item.domain.repository.ReviewRepository;
 import org.icedamericanomall.client.NotificationClient;
+import org.icedamericanomall.client.TaskClient;
+import org.icedamericanomall.dto.TaskCompleteCO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 
@@ -44,12 +49,15 @@ class ReviewManagerTest {
     @Mock
     private NotificationClient notificationClient;
 
+    @Mock
+    private TaskClient taskClient;
+
     private ReviewManager reviewManager;
 
     @BeforeEach
     void setUp() {
         reviewManager = new ReviewManager(reviewRepository, productRepository,
-                reviewConverter, notificationClient);
+                reviewConverter, notificationClient, taskClient);
     }
 
     private Review review(Long userId, Long productId) {
@@ -60,6 +68,17 @@ class ReviewManagerTest {
         ReviewVO vo = new ReviewVO();
         vo.setId(id);
         return vo;
+    }
+
+    private ReviewCreateReq reviewReq() {
+        ReviewCreateReq req = new ReviewCreateReq();
+        req.setOrderId(77L);
+        req.setProductId(10L);
+        req.setSkuId(2L);
+        req.setRating(5);
+        req.setContent("很好");
+        req.setImages("img.jpg");
+        return req;
     }
 
     // ==================== createReview ====================
@@ -91,6 +110,57 @@ class ReviewManagerTest {
         when(reviewConverter.toVO(any())).thenReturn(vo(1L));
 
         reviewManager.createReview(1L, req);
+
+        verify(reviewRepository).save(any(Review.class));
+        verify(productRepository).incrementCommentCount(10L);
+    }
+
+    @Test
+    @DisplayName("createReview — F9 落库后触发每日评价任务：DAILY_REVIEW 携带 userId（ADR-047）")
+    void shouldTriggerDailyReviewTask_whenReviewCreated() {
+        when(reviewRepository.countByOrderIdAndUserId(77L, 1L)).thenReturn(0L);
+        when(reviewConverter.toVO(any())).thenReturn(vo(1L));
+
+        reviewManager.createReview(1L, reviewReq());
+
+        ArgumentCaptor<TaskCompleteCO> captor = ArgumentCaptor.forClass(TaskCompleteCO.class);
+        verify(taskClient).complete(captor.capture());
+        assertEquals(1L, captor.getValue().getUserId());
+        assertEquals("DAILY_REVIEW", captor.getValue().getTaskCode());
+    }
+
+    @Test
+    @DisplayName("createReview — 活动事务内注册 afterCommit：提交前不触发，提交后才触发（Feign 不入事务）")
+    void shouldTriggerTaskOnlyAfterCommit_whenTransactionActive() {
+        when(reviewRepository.countByOrderIdAndUserId(77L, 1L)).thenReturn(0L);
+        when(reviewConverter.toVO(any())).thenReturn(vo(1L));
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            reviewManager.createReview(1L, reviewReq());
+
+            verify(taskClient, never()).complete(any());
+
+            for (TransactionSynchronization sync
+                    : TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCommit();
+            }
+            ArgumentCaptor<TaskCompleteCO> captor = ArgumentCaptor.forClass(TaskCompleteCO.class);
+            verify(taskClient).complete(captor.capture());
+            assertEquals(1L, captor.getValue().getUserId());
+            assertEquals("DAILY_REVIEW", captor.getValue().getTaskCode());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("createReview — 任务触发异常 fail-open：评价落库主流程不受影响")
+    void shouldNotBlockReview_whenTaskTriggerFails() {
+        when(reviewRepository.countByOrderIdAndUserId(77L, 1L)).thenReturn(0L);
+        when(reviewConverter.toVO(any())).thenReturn(vo(1L));
+        doThrow(new RuntimeException("marketing-service down")).when(taskClient).complete(any());
+
+        assertDoesNotThrow(() -> reviewManager.createReview(1L, reviewReq()));
 
         verify(reviewRepository).save(any(Review.class));
         verify(productRepository).incrementCommentCount(10L);

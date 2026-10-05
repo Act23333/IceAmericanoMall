@@ -2,7 +2,9 @@ package org.icedamericanomall.search.adapter.assembler;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.icedamericanomall.search.adapter.response.ProductSearchVO;
+import org.icedamericanomall.search.adapter.response.SearchFacetsVO;
 import org.icedamericanomall.search.domain.model.search.ProductSearchHit;
+import org.icedamericanomall.search.domain.model.search.SearchFacets;
 import org.icedamericanomall.search.domain.model.search.SearchPage;
 import org.mapstruct.Mapper;
 
@@ -29,4 +31,7 @@ public interface ProductSearchConverter {
         voPage.setRecords(hitsToVOs(domainPage.records()));
         return voPage;
     }
+
+    /** 领域 facet（SE6）→ facet 视图（品牌/价格档位计数，min/max 单位分）。 */
+    SearchFacetsVO toVO(SearchFacets facets);
 }

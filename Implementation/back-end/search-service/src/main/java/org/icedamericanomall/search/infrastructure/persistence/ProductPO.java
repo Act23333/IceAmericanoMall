@@ -28,6 +28,9 @@ public class ProductPO implements Serializable {
     private Integer soldCount;
     private Integer status;
 
+    /** 上架时间（SE1 newest 排序与 I47 publishTime 回填；映射主库 product.publish_time 列）。 */
+    private LocalDateTime publishTime;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 }

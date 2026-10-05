@@ -6,8 +6,10 @@ import org.icedamericanomall.client.LogisticsClient;
 import org.icedamericanomall.client.MemberClient;
 import org.icedamericanomall.client.SkuClient;
 import org.icedamericanomall.client.PointsClient;
+import org.icedamericanomall.client.TaskClient;
 import org.icedamericanomall.dto.MemberGrowthCO;
 import org.icedamericanomall.dto.MemberLevelCO;
+import org.icedamericanomall.dto.TaskCompleteCO;
 import org.icedamericanomall.trade.domain.model.order.Order;
 import org.icedamericanomall.trade.domain.model.order.OrderItem;
 import org.icedamericanomall.dto.CreateLogisticsCO;
@@ -44,6 +46,8 @@ public class OrderLifecycleManager {
     /** I45 fail-open 兜底倍率（降级默认 NORMAL = 1 倍，与 MemberClientFallback 口径一致）。 */
     private static final int DEFAULT_POINTS_RATE = 100;
     private static final String POINTS_SOURCE_ORDER_REWARD = "下单奖励";
+    /** F9 每日任务编码（ADR-047 task_def.code seed 常量，对应「每日完成 1 笔订单确认」）。 */
+    private static final String TASK_CODE_DAILY_ORDER = "DAILY_ORDER";
 
     private final OrderRepository orderRepository;
     private final SkuClient skuClient;
@@ -51,12 +55,14 @@ public class OrderLifecycleManager {
     private final LogisticsClient logisticsClient;
     private final PointsClient pointsClient;
     private final MemberClient memberClient;
+    private final TaskClient taskClient;
     private final DomainEventProducer eventProducer;
     private final TradeEventNotifier tradeEventNotifier;
 
     public OrderLifecycleManager(OrderRepository orderRepository, SkuClient skuClient,
                                   CouponClient couponClient, LogisticsClient logisticsClient,
                                   PointsClient pointsClient, MemberClient memberClient,
+                                  TaskClient taskClient,
                                   DomainEventProducer eventProducer,
                                   TradeEventNotifier tradeEventNotifier) {
         this.orderRepository = orderRepository;
@@ -65,6 +71,7 @@ public class OrderLifecycleManager {
         this.logisticsClient = logisticsClient;
         this.pointsClient = pointsClient;
         this.memberClient = memberClient;
+        this.taskClient = taskClient;
         this.eventProducer = eventProducer;
         this.tradeEventNotifier = tradeEventNotifier;
     }
@@ -79,11 +86,13 @@ public class OrderLifecycleManager {
     }
 
     /**
-     * 确认收货（订单转 COMPLETED）—— 本地状态迁移后于事务外做两件非本地动作：
+     * 确认收货（订单转 COMPLETED）—— 本地状态迁移后于事务外做三件非本地动作：
      * <ol>
      *   <li>发放订单奖励积分（I45 取会员积分倍率，fail-open：查询失败降级 1 倍，不阻断）；</li>
      *   <li>会员成长值入账（I46 → user-service，fail-open：失败记日志不阻断确认收货，
-     *       幂等锚点 = orderNo，ADR-044）。</li>
+     *       幂等锚点 = orderNo，ADR-044）；</li>
+     *   <li>每日任务旁路触发（F9 DAILY_ORDER → marketing-service，ADR-047，fail-open：
+     *       降级/异常均不阻断确认收货）。</li>
      * </ol>
      */
     public void confirmReceipt(String orderNo, Long userId) {
@@ -92,6 +101,7 @@ public class OrderLifecycleManager {
         if (order == null || order.getPayAmount() == null) return;
         awardOrderRewardPoints(order);
         recordMemberGrowth(order);
+        completeDailyOrderTask(order);
     }
 
     /** 订单奖励积分发放：points = payAmount / 100 × pointsRate / 100（整数取整，ADR-044 倍率口径）。 */
@@ -138,6 +148,20 @@ public class OrderLifecycleManager {
         } catch (Exception e) {
             log.warn("会员成长值入账失败（不阻断确认收货，Phase 1 不补账）: orderNo={}",
                     order.getOrderNo(), e);
+        }
+    }
+
+    /**
+     * F9 每日任务旁路触发（ADR-047，DAILY_ORDER）—— 与 member growth / 积分发放同一编排点，
+     * 事务外 fail-open：TaskClient 降级返回 {@code completed=false}（返回值忽略），
+     * 异常仅记日志，绝不影响确认收货主流程。
+     */
+    private void completeDailyOrderTask(Order order) {
+        try {
+            taskClient.complete(new TaskCompleteCO(order.getUserId(), TASK_CODE_DAILY_ORDER));
+        } catch (Exception e) {
+            log.warn("每日任务触发失败（不阻断确认收货）: orderNo={}, userId={}",
+                    order.getOrderNo(), order.getUserId(), e);
         }
     }
 
