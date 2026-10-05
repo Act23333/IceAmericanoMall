@@ -537,3 +537,29 @@ MVP 目标：一个月内可上线，验证平台模式可行性。
   - Given marketing 不可用，When 查看商品详情，Then 详情正常返回、`promotions` 为空（fail-open）
   - Given 用户持有 3 张可用 1 张已用 2 张过期券，When 请求 M7，Then `{available:3, used:1, expired:2}`
 - **Phase 2（roadmap）**：新人礼活动数据源、商品列表页促销角标、活动页装修位。
+
+---
+
+## 十二、V5.12 增量需求要点（P2 第四批：F11 店铺装修 / F12 内容社区）
+
+### F11 店铺装修（商家端 + 店铺页）
+
+- **需求**：商家自定义店铺页——公告、轮播图（≤5）、推荐商品位（≤8）；店铺页（SH1）返回装修数据。
+- **核心场景（BDD）**：
+  - Given 商家本人店铺未装修，When PUT 装修（公告+3 张轮播+5 个商品位），Then 保存成功且 GET 返回一致
+  - Given 非本人店铺，When PUT/GET 装修，Then 403 FORBIDDEN
+  - Given 轮播超过 5 张或商品位超过 8 个，When PUT，Then 400 PARAM_ERROR
+  - Given 店铺已装修，When 访客查看店铺页（SH1），Then 响应含 decoration
+  - Given 推荐位商品已下架，When 店铺页展示，Then 展示端过滤该商品（Phase 1 不做保存时校验）
+- **Phase 2（roadmap）**：商品位归属校验、装修模板、楼层化自定义。
+
+### F12 内容社区 Phase 1：种草笔记（落位 item 域，ADR-048）
+
+- **需求**：用户发布种草笔记（标题+正文+图集 ≤9+关联商品 ≤5），社区流浏览、详情（含在售商品卡）、点赞（幂等）、作者删除（软删）。**Phase 1 不含鉴定**（真实鉴定是寄送-质检-证书流程，Phase 2 独立 PRD 立项，本期不携带任何鉴定声明）。
+- **核心场景（BDD）**：
+  - Given 用户发布关联 2 个在售商品的笔记，When 请求社区流，Then 卡片按发布时间倒序可见
+  - Given 访客打开笔记详情，Then 返回正文/图集/点赞数（liked=false）与在售商品卡
+  - Given 用户点赞，When 重复点赞，Then 幂等空操作（计数不变）；取消点赞，Then 计数 -1 且不为负
+  - Given 非作者删除笔记，When DELETE，Then 403；作者删除，Then 流与详情不可见
+  - Given 关联商品含已下架商品，When 查看详情，Then 商品卡仅含在售商品
+- **Phase 2（roadmap）**：鉴定体系（独立 PRD）、富文本/视频、笔记评论、关注流、笔记向量化推荐（复用 ADR-046 管道）。

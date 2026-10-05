@@ -538,6 +538,8 @@ ws(s)://<gateway>/ws/chat/...?token=<accessToken>
 | S1   | POST | `/api/seller/apply`        | 🔒  | `MerchantApplyReq { shopName, contactPhone, province?, city?, district?, detailAddress? }`（语义见 §4.6.6 T25） | `Void`     | ✅ V5.4（原 `/api/seller/register` 更名） |
 | S1a  | GET  | `/api/seller/shops`        | 🔒  | —                                                                                                    | `List<ShopVO>`（本人全部店铺；单店铺商家返回长度 1） | 🆕 V5.4 |
 | S1b  | PUT  | `/api/seller/shops/{shopId}` | 🔒 | Path: `shopId` (Long), Body: `UpdateShopReq { shopName?, shopLogo?, contactPhone?, province?, city?, district?, detailAddress? }` | `Void`（null-safe 部分更新；非本人店铺 → 403 FORBIDDEN） | 🆕 V5.4 |
+| S1c  | GET  | `/api/seller/shops/{shopId}/decoration` | 🔒 | Path: `shopId` (Long) | `ShopDecorationVO { announcement?, banners:[String], hotProductIds:[Long] }`（未装修 → 各字段空值/空数组） | ✅ V5.12 |
+| S1d  | PUT  | `/api/seller/shops/{shopId}/decoration` | 🔒 | Path: `shopId` (Long), Body: `ShopDecorationReq { announcement?(≤200), banners?(≤5 个 URL), hotProductIds?(≤8 个商品 id，去重) }` | `Void`（归属校验同 S1b；UPSERT；**hotProductIds Phase 1 不校验商品归属**——展示端过滤失效 id，ADR-048） | ✅ V5.12 |
 | S2   | GET  | `/api/seller/shop`         | 🔒  | —                                                                                                    | `ShopVO`（默认店铺） | ✅ @Deprecated V5.4 |
 | S3   | PUT  | `/api/seller/shop`         | 🔒  | `UpdateShopReq { shopName?, shopLogo?, contactPhone?, province?, city?, district?, detailAddress? }` | `Void`（更新默认店铺） | ✅ @Deprecated V5.4 |
 
@@ -565,7 +567,7 @@ ws(s)://<gateway>/ws/chat/...?token=<accessToken>
 
 | #    | 方法  | 路径                              | 认证  | 请求                                                                                   | 响应                                 | 阶段     |
 | ---- | --- | ------------------------------- | --- | ------------------------------------------------------------------------------------ | ---------------------------------- | ------ |
-| SH1  | GET | `/api/shops/{shopId}`           | 🌐  | Path: `shopId` (Long)                                                                | `ShopVO`（**仅 shop.status=1 可见**；不存在/非正常 → `SHOP_NOT_FOUND(3015)`） | 🆕 V5.4 |
+| SH1  | GET | `/api/shops/{shopId}`           | 🌐  | Path: `shopId` (Long)                                                                | `ShopVO`（**仅 shop.status=1 可见**；不存在/非正常 → `SHOP_NOT_FOUND(3015)`；**V5.11 增量 `decoration`**: `ShopDecorationVO`——店铺装修（公告/轮播/推荐商品位），未装修 → null） | 🆕 V5.4 |
 | S4   | GET | `/api/shop/{sellerId}`          | 🌐  | Path: `sellerId` (Long)                                                              | `ShopVO`（遗留解析：sellerId → 该商家默认店铺） | ✅ @Deprecated V5.4 |
 | S5   | GET | `/api/shop/{sellerId}/products` | 🌐  | Path: `sellerId` (Long), Query: `page`(1), `size`(20), `sort?`(sales\|price\|newest) | `IPage<ProductVO>`                 | ⚪ 未实现（移入 §十二 roadmap——Phase A 店铺页商品列表用 P1 `sellerId` 过滤参数；shopId 口径待 Phase B） |
 
@@ -788,6 +790,19 @@ ws(s)://<gateway>/ws/chat/...?token=<accessToken>
 | P25 | POST   | `/api/item/sku/{skuId}/stock-notify` | 🔒  | Path: `skuId` (Long) | `Void` (到货后推送通知) | ⚪ V5.0 |
 | P26 | DELETE | `/api/item/sku/{skuId}/stock-notify` | 🔒  | Path: `skuId` (Long) | `Void`           | ⚪ V5.0 |
 | P27 | GET  | `/api/item/product/{productId}/similar` | 🌐  | Path: `productId` (Long), Query: `size`(缺省5, ≤20) | `List<RecommendProductVO>`（相似商品卡：按向量相似度降序，**恒过滤在售**并排除自身；ES 关闭/无相似命中 → 空列表不报错） | ✅ V5.9 |
+
+#### 4.4.xa NoteController — `/api/notes` (item-service, ✅ V5.12 — F12 内容社区 Phase 1，[ADR-048](../adr/048-content-notes-in-item-domain.md))
+
+> **种草笔记**：与 review 同属商品 UGC，落位 item-service（商品摘要卡同库直查，零跨服务）；Phase 1 纯文本+图集（≤9）、关联商品 ≤5（发布时校验存在且在售）、点赞 uk 幂等、作者软删。鉴定体系/富文本/评论 Phase 2 立项。
+
+| #   | 方法   | 路径                     | 认证 | 请求                                                                                                                                    | 响应                                                                                     | 阶段      |
+| --- | ---- | ---------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------- |
+| P28 | POST | `/api/notes`             | 🔒  | `NotePublishReq { title(必填, ≤50), content(必填, ≤2000), coverImage?, images?(≤9 个 URL), productIds?(≤5，去重) }`                     | `NoteVO { id }`（发布即上架）                                                              | ✅ V5.12 |
+| P29 | GET  | `/api/notes`             | 🌐  | Query: `page`(1), `size`(20)                                                                                                          | `Page<NoteCardVO>`（已发布，按发布时间倒序；`NoteCardVO { id, title, coverImage, likeCount, authorId, createTime }`） | ✅ V5.12 |
+| P30 | GET  | `/api/notes/{id}`        | 🌐  | Path: `id` (Long)                                                                                                                     | `NoteDetailVO { id, title, content, images, likeCount, liked(登录用户视角，匿名恒 false), authorId, createTime, products: [{ productId, name, mainImage, minPrice }] }`（已发布；关联商品**在售过滤**，本地库直查） | ✅ V5.12 |
+| P31 | POST | `/api/notes/{id}/like`   | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（uk 幂等：重复点赞空操作；首次原子 +1）                                              | ✅ V5.12 |
+| P32 | DELETE | `/api/notes/{id}/like` | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（未点赞空操作；取消原子 -1 且不为负）                                                | ✅ V5.12 |
+| P33 | DELETE | `/api/notes/{id}`      | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（**仅作者本人**，非本人 → 403；软删 status=2，流与详情不可见）                          | ✅ V5.12 |
 
 #### 4.4.9 FreightTemplateController — `/api/item/freight-template` (item-service)
 
@@ -2452,6 +2467,7 @@ data: [DONE]
 | **V5.9.0** | **2026-10-05** | **P2 第一批（商品向量推荐）契约先行**：①§4.4.x 新增 P27 `GET /api/item/product/{productId}/similar`（相似商品卡，向量相似度降序、恒过滤在售、排除自身，空列表不报错）；②§4.14.10 新增 I47 `POST /internal/search/vector/product/upsert`（商品原文摄取，单向量幂等覆盖写，未启用返回 0/降级哨兵 -1）与 I48 `GET /internal/search/vector/product/similar`（kNN 命中 id+score，组装归 item）；③全链路 fail-open（[ADR-046](../adr/046-product-vector-recommendation.md)）；MySQL 零 schema 变更（向量在 ES，`ProductDocument.embedding` 既有字段） |
 | **V5.10.0** | **2026-10-05** | **P2 第二批（搜索 facet / 每日任务体系）契约先行**：①**F8 搜索 facet**——SE1 声明未实现的 `brand/minPrice/maxPrice/sort` 过滤参数补齐实现（ES 链 filter+sort+publishTime 字段新增，DB 链同口径）；新增 SE6 `GET /api/search/facets`（品牌 terms 聚合 + 固定价格档位计数，独立端点零破坏，DB 链返回空对象）；②**F9 每日任务体系**——新增 M14 `GET /api/task/daily`（今日任务+状态）与 I49 `POST /internal/task/complete`（幂等完成+积分单出口发放，触发方 trade 确认收货/item 评价，事务外 fail-open，[ADR-047](../adr/047-daily-task-system.md)）；数据模型 `task_def`/`task_record` 按 ADR-045 口径直接入 Initialize.sql 快照（无迁移文件） |
 | **V5.11.0** | **2026-10-05** | **P2 第三批（活动中心 + 促销可见性）契约先行**：①§4.13.10 M12/M13 活动中心实现定稿（`ActivityVO` 字段定稿：数据源=promotion 进行中活动，1→FULL_REDUCE/2→LIMIT_DISCOUNT，NEW_USER 暂空列表 Phase 2；M13 按 id 详情 1103）；②M7 我的券三态计数实现；③§4.4.x P2 商品详情响应增量 `promotions` 促销标签（item 复用 I44，调用方 fail-open 包装 + 60s Caffeine 缓存，ADR-041 先例；与下单计价同源 promotion 表——用户所见即所得） |
+| **V5.12.0** | **2026-10-05** | **P2 第四批（店铺装修 / 内容社区 Phase 1）契约先行**：①**F11 店铺装修**——S1c/S1d `/api/seller/shops/{shopId}/decoration`（ShopDecorationVO/Req：公告 + 轮播 ≤5 + 推荐商品位 ≤8；归属校验同 S1b；hotProductIds Phase 1 不校验商品归属）+ SH1 ShopVO 增量 `decoration`；②**F12 内容社区 Phase 1**——新增 P28-P33 `/api/notes/**`（发布/流/详情/点赞取消/作者软删；纯文本+图集 ≤9、关联商品 ≤5 发布时校验在售、点赞 uk 幂等原子计数；落位 item-service，[ADR-048](../adr/048-content-notes-in-item-domain.md)）；数据模型 `shop_decoration`/`note`/`note_product`/`note_like` 按 ADR-045 口径直接入 Initialize.sql 快照（50→54 表）；鉴定体系/富文本/评论 Phase 2 立项 |
 
 ---
 

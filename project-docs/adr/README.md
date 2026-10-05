@@ -51,3 +51,4 @@
 | [045](./045-db-snapshot-single-source.md) | 数据库结构演进口径变更 —— 废除迁移文件机制，Initialize.sql 为唯一结构真相源 | 2026-10-05 |
 | [046](./046-product-vector-recommendation.md) | 商品向量推荐 —— 复用向量管道的单向量相似检索与 item 侧新鲜组装 | 2026-10-05 |
 | [047](./047-daily-task-system.md) | 每日任务体系 —— 表驱动任务定义、每日幂等完成、积分单出口与旁路触发 | 2026-10-05 |
+| [048](./048-content-notes-in-item-domain.md) | 内容社区落位 item 域 —— 种草笔记与 review 同属商品 UGC，鉴定体系 Phase 2 立项 | 2026-10-05 |

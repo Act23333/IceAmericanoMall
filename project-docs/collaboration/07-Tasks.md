@@ -743,6 +743,8 @@ Scenario: 查看商品详情
 
 > **2026-10-05 交付记录（P2 第三批：F10 活动中心与促销可见性，05 规格 V5.11.0 契约先行）**：①**M12/M13 活动中心**——`ActivityController` + `ActivityManager`：进行中促销（时间窗推导，与下单计价同源 `promotion` 表——所见即所得）按契约类型过滤（1→FULL_REDUCE/2→LIMIT_DISCOUNT，`PromotionTypeEnum.contractName` 单一出处），NEW_USER 暂空列表（数据源 Phase 2）；M13 按 id 详情（1103）；②**M7 我的券三态计数**（available/used/expired，`UserCouponRepository` 补计数端口）；③**P2 商品详情促销标签**——`ProductVO` 增量 `promotions`（`PromotionTagVO`），item 复用 I44 `PromotionClient`、调用方 try/catch fail-open 包装（fallback 仍 fail-closed 语义不变）+ 60s Caffeine 缓存（ADR-041 先例，marketing 抖动时标签空 60s 不打压）；④**I44 契约增量**——`PromotionCO` 补 `endTime`（标签倒计时，marketing/item 映射同步）；⑤**网关补路由**——`/api/task/**`（上批 M14 遗漏）与 `/api/activity/**` 进 marketing 路由块，`GET /api/activity/**` 入匿名白名单（M12/M13 🌐）。测试全量通过（计数以主控构建校准）。遗留：新人礼活动数据源/商品列表促销角标 Phase 2。
 
+> **2026-10-05 交付记录（P2 第四批：F11 店铺装修 / F12 内容社区 Phase 1，[ADR-048](../adr/048-content-notes-in-item-domain.md) + 05 规格 V5.12.0 契约先行）**：①**F11 店铺装修（merchant）**——`shop_decoration`（与 shop 1:1，公告/轮播 ≤5/推荐商品位 ≤8，JSON 字符串列领域层校验）+ S1c/S1d（归属校验同 S1b，UPSERT 走 `uk_shop` 的 `ON DUPLICATE KEY UPDATE`）+ SH1 ShopVO 增量 `decoration`；`hotProductIds` Phase 1 不校验商品归属（展示端过滤，ADR-048 §4）；②**F12 种草笔记（item，content 聚合分包——未来 community-service 拆分边界）**——P28 发布（关联商品 ≤5 逐个校验在售）/P29 流/P30 详情（liked 两态 + 在售商品卡同库装配）/P31·P32 点赞取消（`uk_note_user` 幂等 + `like_count` 单条 UPDATE 原子计数）/P33 作者软删；③**网关**——`/api/notes/**` 进 item 路由块 + GET 白名单（流/详情 🌐，写端点落 authenticated）。数据模型 4 张表按 ADR-045 口径直接入 Initialize.sql 快照（50→54 表）。鉴定体系 Phase 2 独立 PRD 立项（Phase 1 不携带任何鉴定声明）。测试全量通过（计数以主控构建校准）。遗留：富文本/视频/笔记评论/关注流/笔记向量化推荐 Phase 2。
+
 ### 版本完成状态
 
 | 版本          | 完成度     | 模块  | 端点  | 测试  | 关键产出                             |
