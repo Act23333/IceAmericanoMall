@@ -604,7 +604,7 @@ ws(s)://<gateway>/ws/chat/...?token=<accessToken>
 
 | #   | 方法   | 路径                              | 认证  | 请求                                                                                                                                              | 响应                 | 阶段  |
 | --- | ---- | ------------------------------- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | --- |
-| P1  | GET  | `/api/item/product/page`        | 🌐  | Query: `categoryId?`, `keyword?`, `brand?`, `minPrice?`, `maxPrice?`, `sort?`(sales\|price\|newest), `order?`(asc\|desc), `page`(1), `size`(20) | `IPage<ProductVO>` | ✅   |
+| P1  | GET  | `/api/item/product/page`        | 🌐  | Query: `categoryId?`, `keyword?`, `brand?`, `minPrice?`, `maxPrice?`, `sort?`(sales\|price\|newest), `order?`(asc\|desc), `page`(1), `size`(20) | `IPage<ProductVO>`（**V5.13 增量 `promotions`**: `List<PromotionTagVO>`——按行 sellerId 聚合店铺进行中促销标签，60s 缓存复用 P2 详情口径；fail-open 空列表） | ✅   |
 | P2  | GET  | `/api/item/product/{id}`        | 🌐  | Path: `id` (Long)                                                                                                                               | `ProductVO`（**V5.11 增量 `promotions`**: `List<PromotionTagVO> { type, name, threshold, discountValue, maxDiscount, endTime }`——该商品所属店铺**进行中**满减/满折标签；fail-open：marketing 不可用/无活动 → 空列表不报错） | `ProductVO`        | ✅   |
 | P3  | POST | `/api/item/product`             | 🏪  | `CreateProductReq { categoryId, name, mainImage?, description?, brand?, skus: [{ spec, price, stock, image?, originalPrice? }] }`               | `Void`             | ✅   |
 | P4  | PUT  | `/api/item/product/{id}`        | 🏪  | Path: `id` (Long), Body: `UpdateProductReq { name?, mainImage?, description?, brand?, categoryId? }`                                            | `Void`             | ✅   |
@@ -803,6 +803,7 @@ ws(s)://<gateway>/ws/chat/...?token=<accessToken>
 | P31 | POST | `/api/notes/{id}/like`   | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（uk 幂等：重复点赞空操作；首次原子 +1）                                              | ✅ V5.12 |
 | P32 | DELETE | `/api/notes/{id}/like` | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（未点赞空操作；取消原子 -1 且不为负）                                                | ✅ V5.12 |
 | P33 | DELETE | `/api/notes/{id}`      | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（**仅作者本人**，非本人 → 403；软删 status=2，流与详情不可见）                          | ✅ V5.12 |
+| P34 | GET  | `/api/notes/{id}/similar` | 🌐  | Path: `id` (Long), Query: `size`(缺省5, ≤20)                                                                                          | `List<NoteCardVO>`（相似笔记卡：I51 kNN 命中 id 由 item 组装**发布态**笔记卡、排除自身、按相似度降序；ES 关闭/无命中 → 空列表不报错） | ✅ V5.13 |
 
 #### 4.4.9 FreightTemplateController — `/api/item/freight-template` (item-service)
 
@@ -1297,7 +1298,7 @@ Feature: 买家退款资金流（F1）
 | SE2 | GET    | `/api/search/hot`     | 🌐  | Query: `limit`(10)                                                                                                                    | `List<String>`          | ✅         |
 | SE3 | GET    | `/api/search/history` | 🔒  | Query: `limit`(10)                                                                                                                    | `List<String>`          | ✅         |
 | SE4 | DELETE | `/api/search/history` | 🔒  | —                                                                                                                                     | `Void` (清空搜索历史)         | 🆕 ⚪ V5.0 |
-| SE5 | GET    | `/api/search/suggest` | 🌐  | Query: `keyword` (前缀)                                                                                                                 | `List<String>` (搜索建议)   | 🆕 ⚪ V5.0 |
+| SE5 | GET    | `/api/search/suggest` | 🌐  | Query: `keyword` (前缀, 必填)                                                                                                           | `List<String>` (≤10：热搜词前缀命中在前 + 商品名前缀在后，去重；**Redis+DB 双源，ES 关闭可用**) | ✅ V5.13 |
 | SE6 | GET    | `/api/search/facets`  | 🌐  | Query: `keyword?`, `categoryId?`                                                                                                        | `SearchFacetsVO { brands:[{name,count}], priceRanges:[{min,max,count}] }`（品牌 terms 聚合 + 固定价格档位计数：0-50/50-100/100-200/200-500/500+ 元；**ES 链实现，DB 链返回空对象**） | ✅ V5.10 |
 
 **`ProductSearchVO`** (V5.4: 删除 `embedding` 字段):
@@ -1975,12 +1976,24 @@ Feature: 渠道对账（F4）
 
 | I49 | POST | `/internal/task/complete` | Body: `TaskCompleteCO { userId(必填), taskCode(必填) }` | `TaskCompleteResultCO { completed(bool), rewardPoints(int) }`（首次=true+实发积分；重复/任务停用/不存在=false+0） | ✅（V5.10） |
 
+#### 4.13.8c AdminTaskController — `/api/admin/task` (marketing-service, ✅ V5.13)
+
+> **任务运营闭环（V5.13，ADR-047 表驱动口径的运营出口）**：任务定义 CRUD——列表分页 / 创建（code 唯一）/ 编辑（name/rewardPoints/status；code 不可改）。`rewardPoints` 调整立即生效（影响后续完成发放，不追溯已发）；`status=0 停用` → 触发口 I49 立即返回 completed=false。两写（AD52/AD53）`@OperationLog`（ADR-032）。
+
+| #    | 方法   | 路径                    | 认证 | 请求                                                                                                          | 响应                      | 阶段      |
+| ---- | ---- | --------------------- | --- | ----------------------------------------------------------------------------------------------------------- | ------------------------ | ------ |
+| AD51 | GET  | `/api/admin/task`       | 🔑  | Query: `status?`, `page`(1), `size`(20)                                                                       | `IPage<TaskDefVO { code, name, type, rewardPoints, status, createTime }>` | ✅ V5.13 |
+| AD52 | POST | `/api/admin/task`       | 🔑  | `TaskCreateReq { code(必填, ≤32, 大写字母/数字/下划线), name(必填, ≤50), type(缺省1=每日), rewardPoints(必填, >0), status?(缺省1) }` | `Void`（code 重复 → 400 `PARAM_ERROR`）   | ✅ V5.13 |
+| AD53 | PUT  | `/api/admin/task/{code}` | 🔑  | Path: `code` (String), Body: `TaskUpdateReq { name?, rewardPoints?(>0), status?(0/1) }`                        | `Void`（不存在 → `NO_RESOURCE_FOUND(1103)`） | ✅ V5.13 |
+
 | #   | 方法   | 路径                                     | 请求                                                | 响应 (原始) | 阶段  |
 | --- | ---- | -------------------------------------- | ------------------------------------------------- | ------- | --- |
 | I25 | POST | `/internal/logistics/create`           | `CreateLogisticsCO`                              | `void`  | ✅   |
 | I26 | PUT  | `/internal/logistics/{orderId}/status` | Path: `orderId` (Long), Query: `status` (Integer) | `void`  | ✅   |
 
 #### 4.14.10 InternalSearchController — `/internal/search` (search-service)
+
+> **V5.13 笔记向量化（ADR-046 管道第二次复用）**：I50/I51 与 I47/I48 同构——`notes` 独立小索引（单向量不分块，文本源=title+content），摄取幂等覆盖写（未启用→0/降级哨兵 -1），相似检索排除自身；**消费方 item**：笔记发布/软删后事务外旁路摄取（afterCommit，ADR-042 口径），P34 相似笔记（命中 id 由 item 组装在售发布态笔记卡）。
 
 | #   | 方法   | 路径                                        | 请求                                                   | 响应 (原始)                 | 阶段  |
 | --- | ---- | ------------------------------------------- | ------------------------------------------------------ | --------------------------- | --- |
@@ -1990,6 +2003,8 @@ Feature: 渠道对账（F4）
 | I38 | POST | `/internal/search/vector/knowledge/delete`  | Query: `knowledgeId` (Long)                            | `boolean` (是否处理)        | 🆕 V5.5 |
 | I47 | POST | `/internal/search/vector/product/upsert`    | `ProductVectorUpsertReq { productId(必填), name(必填), description?, brand?, categoryId?, mainImage?, price?, soldCount? }` | `int`（1=已写入向量；**0=ES/Embedding 未启用静默跳过**；Feign 降级哨兵 `-1`） | 🆕 V5.9 |
 | I48 | GET  | `/internal/search/vector/product/similar`   | Query: `productId` (Long, 必填), `size`(缺省5, ≤20)     | `List<ProductVectorHitCO> { productId, score }`（自身向量 kNN，排除自身；ES 关闭/自身无向量 → 空列表） | 🆕 V5.9 |
+| I50 | POST | `/internal/search/vector/note/upsert`       | `NoteVectorUpsertReq { noteId(必填), title(必填), content?(≤2000) }` | `int`（1=已写入；**0=ES/Embedding 未启用**；Feign 降级哨兵 `-1`）；软删/取消发布 → 以 status=0 语义调用本端点删除该向量文档 | 🆕 V5.13 |
+| I51 | GET  | `/internal/search/vector/note/similar`      | Query: `noteId` (Long, 必填), `size`(缺省5, ≤20)        | `List<NoteVectorHitCO> { noteId, score }`（自身向量 kNN 排除自身；命中仅 id+score，**发布态过滤与卡片组装归 item**） | 🆕 V5.13 |
 
 > - **I28 索引扩展（🆕 V5.5，向后兼容）**：请求体为超集——`index=products`（缺省，历史行为）走商品索引返回 `List<ProductSearchVO>`；`index=knowledge_vectors` 走知识库 chunk 索引返回 `List<KnowledgeChunkHitVO>`（支持 `sellerId` 过滤，null=全站）。旧报文（仅 `embedding`/`size`）行为完全不变；`size` 缺省或 ≤0 归一为 10。
 > - **向量索引归属**：`knowledge_vectors` 索引（含分块与 Embedding 调用）归 search-service 所有；ai-service 经 ia-api `KnowledgeVectorClient` 提交**原文**并取回 chunk 文本，不感知维度与切片策略（Feign 调用方降级时 upsert 哨兵返回 `-1`）。
@@ -2468,6 +2483,7 @@ data: [DONE]
 | **V5.10.0** | **2026-10-05** | **P2 第二批（搜索 facet / 每日任务体系）契约先行**：①**F8 搜索 facet**——SE1 声明未实现的 `brand/minPrice/maxPrice/sort` 过滤参数补齐实现（ES 链 filter+sort+publishTime 字段新增，DB 链同口径）；新增 SE6 `GET /api/search/facets`（品牌 terms 聚合 + 固定价格档位计数，独立端点零破坏，DB 链返回空对象）；②**F9 每日任务体系**——新增 M14 `GET /api/task/daily`（今日任务+状态）与 I49 `POST /internal/task/complete`（幂等完成+积分单出口发放，触发方 trade 确认收货/item 评价，事务外 fail-open，[ADR-047](../adr/047-daily-task-system.md)）；数据模型 `task_def`/`task_record` 按 ADR-045 口径直接入 Initialize.sql 快照（无迁移文件） |
 | **V5.11.0** | **2026-10-05** | **P2 第三批（活动中心 + 促销可见性）契约先行**：①§4.13.10 M12/M13 活动中心实现定稿（`ActivityVO` 字段定稿：数据源=promotion 进行中活动，1→FULL_REDUCE/2→LIMIT_DISCOUNT，NEW_USER 暂空列表 Phase 2；M13 按 id 详情 1103）；②M7 我的券三态计数实现；③§4.4.x P2 商品详情响应增量 `promotions` 促销标签（item 复用 I44，调用方 fail-open 包装 + 60s Caffeine 缓存，ADR-041 先例；与下单计价同源 promotion 表——用户所见即所得） |
 | **V5.12.0** | **2026-10-05** | **P2 第四批（店铺装修 / 内容社区 Phase 1）契约先行**：①**F11 店铺装修**——S1c/S1d `/api/seller/shops/{shopId}/decoration`（ShopDecorationVO/Req：公告 + 轮播 ≤5 + 推荐商品位 ≤8；归属校验同 S1b；hotProductIds Phase 1 不校验商品归属）+ SH1 ShopVO 增量 `decoration`；②**F12 内容社区 Phase 1**——新增 P28-P33 `/api/notes/**`（发布/流/详情/点赞取消/作者软删；纯文本+图集 ≤9、关联商品 ≤5 发布时校验在售、点赞 uk 幂等原子计数；落位 item-service，[ADR-048](../adr/048-content-notes-in-item-domain.md)）；数据模型 `shop_decoration`/`note`/`note_product`/`note_like` 按 ADR-045 口径直接入 Initialize.sql 快照（50→54 表）；鉴定体系/富文本/评论 Phase 2 立项 |
+| **V5.13.0** | **2026-10-05** | **P2 Phase 2 挂账收敛批（列表促销角标 / 搜索联想 / 任务运营 / 笔记向量化）契约先行**：①P1 商品分页响应增量 `promotions`（按行 sellerId 聚合店铺促销标签，60s 缓存复用 P2 详情口径，促销可见性从详情延伸到列表）；②SE5 搜索联想转正（热搜词前缀 + 商品名前缀双源 ≤10 去重，Redis+DB 双源 ES 关闭可用）；③任务运营闭环 AD51-53 `/api/admin/task`（列表/创建/编辑：code 唯一、rewardPoints 调整立即生效、停用即触发口失效，三写 `@OperationLog`）；④笔记向量化（ADR-046 管道第二次复用）：I50/I50 `notes` 独立小索引（单向量 title+content，摄取幂等覆盖写+软删删向量）+ I51 相似检索 + P34 相似笔记卡（item 组装发布态）；无 schema 变更 |
 
 ---
 
