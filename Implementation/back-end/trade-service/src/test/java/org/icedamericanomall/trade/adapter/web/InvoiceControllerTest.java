@@ -3,6 +3,8 @@ package org.icedamericanomall.trade.adapter.web;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.common.security.UserInfo;
+import org.icedamericanomall.trade.adapter.request.InvoiceTitleReq;
+import org.icedamericanomall.trade.adapter.response.InvoiceTitleVO;
 import org.icedamericanomall.trade.adapter.response.InvoiceVO;
 import org.icedamericanomall.trade.app.invoice.InvoiceApplyManager;
 import org.icedamericanomall.trade.app.invoice.InvoiceBuyerManager;
@@ -19,6 +21,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.util.List;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -26,7 +30,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 买家发票接口适配层接线测试（INV1-INV5，F14）：登录态身份注入、参数校验
+ * 买家发票接口适配层接线测试（INV1-INV9，F14）：登录态身份注入、参数校验
  * （@Valid 必填约束）、各端点对应用例执行器的委托关系。
  */
 @ExtendWith(MockitoExtension.class)
@@ -114,5 +118,48 @@ class InvoiceControllerTest {
 
         verify(invoiceBuyerManager).cancel(USER_ID, INVOICE_NO);
         verify(invoiceBuyerManager).urge(USER_ID, INVOICE_NO);
+    }
+
+    @Test
+    @DisplayName("INV6-9 抬头 CRUD — 列表/新建/编辑/删除分别委托对应编排方法")
+    void shouldDelegateTitleCrud() throws Exception {
+        when(invoiceBuyerManager.listTitles(USER_ID)).thenReturn(List.of(new InvoiceTitleVO()));
+        when(invoiceBuyerManager.createTitle(eq(USER_ID), any(InvoiceTitleReq.class)))
+                .thenReturn(new InvoiceTitleVO());
+
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/invoice/title/list"))
+                .andExpect(status().isOk());
+        mockMvc.perform(MockMvcRequestBuilders.post("/api/invoice/title")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"type\":1,\"title\":\"张三\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(MockMvcRequestBuilders.put("/api/invoice/title/5")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"type\":1,\"title\":\"张三\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(MockMvcRequestBuilders.delete("/api/invoice/title/5"))
+                .andExpect(status().isOk());
+
+        verify(invoiceBuyerManager).listTitles(USER_ID);
+        verify(invoiceBuyerManager).createTitle(eq(USER_ID), any(InvoiceTitleReq.class));
+        verify(invoiceBuyerManager).updateTitle(eq(USER_ID), eq(5L), any(InvoiceTitleReq.class));
+        verify(invoiceBuyerManager).deleteTitle(USER_ID, 5L);
+    }
+
+    @Test
+    @DisplayName("INV7/INV8 校验 — type 或 title 缺失 → 400（@Valid 必填约束）")
+    void shouldRejectTitle_whenRequiredFieldsMissing() throws Exception {
+        mockMvc.perform(MockMvcRequestBuilders.post("/api/invoice/title")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"张三\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(MockMvcRequestBuilders.post("/api/invoice/title")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"type\":1}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(MockMvcRequestBuilders.put("/api/invoice/title/5")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
     }
 }

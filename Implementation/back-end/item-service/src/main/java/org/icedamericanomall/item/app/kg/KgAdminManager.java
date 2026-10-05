@@ -15,8 +15,10 @@ import org.icedamericanomall.item.domain.model.product.Product;
 import org.icedamericanomall.item.domain.repository.CategoryRepository;
 import org.icedamericanomall.item.domain.repository.PairingRuleRepository;
 import org.icedamericanomall.item.domain.repository.ProductRepository;
+import org.icedamericanomall.client.KgClient;
 import org.icedamericanomall.dto.KgEdgeItemCO;
 import org.icedamericanomall.dto.KgEdgeUpsertCO;
+import org.icedamericanomall.dto.KgNeighborCO;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,11 +28,11 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * 知识图谱治理编排（应用层 · 平台后台，F15 AD61-AD64，契约 §4.13.8f）。
+ * 知识图谱治理编排（应用层 · 平台后台，F15 AD61-AD65，契约 §4.13.8f）。
  *
  * <p>与 {@link KgPairingManager}（P35 消费面）按用例族拆分（ADR-025）。AD62/AD63 为
  * 纯本地 DB 操作，事务边界在本层；AD64 重建含逐 src Feign 写入，<b>无事务</b>
- * （硬约束：Feign 绝不入事务），fail-open 逐 src 继续。
+ * （硬约束：Feign 绝不入事务），fail-open 逐 src 继续；AD65 为只读检索透传（无事务）。
  *
  * <p><b>运营口径</b>：规则落库即同步边投影（afterCommit，D3 三轨之 C 轨）——创建与
  * 启停即时生效；AD64 全量重建为兜底轨（US-KG-8），按真相源（源表列 + 规则表）逐 src
@@ -44,10 +46,20 @@ public class KgAdminManager {
     /** 重建逐批扫描页大小（商品真相源分页遍历粒度）。 */
     private static final int REBUILD_PAGE_SIZE = 500;
 
+    /** 邻居查询缺省跳数（AD65 契约：depth 缺省 1）。 */
+    private static final int DEFAULT_NEIGHBOR_DEPTH = 1;
+
+    /** 邻居查询最小跳数（低于该值按缺省处理，与 search 侧 {@code normalizeDepth} 同款归一）。 */
+    private static final int MIN_NEIGHBOR_DEPTH = 1;
+
+    /** 邻居查询能力边界（PRD §16.4：≤2 跳，超出拒绝为 1101）。 */
+    private static final int MAX_NEIGHBOR_DEPTH = 2;
+
     private final PairingRuleRepository pairingRuleRepository;
     private final CategoryRepository categoryRepository;
     private final ProductRepository productRepository;
     private final KgEdgeIngestManager kgEdgeIngestManager;
+    private final KgClient kgClient;
 
     /**
      * AD61：规则分页（src/dst/status 三维可选过滤）。
@@ -127,6 +139,33 @@ public class KgAdminManager {
         return written;
     }
 
+    /**
+     * AD65：关系邻居表格化核查视图（US-KG-5，契约 §4.13.8f V5.16.1）——包装 I58 检索面
+     * （{@link KgClient#neighbors}），管理端按 src 核查图数据（关系类型/目标/权重/评分）。
+     *
+     * <p><b>参数预检口径（选 Manager 预检并注明）</b>：srcType/srcId 必填（缺失 → 1101，
+     * 对齐 search 侧 {@code KgEdgeManager} 同款守卫）；depth 归一（null/非正 → 缺省 1）与
+     * {@code >2} 拒绝（1101，图查询能力边界 ≤2 跳，PRD §16.4）在 item 侧先行——search 侧
+     * 保留同款拒绝作为二道防线。
+     *
+     * <p><b>fail-open</b>：ES 降级由 ia-api {@code KgClientFallback} 承担（返回空列表），
+     * 本方法原样透传；本方法无事务（只读 Feign，事务纪律硬约束）。
+     *
+     * @param srcType 源节点类型（必填）
+     * @param srcId   源节点 id（必填）
+     * @param relType 关系类型过滤（null = 不过滤）
+     * @param dstType 目标类型过滤（null = 不过滤）
+     * @param depth   遍历深度（缺省 1，≤2；&gt;2 拒绝）
+     * @param status  状态过滤（null = 仅启用边）
+     * @return 邻居列表；无命中/降级为空列表
+     * @throws BizException srcType/srcId 缺失，或 depth 超出能力边界（1101，400）
+     */
+    public List<KgNeighborCO> neighbors(String srcType, Long srcId, String relType,
+                                        String dstType, Integer depth, Integer status) {
+        validateSrc(srcType, srcId);
+        return kgClient.neighbors(srcType, srcId, relType, dstType, normalizeDepth(depth), status);
+    }
+
     // ==================== 内部方法 ====================
 
     /** 类目存在性校验（悬空 → 1101，BDD §16.6.5 治理规则归属参数校验）。 */
@@ -152,6 +191,28 @@ public class KgAdminManager {
             throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "搭配规则不存在: " + id);
         }
         return rule;
+    }
+
+    /** 邻居查询 src 必填守卫（search 侧 {@code KgEdgeManager} 同款）：缺失 → 1101。 */
+    private static void validateSrc(String srcType, Long srcId) {
+        if (srcType == null || srcType.isBlank()) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "srcType 不能为空");
+        }
+        if (srcId == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "srcId 不能为空");
+        }
+    }
+
+    /** depth 归一（null/非正 → 缺省 1）；&gt;2 超出图查询能力边界 → 1101（PRD §16.4 ≤2 跳）。 */
+    private static int normalizeDepth(Integer depth) {
+        if (depth == null || depth < MIN_NEIGHBOR_DEPTH) {
+            return DEFAULT_NEIGHBOR_DEPTH;
+        }
+        if (depth > MAX_NEIGHBOR_DEPTH) {
+            throw new BizException(ErrorCode.PARAM_ERROR,
+                    "depth 超出图查询能力边界(≤" + MAX_NEIGHBOR_DEPTH + "跳): " + depth);
+        }
+        return depth;
     }
 
     /** 重建①②：商品真相源逐批扫描——在售 upsert 直建边，下架/删除清边。 */

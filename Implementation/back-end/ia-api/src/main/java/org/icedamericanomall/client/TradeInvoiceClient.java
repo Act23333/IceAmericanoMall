@@ -1,5 +1,6 @@
 package org.icedamericanomall.client;
 
+import org.icedamericanomall.dto.InvoicePartialRefundCO;
 import org.icedamericanomall.dto.InvoiceVoidCO;
 import org.icedamericanomall.fallback.TradeInvoiceClientFallback;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -22,4 +23,8 @@ public interface TradeInvoiceClient {
     /** 全额退款联动：待开具→自动作废 / 已开具→自动冲红；无有效票幂等空操作。 */
     @PostMapping("/void-on-full-refund")
     void voidOnFullRefund(@RequestBody InvoiceVoidCO invoiceVoid);
+
+    /** 部分退款联动（✅ V5.16.1）：有效发票置 partial_refund_flag=1 待人工处理；无有效票幂等空操作。 */
+    @PostMapping("/partial-refund-flag")
+    void markPartialRefund(@RequestBody InvoicePartialRefundCO partialRefund);
 }

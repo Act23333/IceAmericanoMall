@@ -2,8 +2,10 @@ package org.icedamericanomall.item.app.kg;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import org.icedamericanomall.client.KgClient;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.dto.KgNeighborCO;
 import org.icedamericanomall.item.adapter.request.PairingRuleReq;
 import org.icedamericanomall.item.adapter.request.PairingRuleUpdateReq;
 import org.icedamericanomall.item.adapter.response.PairingRuleVO;
@@ -27,11 +29,13 @@ import org.springframework.dao.DuplicateKeyException;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -39,8 +43,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * KgAdminManager 单元测试 —— 治理用例族（AD61-64）：类目悬空 1101、重复回落 400、
- * null-safe 编辑与启停即时生效、全量重建编排（幂等、逐 src、fail-open）。
+ * KgAdminManager 单元测试 —— 治理用例族（AD61-65）：类目悬空 1101、重复回落 400、
+ * null-safe 编辑与启停即时生效、全量重建编排（幂等、逐 src、fail-open）、
+ * 关系邻居核查查询（AD65：参数透传、depth 归一与 >2 拒绝、降级空列表透传）。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("KgAdminManager — 知识图谱治理编排")
@@ -58,12 +63,15 @@ class KgAdminManagerTest {
     @Mock
     private KgEdgeIngestManager kgEdgeIngestManager;
 
+    @Mock
+    private KgClient kgClient;
+
     private KgAdminManager kgAdminManager;
 
     @BeforeEach
     void setUp() {
         kgAdminManager = new KgAdminManager(pairingRuleRepository, categoryRepository,
-                productRepository, kgEdgeIngestManager);
+                productRepository, kgEdgeIngestManager, kgClient);
     }
 
     private PairingRuleReq createReq() {
@@ -274,5 +282,59 @@ class KgAdminManagerTest {
         assertEquals(20L, vo.getDstCategoryId());
         assertEquals(8, vo.getWeight());
         assertEquals("配件", vo.getRemark());
+    }
+
+    // ==================== AD65 neighbors ====================
+
+    @Test
+    @DisplayName("AD65 neighbors — 参数透传 I58：src/rel/dst/status 原样，depth 缺省归一 1 / 显式 2 原样透传")
+    void shouldDelegateWithNormalizedDepth_whenNeighborsQueried() {
+        List<KgNeighborCO> expected = List.of(new KgNeighborCO("category", 20L, "PAIR_WITH", 8, 1.5f));
+        when(kgClient.neighbors("category", 10L, "PAIR_WITH", "category", 1, null)).thenReturn(expected);
+        when(kgClient.neighbors("category", 10L, "PAIR_WITH", "category", 2, 0))
+                .thenReturn(List.of());
+
+        List<KgNeighborCO> defaultDepth = kgAdminManager.neighbors(
+                "category", 10L, "PAIR_WITH", "category", null, null);
+        List<KgNeighborCO> explicitDepth = kgAdminManager.neighbors(
+                "category", 10L, "PAIR_WITH", "category", 2, 0);
+
+        assertSame(expected, defaultDepth);
+        assertTrue(explicitDepth.isEmpty());
+        verify(kgClient).neighbors("category", 10L, "PAIR_WITH", "category", 1, null);
+        verify(kgClient).neighbors("category", 10L, "PAIR_WITH", "category", 2, 0);
+    }
+
+    @Test
+    @DisplayName("AD65 neighbors — depth>2 超出图查询能力边界 → 1101，不发起 Feign 查询")
+    void shouldReject1101_whenDepthExceedsBoundary() {
+        BizException ex = assertThrows(BizException.class, () -> kgAdminManager.neighbors(
+                "category", 10L, null, null, 3, null));
+
+        assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
+        verify(kgClient, never()).neighbors(anyString(), anyLong(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("AD65 neighbors — ES 降级（fallback 空列表）原样透传为空列表，治理视图不报错")
+    void shouldPassThroughEmptyList_whenDegraded() {
+        when(kgClient.neighbors("product", 1L, null, null, 1, null)).thenReturn(List.of());
+
+        List<KgNeighborCO> result = kgAdminManager.neighbors("product", 1L, null, null, null, null);
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    @DisplayName("AD65 neighbors — srcType/srcId 必填（缺失 → 1101，不发起 Feign 查询）")
+    void shouldReject1101_whenSrcMissing() {
+        BizException missingType = assertThrows(BizException.class, () -> kgAdminManager.neighbors(
+                " ", 10L, null, null, null, null));
+        BizException missingId = assertThrows(BizException.class, () -> kgAdminManager.neighbors(
+                "category", null, null, null, null, null));
+
+        assertEquals(ErrorCode.PARAM_ERROR, missingType.getErrorCode());
+        assertEquals(ErrorCode.PARAM_ERROR, missingId.getErrorCode());
+        verify(kgClient, never()).neighbors(anyString(), anyLong(), any(), any(), any(), any());
     }
 }

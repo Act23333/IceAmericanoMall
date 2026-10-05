@@ -87,4 +87,14 @@ public interface InvoiceRepository {
      * @return 受影响行数（1=命中；0=状态冲突）
      */
     int markUrged(String invoiceNo, LocalDateTime urgeTime);
+
+    /**
+     * 部分退款置标（I60，决策 D4/O6）—— 该订单已开具有效票置 {@code partial_refund_flag=1}
+     * （不改状态、待人工处理）。条件更新自带幂等：已置标 / 待开具（遇部分退款无需标记，
+     * 开具后人工冲红口径不受影响）/ 终态 / 无票 → 0 行幂等空操作。
+     *
+     * @param orderNo 订单号
+     * @return 受影响行数（1=置标成功；0=幂等空操作）
+     */
+    int markPartialRefundFlagIfIssued(String orderNo);
 }

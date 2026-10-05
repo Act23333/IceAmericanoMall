@@ -6,6 +6,7 @@ import org.icedamericanomall.client.AfterSaleClient;
 import org.icedamericanomall.client.NotificationClient;
 import org.icedamericanomall.client.TradeInvoiceClient;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
+import org.icedamericanomall.dto.InvoicePartialRefundCO;
 import org.icedamericanomall.dto.InvoiceVoidCO;
 import org.icedamericanomall.pay.domain.enums.PayChannelEnum;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
@@ -15,13 +16,14 @@ import org.springframework.stereotype.Component;
 
 /**
  * pay 事件副作用协作器（ADR-042）—— 支付成功 / 退款成功两事件的买家站内信单出口，
- * 及退款成功的三步收口（I42 售后回写 → 买家触达 → I56 全额退款发票联动）。
+ * 及退款成功的三步收口（I42 售后回写 → 买家触达 → 发票联动：全额退款 I56 冲红/作废 ·
+ * 部分退款 I60 置标，V5.16.1）。
  *
  * <p><b>职责</b>：封装 {@link NotificationClient#sendInAppMessage} 调用、type 常量与 fail-open
  * 样板（发送失败仅 log.warn，不重试、不回滚，绝不影响支付/退款主流程）；退款成功路径同时承接
  * 自 {@code RefundManager} 整体迁入的 I42 售后单回写（先 I42 回写、后买家触达，各自独立 try/catch），
- * 以及全额退款发票联动（I56，PRD D4：退款成功且退款金额 = 支付单全额时通知 trade 冲红/作废，
- * 部分退款不触发）。
+ * 以及退款成功发票联动（PRD D4：退款金额 = 支付单全额 → I56 通知 trade 冲红/作废；
+ * 部分退款 → I60 置 partial_refund_flag=1 待人工处理，US-INV-8）。
  *
  * <p><b>事务纪律</b>：两个触发点（{@code PayManager#confirmPaid} / {@code payByBalance} 与
  * {@code RefundManager#markSuccessAndNotify} / {@code confirmRefunded}）均无本地事务包裹——
@@ -66,7 +68,7 @@ public class PayEventNotifier {
     }
 
     /**
-     * 退款成功收口（ADR-042 + I56）：先 I42 回写售后单、后买家站内信触达，再全额退款发票联动。
+     * 退款成功收口（ADR-042 + I56/I60）：先 I42 回写售后单、后买家站内信触达，再发票联动。
      *
      * <p>共享结算入口（PAY6 回调 / 渠道同步终态 / 悬挂补偿 / I55 无售后单退款）统一经本方法收口；
      * 三步各自独立 try/catch，互不影响，也不影响退款落账。
@@ -85,7 +87,7 @@ public class PayEventNotifier {
             writeBackAfterSaleRefunded(refundOrder.getAfterSaleId());
         }
         notifyBuyerRefundSuccess(refundOrder);
-        voidInvoiceOnFullRefund(refundOrder);
+        triggerInvoiceLinkage(refundOrder);
     }
 
     /**
@@ -120,14 +122,18 @@ public class PayEventNotifier {
     }
 
     /**
-     * 全额退款发票联动（I56，契约 §4.14.16c；PRD D4）—— 退款成功且退款金额 = 支付单实付全额时，
-     * 通知 trade-service 对该订单发票自动冲红/作废；部分退款<b>不</b>触发
-     * （D4 Phase 1 简化口径：管理端"部分退款待人工处理"筛选人工收敛）。
+     * 退款成功发票联动（I56 / I60，契约 §4.14.16c；PRD D4 / US-INV-8）——按退款金额二分：
+     * <ul>
+     *   <li>退款金额 = 支付单实付全额 → {@code voidOnFullRefund}（I56，自动冲红/作废）；</li>
+     *   <li>退款金额 &lt; 支付单实付（部分退款）→ {@code markPartialRefund}（I60，有效发票置
+     *       {@code partial_refund_flag=1} 待人工处理——D4 Phase 1 简化口径：不自动红字，
+     *       管理端"部分退款待人工处理"筛选人工收敛，Phase 2 再按金额精确部分红字）。</li>
+     * </ul>
      *
      * <p><b>fail-open 双保险</b>：{@code TradeInvoiceClientFallback} 已兜一层降级告警，此处再捕获
-     * 任何异常仅 log.warn，绝不影响退款落账主流程（与 I42 回写同口径）。
+     * 任何异常仅 log.warn，绝不影响退款落账主流程（与 I42 回写同口径，两条分支同享该防御）。
      */
-    private void voidInvoiceOnFullRefund(RefundOrder refundOrder) {
+    private void triggerInvoiceLinkage(RefundOrder refundOrder) {
         try {
             if (isBlank(refundOrder.getOrderNo()) || isBlank(refundOrder.getBizRef())) {
                 log.warn("[refund-invoice][skip] 订单号或幂等业务键缺失，发票联动跳过: refundNo={}",
@@ -136,19 +142,22 @@ public class PayEventNotifier {
             }
             PayOrder payOrder = payOrderService.getByPayOrderNo(refundOrder.getPayOrderNo());
             if (payOrder == null || payOrder.getAmount() == null || refundOrder.getRefundAmount() == null) {
-                log.warn("[refund-invoice][skip] 支付单或金额缺失，无法判定全额，发票联动跳过: refundNo={}, payOrderNo={}",
+                log.warn("[refund-invoice][skip] 支付单或金额缺失，无法判定全额/部分，发票联动跳过: refundNo={}, payOrderNo={}",
                         refundOrder.getRefundNo(), refundOrder.getPayOrderNo());
                 return;
             }
-            if (refundOrder.getRefundAmount().intValue() != payOrder.getAmount().intValue()) {
-                log.info("[refund-invoice][skip] 部分退款不触发发票联动（D4 Phase 1 人工收敛）: refundNo={}, refundAmount={}, paidAmount={}",
-                        refundOrder.getRefundNo(), refundOrder.getRefundAmount(), payOrder.getAmount());
-                return;
+            if (refundOrder.getRefundAmount().intValue() == payOrder.getAmount().intValue()) {
+                tradeInvoiceClient.voidOnFullRefund(
+                        new InvoiceVoidCO(refundOrder.getOrderNo(), refundOrder.getBizRef()));
+                log.info("[refund-invoice][triggered] 全额退款已联动发票冲红/作废（I56）: orderNo={}, sceneRef={}",
+                        refundOrder.getOrderNo(), refundOrder.getBizRef());
+            } else {
+                tradeInvoiceClient.markPartialRefund(
+                        new InvoicePartialRefundCO(refundOrder.getOrderNo(), refundOrder.getBizRef()));
+                log.info("[refund-invoice][triggered] 部分退款已联动发票置标待人工处理（I60）: orderNo={}, sceneRef={}, refundAmount={}, paidAmount={}",
+                        refundOrder.getOrderNo(), refundOrder.getBizRef(),
+                        refundOrder.getRefundAmount(), payOrder.getAmount());
             }
-            tradeInvoiceClient.voidOnFullRefund(
-                    new InvoiceVoidCO(refundOrder.getOrderNo(), refundOrder.getBizRef()));
-            log.info("[refund-invoice][triggered] 全额退款已联动发票冲红/作废: orderNo={}, sceneRef={}",
-                    refundOrder.getOrderNo(), refundOrder.getBizRef());
         } catch (Exception e) {
             log.warn("[refund-invoice][fail-open] 发票联动失败（不阻断退款主流程，管理端人工收敛）: refundNo={}, orderNo={}",
                     refundOrder.getRefundNo(), refundOrder.getOrderNo(), e);

@@ -227,6 +227,28 @@ class InvoiceAdminManagerTest {
     }
 
     @Test
+    @DisplayName("I60 部分退款 — 已开具有效票置 partial_refund_flag=1（不改状态不触达）")
+    void shouldMarkFlag_whenPartialRefundOnIssued() {
+        when(invoiceRepository.markPartialRefundFlagIfIssued(ORDER_NO)).thenReturn(1);
+
+        manager.markPartialRefundFlag(ORDER_NO, "PR:ORD-1:1");
+
+        verify(invoiceRepository).markPartialRefundFlagIfIssued(ORDER_NO);
+        verifyNoInteractions(tradeEventNotifier);
+    }
+
+    @Test
+    @DisplayName("I60 部分退款 — 待开具/无票/终态/已置标（0 行）→ 幂等空操作，不触达")
+    void shouldNoOp_whenPartialRefundNotOnIssued() {
+        when(invoiceRepository.markPartialRefundFlagIfIssued(ORDER_NO)).thenReturn(0);
+
+        manager.markPartialRefundFlag(ORDER_NO, "PR:ORD-1:2");
+
+        verify(invoiceRepository).markPartialRefundFlagIfIssued(ORDER_NO);
+        verifyNoInteractions(tradeEventNotifier);
+    }
+
+    @Test
     @DisplayName("通用 — 发票不存在 → NO_RESOURCE_FOUND")
     void shouldReject_whenInvoiceNotFound() {
         when(invoiceRepository.findByInvoiceNo(INVOICE_NO)).thenReturn(null);

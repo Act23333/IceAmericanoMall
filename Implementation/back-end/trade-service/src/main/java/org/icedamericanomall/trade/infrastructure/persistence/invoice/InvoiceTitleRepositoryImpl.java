@@ -20,6 +20,11 @@ public class InvoiceTitleRepositoryImpl implements InvoiceTitleRepository {
     private final InvoiceTitleMapper invoiceTitleMapper;
 
     @Override
+    public InvoiceTitle findById(Long id) {
+        return toDomain(invoiceTitleMapper.selectById(id));
+    }
+
+    @Override
     public InvoiceTitle findByIdAndUserId(Long id, Long userId) {
         return toDomain(invoiceTitleMapper.selectOne(new LambdaQueryWrapper<InvoiceTitlePO>()
                 .eq(InvoiceTitlePO::getId, id)
@@ -37,6 +42,11 @@ public class InvoiceTitleRepositoryImpl implements InvoiceTitleRepository {
     @Override
     public void update(InvoiceTitle title) {
         invoiceTitleMapper.updateById(toPO(title));
+    }
+
+    @Override
+    public int updateFull(InvoiceTitle title) {
+        return invoiceTitleMapper.updateTitleById(toPO(title));
     }
 
     @Override

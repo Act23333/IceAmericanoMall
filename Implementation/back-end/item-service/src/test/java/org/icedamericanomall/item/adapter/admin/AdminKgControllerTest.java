@@ -2,6 +2,7 @@ package org.icedamericanomall.item.adapter.admin;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.icedamericanomall.common.annotation.OperationLog;
+import org.icedamericanomall.dto.KgNeighborCO;
 import org.icedamericanomall.item.adapter.response.PairingRuleVO;
 import org.icedamericanomall.item.app.kg.KgAdminManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,8 +27,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * AdminKgController 适配层接线测试（F15 AD61-64）—— 委托与审计注解锁死：
- * ① 分页/创建/编辑/重建正确委托 {@code KgAdminManager}；② 全部写操作携带
+ * AdminKgController 适配层接线测试（F15 AD61-65）—— 委托与审计注解锁死：
+ * ① 分页/创建/编辑/重建/邻居核查查询正确委托 {@code KgAdminManager}；② 全部写操作携带
  * {@code @OperationLog} 审计注解（ADR-032 管道一，US-KG-7）。
  */
 @ExtendWith(MockitoExtension.class)
@@ -104,6 +105,26 @@ class AdminKgControllerTest {
                 .andExpect(jsonPath("$.data").value(42));
 
         verify(kgAdminManager).rebuild();
+    }
+
+    @Test
+    @DisplayName("AD65 neighbors — 查询参数透传 KgAdminManager 并返回邻居列表")
+    void shouldDelegateNeighbors_whenQueryGiven() throws Exception {
+        when(kgAdminManager.neighbors("category", 10L, "PAIR_WITH", "category", 2, 0))
+                .thenReturn(List.of(new KgNeighborCO("category", 20L, "PAIR_WITH", 8, 1.5f)));
+
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/admin/kg/neighbors")
+                        .param("srcType", "category")
+                        .param("srcId", "10")
+                        .param("relType", "PAIR_WITH")
+                        .param("dstType", "category")
+                        .param("depth", "2")
+                        .param("status", "0"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].dstId").value(20))
+                .andExpect(jsonPath("$.data[0].relType").value("PAIR_WITH"));
+
+        verify(kgAdminManager).neighbors("category", 10L, "PAIR_WITH", "category", 2, 0);
     }
 
     @Test

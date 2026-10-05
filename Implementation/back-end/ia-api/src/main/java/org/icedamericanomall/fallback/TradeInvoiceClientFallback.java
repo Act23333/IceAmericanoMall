@@ -2,6 +2,7 @@ package org.icedamericanomall.fallback;
 
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.TradeInvoiceClient;
+import org.icedamericanomall.dto.InvoicePartialRefundCO;
 import org.icedamericanomall.dto.InvoiceVoidCO;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;
@@ -23,6 +24,14 @@ public class TradeInvoiceClientFallback implements FallbackFactory<TradeInvoiceC
                                 + "（管理端筛选人工收敛，PRD D4 已知风险） orderNo={}, sceneRef={}",
                         invoiceVoid == null ? null : invoiceVoid.getOrderNo(),
                         invoiceVoid == null ? null : invoiceVoid.getSceneRef(), cause);
+            }
+
+            @Override
+            public void markPartialRefund(InvoicePartialRefundCO partialRefund) {
+                log.warn("部分退款发票标记降级：trade-service 不可用，partial_refund_flag 未置位"
+                                + "（管理端筛选人工收敛，PRD D4 已知风险） orderNo={}, sceneRef={}",
+                        partialRefund == null ? null : partialRefund.getOrderNo(),
+                        partialRefund == null ? null : partialRefund.getSceneRef(), cause);
             }
         };
     }

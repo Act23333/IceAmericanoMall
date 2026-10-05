@@ -8,9 +8,12 @@ import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.trade.adapter.request.InvoiceApplyReq;
 import org.icedamericanomall.trade.adapter.request.InvoiceHistoryReq;
+import org.icedamericanomall.trade.adapter.request.InvoiceTitleReq;
+import org.icedamericanomall.trade.adapter.response.InvoiceTitleVO;
 import org.icedamericanomall.trade.adapter.response.InvoiceVO;
 import org.icedamericanomall.trade.app.invoice.InvoiceApplyManager;
 import org.icedamericanomall.trade.app.invoice.InvoiceBuyerManager;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,11 +22,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
- * 买家发票接口（F14 发票 INV1-INV5，契约 §4.15）。
+ * 买家发票接口（F14 发票 INV1-INV9，契约 §4.15）。
  *
  * <p>控制器只做参数校验与委托：申请守卫（归属/状态/时间窗/一单一票）在
- * {@link InvoiceApplyManager}，查看/撤回/催开编排在 {@link InvoiceBuyerManager}；
+ * {@link InvoiceApplyManager}，查看/撤回/催开/常用抬头编排在 {@link InvoiceBuyerManager}；
  * VO 一律脱敏（税号/邮箱只回掩码，不含 cipher/hash 技术字段）。
  */
 @RestController
@@ -68,6 +73,32 @@ public class InvoiceController {
     @PutMapping("/{invoiceNo}/urge")
     public Result<Void> urge(@PathVariable String invoiceNo) {
         invoiceBuyerManager.urge(UserContext.getUserId(), invoiceNo);
+        return Result.ok();
+    }
+
+    /** INV6 常用抬头列表（本人抬头，默认在前；税号只出掩码）。 */
+    @GetMapping("/title/list")
+    public Result<List<InvoiceTitleVO>> listTitles() {
+        return Result.ok(invoiceBuyerManager.listTitles(UserContext.getUserId()));
+    }
+
+    /** INV7 新建常用抬头（isDefault=true 时服务端清除本人旧默认）。 */
+    @PostMapping("/title")
+    public Result<InvoiceTitleVO> createTitle(@Valid @RequestBody InvoiceTitleReq req) {
+        return Result.ok(invoiceBuyerManager.createTitle(UserContext.getUserId(), req));
+    }
+
+    /** INV8 编辑常用抬头（全量更新语义；非本人 403，不存在 1103）。 */
+    @PutMapping("/title/{id}")
+    public Result<Void> updateTitle(@PathVariable Long id, @Valid @RequestBody InvoiceTitleReq req) {
+        invoiceBuyerManager.updateTitle(UserContext.getUserId(), id, req);
+        return Result.ok();
+    }
+
+    /** INV9 删除常用抬头（软删；默认抬头删除后不自动递补）。 */
+    @DeleteMapping("/title/{id}")
+    public Result<Void> deleteTitle(@PathVariable Long id) {
+        invoiceBuyerManager.deleteTitle(UserContext.getUserId(), id);
         return Result.ok();
     }
 }

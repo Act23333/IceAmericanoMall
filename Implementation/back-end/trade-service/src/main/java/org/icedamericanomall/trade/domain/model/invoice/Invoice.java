@@ -154,8 +154,11 @@ public class Invoice {
      * 企业税号三字段（O4 从严）—— cipher/hash 复用统一三字段模型；掩码显式走账号类规则：
      * {@code DesensitizeUtil.mask} 通用入口只识别手机号/邮箱形态，税号会原样返回明文，
      * 必须改用 {@code maskAccount} 尾 4 口径（掩码规则唯一出口，ADR-034）。
+     *
+     * <p>包内共享：同包 {@link InvoiceTitle}（常用抬头）创建/更新税号时复用本方法，
+     * 保证税号三字段组合口径（cipher + hash + maskAccount 掩码）单一出处。
      */
-    private static EncryptedIdentifier encryptedTaxNo(String taxNo) {
+    static EncryptedIdentifier encryptedTaxNo(String taxNo) {
         EncryptedIdentifier identifier = EncryptedIdentifier.fromPlain(taxNo);
         return EncryptedIdentifier.fromStorage(identifier.getCipher(), identifier.getHash(),
                 DesensitizeUtil.maskAccount(taxNo));

@@ -128,6 +128,11 @@ public class InvoiceRepositoryImpl implements InvoiceRepository {
         return invoiceMapper.markUrged(invoiceNo, urgeTime);
     }
 
+    @Override
+    public int markPartialRefundFlagIfIssued(String orderNo) {
+        return invoiceMapper.markPartialRefundFlagIfIssued(orderNo);
+    }
+
     // ==================== PO <-> 聚合 ====================
 
     static Invoice toDomain(InvoicePO po) {

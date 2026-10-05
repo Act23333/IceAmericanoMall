@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.annotation.OperationLog;
 import org.icedamericanomall.common.api.Result;
+import org.icedamericanomall.dto.KgNeighborCO;
 import org.icedamericanomall.item.adapter.request.PairingRuleReq;
 import org.icedamericanomall.item.adapter.request.PairingRuleUpdateReq;
 import org.icedamericanomall.item.adapter.response.PairingRuleVO;
@@ -19,17 +20,20 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
- * 平台后台知识图谱治理接口（F15 AD61-AD64，契约 §4.13.8f；D6-A 最小治理面，
+ * 平台后台知识图谱治理接口（F15 AD61-AD65，契约 §4.13.8f；D6-A 最小治理面，
  * O5 裁决落位 item 管理端；网关 {@code /api/admin/kg/**} 须先于 {@code /api/admin/**}
  * 兜底声明——ADR-035/036 先例）。
  *
  * <p>控制器只做参数校验与委托：规则分页 / 创建（类目存在性 + 唯一键防重）/
- * 编辑（null-safe，启停即时生效）/ 全量重建（US-KG-8 兜底轨）编排下沉到
- * {@link KgAdminManager}。
+ * 编辑（null-safe，启停即时生效）/ 全量重建（US-KG-8 兜底轨）/ 关系邻居核查查询
+ * （AD65，US-KG-5 表格化视图）编排下沉到 {@link KgAdminManager}。
  *
  * <p><b>审计（ADR-032 管道一，US-KG-7）</b>：全部写操作标注 {@code @OperationLog}，
- * 产出单行 JSON 审计日志（logger {@code AUDIT}）；默认不记参数值（PII 安全默认）。
+ * 产出单行 JSON 审计日志（logger {@code AUDIT}）；默认不记参数值（PII 安全默认）；
+ * AD65 为只读查询，不标注。
  */
 @RestController
 @PreAuthorize("@ss.hasPermi('user:admin')")
@@ -82,5 +86,21 @@ public class AdminKgController {
     @PostMapping("/rebuild")
     public Result<Integer> rebuild() {
         return Result.ok(kgAdminManager.rebuild());
+    }
+
+    /**
+     * AD65：关系邻居表格化核查视图（US-KG-5，V5.16.1）——按 src 查询邻居列表
+     * （关系类型/目标/权重/评分），包装 I58 检索面；ES 降级 → 空列表（fail-open 由
+     * ia-api fallback 承担）。srcType/srcId 必填与 depth 边界（缺省 1，≤2）校验在
+     * {@link KgAdminManager#neighbors}（缺失/超界 → 1101/400）。
+     */
+    @GetMapping("/neighbors")
+    public Result<List<KgNeighborCO>> neighbors(@RequestParam(required = false) String srcType,
+                                                @RequestParam(required = false) Long srcId,
+                                                @RequestParam(required = false) String relType,
+                                                @RequestParam(required = false) String dstType,
+                                                @RequestParam(defaultValue = "1") Integer depth,
+                                                @RequestParam(required = false) Integer status) {
+        return Result.ok(kgAdminManager.neighbors(srcType, srcId, relType, dstType, depth, status));
     }
 }

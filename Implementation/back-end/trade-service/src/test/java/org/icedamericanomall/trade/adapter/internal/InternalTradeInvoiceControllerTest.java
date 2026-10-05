@@ -1,5 +1,6 @@
 package org.icedamericanomall.trade.adapter.internal;
 
+import org.icedamericanomall.dto.InvoicePartialRefundCO;
 import org.icedamericanomall.dto.InvoiceVoidCO;
 import org.icedamericanomall.trade.app.invoice.InvoiceAdminManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,12 +14,12 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.Mockito.verify;
 
 /**
- * I56 内部联动端点接线测试（F14，契约 §4.14.16c）：委托
- * {@code InvoiceAdminManager.voidOnFullRefund(orderNo, sceneRef)}；
- * 幂等空操作语义（无票/已终态静默返回）在应用层测试覆盖。
+ * I56/I60 内部联动端点接线测试（F14，契约 §4.14.16c）：委托
+ * {@code InvoiceAdminManager.voidOnFullRefund / markPartialRefundFlag}；
+ * 幂等空操作语义（无票/已终态/已置标静默返回）在应用层测试覆盖。
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("InternalTradeInvoiceController — I56 委托")
+@DisplayName("InternalTradeInvoiceController — I56/I60 委托")
 class InternalTradeInvoiceControllerTest {
 
     @Mock private InvoiceAdminManager invoiceAdminManager;
@@ -38,5 +39,15 @@ class InternalTradeInvoiceControllerTest {
         assertDoesNotThrow(() -> controller.voidOnFullRefund(co));
 
         verify(invoiceAdminManager).voidOnFullRefund("ORD-1", "AS-9");
+    }
+
+    @Test
+    @DisplayName("I60 — 报文 orderNo/sceneRef 原样透传给管理端编排器")
+    void shouldDelegateMarkPartialRefund() {
+        InvoicePartialRefundCO co = new InvoicePartialRefundCO("ORD-1", "PR-1");
+
+        assertDoesNotThrow(() -> controller.markPartialRefundFlag(co));
+
+        verify(invoiceAdminManager).markPartialRefundFlag("ORD-1", "PR-1");
     }
 }

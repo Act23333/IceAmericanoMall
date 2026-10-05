@@ -8,6 +8,7 @@ import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.BalanceRefundCO;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
+import org.icedamericanomall.dto.InvoicePartialRefundCO;
 import org.icedamericanomall.dto.InvoiceVoidCO;
 import org.icedamericanomall.dto.RefundCreateCO;
 import org.icedamericanomall.dto.RefundResultCO;
@@ -466,8 +467,8 @@ class RefundManagerTest {
     }
 
     @Test
-    @DisplayName("全额退款发票联动 — 部分退款结算成功：不触发联动（D4 Phase 1 人工收敛）")
-    void shouldNotVoidInvoice_whenPartialRefundSettled() {
+    @DisplayName("部分退款发票置标（I60）— 部分退款结算成功：markPartialRefund 收到 orderNo+sceneRef，不触发 I56")
+    void shouldMarkPartialRefund_whenPartialRefundSettled() {
         RefundCreateCO req = request();
         req.setRefundAmount(AMOUNT - 1000);
         when(refundOrderService.getByAfterSaleId(AFTER_SALE_ID)).thenReturn(null);
@@ -482,7 +483,11 @@ class RefundManagerTest {
 
         refundManager.refund(req);
 
-        verifyNoInteractions(tradeInvoiceClient);
+        ArgumentCaptor<InvoicePartialRefundCO> captor = ArgumentCaptor.forClass(InvoicePartialRefundCO.class);
+        verify(tradeInvoiceClient).markPartialRefund(captor.capture());
+        assertEquals(ORDER_NO, captor.getValue().getOrderNo());
+        assertEquals(RefundOrder.afterSaleBizRef(AFTER_SALE_ID), captor.getValue().getSceneRef());
+        verify(tradeInvoiceClient, never()).voidOnFullRefund(any(InvoiceVoidCO.class));
     }
 
     @Test

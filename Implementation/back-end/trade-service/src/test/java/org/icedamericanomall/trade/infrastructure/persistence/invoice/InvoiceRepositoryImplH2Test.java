@@ -236,4 +236,24 @@ class InvoiceRepositoryImplH2Test {
         var partial = repository.pageForAdmin(null, null, true, false, 1, 10);
         assertEquals(0, partial.getTotal(), "无部分退款标记的发票");
     }
+
+    @Test
+    @Order(8)
+    @DisplayName("I60 部分退款置标 — 已开具命中；已置标/待开具/终态/无票 = 0 行幂等空操作")
+    void shouldMarkPartialRefundFlagOnlyOnIssued() {
+        saveInvoice("INV-H2-9A", "ORD-H2-9A", InvoiceStatusEnum.ISSUED.getCode());
+        assertEquals(1, repository.markPartialRefundFlagIfIssued("ORD-H2-9A"), "已开具有效票命中");
+        assertEquals(1, repository.findByInvoiceNo("INV-H2-9A").getPartialRefundFlag());
+        assertEquals(1, repository.findByInvoiceNo("INV-H2-9A").getActiveFlag(), "置标不动有效票槽位");
+        assertEquals(0, repository.markPartialRefundFlagIfIssued("ORD-H2-9A"), "已置标重复触发 = 0 行幂等");
+
+        saveInvoice("INV-H2-9B", "ORD-H2-9B", InvoiceStatusEnum.PENDING_ISSUE.getCode());
+        assertEquals(0, repository.markPartialRefundFlagIfIssued("ORD-H2-9B"), "待开具票遇部分退款无需标记");
+        assertEquals(0, repository.findByInvoiceNo("INV-H2-9B").getPartialRefundFlag());
+
+        saveInvoice("INV-H2-9C", "ORD-H2-9C", InvoiceStatusEnum.RED_FLUSHED.getCode());
+        assertEquals(0, repository.markPartialRefundFlagIfIssued("ORD-H2-9C"), "终态票不置标");
+
+        assertEquals(0, repository.markPartialRefundFlagIfIssued("ORD-H2-404"), "无票幂等空操作");
+    }
 }

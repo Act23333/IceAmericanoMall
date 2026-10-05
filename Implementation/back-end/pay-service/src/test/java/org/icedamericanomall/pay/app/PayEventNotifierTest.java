@@ -4,6 +4,7 @@ import org.icedamericanomall.client.AfterSaleClient;
 import org.icedamericanomall.client.NotificationClient;
 import org.icedamericanomall.client.TradeInvoiceClient;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
+import org.icedamericanomall.dto.InvoicePartialRefundCO;
 import org.icedamericanomall.dto.InvoiceVoidCO;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
 import org.icedamericanomall.pay.domain.model.refundorder.RefundOrder;
@@ -29,12 +30,12 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * PayEventNotifier 事件副作用协作器单元测试（ADR-042 + I56）。
+ * PayEventNotifier 事件副作用协作器单元测试（ADR-042 + I56/I60）。
  *
  * <p>覆盖：支付成功 / 退款成功两事件的站内信字段口径（type/recipient/content/linkUrl）、
  * 退款成功「先 I42 回写、后买家触达」顺序、fail-open（Notification/AfterSale 客户端异常不外溢）、
- * 收件人缺失跳过不发送；全额退款发票联动（I56，PRD D4）：全额触发且参数正确
- * （orderNo/sceneRef）、部分退款不触发、联动异常不外溢、支付单缺失跳过。
+ * 收件人缺失跳过不发送；退款成功发票联动（PRD D4 / US-INV-8）：全额退款触发 I56 且参数正确
+ * （orderNo/sceneRef）、部分退款触发 I60 置标且不触发 I56、联动异常不外溢、支付单缺失跳过。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("PayEventNotifier 事件副作用协作器单元测试（ADR-042 + I56）")
@@ -191,10 +192,10 @@ class PayEventNotifierTest {
         verify(afterSaleClient, never()).markRefunded(any());
     }
 
-    // ==================== 全额退款发票联动（I56，PRD D4） ====================
+    // ==================== 退款成功发票联动（I56 / I60，PRD D4 / US-INV-8） ====================
 
     @Test
-    @DisplayName("全额退款发票联动 — 退款金额=支付单全额：voidOnFullRefund 收到 orderNo+sceneRef（bizRef）")
+    @DisplayName("全额退款 — 退款金额=支付单全额：voidOnFullRefund 收到 orderNo+sceneRef（bizRef），不触发 I60")
     void shouldVoidInvoiceOnFullRefund_whenRefundAmountEqualsPaidAmount() {
         when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder(BUYER_ID, AMOUNT));
 
@@ -204,20 +205,25 @@ class PayEventNotifierTest {
         verify(tradeInvoiceClient).voidOnFullRefund(captor.capture());
         assertEquals(ORDER_NO, captor.getValue().getOrderNo());
         assertEquals(SCENE_REF, captor.getValue().getSceneRef());
+        verify(tradeInvoiceClient, never()).markPartialRefund(any(InvoicePartialRefundCO.class));
     }
 
     @Test
-    @DisplayName("全额退款发票联动 — 部分退款（退款金额 < 支付单全额）：不触发（D4 Phase 1 人工收敛）")
-    void shouldNotVoidInvoice_whenPartialRefund() {
+    @DisplayName("部分退款（I60）— 退款金额 < 支付单全额：markPartialRefund 收到 orderNo+sceneRef（bizRef），不触发 I56")
+    void shouldMarkPartialRefund_whenRefundAmountLessThanPaidAmount() {
         when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder(BUYER_ID, AMOUNT));
 
         notifier.onRefundSuccess(settledRefundOrder(AMOUNT - 100));
 
-        verifyNoInteractions(tradeInvoiceClient);
+        ArgumentCaptor<InvoicePartialRefundCO> captor = ArgumentCaptor.forClass(InvoicePartialRefundCO.class);
+        verify(tradeInvoiceClient).markPartialRefund(captor.capture());
+        assertEquals(ORDER_NO, captor.getValue().getOrderNo());
+        assertEquals(SCENE_REF, captor.getValue().getSceneRef());
+        verify(tradeInvoiceClient, never()).voidOnFullRefund(any(InvoiceVoidCO.class));
     }
 
     @Test
-    @DisplayName("全额退款发票联动 — 联动抛异常不外溢：I42 回写与买家触达先行完成，主流程不受影响")
+    @DisplayName("fail-open — I56 联动抛异常不外溢：I42 回写与买家触达先行完成，主流程不受影响")
     void shouldNotPropagate_whenInvoiceVoidFails() {
         when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder(BUYER_ID, AMOUNT));
         doThrow(new RuntimeException("trade-service down"))
@@ -230,8 +236,21 @@ class PayEventNotifierTest {
     }
 
     @Test
-    @DisplayName("全额退款发票联动 — 支付单缺失：无法判定全额，跳过联动（fail-open）")
-    void shouldSkipInvoiceVoid_whenPayOrderMissing() {
+    @DisplayName("fail-open — I60 置标抛异常不外溢：I42 回写与买家触达先行完成，主流程不受影响")
+    void shouldNotPropagate_whenPartialRefundFlagFails() {
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder(BUYER_ID, AMOUNT));
+        doThrow(new RuntimeException("trade-service down"))
+                .when(tradeInvoiceClient).markPartialRefund(any(InvoicePartialRefundCO.class));
+
+        assertDoesNotThrow(() -> notifier.onRefundSuccess(settledRefundOrder(AMOUNT - 100)));
+
+        verify(afterSaleClient).markRefunded(AFTER_SALE_ID);
+        verify(notificationClient).sendInAppMessage(any(InAppMessageSendReqCO.class));
+    }
+
+    @Test
+    @DisplayName("支付单缺失 — 无法判定全额/部分，跳过联动（fail-open，两分支均不触发）")
+    void shouldSkipInvoiceLinkage_whenPayOrderMissing() {
         when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(null);
 
         notifier.onRefundSuccess(settledRefundOrder(AMOUNT));

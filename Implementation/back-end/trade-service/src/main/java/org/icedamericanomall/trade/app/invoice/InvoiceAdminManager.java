@@ -28,6 +28,7 @@ import java.time.LocalDateTime;
  * AD59 PUT /api/admin/invoice/{no}/void           —— 作废（仅待开具 1→4；已开具拒绝走冲红）
  * AD60 PUT /api/admin/invoice/{no}/red-flush      —— 冲红（仅已开具 2→3，原因必填；重复幂等）
  * I56  POST /internal/trade/invoice/void-on-full-refund —— 全额退款联动（待开具→作废 / 已开具→冲红）
+ * I60  POST /internal/trade/invoice/partial-refund-flag —— 部分退款置标（已开具有效票置标记待人工）
  * </pre>
  *
  * <p><b>事务纪律</b>：AD58 开具含样票 PDF 生成 + 对象存储上传（耗时外部操作），
@@ -163,6 +164,30 @@ public class InvoiceAdminManager {
             log.info("[invoice-admin][refund-link] orderNo={} 已开具发票已自动冲红", orderNo);
             tradeEventNotifier.notifyInvoiceRedFlushed(invoice, systemReason);
         }
+    }
+
+    /**
+     * I60 部分退款发票置标（pay-service 部分退款触发，决策 D4/O6）：
+     * 已开具有效票置 {@code partial_refund_flag=1} 待人工处理（不改状态、不冲红、不触达——
+     * 退款成功站内信由 pay 侧发送）。
+     *
+     * <p>口径（PRD US-INV-8 / 契约 §4.14.16c）：<b>待开具票遇部分退款无需标记</b>
+     * （开具后人工冲红口径不受影响）；已置标重复触发 / 终态票 / 无有效票 → 幂等空操作。
+     * {@code sceneRef} 仅审计日志留痕（表无独立落库列，置标本身以 {@code partial_refund_flag=1}
+     * 为幂等水位）。
+     *
+     * @param orderNo  订单号
+     * @param sceneRef 退款幂等键（refund_order.biz_ref，审计追溯）
+     */
+    public void markPartialRefundFlag(String orderNo, String sceneRef) {
+        int marked = invoiceRepository.markPartialRefundFlagIfIssued(orderNo);
+        if (marked == 0) {
+            log.info("[invoice-admin][partial-refund] orderNo={} sceneRef={} "
+                    + "无已开具有效票或已置标，幂等空操作", orderNo, sceneRef);
+            return;
+        }
+        log.info("[invoice-admin][partial-refund] orderNo={} sceneRef={} "
+                + "已置 partial_refund_flag=1 待人工处理", orderNo, sceneRef);
     }
 
     // ==================== 内部装配 ====================

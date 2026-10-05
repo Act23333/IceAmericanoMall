@@ -94,4 +94,16 @@ public interface InvoiceMapper extends BaseMapper<InvoicePO> {
     @Update("UPDATE invoice SET urge_time = #{urgeTime}, update_time = NOW() "
             + "WHERE invoice_no = #{invoiceNo} AND status = 1")
     int markUrged(@Param("invoiceNo") String invoiceNo, @Param("urgeTime") LocalDateTime urgeTime);
+
+    /**
+     * 部分退款置标（I60，决策 D4/O6）—— 按订单号定位已开具有效票置 partial_refund_flag=1
+     * （不改状态，待人工处理；不动 active_flag 有效票槽位）。
+     * WHERE 限定 status=2 且未置标：已置标 / 待开具 / 终态 / 无票 → 0 行（幂等空操作语义）。
+     *
+     * @param orderNo 订单号
+     * @return 受影响行数（1=置标成功；0=幂等空操作）
+     */
+    @Update("UPDATE invoice SET partial_refund_flag = 1, update_time = NOW() "
+            + "WHERE order_no = #{orderNo} AND status = 2 AND partial_refund_flag = 0")
+    int markPartialRefundFlagIfIssued(@Param("orderNo") String orderNo);
 }
