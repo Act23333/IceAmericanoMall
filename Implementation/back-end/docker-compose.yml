@@ -43,8 +43,7 @@ services:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      # Initialize.sql = 全量最新快照（40 表终态），装新库只执行它；
-      # migrations/ 仅用于存量库逐版升级（按 V1.1.0 → V5.4 顺序手动执行），容器初始化不挂载
+      # Initialize.sql = 全库唯一结构真相源（48 表终态）；2026-10-05 起迁移文件机制废除（ADR-045，库无存量数据），结构变更直接修改本快照
       - ./database/Initialize.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
       - ./database/middleware/nacos-mysql.sql:/docker-entrypoint-initdb.d/11-nacos-mysql.sql:ro
       - ./database/middleware/xxl-job-mysql.sql:/docker-entrypoint-initdb.d/12-xxl-job-mysql.sql:ro

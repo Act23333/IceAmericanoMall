@@ -1,7 +1,7 @@
 # 14 — 服务配置指南
 
 > 从零搭建 IceAmericanoMall 所需的全部组件：Docker 容器编排、中间件配置、第三方平台注册、微服务环境变量。
-> 最后更新: 2026-10-03（数据库整治同步：Initialize.sql 全量快照语义、迁移文件三段式新名 V1.1.2、建库流程修订；第六轮边界重构同步：端口表补 merchant-service 9550；遗留风险清零批次：Sentinel 生效键（trade，ADR-028）、gateway.ws.token-paths（ADR-026）、RAG 配置项（ai.rag.* / search.embedding.* / search.knowledge-vector.*，T14））
+> 最后更新: 2026-10-05（迁移文件机制废除——Initialize.sql 唯一结构真相源，ADR-045；P1 两批交付同步）
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增中间件/配置项/端口时
 
 ---
@@ -124,9 +124,7 @@ slow_query_log=1                         # 慢查询监控
 ```bash
 # 自动执行 (Docker 首次启动)
 # database/Initialize.sql → /docker-entrypoint-initdb.d/01-init.sql（全量最新快照，40 张表，一次装库到位）
-# 存量库升级（新装库跳过，按版本号顺序执行全部 28 个文件至 V5.4；文件名三段式版本号）:
-docker compose exec mysql mysql -u root -p icedamericano_mall < database/migrations/V1.1.2__add_points.sql
-# 示例：原 V1.1__add_points.sql 已重命名去重为 V1.1.2__add_points.sql
+※ 2026-10-05 起迁移文件机制已废除（ADR-045）：新装库执行 Initialize.sql 一次到位；结构变更直接修改 Initialize.sql（库无存量数据，无需迁移）。
 ```
 
 **分布式扩展：**
@@ -543,7 +541,7 @@ ia-common `CryptoKeyConfig`（自动装配）为全部启用 PII 三字段模型
 
 **执行时机与步骤**：
 
-1. 先应用 V5.2 DDL（`database/migrations/V5.2__user_profile_split_and_encryption.sql`）并注入 PII 密钥（§6.4）——密钥未装载时迁移逐行 WARN 不中断；
+1. 先应用 V5.2 DDL（`Initialize.sql 终态（迁移机制已废除，ADR-045）`）并注入 PII 密钥（§6.4）——密钥未装载时迁移逐行 WARN 不中断；
 2. 置 `AUTH_LEGACY_MIGRATION_ENABLED=true`（yml：`auth.legacy-migration.enabled`，**默认 false**）后**启动一次** authorization-service；
 3. 迁移**幂等可重跑**，逐条独立事务，单行失败仅 WARN 不中断整批；
 4. 完成后**置回 false**，人工复核旧列（`password` / `wx_openid` / `role_type` / 明文 `phone` / `last_login_time`，均已标 deprecated），删列另行 DDL。
@@ -599,7 +597,7 @@ Step 2  docker compose up -d                      → MySQL + Redis + Nacos
 Step 3  docker compose ps (确认全部 healthy)
 Step 4  docker compose exec mysql mysql ... < database/Initialize.sql           → 40 张业务表（全量最新快照，一次装库到位）
 Step 5  docker compose exec mysql mysql ... < database/middleware/nacos-mysql.sql  → Nacos 12 张表
-Step 6  仅存量库升级：按版本顺序执行 database/migrations/V*.sql（V1.1.0 → V5.4；新装库跳过——Initialize.sql 已是全量）
+Step 6  （已废除）原「存量库迁移」步骤——2026-10-05 起无迁移机制（ADR-045），新装库 Step 4 即完成全部结构
 Step 7  docker compose --profile v1.1 up -d        → ES + MQ + XXL-Job + MinIO
 Step 8  docker compose exec mysql mysql ... < database/middleware/xxl-job-mysql.sql → XXL-Job 7 张表
 Step 9  mvn -f Implementation/back-end/pom.xml clean install -DskipTests

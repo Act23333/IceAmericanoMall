@@ -48,3 +48,5 @@
 | [042](./042-buyer-notification-wiring.md) | 买家消息触达接线 —— 四事件站内信、事务外 fail-open、单出口 notification-service | 2026-10-04 |
 | [043](./043-pricing-center-and-promotion-engine.md) | 价格计算中心与促销引擎 —— 满减/满折统一计价、叠加口径与分摊边界 | 2026-10-05 |
 | [044](./044-member-level-and-benefits.md) | 会员等级升降级与权益 —— 成长值只升不降、会员折扣接入定价中心、积分倍率接线 | 2026-10-05 |
+| [045](./045-db-snapshot-single-source.md) | 数据库结构演进口径变更 —— 废除迁移文件机制，Initialize.sql 为唯一结构真相源 | 2026-10-05 |
+| [046](./046-product-vector-recommendation.md) | 商品向量推荐 —— 复用向量管道的单向量相似检索与 item 侧新鲜组装 | 2026-10-05 |

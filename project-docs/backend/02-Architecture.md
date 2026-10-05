@@ -723,7 +723,7 @@ wallet-service         (余额账户)                          ✅ 2 controllers
 ia-integration         (第三方集成: 微信支付/短信/邮件/极验/MinIO/OAuth)
 ia-common              (异常/Result/工具/AOP/RocketMQ/CryptoKeyConfig)
 ia-api                 (Feign 契约: 15 Client + DTO + fallback)
-database               (SQL: Initialize 全量快照（45 表）+ 30 migrations，最新 V5.6)
+database               (SQL: Initialize 全量快照唯一真相源（48 表）；迁移机制已废除，ADR-045)
 ─────────────────────────────────────────────
-18 模块 / 15 服务模块 / 约 184 端点（方法级映射实测）/ 590 测试（2026-10-03）
+18 模块 / 15 服务模块 / 约 193 端点（方法级映射实测）/ 1074 测试（2026-10-05）
 ```

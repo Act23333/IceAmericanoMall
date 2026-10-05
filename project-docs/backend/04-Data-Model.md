@@ -860,6 +860,8 @@ public void createOrder(OrderDTO dto) {
 > | **V5.7 订单留言** | `orders.remark VARCHAR(200) NULL`（买家留言快照，T1/T6 请求增量） | `V5.7__order_remark.sql` |
 > | **V5.8 促销与会员** | `promotion`（F5 满减/满折活动）+ `member_level_rule`、`member_growth_log`（F6 等级规则与成长值流水，含 seed） | `V5.8__promotion_and_member_level.sql` |
 >
+> ※ **2026-10-05 用户裁决：迁移文件机制废除**（[ADR-045](../adr/045-db-snapshot-single-source.md)）——`database/migrations/` 目录已删除（库无存量数据，无需升级路径），`Initialize.sql` 为唯一结构真相源，此后结构变更直接修改快照；上表批次与文件名仅作演进存档。
+>
 > 全部新表遵循 §一 约定：`INT` 分、`TINYINT` 状态枚举、审计列 `create_time`/`update_time`、`utf8mb4` + InnoDB、技术主键 `id AUTO_INCREMENT` + 业务唯一键（主键决策矩阵）。
 >
 > **V5.8 促销与会员（F5/F6，[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)/[ADR-044](../adr/044-member-level-and-benefits.md)）**：①`promotion`——店铺级满减/满折活动（name/seller_id/type[1满减 2满折]/threshold/discount_value[满减=分；满折=万分比]/max_discount[满折封顶]/start_time/end_time/status[时间窗推导]/version）；②`member_level_rule`——等级规则（level/threshold 成长值门槛/discount_rate 万分比/points_rate 百分比/sort，seed：NORMAL 0/10000/100、SILVER 100000/9900/110、GOLD 500000/9800/120、PLATINUM 2000000/9500/150）；③`member_growth_log`——成长值入账流水（`uk_order_no` 幂等锚点，一单一次成长，只升不降）。计价口径见 §十二 12.5/12.6 与 ADR-043/044。
