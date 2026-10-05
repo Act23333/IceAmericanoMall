@@ -1,11 +1,13 @@
 package org.icedamericanomall.search.domain.gateway;
 
 import org.icedamericanomall.search.domain.model.search.ProductSearchHit;
+import org.icedamericanomall.search.domain.model.search.ProductVectorDoc;
 import org.icedamericanomall.search.domain.model.search.SearchPage;
 import org.icedamericanomall.search.domain.model.search.SearchQuery;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 商品检索网关（领域端口）—— DB LIKE 与 ES 两条实现链的唯一契约。
@@ -24,4 +26,21 @@ public interface ProductSearchGateway {
 
     /** ES 全量重建索引（DB 实现返回未启用标记）。 */
     Map<String, Object> reindex();
+
+    /**
+     * 商品向量文档幂等覆盖写（契约 I47）—— 按 productId 幂等，整文档以入参为准
+     * （含向量，以新向量为准；ADR-046）。DB 实现为空操作。
+     *
+     * @param doc 商品向量文档（展示字段 + 向量）
+     */
+    void upsertVectorDoc(ProductVectorDoc doc);
+
+    /**
+     * 取商品自身向量（供 I48 以自身向量做 kNN 检索）。
+     * DB 实现恒返回 empty；ES 实现在商品未摄取/读取失败时也返回 empty（fail-open）。
+     *
+     * @param productId 商品 id（幂等键，与 {@link #upsertVectorDoc(ProductVectorDoc)} 同源）
+     * @return 商品向量；不存在时 empty
+     */
+    Optional<double[]> findVectorById(Long productId);
 }

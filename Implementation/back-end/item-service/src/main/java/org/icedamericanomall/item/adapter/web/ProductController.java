@@ -9,6 +9,7 @@ import org.icedamericanomall.item.adapter.request.CreateProductReq;
 import org.icedamericanomall.item.adapter.request.ProductPageReq;
 import org.icedamericanomall.item.adapter.request.UpdateProductReq;
 import org.icedamericanomall.item.adapter.response.ProductVO;
+import org.icedamericanomall.item.adapter.response.RecommendProductVO;
 import org.icedamericanomall.item.adapter.response.SkuVO;
 import org.icedamericanomall.item.app.ProductManager;
 import org.springframework.web.bind.annotation.*;
@@ -52,6 +53,16 @@ public class ProductController {
     @GetMapping("/{id}/skus")
     public Result<List<SkuVO>> getSkuList(@PathVariable Long id) {
         return Result.ok(productManager.listSkus(id));
+    }
+
+    /**
+     * 相似商品推荐（P27，ADR-046）—— 向量相似度降序，恒过滤在售并排除自身；
+     * ES 关闭/无相似命中 → 空列表不报错（推荐位可空）。
+     */
+    @GetMapping("/{id}/similar")
+    public Result<List<RecommendProductVO>> similar(@PathVariable Long id,
+                                                    @RequestParam(required = false) Integer size) {
+        return Result.ok(productManager.similarProducts(id, size));
     }
 
     // ==================== 商家操作 ====================

@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.search.domain.gateway.ProductSearchGateway;
 import org.icedamericanomall.search.domain.model.search.ProductSearchHit;
+import org.icedamericanomall.search.domain.model.search.ProductVectorDoc;
 import org.icedamericanomall.search.domain.model.search.SearchPage;
 import org.icedamericanomall.search.domain.model.search.SearchQuery;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -14,12 +15,14 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
  * DB LIKE 检索网关 —— ES 未启用时的缺省实现（MyBatis-Plus lambdaQuery 参数化，杜绝 SQL 注入）。
  *
- * <p>向量检索不支持（恒返回空列表）；reindex 不适用（返回未启用标记）。
+ * <p>向量检索与向量摄取均不支持（向量是 ES 能力）：{@code vectorSearch} 恒返回空列表、
+ * {@code upsertVectorDoc} 为空操作、{@code findVectorById} 恒 empty；reindex 不适用（返回未启用标记）。
  */
 @Slf4j
 @Component
@@ -72,6 +75,17 @@ public class DbProductSearchGateway implements ProductSearchGateway {
     @Override
     public Map<String, Object> reindex() {
         return Map.of("status", "ok", "count", 0, "esEnabled", false);
+    }
+
+    @Override
+    public void upsertVectorDoc(ProductVectorDoc doc) {
+        // DB 链无向量能力，摄取为空操作（向量是 ES 能力，仅 ES 链路实现）
+    }
+
+    @Override
+    public Optional<double[]> findVectorById(Long productId) {
+        // DB 链无向量能力，恒视为无向量（fail-open）
+        return Optional.empty();
     }
 
     /** 在售 SKU 最低价（按商品分组取最小）。 */
