@@ -52,3 +52,4 @@
 | [046](./046-product-vector-recommendation.md) | 商品向量推荐 —— 复用向量管道的单向量相似检索与 item 侧新鲜组装 | 2026-10-05 |
 | [047](./047-daily-task-system.md) | 每日任务体系 —— 表驱动任务定义、每日幂等完成、积分单出口与旁路触发 | 2026-10-05 |
 | [048](./048-content-notes-in-item-domain.md) | 内容社区落位 item 域 —— 种草笔记与 review 同属商品 UGC，鉴定体系 Phase 2 立项 | 2026-10-05 |
+| [049](./049-group-buy-full-loop.md) | 拼团完整闭环 —— 两段式参团、幂等锚点泛化（修订 ADR-035）、结团退款联动 | 2026-10-05 |

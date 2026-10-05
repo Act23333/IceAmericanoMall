@@ -998,3 +998,14 @@ public void createOrder(OrderDTO dto) {
 索引：`idx_batch_result(batch_id, result)`（管理端按差异类型筛选）
 
 > **Phase 1 口径**：差异仅**落库记录供管理端查看**（§4.13.14 AD44-AD46），**不自动调账**；日终任务由 XXL-Job 触发（dev 默认关闭），渠道账单下载经 ia-integration（Phase 1 mock 返回样例账单）。**重复执行同日对账幂等**：同 `(bill_date, channel)` 先删旧批次与明细再重写（`uk_date_channel` 兜底并发重复触发）。
+
+### 12.5 F13 拼团（V5.14，[ADR-049](../adr/049-group-buy-full-loop.md)，schema 直改 Initialize.sql）
+
+| 表 | 关键列 | 说明 |
+| --- | --- | --- |
+| `group_buy_activity` | seller_id / product_id / sku_id / group_price(分) / required_members(≥2) / time_limit_hours / start_time / end_time / status(1/2/3 时间窗推导) / version | 拼团活动（marketing 域，管理端 AD54-56） |
+| `group_team` | team_no(UK) / activity_id / leader_user_id / required_members / current_members / status(1拼团中 2已成团 3已失败) / expire_time / success_time | 团（成团状态机；参团条件更新 +1，满员条件置已成团） |
+| `group_team_member` | team_id / user_id / order_no(**UK**，幂等锚点：一单一团一次) | 团成员（uk_team_user 防同团重复参团） |
+| `refund_order`（改造） | `after_sale_id` 改**可空** + 新增 `biz_ref VARCHAR(64) NOT NULL` + `uk_biz_ref` | 幂等锚点泛化（修订 ADR-035 §1）：售后退款 `AS:{id}`、拼团退款 `GB:{orderNo}`；`uk_after_sale` 保留 |
+
+> 计价口径：拼团单不进价格计算中心（`discountAmount=0`，与秒杀同口径，ADR-043）；参团两段式（下单不占团位、支付成功后 I53 入团）与结团退款联动见 ADR-049。

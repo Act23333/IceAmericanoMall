@@ -947,6 +947,7 @@ Feature: 运费模型（F2）
 | T4  | POST | `/api/trade/order/{orderNo}/cancel`  | 🔒  | Path: `orderNo` (String), Body: `{ reason? }`                                        | `Void`           | ✅      |
 | T5  | POST | `/api/trade/order/{orderNo}/confirm` | 🔒  | Path: `orderNo` (String)                                                             | `Void`           | ✅      |
 | T6  | POST | `/api/trade/order/direct`            | 🔒  | `DirectOrderReq { skuId(Long, 必填), quantity(≥1, 缺省1), addressId(必填), userCouponId?(单券, 可选), remark?(买家留言, ≤200, 可选——V5.7) }`（**V5.5 已决**：删除未接线的 `userCouponIds`） | `OrderVO`        | ✅ V4.0 |
+| T27 | POST | `/api/trade/order/group-buy`         | 🔒  | `GroupBuyOrderReq { activityId(Long, 必填), teamNo?(String, 可选——空=开团), addressId(Long, 必填), remark?(≤200, 可选) }`（quantity 恒 1；拼团价快照，**不叠加**券/促销/会员——与秒杀同口径；下单不占团位，未支付走既有 30 分钟超时取消；下单前置校验经 I52） | `OrderVO`        | ✅ V5.14 |
 
 **`CreateOrderReq`**:
 
@@ -1453,6 +1454,19 @@ Feature: 买家退款资金流（F1）
 
 ---
 
+#### 4.10.4 GroupBuyController — `/api/group-buy` (marketing-service, ✅ V5.14)
+
+> **F13 拼团 C 端（[ADR-049](../adr/049-group-buy-full-loop.md)）**：活动浏览与团进度只读。参团动作本身是 T27 下单 + 支付成功后自动入团（I53），不经本节端点。
+
+| #    | 方法  | 路径                          | 认证 | 请求                                                              | 响应                                                                                          | 阶段      |
+| ---- | --- | --------------------------- | --- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------- |
+| M15 | GET | `/api/group-buy/activities` | 🌐  | Query: `page`(1), `size`(10)                                     | `IPage<GroupBuyActivityVO>`（**进行中**活动，时间窗推导）                                                | ✅ V5.14 |
+| M16 | GET | `/api/group-buy/activity/{id}` | 🌐 | Path: `id` (Long)                                              | `GroupBuyActivityVO`（详情 + 最近进行中团列表 ≤10：teamNo/currentMembers/requiredMembers/expireTime，**不含他人 userId**） | ✅ V5.14 |
+| M17 | GET | `/api/group-buy/team/{teamNo}` | 🌐 | Path: `teamNo` (String)                                        | `GroupTeamVO { teamNo, status(1拼团中/2已成团/3已失败), currentMembers, requiredMembers, expireTime, successTime? }` | ✅ V5.14 |
+
+> - **GroupBuyActivityVO**：id/name/sellerId/productId/skuId/groupPrice/requiredMembers/timeLimitHours/startTime/endTime/status。
+> - 错误口径：活动/团不存在 → `NO_RESOURCE_FOUND(1103)`。
+
 ### 4.11 AI 服务 (ai-service)
 
 > 当前实现: V2.5 生产就绪 ✅ | 完整选型见 [13-AI-Technology-Selection.md](../backend/13-AI-Technology-Selection.md)
@@ -1728,6 +1742,19 @@ Feature: 买家退款资金流（F1）
 > - **C 端商品页促销标签** Phase 2（roadmap）；Phase 1 优惠在下单时自动应用并在 `OrderVO.discountAmount` 体现。
 > - 审计：三写操作标注 `@OperationLog`（ADR-032）。
 
+#### 4.13.8d AdminGroupBuyController — `/api/admin/group-buy` (marketing-service, ✅ V5.14)
+
+> **F13 拼团活动管理（[ADR-049](../adr/049-group-buy-full-loop.md)）**：复用 promotion/flash 先例——时间窗推导状态、null-safe 局部更新、已结束禁编、进行中禁删、已过期窗口拒绝创建；三写 `@OperationLog` 审计。数据模型 `group_buy_activity`/`group_team`/`group_team_member` 见 04 §十二 12.5。
+
+| #    | 方法   | 路径                          | 认证 | 请求                                                                                                                                                                                              | 响应                | 阶段      |
+| ---- | ---- | --------------------------- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ------- |
+| AD54 | POST | `/api/admin/group-buy`        | 🔑  | `GroupBuyCreateReq { name(必填, ≤50), sellerId(必填), productId(必填), skuId(必填), groupPrice(必填, >0, 分), requiredMembers(必填, ≥2), timeLimitHours(必填, ≥1), startTime(必填), endTime(必填, >startTime) }` | `GroupBuyActivityVO` | ✅ V5.14 |
+| AD55 | PUT  | `/api/admin/group-buy/{id}`   | 🔑  | Path: `id` (Long), Body: `GroupBuyUpdateReq`（同 CreateReq 全可选，null-safe；已结束活动不可编辑）                                                                                                                | `Void`              | ✅ V5.14 |
+| AD56 | DELETE | `/api/admin/group-buy/{id}` | 🔑  | Path: `id` (Long)                                                                                                                                                                                | `Void`（进行中活动禁删 → 400） | ✅ V5.14 |
+
+> - **错误口径**：字段非法（groupPrice≤0 / requiredMembers<2 / timeLimitHours<1 / endTime≤startTime / 整体已过期）→ 400 `PARAM_ERROR(1101)`；活动不存在 → `NO_RESOURCE_FOUND(1103)`。
+> - 拼团库存不单独建模（活动绑定 SKU，沿用 `sku.stock` 与既有原子扣减 ADR-020）；开团/成团运营统计 Phase 2。
+
 #### 4.13.9 MerchantCouponController — `/api/seller/coupon` (marketing-service)
 
 | #    | 方法   | 路径                                      | 认证  | 请求                        | 响应               | 阶段  |
@@ -1976,6 +2003,17 @@ Feature: 渠道对账（F4）
 
 | I49 | POST | `/internal/task/complete` | Body: `TaskCompleteCO { userId(必填), taskCode(必填) }` | `TaskCompleteResultCO { completed(bool), rewardPoints(int) }`（首次=true+实发积分；重复/任务停用/不存在=false+0） | ✅（V5.10） |
 
+#### 4.14.8c InternalGroupBuyController — `/internal/group-buy` (marketing-service, ✅ V5.14)
+
+> **F13 拼团参团联动（[ADR-049](../adr/049-group-buy-full-loop.md)）**：调用方 trade-service（ia-api `GroupBuyClient`）。**I52 下单前置校验** fail-closed（判别型：拼团价是计价业务事实）与 **I53 支付成功参团** fail-closed（参团失败触发 trade 的「取消 + 恢复库存 + I55 退款」闭环，绝不静默假装参团成功）。幂等：I53 以 `uk_order_no`/`uk_team_user` 双唯一键兜底（重放返回现状）；参团竞态由 `current_members` 条件更新兜底（0 行 = 团满/已结 → 抛异常）。
+
+| I52 | POST | `/internal/group-buy/validate` | Body: `GroupBuyValidateCO { activityId(必填), teamNo?(可空=开团校验), userId(必填) }` | `GroupBuyValidateResultCO { activityId, teamNo?(参团时回显), groupPrice, requiredMembers, timeLimitHours, skuId(✅ V5.14.1：活动绑定的 SKU 由服务端权威下发，trade 据此做快照与扣库存——与秒杀 marketing 下发 flashPrice 同构) }` | ✅（V5.14） |
+| I53 | POST | `/internal/group-buy/join` | Body: `GroupJoinCO { userId(必填), orderNo(必填), activityId(必填), teamNo?(可空=开团) }` | `GroupTeamCO { teamNo, status(1/2/3), currentMembers, requiredMembers }`（满员时 status=2） | ✅（V5.14） |
+
+> - **I52 校验面**：活动进行中（时间窗推导）+ 参团时团存在/拼团中/未满 + 用户未在该团（uk_team_user 预检）。
+> - **I53 语义**：开团 = 创建团（leader=userId，`expire_time=now+timeLimitHours`）+ 首个成员行；参团 = 成员行 + 条件更新人数；团满员条件置 `status=2 已成团`。
+> - **错误口径（ADR-004）**：活动无效/团满/团已结/重复参团 → 400 原始透出（trade 捕获后走退款闭环）。
+
 #### 4.13.8c AdminTaskController — `/api/admin/task` (marketing-service, ✅ V5.13)
 
 > **任务运营闭环（V5.13，ADR-047 表驱动口径的运营出口）**：任务定义 CRUD——列表分页 / 创建（code 唯一）/ 编辑（name/rewardPoints/status；code 不可改）。`rewardPoints` 调整立即生效（影响后续完成发放，不追溯已发）；`status=0 停用` → 触发口 I49 立即返回 completed=false。两写（AD52/AD53）`@OperationLog`（ADR-032）。
@@ -2069,6 +2107,15 @@ Feature: 渠道对账（F4）
 > - **金额校验**：`refundAmount` 超过订单实付 `payAmount` → `PARAM_ERROR(1101)`（申请时已有校验的双保险）。pay 侧不持有售后域：售后单存在性由 trade 侧保证，pay 以**支付单存在性 + 金额 ≤ 支付单金额**代理校验（ADR-035）。
 > - **错误口径（ADR-004）**：失败以原始 HTTP 异常透出，不包 `Result`；调用方降级**fail-closed**——退款发起失败不允许静默丢失（售后单停留 APPROVED/RETURNED，由管理端重试 AD43 收敛），与吊销类 fail-open 刻意不同（ADR-011 三分法）。
 
+#### 4.14.15b InternalPayOrderRefundController — `/internal/pay/refund/order` (pay-service, ✅ V5.14)
+
+> **F13 无售后单退款命令（[ADR-049](../adr/049-group-buy-full-loop.md)；幂等锚点泛化修订 ADR-035 §1）**：调用方 trade-service（拼团参团失败/团失败的**资金命令**；ia-api `OrderRefundClient`，降级 **fail-closed**）。`refund_order` 增量：`after_sale_id` 改**可空** + 新增 `biz_ref VARCHAR(64) NOT NULL` + `uk_biz_ref` 统一幂等业务键（售后=`AS:{id}`，拼团=`GB:{orderNo}`）；`uk_after_sale` 保留（售后场景语义不变）。
+
+| I55 | POST | `/internal/pay/refund/order` | Body: `OrderRefundCO { orderNo(必填), sceneRef(必填, 幂等业务键), reason?(摘要) }` | `RefundResultCO { refundNo, status }`（退款金额 = 订单实付全额） | ✅（V5.14） |
+
+> - **幂等**：同 `sceneRef` 重放返回既有退款单。**金额口径**：按 `orderNo` 关联支付单**全额**退款（拼团失败=整单退）。退款成功**不回写售后单**（无售后域），买家触达复用 ADR-042 `REFUND_SUCCESS`。
+> - **错误口径（ADR-004）**：支付单不存在 → `ORDER_NOT_FOUND(3009)` 原始透出（HTTP 状态按 ErrorCode 映射 + 极简 `{"code","msg"}` JSON，与 I40 同口径）；调用方 fail-closed（ADR-035 §5 定类不变）。
+
 #### 4.14.16 InternalAfterSaleController — `/internal/trade/after-sale` (trade-service, ✅ V5.6)
 
 > **已实现（V5.6）**——pay-service 退款成功后的售后单状态回写。调用方：pay-service（退款单置成功后；ia-api `AfterSaleClient`，降级 fail-open + 告警——状态回写丢失靠对账/重试收敛，不阻断退款主流程，ADR-011 定类）。
@@ -2080,6 +2127,14 @@ Feature: 渠道对账（F4）
 > - **语义（✅ V5.6 按实现收敛，ADR-037）**：售后单 `APPROVED(2) | RETURNED(4) → REFUNDED(5)` 条件迁移（`UPDATE ... WHERE id=? AND status IN (2, 4)`，0 行 = 状态已迁移/非两类来源，幂等空操作成功返回）——激活此前为死状态的 `REFUNDED(5)`（`AfterSaleStatusEnum`，见 04-Data-Model §7.3）。**两条来源边共用资金终态**：仅退款（审核同意后）与退货退款（确认收到退货后，AD47 触发点，§4.13.5）。
 > - **状态口径**：退款处理中/失败时售后单**停留原状态**（APPROVED/RETURNED，可重试）；仅退款成功才调用本端点。
 > - **错误口径（ADR-004）**：售后单不存在 → 404 原始透出；其余幂等分支不抛异常。
+
+#### 4.14.16b InternalTradeGroupBuyController — `/internal/trade/group-buy` (trade-service, ✅ V5.14)
+
+> **F13 结团退款联动（[ADR-049](../adr/049-group-buy-full-loop.md)）**：调用方 marketing-service（`GroupBuyExpireJob` 结团后；ia-api `GroupBuyTeamClient`，降级 **fail-open + 告警**——结团事实已定，退款闭环由 trade 逐单 try/catch 收敛，失败单依赖 refund_order 失败态 + 补偿挂账 roadmap）。
+
+| I54 | POST | `/internal/trade/group-buy/refund-team` | Body: `{ teamNo(必填), orderNos[](必填, 团成员订单号) }` | `void` | ✅（V5.14） |
+
+> - **逐单闭环**：条件取消（待发货 2→5）+ 恢复库存 + I55 全额退款；单笔失败 try/catch 继续，不中断整团。
 
 #### 4.14.17 InternalFreightTemplateController — `/internal/item/freight-template` (item-service, ✅ V5.6)
 
@@ -2484,6 +2539,7 @@ data: [DONE]
 | **V5.11.0** | **2026-10-05** | **P2 第三批（活动中心 + 促销可见性）契约先行**：①§4.13.10 M12/M13 活动中心实现定稿（`ActivityVO` 字段定稿：数据源=promotion 进行中活动，1→FULL_REDUCE/2→LIMIT_DISCOUNT，NEW_USER 暂空列表 Phase 2；M13 按 id 详情 1103）；②M7 我的券三态计数实现；③§4.4.x P2 商品详情响应增量 `promotions` 促销标签（item 复用 I44，调用方 fail-open 包装 + 60s Caffeine 缓存，ADR-041 先例；与下单计价同源 promotion 表——用户所见即所得） |
 | **V5.12.0** | **2026-10-05** | **P2 第四批（店铺装修 / 内容社区 Phase 1）契约先行**：①**F11 店铺装修**——S1c/S1d `/api/seller/shops/{shopId}/decoration`（ShopDecorationVO/Req：公告 + 轮播 ≤5 + 推荐商品位 ≤8；归属校验同 S1b；hotProductIds Phase 1 不校验商品归属）+ SH1 ShopVO 增量 `decoration`；②**F12 内容社区 Phase 1**——新增 P28-P33 `/api/notes/**`（发布/流/详情/点赞取消/作者软删；纯文本+图集 ≤9、关联商品 ≤5 发布时校验在售、点赞 uk 幂等原子计数；落位 item-service，[ADR-048](../adr/048-content-notes-in-item-domain.md)）；数据模型 `shop_decoration`/`note`/`note_product`/`note_like` 按 ADR-045 口径直接入 Initialize.sql 快照（50→54 表）；鉴定体系/富文本/评论 Phase 2 立项 |
 | **V5.13.0** | **2026-10-05** | **P2 Phase 2 挂账收敛批（列表促销角标 / 搜索联想 / 任务运营 / 笔记向量化）契约先行**：①P1 商品分页响应增量 `promotions`（按行 sellerId 聚合店铺促销标签，60s 缓存复用 P2 详情口径，促销可见性从详情延伸到列表）；②SE5 搜索联想转正（热搜词前缀 + 商品名前缀双源 ≤10 去重，Redis+DB 双源 ES 关闭可用）；③任务运营闭环 AD51-53 `/api/admin/task`（列表/创建/编辑：code 唯一、rewardPoints 调整立即生效、停用即触发口失效，三写 `@OperationLog`）；④笔记向量化（ADR-046 管道第二次复用）：I50/I50 `notes` 独立小索引（单向量 title+content，摄取幂等覆盖写+软删删向量）+ I51 相似检索 + P34 相似笔记卡（item 组装发布态）；无 schema 变更 |
+| **V5.14.0** | **2026-10-05** | **P3 第一批（F13 拼团完整闭环）契约先行**：①§4.10.4 新增 M15-M17 `/api/group-buy/**` C 端浏览（活动列表/详情+进行中团列表脱敏/团进度）；②§4.6.1 新增 T27 `POST /api/trade/order/group-buy`（quantity 恒 1，拼团价快照不叠加券/促销/会员，下单不占团位）；③§4.13.8d 新增 AD54-56 管理端拼团活动 CRUD（复用 promotion/flash 先例）；④§4.14.8c 新增 I52 validate/I53 join（均 fail-closed：参团失败触发 trade「取消+恢复库存+I55 退款」闭环）；⑤§4.14.15b 新增 I55 `POST /internal/pay/refund/order`（**无售后单退款命令**；幂等锚点泛化修订 ADR-035 §1：`refund_order.after_sale_id` 改可空 + `biz_ref`/`uk_biz_ref`）；⑥§4.14.16b 新增 I54 `POST /internal/trade/group-buy/refund-team`（结团逐单退款，fail-open）；⑦网关补 `/api/group-buy/**` 路由；数据模型 `group_buy_activity`/`group_team`/`group_team_member` 按 ADR-045 口径直接入 Initialize.sql（54→57 表），[ADR-049](../adr/049-group-buy-full-loop.md) |
 
 ---
 
