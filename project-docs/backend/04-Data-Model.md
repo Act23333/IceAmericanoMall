@@ -352,7 +352,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 | biz_user_id | BIGINT | FK → user.id, NULL | 用户 |
 | pay_channel_code | VARCHAR(20) | NOT NULL | 支付渠道代码 |
 | amount | INT | NOT NULL | 支付金额（分） |
-| pay_type | TINYINT | NOT NULL | 1-h5, 2-小程序, 3-公众号, 4-扫码, 5-余额 |
+| pay_type | TINYINT | NOT NULL | 1-h5, 2-公众号(JSAPI), 3-小程序(MINI), 4-扫码(NATIVE), 5-余额（V5.18 与 PayTypeEnum 对齐修正） |
 | status | TINYINT | NOT NULL | 0-待提交, 1-待支付, 2-超时取消, 3-成功 |
 | expand_json | JSON | NULL | 扩展字段 |
 | result_code | VARCHAR(50) | NULL | 第三方返回码 |

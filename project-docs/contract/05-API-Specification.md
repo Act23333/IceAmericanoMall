@@ -1,6 +1,6 @@
 # 05 — API 规格文档 (API Specification — SDD)
 
-> **最后更新**: 2026-10-06 | **版本**: V5.17.0 | **端点总数**: 276（方法级映射实测，含 `/internal/**` 57 个；V5.7–V5.17 全量落地：FT/任务/活动中心/装修/笔记/推荐/facets/suggest/拼团/发票/知识图谱/多币种/AD48-68/I44-I61/P27-P36 均已实现，详见 §十四 版本行 V5.7.0–V5.17.0） | **已实现**: 全部标注 ✅ 端点 | **公共**: 195+ | **内部**: 39+ | **已实现**: 229+
+> **最后更新**: 2026-10-06 | **版本**: V5.18.0 | **端点总数**: 278（方法级映射实测，含 `/internal/**` 57 个；V5.7–V5.18 全量落地：FT/任务/活动中心/装修/笔记/推荐/facets/suggest/拼团/发票/知识图谱/多币种/小程序支付与分享码/AD48-68/I44-I61/P27-P37 均已实现，详见 §十四 版本行 V5.7.0–V5.18.0） | **已实现**: 全部标注 ✅ 端点 | **公共**: 195+ | **内部**: 39+ | **已实现**: 229+
 >
 > **V5.6.1 实现落地说明**：V5.6.0 规格先行的四个 P0 功能（F1 买家退款资金流 / F2 运费模型 / F3 拆单发货 / F4 渠道对账）已**全量实现并通过全量测试**，全部 V5.6 规划标注已收敛为"已实现（V5.6）"；实现方上报的规格偏差已按 ADR-035/036/037 收敛进正文（错误码 3039/3040/3041、AD47 confirm-return 退款触发分派、I41 并发幂等、I43 fail-closed、AD46 批次列表）。数据模型见 `04-Data-Model.md` §十二（已建库）。
 > 
@@ -534,6 +534,7 @@ ws(s)://<gateway>/ws/chat/...?token=<accessToken>
 | #    | 方法  | 路径                  | 认证 | 请求 | 响应                                                                                  | 阶段      |
 | ---- | --- | ------------------- | --- | --- | ----------------------------------------------------------------------------------- | ------- |
 | P36 | GET | `/api/currency/list` | 🌐  | —   | `List<CurrencyVO { code, name, symbol, exponent, rateScaled, effectTime }>`（仅启用；本地表直读 + 可选 60s 缓存，I44 先例） | ✅ V5.17 |
+| P37 | GET | `/api/item/product/{id}/wxa-code` | 🌐  | Path: `productId` (Long) | `WxaCodeVO { url }`（**商品分享小程序码**：微信 `wxacode.getUnlimited`（scene=`p={id}`）→ MinIO 缓存直返 URL；公开匿名，分享场景；✅ V5.18） |
 
 ### 4.3 商家/店铺服务 (merchant-service)
 
@@ -1203,6 +1204,7 @@ Feature: 拆单发货（F3）
 | #    | 方法   | 路径                                       | 认证  | 请求                                                                                   | 响应                          | 阶段       |
 | ---- | ---- | ---------------------------------------- | --- | ------------------------------------------------------------------------------------ | --------------------------- | --------- |
 | PAY6 | POST | `/api/pay/callback/wechat-refund`        | 🌐  | Headers: `Wechatpay-Signature/Nonce/Timestamp/Serial`, Body: 原始回调报文（经通道适配层验签+AES-GCM 解密，**复用 ADR-033 口径**） | 裸 JSON（v3 规范，同 PAY2 应答协议） | ✅（V5.6） |
+| PAY7 | POST | `/api/pay/wechat/jsapi` | 🔒  | Body: `JsapiPayReq { orderNo(必填), openid(必填, 与商户下单 appid 同源的 openid) }` | `JsapiPayParamsVO { appId, timeStamp, nonceStr, packageVal, signType, paySign }`（**小程序内拉起**：JSAPI 下单（`payer.openid` + appid 绑定）→ SDK `prepayWithRequestPayment` 返回带签名拉起参数集，前端直传 `wx.requestPayment`；✅ V5.18） |
 
 > **PAY6 语义**：微信退款成功通知——解密提取退款单号（`out_refund_no` = `refund_order.refund_no`）与渠道退款单号（`refund_id` → `channel_refund_no`）→ `refund_order` 条件置成功（仅"处理中"可迁移，重复通知幂等）→ 经 I42 通知 trade 回写售后单。应答体与 PAY2 同协议（ADR-029）：成功 200 + `{"code":"SUCCESS","message":"成功"}`，失败 500 + `{"code":"FAIL","message":"处理失败，请重试"}`（触发渠道重推），幂等重复通知仍 200 + SUCCESS。入参保持原始报文（ADR-023 显式例外）。
 
@@ -2641,6 +2643,7 @@ data: [DONE]
 | **V5.15.0** | **2026-10-05** | **P3 第二批（F14 发票）契约先行——完整 PRD 定稿（01-PRD §十五，D1-D7/O1-O10 已裁决）后规格收口**：①§4.15 INV1-INV3 占位转定稿 + 增量 INV4 撤回/INV5 催开（买家端，INV3 修正为业务键 invoiceNo）；②§4.13.8e 新增管理端 **AD57-60**（O7 裁决用平台 AD 惯例编号；模拟开具 `InvoiceIssuePort` 防腐；导出延 Phase 2）；③§4.14.16c 新增 **I56** `POST /internal/trade/invoice/void-on-full-refund`（pay 全额退款 → 自动冲红/作废联动，fail-open 触发器，PRD D4）；④金额口径 = `payAmount` 快照（不变式 V2 对齐）、一单一有效票 `uk_order_active`、税号/邮箱 PII 三字段（O4 从严）；数据模型 `invoice`/`invoice_title` 按 ADR-045 直改 Initialize.sql（57→59 表） |
 | **V5.16.1** | **2026-10-06** | **P3 需求对账缺口收敛（web 端需求对账：§十五/§十六 用户故事逐条核对，三处缺口补契约）**：①§4.15 新增 **INV6-9** 常用抬头 CRUD（US-INV-2——仓储 `InvoiceTitleRepository` V5.15 已就绪，本次补契约与实现；INV1 的 `titleId` 引用自此可用）；②§4.14.16c 新增 **I60** `partial-refund-flag`（US-INV-8/D4 部分退款自动置标触发口——pay 判定 full→I56 / partial→I60，两侧 fail-open）；③§4.13.8f 新增 **AD65** 管理端关系邻居查询（US-KG-5 表格化核查视图，包装 I58） |
 | **V5.17.0** | **2026-10-06** | **P3 第四批（F16 多币种 Phase 1：展示换算 + 订单快照锁汇）契约先行——完整 PRD 定稿（01-PRD §十七，O1 核心裁决采纳 B 折中，裁决记录 17.2.0）后规格收口**：①§1.5 金额约定增补「定点整数汇率」口径（rate_scaled BIGINT 10⁻⁶ 刻度 + half-up 到最小单位；换算仅展示、**前端执行 D7-A**、金额 INT 分语义零改动）；②§4.2.11 新增 **P36** `GET /api/currency/list`（wallet 数据面，🌐 仅启用币种）；③§4.14.3b 新增 **I61** `GET /internal/currency/current`（trade 下单快照消费，未启用 1103/降级哨兵 -1，fail-open）；④§4.13.8g 新增管理端 **AD66-68**（币种分页/汇率人工修正/启停，`@OperationLog`；定时拉取 job 开关默认 false）；⑤T1/T6/T27 请求增量可选 `displayCurrency` + OrderVO 增量 `displayCurrency/displayRateScaled` 可空回显（快照锁汇 D1-B）；⑥数据模型 `currency`/`exchange_rate` 两表 + `orders` 增 `display_currency/display_rate` 两可空列（Initialize.sql 直改 59→62 表，列注释强制「非结算币种」隔离）；⑦网关 `/api/currency/**` GET 匿名 + `/api/admin/currency/**` 先于兜底声明；资金链路（支付/退款/钱包/对账/发票）**全程 CNY 分零改动**（NFR 硬验收）；Phase 2 结算触发器量化（PRD §17.8） |
+| **V5.18.0** | **2026-10-06** | **小程序后端增量核对项补齐（AGENTS ⚪ 口径修正后的两处增量；mini-program 本体为前端工程，业务契约全量共享）**：①**PAY7** `POST /api/pay/wechat/jsapi`——小程序内拉起支付：JSAPI 下单（`payer.openid` 与商户下单 appid 同源 + 补齐 WechatPayProperties `app-id` 配置——修正 Native 下单缺 appid 的既有缺陷）→ SDK `prepayWithRequestPayment` 返回带签名拉起参数集，前端直传 `wx.requestPayment`；回调/退款/对账零改动（复用 PAY2/PAY6/I55 全链路）；②**P37** `GET /api/item/product/{id}/wxa-code`——商品分享小程序码（微信 `wxacode.getUnlimited`，复用 `wechat.mini` 登录配置取 stable_token，scene=`p={id}`，MinIO 缓存直返 URL）；网关零新增（/api/pay/** 与 /api/item/** 路由既有） |
 | **V5.16.0** | **2026-10-06** | **P3 第三批（F15 知识图谱 Phase 1：商品关系导购）契约先行——完整 PRD 定稿（01-PRD §十六，O1 聚焦导购/O2 混合最小形态已裁决）后规格收口**：①§4.14.10b 新增 **I57 edge/upsert（先删后写幂等，哨兵 -1）/ I58 neighbors（≤2 跳 terms，fail-open 空列表）/ I59 edges 清边**（search `kg_edges` 边索引投影；I57-I59 全链路 fail-open 对齐 ADR-046 定类）；②§4.4.x 新增 **P35** `GET /api/item/product/{id}/pairing`（KG 图主召回 → 向量兜底 → 空态，与 P27 同页共存 O6）；③§4.13.8f 新增管理端 **AD61-63** 规则 CRUD + **AD64** 全量重建（裁决增量，兑现 US-KG-8）；④Phase 1 唯一新增 MySQL 表 `pairing_rule`（Initialize.sql 直改 59→60 表）+ ES `kg_edges` 边索引（D1 混合最小形态：MySQL 真相源 + ES 检索面；NebulaGraph 触发器化 §16.9）；⑤网关 `/api/admin/kg/**` 先于兜底声明；LLM 抽取/审核队列/政策问答/可视化均 Phase 2（触发器量化） |
 
 ---
