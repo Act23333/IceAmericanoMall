@@ -1,8 +1,11 @@
 package org.icedamericanomall.pay.adapter.web;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.icedamericanomall.pay.adapter.request.JsapiPayReq;
+import org.icedamericanomall.pay.adapter.response.JsapiPayParamsVO;
 import org.icedamericanomall.pay.adapter.response.PayOrderVO;
 import org.icedamericanomall.pay.domain.enums.PayChannelEnum;
 import org.icedamericanomall.pay.app.PayManager;
@@ -63,6 +66,20 @@ public class PayController {
                                        @RequestParam(defaultValue = "WECHAT") String channel) {
         Long userId = UserContext.getUserId();
         return Result.ok(payManager.initiatePayment(orderNo, userId, PayChannelEnum.of(channel)));
+    }
+
+    /**
+     * 小程序内拉起支付（微信 JSAPI 通道，PAY7）：JSAPI 下单（{@code payer.openid} 与
+     * {@code wechat.pay.app-id} 绑定）返回<b>带签名</b>拉起参数集，前端直传
+     * {@code wx.requestPayment}；支付结果经 {@code /callback/wechat}（PAY2）确认，本端点不推进状态。
+     *
+     * @param req 订单号 + 用户在下单 appid 下的 openid（均必填，同源约束由配置侧保证）
+     * @return 拉起参数集 appId/timeStamp/nonceStr/packageVal/signType/paySign
+     */
+    @PostMapping("/wechat/jsapi")
+    public Result<JsapiPayParamsVO> initiateJsapi(@Valid @RequestBody JsapiPayReq req) {
+        Long userId = UserContext.getUserId();
+        return Result.ok(payManager.initiateJsapiPayment(req.getOrderNo(), userId, req.getOpenid()));
     }
 
     /**

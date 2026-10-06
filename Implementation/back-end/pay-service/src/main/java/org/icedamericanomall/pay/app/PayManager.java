@@ -5,9 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.OrderClient;
 import org.icedamericanomall.pay.adapter.assembler.PayOrderConverter;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
+import org.icedamericanomall.pay.adapter.response.JsapiPayParamsVO;
 import org.icedamericanomall.pay.adapter.response.PayOrderVO;
 import org.icedamericanomall.dto.OrderSummaryCO;
 import org.icedamericanomall.integration.payment.AlipayPaymentClient;
+import org.icedamericanomall.integration.payment.JsapiPayResult;
 import org.icedamericanomall.integration.payment.WechatCallbackResult;
 import org.icedamericanomall.pay.domain.enums.PayChannelEnum;
 import org.icedamericanomall.pay.domain.enums.PayTypeEnum;
@@ -33,6 +35,9 @@ import java.util.Map;
  * <pre>
  * Scenario: 微信/支付宝发起
  *   Then 调对应渠道客户端拿支付链接，复用或创建"待支付"支付单，返回链接
+ * Scenario: 小程序内拉起（微信 JSAPI，PAY7）
+ *   Then 与微信发起同构：幂等已支付检查 → 校验订单 → JSAPI 下单（openid 与 wechat.pay.app-id
+ *        绑定）返回带签名拉起参数集；支付结果仍由微信回调确认，此处不推进状态
  * Scenario: 余额支付
  *   Then 先落"待支付"支付单 → 事务外 Feign 扣余额 → 扣款成功条件置成功并通知订单；
  *        扣款失败则条件取消支付单并抛 BALANCE_INSUFFICIENT（禁止只记日志吞掉）
@@ -79,8 +84,39 @@ public class PayManager {
             return payOrderConverter.toVO(payByBalance(orderNo, userId, amount));
         }
         String payUrl = channelRouter.initiatePayment(orderNo, amount, PAY_DESC, channel);
-        PayOrder payOrder = reuseOrCreatePending(existing, orderNo, userId, amount, payUrl, channel);
+        PayOrder payOrder = reuseOrCreatePending(existing, orderNo, userId, amount, payUrl, channel,
+                PayTypeEnum.NATIVE.getCode());
         return payOrderConverter.toVO(payOrder);
+    }
+
+    /**
+     * 发起微信 JSAPI 支付（小程序内拉起，PAY7）—— 与 {@link #initiatePayment} 同构：
+     * 幂等已支付检查 → Feign 校验订单 → 渠道 JSAPI 下单（appid/openid 同源绑定由
+     * {@code wechat.pay.app-id} 配置侧保证）→ 建/复用待支付单（channel=WECHAT、payType=小程序）。
+     *
+     * <p>返回<b>带签名</b>的拉起参数集，前端直传 {@code wx.requestPayment}；支付结果不经本方法
+     * 推进——仍走 PAY2 微信回调 → {@link #confirmPaid} 全链路，此处零额外状态分支。
+     *
+     * @param orderNo 业务订单号
+     * @param userId  支付用户
+     * @param openid  用户在下单 appid（小程序 appid）下的 openid
+     * @return 小程序拉起参数集（appId/timeStamp/nonceStr/packageVal/signType/paySign）
+     * @throws BizException 已支付 / 订单不存在（ORDER_NOT_FOUND）/ 渠道下单失败
+     */
+    public JsapiPayParamsVO initiateJsapiPayment(String orderNo, Long userId, String openid) {
+        PayOrder existing = payOrderService.getByBizOrderNo(orderNo);
+        if (existing != null && existing.isPaid()) {
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "订单已支付");
+        }
+        OrderSummaryCO summary = orderClient.getOrder(orderNo);
+        if (summary == null) {
+            throw new BizException(ErrorCode.ORDER_NOT_FOUND, "订单不存在: " + orderNo);
+        }
+        int amount = resolvePayAmount(summary, orderNo);
+        JsapiPayResult params = channelRouter.initiateWechatJsapi(orderNo, amount, PAY_DESC, openid);
+        reuseOrCreatePending(existing, orderNo, userId, amount, null,
+                PayChannelEnum.WECHAT, PayTypeEnum.MINI.getCode());
+        return payOrderConverter.toParamsVO(params);
     }
 
     /** 扣款金额取「应付 payAmount」；历史订单缺字段时降级用原价并告警。 */
@@ -100,8 +136,7 @@ public class PayManager {
 
     /** 复用已有「待支付」支付单（条件更新），否则新建，避免同一订单重复新增支付行。 */
     private PayOrder reuseOrCreatePending(PayOrder existing, String orderNo, Long userId,
-                                                int amount, String payUrl, PayChannelEnum channel) {
-        int payType = PayTypeEnum.NATIVE.getCode();
+                                                int amount, String payUrl, PayChannelEnum channel, int payType) {
         if (existing != null && existing.isPendingPay()) {
             PayOrder reused = payOrderService.resetPending(
                     existing, amount, channel.getCode(), payUrl, payType);

@@ -19,6 +19,8 @@ spring:
 wechat:
   pay:
     merchant-id:  # 留空 = 自动使用 MockWechatPaymentClient
+    # 商户下单 appid（微信 v3 下单必填；小程序 JSAPI 场景须与 openid 同源，即同 wechat.mini.app-id）
+    app-id: ""
     private-key-path: ""
     merchant-serial-number: ""
     api-v3-key: ""

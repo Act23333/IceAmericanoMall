@@ -105,6 +105,20 @@ class MockWechatPaymentClientTest {
     }
 
     @Test
+    @DisplayName("JSAPI 下单 — Mock 返回六字段拉起参数集（packageVal 沿用 prepay_id= 协议前缀）")
+    void shouldReturnJsapiParams_whenInitiateJsapiPayment() {
+        JsapiPayResult result = client.initiateJsapiPayment("PAY-1", 11900, "订单支付", "openid-1");
+
+        assertEquals(WechatPaymentClient.MockWechatPaymentClient.MOCK_APP_ID, result.appId());
+        assertEquals(WechatPaymentClient.MockWechatPaymentClient.MOCK_SIGN_TYPE, result.signType());
+        assertEquals(WechatPaymentClient.MockWechatPaymentClient.MOCK_PREPAY_ID_PREFIX + "PAY-1",
+                result.packageVal());
+        assertFalse(result.timeStamp().isBlank(), "timeStamp 不得为空（秒级时间戳字符串）");
+        assertFalse(result.nonceStr().isBlank(), "nonceStr 不得为空");
+        assertFalse(result.paySign().isBlank(), "paySign 不得为空");
+    }
+
+    @Test
     @DisplayName("账单下载 — 返回样例流水（金额单位：分）")
     void shouldDownloadSampleBill() {
         var items = client.billDownload("2026-10-02");

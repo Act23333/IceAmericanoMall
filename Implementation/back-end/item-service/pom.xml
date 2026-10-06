@@ -79,6 +79,11 @@
             <groupId>org.nolazy</groupId>
             <artifactId>ia-common</artifactId>
         </dependency>
+        <!-- P37 商品分享小程序码：ia-integration 微信客户端（WechatMiniApiClient）+ MinIO（StorageClient） -->
+        <dependency>
+            <groupId>org.nolazy</groupId>
+            <artifactId>ia-integration</artifactId>
+        </dependency>
         <!-- 商品详情促销标签 I44 短 TTL 本地缓存（F10，ADR-041 先例）；版本由 spring-boot-dependencies 管理 -->
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>

@@ -1,6 +1,7 @@
 package org.icedamericanomall.pay.adapter.web;
 
 import com.jayway.jsonpath.JsonPath;
+import org.icedamericanomall.pay.adapter.response.JsapiPayParamsVO;
 import org.icedamericanomall.pay.app.PayManager;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
@@ -20,11 +21,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * PayController 微信回调应答单元测试 —— 锁死「渠道协议优先于业务信封」。
@@ -144,5 +148,64 @@ class PayControllerTest {
         assertEquals(PayController.RESPONSE_CODE_FAIL, JsonPath.read(body, "$.code"));
         assertEquals(PayController.RESPONSE_MESSAGE_FAIL, JsonPath.read(body, "$.message"));
         assertFalse(body.contains("支付单不存在"), "不得外泄内部失败原因: " + body);
+    }
+
+    // ==================== PAY7 小程序拉起（微信 JSAPI） ====================
+
+    @Test
+    @DisplayName("PAY7 成功 — HTTP 200 + Result.data 六字段拉起参数集（packageVal 原名透传），委托 Manager")
+    void shouldReturnJsapiParams_whenValidJsapiBody() throws Exception {
+        JsapiPayParamsVO vo = new JsapiPayParamsVO();
+        vo.setAppId("wx-app");
+        vo.setTimeStamp("1760000000");
+        vo.setNonceStr("nonce-str");
+        vo.setPackageVal("prepay_id=wx-1");
+        vo.setSignType("RSA");
+        vo.setPaySign("pay-sign");
+        when(payManager.initiateJsapiPayment(eq("ORD-1"), any(), eq("openid-1"))).thenReturn(vo);
+
+        MvcResult result = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/pay/wechat/jsapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"orderNo\":\"ORD-1\",\"openid\":\"openid-1\"}"))
+                .andReturn();
+        String body = body(result);
+
+        assertEquals(200, result.getResponse().getStatus());
+        assertEquals("wx-app", JsonPath.read(body, "$.data.appId"));
+        assertEquals("1760000000", JsonPath.read(body, "$.data.timeStamp"));
+        assertEquals("nonce-str", JsonPath.read(body, "$.data.nonceStr"));
+        assertEquals("prepay_id=wx-1", JsonPath.read(body, "$.data.packageVal"),
+                "微信协议 package 字段须以 packageVal 原名透传");
+        assertEquals("RSA", JsonPath.read(body, "$.data.signType"));
+        assertEquals("pay-sign", JsonPath.read(body, "$.data.paySign"));
+        // 委托：orderNo/openid 原样透传（standalone MockMvc 无认证上下文，userId 为 null）
+        verify(payManager).initiateJsapiPayment("ORD-1", null, "openid-1");
+    }
+
+    @Test
+    @DisplayName("PAY7 参数校验 — 缺 openid → HTTP 400，Manager 不被调用")
+    void shouldReturn400_whenJsapiOpenidMissing() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/pay/wechat/jsapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"orderNo\":\"ORD-1\"}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status()
+                        .isBadRequest());
+
+        verify(payManager, never()).initiateJsapiPayment(anyString(), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("PAY7 参数校验 — 缺 orderNo → HTTP 400，Manager 不被调用")
+    void shouldReturn400_whenJsapiOrderNoMissing() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/pay/wechat/jsapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"openid\":\"openid-1\"}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status()
+                        .isBadRequest());
+
+        verify(payManager, never()).initiateJsapiPayment(anyString(), any(), anyString());
     }
 }

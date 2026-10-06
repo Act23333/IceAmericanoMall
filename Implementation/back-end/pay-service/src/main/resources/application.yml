@@ -81,6 +81,9 @@ xxl:
 wechat:
   pay:
     merchant-id: ${WECHAT_PAY_MERCHANT_ID:}
+    # 商户下单 appid（微信 v3 下单必填；PAY7 小程序 JSAPI 下单时必须与 openid 同源，
+    # 即配置为小程序 appid、与 wechat.mini.app-id 一致，不同源微信直接拒绝）
+    app-id: ${WECHAT_PAY_APP_ID:}
     private-key-path: ${WECHAT_PAY_PRIVATE_KEY_PATH:/etc/wechat/apiclient_key.pem}
     merchant-serial-number: ${WECHAT_PAY_MERCHANT_SERIAL:}
     api-v3-key: ${WECHAT_PAY_API_V3_KEY:}

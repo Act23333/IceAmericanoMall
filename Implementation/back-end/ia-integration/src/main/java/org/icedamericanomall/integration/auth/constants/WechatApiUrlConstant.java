@@ -23,4 +23,10 @@ public class WechatApiUrlConstant {
 
     /** 获取手机号的接口 */
     public static final String MINI_PHONE_REQUEST_URL = "https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=";
+
+    /** 获取稳定版 access_token 接口（POST JSON：grant_type=client_credential + appid + secret）。 */
+    public static final String MINI_STABLE_TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/stable_token";
+
+    /** 获取不限制数量小程序码接口（POST JSON，access_token 拼查询串；成功返回图片二进制，失败返回 errcode JSON）。 */
+    public static final String MINI_WXA_CODE_UNLIMITED_URL = "https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=";
 }

@@ -45,6 +45,20 @@ management:
     tags:
       application: ${spring.application.name}
 
+# ── 商品分享小程序码（P37，契约 §4.4.x V5.18）──
+# 生成结果按 productId 缓存于 MinIO（wxa-code/product/{id}.png），二次请求直返 URL
+item:
+  share:
+    # 小程序码落地页（微信 getwxacodeunlimit page 参数，需真实存在于小程序发布版本）
+    wxa-page: pages/product/detail/index
+
+# 微信小程序（P37 小程序码与登录 jscode2session 同源配置；缺 appId/secret 时
+# WechatMiniApiClient 抛"小程序码生成未配置"，不 NPE；样例如下，生产经环境变量注入）：
+# wechat:
+#   mini:
+#     app-id: ${WECHAT_MINI_APP_ID:}
+#     app-secret: ${WECHAT_MINI_APP_SECRET:}
+
 # ── Knife4j API 文档 ──
 knife4j:
   enable: true

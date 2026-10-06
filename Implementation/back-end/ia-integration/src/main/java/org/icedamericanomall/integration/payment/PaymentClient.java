@@ -25,6 +25,25 @@ public interface PaymentClient {
     String initiatePayment(String orderNo, int amount, String description);
 
     /**
+     * 发起微信 JSAPI 下单（小程序内拉起支付，PAY7）：{@code payer.openid} 与商户下单 appid
+     * 绑定（appid 取自适配层配置 {@code wechat.pay.app-id}，<b>必须与 openid 同源</b>——
+     * 小程序场景即小程序 appid），SDK {@code prepayWithRequestPayment} 同步返回
+     * <b>带签名</b>的拉起参数集，前端直传 {@code wx.requestPayment}。
+     *
+     * <p>支付结果不经本方法返回：仍由 {@link #parseWechatCallback}（PAY2 回调）确认，
+     * 与 Native 通道共用同一套回调确认链路。
+     *
+     * @param orderNo     业务订单号（微信 {@code out_trade_no}）
+     * @param amount      支付金额（<b>分</b>）
+     * @param description 商品描述
+     * @param openid      用户在<b>下单 appid</b> 下的 openid
+     * @return 小程序拉起参数集（appId/timeStamp/nonceStr/packageVal/signType/paySign）
+     * @throws org.icedamericanomall.common.exception.BizException
+     *         {@code BUSINESS_EXECUTION_EXCEPTION} —— 渠道拒绝 / 调用失败（下单失败不允许静默丢失）
+     */
+    JsapiPayResult initiateJsapiPayment(String orderNo, int amount, String description, String openid);
+
+    /**
      * 解析微信支付 v3 回调：验签 → AES-GCM 解密 {@code resource} → 提取强类型结果。
      *
      * @param headers HTTP 请求头（微信签名头 {@code Wechatpay-*}，大小写不敏感）

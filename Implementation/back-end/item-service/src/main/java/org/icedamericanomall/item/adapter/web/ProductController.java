@@ -12,8 +12,10 @@ import org.icedamericanomall.item.adapter.response.ProductVO;
 import org.icedamericanomall.item.adapter.response.PairingCardVO;
 import org.icedamericanomall.item.adapter.response.RecommendProductVO;
 import org.icedamericanomall.item.adapter.response.SkuVO;
+import org.icedamericanomall.item.adapter.response.WxaCodeVO;
 import org.icedamericanomall.item.app.ProductManager;
 import org.icedamericanomall.item.app.kg.KgPairingManager;
+import org.icedamericanomall.item.app.share.ProductShareManager;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -26,6 +28,7 @@ import java.util.List;
  * GET   /api/item/product/{id}/skus  — SKU列表
  * GET   /api/item/product/{id}/similar — 相似商品推荐（P27，向量）
  * GET   /api/item/product/{id}/pairing — 搭配推荐卡（P35，知识图谱）
+ * GET   /api/item/product/{id}/wxa-code — 商品分享小程序码（P37，MinIO 缓存直返）
  * POST  /api/item/product            — 商家发布商品
  * PUT   /api/item/product/{id}       — 商家编辑商品
  * PUT   /api/item/product/{id}/status — 商家/管理员上下架
@@ -37,6 +40,7 @@ public class ProductController {
 
     private final ProductManager productManager;
     private final KgPairingManager kgPairingManager;
+    private final ProductShareManager productShareManager;
 
     // ==================== 查询 (游客/用户/VIP/SVIP 共享) ====================
 
@@ -78,6 +82,16 @@ public class ProductController {
     public Result<PairingCardVO> pairing(@PathVariable Long id,
                                          @RequestParam(required = false) Integer limit) {
         return Result.ok(kgPairingManager.pairing(id, limit));
+    }
+
+    /**
+     * 商品分享小程序码（P37，V5.18 契约 §4.4.x）—— 公开匿名分享场景；
+     * MinIO 已有缓存直返 URL，否则调微信 {@code wxacode.getUnlimit}（scene=p={id}）
+     * 生成并上传。商品不存在/不在售 → 1103；微信侧失败 fail-loud 透出。
+     */
+    @GetMapping("/{id}/wxa-code")
+    public Result<WxaCodeVO> wxaCode(@PathVariable Long id) {
+        return Result.ok(productShareManager.getWxaCode(id));
     }
 
     // ==================== 商家操作 ====================

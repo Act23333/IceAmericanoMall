@@ -7,6 +7,9 @@ import com.wechat.pay.java.service.billdownload.BillDownloadService;
 import com.wechat.pay.java.service.billdownload.model.BillType;
 import com.wechat.pay.java.service.billdownload.model.GetTradeBillRequest;
 import com.wechat.pay.java.service.billdownload.model.QueryBillEntity;
+import com.wechat.pay.java.service.payments.jsapi.JsapiServiceExtension;
+import com.wechat.pay.java.service.payments.jsapi.model.Payer;
+import com.wechat.pay.java.service.payments.jsapi.model.PrepayWithRequestPaymentResponse;
 import com.wechat.pay.java.service.payments.nativepay.NativePayService;
 import com.wechat.pay.java.service.payments.nativepay.model.*;
 import com.wechat.pay.java.service.refund.RefundService;
@@ -33,7 +36,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 微信支付 API v3 Native 支付 —— {@code wechat.pay.merchant-id} 非空且未被
+ * 微信支付 API v3 通道（Native 扫码 + JSAPI 小程序拉起）—— {@code wechat.pay.merchant-id} 非空且未被
  * {@code wechat.pay.enabled=false} 关闭时激活（与 {@link MockWechatPaymentClient} 互斥）。
  *
  * <p><b>装配口径（V5.3 修正，P1 缺陷）</b>：此前用
@@ -92,6 +95,7 @@ public class WechatPaymentClient implements PaymentClient {
 
     private final WechatPayProperties props;
     private NativePayService nativePayService;
+    private JsapiServiceExtension jsapiServiceExtension;
     private RefundService refundService;
     private BillDownloadService billDownloadService;
     private RSAAutoCertificateConfig rsaConfig;
@@ -105,14 +109,17 @@ public class WechatPaymentClient implements PaymentClient {
                 .apiV3Key(props.getApiV3Key())
                 .build();
         this.nativePayService = new NativePayService.Builder().config(rsaConfig).build();
+        this.jsapiServiceExtension = new JsapiServiceExtension.Builder().config(rsaConfig).build();
         this.refundService = new RefundService.Builder().config(rsaConfig).build();
         this.billDownloadService = new BillDownloadService.Builder().config(rsaConfig).build();
-        log.info("微信支付 SDK 初始化完成: merchantId={}", props.getMerchantId());
+        log.info("微信支付 SDK 初始化完成: merchantId={}, appId={}", props.getMerchantId(), props.getAppId());
     }
 
     @Override
     public String initiatePayment(String orderNo, int amount, String description) {
         PrepayRequest request = new PrepayRequest();
+        // V5.18 修复既有缺陷：微信 v3 下单报文必填 appid，此前漏传真实环境必然下单失败
+        request.setAppid(props.getAppId());
         request.setMchid(props.getMerchantId());
         request.setDescription(description);
         request.setOutTradeNo(orderNo);
@@ -128,6 +135,53 @@ public class WechatPaymentClient implements PaymentClient {
             log.error("微信支付下单失败: orderNo={}", orderNo, e);
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "支付下单失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 发起微信 JSAPI 下单（小程序内拉起支付，PAY7）：{@code payer.openid} 与商户下单 appid
+     * 绑定（appid 取自 {@link WechatPayProperties#getAppId()}，必须与 openid 同源），SDK
+     * {@link JsapiServiceExtension#prepayWithRequestPayment} 同步返回带签名的拉起参数集。
+     *
+     * <p>微信支付结果不经本方法返回，仍由 PAY2 支付回调确认（与 Native 通道共用同一链路）。
+     *
+     * @param orderNo     业务订单号（微信 {@code out_trade_no}）
+     * @param amount      支付金额（分）
+     * @param description 商品描述
+     * @param openid      用户在下单 appid 下的 openid
+     * @return 小程序拉起参数集（appId/timeStamp/nonceStr/packageVal/signType/paySign）
+     * @throws BizException {@code BUSINESS_EXECUTION_EXCEPTION} 渠道拒绝 / 调用失败
+     */
+    @Override
+    public JsapiPayResult initiateJsapiPayment(String orderNo, int amount, String description, String openid) {
+        var request = new com.wechat.pay.java.service.payments.jsapi.model.PrepayRequest();
+        request.setAppid(props.getAppId());
+        request.setMchid(props.getMerchantId());
+        request.setDescription(description);
+        request.setOutTradeNo(orderNo);
+        request.setNotifyUrl(props.getNotifyUrl());
+        Payer payer = new Payer();
+        payer.setOpenid(openid);
+        request.setPayer(payer);
+        var amountObj = new com.wechat.pay.java.service.payments.jsapi.model.Amount();
+        amountObj.setTotal(amount);
+        request.setAmount(amountObj);
+        try {
+            var response = jsapiServiceExtension.prepayWithRequestPayment(request);
+            log.info("微信支付 JSAPI 下单: orderNo={}", orderNo);
+            return toJsapiPayResult(response);
+        } catch (Exception e) {
+            log.error("微信 JSAPI 下单失败: orderNo={}", orderNo, e);
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "JSAPI 支付下单失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * SDK 拉起参数集 → 通道无关结果（六字段一一对应，{@code packageVal} 沿用 SDK 原名，
+     * 规避 Java 关键字 {@code package}；独立成静态方法以便纯单测映射口径）。
+     */
+    static JsapiPayResult toJsapiPayResult(PrepayWithRequestPaymentResponse response) {
+        return new JsapiPayResult(response.getAppId(), response.getTimeStamp(), response.getNonceStr(),
+                response.getPackageVal(), response.getSignType(), response.getPaySign());
     }
 
     /**
@@ -363,10 +417,31 @@ public class WechatPaymentClient implements PaymentClient {
         /** Mock 渠道交易号前缀（形如 {@code mock-txn-<billDate>-<n>}）。 */
         static final String MOCK_CHANNEL_TXN_NO_PREFIX = "mock-txn-";
 
+        /** Mock 商户 appid（拉起参数集 appId 字段；Mock 环境不校验与 openid 的同源性）。 */
+        static final String MOCK_APP_ID = "wx-mock-appid";
+
+        /** Mock JSAPI 预支付标识前缀（packageVal 形如 {@code prepay_id=mock-<payOrderNo>}）。 */
+        static final String MOCK_PREPAY_ID_PREFIX = "prepay_id=mock-";
+
+        /** Mock 拉起参数集签名类型（与微信 v3 真实取值一致）。 */
+        static final String MOCK_SIGN_TYPE = "RSA";
+
         @Override
         public String initiatePayment(String orderNo, int amount, String description) {
             log.info("===== MOCK WECHAT PAY ===== OrderNo: {}, Amount: {} 分", orderNo, amount);
             return "https://mock-pay.example.com/qrcode?order=" + orderNo;
+        }
+
+        /**
+         * Mock JSAPI 下单：返回形态与真实一致的六字段拉起参数集
+         * （packageVal 沿用 {@code prepay_id=} 协议前缀，签名值为占位串），
+         * 供本地打通「PAY7 下单 → 前端拉起 → PAY2 回调确认」链路。
+         */
+        @Override
+        public JsapiPayResult initiateJsapiPayment(String orderNo, int amount, String description, String openid) {
+            log.info("===== MOCK WECHAT JSAPI ===== OrderNo: {}, Amount: {} 分", orderNo, amount);
+            return new JsapiPayResult(MOCK_APP_ID, String.valueOf(System.currentTimeMillis() / 1000),
+                    "mock-nonce", MOCK_PREPAY_ID_PREFIX + orderNo, MOCK_SIGN_TYPE, "mock-pay-sign");
         }
 
         /**

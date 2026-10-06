@@ -7,8 +7,10 @@ import org.icedamericanomall.client.TradeInvoiceClient;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
 import org.icedamericanomall.pay.adapter.assembler.PayOrderConverter;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
+import org.icedamericanomall.pay.adapter.response.JsapiPayParamsVO;
 import org.icedamericanomall.pay.adapter.response.PayOrderVO;
 import org.icedamericanomall.dto.OrderSummaryCO;
+import org.icedamericanomall.integration.payment.JsapiPayResult;
 import org.icedamericanomall.integration.payment.WechatCallbackResult;
 import org.icedamericanomall.pay.domain.enums.PayChannelEnum;
 import org.icedamericanomall.pay.domain.enums.PayStatusEnum;
@@ -336,6 +338,79 @@ class PayManagerTest {
 
         assertEquals(ErrorCode.ILLEGAL_REQUEST, ex.getErrorCode());
         verify(payOrderService, never()).markSuccessIfPending(anyString(), any());
+    }
+
+    // ==================== PAY7 小程序拉起（微信 JSAPI） ====================
+
+    /** 渠道 JSAPI 下单返回的带签名拉起参数集（六字段，与 SDK 响应同构）。 */
+    private JsapiPayResult jsapiResult() {
+        return new JsapiPayResult("wx-app", "1760000000", "nonce-str",
+                "prepay_id=wx-1", "RSA", "pay-sign");
+    }
+
+    @Test
+    @DisplayName("initiateJsapiPayment — 取应付金额、JSAPI 下单、建小程序待支付单、返回拉起参数集")
+    void shouldInitiateJsapi_whenOrderValid() {
+        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
+        when(orderClient.getOrder("ORD-1")).thenReturn(summary(12900, 11900));
+        when(channelRouter.initiateWechatJsapi(eq("ORD-1"), eq(11900), anyString(), eq("openid-1")))
+                .thenReturn(jsapiResult());
+        when(payOrderService.createPending("ORD-1", 100L, 11900, null, "WECHAT",
+                PayTypeEnum.MINI.getCode())).thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
+        JsapiPayParamsVO vo = new JsapiPayParamsVO();
+        when(payOrderConverter.toParamsVO(any())).thenReturn(vo);
+
+        JsapiPayParamsVO result = payManager.initiateJsapiPayment("ORD-1", 100L, "openid-1");
+
+        assertSame(vo, result);
+        // 扣款金额必须用 payAmount 而非原价；openid 原样透传渠道做同源绑定
+        verify(channelRouter).initiateWechatJsapi(eq("ORD-1"), eq(11900), anyString(), eq("openid-1"));
+        verify(payOrderService).createPending("ORD-1", 100L, 11900, null, "WECHAT",
+                PayTypeEnum.MINI.getCode());
+    }
+
+    @Test
+    @DisplayName("initiateJsapiPayment — 已有待支付单（Native 发起过）：条件重置为小程序方式，不新增行")
+    void shouldReusePendingRow_whenJsapiReInitiate() {
+        PayOrder pending = payOrder(PayStatusEnum.PENDING_PAY.getCode());
+        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(pending);
+        when(orderClient.getOrder("ORD-1")).thenReturn(summary(12900, 11900));
+        when(channelRouter.initiateWechatJsapi(anyString(), anyInt(), anyString(), anyString()))
+                .thenReturn(jsapiResult());
+        when(payOrderService.resetPending(pending, 11900, "WECHAT", null, PayTypeEnum.MINI.getCode()))
+                .thenReturn(pending);
+        when(payOrderConverter.toParamsVO(any())).thenReturn(new JsapiPayParamsVO());
+
+        payManager.initiateJsapiPayment("ORD-1", 100L, "openid-1");
+
+        verify(payOrderService).resetPending(pending, 11900, "WECHAT", null, PayTypeEnum.MINI.getCode());
+        verify(payOrderService, never()).createPending(anyString(), anyLong(), anyInt(),
+                any(), anyString(), anyInt());
+    }
+
+    @Test
+    @DisplayName("initiateJsapiPayment — 幂等：已支付订单拒绝重复拉起且不重复下单")
+    void shouldRejectJsapi_whenAlreadyPaid() {
+        when(payOrderService.getByBizOrderNo("ORD-1"))
+                .thenReturn(payOrder(PayStatusEnum.SUCCESS.getCode()));
+
+        assertThrows(BizException.class, () -> payManager.initiateJsapiPayment("ORD-1", 100L, "openid-1"));
+
+        verify(orderClient, never()).getOrder(anyString());
+        verify(channelRouter, never()).initiateWechatJsapi(anyString(), anyInt(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("initiateJsapiPayment — 订单不存在：抛 ORDER_NOT_FOUND 且不下单")
+    void shouldRejectJsapi_whenOrderMissing() {
+        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
+        when(orderClient.getOrder("ORD-1")).thenReturn(null);
+
+        BizException ex = assertThrows(BizException.class,
+                () -> payManager.initiateJsapiPayment("ORD-1", 100L, "openid-1"));
+
+        assertEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode());
+        verify(channelRouter, never()).initiateWechatJsapi(anyString(), anyInt(), anyString(), anyString());
     }
 
     // ==================== 超时关单 ====================

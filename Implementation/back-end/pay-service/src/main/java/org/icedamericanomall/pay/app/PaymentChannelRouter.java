@@ -7,6 +7,7 @@ import org.icedamericanomall.integration.payment.AlipayPaymentClient;
 import org.icedamericanomall.integration.payment.ChannelBillItem;
 import org.icedamericanomall.integration.payment.ChannelRefundQueryResult;
 import org.icedamericanomall.integration.payment.ChannelRefundResult;
+import org.icedamericanomall.integration.payment.JsapiPayResult;
 import org.icedamericanomall.integration.payment.PaymentClient;
 import org.icedamericanomall.integration.payment.WechatCallbackResult;
 import org.icedamericanomall.integration.payment.WechatRefundCallbackResult;
@@ -23,6 +24,7 @@ import java.util.Map;
  *
  * <pre>
  * initiate：按渠道调对应客户端生成支付链接；BALANCE 不在此方法（扣款由 PayManager 直接处理）
+ * initiateWechatJsapi：微信 JSAPI 下单（小程序内拉起，PAY7），返回带签名拉起参数集
  * parseWechatCallback：微信回调整包解析（验签 + 解密 + 提取，见 ADR-033）
  * parseWechatRefundCallback：微信退款回调整包解析（F1，复用同一验签/解密基建）
  * refund：按渠道发起退款（BALANCE 不在此路由）
@@ -48,6 +50,20 @@ public class PaymentChannelRouter {
             case BALANCE -> throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
                     "余额支付请走 PayManager.payByBalance 扣款路径");
         };
+    }
+
+    /**
+     * 微信 JSAPI 下单（小程序内拉起支付，PAY7）：appid/openid 同源绑定由适配层配置保证。
+     *
+     * @param orderNo     业务订单号
+     * @param amount      支付金额（分）
+     * @param description 商品描述
+     * @param openid      用户在下单 appid 下的 openid
+     * @return 带签名的小程序拉起参数集（appId/timeStamp/nonceStr/packageVal/signType/paySign）
+     * @throws BizException 渠道拒绝 / 调用失败
+     */
+    public JsapiPayResult initiateWechatJsapi(String orderNo, int amount, String description, String openid) {
+        return wechatClient.initiateJsapiPayment(orderNo, amount, description, openid);
     }
 
     /** 余额扣款（代理 BalanceClient）。 */

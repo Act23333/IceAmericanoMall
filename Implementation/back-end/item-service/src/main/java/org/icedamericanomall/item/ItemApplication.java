@@ -17,11 +17,16 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
  *   <li>{@code org.icedamericanomall.fallback} —— ia-api 的 Feign 降级工厂。
  *       {@code @Component} 在 ia-api 内、不在本服务扫描路径，需显式纳入，
  *       否则开启熔断后 {@code fallbackFactory} 取不到 Bean</li>
+ *   <li>{@code org.icedamericanomall.integration.auth} —— ia-integration 微信客户端
+ *       （P37 商品分享小程序码 {@code WechatMiniApiClient}，对齐 user-service 的
+ *       既有扫描先例）；storage 系 Bean 走 ia-integration 的
+ *       {@code AutoConfiguration.imports}，无需在此登记</li>
  * </ul>
  */
 @SpringBootApplication(scanBasePackages = {
         "org.icedamericanomall.item",
-        "org.icedamericanomall.fallback"
+        "org.icedamericanomall.fallback",
+        "org.icedamericanomall.integration.auth"
 })
 @MapperScan("org.icedamericanomall.item.infrastructure.persistence")
 @EnableFeignClients(basePackages = "org.icedamericanomall.client")
