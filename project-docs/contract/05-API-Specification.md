@@ -1,6 +1,6 @@
 # 05 — API 规格文档 (API Specification — SDD)
 
-> **最后更新**: 2026-10-06 | **版本**: V5.16.1 | **端点总数**: 271（方法级映射实测，含 `/internal/**` 56 个；V5.7–V5.16.1 全量落地：FT/任务/活动中心/装修/笔记/推荐/facets/suggest/拼团/发票/知识图谱/AD48-65/I44-I60/P27-P35 均已实现，详见 §十四 版本行 V5.7.0–V5.16.1） | **已实现**: 全部标注 ✅ 端点 | **公共**: 195+ | **内部**: 39+ | **已实现**: 229+
+> **最后更新**: 2026-10-06 | **版本**: V5.17.0 | **端点总数**: 276（方法级映射实测，含 `/internal/**` 57 个；V5.7–V5.17 全量落地：FT/任务/活动中心/装修/笔记/推荐/facets/suggest/拼团/发票/知识图谱/多币种/AD48-68/I44-I61/P27-P36 均已实现，详见 §十四 版本行 V5.7.0–V5.17.0） | **已实现**: 全部标注 ✅ 端点 | **公共**: 195+ | **内部**: 39+ | **已实现**: 229+
 >
 > **V5.6.1 实现落地说明**：V5.6.0 规格先行的四个 P0 功能（F1 买家退款资金流 / F2 运费模型 / F3 拆单发货 / F4 渠道对账）已**全量实现并通过全量测试**，全部 V5.6 规划标注已收敛为"已实现（V5.6）"；实现方上报的规格偏差已按 ADR-035/036/037 收敛进正文（错误码 3039/3040/3041、AD47 confirm-return 退款触发分派、I41 并发幂等、I43 fail-closed、AD46 批次列表）。数据模型见 `04-Data-Model.md` §十二（已建库）。
 > 
@@ -79,6 +79,8 @@
 ```json
 { "price": 12800 }  // = ¥128.00
 ```
+
+> **定点整数汇率（✅ V5.17 多币种展示口径，PRD §十七 D4）**：展示性多币种换算使用**定点整数汇率** `rate_scaled`（BIGINT = 每 1 元人民币兑换目标币**主单位**数 × 10⁶，如 USD 0.140300 → `140300`、JPY 20.910000 → `20910000`）；换算公式 = `round(amountCNY × rate_scaled × 10^exponent ÷ 10⁸)`（half-up 到目标币**最小单位**，`exponent` 为 ISO 4217 最小单位指数）。换算**仅用于展示**（前端执行，D7-A），不参与任何金额不变式、不进任何 Feign DTO 金额字段；本节所有金额字段语义（INT 分）零改动；**严禁 BigDecimal/浮点表达金额或汇率**（09-Constraints 硬约束延伸）。
 
 ### 1.6 API 版本策略
 
@@ -525,6 +527,14 @@ ws(s)://<gateway>/ws/chat/...?token=<accessToken>
 
 ---
 
+#### 4.2.11 CurrencyController — `/api/currency` (wallet-service, ✅ V5.17)
+
+> **F16 多币种展示数据面（[PRD §十七](../product/01-PRD.md) D7 落位 wallet 资金域）**：币种列表本地表直读（仅启用，O8 种子六币种）；**响应不含免责文案**（前端静态常量，D6）。全链路 fail-open（前端降级仅 CNY 展示，US-CUR-7）。
+
+| #    | 方法  | 路径                  | 认证 | 请求 | 响应                                                                                  | 阶段      |
+| ---- | --- | ------------------- | --- | --- | ----------------------------------------------------------------------------------- | ------- |
+| P36 | GET | `/api/currency/list` | 🌐  | —   | `List<CurrencyVO { code, name, symbol, exponent, rateScaled, effectTime }>`（仅启用；本地表直读 + 可选 60s 缓存，I44 先例） | ✅ V5.17 |
+
 ### 4.3 商家/店铺服务 (merchant-service)
 
 > **V5.4（ADR-019）商家/店铺 1:N**：一个商家（seller，归属商家 user_id）可拥有多间店铺（shop，以 `shopId` 寻址）；
@@ -942,13 +952,13 @@ Feature: 运费模型（F2）
 
 | #   | 方法   | 路径                                   | 认证  | 请求                                                                                   | 响应               | 阶段     |
 | --- | ---- | ------------------------------------ | --- | ------------------------------------------------------------------------------------ | ---------------- | ------ |
-| T1  | POST | `/api/trade/order`                   | 🔒  | `CreateOrderReq { addressId(必填), userCouponId?(单券, 可选), remark?(买家留言, ≤200, 可选) }`（**V5.4 契约收缩**：删除从未被读取的 `cartItemIds` 与死字段 `remark`；**V5.7 重新立项**：`remark` 作为真实买家留言回归——落 `orders.remark` 快照并随 OrderVO 回显；**V5.5 已决**：删除未接线的 `userCouponIds`，多券叠加移入 §十二 roadmap；下单商品恒取服务端购物车已勾选项；`addressId` `@NotNull`，缺失 → 400 `PARAM_ERROR`） | `OrderVO`        | ✅ V4.4 |
+| T1  | POST | `/api/trade/order`                   | 🔒  | `CreateOrderReq { addressId(必填), userCouponId?(单券, 可选), remark?(买家留言, ≤200, 可选), displayCurrency?(展示币种, ISO 4217, 可选——V5.17 下单快照锁汇：传则按 I61 汇率快照进订单展示参考，未传/降级=CNY 不快照) }`（**V5.4 契约收缩**：删除从未被读取的 `cartItemIds` 与死字段 `remark`；**V5.7 重新立项**：`remark` 作为真实买家留言回归——落 `orders.remark` 快照并随 OrderVO 回显；**V5.5 已决**：删除未接线的 `userCouponIds`，多券叠加移入 §十二 roadmap；下单商品恒取服务端购物车已勾选项；`addressId` `@NotNull`，缺失 → 400 `PARAM_ERROR`） | `OrderVO`        | ✅ V4.4 |
 | T2  | GET  | `/api/trade/order/{orderNo}`         | 🔒  | Path: `orderNo` (String)                                                             | `OrderVO`        | ✅      |
 | T3  | GET  | `/api/trade/order/page`              | 🔒  | Query: `status?`, `keyword?`, `startDate?`, `endDate?`, `page`(1), `size`(20)        | `IPage<OrderVO>` | ✅      |
 | T4  | POST | `/api/trade/order/{orderNo}/cancel`  | 🔒  | Path: `orderNo` (String), Body: `{ reason? }`                                        | `Void`           | ✅      |
 | T5  | POST | `/api/trade/order/{orderNo}/confirm` | 🔒  | Path: `orderNo` (String)                                                             | `Void`           | ✅      |
-| T6  | POST | `/api/trade/order/direct`            | 🔒  | `DirectOrderReq { skuId(Long, 必填), quantity(≥1, 缺省1), addressId(必填), userCouponId?(单券, 可选), remark?(买家留言, ≤200, 可选——V5.7) }`（**V5.5 已决**：删除未接线的 `userCouponIds`） | `OrderVO`        | ✅ V4.0 |
-| T27 | POST | `/api/trade/order/group-buy`         | 🔒  | `GroupBuyOrderReq { activityId(Long, 必填), teamNo?(String, 可选——空=开团), addressId(Long, 必填), remark?(≤200, 可选) }`（quantity 恒 1；拼团价快照，**不叠加**券/促销/会员——与秒杀同口径；下单不占团位，未支付走既有 30 分钟超时取消；下单前置校验经 I52） | `OrderVO`        | ✅ V5.14 |
+| T6  | POST | `/api/trade/order/direct`            | 🔒  | `DirectOrderReq { skuId(Long, 必填), quantity(≥1, 缺省1), addressId(必填), userCouponId?(单券, 可选), remark?(买家留言, ≤200, 可选——V5.7), displayCurrency?(展示币种, ISO 4217, 可选——V5.17 快照锁汇) }`（**V5.5 已决**：删除未接线的 `userCouponIds`） | `OrderVO`        | ✅ V4.0 |
+| T27 | POST | `/api/trade/order/group-buy`         | 🔒  | `GroupBuyOrderReq { activityId(Long, 必填), teamNo?(String, 可选——空=开团), addressId(Long, 必填), remark?(≤200, 可选), displayCurrency?(ISO 4217, 可选——V5.17 快照锁汇) }`（quantity 恒 1；拼团价快照，**不叠加**券/促销/会员——与秒杀同口径；下单不占团位，未支付走既有 30 分钟超时取消；下单前置校验经 I52） | `OrderVO`        | ✅ V5.14 |
 
 **`CreateOrderReq`**:
 
@@ -973,6 +983,8 @@ Feature: 运费模型（F2）
   "discountAmount": 2000,
   "postFee": 800,
   "remark": "请包装牢固，谢谢",
+  "displayCurrency": "USD",
+  "displayRateScaled": 140300,
   "status": 1,
   "orderType": 1,
   "receiverName": "张三",
@@ -1785,6 +1797,18 @@ Feature: 买家退款资金流（F1）
 > - **守卫**：悬空类目引用 → 400 `PARAM_ERROR(1101)`；重复规则唯一约束 → DuplicateKey 回落 400（AD51-53 先例）。
 > - **重建口径（US-KG-8）**：按真相源（源表列 + 规则表）全量重建 `kg_edges` 投影，幂等可重试；增量摄取走商品 afterCommit（I57）。
 
+#### 4.13.8g AdminCurrencyController — `/api/admin/currency` (wallet-service, ✅ V5.17)
+
+> **F16 币种/汇率维护（[PRD §十七](../product/01-PRD.md) US-CUR-6）**：修正即时生效于**新**订单快照（既有快照展示不受影响，AD68 停用同口径）；修正留痕 source/effect_time。三写 `@OperationLog`；网关 `/api/admin/currency/**` 须先于 `/api/admin/**` 兜底声明（O7）。
+
+| #    | 方法   | 路径                                   | 认证 | 请求                                                                     | 响应                          | 阶段      |
+| ---- | ---- | ----------------------------------- | --- | ---------------------------------------------------------------------- | --------------------------- | -------- |
+| AD66 | GET  | `/api/admin/currency/page`            | 🔑  | Query: `page`(1), `size`(20), `status?`                                  | `IPage<CurrencyAdminVO>`（含 source/effectTime，stale 告警与人工兜底数据面） | ✅ V5.17 |
+| AD67 | PUT  | `/api/admin/currency/{code}/rate`      | 🔑  | Body: `{ rateScaled(必填, >0), remark? }`（定点整数直传，主单位小数由管理端 UI 转换）          | `Void`（人工修正，source=MANUAL） | ✅ V5.17 |
+| AD68 | PUT  | `/api/admin/currency/{code}/status`    | 🔑  | Body: `{ status(0\|1) }`                                                  | `Void`（启用/停用）             | ✅ V5.17 |
+
+> - 汇率定时拉取为 scheduler job（非端点）：开关 `currency.rate.pull.enabled` 默认 false + 每日凌晨低峰 cron；拉取失败保留上次值 + 告警（D2）。
+
 #### 4.13.9 MerchantCouponController — `/api/seller/coupon` (marketing-service)
 
 | #    | 方法   | 路径                                      | 认证  | 请求                        | 响应               | 阶段  |
@@ -1961,6 +1985,16 @@ Feature: 渠道对账（F4）
 > - **I41 语义（✅ V5.6 已实现——F1 余额渠道退款入账，ADR-035）**：`wallet_account.balance` 增量 + `wallet_transaction`（type=1 收入，`bizNo`=退款单号）**同事务**写入；ia-api 契约对象 `BalanceRefundCO`（ADR-015 命名；线协议字段名两侧 `@JsonProperty` 显式钉死 snake_case，防 wallet 侧全局 SNAKE_CASE 策略下字段静默为 null）。调用方：pay-service（退款单渠道=BALANCE 时，见 §4.7.3 / §4.14.15）。
 > - **幂等语义细化（ADR-035，按实现收敛）**：**顺序重放**（`existsByTransactionNo` 前置判定命中）视为重复请求，幂等成功返回、不重复加余额；**真并发同号**（两请求同时穿过前置判定，其一撞 `uk_transaction_no` 唯一键）→ 抛异常使本次「加余额 + 写流水」**整体回滚**——pay 侧将退款单置失败(2)，管理端 AD43 重试即命中幂等分支转成功，**资金不双记**（数据正确性优先于调用方一次成功，ADR-035「后果」登记的取舍）。
 > - **错误口径（ADR-004）**：用户无钱包账户 / amount 非法 → 原始 HTTP 异常透出（400/404 族），不包 `Result`。
+
+#### 4.14.3b InternalCurrencyController — `/internal/currency` (wallet-service, ✅ V5.17)
+
+> **F16 下单快照锁汇消费面（[PRD §十七](../product/01-PRD.md) D1-B/D3-B）**：调用方 trade-service（下单编排链内、事务外；ia-api `CurrencyClient`，**fail-open**——未启用/未配置 → `NO_RESOURCE_FOUND(1103)` 极简透出、Feign 降级哨兵 `rateScaled=-1`；trade 侧任一失败均**跳过快照**，订单照常创建，绝不因汇率失败阻塞交易主流程）。
+
+| #    | 方法  | 路径                           | 请求                    | 响应                                                | 阶段       |
+| ---- | --- | ---------------------------- | --------------------- | ------------------------------------------------- | --------- |
+| I61 | GET | `/internal/currency/current` | Query: `code`(必填) | `CurrencyRateCO { code, rateScaled, exponent }` | ✅（V5.17） |
+
+> - 供 trade 下单快照 `orders.display_currency/display_rate`（两可空列，展示参考非结算币种，04 §3.7）。
 
 #### 4.14.4 InternalPointsController — `/internal/points` (user-service)
 
@@ -2606,6 +2640,7 @@ data: [DONE]
 | **V5.14.0** | **2026-10-05** | **P3 第一批（F13 拼团完整闭环）契约先行**：①§4.10.4 新增 M15-M17 `/api/group-buy/**` C 端浏览（活动列表/详情+进行中团列表脱敏/团进度）；②§4.6.1 新增 T27 `POST /api/trade/order/group-buy`（quantity 恒 1，拼团价快照不叠加券/促销/会员，下单不占团位）；③§4.13.8d 新增 AD54-56 管理端拼团活动 CRUD（复用 promotion/flash 先例）；④§4.14.8c 新增 I52 validate/I53 join（均 fail-closed：参团失败触发 trade「取消+恢复库存+I55 退款」闭环）；⑤§4.14.15b 新增 I55 `POST /internal/pay/refund/order`（**无售后单退款命令**；幂等锚点泛化修订 ADR-035 §1：`refund_order.after_sale_id` 改可空 + `biz_ref`/`uk_biz_ref`）；⑥§4.14.16b 新增 I54 `POST /internal/trade/group-buy/refund-team`（结团逐单退款，fail-open）；⑦网关补 `/api/group-buy/**` 路由；数据模型 `group_buy_activity`/`group_team`/`group_team_member` 按 ADR-045 口径直接入 Initialize.sql（54→57 表），[ADR-049](../adr/049-group-buy-full-loop.md) |
 | **V5.15.0** | **2026-10-05** | **P3 第二批（F14 发票）契约先行——完整 PRD 定稿（01-PRD §十五，D1-D7/O1-O10 已裁决）后规格收口**：①§4.15 INV1-INV3 占位转定稿 + 增量 INV4 撤回/INV5 催开（买家端，INV3 修正为业务键 invoiceNo）；②§4.13.8e 新增管理端 **AD57-60**（O7 裁决用平台 AD 惯例编号；模拟开具 `InvoiceIssuePort` 防腐；导出延 Phase 2）；③§4.14.16c 新增 **I56** `POST /internal/trade/invoice/void-on-full-refund`（pay 全额退款 → 自动冲红/作废联动，fail-open 触发器，PRD D4）；④金额口径 = `payAmount` 快照（不变式 V2 对齐）、一单一有效票 `uk_order_active`、税号/邮箱 PII 三字段（O4 从严）；数据模型 `invoice`/`invoice_title` 按 ADR-045 直改 Initialize.sql（57→59 表） |
 | **V5.16.1** | **2026-10-06** | **P3 需求对账缺口收敛（web 端需求对账：§十五/§十六 用户故事逐条核对，三处缺口补契约）**：①§4.15 新增 **INV6-9** 常用抬头 CRUD（US-INV-2——仓储 `InvoiceTitleRepository` V5.15 已就绪，本次补契约与实现；INV1 的 `titleId` 引用自此可用）；②§4.14.16c 新增 **I60** `partial-refund-flag`（US-INV-8/D4 部分退款自动置标触发口——pay 判定 full→I56 / partial→I60，两侧 fail-open）；③§4.13.8f 新增 **AD65** 管理端关系邻居查询（US-KG-5 表格化核查视图，包装 I58） |
+| **V5.17.0** | **2026-10-06** | **P3 第四批（F16 多币种 Phase 1：展示换算 + 订单快照锁汇）契约先行——完整 PRD 定稿（01-PRD §十七，O1 核心裁决采纳 B 折中，裁决记录 17.2.0）后规格收口**：①§1.5 金额约定增补「定点整数汇率」口径（rate_scaled BIGINT 10⁻⁶ 刻度 + half-up 到最小单位；换算仅展示、**前端执行 D7-A**、金额 INT 分语义零改动）；②§4.2.11 新增 **P36** `GET /api/currency/list`（wallet 数据面，🌐 仅启用币种）；③§4.14.3b 新增 **I61** `GET /internal/currency/current`（trade 下单快照消费，未启用 1103/降级哨兵 -1，fail-open）；④§4.13.8g 新增管理端 **AD66-68**（币种分页/汇率人工修正/启停，`@OperationLog`；定时拉取 job 开关默认 false）；⑤T1/T6/T27 请求增量可选 `displayCurrency` + OrderVO 增量 `displayCurrency/displayRateScaled` 可空回显（快照锁汇 D1-B）；⑥数据模型 `currency`/`exchange_rate` 两表 + `orders` 增 `display_currency/display_rate` 两可空列（Initialize.sql 直改 59→62 表，列注释强制「非结算币种」隔离）；⑦网关 `/api/currency/**` GET 匿名 + `/api/admin/currency/**` 先于兜底声明；资金链路（支付/退款/钱包/对账/发票）**全程 CNY 分零改动**（NFR 硬验收）；Phase 2 结算触发器量化（PRD §17.8） |
 | **V5.16.0** | **2026-10-06** | **P3 第三批（F15 知识图谱 Phase 1：商品关系导购）契约先行——完整 PRD 定稿（01-PRD §十六，O1 聚焦导购/O2 混合最小形态已裁决）后规格收口**：①§4.14.10b 新增 **I57 edge/upsert（先删后写幂等，哨兵 -1）/ I58 neighbors（≤2 跳 terms，fail-open 空列表）/ I59 edges 清边**（search `kg_edges` 边索引投影；I57-I59 全链路 fail-open 对齐 ADR-046 定类）；②§4.4.x 新增 **P35** `GET /api/item/product/{id}/pairing`（KG 图主召回 → 向量兜底 → 空态，与 P27 同页共存 O6）；③§4.13.8f 新增管理端 **AD61-63** 规则 CRUD + **AD64** 全量重建（裁决增量，兑现 US-KG-8）；④Phase 1 唯一新增 MySQL 表 `pairing_rule`（Initialize.sql 直改 59→60 表）+ ES `kg_edges` 边索引（D1 混合最小形态：MySQL 真相源 + ES 检索面；NebulaGraph 触发器化 §16.9）；⑤网关 `/api/admin/kg/**` 先于兜底声明；LLM 抽取/审核队列/政策问答/可视化均 Phase 2（触发器量化） |
 
 ---
@@ -2660,7 +2695,7 @@ data: [DONE]
 | 多券叠加 `userCouponIds` | 已从下单请求体删除（V5.5）；策略层多券逻辑保留，接线需先出《多券金额分摊规则》PRD（§十一 11.2 O1） |
 | 微信回调 `out_trade_no` 断链修复 | **已完成**（ADR-033 落地：验签+AES-GCM 解密+字段提取收口 ia-integration 通道适配层，V5.5）；PAY2 对外契约不变（§4.7.1） |
 | 知识图谱（RAG+KG 混合检索） | ✅ **Phase 1 已定稿并落地（V5.16）**：I57-I59（§4.14.10b）/ P35（§4.4.x）/ AD61-64（§4.13.8f）；完整 PRD 见 `../product/01-PRD.md` §十六；P2 政策问答/可视化随 §16.9 触发器另案 |
-| 多币种（展示换算 + 订单快照锁汇，Phase 1；多币种结算另评审） | **从未产生契约占位**（无端点/字段挂账）；完整 PRD 见 `../product/01-PRD.md` §十七（P3 候选，🔴 待评审定稿）——定稿前本契约不新增任何多币种端点/字段，§1.5 金额约定（Integer 分）零改动（对齐本节门禁口径） |
+| 多币种（展示换算 + 订单快照锁汇，Phase 1；多币种结算另评审） | ✅ **已定稿并落地（V5.17）**：P36/I61/AD66-68 + `currency`/`exchange_rate` 两表 + `orders.display_*` 快照列；完整 PRD 见 `../product/01-PRD.md` §十七（裁决记录 17.2.0）；多币种结算随 §17.8 量化触发器另评审 |
 
 ---
 

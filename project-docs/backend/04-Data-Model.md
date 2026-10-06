@@ -1026,3 +1026,13 @@ public void createOrder(OrderDTO dto) {
 | 既有三向量索引（不变） | products / knowledge_vectors / notes | P35 混合检索的向量兜底面（图主召回、向量兜底） |
 
 > 降级纪律：KG 全链路 fail-open 纯旁路（对齐 ADR-046/011）；NebulaGraph 引入触发器量化（§16.9，≥2 项才立项）。
+
+### 12.8 F16 多币种 Phase 1（V5.17，[PRD §十七 已定稿](../product/01-PRD.md)，schema 直改 Initialize.sql）
+
+| 表/列 | 关键列 | 说明 |
+| --- | --- | --- |
+| `currency`（MySQL，新增） | code(UK) / name / symbol / exponent（ISO 4217 最小单位指数）/ status | 币种（wallet 资金域；O8 种子六币种 USD/EUR/JPY/KRW/GBP/HKD；CNY 恒主币种不入表） |
+| `exchange_rate`（MySQL，新增） | code(UK) / `rate_scaled` BIGINT（每 1 CNY 兑目标币主单位数 × 10⁶，定点整数严禁浮点）/ source（API/MANUAL）/ effect_time / updater_id | 展示汇率（一行一币 upsert，O6 不做历史版本化；拉取失败保上次值 + 告警） |
+| `orders` 增列 | `display_currency` VARCHAR(3) NULL / `display_rate` BIGINT NULL | 下单快照锁汇（D1-B/D3-B）：NULL=CNY 订单或快照降级；**展示参考、非结算币种**——不参与金额不变式 V2，列注释强制隔离（NFR §17.7.1） |
+
+> 金额纪律（硬验收）：全部既有金额字段（INT 分）语义零改动；换算仅前端展示（D7-A，后端契约零换算）；定点整数公式与舍入口径见 PRD D4 与 05 §1.5。
