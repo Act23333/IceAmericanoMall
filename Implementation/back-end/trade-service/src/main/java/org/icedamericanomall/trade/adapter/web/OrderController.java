@@ -38,6 +38,7 @@ public class OrderController {
         ctx.setAddressId(req.getAddressId());
         ctx.setRemark(req.getRemark());
         ctx.setUserCouponId(req.getUserCouponId());
+        ctx.setDisplayCurrency(req.getDisplayCurrency()); // F16: 展示币种透传（可选，未传=CNY 不快照）
         return Result.ok(orderCreationManager.createOrder(ctx));
     }
 
@@ -53,6 +54,7 @@ public class OrderController {
         ctx.setAddressId(req.getAddressId());
         ctx.setRemark(req.getRemark());
         ctx.setUserCouponId(req.getUserCouponId());
+        ctx.setDisplayCurrency(req.getDisplayCurrency()); // F16: 展示币种透传（可选，未传=CNY 不快照）
         return Result.ok(orderCreationManager.createOrder(ctx));
     }
 

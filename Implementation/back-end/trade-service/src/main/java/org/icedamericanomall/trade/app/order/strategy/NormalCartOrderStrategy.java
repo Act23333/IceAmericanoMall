@@ -142,6 +142,10 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
         order.setSellerId(ctx.getSellerId());
         order.setStatus(OrderStatusEnum.PENDING_PAYMENT.getCode());
         order.setRemark(ctx.getRemark()); // V5.7: 买家留言随单快照（无留言渠道的订单类型为 null）
+        // F16 多币种（V5.17）: 展示币种/汇率随单快照——仅快照成功后两者非空
+        //（未传/CNY/降级 fail-open 时 ctx 已归空，两列 NULL），展示参考、不参与金额不变式 V2
+        order.setDisplayCurrency(ctx.getDisplayCurrency());
+        order.setDisplayRate(ctx.getDisplayRate());
         int totalAmount = 0;
         for (var snap : ctx.getSnapshots()) {
             totalAmount += snap.getPrice() * snap.getQuantity();

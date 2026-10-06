@@ -42,6 +42,19 @@ public class OrderCreateContext {
     private List<Long> userCouponIds;     // V4.3: 多券支持
     private AddressCO address;
 
+    // === 多币种展示快照（F16 V5.17，契约 §4.6.1/§4.14.3b I61） ===
+    /**
+     * 展示币种（可选，ISO 4217）—— 前端请求透传；由 {@code OrderDisplaySnapshotService}
+     * 决定去留：快照成功后与 {@link #displayRate} 一起随 {@code buildBaseOrder} 落
+     * {@code orders.display_*} 两列，未传/CNY/降级（fail-open）时归空（两列 NULL）。
+     */
+    private String displayCurrency;
+    /**
+     * 下单时点定点整数汇率快照（每 1 CNY 兑目标币主单位数 × 10⁶）—— 仅快照成功后回填，
+     * {@code null} = 未快照。展示参考、非结算参数，不参与金额不变式 V2。
+     */
+    private Long displayRate;
+
     // === 计算结果（策略 buildOrder 填充） ===
     private List<CartItemSnapshot> snapshots;
     private Long sellerId;

@@ -32,6 +32,13 @@ public class Order {
      */
     public static final int REMARK_MAX_LENGTH = 200;
 
+    /**
+     * 展示币种代码最大长度（V5.17 多币种）—— ISO 4217 alpha-3 定长 3 字符，供适配层
+     * {@code @Size(max = ...)} 注解与单元测试共用，避免魔法值双写漂移（同
+     * {@link #REMARK_MAX_LENGTH} 体例）。数据库列 {@code orders.display_currency VARCHAR(3)}。
+     */
+    public static final int DISPLAY_CURRENCY_MAX_LENGTH = 3;
+
     private Long id;
     private String orderNo;
     private Long userId;
@@ -48,6 +55,23 @@ public class Order {
      * 可选），Phase 1 不提供修改端点；秒杀等无留言渠道的订单类型为 {@code null}。
      */
     private String remark;
+
+    /**
+     * 展示币种快照（V5.17 多币种 Phase 1，F16，ISO 4217，可空）—— 下单时点展示参考快照，
+     * {@code null} = CNY 订单（未传/主币种直通）或下单时快照降级（fail-open，PRD §17.7.2）。
+     * <b>展示参考、非结算币种</b>（PRD 裁决 D1-B/D3-B）：不参与金额不变式 V2
+     * （{@code payAmount = totalAmount − discountAmount + postFee}，四金额字段恒 CNY 分），
+     * 支付/退款/钱包/对账等资金链路永不读取本字段。
+     */
+    private String displayCurrency;
+
+    /**
+     * 下单时点定点整数汇率快照（V5.17 多币种 Phase 1，可空）—— 每 1 元人民币兑换目标币
+     * 主单位数 × 10⁶（如 USD 0.140300 → 140300）。<b>展示参考、非结算参数，不参与金额不变式
+     * V2</b>；与 {@link #displayCurrency} 同生共死：仅快照成功后两者非空，
+     * 未传/CNY/降级（哨兵 -1/未启用 1103/异常）两者皆空。
+     */
+    private Long displayRate;
 
     private Integer status;
     private Integer orderType;

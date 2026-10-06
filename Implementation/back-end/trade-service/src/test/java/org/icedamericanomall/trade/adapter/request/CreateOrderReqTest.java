@@ -54,9 +54,42 @@ class CreateOrderReqTest {
         assertTrue(hasRemarkViolation(req("好".repeat(Order.REMARK_MAX_LENGTH + 1))));
     }
 
+    // ==================== V5.17 多币种 displayCurrency（可选，ISO 4217 alpha-3） ====================
+
+    private CreateOrderReq reqWithCurrency(String displayCurrency) {
+        CreateOrderReq r = new CreateOrderReq();
+        r.setAddressId(1L);
+        r.setDisplayCurrency(displayCurrency);
+        return r;
+    }
+
+    private boolean hasDisplayCurrencyViolation(CreateOrderReq req) {
+        Set<ConstraintViolation<CreateOrderReq>> violations = validator.validate(req);
+        return violations.stream().anyMatch(v -> "displayCurrency".equals(v.getPropertyPath().toString()));
+    }
+
     @Test
-    @DisplayName("常量防漂移 — REMARK_MAX_LENGTH 必须为 200（与 05 契约 §4.6.1 一致）")
+    @DisplayName("displayCurrency 为 null（可选不传=CNY 不快照）— 不触发任何约束")
+    void shouldPass_whenDisplayCurrencyNull() {
+        assertFalse(hasDisplayCurrencyViolation(reqWithCurrency(null)));
+    }
+
+    @Test
+    @DisplayName("displayCurrency 长度 = DISPLAY_CURRENCY_MAX_LENGTH(3) — 边界内合法（如 USD）")
+    void shouldPass_whenDisplayCurrencyAtMaxLength() {
+        assertFalse(hasDisplayCurrencyViolation(reqWithCurrency("USD")));
+    }
+
+    @Test
+    @DisplayName("displayCurrency 长度 = DISPLAY_CURRENCY_MAX_LENGTH + 1(4) — 触发 @Size 约束（→ 400 PARAM_ERROR）")
+    void shouldReject_whenDisplayCurrencyExceedsMaxLength() {
+        assertTrue(hasDisplayCurrencyViolation(reqWithCurrency("USDX")));
+    }
+
+    @Test
+    @DisplayName("常量防漂移 — REMARK_MAX_LENGTH 必须为 200、DISPLAY_CURRENCY_MAX_LENGTH 必须为 3（与 05 契约 §4.6.1 一致）")
     void shouldKeepConstantAlignedWithContract() {
         assertEquals(200, Order.REMARK_MAX_LENGTH);
+        assertEquals(3, Order.DISPLAY_CURRENCY_MAX_LENGTH);
     }
 }

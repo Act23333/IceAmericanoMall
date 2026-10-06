@@ -105,11 +105,12 @@ spring:
                 - Path=/api/group-buy/**
                 - Path=/api/admin/coupon/**
                 - Path=/api/seller/coupon/**
-            # 钱包服务路由（余额账户，需登录）
+            # 钱包服务路由（余额账户需登录；F16 币种公开列表 /api/currency/** GET 匿名）
             - id: wallet-service
               uri: lb://wallet-service
               predicates:
                 - Path=/api/wallet/**
+                - Path=/api/currency/**
             # 授权服务路由（RBAC 角色与权限管理，须先于 /api/admin/** 声明，ADR-018）
             - id: auth-admin-routes
               uri: lb://authorization-service
@@ -127,6 +128,12 @@ spring:
               uri: lb://pay-service
               predicates:
                 - Path=/api/admin/pay/**
+            # 币种管理路由（F16 AD66-68，须先于 /api/admin/** 声明——ADR-035/036 先例）
+            #   未声明时会被兜底路由 /api/admin/** 送到 user-service 而 404
+            - id: wallet-admin-routes
+              uri: lb://wallet-service
+              predicates:
+                - Path=/api/admin/currency/**
             # 管理员路由
             - id: admin-user-routes
               uri: lb://user-service

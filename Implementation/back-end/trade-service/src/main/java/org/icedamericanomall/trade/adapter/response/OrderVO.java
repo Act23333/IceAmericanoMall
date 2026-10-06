@@ -55,6 +55,20 @@ public class OrderVO implements Serializable {
      */
     private String remark;
 
+    /**
+     * 展示币种快照（V5.17 多币种，可空）—— 下单时点展示参考快照；{@code null} = CNY 订单
+     * （未传/主币种直通）或下单时快照降级（fail-open），前端仅 CNY 展示、无参考价。
+     * 字段上线前报文不含该键，前端须按可空字段消费。展示参考、非结算币种（支付恒 CNY）。
+     */
+    private String displayCurrency;
+
+    /**
+     * 下单时点定点整数汇率快照（V5.17 多币种，可空）—— 每 1 CNY 兑目标币主单位数 × 10⁶
+     * （如 USD 0.140300 → 140300）；前端据此本地整数换算参考价（D7-A 前端换算，half-up 到
+     * 最小单位）。展示参考、非结算参数，与 {@link #displayCurrency} 同生共死（两者皆空或皆非空）。
+     */
+    private Long displayRateScaled;
+
     /** 状态码，见 {@link org.icedamericanomall.trade.domain.enums.OrderStatusEnum}。 */
     private Integer status;
 

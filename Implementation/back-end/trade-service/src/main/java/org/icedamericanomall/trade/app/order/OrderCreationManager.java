@@ -32,7 +32,7 @@ import java.util.List;
 /**
  * V4.1: 统一订单创建编排 Manager（京东/淘宝统一订单中心标准）。
  * 所有订单类型（NORMAL/DIRECT/FLASH_SALE/GROUP_BUY/PRESALE）通过策略模式路由到对应处理器。
- * 共享管道: validate → buildOrder → deductStock → persist → afterCreate。
+ * 共享管道: validate → displaySnapshot(F16 fail-open) → buildOrder → deductStock → persist → afterCreate。
  *
  * <pre>
  * Scenario: 购物车下单 (orderType=NORMAL)
@@ -56,12 +56,14 @@ public class OrderCreationManager {
     private final OrderTimeoutPublisher timeoutPublisher;
     private final OrderCreateStrategyFactory strategyFactory;
     private final DomainEventProducer eventProducer;
+    private final OrderDisplaySnapshotService displaySnapshotService;
 
     public OrderCreationManager(OrderRepository orderRepository, OrderConverter orderConverter,
                                  SkuClient skuClient, CouponClient couponClient,
                                  OrderTimeoutPublisher timeoutPublisher,
                                  OrderCreateStrategyFactory strategyFactory,
-                                 DomainEventProducer eventProducer) {
+                                 DomainEventProducer eventProducer,
+                                 OrderDisplaySnapshotService displaySnapshotService) {
         this.orderRepository = orderRepository;
         this.orderConverter = orderConverter;
         this.skuClient = skuClient;
@@ -69,6 +71,7 @@ public class OrderCreationManager {
         this.timeoutPublisher = timeoutPublisher;
         this.strategyFactory = strategyFactory;
         this.eventProducer = eventProducer;
+        this.displaySnapshotService = displaySnapshotService;
     }
 
     /**
@@ -105,14 +108,18 @@ public class OrderCreationManager {
         // 1. 策略校验（Feign 读取，事务外）
         strategy.validate(ctx);
 
-        // 2. 策略构建订单（含优惠券核销 Feign，事务外）
+        // 2. F16 多币种展示汇率快照（Feign I61，事务外，fail-open）——
+        //    快照结果回填 ctx，随后 buildBaseOrder 随单落 orders.display_* 两列
+        displaySnapshotService.snapshotIfNeeded(ctx);
+
+        // 3. 策略构建订单（含优惠券核销 Feign，事务外）
         Order order = strategy.buildOrder(ctx);
 
-        // 3. 扣减库存（Feign，事务外）
+        // 4. 扣减库存（Feign，事务外）
         List<StockOpCO> stockOps = buildStockOps(ctx);
         deductStock(stockOps);
 
-        // 4. 持久化 + 策略后置处理：任一步失败都必须补偿已扣库存/券
+        // 5. 持久化 + 策略后置处理：任一步失败都必须补偿已扣库存/券
         List<OrderItem> items = NormalCartOrderStrategy.buildItems(order, ctx);
         try {
             orderRepository.saveWithItems(order, items);
@@ -123,10 +130,10 @@ public class OrderCreationManager {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "订单创建失败");
         }
 
-        // 5. RocketMQ 领域事件: order.created (非关键路径，事务外)
+        // 6. RocketMQ 领域事件: order.created (非关键路径，事务外)
         publishOrderCreatedEvent(order);
 
-        // 6. 返回 VO
+        // 7. 返回 VO
         OrderVO vo = orderConverter.toVO(order);
         vo.setItems(orderConverter.toItemVOs(items));
         return vo;
@@ -177,6 +184,7 @@ public class OrderCreationManager {
         ctx.setTeamNo(req.getTeamNo());
         ctx.setAddressId(req.getAddressId());
         ctx.setRemark(req.getRemark());
+        ctx.setDisplayCurrency(req.getDisplayCurrency()); // F16: 展示币种透传（快照走统一管道）
         return createOrder(ctx);
     }
 

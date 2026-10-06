@@ -47,6 +47,18 @@ public class OrderPO implements Serializable {
     /** 买家留言快照（V5.7）—— 下单时随单落库，Phase 1 不提供修改端点。 */
     private String remark;
 
+    /**
+     * 展示币种快照（V5.17 多币种，ISO 4217；NULL=CNY 订单或快照降级）——
+     * 展示参考、非结算币种（PRD D1-B/D3-B），不参与金额不变式 V2。
+     */
+    private String displayCurrency;
+
+    /**
+     * 下单时点定点整数汇率快照（V5.17 多币种；每 1 CNY 兑目标币主单位数 × 10⁶）——
+     * 展示参考、非结算参数，不参与金额不变式 V2。
+     */
+    private Long displayRate;
+
     private Integer status;
     private Integer orderType;
     private Integer paymentType;
@@ -75,6 +87,8 @@ public class OrderPO implements Serializable {
     public void setDiscountAmount(Integer v) { this.discountAmount = v; }
     public void setPostFee(Integer v) { this.postFee = v; }
     public void setRemark(String v) { this.remark = v; }
+    public void setDisplayCurrency(String v) { this.displayCurrency = v; }
+    public void setDisplayRate(Long v) { this.displayRate = v; }
     public void setStatus(Integer v) { this.status = v; }
     public void setOrderType(Integer v) { this.orderType = v; }
     public void setPaymentType(Integer v) { this.paymentType = v; }

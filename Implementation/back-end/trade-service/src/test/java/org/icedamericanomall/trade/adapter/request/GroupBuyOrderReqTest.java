@@ -78,4 +78,30 @@ class GroupBuyOrderReqTest {
         r.setRemark("好".repeat(Order.REMARK_MAX_LENGTH + 1));
         assertTrue(violations(r).stream().anyMatch(v -> "remark".equals(v.getPropertyPath().toString())));
     }
+
+    // ==================== V5.17 多币种 displayCurrency（可选，ISO 4217 alpha-3） ====================
+
+    @Test
+    @DisplayName("displayCurrency 为 null（可选不传=CNY 不快照）— 不触发任何约束")
+    void shouldPass_whenDisplayCurrencyNull() {
+        GroupBuyOrderReq r = req();
+        r.setDisplayCurrency(null);
+        assertTrue(violations(r).isEmpty());
+    }
+
+    @Test
+    @DisplayName("displayCurrency 长度 = DISPLAY_CURRENCY_MAX_LENGTH(3) — 边界内合法（如 USD）")
+    void shouldPass_whenDisplayCurrencyAtMaxLength() {
+        GroupBuyOrderReq r = req();
+        r.setDisplayCurrency("USD");
+        assertTrue(violations(r).isEmpty());
+    }
+
+    @Test
+    @DisplayName("displayCurrency 长度 = DISPLAY_CURRENCY_MAX_LENGTH + 1(4) — 触发 @Size（→ 400 PARAM_ERROR）")
+    void shouldReject_whenDisplayCurrencyExceedsMaxLength() {
+        GroupBuyOrderReq r = req();
+        r.setDisplayCurrency("USDX");
+        assertTrue(violations(r).stream().anyMatch(v -> "displayCurrency".equals(v.getPropertyPath().toString())));
+    }
 }

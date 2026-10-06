@@ -41,3 +41,13 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+# F16 多币种（P36/I61/AD66-68）：汇率定时拉取 Job —— 默认关闭（Bean 不注册）；
+# 接入汇率 API 后开启（开放汇率 API 常见形态 {"rates":{"USD":0.1403,...}}；
+# 拉取失败保留上次值 + 告警，D2）。ExchangeRatePullJob 内置同名默认值。
+#currency:
+#  rate:
+#    pull:
+#      enabled: true
+#      api-url: https://open.er-api.com/v6/latest/CNY
+#      cron: "0 0 3 * * ?"

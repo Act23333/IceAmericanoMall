@@ -321,6 +321,8 @@ CREATE TABLE `orders` (
                          `discount_amount` INT NOT NULL DEFAULT 0 COMMENT '优惠金额（分）',
                          `post_fee` INT NOT NULL DEFAULT 0 COMMENT '运费（分），下单时按运费模板计算并快照（V5.6）',
                          `remark` VARCHAR(200) NULL COMMENT '买家留言',
+                         `display_currency` VARCHAR(3)  NULL COMMENT '展示币种快照（ISO 4217；NULL=CNY 订单或快照降级；展示参考、非结算币种——V5.17 多币种 PRD D1-B/D3-B）',
+                         `display_rate`     BIGINT      NULL COMMENT '下单时点定点整数汇率快照（每 1 CNY 兑目标币主单位数 × 10⁶；展示参考、非结算参数，不参与金额不变式）',
                          `status` TINYINT NOT NULL COMMENT '状态：1-待付款，2-待发货，3-待收货，4-已完成，5-已取消，6-待评价',
                          `payment_type` TINYINT DEFAULT NULL COMMENT '支付类型：1-支付宝，2-微信，3-余额',
                          `receiver_name` VARCHAR(50) NOT NULL COMMENT '收货人姓名（快照）',
@@ -1336,3 +1338,52 @@ CREATE TABLE `pairing_rule` (
     KEY `idx_src` (`src_category_id`),
     KEY `idx_dst` (`dst_category_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='类目搭配规则（KG PAIR_WITH 边真相源，平台级类目粒度）';
+
+-- =====================================================================
+-- V5.17 多币种 Phase 1（F16，PRD 01-PRD §十七 已定稿；D1-B 折中：展示换算 +
+-- 订单快照锁汇；资金链路恒 CNY 分零改动；schema 直改本文件，无迁移文件）
+-- =====================================================================
+
+-- 币种（wallet-service 域；ISO 4217；CNY 为主币种不入表）
+CREATE TABLE `currency` (
+    `id`          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `code`        VARCHAR(3)   NOT NULL COMMENT '币种代码（ISO 4217，如 USD/EUR/JPY）',
+    `name`        VARCHAR(50)  NOT NULL COMMENT '币种名称',
+    `symbol`      VARCHAR(8)   NOT NULL COMMENT '符号（如 $/€/¥）',
+    `exponent`    TINYINT      NOT NULL COMMENT '最小单位指数（ISO 4217：USD/EUR=2、JPY/KRW=0、BHD=3）',
+    `status`      TINYINT      NOT NULL DEFAULT 1 COMMENT '1=启用 0=停用（停用后 C 端列表不返回，换算请求回落 CNY）',
+    `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='币种（展示换算；O8 裁决种子六币种）';
+
+-- 汇率（一行一币 upsert；定点整数 rate_scaled = 每 1 CNY 兑目标币主单位数 × 10⁶，O6 不做历史版本化）
+CREATE TABLE `exchange_rate` (
+    `id`          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `code`        VARCHAR(3)   NOT NULL COMMENT '币种代码（对应 currency.code）',
+    `rate_scaled` BIGINT       NOT NULL COMMENT '定点整数汇率：每 1 元人民币兑换目标币主单位数 × 10⁶（如 USD 0.140300 → 140300）',
+    `source`      VARCHAR(16)  NOT NULL COMMENT '来源：API（定时拉取）/ MANUAL（管理端人工修正）',
+    `effect_time` DATETIME     NOT NULL COMMENT '生效时间（上次成功更新时点；失败保留上次值 + 告警）',
+    `updater_id`  BIGINT       NULL COMMENT '修正人（MANUAL 时记录；API 拉取为 NULL）',
+    `remark`      VARCHAR(255) NULL COMMENT '备注',
+    `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='展示汇率（定点整数，O6 裁决不做历史版本化）';
+
+INSERT IGNORE INTO `currency` (`code`, `name`, `symbol`, `exponent`, `status`) VALUES
+    ('USD', '美元',   '$', 2, 1),
+    ('EUR', '欧元',   '€', 2, 1),
+    ('JPY', '日元',   '¥', 0, 1),
+    ('KRW', '韩元',   '₩', 0, 1),
+    ('GBP', '英镑',   '£', 2, 1),
+    ('HKD', '港币',   'HK$', 2, 1);
+
+-- 初始占位汇率（source=MANUAL；接入汇率 API 后由定时拉取日更覆盖——O2/O9 裁决）
+INSERT IGNORE INTO `exchange_rate` (`code`, `rate_scaled`, `source`, `effect_time`, `remark`) VALUES
+    ('USD', 140300,    'MANUAL', NOW(), '初始占位汇率，接入汇率 API 后日更覆盖（O9）'),
+    ('EUR', 130500,    'MANUAL', NOW(), '初始占位汇率，接入汇率 API 后日更覆盖（O9）'),
+    ('JPY', 20910000,  'MANUAL', NOW(), '初始占位汇率，接入汇率 API 后日更覆盖（O9）'),
+    ('KRW', 190000000, 'MANUAL', NOW(), '初始占位汇率，接入汇率 API 后日更覆盖（O9）'),
+    ('GBP', 110800,    'MANUAL', NOW(), '初始占位汇率，接入汇率 API 后日更覆盖（O9）'),
+    ('HKD', 1095000,   'MANUAL', NOW(), '初始占位汇率，接入汇率 API 后日更覆盖（O9）');

@@ -451,6 +451,8 @@ public class OrderRepositoryImpl implements OrderRepository {
         order.setDiscountAmount(po.getDiscountAmount());
         order.setPostFee(po.getPostFee());
         order.setRemark(po.getRemark());
+        order.setDisplayCurrency(po.getDisplayCurrency());
+        order.setDisplayRate(po.getDisplayRate());
         order.setStatus(po.getStatus());
         order.setOrderType(po.getOrderType());
         order.setPaymentType(po.getPaymentType());
@@ -479,6 +481,8 @@ public class OrderRepositoryImpl implements OrderRepository {
         po.setDiscountAmount(order.getDiscountAmount());
         po.setPostFee(order.getPostFee());
         po.setRemark(order.getRemark());
+        po.setDisplayCurrency(order.getDisplayCurrency());
+        po.setDisplayRate(order.getDisplayRate());
         po.setStatus(order.getStatus());
         po.setOrderType(order.getOrderType());
         po.setPaymentType(order.getPaymentType());

@@ -37,6 +37,24 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- F16 币种/汇率：方法级授权（AD66-68 @PreAuthorize，鉴权在网关，下游只授权） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <!-- F16 币种列表 60s 本地缓存（P36，ADR-041 先例：tagsFor 同款 Caffeine） -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
+        <!-- F16 跨服务契约：I61 返回 ia-api 的 CurrencyRateCO（trade 下单快照消费面） -->
+        <dependency>
+            <groupId>org.nolazy</groupId>
+            <artifactId>ia-api</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

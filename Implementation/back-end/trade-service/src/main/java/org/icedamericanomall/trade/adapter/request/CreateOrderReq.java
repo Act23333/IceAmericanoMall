@@ -40,4 +40,14 @@ public class CreateOrderReq implements Serializable {
      */
     @Size(max = Order.REMARK_MAX_LENGTH, message = "买家留言不能超过" + Order.REMARK_MAX_LENGTH + "字")
     private String remark;
+
+    /**
+     * 展示币种（V5.17 多币种，可选，ISO 4217 alpha-3）—— 前端传当前展示币种，
+     * 下单时按 I61 汇率快照进订单展示参考（{@code orders.display_currency/display_rate}）；
+     * 未传 = CNY 不快照（两列 NULL），快照降级同样跳过（fail-open，主流程零影响）。
+     * 可选字段不加 {@code @NotNull}；格式由 {@code @Size} 前置拦截（→ 400 PARAM_ERROR）。
+     */
+    @Size(max = Order.DISPLAY_CURRENCY_MAX_LENGTH,
+            message = "展示币种代码不能超过" + Order.DISPLAY_CURRENCY_MAX_LENGTH + "字符")
+    private String displayCurrency;
 }

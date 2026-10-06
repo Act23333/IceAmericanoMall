@@ -49,6 +49,8 @@ class OrderRepositoryImplH2Test {
                     discount_amount INT DEFAULT 0,
                     post_fee INT DEFAULT 0,
                     remark VARCHAR(200),
+                    display_currency VARCHAR(3),
+                    display_rate BIGINT,
                     status INT DEFAULT 1,
                     order_type INT DEFAULT 1,
                     payment_type INT DEFAULT 1,

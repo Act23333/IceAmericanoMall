@@ -8,6 +8,7 @@ import org.h2.Driver;
 import org.icedamericanomall.client.AddressClient;
 import org.icedamericanomall.client.CartClient;
 import org.icedamericanomall.client.CouponClient;
+import org.icedamericanomall.client.CurrencyClient;
 import org.icedamericanomall.client.MemberClient;
 import org.icedamericanomall.client.PromotionClient;
 import org.icedamericanomall.client.SkuClient;
@@ -81,6 +82,7 @@ class OrderCreationManagerTest {
                     total_amount INT DEFAULT 0, pay_amount INT DEFAULT 0, discount_amount INT DEFAULT 0,
                     post_fee INT DEFAULT 0,
                     remark VARCHAR(200),
+                    display_currency VARCHAR(3), display_rate BIGINT,
                     status INT DEFAULT 1, order_type INT DEFAULT 1, payment_type INT DEFAULT 1,
                     receiver_name VARCHAR(50), receiver_phone VARCHAR(20), receiver_address VARCHAR(200),
                     version INT DEFAULT 0,
@@ -142,7 +144,8 @@ class OrderCreationManagerTest {
                 skuClient, couponClient,
                 mock(OrderTimeoutPublisher.class),
                 factory,
-                mock(DomainEventProducer.class));
+                mock(DomainEventProducer.class),
+                new OrderDisplaySnapshotService(mock(CurrencyClient.class)));
     }
 
     private CartItemCO cartItem(Long cartItemId, Long skuId, int qty) {
