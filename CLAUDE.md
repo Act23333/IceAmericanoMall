@@ -250,7 +250,7 @@ Authoritative roadmap: `project-docs/backend/02-Architecture.md` §七. Delivere
 
 #### ⚪ Not built (do not start without a PRD/spec update)
 
-mini-program/App. If asked to build these, flag that they are beyond the current implemented surface. (Delivered and removed from this list: channel reconciliation 对账 V5.5 — ADR-036; group buys 拼团 V5.14 — ADR-049; invoices 发票 V5.15 — PRD §十五 定稿; knowledge graph Phase 1 商品关系导购 V5.16 — PRD §十六 定稿; multi-currency Phase 1 展示换算+订单快照锁汇 V5.17 — PRD §十七 定稿. mini-program requires a full PRD before development per the two-phase discipline.)
+mini-program/App（**前端工程为主，后端接口全量共享**——微信小程序登录通道 V5.1 已实现（`POST /api/auth/wechat/mini/login` + `WechatMiniLoginStrategy`，`user_auth.wx_openid`），业务契约零改动；后端增量仅剩核对项：微信支付小程序内拉起参数（JSAPI/openid 传递）。不需要完整 PRD 重述，仅需一页前后端增量核对清单；小程序前端本体落 16-Frontend-Product-Design）。If asked to build the mini-program frontend, flag that it is outside this backend repo's scope. (Delivered and removed from this list: channel reconciliation 对账 V5.5 — ADR-036; group buys 拼团 V5.14 — ADR-049; invoices 发票 V5.15 — PRD §十五 定稿; knowledge graph Phase 1 商品关系导购 V5.16 — PRD §十六 定稿; multi-currency Phase 1 展示换算+订单快照锁汇 V5.17 — PRD §十七 定稿.)
 
 ### Hard Constraints (from `project-docs/collaboration/09-constraints.md`)
 
