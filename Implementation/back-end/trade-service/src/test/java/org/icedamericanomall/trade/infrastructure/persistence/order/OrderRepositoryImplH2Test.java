@@ -41,7 +41,7 @@ class OrderRepositoryImplH2Test {
             stmt.execute("""
                 CREATE TABLE orders (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                    order_no VARCHAR(64) NOT NULL UNIQUE,
+                    order_no BINARY(16) NOT NULL UNIQUE,
                     user_id BIGINT NOT NULL,
                     seller_id BIGINT NOT NULL,
                     total_amount INT DEFAULT 0,
@@ -102,6 +102,14 @@ class OrderRepositoryImplH2Test {
                 sqlSessionFactory.openSession().getMapper(OrderItemMapper.class));
     }
 
+    @Test
+    @DisplayName("findByOrderNo — 非 hex 垃圾入参（外部输入路径）→ 宽松解析落空返回 null，不抛异常不误命中")
+    void shouldReturnNull_whenOrderNoIsGarbage() {
+        saveOrder("aaaaaaaa0000700080000000000000ee", 100L, 9L, 1);
+        assertNull(repository.findByOrderNo("NOT-A-HEX-ORDER-NO"), "垃圾入参必须按未命中处理（ADR-050 toBytesOrNull）");
+        assertNull(repository.findByOrderNo("123456"), "长度不足同样未命中");
+    }
+
     private void saveOrder(String orderNo, Long userId, Long sellerId, int status) {
         Order o = new Order();
         o.setOrderNo(orderNo); o.setUserId(userId); o.setSellerId(sellerId);
@@ -115,8 +123,8 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(1)
     @DisplayName("findByOrderNo — 根据订单号查询")
     void shouldFindOrderByOrderNo() {
-        saveOrder("ORD-H2-001", 100L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
-        Order found = repository.findByOrderNo("ORD-H2-001");
+        saveOrder("aaaaaaaa000070008000000000000001", 100L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
+        Order found = repository.findByOrderNo("aaaaaaaa000070008000000000000001");
         assertNotNull(found);
         assertEquals(100L, found.getUserId());
     }
@@ -125,7 +133,7 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(2)
     @DisplayName("findByOrderNo — 不存在返回 null")
     void shouldReturnNull_whenNotFound() {
-        assertNull(repository.findByOrderNo("NONEXISTENT"));
+        assertNull(repository.findByOrderNo("aaaaaaaa00007000800000000000ffff"));
     }
 
     @Test
@@ -133,7 +141,7 @@ class OrderRepositoryImplH2Test {
     @DisplayName("saveWithItems — 事务中创建订单+订单项")
     void shouldCreateOrderAndItemsAtomically() {
         Order order = new Order();
-        order.setOrderNo("ORD-H2-003"); order.setUserId(900L); order.setSellerId(1L);
+        order.setOrderNo("aaaaaaaa000070008000000000000002"); order.setUserId(900L); order.setSellerId(1L);
         order.setTotalAmount(50000); order.setStatus(OrderStatusEnum.PENDING_PAYMENT.getCode());
 
         OrderItem item = new OrderItem();
@@ -144,7 +152,7 @@ class OrderRepositoryImplH2Test {
         assertNotNull(order.getId());
         assertEquals(order.getId(), item.getOrderId());
 
-        Order found = repository.findByOrderNo("ORD-H2-003");
+        Order found = repository.findByOrderNo("aaaaaaaa000070008000000000000002");
         assertNotNull(found);
         assertEquals(900L, found.getUserId());
     }
@@ -153,10 +161,10 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(4)
     @DisplayName("confirmReceiptByUser — 待收货→已完成")
     void shouldCompleteOrder_whenConfirmReceipt() {
-        saveOrder("ORD-H2-C1", 400L, 1L, OrderStatusEnum.PENDING_RECEIPT.getCode());
-        repository.confirmReceiptByUser("ORD-H2-C1", 400L);
+        saveOrder("aaaaaaaa000070008000000000000003", 400L, 1L, OrderStatusEnum.PENDING_RECEIPT.getCode());
+        repository.confirmReceiptByUser("aaaaaaaa000070008000000000000003", 400L);
 
-        Order updated = repository.findByOrderNo("ORD-H2-C1");
+        Order updated = repository.findByOrderNo("aaaaaaaa000070008000000000000003");
         assertEquals(OrderStatusEnum.COMPLETED.getCode(), updated.getStatus());
         assertNotNull(updated.getEndTime());
     }
@@ -165,9 +173,9 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(6)
     @DisplayName("confirmReceiptByUser — 非待收货状态拒绝")
     void shouldRejectConfirm_whenNotPendingReceipt() {
-        saveOrder("ORD-H2-C2", 400L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
+        saveOrder("aaaaaaaa000070008000000000000004", 400L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
         assertThrows(Exception.class, () ->
-                repository.confirmReceiptByUser("ORD-H2-C2", 400L));
+                repository.confirmReceiptByUser("aaaaaaaa000070008000000000000004", 400L));
     }
 
     // ==================== 条件更新（并发安全） ====================
@@ -176,11 +184,11 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(7)
     @DisplayName("cancelByUser — 待付款订单条件更新为已取消")
     void shouldCancelOrder_whenConditionalUpdateHits() {
-        saveOrder("ORD-H2-CANCEL1", 500L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
+        saveOrder("aaaaaaaa000070008000000000000005", 500L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
 
-        repository.cancelByUser("ORD-H2-CANCEL1", 500L);
+        repository.cancelByUser("aaaaaaaa000070008000000000000005", 500L);
 
-        Order updated = repository.findByOrderNo("ORD-H2-CANCEL1");
+        Order updated = repository.findByOrderNo("aaaaaaaa000070008000000000000005");
         assertEquals(OrderStatusEnum.CANCELLED.getCode(), updated.getStatus());
         assertNotNull(updated.getCloseTime());
     }
@@ -189,11 +197,11 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(8)
     @DisplayName("cancelByUser — 已取消订单重复取消：0 行受影响抛 ORDER_STATUS_INVALID")
     void shouldRejectCancel_whenAlreadyCancelled() {
-        saveOrder("ORD-H2-CANCEL2", 500L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
-        repository.cancelByUser("ORD-H2-CANCEL2", 500L);
+        saveOrder("aaaaaaaa000070008000000000000006", 500L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
+        repository.cancelByUser("aaaaaaaa000070008000000000000006", 500L);
 
         BizException ex = assertThrows(BizException.class, () ->
-                repository.cancelByUser("ORD-H2-CANCEL2", 500L));
+                repository.cancelByUser("aaaaaaaa000070008000000000000006", 500L));
         assertEquals(ErrorCode.ORDER_STATUS_INVALID, ex.getErrorCode());
     }
 
@@ -201,8 +209,8 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(9)
     @DisplayName("closeTimeoutOrder — 首次命中返回 true，重复调用返回 false（幂等无操作）")
     void shouldReturnFalse_whenCloseTimeoutOrderAlreadyCancelled() {
-        saveOrder("ORD-H2-TIMEOUT1", 600L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
-        Order order = repository.findByOrderNo("ORD-H2-TIMEOUT1");
+        saveOrder("aaaaaaaa000070008000000000000020", 600L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
+        Order order = repository.findByOrderNo("aaaaaaaa000070008000000000000020");
 
         assertTrue(repository.closeTimeoutOrder(order.getId()));
         assertFalse(repository.closeTimeoutOrder(order.getId()));
@@ -214,11 +222,11 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(10)
     @DisplayName("transitionFromPendingPayment — 待付款→待发货（支付成功）")
     void shouldTransitionToPendingShipment_whenPaidCallback() {
-        saveOrder("ORD-H2-PAY1", 700L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
+        saveOrder("aaaaaaaa000070008000000000000010", 700L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
 
-        repository.transitionFromPendingPayment("ORD-H2-PAY1", OrderStatusEnum.PENDING_SHIPMENT.getCode());
+        repository.transitionFromPendingPayment("aaaaaaaa000070008000000000000010", OrderStatusEnum.PENDING_SHIPMENT.getCode());
 
-        Order updated = repository.findByOrderNo("ORD-H2-PAY1");
+        Order updated = repository.findByOrderNo("aaaaaaaa000070008000000000000010");
         assertEquals(OrderStatusEnum.PENDING_SHIPMENT.getCode(), updated.getStatus());
         assertNotNull(updated.getPayTime());
     }
@@ -227,23 +235,23 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(11)
     @DisplayName("transitionFromPendingPayment — 待付款→已取消（支付超时）")
     void shouldTransitionToCancelled_whenPayTimeout() {
-        saveOrder("ORD-H2-PAY2", 700L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
+        saveOrder("aaaaaaaa000070008000000000000011", 700L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
 
-        repository.transitionFromPendingPayment("ORD-H2-PAY2", OrderStatusEnum.CANCELLED.getCode());
+        repository.transitionFromPendingPayment("aaaaaaaa000070008000000000000011", OrderStatusEnum.CANCELLED.getCode());
 
         assertEquals(OrderStatusEnum.CANCELLED.getCode(),
-                repository.findByOrderNo("ORD-H2-PAY2").getStatus());
+                repository.findByOrderNo("aaaaaaaa000070008000000000000011").getStatus());
     }
 
     @Test
     @org.junit.jupiter.api.Order(12)
     @DisplayName("transitionFromPendingPayment — 重复回调：非待付款源状态抛 ORDER_STATUS_INVALID")
     void shouldRejectRepeatCallback_whenAlreadyTransitioned() {
-        saveOrder("ORD-H2-PAY3", 700L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
-        repository.transitionFromPendingPayment("ORD-H2-PAY3", OrderStatusEnum.PENDING_SHIPMENT.getCode());
+        saveOrder("aaaaaaaa000070008000000000000012", 700L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
+        repository.transitionFromPendingPayment("aaaaaaaa000070008000000000000012", OrderStatusEnum.PENDING_SHIPMENT.getCode());
 
         BizException ex = assertThrows(BizException.class, () -> repository
-                .transitionFromPendingPayment("ORD-H2-PAY3", OrderStatusEnum.PENDING_SHIPMENT.getCode()));
+                .transitionFromPendingPayment("aaaaaaaa000070008000000000000012", OrderStatusEnum.PENDING_SHIPMENT.getCode()));
         assertEquals(ErrorCode.ORDER_STATUS_INVALID, ex.getErrorCode());
     }
 
@@ -251,13 +259,13 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(13)
     @DisplayName("transitionFromPendingPayment — 非法目标状态（已完成）抛 ORDER_STATUS_INVALID 且状态不变")
     void shouldRejectIllegalTargetStatus_whenPaymentCallback() {
-        saveOrder("ORD-H2-PAY4", 700L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
+        saveOrder("aaaaaaaa000070008000000000000013", 700L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
 
         BizException ex = assertThrows(BizException.class, () -> repository
-                .transitionFromPendingPayment("ORD-H2-PAY4", OrderStatusEnum.COMPLETED.getCode()));
+                .transitionFromPendingPayment("aaaaaaaa000070008000000000000013", OrderStatusEnum.COMPLETED.getCode()));
         assertEquals(ErrorCode.ORDER_STATUS_INVALID, ex.getErrorCode());
         assertEquals(OrderStatusEnum.PENDING_PAYMENT.getCode(),
-                repository.findByOrderNo("ORD-H2-PAY4").getStatus());
+                repository.findByOrderNo("aaaaaaaa000070008000000000000013").getStatus());
     }
 
     // ==================== 归属校验 ====================
@@ -267,7 +275,7 @@ class OrderRepositoryImplH2Test {
     @DisplayName("findOwnedOrder — 订单不存在抛 ORDER_NOT_FOUND")
     void shouldThrowOrderNotFound_whenOwnedOrderMissing() {
         BizException ex = assertThrows(BizException.class, () ->
-                repository.findOwnedOrder("ORD-H2-NOPE", 800L));
+                repository.findOwnedOrder("aaaaaaaa000070008000000000000007", 800L));
         assertEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode());
     }
 
@@ -275,10 +283,10 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(15)
     @DisplayName("findOwnedOrder — 非本人订单抛 FORBIDDEN")
     void shouldThrowForbidden_whenOrderBelongsToAnotherUser() {
-        saveOrder("ORD-H2-OWN1", 800L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
+        saveOrder("aaaaaaaa000070008000000000000008", 800L, 1L, OrderStatusEnum.PENDING_PAYMENT.getCode());
 
         ForbiddenException ex = assertThrows(ForbiddenException.class, () ->
-                repository.findOwnedOrder("ORD-H2-OWN1", 999L));
+                repository.findOwnedOrder("aaaaaaaa000070008000000000000008", 999L));
         assertEquals(ErrorCode.FORBIDDEN, ex.getErrorCode());
     }
 
@@ -286,20 +294,20 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(16)
     @DisplayName("findSellerOrder — 非本店订单抛 FORBIDDEN")
     void shouldThrowForbidden_whenOrderBelongsToAnotherSeller() {
-        saveOrder("ORD-H2-OWN2", 800L, 7L, OrderStatusEnum.PENDING_PAYMENT.getCode());
+        saveOrder("aaaaaaaa000070008000000000000009", 800L, 7L, OrderStatusEnum.PENDING_PAYMENT.getCode());
 
         assertThrows(ForbiddenException.class, () ->
-                repository.findSellerOrder("ORD-H2-OWN2", 8L));
+                repository.findSellerOrder("aaaaaaaa000070008000000000000009", 8L));
     }
 
     @Test
     @org.junit.jupiter.api.Order(17)
     @DisplayName("shipPackage — 非待发货状态拒绝（V5.6 拆单发货入口）")
     void shouldRejectShip_whenStatusNotPendingShipment() {
-        saveOrder("ORD-H2-SHIP1", 810L, 9L, OrderStatusEnum.PENDING_PAYMENT.getCode());
+        saveOrder("aaaaaaaa000070008000000000000014", 810L, 9L, OrderStatusEnum.PENDING_PAYMENT.getCode());
 
         BizException ex = assertThrows(BizException.class, () ->
-                repository.shipPackage("ORD-H2-SHIP1", 9L, null));
+                repository.shipPackage("aaaaaaaa000070008000000000000014", 9L, null));
         assertEquals(ErrorCode.ORDER_STATUS_INVALID, ex.getErrorCode());
     }
 
@@ -338,7 +346,7 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(18)
     @DisplayName("F3-1 一单两包裹先后发货 — 部分发货保持待发货(2)，全量发完转待收货(3)")
     void shouldKeepPendingShipment_thenMoveToPendingReceipt_whenShippingTwoPackages() {
-        String orderNo = savePendingShipmentOrderWithItems("ORD-H2-SPLIT1", SKU_A, SKU_B);
+        String orderNo = savePendingShipmentOrderWithItems("aaaaaaaa000070008000000000000015", SKU_A, SKU_B);
 
         // When 第一次发货本包裹 skuIds=[sku1]
         ShipPackageResult first = repository.shipPackage(orderNo, 9L, List.of(SKU_A));
@@ -367,7 +375,7 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(19)
     @DisplayName("F3-2 空 skuIds 全量发货 — 全部明细打同一 packageNo=1，直接转待收货(3)")
     void shouldShipAllItemsInOnePackage_whenSkuIdsEmpty() {
-        String orderNo = savePendingShipmentOrderWithItems("ORD-H2-SPLIT2", SKU_A, SKU_B);
+        String orderNo = savePendingShipmentOrderWithItems("aaaaaaaa000070008000000000000016", SKU_A, SKU_B);
 
         ShipPackageResult result = repository.shipPackage(orderNo, 9L, null);
 
@@ -383,7 +391,7 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(20)
     @DisplayName("F3-3 重复发货同一 sku 被拒 — ORDER_STATUS_INVALID(3010)，订单状态不变")
     void shouldRejectDuplicateShip_whenSkuAlreadyPackaged() {
-        String orderNo = savePendingShipmentOrderWithItems("ORD-H2-SPLIT3", SKU_A, SKU_B);
+        String orderNo = savePendingShipmentOrderWithItems("aaaaaaaa000070008000000000000017", SKU_A, SKU_B);
         repository.shipPackage(orderNo, 9L, List.of(SKU_A));
 
         BizException ex = assertThrows(BizException.class, () ->
@@ -399,9 +407,9 @@ class OrderRepositoryImplH2Test {
     @org.junit.jupiter.api.Order(21)
     @DisplayName("F3-4 发货明细校验归属 — 含他单 skuId → PARAM_ERROR(1101)，无任何状态变更")
     void shouldRejectShip_whenSkuNotBelongToOrder() {
-        String orderNo = savePendingShipmentOrderWithItems("ORD-H2-SPLIT4", SKU_A, SKU_B);
+        String orderNo = savePendingShipmentOrderWithItems("aaaaaaaa000070008000000000000018", SKU_A, SKU_B);
         // 另一订单的明细 sku
-        String otherOrderNo = savePendingShipmentOrderWithItems("ORD-H2-SPLIT5", 8001L);
+        String otherOrderNo = savePendingShipmentOrderWithItems("aaaaaaaa000070008000000000000019", 8001L);
 
         BizException ex = assertThrows(BizException.class, () ->
                 repository.shipPackage(orderNo, 9L, List.of(SKU_A, 8001L)));

@@ -2,6 +2,7 @@ package org.icedamericanomall.marketing.infrastructure.persistence.coupon;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.marketing.domain.enums.UserCouponStatusEnum;
 import org.icedamericanomall.marketing.domain.model.coupon.UserCoupon;
 import org.icedamericanomall.marketing.domain.repository.UserCouponRepository;
@@ -63,7 +64,7 @@ public class UserCouponRepositoryImpl implements UserCouponRepository {
     @Override
     public UserCoupon findUsedByOrderNo(String orderNo) {
         return toDomain(userCouponMapper.selectOne(new LambdaQueryWrapper<UserCouponPO>()
-                .eq(UserCouponPO::getUsedOrderNo, orderNo)
+                .eq(UserCouponPO::getUsedOrderNo, IdGenerator.toBytes(orderNo))
                 .eq(UserCouponPO::getStatus, UserCouponStatusEnum.USED.getCode())));
     }
 
@@ -85,7 +86,7 @@ public class UserCouponRepositoryImpl implements UserCouponRepository {
                 .userId(po.getUserId())
                 .couponId(po.getCouponId())
                 .status(po.getStatus())
-                .usedOrderNo(po.getUsedOrderNo())
+                .usedOrderNo(IdGenerator.toHexString(po.getUsedOrderNo()))
                 .useTime(po.getUseTime())
                 .createTime(po.getCreateTime())
                 .build();
@@ -97,7 +98,7 @@ public class UserCouponRepositoryImpl implements UserCouponRepository {
         po.setUserId(userCoupon.getUserId());
         po.setCouponId(userCoupon.getCouponId());
         po.setStatus(userCoupon.getStatus());
-        po.setUsedOrderNo(userCoupon.getUsedOrderNo());
+        po.setUsedOrderNo(IdGenerator.toBytes(userCoupon.getUsedOrderNo()));
         po.setUseTime(userCoupon.getUseTime());
         po.setCreateTime(userCoupon.getCreateTime());
         return po;

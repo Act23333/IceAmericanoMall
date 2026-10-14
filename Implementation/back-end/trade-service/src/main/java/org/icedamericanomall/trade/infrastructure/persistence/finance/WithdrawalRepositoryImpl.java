@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.trade.domain.model.finance.Withdrawal;
 import org.icedamericanomall.trade.domain.repository.WithdrawalRepository;
 import org.springframework.stereotype.Repository;
@@ -62,7 +63,7 @@ public class WithdrawalRepositoryImpl implements WithdrawalRepository {
         }
         Withdrawal withdrawal = new Withdrawal();
         withdrawal.setId(po.getId());
-        withdrawal.setWithdrawalNo(po.getWithdrawalNo());
+        withdrawal.setWithdrawalNo(IdGenerator.toHexString(po.getWithdrawalNo()));
         withdrawal.setSellerId(po.getSellerId());
         withdrawal.setAmount(po.getAmount());
         withdrawal.setStatus(po.getStatus());
@@ -77,7 +78,7 @@ public class WithdrawalRepositoryImpl implements WithdrawalRepository {
     static WithdrawalPO toPO(Withdrawal withdrawal) {
         WithdrawalPO po = new WithdrawalPO();
         po.setId(withdrawal.getId());
-        po.setWithdrawalNo(withdrawal.getWithdrawalNo());
+        po.setWithdrawalNo(IdGenerator.toBytes(withdrawal.getWithdrawalNo()));
         po.setSellerId(withdrawal.getSellerId());
         po.setAmount(withdrawal.getAmount());
         po.setStatus(withdrawal.getStatus());

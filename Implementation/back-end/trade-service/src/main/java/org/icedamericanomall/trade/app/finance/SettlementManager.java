@@ -1,6 +1,6 @@
 package org.icedamericanomall.trade.app.finance;
 
-import cn.hutool.core.util.IdUtil;
+import org.icedamericanomall.common.utils.IdGenerator;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.enums.ErrorCode;
@@ -52,7 +52,7 @@ public class SettlementManager {
         int settlementAmount = total - commission;
 
         Settlement settlement = new Settlement();
-        settlement.setSettlementNo(IdUtil.fastSimpleUUID());
+        settlement.setSettlementNo(IdGenerator.nextId());
         settlement.setSellerId(sellerId);
         settlement.setPeriodStart(periodStart);
         settlement.setPeriodEnd(periodEnd);

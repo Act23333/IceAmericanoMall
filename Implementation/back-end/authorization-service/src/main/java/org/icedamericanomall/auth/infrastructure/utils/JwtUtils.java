@@ -31,7 +31,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.Map;
-import java.util.UUID;
+import org.icedamericanomall.common.utils.IdGenerator;
 
 /**
  * JWT 签发 / 解析工具。
@@ -70,7 +70,7 @@ public class JwtUtils {
             Instant now = Instant.now();
             builder.issueTime(Date.from(now));
             builder.expirationTime(Date.from(now.plus(Duration.ofSeconds(jwtProperties.getAccessTokenTtl()))));
-            builder.jwtID(UUID.randomUUID().toString().replace("-", "")); // ⭐ 新增
+            builder.jwtID(IdGenerator.secureToken()); // 256 位熵凭据，ADR-050
             SignedJWT signedJWT = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).build(), builder.build());
             signedJWT.sign(signer);
             return signedJWT.serialize();

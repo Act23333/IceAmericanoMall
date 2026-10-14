@@ -13,7 +13,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
-import java.util.UUID;
+import org.icedamericanomall.common.utils.IdGenerator;
 
 /**
  * V4.0 DDD: AI 编排 Manager（应用层）。
@@ -94,7 +94,7 @@ public class AiManager {
 
     /** 会话ID 为空时生成 UUID。 */
     public String resolveConversationId(String requested) {
-        return requested != null && !requested.isBlank() ? requested : UUID.randomUUID().toString();
+        return requested != null && !requested.isBlank() ? requested : IdGenerator.nextId();
     }
 
     /** AI 未启用时的兜底文案（适配层流式分支复用，避免文案重复）。 */

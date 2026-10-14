@@ -30,8 +30,10 @@ public class PayOrderPO implements Serializable {
 
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String bizOrderNo;
-    private String payOrderNo;
+    /** 业务订单号（orders.order_no 复制，BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] bizOrderNo;
+    /** 支付单号（业务唯一键，渠道侧 out_trade_no；BINARY(16) ↔ byte[]，ADR-050） */
+    private byte[] payOrderNo;
     private Long bizUserId;
     private String payChannelCode;
     private Integer amount;
@@ -53,8 +55,8 @@ public class PayOrderPO implements Serializable {
     // ==================== 持久层 setter (仅 MyBatis 使用) ====================
 
     public void setId(Long v) { this.id = v; }
-    public void setBizOrderNo(String v) { this.bizOrderNo = v; }
-    public void setPayOrderNo(String v) { this.payOrderNo = v; }
+    public void setBizOrderNo(byte[] v) { this.bizOrderNo = v; }
+    public void setPayOrderNo(byte[] v) { this.payOrderNo = v; }
     public void setBizUserId(Long v) { this.bizUserId = v; }
     public void setPayChannelCode(String v) { this.payChannelCode = v; }
     public void setAmount(Integer v) { this.amount = v; }

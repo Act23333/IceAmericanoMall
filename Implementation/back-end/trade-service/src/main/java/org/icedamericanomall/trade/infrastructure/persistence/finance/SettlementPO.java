@@ -12,7 +12,8 @@ public class SettlementPO implements Serializable {
     private static final long serialVersionUID = 1L;
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String settlementNo;
+    /** 结算单号（业务唯一键，BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] settlementNo;
     private Long sellerId;
     private LocalDate periodStart;
     private LocalDate periodEnd;

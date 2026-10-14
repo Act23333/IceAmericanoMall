@@ -24,7 +24,8 @@ public class GroupTeamPO implements Serializable {
     @TableId(type = IdType.AUTO)
     private Long id;
     /** 团号（业务唯一键，UUID） */
-    private String teamNo;
+    /** 团号（业务唯一键，BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] teamNo;
     private Long activityId;
     /** 团长 user_id（开团者） */
     private Long leaderUserId;

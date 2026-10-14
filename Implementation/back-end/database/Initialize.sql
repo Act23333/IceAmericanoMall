@@ -110,7 +110,7 @@ DROP TABLE IF EXISTS `sys_role`;
 -- ---------------------------------------------------------------
 CREATE TABLE `user` (
                         `id` BIGINT AUTO_INCREMENT COMMENT '技术主键',
-                        `user_id` VARCHAR(32) NOT NULL COMMENT '业务唯一标识（UUID）',
+                        `user_id` BINARY(16) NOT NULL COMMENT '业务唯一标识（UUIDv7 原始字节，IdGenerator.nextId() 生成，ADR-050）',
                         `username` VARCHAR(50) DEFAULT NULL COMMENT '昵称（V5.2 起为展示字段，可重复）',
                         `phone` VARCHAR(20) DEFAULT NULL COMMENT 'deprecated V5.2：手机号存 phone_cipher/phone_hash/phone_mask，迁移后应为 NULL',
                         `phone_cipher` VARCHAR(512) DEFAULT NULL COMMENT '手机号密文（AES-256-GCM，Base64，V5.2）',
@@ -226,7 +226,7 @@ CREATE TABLE `category` (
 -- ---------------------------------------------------------------
 CREATE TABLE `freight_template` (
     `id`             BIGINT      AUTO_INCREMENT COMMENT '技术主键',
-    `template_no`    CHAR(36)    NOT NULL COMMENT '模板业务编号（UUID）',
+    `template_no`    BINARY(16)  NOT NULL COMMENT '模板业务编号（UUIDv7 原始字节，ADR-050）',
     `seller_id`      BIGINT      NOT NULL COMMENT '商家ID（口径 = 商家 user_id）',
     `template_name`  VARCHAR(50) NOT NULL COMMENT '模板名称（同商家内唯一）',
     `charge_mode`    TINYINT     NOT NULL DEFAULT 1 COMMENT '计费方式：1-固定运费（Phase 1 唯一值）',
@@ -246,7 +246,7 @@ CREATE TABLE `freight_template` (
 -- ---------------------------------------------------------------
 CREATE TABLE `product` (
                            `id` BIGINT AUTO_INCREMENT COMMENT '技术主键',
-                           `product_id` VARCHAR(32) NOT NULL COMMENT '业务商品编号',
+                           `product_id` BINARY(16) NOT NULL COMMENT '业务商品编号（UUIDv7 原始字节，ADR-050）',
                            `seller_id` BIGINT NOT NULL COMMENT '所属商家ID',
                            `category_id` BIGINT NOT NULL COMMENT '所属类目ID',
                            `freight_template_id` BIGINT DEFAULT NULL COMMENT '绑定运费模板ID（V5.6，NULL=回落商家默认模板；模板删除经 ON DELETE SET NULL 回落）',
@@ -284,7 +284,7 @@ CREATE TABLE `product` (
 -- ---------------------------------------------------------------
 CREATE TABLE `sku` (
                        `id` BIGINT AUTO_INCREMENT COMMENT '技术主键',
-                       `sku_id` VARCHAR(32) NOT NULL COMMENT '业务SKU编码',
+                       `sku_id` BINARY(16) NOT NULL COMMENT '业务SKU编码（UUIDv7 原始字节，ADR-050）',
                        `product_id` BIGINT NOT NULL COMMENT '所属商品ID',
                        `spec` VARCHAR(200) NOT NULL COMMENT '规格描述（如“黑色 128G”）',
                        `price` INT NOT NULL COMMENT '价格（单位：分）',
@@ -312,7 +312,7 @@ CREATE TABLE `sku` (
 -- ---------------------------------------------------------------
 CREATE TABLE `orders` (
                          `id` BIGINT AUTO_INCREMENT COMMENT '技术主键',
-                         `order_no` VARCHAR(32) NOT NULL COMMENT '订单号（业务唯一）',
+                         `order_no` BINARY(16) NOT NULL COMMENT '订单号（业务唯一，UUIDv7 原始字节，ADR-050）',
                          `user_id` BIGINT NOT NULL COMMENT '买家ID',
                          `seller_id` BIGINT NOT NULL COMMENT '商家ID',
                          `order_type` TINYINT NOT NULL DEFAULT 1 COMMENT '订单类型: 1=NORMAL购物车, 2=DIRECT立即购买, 3=FLASH_SALE秒杀, 4=PRESALE预售（V4.1）',
@@ -394,8 +394,8 @@ CREATE TABLE `cart` (
 -- ---------------------------------------------------------------
 CREATE TABLE `pay_order` (
                              `id` BIGINT AUTO_INCREMENT COMMENT '技术主键',
-                             `biz_order_no` VARCHAR(32) NOT NULL COMMENT '业务订单号（关联 orders.order_no）',
-                             `pay_order_no` VARCHAR(32) NOT NULL COMMENT '支付单号',
+                             `biz_order_no` BINARY(16) NOT NULL COMMENT '业务订单号（关联 orders.order_no，UUIDv7 原始字节，ADR-050）',
+                             `pay_order_no` BINARY(16) NOT NULL COMMENT '支付单号（UUIDv7 原始字节，ADR-050）',
                              `biz_user_id` BIGINT DEFAULT NULL COMMENT '用户ID',
                              `pay_channel_code` VARCHAR(20) NOT NULL COMMENT '支付渠道代码',
                              `amount` INT NOT NULL COMMENT '支付金额（分）',
@@ -521,7 +521,7 @@ CREATE TABLE `sys_user_permission`
 -- coupon（优惠券模板，五维模型 + 适用范围/叠加规则）
 CREATE TABLE `coupon` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `coupon_id` VARCHAR(32) NOT NULL UNIQUE COMMENT '业务唯一标识',
+    `coupon_id` BINARY(16) NOT NULL UNIQUE COMMENT '业务唯一标识（可省略由系统生成 UUIDv7；提供则须 32-hex/36-hyphen 并归一为 32-hex 落库，ADR-050 修订）',
     `name` VARCHAR(100) NOT NULL COMMENT '优惠券名称',
     `type` TINYINT NULL COMMENT 'DEPRECATED（V4.0）：请使用 discount_type',
     `value` INT NOT NULL COMMENT '券面值（满减=分, 折扣=百分比 85=8.5折）',
@@ -553,7 +553,7 @@ CREATE TABLE `user_coupon` (
     `user_id` BIGINT NOT NULL COMMENT '用户ID',
     `coupon_id` BIGINT NOT NULL COMMENT '关联 coupon 表主键',
     `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=未使用, 2=已使用, 3=已过期',
-    `used_order_no` VARCHAR(32) COMMENT '使用的订单号',
+    `used_order_no` BINARY(16) COMMENT '使用的订单号（orders.order_no 复制，UUIDv7 原始字节，ADR-050）',
     `use_time` DATETIME COMMENT '使用时间',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY `idx_user_status` (`user_id`, `status`),
@@ -593,7 +593,7 @@ CREATE TABLE `flash_sale` (
 CREATE TABLE `flash_order_log`
 (
     `id`          BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `order_no`    VARCHAR(32)  NOT NULL UNIQUE COMMENT '订单号',
+    `order_no`    BINARY(16)  NOT NULL UNIQUE COMMENT '订单号（UUIDv7 原始字节，ADR-050）',
     `flash_id`    BIGINT       NOT NULL COMMENT '秒杀活动ID',
     `user_id`     BIGINT       NOT NULL COMMENT '用户ID',
     `status`      TINYINT      DEFAULT 0 COMMENT '0=待处理, 1=已创建, 2=失败, 3=超时取消',
@@ -629,7 +629,7 @@ CREATE TABLE `review` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
     `user_id` BIGINT NOT NULL COMMENT '评价用户ID',
     `product_id` BIGINT NOT NULL COMMENT '商品ID',
-    `order_id` BIGINT NOT NULL COMMENT '关联订单ID',
+    `order_no` BINARY(16) NOT NULL COMMENT '关联订单号（orders.order_no，无外键；去重锚点，ADR-050 三批收敛）',
     `sku_id` BIGINT DEFAULT NULL COMMENT 'SKU ID',
     `rating` TINYINT NOT NULL COMMENT '评分 1-5',
     `content` TEXT COMMENT '评价内容',
@@ -644,7 +644,7 @@ CREATE TABLE `review` (
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY `idx_product_id` (`product_id`),
     KEY `idx_user_id` (`user_id`),
-    UNIQUE KEY `uk_order_user` (`order_id`, `user_id`)
+    UNIQUE KEY `uk_order_user` (`order_no`, `user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品评价';
 
 -- review_like（评价点赞，多对多）
@@ -689,7 +689,7 @@ CREATE TABLE `product_view_log` (
 -- after_sale（售后申请）
 CREATE TABLE `after_sale` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `order_no` VARCHAR(32) NOT NULL COMMENT '关联订单号',
+    `order_no` BINARY(16) NOT NULL COMMENT '关联订单号（orders.order_no，UUIDv7 原始字节，ADR-050）',
     `user_id` BIGINT NOT NULL COMMENT '申请用户ID',
     `type` TINYINT NOT NULL COMMENT '1=退货退款, 2=仅退款',
     `reason` VARCHAR(500) NOT NULL COMMENT '申请原因',
@@ -727,7 +727,7 @@ CREATE TABLE `seller_application` (
 -- settlement（结算单）— trade-service 结算域
 CREATE TABLE `settlement` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `settlement_no` VARCHAR(32) NOT NULL UNIQUE COMMENT '结算单号',
+    `settlement_no` BINARY(16) NOT NULL UNIQUE COMMENT '结算单号（UUIDv7 原始字节，ADR-050）',
     `seller_id` BIGINT NOT NULL COMMENT '商家ID',
     `period_start` DATE NOT NULL COMMENT '结算周期开始',
     `period_end` DATE NOT NULL COMMENT '结算周期结束',
@@ -745,7 +745,7 @@ CREATE TABLE `settlement` (
 -- withdrawal（提现申请）— trade-service 结算域（与 settlement 级联，不属钱包域）
 CREATE TABLE `withdrawal` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `withdrawal_no` VARCHAR(32) NOT NULL UNIQUE COMMENT '提现单号',
+    `withdrawal_no` BINARY(16) NOT NULL UNIQUE COMMENT '提现单号（UUIDv7 原始字节，ADR-050）',
     `seller_id` BIGINT NOT NULL COMMENT '商家ID',
     `amount` INT NOT NULL COMMENT '提现金额（分）',
     `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=待审核, 2=已打款, 3=拒绝',
@@ -766,7 +766,7 @@ CREATE TABLE `withdrawal` (
 CREATE TABLE `ai_conversation`
 (
     `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `conversation_id` VARCHAR(36)  NOT NULL UNIQUE COMMENT '会话业务ID (UUID)',
+    `conversation_id` BINARY(16)  NOT NULL UNIQUE COMMENT '会话业务ID（服务端生成 32-hex，UUIDv7 原始字节；表当前无代码接入，ADR-050 修订）',
     `user_id`         BIGINT       NOT NULL COMMENT '用户ID',
     `agent_type`      VARCHAR(20)  NOT NULL COMMENT 'Agent类型: SHOPPING / CUSTOMER_SERVICE',
     `title`           VARCHAR(100) DEFAULT NULL COMMENT '会话标题（首条用户消息截断）',
@@ -784,7 +784,7 @@ CREATE TABLE `ai_conversation`
 CREATE TABLE `ai_message`
 (
     `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `conversation_id` VARCHAR(36)  NOT NULL COMMENT '会话ID',
+    `conversation_id` BINARY(16)  NOT NULL COMMENT '会话ID（= ai_conversation.conversation_id 复制；UUIDv7 原始字节，ADR-050 修订）',
     `role`            VARCHAR(10)  NOT NULL COMMENT '角色: USER / ASSISTANT / SYSTEM / TOOL',
     `content`         TEXT         NOT NULL COMMENT '消息内容',
     `tool_calls`      JSON         DEFAULT NULL COMMENT 'Tool调用记录: [{toolName, input, output, latencyMs}]',
@@ -800,7 +800,7 @@ CREATE TABLE `ai_message`
 CREATE TABLE `chat_message`
 (
     `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `message_id`      VARCHAR(36)  NOT NULL UNIQUE COMMENT '消息业务ID (UUID)',
+    `message_id`      BINARY(16)  NOT NULL UNIQUE COMMENT '消息业务ID（UUIDv7 原始字节，ADR-050）',
     `conversation_id` VARCHAR(36)  NOT NULL COMMENT '会话ID (buyer_{buyerId}_seller_{sellerId}_product_{productId})',
     `sender_id`       BIGINT       NOT NULL COMMENT '发送者用户ID',
     `sender_role`     VARCHAR(10)  NOT NULL COMMENT 'BUYER / SELLER / AI',
@@ -929,9 +929,9 @@ CREATE TABLE `wallet_account` (
 -- refund_order（退款单）— pay-service；uk_after_sale 是一售后单一次退款的幂等锚点
 CREATE TABLE `refund_order` (
     `id`                BIGINT       AUTO_INCREMENT COMMENT '技术主键',
-    `refund_no`         CHAR(36)     NOT NULL COMMENT '退款单号（业务唯一键，UUID；对外与幂等重试的定位键）',
-    `order_no`          VARCHAR(64)  NOT NULL COMMENT '关联订单号（orders.order_no，无外键）',
-    `pay_order_no`      VARCHAR(64)  NOT NULL COMMENT '关联支付单号（pay_order.pay_order_no）',
+    `refund_no`         BINARY(16)   NOT NULL COMMENT '退款单号（业务唯一键，UUIDv7 原始字节；对外与幂等重试的定位键，ADR-050）',
+    `order_no`          BINARY(16)   NOT NULL COMMENT '关联订单号（orders.order_no 复制，UUIDv7 原始字节，ADR-050）',
+    `pay_order_no`      BINARY(16)   NOT NULL COMMENT '关联支付单号（pay_order.pay_order_no 复制，UUIDv7 原始字节，ADR-050）',
     `after_sale_id`     BIGINT       NULL        COMMENT '关联售后单（after_sale.id）——售后场景退款；拼团等无售后场景为 NULL（ADR-049）',
     `biz_ref`           VARCHAR(64)  NOT NULL COMMENT '统一幂等业务键：售后=AS:{afterSaleId}，拼团=GB:{orderNo}（ADR-049）',
     `user_id`           BIGINT       NOT NULL COMMENT '买家用户ID',
@@ -952,7 +952,7 @@ CREATE TABLE `refund_order` (
 -- wallet_transaction（钱包流水）— wallet-service；transaction_no 幂等键
 CREATE TABLE `wallet_transaction` (
     `id`             BIGINT       AUTO_INCREMENT COMMENT '技术主键',
-    `transaction_no` CHAR(36)     NOT NULL COMMENT '流水号（幂等键，UUID）',
+    `transaction_no` BINARY(16)   NOT NULL COMMENT '流水号（幂等键，= refund_order.refund_no 复制；UUIDv7 原始字节，ADR-050）',
     `user_id`        BIGINT       NOT NULL COMMENT '用户ID（wallet_account.user_id 口径）',
     `type`           TINYINT      NOT NULL COMMENT '类型：1-收入，2-支出',
     `amount`         INT          NOT NULL COMMENT '变动金额（分，恒正；方向由 type 表达）',
@@ -983,7 +983,7 @@ CREATE TABLE `reconciliation_batch` (
 CREATE TABLE `reconciliation_detail` (
     `id`             BIGINT      AUTO_INCREMENT COMMENT '技术主键',
     `batch_id`       BIGINT      NOT NULL COMMENT '所属批次（reconciliation_batch.id）',
-    `pay_order_no`   VARCHAR(64) NOT NULL COMMENT '本地支付单号（比对键）',
+    `pay_order_no`   BINARY(16)  NOT NULL COMMENT '本地支付单号（比对键，pay_order.pay_order_no 复制，UUIDv7 原始字节，ADR-050）',
     `channel_txn_id` VARCHAR(64) DEFAULT NULL COMMENT '渠道交易号（渠道账单有则回填）',
     `channel_amount` INT         DEFAULT NULL COMMENT '渠道账单金额（分；渠道无此单为 NULL）',
     `local_amount`   INT         DEFAULT NULL COMMENT '本地金额（分；本地无此单为 NULL）',
@@ -1055,13 +1055,14 @@ ON DUPLICATE KEY UPDATE `permission_id` = VALUES(`permission_id`);
 --       如需该账号可登录，需按 §V5.2 运行存量迁移器（LegacyCredentialMigrationRunner）
 --       生成 user_auth 行，或直接改为在 user_auth 中建档。
 -- =====================================================================
+-- admin 账号业务 ID 为定值（32-hex UUIDv7 形态）；BINARY(16) 列不可存 'admin-001' 字面量（ADR-050）
 INSERT INTO `user` (`user_id`, `username`, `phone`, `password`, `role_type`, `status`, `balance`, `register_time`, `create_time`, `update_time`)
-VALUES ('admin-001', 'admin', '10000000000', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5Eh', 2, 1, 0, NOW(), NOW(), NOW())
+VALUES (UNHEX('aaaaaaaa000070008000000000000001'), 'admin', '10000000000',
 ON DUPLICATE KEY UPDATE `username` = VALUES(`username`);
 
 -- 为管理员分配角色 (user 表 id 为自增，通过子查询获取)
 INSERT INTO `sys_user_role` (`user_id`, `role_id`)
-SELECT u.id, 4 FROM `user` u WHERE u.user_id = 'admin-001'
+SELECT u.id, 4 FROM `user` u WHERE u.user_id = UNHEX('aaaaaaaa000070008000000000000001')
 ON DUPLICATE KEY UPDATE `role_id` = 4;
 
 -- =====================================================================
@@ -1111,7 +1112,7 @@ INSERT IGNORE INTO `member_level_rule` (`level`, `threshold`, `discount_rate`, `
 CREATE TABLE `member_growth_log` (
     `id`            BIGINT AUTO_INCREMENT PRIMARY KEY,
     `user_id`       BIGINT      NOT NULL COMMENT '买家 user_id',
-    `order_no`      VARCHAR(32) NOT NULL COMMENT '来源订单号（幂等锚点）',
+    `order_no`      BINARY(16)  NOT NULL COMMENT '来源订单号（幂等锚点，orders.order_no 复制，UUIDv7 原始字节，ADR-050）',
     `growth_amount` INT         NOT NULL COMMENT '本单成长值（=订单实付金额，分）',
     `after_level`   VARCHAR(16) NOT NULL COMMENT '入账后等级',
     `create_time`   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1235,7 +1236,7 @@ CREATE TABLE `group_buy_activity` (
 -- 拼团团（成团状态机：1拼团中 2已成团 3已失败；参团条件更新 +1，满员条件置已成团）
 CREATE TABLE `group_team` (
     `id`               BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `team_no`          VARCHAR(32) NOT NULL COMMENT '团号（业务唯一键，UUID）',
+    `team_no`          BINARY(16)  NOT NULL COMMENT '团号（业务唯一键，UUIDv7 原始字节，ADR-050）',
     `activity_id`      BIGINT      NOT NULL COMMENT '拼团活动ID',
     `leader_user_id`   BIGINT      NOT NULL COMMENT '团长 user_id（开团者）',
     `required_members` TINYINT     NOT NULL COMMENT '成团人数（开团时从活动快照）',
@@ -1254,7 +1255,7 @@ CREATE TABLE `group_team_member` (
     `id`          BIGINT AUTO_INCREMENT PRIMARY KEY,
     `team_id`     BIGINT      NOT NULL COMMENT '团ID',
     `user_id`     BIGINT      NOT NULL COMMENT '参团用户 user_id（团长亦入列）',
-    `order_no`    VARCHAR(32) NOT NULL COMMENT '关联拼团订单号（orders.order_no）',
+    `order_no`    BINARY(16)  NOT NULL COMMENT '关联拼团订单号（orders.order_no，UUIDv7 原始字节，ADR-050）',
     `create_time` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY `uk_order_no` (`order_no`),
     UNIQUE KEY `uk_team_user` (`team_id`, `user_id`),
@@ -1268,10 +1269,10 @@ CREATE TABLE `group_team_member` (
 -- =====================================================================
 
 -- 发票单（trade-service 域；买家 INV1-INV5 + 管理端 AD57-60；状态机 1待开具 2已开具 3已冲红 4已作废）
-CREATE TABLE `invoice` (
+    CREATE TABLE `invoice` (
     `id`                  BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `invoice_no`          CHAR(36)     NOT NULL COMMENT '发票申请号（业务唯一键，UUID）',
-    `order_no`            VARCHAR(32)  NOT NULL COMMENT '关联订单号（orders.order_no，无外键）',
+    `invoice_no`          BINARY(16)   NOT NULL COMMENT '发票申请号（业务唯一键，UUIDv7 原始字节，ADR-050）',
+    `order_no`            BINARY(16)   NOT NULL COMMENT '关联订单号（orders.order_no，UUIDv7 原始字节，ADR-050）',
     `active_flag`         TINYINT      NULL COMMENT '1=有效（待开具/已开具）；NULL=终态（已冲红/已作废）——与 order_no 组成 uk_order_active，多 NULL 特性实现一单一有效票',
     `user_id`             BIGINT       NOT NULL COMMENT '买家 user_id',
     `seller_id`           BIGINT       NOT NULL COMMENT '开票主体商家 user_id（= orders.seller_id，决策 D1）',

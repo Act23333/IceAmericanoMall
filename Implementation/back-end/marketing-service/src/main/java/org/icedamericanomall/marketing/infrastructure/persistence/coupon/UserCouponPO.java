@@ -25,7 +25,8 @@ public class UserCouponPO implements Serializable {
     private Long couponId;
     /** 1=未使用, 2=已使用, 3=已过期 */
     private Integer status;
-    private String usedOrderNo;
+    /** 使用的订单号（orders.order_no 复制，BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] usedOrderNo;
     private LocalDateTime useTime;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;

@@ -34,8 +34,8 @@ public class UserPO {
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    /** 业务唯一键（UUID，32 位） */
-    private String userId;
+    /** 业务唯一键（UUIDv7 原始字节，BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] userId;
 
     /** 昵称（历史列名 username，V5.2 领域术语统一为 nickname） */
     private String username;

@@ -27,6 +27,7 @@ public class GroupTeamMemberPO implements Serializable {
     /** 参团用户 user_id（团长亦入列） */
     private Long userId;
     /** 关联拼团订单号（uk_order_no 幂等锚点） */
-    private String orderNo;
+    /** 关联拼团订单号（orders.order_no，BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] orderNo;
     private LocalDateTime createTime;
 }

@@ -3,6 +3,7 @@ package org.icedamericanomall.pay.infrastructure.persistence;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.pay.domain.enums.RefundStatusEnum;
 import org.icedamericanomall.pay.domain.model.refundorder.RefundOrder;
@@ -26,7 +27,7 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
     @Override
     public RefundOrder getByRefundNo(String refundNo) {
         return refundOrderMapper.selectList(new LambdaQueryWrapper<RefundOrderPO>()
-                        .eq(RefundOrderPO::getRefundNo, refundNo))
+                        .eq(RefundOrderPO::getRefundNo, IdGenerator.toBytesOrNull(refundNo)))
                 .stream().findFirst().map(RefundOrderRepositoryImpl::toDomain).orElse(null);
     }
 
@@ -69,7 +70,7 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
     @Override
     public boolean markSuccessIfProcessing(String refundNo, String channelRefundNo) {
         return refundOrderMapper.update(null, new LambdaUpdateWrapper<RefundOrderPO>()
-                .eq(RefundOrderPO::getRefundNo, refundNo)
+                .eq(RefundOrderPO::getRefundNo, IdGenerator.toBytesOrNull(refundNo))
                 .eq(RefundOrderPO::getStatus, RefundStatusEnum.PROCESSING.getCode())
                 .set(RefundOrderPO::getStatus, RefundStatusEnum.SUCCESS.getCode())
                 .set(RefundOrderPO::getChannelRefundNo, channelRefundNo)
@@ -79,7 +80,7 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
     @Override
     public boolean markFailedIfProcessing(String refundNo, String failReason) {
         return refundOrderMapper.update(null, new LambdaUpdateWrapper<RefundOrderPO>()
-                .eq(RefundOrderPO::getRefundNo, refundNo)
+                .eq(RefundOrderPO::getRefundNo, IdGenerator.toBytesOrNull(refundNo))
                 .eq(RefundOrderPO::getStatus, RefundStatusEnum.PROCESSING.getCode())
                 .set(RefundOrderPO::getStatus, RefundStatusEnum.FAILED.getCode())
                 .set(RefundOrderPO::getFailReason, failReason)) > 0;
@@ -88,7 +89,7 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
     @Override
     public boolean markProcessingIfFailed(String refundNo) {
         return refundOrderMapper.update(null, new LambdaUpdateWrapper<RefundOrderPO>()
-                .eq(RefundOrderPO::getRefundNo, refundNo)
+                .eq(RefundOrderPO::getRefundNo, IdGenerator.toBytesOrNull(refundNo))
                 .eq(RefundOrderPO::getStatus, RefundStatusEnum.FAILED.getCode())
                 .set(RefundOrderPO::getStatus, RefundStatusEnum.PROCESSING.getCode())
                 .set(RefundOrderPO::getFailReason, null)) > 0;
@@ -103,9 +104,9 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
     private static RefundOrder toDomain(RefundOrderPO po) {
         return RefundOrder.builder()
                 .id(po.getId())
-                .refundNo(po.getRefundNo())
-                .orderNo(po.getOrderNo())
-                .payOrderNo(po.getPayOrderNo())
+                .refundNo(IdGenerator.toHexString(po.getRefundNo()))
+                .orderNo(IdGenerator.toHexString(po.getOrderNo()))
+                .payOrderNo(IdGenerator.toHexString(po.getPayOrderNo()))
                 .afterSaleId(po.getAfterSaleId())
                 .bizRef(po.getBizRef())
                 .userId(po.getUserId())
@@ -122,9 +123,9 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
     private static RefundOrderPO toPO(RefundOrder refundOrder) {
         RefundOrderPO po = new RefundOrderPO();
         po.setId(refundOrder.getId());
-        po.setRefundNo(refundOrder.getRefundNo());
-        po.setOrderNo(refundOrder.getOrderNo());
-        po.setPayOrderNo(refundOrder.getPayOrderNo());
+        po.setRefundNo(IdGenerator.toBytes(refundOrder.getRefundNo()));
+        po.setOrderNo(IdGenerator.toBytes(refundOrder.getOrderNo()));
+        po.setPayOrderNo(IdGenerator.toBytes(refundOrder.getPayOrderNo()));
         po.setAfterSaleId(refundOrder.getAfterSaleId());
         po.setBizRef(refundOrder.getBizRef());
         po.setUserId(refundOrder.getUserId());

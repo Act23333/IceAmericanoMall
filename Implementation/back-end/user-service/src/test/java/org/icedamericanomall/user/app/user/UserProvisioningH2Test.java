@@ -75,7 +75,7 @@ class UserProvisioningH2Test {
             stmt.execute("""
                 CREATE TABLE user (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                    user_id VARCHAR(64), username VARCHAR(50),
+                    user_id BINARY(16), username VARCHAR(50),
                     avatar VARCHAR(255), gender INT DEFAULT 0, birthday DATE,
                     member_level VARCHAR(20) DEFAULT 'NORMAL',
                     phone_cipher VARCHAR(512), phone_hash VARCHAR(128), phone_mask VARCHAR(64),
@@ -220,6 +220,7 @@ class UserProvisioningH2Test {
     /** 按技术主键回读领域对象（仅用于取业务 UUID 做断言）。 */
     private User userRepositoryFind(Long id) {
         UserPO dataObject = userMapper.selectById(id);
-        return User.builder().id(dataObject.getId()).userId(dataObject.getUserId()).build();
+        return User.builder().id(dataObject.getId())
+                .userId(org.icedamericanomall.common.utils.IdGenerator.toHexString(dataObject.getUserId())).build();
     }
 }

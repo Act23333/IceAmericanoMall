@@ -7,7 +7,7 @@ import org.icedamericanomall.item.domain.enums.SkuStatusEnum;
 import org.icedamericanomall.item.domain.enums.StockTypeEnum;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
+import org.icedamericanomall.common.utils.IdGenerator;
 
 /**
  * SKU 实体（纯 POJO，零框架依赖）—— 归属 {@code Product} 聚合（商品下的一行规格）。
@@ -91,7 +91,7 @@ public class Sku {
     public static Sku create(Long productId, String spec, Integer price, Integer stock, String image,
                              Integer stockType, Boolean isHot, String hotReason, String salesTags) {
         SkuBuilder builder = Sku.builder()
-                .skuId(UUID.randomUUID().toString().replace("-", ""))
+                .skuId(IdGenerator.nextId())
                 .productId(productId)
                 .spec(spec)
                 .price(price)

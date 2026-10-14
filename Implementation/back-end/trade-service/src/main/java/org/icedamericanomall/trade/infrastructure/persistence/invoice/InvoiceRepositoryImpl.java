@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.model.EncryptedIdentifier;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.trade.domain.model.invoice.Invoice;
 import org.icedamericanomall.trade.domain.repository.InvoiceRepository;
 import org.springframework.stereotype.Repository;
@@ -36,13 +37,13 @@ public class InvoiceRepositoryImpl implements InvoiceRepository {
     @Override
     public Invoice findByInvoiceNo(String invoiceNo) {
         return toDomain(invoiceMapper.selectOne(new LambdaQueryWrapper<InvoicePO>()
-                .eq(InvoicePO::getInvoiceNo, invoiceNo)));
+                .eq(InvoicePO::getInvoiceNo, IdGenerator.toBytesOrNull(invoiceNo))));
     }
 
     @Override
     public Invoice findLatestByOrderNo(String orderNo) {
         var list = invoiceMapper.selectList(new LambdaQueryWrapper<InvoicePO>()
-                .eq(InvoicePO::getOrderNo, orderNo)
+                .eq(InvoicePO::getOrderNo, IdGenerator.toBytesOrNull(orderNo))
                 .orderByDesc(InvoicePO::getId));
         return list.isEmpty() ? null : toDomain(list.get(0));
     }
@@ -50,7 +51,7 @@ public class InvoiceRepositoryImpl implements InvoiceRepository {
     @Override
     public Invoice findActiveByOrderNo(String orderNo) {
         return toDomain(invoiceMapper.selectOne(new LambdaQueryWrapper<InvoicePO>()
-                .eq(InvoicePO::getOrderNo, orderNo)
+                .eq(InvoicePO::getOrderNo, IdGenerator.toBytesOrNull(orderNo))
                 .eq(InvoicePO::getActiveFlag, 1)));
     }
 
@@ -92,45 +93,45 @@ public class InvoiceRepositoryImpl implements InvoiceRepository {
     @Override
     public int issueIfPending(String invoiceNo, String mockInvoiceNo, String pdfKey,
                               LocalDateTime issueTime) {
-        return invoiceMapper.issueIfPending(invoiceNo, mockInvoiceNo, pdfKey, issueTime);
+        return invoiceMapper.issueIfPending(IdGenerator.toBytes(invoiceNo), mockInvoiceNo, pdfKey, issueTime);
     }
 
     @Override
     public int cancelIfPending(String invoiceNo, String reason) {
-        return invoiceMapper.cancelIfPending(invoiceNo, reason);
+        return invoiceMapper.cancelIfPending(IdGenerator.toBytes(invoiceNo), reason);
     }
 
     @Override
     public int redFlushIfIssued(String invoiceNo, String reason) {
-        return invoiceMapper.redFlushIfIssued(invoiceNo, reason);
+        return invoiceMapper.redFlushIfIssued(IdGenerator.toBytes(invoiceNo), reason);
     }
 
     @Override
     public int markRedAndExpire(String invoiceNo, String reason) {
         // 换开前置冲红与人工冲红共用 2→3 条件迁移边（冲红语义相同，差异只在触发方与原因留痕）
-        return invoiceMapper.redFlushIfIssued(invoiceNo, reason);
+        return invoiceMapper.redFlushIfIssued(IdGenerator.toBytes(invoiceNo), reason);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int voidOnFullRefund(String orderNo, String systemReason) {
         // 一单一有效票（uk_order_active）：两条条件更新至多一条命中，结果互斥
-        int voided = invoiceMapper.voidPendingByOrderNo(orderNo, systemReason);
+        int voided = invoiceMapper.voidPendingByOrderNo(IdGenerator.toBytesOrNull(orderNo), systemReason);
         if (voided > 0) {
             return 4;
         }
-        int redFlushed = invoiceMapper.redFlushIssuedByOrderNo(orderNo, systemReason);
+        int redFlushed = invoiceMapper.redFlushIssuedByOrderNo(IdGenerator.toBytesOrNull(orderNo), systemReason);
         return redFlushed > 0 ? 3 : 0;
     }
 
     @Override
     public int markUrged(String invoiceNo, LocalDateTime urgeTime) {
-        return invoiceMapper.markUrged(invoiceNo, urgeTime);
+        return invoiceMapper.markUrged(IdGenerator.toBytes(invoiceNo), urgeTime);
     }
 
     @Override
     public int markPartialRefundFlagIfIssued(String orderNo) {
-        return invoiceMapper.markPartialRefundFlagIfIssued(orderNo);
+        return invoiceMapper.markPartialRefundFlagIfIssued(IdGenerator.toBytesOrNull(orderNo));
     }
 
     // ==================== PO <-> 聚合 ====================
@@ -141,8 +142,8 @@ public class InvoiceRepositoryImpl implements InvoiceRepository {
         }
         Invoice invoice = new Invoice();
         invoice.setId(po.getId());
-        invoice.setInvoiceNo(po.getInvoiceNo());
-        invoice.setOrderNo(po.getOrderNo());
+        invoice.setInvoiceNo(IdGenerator.toHexString(po.getInvoiceNo()));
+        invoice.setOrderNo(IdGenerator.toHexString(po.getOrderNo()));
         invoice.setActiveFlag(po.getActiveFlag());
         invoice.setUserId(po.getUserId());
         invoice.setSellerId(po.getSellerId());
@@ -167,8 +168,8 @@ public class InvoiceRepositoryImpl implements InvoiceRepository {
     static InvoicePO toPO(Invoice invoice) {
         InvoicePO po = new InvoicePO();
         po.setId(invoice.getId());
-        po.setInvoiceNo(invoice.getInvoiceNo());
-        po.setOrderNo(invoice.getOrderNo());
+        po.setInvoiceNo(IdGenerator.toBytes(invoice.getInvoiceNo()));
+        po.setOrderNo(IdGenerator.toBytes(invoice.getOrderNo()));
         po.setActiveFlag(invoice.getActiveFlag());
         po.setUserId(invoice.getUserId());
         po.setSellerId(invoice.getSellerId());

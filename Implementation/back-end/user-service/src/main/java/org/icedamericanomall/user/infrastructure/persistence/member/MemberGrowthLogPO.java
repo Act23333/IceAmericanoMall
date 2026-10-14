@@ -25,8 +25,8 @@ public class MemberGrowthLogPO implements Serializable {
     /** 买家 user_id（跨服务 user_id 口径） */
     private Long userId;
 
-    /** 来源订单号（幂等锚点，uk_order_no） */
-    private String orderNo;
+    /** 来源订单号（幂等锚点，uk_order_no；BINARY(16) ↔ byte[]，hex 形态仅在领域层，ADR-050） */
+    private byte[] orderNo;
 
     /** 本单成长值（=订单实付金额，分） */
     private Integer growthAmount;

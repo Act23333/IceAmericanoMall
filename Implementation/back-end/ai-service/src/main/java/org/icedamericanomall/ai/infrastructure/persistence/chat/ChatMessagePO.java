@@ -14,7 +14,8 @@ import java.time.LocalDateTime;
 public class ChatMessagePO {
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String messageId;
+    /** 消息业务ID（BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] messageId;
     private String conversationId;
     private Long senderId;
     private String senderRole;

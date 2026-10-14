@@ -1,6 +1,7 @@
 package org.icedamericanomall.item.infrastructure.persistence;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import org.icedamericanomall.common.utils.IdGenerator;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.item.domain.enums.SkuStatusEnum;
 import org.icedamericanomall.item.domain.model.sku.Sku;
@@ -95,7 +96,7 @@ public class SkuRepositoryImpl implements SkuRepository {
     static SkuPO toPO(Sku sku) {
         SkuPO po = new SkuPO();
         po.setId(sku.getId());
-        po.setSkuId(sku.getSkuId());
+        po.setSkuId(IdGenerator.toBytes(sku.getSkuId()));
         po.setProductId(sku.getProductId());
         po.setSpec(sku.getSpec());
         po.setPrice(sku.getPrice());
@@ -114,7 +115,7 @@ public class SkuRepositoryImpl implements SkuRepository {
 
     static Sku toDomain(SkuPO po) {
         return Sku.builder()
-                .id(po.getId()).skuId(po.getSkuId()).productId(po.getProductId())
+                .id(po.getId()).skuId(IdGenerator.toHexString(po.getSkuId())).productId(po.getProductId())
                 .spec(po.getSpec()).price(po.getPrice()).originalPrice(po.getOriginalPrice())
                 .stock(po.getStock()).image(po.getImage()).soldCount(po.getSoldCount())
                 .stockType(po.getStockType()).isHot(po.getIsHot()).hotReason(po.getHotReason())

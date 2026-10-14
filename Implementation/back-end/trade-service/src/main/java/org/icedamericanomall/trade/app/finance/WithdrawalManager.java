@@ -1,6 +1,6 @@
 package org.icedamericanomall.trade.app.finance;
 
-import cn.hutool.core.util.IdUtil;
+import org.icedamericanomall.common.utils.IdGenerator;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.enums.ErrorCode;
@@ -58,7 +58,7 @@ public class WithdrawalManager {
         }
         Withdrawal withdrawal = new Withdrawal();
         withdrawal.setSellerId(sellerId);
-        withdrawal.setWithdrawalNo(IdUtil.fastSimpleUUID());
+        withdrawal.setWithdrawalNo(IdGenerator.nextId());
         withdrawal.setAmount(amount);
         withdrawal.setBankAccount(req.getBankAccount());
         withdrawal.setBankName(req.getBankName());

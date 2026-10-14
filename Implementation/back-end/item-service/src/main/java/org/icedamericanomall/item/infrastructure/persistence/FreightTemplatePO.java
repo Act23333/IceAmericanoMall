@@ -31,7 +31,8 @@ public class FreightTemplatePO implements Serializable {
     private Long id;
 
     /** 模板业务编号（UUID）。 */
-    private String templateNo;
+    /** 模板业务编号（BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] templateNo;
 
     /** 商家 ID（= 商家 user_id）。 */
     private Long sellerId;

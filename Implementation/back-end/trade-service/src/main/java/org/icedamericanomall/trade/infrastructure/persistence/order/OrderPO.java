@@ -34,7 +34,8 @@ public class OrderPO implements Serializable {
 
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String orderNo;
+    /** 订单号（业务唯一，BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] orderNo;
     private Long userId;
     private Long sellerId;
     private Integer totalAmount;
@@ -79,7 +80,7 @@ public class OrderPO implements Serializable {
     // ==================== 持久层 setter (仅 MyBatis 使用) ====================
 
     public void setId(Long id) { this.id = id; }
-    public void setOrderNo(String v) { this.orderNo = v; }
+    public void setOrderNo(byte[] v) { this.orderNo = v; }
     public void setUserId(Long v) { this.userId = v; }
     public void setSellerId(Long v) { this.sellerId = v; }
     public void setTotalAmount(Integer v) { this.totalAmount = v; }

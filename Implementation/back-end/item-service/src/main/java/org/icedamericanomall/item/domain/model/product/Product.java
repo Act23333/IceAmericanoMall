@@ -3,12 +3,12 @@ package org.icedamericanomall.item.domain.model.product;
 import lombok.Builder;
 import lombok.Data;
 import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.item.domain.enums.ProductStatusEnum;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
-import java.util.UUID;
 
 /**
  * 商品聚合根（纯 POJO，零框架依赖）—— 商品/SKU/分类/评价/首页配置/运费模板六个聚合之一。
@@ -118,7 +118,7 @@ public class Product {
 
     /** 生成业务唯一键（UUID 去连字符，32 位）。 */
     public static String newBusinessId() {
-        return UUID.randomUUID().toString().replace("-", "");
+        return IdGenerator.nextId();
     }
 
     // ==================== 查询 ====================

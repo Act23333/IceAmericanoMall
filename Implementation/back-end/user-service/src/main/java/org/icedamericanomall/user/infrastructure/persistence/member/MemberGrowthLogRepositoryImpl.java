@@ -2,6 +2,7 @@ package org.icedamericanomall.user.infrastructure.persistence.member;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.user.domain.enums.MemberLevelEnum;
 import org.icedamericanomall.user.domain.model.member.MemberGrowthLog;
 import org.icedamericanomall.user.domain.repository.MemberGrowthLogRepository;
@@ -31,7 +32,7 @@ public class MemberGrowthLogRepositoryImpl implements MemberGrowthLogRepository 
         // 语义见端口 Javadoc（ADR-044 I46 幂等）
         return Optional.ofNullable(toDomain(memberGrowthLogMapper.selectOne(
                 new LambdaQueryWrapper<MemberGrowthLogPO>()
-                        .eq(MemberGrowthLogPO::getOrderNo, orderNo)
+                        .eq(MemberGrowthLogPO::getOrderNo, IdGenerator.toBytes(orderNo))
                         .last("FOR UPDATE"))));
     }
 
@@ -61,7 +62,7 @@ public class MemberGrowthLogRepositoryImpl implements MemberGrowthLogRepository 
         return MemberGrowthLog.builder()
                 .id(dataObject.getId())
                 .userId(dataObject.getUserId())
-                .orderNo(dataObject.getOrderNo())
+                .orderNo(IdGenerator.toHexString(dataObject.getOrderNo()))
                 .growthAmount(dataObject.getGrowthAmount())
                 .afterLevel(MemberLevelEnum.fromCode(dataObject.getAfterLevel()))
                 .createTime(dataObject.getCreateTime())
@@ -81,7 +82,7 @@ public class MemberGrowthLogRepositoryImpl implements MemberGrowthLogRepository 
         MemberGrowthLogPO dataObject = new MemberGrowthLogPO();
         dataObject.setId(growthLog.getId());
         dataObject.setUserId(growthLog.getUserId());
-        dataObject.setOrderNo(growthLog.getOrderNo());
+        dataObject.setOrderNo(IdGenerator.toBytes(growthLog.getOrderNo()));
         dataObject.setGrowthAmount(growthLog.getGrowthAmount());
         dataObject.setAfterLevel(growthLog.getAfterLevel() == null ? null : growthLog.getAfterLevel().getCode());
         return dataObject;

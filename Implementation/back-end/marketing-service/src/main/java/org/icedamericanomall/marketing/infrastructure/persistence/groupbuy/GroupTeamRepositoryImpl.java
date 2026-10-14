@@ -3,6 +3,7 @@ package org.icedamericanomall.marketing.infrastructure.persistence.groupbuy;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.marketing.domain.enums.GroupTeamStatusEnum;
 import org.icedamericanomall.marketing.domain.model.groupbuy.GroupTeam;
 import org.icedamericanomall.marketing.domain.repository.GroupTeamRepository;
@@ -33,7 +34,7 @@ public class GroupTeamRepositoryImpl implements GroupTeamRepository {
     @Override
     public GroupTeam findByTeamNo(String teamNo) {
         return toDomain(groupTeamMapper.selectOne(new LambdaQueryWrapper<GroupTeamPO>()
-                .eq(GroupTeamPO::getTeamNo, teamNo)));
+                .eq(GroupTeamPO::getTeamNo, IdGenerator.toBytesOrNull(teamNo))));
     }
 
     @Override
@@ -101,7 +102,7 @@ public class GroupTeamRepositoryImpl implements GroupTeamRepository {
         }
         return GroupTeam.builder()
                 .id(po.getId())
-                .teamNo(po.getTeamNo())
+                .teamNo(IdGenerator.toHexString(po.getTeamNo()))
                 .activityId(po.getActivityId())
                 .leaderUserId(po.getLeaderUserId())
                 .requiredMembers(po.getRequiredMembers())
@@ -116,7 +117,7 @@ public class GroupTeamRepositoryImpl implements GroupTeamRepository {
     static GroupTeamPO toPO(GroupTeam team) {
         GroupTeamPO po = new GroupTeamPO();
         po.setId(team.getId());
-        po.setTeamNo(team.getTeamNo());
+        po.setTeamNo(IdGenerator.toBytes(team.getTeamNo()));
         po.setActivityId(team.getActivityId());
         po.setLeaderUserId(team.getLeaderUserId());
         po.setRequiredMembers(team.getRequiredMembers());

@@ -3,6 +3,7 @@ package org.icedamericanomall.pay.infrastructure.persistence;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.pay.domain.enums.PayStatusEnum;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
@@ -32,7 +33,7 @@ public class PayOrderRepositoryImpl implements PayOrderRepository {
     public PayOrder getByBizOrderNo(String bizOrderNo) {
         // 防多行炸裂：同一业务订单历史可能有多条支付记录，取首行
         return payOrderMapper.selectList(new LambdaQueryWrapper<PayOrderPO>()
-                        .eq(PayOrderPO::getBizOrderNo, bizOrderNo)
+                        .eq(PayOrderPO::getBizOrderNo, IdGenerator.toBytes(bizOrderNo))
                         .orderByDesc(PayOrderPO::getId))
                 .stream().findFirst().map(PayOrderRepositoryImpl::toDomain).orElse(null);
     }
@@ -40,7 +41,7 @@ public class PayOrderRepositoryImpl implements PayOrderRepository {
     @Override
     public PayOrder getByPayOrderNo(String payOrderNo) {
         return payOrderMapper.selectList(new LambdaQueryWrapper<PayOrderPO>()
-                        .eq(PayOrderPO::getPayOrderNo, payOrderNo))
+                        .eq(PayOrderPO::getPayOrderNo, IdGenerator.toBytesOrNull(payOrderNo)))
                 .stream().findFirst().map(PayOrderRepositoryImpl::toDomain).orElse(null);
     }
 
@@ -77,7 +78,7 @@ public class PayOrderRepositoryImpl implements PayOrderRepository {
     @Override
     public boolean markSuccessIfPending(String payOrderNo, String resultCode) {
         return payOrderMapper.update(null, new LambdaUpdateWrapper<PayOrderPO>()
-                .eq(PayOrderPO::getPayOrderNo, payOrderNo)
+                .eq(PayOrderPO::getPayOrderNo, IdGenerator.toBytesOrNull(payOrderNo))
                 .eq(PayOrderPO::getStatus, PayStatusEnum.PENDING_PAY.getCode())
                 .set(PayOrderPO::getStatus, PayStatusEnum.SUCCESS.getCode())
                 .set(PayOrderPO::getResultCode, resultCode)
@@ -121,8 +122,8 @@ public class PayOrderRepositoryImpl implements PayOrderRepository {
     private static PayOrder toDomain(PayOrderPO po) {
         return PayOrder.builder()
                 .id(po.getId())
-                .bizOrderNo(po.getBizOrderNo())
-                .payOrderNo(po.getPayOrderNo())
+                .bizOrderNo(IdGenerator.toHexString(po.getBizOrderNo()))
+                .payOrderNo(IdGenerator.toHexString(po.getPayOrderNo()))
                 .bizUserId(po.getBizUserId())
                 .payChannelCode(po.getPayChannelCode())
                 .amount(po.getAmount())
@@ -142,8 +143,8 @@ public class PayOrderRepositoryImpl implements PayOrderRepository {
     private static PayOrderPO toPO(PayOrder payOrder) {
         PayOrderPO po = new PayOrderPO();
         po.setId(payOrder.getId());
-        po.setBizOrderNo(payOrder.getBizOrderNo());
-        po.setPayOrderNo(payOrder.getPayOrderNo());
+        po.setBizOrderNo(IdGenerator.toBytes(payOrder.getBizOrderNo()));
+        po.setPayOrderNo(IdGenerator.toBytes(payOrder.getPayOrderNo()));
         po.setBizUserId(payOrder.getBizUserId());
         po.setPayChannelCode(payOrder.getPayChannelCode());
         po.setAmount(payOrder.getAmount());

@@ -79,7 +79,7 @@ class ReconciliationRepositoryImplTest {
     void shouldInsertBatchAndDetails_whenNoExistingBatch() {
         when(batchMapper.selectList(any())).thenReturn(List.of());
         stubInsertReturnsId(11L);
-        List<ReconciliationDetail> details = List.of(detail("pay-001", 1), detail("pay-00X", 2));
+        List<ReconciliationDetail> details = List.of(detail("bbbbbbbb0000700080000000000000aa", 1), detail("bbbbbbbb0000700080000000000000ab", 2));
 
         ReconciliationBatch batch = repository.saveBatchResult(BILL_DATE, "WECHAT", 34800, 30700, details);
 
@@ -104,7 +104,7 @@ class ReconciliationRepositoryImplTest {
         stubInsertReturnsId(12L);
 
         ReconciliationBatch batch = repository.saveBatchResult(BILL_DATE, "WECHAT", 100, 100,
-                List.of(detail("pay-001", 1)));
+                List.of(detail("bbbbbbbb0000700080000000000000aa", 1)));
 
         verify(detailMapper).delete(any());
         verify(batchMapper).deleteById(7L);

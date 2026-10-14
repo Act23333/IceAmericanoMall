@@ -29,7 +29,7 @@ public interface InvoiceMapper extends BaseMapper<InvoicePO> {
     @Update("UPDATE invoice SET status = 2, issue_time = #{issueTime}, mock_invoice_no = #{mockInvoiceNo}, "
             + "pdf_key = #{pdfKey}, update_time = NOW() "
             + "WHERE invoice_no = #{invoiceNo} AND status = 1")
-    int issueIfPending(@Param("invoiceNo") String invoiceNo,
+    int issueIfPending(@Param("invoiceNo") byte[] invoiceNo,
                        @Param("mockInvoiceNo") String mockInvoiceNo,
                        @Param("pdfKey") String pdfKey,
                        @Param("issueTime") LocalDateTime issueTime);
@@ -45,7 +45,7 @@ public interface InvoiceMapper extends BaseMapper<InvoicePO> {
     @Update("UPDATE invoice SET status = 4, active_flag = NULL, red_reason = #{reason}, "
             + "update_time = NOW() "
             + "WHERE invoice_no = #{invoiceNo} AND status = 1")
-    int cancelIfPending(@Param("invoiceNo") String invoiceNo, @Param("reason") String reason);
+    int cancelIfPending(@Param("invoiceNo") byte[] invoiceNo, @Param("reason") String reason);
 
     /**
      * 冲红（条件迁移 2→3）—— 管理端人工冲红 / 换开前置共用（换开语义 =
@@ -58,7 +58,7 @@ public interface InvoiceMapper extends BaseMapper<InvoicePO> {
     @Update("UPDATE invoice SET status = 3, active_flag = NULL, red_reason = #{reason}, "
             + "update_time = NOW() "
             + "WHERE invoice_no = #{invoiceNo} AND status = 2")
-    int redFlushIfIssued(@Param("invoiceNo") String invoiceNo, @Param("reason") String reason);
+    int redFlushIfIssued(@Param("invoiceNo") byte[] invoiceNo, @Param("reason") String reason);
 
     /**
      * 全额退款自动作废（条件迁移 1→4，I56 决策 D4）—— 按订单号定位有效票。
@@ -70,7 +70,7 @@ public interface InvoiceMapper extends BaseMapper<InvoicePO> {
     @Update("UPDATE invoice SET status = 4, active_flag = NULL, red_reason = #{reason}, "
             + "update_time = NOW() "
             + "WHERE order_no = #{orderNo} AND status = 1")
-    int voidPendingByOrderNo(@Param("orderNo") String orderNo, @Param("reason") String reason);
+    int voidPendingByOrderNo(@Param("orderNo") byte[] orderNo, @Param("reason") String reason);
 
     /**
      * 全额退款自动冲红（条件迁移 2→3，I56 决策 D4）—— 按订单号定位有效票。
@@ -82,7 +82,7 @@ public interface InvoiceMapper extends BaseMapper<InvoicePO> {
     @Update("UPDATE invoice SET status = 3, active_flag = NULL, red_reason = #{reason}, "
             + "update_time = NOW() "
             + "WHERE order_no = #{orderNo} AND status = 2")
-    int redFlushIssuedByOrderNo(@Param("orderNo") String orderNo, @Param("reason") String reason);
+    int redFlushIssuedByOrderNo(@Param("orderNo") byte[] orderNo, @Param("reason") String reason);
 
     /**
      * 记录催开时间（仅待开具可催开，O10 最小实现：urge_time 持久化 + 24h 限频判定）。
@@ -93,7 +93,7 @@ public interface InvoiceMapper extends BaseMapper<InvoicePO> {
      */
     @Update("UPDATE invoice SET urge_time = #{urgeTime}, update_time = NOW() "
             + "WHERE invoice_no = #{invoiceNo} AND status = 1")
-    int markUrged(@Param("invoiceNo") String invoiceNo, @Param("urgeTime") LocalDateTime urgeTime);
+    int markUrged(@Param("invoiceNo") byte[] invoiceNo, @Param("urgeTime") LocalDateTime urgeTime);
 
     /**
      * 部分退款置标（I60，决策 D4/O6）—— 按订单号定位已开具有效票置 partial_refund_flag=1
@@ -105,5 +105,5 @@ public interface InvoiceMapper extends BaseMapper<InvoicePO> {
      */
     @Update("UPDATE invoice SET partial_refund_flag = 1, update_time = NOW() "
             + "WHERE order_no = #{orderNo} AND status = 2 AND partial_refund_flag = 0")
-    int markPartialRefundFlagIfIssued(@Param("orderNo") String orderNo);
+    int markPartialRefundFlagIfIssued(@Param("orderNo") byte[] orderNo);
 }

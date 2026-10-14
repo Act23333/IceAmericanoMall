@@ -55,13 +55,10 @@ public class UserProvisioner {
      */
     public User findOrCreate(IdentityTypeEnum identityType, String identifier, String nickname) {
         Optional<User> existing = userRepository.findByIdentity(identityType, identifier);
-        if (existing.isPresent()) {
-            return existing.get();
-        }
-        return distributedLock.executeWithLock(
+        return existing.orElseGet(() -> distributedLock.executeWithLock(
                 LOCK_KEY_PREFIX + identityType.name() + ":" + identifier,
                 () -> userRepository.findByIdentity(identityType, identifier)
-                        .orElseGet(() -> createIdempotently(identityType, identifier, nickname)));
+                        .orElseGet(() -> createIdempotently(identityType, identifier, nickname))));
     }
 
     /** 创建（事务建档 + 建档奖励）；并发下唯一键冲突则回查（幂等兜底）。 */

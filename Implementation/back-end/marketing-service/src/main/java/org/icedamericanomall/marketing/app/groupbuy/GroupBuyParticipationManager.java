@@ -1,11 +1,11 @@
 package org.icedamericanomall.marketing.app.groupbuy;
 
-import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.GroupBuyTeamClient;
 import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.GroupBuyValidateCO;
 import org.icedamericanomall.dto.GroupBuyValidateResultCO;
@@ -162,7 +162,7 @@ public class GroupBuyParticipationManager {
     /** 开团：创建团（团长自占一位）+ 首个成员行；团号 UUID，截止时间 = now + 活动时限。 */
     private GroupTeamCO openTeam(GroupBuyActivity activity, GroupJoinCO join) {
         GroupTeam team = GroupTeam.open(activity.getId(), join.getUserId(), activity.getRequiredMembers(),
-                IdUtil.fastSimpleUUID(), LocalDateTime.now().plusHours(activity.getTimeLimitHours()));
+                IdGenerator.nextId(), LocalDateTime.now().plusHours(activity.getTimeLimitHours()));
         groupTeamRepository.save(team);
         groupTeamMemberRepository.save(GroupTeamMember.join(team.getId(), join.getUserId(), join.getOrderNo()));
         return toTeamCO(team);

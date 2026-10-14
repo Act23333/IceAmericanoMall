@@ -2,6 +2,7 @@ package org.icedamericanomall.marketing.infrastructure.persistence.groupbuy;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.marketing.domain.model.groupbuy.GroupTeamMember;
 import org.icedamericanomall.marketing.domain.repository.GroupTeamMemberRepository;
 import org.springframework.stereotype.Repository;
@@ -30,7 +31,7 @@ public class GroupTeamMemberRepositoryImpl implements GroupTeamMemberRepository 
     @Override
     public GroupTeamMember findByOrderNo(String orderNo) {
         return toDomain(groupTeamMemberMapper.selectOne(new LambdaQueryWrapper<GroupTeamMemberPO>()
-                .eq(GroupTeamMemberPO::getOrderNo, orderNo)));
+                .eq(GroupTeamMemberPO::getOrderNo, IdGenerator.toBytesOrNull(orderNo))));
     }
 
     @Override
@@ -58,7 +59,7 @@ public class GroupTeamMemberRepositoryImpl implements GroupTeamMemberRepository 
                 .id(po.getId())
                 .teamId(po.getTeamId())
                 .userId(po.getUserId())
-                .orderNo(po.getOrderNo())
+                .orderNo(IdGenerator.toHexString(po.getOrderNo()))
                 .createTime(po.getCreateTime())
                 .build();
     }
@@ -68,7 +69,7 @@ public class GroupTeamMemberRepositoryImpl implements GroupTeamMemberRepository 
         po.setId(member.getId());
         po.setTeamId(member.getTeamId());
         po.setUserId(member.getUserId());
-        po.setOrderNo(member.getOrderNo());
+        po.setOrderNo(IdGenerator.toBytes(member.getOrderNo()));
         po.setCreateTime(member.getCreateTime());
         return po;
     }

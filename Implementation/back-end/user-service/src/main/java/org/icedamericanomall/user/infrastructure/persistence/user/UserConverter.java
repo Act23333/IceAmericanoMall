@@ -5,6 +5,7 @@ import org.icedamericanomall.user.domain.enums.GenderEnum;
 import org.icedamericanomall.user.domain.enums.MemberLevelEnum;
 import org.icedamericanomall.user.domain.enums.UserStatusEnum;
 import org.icedamericanomall.common.model.EncryptedIdentifier;
+import org.icedamericanomall.common.utils.IdGenerator;
 
 /**
  * {@code UserPO} ↔ 领域对象 {@link User} 转换器（基础设施层内部，纯静态转换，不使用反射）。
@@ -33,7 +34,7 @@ public final class UserConverter {
         }
         return User.builder()
                 .id(dataObject.getId())
-                .userId(dataObject.getUserId())
+                .userId(IdGenerator.toHexString(dataObject.getUserId()))
                 .nickname(dataObject.getUsername())
                 .avatar(dataObject.getAvatar())
                 .gender(GenderEnum.fromCode(dataObject.getGender()))
@@ -59,7 +60,7 @@ public final class UserConverter {
         }
         UserPO dataObject = new UserPO();
         dataObject.setId(user.getId());
-        dataObject.setUserId(user.getUserId());
+        dataObject.setUserId(IdGenerator.toBytes(user.getUserId()));
         dataObject.setUsername(user.getNickname());
         dataObject.setAvatar(user.getAvatar());
         dataObject.setGender(user.getGender() == null ? null : user.getGender().getCode());

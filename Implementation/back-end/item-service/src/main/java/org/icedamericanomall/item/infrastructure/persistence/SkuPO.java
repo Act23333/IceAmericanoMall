@@ -28,7 +28,8 @@ public class SkuPO implements Serializable {
 
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String skuId;
+    /** 业务SKU编码（BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] skuId;
     private Long productId;
     private String spec;
     private Integer price;
@@ -54,7 +55,7 @@ public class SkuPO implements Serializable {
     // ==================== 持久层 setter (仅 MyBatis/Repository 使用) ====================
 
     public void setId(Long v) { this.id = v; }
-    public void setSkuId(String v) { this.skuId = v; }
+    public void setSkuId(byte[] v) { this.skuId = v; }
     public void setProductId(Long v) { this.productId = v; }
     public void setSpec(String v) { this.spec = v; }
     public void setPrice(Integer v) { this.price = v; }

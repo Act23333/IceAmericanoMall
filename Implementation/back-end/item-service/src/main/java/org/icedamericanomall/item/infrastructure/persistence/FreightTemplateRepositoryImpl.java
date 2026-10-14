@@ -1,6 +1,7 @@
 package org.icedamericanomall.item.infrastructure.persistence;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import org.icedamericanomall.common.utils.IdGenerator;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.item.domain.enums.FreightTemplateStatusEnum;
 import org.icedamericanomall.item.domain.model.freight.FreightTemplate;
@@ -92,7 +93,7 @@ public class FreightTemplateRepositoryImpl implements FreightTemplateRepository 
 
     private static FreightTemplate toDomain(FreightTemplatePO po) {
         return FreightTemplate.builder()
-                .id(po.getId()).templateNo(po.getTemplateNo()).sellerId(po.getSellerId())
+                .id(po.getId()).templateNo(IdGenerator.toHexString(po.getTemplateNo())).sellerId(po.getSellerId())
                 .templateName(po.getTemplateName()).chargeMode(po.getChargeMode())
                 .fee(po.getFee()).freeThreshold(po.getFreeThreshold()).status(po.getStatus())
                 .createTime(po.getCreateTime()).updateTime(po.getUpdateTime())
@@ -102,7 +103,7 @@ public class FreightTemplateRepositoryImpl implements FreightTemplateRepository 
     private static FreightTemplatePO toPO(FreightTemplate t) {
         FreightTemplatePO po = new FreightTemplatePO();
         po.setId(t.getId());
-        po.setTemplateNo(t.getTemplateNo());
+        po.setTemplateNo(IdGenerator.toBytes(t.getTemplateNo()));
         po.setSellerId(t.getSellerId());
         po.setTemplateName(t.getTemplateName());
         po.setChargeMode(t.getChargeMode());

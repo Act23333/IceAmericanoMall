@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.pay.domain.enums.ReconciliationStatusEnum;
 import org.icedamericanomall.pay.domain.model.reconciliation.ReconciliationBatch;
@@ -148,7 +149,7 @@ public class ReconciliationRepositoryImpl implements ReconciliationRepository {
         ReconciliationDetail detail = new ReconciliationDetail();
         detail.setId(po.getId());
         detail.setBatchId(po.getBatchId());
-        detail.setPayOrderNo(po.getPayOrderNo());
+        detail.setPayOrderNo(IdGenerator.toHexString(po.getPayOrderNo()));
         detail.setChannelTxnId(po.getChannelTxnId());
         detail.setChannelAmount(po.getChannelAmount());
         detail.setLocalAmount(po.getLocalAmount());
@@ -162,7 +163,7 @@ public class ReconciliationRepositoryImpl implements ReconciliationRepository {
         ReconciliationDetailPO po = new ReconciliationDetailPO();
         po.setId(detail.getId());
         po.setBatchId(detail.getBatchId());
-        po.setPayOrderNo(detail.getPayOrderNo());
+        po.setPayOrderNo(IdGenerator.toBytes(detail.getPayOrderNo()));
         po.setChannelTxnId(detail.getChannelTxnId());
         po.setChannelAmount(detail.getChannelAmount());
         po.setLocalAmount(detail.getLocalAmount());

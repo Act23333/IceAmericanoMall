@@ -3,6 +3,7 @@ package org.icedamericanomall.pay.infrastructure.persistence;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
 import org.icedamericanomall.pay.domain.enums.PayStatusEnum;
 import org.junit.jupiter.api.DisplayName;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
@@ -27,8 +28,8 @@ class PayOrderRepositoryImplTest {
     void shouldSetAllPayOrderFields() {
         PayOrder entity = new PayOrder();
         entity.setId(1L);
-        entity.setBizOrderNo("ORD-001");
-        entity.setPayOrderNo("PAY-UUID-001");
+        entity.setBizOrderNo("bbbbbbbb000070008000000000000001");
+        entity.setPayOrderNo("bbbbbbbb000070008000000000000002");
         entity.setBizUserId(100L);
         entity.setPayChannelCode("WECHAT");
         entity.setAmount(129900);  // 1299.00 元 = 129900 分
@@ -38,8 +39,8 @@ class PayOrderRepositoryImplTest {
         entity.setQrCodeUrl("weixin://wxpay/bizpayurl?pr=abc123");
 
         assertEquals(1L, entity.getId());
-        assertEquals("ORD-001", entity.getBizOrderNo());
-        assertEquals("PAY-UUID-001", entity.getPayOrderNo());
+        assertEquals("bbbbbbbb000070008000000000000001", entity.getBizOrderNo());
+        assertEquals("bbbbbbbb000070008000000000000002", entity.getPayOrderNo());
         assertEquals(100L, entity.getBizUserId());
         assertEquals("WECHAT", entity.getPayChannelCode());
         assertEquals(129900, entity.getAmount());
@@ -191,9 +192,9 @@ class PayOrderRepositoryImplTest {
     @DisplayName("支付单号唯一 — payOrderNo 使用 UUID 格式")
     void shouldHaveUniquePayOrderNo() {
         PayOrder entity1 = new PayOrder();
-        entity1.setPayOrderNo("uuid-001");
+        entity1.setPayOrderNo("bbbbbbbb000070008000000000000003");
         PayOrder entity2 = new PayOrder();
-        entity2.setPayOrderNo("uuid-002");
+        entity2.setPayOrderNo("bbbbbbbb000070008000000000000004");
 
         assertNotEquals(entity1.getPayOrderNo(), entity2.getPayOrderNo(),
                 "不同支付单应有不同的 payOrderNo");

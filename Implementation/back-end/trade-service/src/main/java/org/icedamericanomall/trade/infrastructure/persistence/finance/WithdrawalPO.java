@@ -11,7 +11,8 @@ public class WithdrawalPO implements Serializable {
     private static final long serialVersionUID = 1L;
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String withdrawalNo;
+    /** 提现单号（业务唯一键，BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] withdrawalNo;
     private Long sellerId;
     private Integer amount;
     private Integer status;

@@ -38,13 +38,16 @@ public class RefundOrderPO implements Serializable {
     private Long id;
 
     /** 退款单号（业务唯一键，UUID）。 */
-    private String refundNo;
+    /** 退款单号（业务唯一键，渠道侧 out_refund_no；BINARY(16) ↔ byte[]，ADR-050） */
+    private byte[] refundNo;
 
     /** 关联订单号（orders.order_no）。 */
-    private String orderNo;
+    /** 关联订单号（orders.order_no 复制，BINARY(16) ↔ byte[]，ADR-050） */
+    private byte[] orderNo;
 
     /** 关联支付单号（pay_order.pay_order_no）。 */
-    private String payOrderNo;
+    /** 关联支付单号（pay_order.pay_order_no 复制，BINARY(16) ↔ byte[]，ADR-050） */
+    private byte[] payOrderNo;
 
     /** 关联售后单 ID（唯一约束，一售后单一次退款）；无售后单退款（I55 拼团）为 NULL（ADR-049）。 */
     private Long afterSaleId;

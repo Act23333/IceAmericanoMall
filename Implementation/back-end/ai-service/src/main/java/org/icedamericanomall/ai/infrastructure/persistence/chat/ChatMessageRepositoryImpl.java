@@ -3,6 +3,7 @@ package org.icedamericanomall.ai.infrastructure.persistence.chat;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.ai.domain.model.conversation.ChatMessage;
 import org.icedamericanomall.ai.domain.repository.ChatMessageRepository;
 import org.springframework.stereotype.Repository;
@@ -66,7 +67,7 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
     private static ChatMessagePO toPO(ChatMessage message) {
         ChatMessagePO po = new ChatMessagePO();
         po.setId(message.getId());
-        po.setMessageId(message.getMessageId());
+        po.setMessageId(IdGenerator.toBytes(message.getMessageId()));
         po.setConversationId(message.getConversationId());
         po.setSenderId(message.getSenderId());
         po.setSenderRole(message.getSenderRole());
@@ -84,7 +85,7 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
     private static ChatMessage toDomain(ChatMessagePO po) {
         ChatMessage message = new ChatMessage();
         message.setId(po.getId());
-        message.setMessageId(po.getMessageId());
+        message.setMessageId(IdGenerator.toHexString(po.getMessageId()));
         message.setConversationId(po.getConversationId());
         message.setSenderId(po.getSenderId());
         message.setSenderRole(po.getSenderRole());

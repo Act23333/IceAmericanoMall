@@ -7,7 +7,7 @@ import lombok.Data;
 import org.icedamericanomall.pay.domain.enums.PayStatusEnum;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
+import org.icedamericanomall.common.utils.IdGenerator;
 
 /**
  * 支付单聚合根（纯 POJO，零框架依赖）—— {@code pay_order} 表的领域模型。
@@ -117,7 +117,7 @@ public class PayOrder {
 
     /** 生成业务唯一键（32 位 UUID，无连字符；与 {@code pay_order_no VARCHAR(32)} 对齐）。 */
     public static String newBusinessId() {
-        return UUID.randomUUID().toString().replace("-", "");
+        return IdGenerator.nextId();
     }
 
     // ==================== 状态谓词 / 迁移 ====================

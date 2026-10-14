@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.exception.ForbiddenException;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.trade.domain.enums.OrderStatusEnum;
 import org.icedamericanomall.trade.domain.model.order.Order;
 import org.icedamericanomall.trade.domain.model.order.OrderItem;
@@ -61,7 +62,7 @@ public class OrderRepositoryImpl implements OrderRepository {
     @Override
     public Order findByOrderNo(String orderNo) {
         return toDomain(orderMapper.selectOne(
-                new LambdaQueryWrapper<OrderPO>().eq(OrderPO::getOrderNo, orderNo)));
+                new LambdaQueryWrapper<OrderPO>().eq(OrderPO::getOrderNo, IdGenerator.toBytesOrNull(orderNo))));
     }
 
     @Override
@@ -348,7 +349,7 @@ public class OrderRepositoryImpl implements OrderRepository {
     public boolean cancelPaidBySystem(String orderNo) {
         return orderMapper.update(null,
                 new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<OrderPO>()
-                        .eq(OrderPO::getOrderNo, orderNo)
+                        .eq(OrderPO::getOrderNo, IdGenerator.toBytes(orderNo))
                         .eq(OrderPO::getStatus, OrderStatusEnum.PENDING_SHIPMENT.getCode())
                         .set(OrderPO::getStatus, OrderStatusEnum.CANCELLED.getCode())
                         .set(OrderPO::getCloseTime, LocalDateTime.now())) > 0;
@@ -443,7 +444,7 @@ public class OrderRepositoryImpl implements OrderRepository {
         }
         Order order = new Order();
         order.setId(po.getId());
-        order.setOrderNo(po.getOrderNo());
+        order.setOrderNo(IdGenerator.toHexString(po.getOrderNo()));
         order.setUserId(po.getUserId());
         order.setSellerId(po.getSellerId());
         order.setTotalAmount(po.getTotalAmount());
@@ -473,7 +474,7 @@ public class OrderRepositoryImpl implements OrderRepository {
     static OrderPO toPO(Order order) {
         OrderPO po = new OrderPO();
         po.setId(order.getId());
-        po.setOrderNo(order.getOrderNo());
+        po.setOrderNo(IdGenerator.toBytes(order.getOrderNo()));
         po.setUserId(order.getUserId());
         po.setSellerId(order.getSellerId());
         po.setTotalAmount(order.getTotalAmount());

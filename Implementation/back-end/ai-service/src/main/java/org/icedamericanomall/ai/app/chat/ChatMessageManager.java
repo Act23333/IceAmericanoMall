@@ -25,7 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
+import org.icedamericanomall.common.utils.IdGenerator;
 
 /**
  * 买家-商家会话（应用层）—— 客服域的唯一会话入口（人工 IM 面 + AI 会话面）。
@@ -75,7 +75,7 @@ public class ChatMessageManager {
      */
     public ChatMessageDTO sendMessage(SendChatMessageCommand command) {
         ChatMessage message = new ChatMessage();
-        message.setMessageId(UUID.randomUUID().toString());
+        message.setMessageId(IdGenerator.nextId());
         message.setConversationId(command.conversationId());
         message.setSenderId(command.senderId());
         message.setSenderRole(command.senderRole());

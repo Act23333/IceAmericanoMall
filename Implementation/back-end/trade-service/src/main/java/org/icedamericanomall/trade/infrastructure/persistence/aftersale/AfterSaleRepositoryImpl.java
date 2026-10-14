@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.trade.domain.model.aftersale.AfterSale;
 import org.icedamericanomall.trade.domain.repository.AfterSaleRepository;
 import org.springframework.stereotype.Repository;
@@ -43,7 +44,7 @@ public class AfterSaleRepositoryImpl implements AfterSaleRepository {
     @Override
     public boolean existsByOrderNoAndUserId(String orderNo, Long userId) {
         return afterSaleMapper.selectCount(new LambdaQueryWrapper<AfterSalePO>()
-                .eq(AfterSalePO::getOrderNo, orderNo)
+                .eq(AfterSalePO::getOrderNo, IdGenerator.toBytesOrNull(orderNo))
                 .eq(AfterSalePO::getUserId, userId)) > 0;
     }
 
@@ -84,7 +85,7 @@ public class AfterSaleRepositoryImpl implements AfterSaleRepository {
         }
         AfterSale afterSale = new AfterSale();
         afterSale.setId(po.getId());
-        afterSale.setOrderNo(po.getOrderNo());
+        afterSale.setOrderNo(IdGenerator.toHexString(po.getOrderNo()));
         afterSale.setUserId(po.getUserId());
         afterSale.setType(po.getType());
         afterSale.setReason(po.getReason());
@@ -100,7 +101,7 @@ public class AfterSaleRepositoryImpl implements AfterSaleRepository {
     static AfterSalePO toPO(AfterSale afterSale) {
         AfterSalePO po = new AfterSalePO();
         po.setId(afterSale.getId());
-        po.setOrderNo(afterSale.getOrderNo());
+        po.setOrderNo(IdGenerator.toBytes(afterSale.getOrderNo()));
         po.setUserId(afterSale.getUserId());
         po.setType(afterSale.getType());
         po.setReason(afterSale.getReason());

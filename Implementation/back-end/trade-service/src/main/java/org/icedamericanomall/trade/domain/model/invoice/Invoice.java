@@ -4,12 +4,12 @@ import lombok.Data;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.model.EncryptedIdentifier;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.common.utils.crypto.DesensitizeUtil;
 import org.icedamericanomall.trade.domain.enums.InvoiceStatusEnum;
 import org.icedamericanomall.trade.domain.enums.InvoiceTitleTypeEnum;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 /**
  * 发票单聚合（纯 POJO，零框架依赖）—— {@code invoice} 表（F14 发票，PRD §十五）。
@@ -134,7 +134,7 @@ public class Invoice {
             throw new BizException(ErrorCode.PARAM_ERROR, "开票金额非法");
         }
         Invoice invoice = new Invoice();
-        invoice.invoiceNo = UUID.randomUUID().toString();
+        invoice.invoiceNo = IdGenerator.nextId();
         invoice.orderNo = orderNo;
         invoice.userId = userId;
         invoice.sellerId = sellerId;

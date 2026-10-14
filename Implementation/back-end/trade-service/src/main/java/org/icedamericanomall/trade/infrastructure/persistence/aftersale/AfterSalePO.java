@@ -14,7 +14,8 @@ public class AfterSalePO implements Serializable {
     private static final long serialVersionUID = 1L;
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String orderNo;
+    /** 关联订单号（BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] orderNo;
     private Long userId;
     private Integer type;
     private String reason;

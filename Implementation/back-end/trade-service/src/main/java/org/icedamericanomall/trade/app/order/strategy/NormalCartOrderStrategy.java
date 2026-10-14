@@ -16,6 +16,7 @@ import org.icedamericanomall.trade.domain.enums.OrderTypeEnum;
 import org.icedamericanomall.trade.domain.enums.StockTypeEnum;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -137,7 +138,7 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
 
     static Order buildBaseOrder(OrderCreateContext ctx) {
         Order order = new Order();
-        order.setOrderNo(cn.hutool.core.util.IdUtil.fastSimpleUUID());
+        order.setOrderNo(IdGenerator.nextId());
         order.setUserId(ctx.getUserId());
         order.setSellerId(ctx.getSellerId());
         order.setStatus(OrderStatusEnum.PENDING_PAYMENT.getCode());

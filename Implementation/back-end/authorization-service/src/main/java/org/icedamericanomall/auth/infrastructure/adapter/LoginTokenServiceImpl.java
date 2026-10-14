@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.StringJoiner;
-import java.util.UUID;
+import org.icedamericanomall.common.utils.IdGenerator;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -195,7 +195,7 @@ public class LoginTokenServiceImpl implements LoginTokenService {
                 ? issuedAt + refreshTokenTtlMs
                 : issueParam.maxExpireAt();
         final long ttlSeconds = (maxExpire - issuedAt) / 1000;
-        final String refreshToken = UUID.randomUUID().toString().replace("-", "");
+        final String refreshToken = IdGenerator.secureToken();
 
         RefreshTokenInfo info = new RefreshTokenInfo(refreshToken, accessTokenJti, issueParam.userId(),
                 issueParam.deviceId(), issueParam.deviceType(), issueParam.platform(), issuedAt, maxExpire);

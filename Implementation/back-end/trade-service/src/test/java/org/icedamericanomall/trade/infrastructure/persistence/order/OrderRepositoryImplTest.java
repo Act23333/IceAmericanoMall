@@ -41,7 +41,7 @@ class OrderRepositoryImplTest {
     @DisplayName("saveWithItems — 事务中创建订单和订单项，订单项关联 orderId")
     void shouldCreateOrderAndItems_whenValidInput() {
         Order order = new Order();
-        order.setOrderNo("ORD-20260617-001");
+        order.setOrderNo("aaaaaaaa000070008000000000000001");
         order.setUserId(100L);
         order.setTotalAmount(129900);
 
@@ -69,7 +69,7 @@ class OrderRepositoryImplTest {
     @DisplayName("saveWithItems — 空订单项列表也能正常保存订单")
     void shouldCreateOrder_whenEmptyItems() {
         Order order = new Order();
-        order.setOrderNo("ORD-EMPTY-001");
+        order.setOrderNo("aaaaaaaa000070008000000000000002");
         order.setUserId(100L);
 
         repository.saveWithItems(order, List.of());
@@ -82,7 +82,7 @@ class OrderRepositoryImplTest {
     @DisplayName("saveWithItems — createTime 自动设置为当前时间")
     void shouldAutoSetCreateTime_whenCreatingOrder() {
         Order order = new Order();
-        order.setOrderNo("ORD-TIME-001");
+        order.setOrderNo("aaaaaaaa000070008000000000000003");
         order.setUserId(100L);
 
         repository.saveWithItems(order, List.of());

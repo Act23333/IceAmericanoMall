@@ -9,7 +9,7 @@ import org.icedamericanomall.item.domain.enums.FreightTemplateStatusEnum;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
-import java.util.UUID;
+import org.icedamericanomall.common.utils.IdGenerator;
 
 /**
  * 运费模板聚合根（纯 POJO，零框架依赖，F2 运费模型）。
@@ -74,7 +74,7 @@ public class FreightTemplate {
     public static FreightTemplate create(Long sellerId, String templateName, Integer chargeMode,
                                          Integer fee, Integer freeThreshold, Integer status) {
         return FreightTemplate.builder()
-                .templateNo(UUID.randomUUID().toString().replace("-", ""))
+                .templateNo(IdGenerator.nextId())
                 .sellerId(sellerId)
                 .templateName(templateName)
                 .chargeMode(normalizeChargeMode(chargeMode))

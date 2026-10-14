@@ -7,13 +7,13 @@ import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.model.EncryptedIdentifier;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.user.domain.enums.GenderEnum;
 import org.icedamericanomall.user.domain.enums.MemberLevelEnum;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Locale;
-import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -111,9 +111,9 @@ public class User {
         };
     }
 
-    /** 生成业务唯一键（UUID 去连字符，32 位）。 */
+    /** 生成业务唯一键（UUIDv7，32 位小写 hex，全项目唯一出口 IdGenerator，ADR-050）。 */
     public static String newBusinessId() {
-        return UUID.randomUUID().toString().replace("-", "");
+        return IdGenerator.nextId();
     }
 
     // ==================== 状态机 ====================

@@ -9,7 +9,7 @@ import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.pay.domain.enums.RefundStatusEnum;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
+import org.icedamericanomall.common.utils.IdGenerator;
 
 /**
  * 退款单聚合根（纯 POJO，零框架依赖）—— {@code refund_order} 表的领域模型（F1 买家退款资金流）。
@@ -152,7 +152,7 @@ public class RefundOrder {
 
     /** 生成业务唯一键（32 位 UUID，无连字符；与存量 {@code refund_no} 取值格式保持一致）。 */
     public static String newBusinessId() {
-        return UUID.randomUUID().toString().replace("-", "");
+        return IdGenerator.nextId();
     }
 
     // ==================== 状态谓词 ====================

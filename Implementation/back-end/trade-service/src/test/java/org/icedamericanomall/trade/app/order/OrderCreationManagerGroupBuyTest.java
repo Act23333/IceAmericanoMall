@@ -70,7 +70,7 @@ class OrderCreationManagerGroupBuyTest {
             stmt.execute("""
                 CREATE TABLE orders (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                    order_no VARCHAR(64) NOT NULL UNIQUE,
+                    order_no BINARY(16) NOT NULL UNIQUE,
                     user_id BIGINT NOT NULL, seller_id BIGINT NOT NULL,
                     total_amount INT DEFAULT 0, pay_amount INT DEFAULT 0, discount_amount INT DEFAULT 0,
                     post_fee INT DEFAULT 0,

@@ -17,7 +17,8 @@ public class ProductPO implements Serializable {
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    private String productId;
+    /** 业务商品编号（BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] productId;
 
     private Long sellerId;
 
@@ -41,6 +42,10 @@ public class ProductPO implements Serializable {
     private String brand;
 
     private Integer soldCount;
+
+    /** 在售 SKU 最低价（检索查询计算列 {@code AS min_price}，非表结构字段；ADR-052 检索出口）。 */
+    @TableField(exist = false)
+    private Integer minPrice;
 
     private Integer commentCount;
 

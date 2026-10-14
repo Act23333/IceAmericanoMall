@@ -28,10 +28,12 @@ public class InvoicePO implements Serializable {
     private Long id;
 
     /** 发票申请号（业务唯一键，uk_invoice_no） */
-    private String invoiceNo;
+    /** 发票申请号（业务唯一键，uk_invoice_no；BINARY(16) ↔ byte[]，ADR-050） */
+    private byte[] invoiceNo;
 
     /** 关联订单号 */
-    private String orderNo;
+    /** 关联订单号（BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
+    private byte[] orderNo;
 
     /** 有效票标记：1=有效；NULL=终态（uk_order_active 多 NULL 语义） */
     private Integer activeFlag;

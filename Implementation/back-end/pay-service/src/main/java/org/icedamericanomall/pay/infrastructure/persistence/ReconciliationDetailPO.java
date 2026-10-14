@@ -31,7 +31,8 @@ public class ReconciliationDetailPO implements Serializable {
     private Long batchId;
 
     /** 本地支付单号（比对键）。 */
-    private String payOrderNo;
+    /** 本地支付单号（比对键，pay_order.pay_order_no 复制，BINARY(16) ↔ byte[]，ADR-050） */
+    private byte[] payOrderNo;
 
     /** 渠道交易号（渠道账单有则回填）。 */
     private String channelTxnId;

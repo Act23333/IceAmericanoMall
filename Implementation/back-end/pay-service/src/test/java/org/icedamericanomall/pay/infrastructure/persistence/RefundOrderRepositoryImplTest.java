@@ -3,6 +3,7 @@ package org.icedamericanomall.pay.infrastructure.persistence;
 import org.icedamericanomall.pay.domain.enums.RefundStatusEnum;
 import org.icedamericanomall.pay.domain.model.refundorder.RefundOrder;
 import org.junit.jupiter.api.DisplayName;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -32,14 +33,14 @@ class RefundOrderRepositoryImplTest {
     void shouldReturnRefund_whenRefundNoHits() {
         RefundOrderPO po = new RefundOrderPO();
         po.setId(1L);
-        po.setRefundNo("R123");
+        po.setRefundNo(IdGenerator.toBytes("bbbbbbbb000070008000000000000004"));
         po.setAfterSaleId(9L);
         po.setStatus(RefundStatusEnum.PROCESSING.getCode());
         when(refundOrderMapper.selectList(any())).thenReturn(java.util.List.of(po));
 
-        RefundOrder result = repository.getByRefundNo("R123");
+        RefundOrder result = repository.getByRefundNo("bbbbbbbb000070008000000000000004");
 
-        assertEquals("R123", result.getRefundNo());
+        assertEquals("bbbbbbbb000070008000000000000004", result.getRefundNo());
         assertEquals(9L, result.getAfterSaleId());
         assertEquals(RefundStatusEnum.PROCESSING.getCode(), result.getStatus());
     }
@@ -55,7 +56,7 @@ class RefundOrderRepositoryImplTest {
     @Test
     @DisplayName("createProcessing — 经聚合工厂创建（状态默认处理中）后落库并回填 id")
     void shouldCreateProcessingViaFactory() {
-        RefundOrder result = repository.createProcessing(9L, "ORD-1", "PAY-1", 100L, "BALANCE", 5000);
+        RefundOrder result = repository.createProcessing(9L, "bbbbbbbb000070008000000000000001", "bbbbbbbb000070008000000000000002", 100L, "BALANCE", 5000);
 
         assertEquals(RefundStatusEnum.PROCESSING.getCode(), result.getStatus());
         assertEquals(9L, result.getAfterSaleId());
@@ -71,7 +72,7 @@ class RefundOrderRepositoryImplTest {
     @Test
     @DisplayName("createProcessing — 售后路径统一幂等键：biz_ref 自动落 AS:{afterSaleId}（uk_biz_ref NOT NULL 不变式，ADR-049）")
     void shouldFillAfterSaleBizRef_whenCreateProcessing() {
-        repository.createProcessing(9L, "ORD-1", "PAY-1", 100L, "BALANCE", 5000);
+        repository.createProcessing(9L, "bbbbbbbb000070008000000000000001", "bbbbbbbb000070008000000000000002", 100L, "BALANCE", 5000);
 
         org.mockito.ArgumentCaptor<RefundOrderPO> captor =
                 org.mockito.ArgumentCaptor.forClass(RefundOrderPO.class);
@@ -85,7 +86,7 @@ class RefundOrderRepositoryImplTest {
     void shouldReturnRefund_whenBizRefHits() {
         RefundOrderPO po = new RefundOrderPO();
         po.setId(1L);
-        po.setRefundNo("R-GB");
+        po.setRefundNo(IdGenerator.toBytes("bbbbbbbb000070008000000000000003"));
         po.setAfterSaleId(null);
         po.setBizRef("GB:ORD-1");
         po.setStatus(RefundStatusEnum.PROCESSING.getCode());
@@ -93,7 +94,7 @@ class RefundOrderRepositoryImplTest {
 
         RefundOrder result = repository.getByBizRef("GB:ORD-1");
 
-        assertEquals("R-GB", result.getRefundNo());
+        assertEquals("bbbbbbbb000070008000000000000003", result.getRefundNo());
         assertEquals("GB:ORD-1", result.getBizRef());
         assertNull(result.getAfterSaleId());
     }
@@ -109,7 +110,7 @@ class RefundOrderRepositoryImplTest {
     @Test
     @DisplayName("createOrderRefundProcessing — 无售后单退款落库：after_sale_id=null + biz_ref 传入值（I55，ADR-049）")
     void shouldCreateOrderRefundProcessingWithoutAfterSale() {
-        RefundOrder result = repository.createOrderRefundProcessing("ORD-1", "PAY-1", 100L,
+        RefundOrder result = repository.createOrderRefundProcessing("bbbbbbbb000070008000000000000001", "bbbbbbbb000070008000000000000002", 100L,
                 "BALANCE", 5000, "GB:ORD-1");
 
         assertEquals(RefundStatusEnum.PROCESSING.getCode(), result.getStatus());

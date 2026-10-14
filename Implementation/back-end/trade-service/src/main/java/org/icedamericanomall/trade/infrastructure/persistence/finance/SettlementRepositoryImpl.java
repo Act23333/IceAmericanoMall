@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.trade.domain.model.finance.Settlement;
 import org.icedamericanomall.trade.domain.repository.SettlementRepository;
 import org.springframework.stereotype.Repository;
@@ -75,7 +76,7 @@ public class SettlementRepositoryImpl implements SettlementRepository {
         }
         Settlement settlement = new Settlement();
         settlement.setId(po.getId());
-        settlement.setSettlementNo(po.getSettlementNo());
+        settlement.setSettlementNo(IdGenerator.toHexString(po.getSettlementNo()));
         settlement.setSellerId(po.getSellerId());
         settlement.setPeriodStart(po.getPeriodStart());
         settlement.setPeriodEnd(po.getPeriodEnd());
@@ -92,7 +93,7 @@ public class SettlementRepositoryImpl implements SettlementRepository {
     static SettlementPO toPO(Settlement settlement) {
         SettlementPO po = new SettlementPO();
         po.setId(settlement.getId());
-        po.setSettlementNo(settlement.getSettlementNo());
+        po.setSettlementNo(IdGenerator.toBytes(settlement.getSettlementNo()));
         po.setSellerId(settlement.getSellerId());
         po.setPeriodStart(settlement.getPeriodStart());
         po.setPeriodEnd(settlement.getPeriodEnd());
