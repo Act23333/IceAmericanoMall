@@ -1,14 +1,13 @@
 package org.icedamericanomall.user.app.oplog;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.common.security.UserInfo;
 import org.icedamericanomall.user.adapter.response.OperationLogVO;
-import org.icedamericanomall.user.infrastructure.persistence.oplog.OperationLogPO;
-import org.icedamericanomall.user.infrastructure.persistence.oplog.OperationLogMapper;
+import org.icedamericanomall.user.domain.model.oplog.OperationLog;
+import org.icedamericanomall.user.domain.repository.OperationLogRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
  * 持久化实现上（见 ADR-032 决策）。全平台其余服务的管理操作走管道一
  * （{@code @OperationLog} → ELK JSON 审计日志），<b>不落此表</b>。
  *
+ * <p><b>分层整改（2026-10-10 架构守卫）</b>：本类不再触碰 Mapper/PO——读写经
+ * {@link OperationLogRepository} 领域端口，PO ↔ 领域模型转换下沉到基础设施层
+ * （原实现直操 PO 且 {@code OperationLogVO.from(PO)}，违反 ADR-003/038 对象隔离）。
+ *
  * <p><b>列映射</b>：{@code userId} → {@code user_id}；{@code module + ":" + action} → {@code action}
  * （表无 module 列，故模块限定词并入 action）；{@code content} → {@code detail}；
  * {@code username} / {@code ip} 取当前请求的 {@link UserContext}（取不到则留空）。
@@ -36,14 +39,18 @@ public class OperationLogManager {
     /** 模块与动作的分隔符（{@code MODULE:ACTION}）。 */
     static final String MODULE_ACTION_SEPARATOR = ":";
 
-    private final OperationLogMapper operationLogMapper;
+    private final OperationLogRepository operationLogRepository;
 
     /** 管理后台：分页查询操作日志（按时间倒序）。 */
     public IPage<OperationLogVO> pageLogs(int pageNum, int size) {
-        IPage<OperationLogPO> result = operationLogMapper.selectPage(new Page<>(pageNum, size),
-                new LambdaQueryWrapper<OperationLogPO>()
-                        .orderByDesc(OperationLogPO::getCreateTime));
-        return result.convert(OperationLogVO::from);
+        int offset = Math.max(0, (pageNum - 1) * size);
+        long total = operationLogRepository.countAll();
+        Page<OperationLogVO> page = new Page<>(pageNum, size);
+        page.setTotal(total);
+        page.setRecords(operationLogRepository.findPageDesc(offset, size).stream()
+                .map(OperationLogVO::from)
+                .toList());
+        return page;
     }
 
     /**
@@ -62,12 +69,12 @@ public class OperationLogManager {
     @Transactional(rollbackFor = Exception.class)
     public void record(Long userId, String module, String action, String content) {
         UserInfo operator = UserContext.getUser();
-        OperationLogPO log = new OperationLogPO();
-        log.setUserId(userId);
-        log.setUsername(operator == null ? null : operator.username());
-        log.setAction(module + MODULE_ACTION_SEPARATOR + action);
-        log.setDetail(content);
-        log.setIp(operator == null ? null : operator.clientIp());
-        operationLogMapper.insert(log);
+        operationLogRepository.save(OperationLog.builder()
+                .userId(userId)
+                .username(operator == null ? null : operator.username())
+                .action(module + MODULE_ACTION_SEPARATOR + action)
+                .detail(content)
+                .ip(operator == null ? null : operator.clientIp())
+                .build());
     }
 }

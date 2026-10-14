@@ -1,7 +1,7 @@
 package org.icedamericanomall.user.adapter.response;
 
 import lombok.Data;
-import org.icedamericanomall.user.infrastructure.persistence.oplog.OperationLogPO;
+import org.icedamericanomall.user.domain.model.oplog.OperationLog;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
@@ -22,17 +22,17 @@ public class OperationLogVO implements Serializable {
     private String ip;
     private LocalDateTime createTime;
 
-    /** 持久化对象 → 视图对象。 */
-    public static OperationLogVO from(OperationLogPO dataObject) {
+    /** 领域模型 → 视图对象（PO 不出基础设施层，ADR-003/038）。 */
+    public static OperationLogVO from(OperationLog log) {
         OperationLogVO vo = new OperationLogVO();
-        vo.setId(dataObject.getId());
-        vo.setUserId(dataObject.getUserId());
-        vo.setUsername(dataObject.getUsername());
-        vo.setAction(dataObject.getAction());
-        vo.setTarget(dataObject.getTarget());
-        vo.setDetail(dataObject.getDetail());
-        vo.setIp(dataObject.getIp());
-        vo.setCreateTime(dataObject.getCreateTime());
+        vo.setId(log.getId());
+        vo.setUserId(log.getUserId());
+        vo.setUsername(log.getUsername());
+        vo.setAction(log.getAction());
+        vo.setTarget(log.getTarget());
+        vo.setDetail(log.getDetail());
+        vo.setIp(log.getIp());
+        vo.setCreateTime(log.getCreateTime());
         return vo;
     }
 }

@@ -2,8 +2,8 @@ package org.icedamericanomall.user.app.oplog;
 
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.common.security.UserInfo;
-import org.icedamericanomall.user.infrastructure.persistence.oplog.OperationLogMapper;
-import org.icedamericanomall.user.infrastructure.persistence.oplog.OperationLogPO;
+import org.icedamericanomall.user.domain.model.oplog.OperationLog;
+import org.icedamericanomall.user.domain.repository.OperationLogRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,23 +13,27 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
- * {@code operation_log} 写入测试 —— 锁定 user 域审计落库的列映射（ADR-032 管道二）。
+ * {@code operation_log} 读写测试 —— 锁定 user 域审计落库的列映射（ADR-032 管道二）
+ * 与分层边界（Manager 只经领域端口 {@link OperationLogRepository}，不触碰 Mapper/PO；ADR-003/038）。
  *
  * <p>不变量：{@code action} 为 {@code MODULE:ACTION}；{@code detail} 为操作摘要；
- * {@code username}/{@code ip} 取当前登录态（缺失留空）；{@code create_time} 交 DB 默认值。
+ * {@code username}/{@code ip} 取当前登录态（缺失留空）；{@code createTime} 交 DB 默认值。
  */
-@DisplayName("OperationLogManager — user 域审计落库")
+@DisplayName("OperationLogManager — user 域审计落库（经领域端口）")
 @ExtendWith(MockitoExtension.class)
 class OperationLogManagerTest {
 
     private static final Long ADMIN_ID = 1001L;
 
     @Mock
-    private OperationLogMapper operationLogMapper;
+    private OperationLogRepository operationLogRepository;
 
     @InjectMocks
     private OperationLogManager operationLogManager;
@@ -48,7 +52,7 @@ class OperationLogManagerTest {
         operationLogManager.record(ADMIN_ID, OperationAuditConstants.MODULE_USER,
                 OperationAuditConstants.ACTION_UPDATE_USER_STATUS, "targetUserId=7, status=FROZEN");
 
-        OperationLogPO inserted = capturedInsert();
+        OperationLog inserted = capturedSave();
         assertThat(inserted.getUserId()).isEqualTo(ADMIN_ID);
         assertThat(inserted.getUsername()).isEqualTo("admin");
         assertThat(inserted.getIp()).isEqualTo("203.0.113.9");
@@ -63,11 +67,26 @@ class OperationLogManagerTest {
         operationLogManager.record(null, OperationAuditConstants.MODULE_USER,
                 OperationAuditConstants.ACTION_SET_USER_ROLE, "targetUserId=7, roleType=2");
 
-        OperationLogPO inserted = capturedInsert();
+        OperationLog inserted = capturedSave();
         assertThat(inserted.getUserId()).isNull();
         assertThat(inserted.getUsername()).isNull();
         assertThat(inserted.getIp()).isNull();
         assertThat(inserted.getAction()).isEqualTo("USER:SET_USER_ROLE");
+    }
+
+    @Test
+    @DisplayName("分页 — offset 由页码换算，total 独立计数，记录经领域模型映射为 VO")
+    void shouldPageLogsViaRepository() {
+        when(operationLogRepository.countAll()).thenReturn(3L);
+        when(operationLogRepository.findPageDesc(10, 10)).thenReturn(List.of(
+                OperationLog.builder().id(2L).action("USER:SET_USER_ROLE").build()));
+
+        var page = operationLogManager.pageLogs(2, 10);
+
+        assertThat(page.getTotal()).isEqualTo(3L);
+        assertThat(page.getRecords()).hasSize(1);
+        assertThat(page.getRecords().get(0).getAction()).isEqualTo("USER:SET_USER_ROLE");
+        verify(operationLogRepository).findPageDesc(10, 10);
     }
 
     @Test
@@ -78,10 +97,10 @@ class OperationLogManagerTest {
         assertThat(OperationAuditConstants.ACTION_SET_USER_ROLE).isEqualTo("SET_USER_ROLE");
     }
 
-    /** 捕获本次插入的持久化对象。 */
-    private OperationLogPO capturedInsert() {
-        ArgumentCaptor<OperationLogPO> captor = ArgumentCaptor.forClass(OperationLogPO.class);
-        verify(operationLogMapper).insert(captor.capture());
+    /** 捕获本次落库的领域对象。 */
+    private OperationLog capturedSave() {
+        ArgumentCaptor<OperationLog> captor = ArgumentCaptor.forClass(OperationLog.class);
+        verify(operationLogRepository).save(captor.capture());
         return captor.getValue();
     }
 }

@@ -1,0 +1,3 @@
+#
+#Wed Oct 14 17:05:05 GMT+08:00 2026
+no\ classes\ that\ reside\ in\ a\ package\ '..domain..'\ should\ depend\ on\ classes\ that\ reside\ in\ any\ package\ ['org.springframework..',\ 'com.baomidou..',\ 'org.apache.ibatis..',\ '..infrastructure..',\ '..adapter..',\ '..app..'],\ because\ domain\ \u5C42\u6309\ ADR-038\ \u5FC5\u987B\u6846\u67B6\u65E0\u5173\uFF08ia-common\ \u5171\u4EAB\u5185\u6838\ /\ lombok\ /\ JDK\ \u5141\u8BB8\uFF1B\u5B58\u91CF\u57FA\u7EBF\u5DF2\u51BB\u7ED3\uFF09=33c4c196-5fdf-4aab-920e-05e5c6c112b0

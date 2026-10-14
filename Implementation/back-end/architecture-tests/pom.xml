@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.nolazy</groupId>
+        <artifactId>IcedAmericanoMall</artifactId>
+        <version>1.0</version>
+    </parent>
+
+    <artifactId>architecture-tests</artifactId>
+    <packaging>jar</packaging>
+    <name>architecture-tests</name>
+    <description>
+        架构规则守卫（ArchUnit，ADR-038/050/052）：四层依赖方向 / PO 边界 / adapter 边界 / ID 生成出口。
+        不依赖任何业务模块（无需 Spring 上下文），通过 importPaths 扫描各模块 target/classes；
+        Maven 构建顺序按父 POM modules 声明序（本模块置末），全量 reactor 构建天然满足前置编译。
+    </description>
+
+    <properties>
+        <archunit.version>1.3.0</archunit.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>${archunit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

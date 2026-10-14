@@ -33,6 +33,7 @@
         <module>verification-service</module>
         <module>wallet-service</module>
         <module>merchant-service</module>
+        <module>architecture-tests</module>
     </modules>
 
     <!--实现 Maven 的配置继承-->
