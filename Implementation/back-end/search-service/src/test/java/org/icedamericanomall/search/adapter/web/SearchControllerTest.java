@@ -1,11 +1,11 @@
 package org.icedamericanomall.search.adapter.web;
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.search.adapter.assembler.ProductSearchConverter;
 import org.icedamericanomall.search.adapter.request.SearchPageReq;
 import org.icedamericanomall.search.adapter.response.ProductSearchVO;
 import org.icedamericanomall.search.adapter.response.SearchFacetsVO;
+import org.icedamericanomall.search.adapter.response.SearchPageVO;
 import org.icedamericanomall.search.app.SearchManager;
 import org.icedamericanomall.search.domain.model.search.SearchFacets;
 import org.icedamericanomall.search.domain.model.search.SearchPage;
@@ -56,15 +56,18 @@ class SearchControllerTest {
         req.setPage(2);
         req.setSize(5);
 
-        Page<ProductSearchVO> voPage = new Page<>(2, 5);
+        SearchPageVO<ProductSearchVO> voPage = SearchPageVO.of(List.of(), 0L, 2, 5);
         when(searchManager.search("手机", 10L, "Apple", 100, 200, "newest", 2, 5))
                 .thenReturn(SearchPage.empty(2, 5));
         when(converter.toPage(any())).thenReturn(voPage);
 
-        Result<Page<ProductSearchVO>> result = controller().search(req);
+        Result<SearchPageVO<ProductSearchVO>> result = controller().search(req);
 
         verify(searchManager).search("手机", 10L, "Apple", 100, 200, "newest", 2, 5);
         assertSame(voPage, result.getData());
+        // 自持信封核心字段（ADR-052：原 MP Page 框架类型清理）
+        assertEquals(2L, result.getData().getCurrent());
+        assertEquals(5L, result.getData().getSize());
     }
 
     @Test

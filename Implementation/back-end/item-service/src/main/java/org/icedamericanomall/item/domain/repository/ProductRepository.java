@@ -2,7 +2,10 @@ package org.icedamericanomall.item.domain.repository;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.icedamericanomall.item.domain.model.PageResult;
 import org.icedamericanomall.item.domain.model.product.Product;
+import org.icedamericanomall.item.domain.model.product.ProductSearchCard;
+import org.icedamericanomall.item.domain.model.product.ProductSearchCriteria;
 
 import java.util.List;
 import java.util.Map;
@@ -59,4 +62,21 @@ public interface ProductRepository {
 
     /** 批量运费模板映射（未绑定的商品不进入映射 = 回落商家默认模板）。 */
     Map<Long, Long> freightTemplateIdMapByProductIds(List<Long> productIds);
+
+    // ==================== 检索出口（ADR-052：search-service 数据面） ====================
+
+    /**
+     * 商品检索分页（LIKE 降级链路数据源）—— 新方法采用框架无关 {@link PageResult}
+     * （域层 IPage 为架构守卫冻结基线债务，只减不增；迁移方向见 ADR-052/11-Test-Strategy）。
+     */
+    PageResult<ProductSearchCard> searchPage(ProductSearchCriteria criteria);
+
+    /** 在售商品全量导出分页（ES 重建数据源，id 升序稳定遍历）。 */
+    PageResult<ProductSearchCard> exportPage(int page, int size);
+
+    /** 商品名前缀联想（在售，销量降序，去重截断）。 */
+    List<String> suggestNames(String prefix, int limit);
+
+    /** 单商品检索卡片（ES 摄取 publishTime 回填用）；不存在返回 null。 */
+    ProductSearchCard findSearchCardById(Long id);
 }

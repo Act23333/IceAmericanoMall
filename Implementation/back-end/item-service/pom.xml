@@ -93,5 +93,16 @@
             <groupId>jakarta.annotation</groupId>
             <artifactId>jakarta.annotation-api</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- MP 3.5+ 分页拦截器类所在制品（ia-common MybatisConfig 生产使用；测试手工接线需要） -->
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

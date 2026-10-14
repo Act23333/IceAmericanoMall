@@ -5,12 +5,14 @@ import co.elastic.clients.elasticsearch._types.KnnQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.icedamericanomall.client.ItemSearchClient;
 import org.icedamericanomall.client.KnowledgeVectorClient;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.dto.ProductSearchItemCO;
+import org.icedamericanomall.dto.ProductSearchPageCO;
 import org.icedamericanomall.search.domain.gateway.EmbeddingGateway;
 import org.icedamericanomall.search.domain.gateway.ProductSearchGateway;
 import org.icedamericanomall.search.domain.model.search.ProductSearchHit;
@@ -20,10 +22,6 @@ import org.icedamericanomall.search.domain.model.search.SearchPage;
 import org.icedamericanomall.search.domain.model.search.SearchQuery;
 import org.icedamericanomall.search.domain.service.ProductVectorTextBuilder;
 import org.icedamericanomall.search.infrastructure.config.EmbeddingProperties;
-import org.icedamericanomall.search.infrastructure.persistence.ProductMapper;
-import org.icedamericanomall.search.infrastructure.persistence.ProductPO;
-import org.icedamericanomall.search.infrastructure.persistence.SkuMapper;
-import org.icedamericanomall.search.infrastructure.persistence.SkuPO;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
@@ -34,7 +32,6 @@ import org.springframework.stereotype.Component;
 
 import java.io.StringReader;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -46,6 +43,10 @@ import java.util.Optional;
  *
  * <p><b>向量写入（I47 / reindex，ADR-046）</b>：索引按 kNN mapping 创建（{@link ProductVectorMapping}）；
  * I47 幂等覆盖写为增量主路径，reindex 全量兜底（逐商品生成向量，单商品失败降级无向量文档）。
+ *
+ * <p><b>数据面（ADR-052）</b>：reindex 的商品数据与 publishTime 回填经 {@link ItemSearchClient}
+ * 从 item-service 内部检索端点获取（原直读 {@code product}/{@code sku} 镜像表的实现已退出）
+ * ——拉取改为分页循环（{@code REINDEX_PAGE_SIZE}），不再一次性全量载入内存。
  */
 @Slf4j
 @Component
@@ -53,21 +54,20 @@ import java.util.Optional;
 @ConditionalOnProperty(name = "search.elasticsearch.enabled", havingValue = "true")
 public class EsProductSearchGateway implements ProductSearchGateway {
 
-    /** 在售状态（与 DB 网关同口径）。 */
-    private static final int STATUS_ON_SALE = 1;
-
     /** 商品索引名（契约常量，reindex / I28 / I47 共用）。 */
     private static final String INDEX_PRODUCTS = KnowledgeVectorClient.INDEX_PRODUCTS;
 
     /** 并发建索引时被其它实例抢先的错误特征串（无害化，与知识库索引同口径）。 */
     private static final String ALREADY_EXISTS_MARKER = "resource_already_exists_exception";
 
+    /** reindex 数据拉取页长（item 内部导出端点分页循环，ADR-052）。 */
+    private static final int REINDEX_PAGE_SIZE = 500;
+
     private final ElasticsearchOperations esOps;
-    private final ProductMapper productMapper;
-    private final SkuMapper skuMapper;
     private final ElasticsearchClient esClient;
     private final EmbeddingProperties embeddingProperties;
     private final EmbeddingGateway embeddingGateway;
+    private final ItemSearchClient itemSearchClient;
 
     @Override
     public SearchPage<ProductSearchHit> search(SearchQuery query) {
@@ -125,12 +125,11 @@ public class EsProductSearchGateway implements ProductSearchGateway {
     /**
      * ES 全量重建（全量兜底，ADR-046 §5）：按 kNN mapping 重建并逐商品生成向量；
      * Embedding 未配置整体跳过；单商品失败降级为无向量文档，不中断整批。
+     * 商品数据经 item-service 内部导出端点分页拉取（ADR-052，不再直读镜像表）。
      */
     @Override
     public Map<String, Object> reindex() {
-        List<ProductPO> products = productMapper.selectList(
-                new LambdaQueryWrapper<ProductPO>().eq(ProductPO::getStatus, STATUS_ON_SALE));
-        Map<Long, Integer> priceMap = loadMinPrices(products);
+        List<ProductSearchItemCO> products = fetchOnSaleProducts();
         boolean vectorEnabled = embeddingGateway.isConfigured();
         if (!vectorEnabled) {
             log.info("ES reindex: Embedding 未配置，本次重建不带向量（关键词检索不受影响）");
@@ -140,11 +139,11 @@ public class EsProductSearchGateway implements ProductSearchGateway {
             recreateIndexWithVectorMapping();
             int vectorFailures = 0;
             BulkRequest.Builder bulk = new BulkRequest.Builder();
-            for (ProductPO p : products) {
+            for (ProductSearchItemCO p : products) {
                 float[] embedding = vectorEnabled ? embedQuietly(p) : null;
                 vectorFailures += vectorEnabled && embedding == null ? 1 : 0;
                 bulk.operations(op -> op.index(idx -> idx.index(INDEX_PRODUCTS)
-                        .id(String.valueOf(p.getId())).document(ProductEsDocuments.toDocMap(p, priceMap, embedding))));
+                        .id(String.valueOf(p.getId())).document(ProductEsDocuments.toDocMap(p, embedding))));
             }
             var resp = esClient.bulk(bulk.build());
             long errors = resp.items().stream().filter(i -> i.error() != null).count();
@@ -179,15 +178,36 @@ public class EsProductSearchGateway implements ProductSearchGateway {
     }
 
     /**
+     * 在售商品全量拉取（ADR-052：item 域数据面出口）——分页循环拉取，
+     * 单页为空或累计达到总数即终止（防御调用方 total 漂移导致死循环）。
+     */
+    private List<ProductSearchItemCO> fetchOnSaleProducts() {
+        List<ProductSearchItemCO> all = new ArrayList<>();
+        int page = 1;
+        while (true) {
+            ProductSearchPageCO co = itemSearchClient.exportPage(page, REINDEX_PAGE_SIZE);
+            if (co == null || co.getRecords() == null || co.getRecords().isEmpty()) {
+                break;
+            }
+            all.addAll(co.getRecords());
+            if (all.size() >= co.getTotal()) {
+                break;
+            }
+            page++;
+        }
+        return all;
+    }
+
+    /**
      * I47 覆盖写补齐 publishTime（SE1 newest 排序）—— 摄取契约（{@code ProductVectorUpsertCO}）
-     * 无此字段，整文档覆盖写会丢列，故从本地镜像表回填；缺失/读取失败按无值处理
-     * （fail-open，仅影响 newest 排序，不阻断摄取主流程）。
+     * 无此字段，整文档覆盖写会丢列，故经 item 内部端点回填（ADR-052）；
+     * 缺失/读取失败按无值处理（fail-open，仅影响 newest 排序，不阻断摄取主流程）。
      */
     private void applyPublishTimeQuietly(ProductDocument document) {
         try {
-            ProductPO po = productMapper.selectById(document.getId());
-            if (po != null && po.getPublishTime() != null) {
-                document.setPublishTime(ProductEsDocuments.toEpochMilli(po.getPublishTime()));
+            ProductSearchItemCO item = itemSearchClient.detail(Long.valueOf(document.getId()));
+            if (item != null && item.getPublishTime() != null) {
+                document.setPublishTime(item.getPublishTime());
             }
         } catch (Exception e) {
             log.warn("商品 publishTime 回填失败（按缺失处理）: productId={}, 原因: {}",
@@ -234,21 +254,8 @@ public class EsProductSearchGateway implements ProductSearchGateway {
         }
     }
 
-    /** 在售 SKU 最低价（按商品分组取最小，与 DB 网关同口径）。 */
-    private Map<Long, Integer> loadMinPrices(List<ProductPO> products) {
-        Map<Long, Integer> priceMap = new HashMap<>();
-        for (ProductPO p : products) {
-            List<SkuPO> skus = skuMapper.selectList(
-                    new LambdaQueryWrapper<SkuPO>()
-                            .eq(SkuPO::getProductId, p.getId())
-                            .eq(SkuPO::getStatus, STATUS_ON_SALE));
-            priceMap.put(p.getId(), skus.stream().mapToInt(SkuPO::getPrice).min().orElse(0));
-        }
-        return priceMap;
-    }
-
     /** 单商品向量化（fail-open）：失败记 WARN 返回 null（写入无向量文档），不中断整批。 */
-    private float[] embedQuietly(ProductPO product) {
+    private float[] embedQuietly(ProductSearchItemCO product) {
         String text = ProductVectorTextBuilder.build(
                 product.getName(), product.getDescription(), product.getBrand());
         try {

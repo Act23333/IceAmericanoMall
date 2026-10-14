@@ -1,12 +1,12 @@
 package org.icedamericanomall.search.adapter.web;
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.search.adapter.assembler.ProductSearchConverter;
 import org.icedamericanomall.search.adapter.request.SearchPageReq;
 import org.icedamericanomall.search.adapter.response.ProductSearchVO;
+import org.icedamericanomall.search.adapter.response.SearchPageVO;
 import org.icedamericanomall.search.adapter.response.SearchFacetsVO;
 import org.icedamericanomall.search.app.SearchManager;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,7 +34,7 @@ public class SearchController {
      * V5.10 补齐 {@code brand}/{@code minPrice}/{@code maxPrice}/{@code sort} 过滤透传）。
      */
     @GetMapping("/product")
-    public Result<Page<ProductSearchVO>> search(SearchPageReq req) {
+    public Result<SearchPageVO<ProductSearchVO>> search(SearchPageReq req) {
         return Result.ok(converter.toPage(searchManager.search(req.getKeyword(), req.getCategoryId(),
                 req.getBrand(), req.getMinPrice(), req.getMaxPrice(), req.getSort(),
                 req.getPage(), req.getSize())));

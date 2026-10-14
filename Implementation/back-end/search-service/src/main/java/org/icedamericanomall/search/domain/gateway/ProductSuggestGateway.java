@@ -7,7 +7,7 @@ import java.util.List;
  *
  * <p><b>选型说明</b>：商品名源恒走 DB LIKE 前缀查询（{@code name LIKE 'prefix%'}），
  * 不依赖 ES —— 联想必须「ES 关闭可用」（契约 SE5），且两条实现链（DB/ES）共用同一数据源，
- * 避免按 ES 开关分裂两套联想口径。实现方：{@code infrastructure.persistence.ProductSuggestDbGateway}。
+ * 避免按 ES 开关分裂两套联想口径。实现方：{@code infrastructure.adapter.ItemServiceProductSuggestGateway}（item 域检索端点，ADR-052）。
  */
 public interface ProductSuggestGateway {
 

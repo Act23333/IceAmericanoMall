@@ -8,6 +8,7 @@ import org.icedamericanomall.fallback.BalanceClientFallback;
 import org.icedamericanomall.fallback.CartClientFallback;
 import org.icedamericanomall.fallback.CouponClientFallback;
 import org.icedamericanomall.fallback.FreightTemplateClientFallback;
+import org.icedamericanomall.fallback.ItemSearchClientFallback;
 import org.icedamericanomall.fallback.KnowledgeVectorClientFallback;
 import org.icedamericanomall.fallback.LogisticsClientFallback;
 import org.icedamericanomall.fallback.NotificationClientFallback;
@@ -49,7 +50,7 @@ class DefaultFeignConfigTest {
     void shouldRegisterAllFallbackFactories() {
         runner.run(context -> {
             assertThat(context.getStartupFailure()).isNull();
-            assertThat(context.getBeansOfType(FallbackFactory.class)).hasSize(19);
+            assertThat(context.getBeansOfType(FallbackFactory.class)).hasSize(20);
             assertThat(context).hasSingleBean(AddressClientFallback.class);
             assertThat(context).hasSingleBean(AfterSaleClientFallback.class);
             assertThat(context).hasSingleBean(AuthContextClientFallback.class);
@@ -57,6 +58,7 @@ class DefaultFeignConfigTest {
             assertThat(context).hasSingleBean(CartClientFallback.class);
             assertThat(context).hasSingleBean(CouponClientFallback.class);
             assertThat(context).hasSingleBean(FreightTemplateClientFallback.class);
+            assertThat(context).hasSingleBean(ItemSearchClientFallback.class);
             assertThat(context).hasSingleBean(KnowledgeVectorClientFallback.class);
             assertThat(context).hasSingleBean(LogisticsClientFallback.class);
             assertThat(context).hasSingleBean(NotificationClientFallback.class);

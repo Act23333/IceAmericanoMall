@@ -18,18 +18,17 @@ import co.elastic.clients.json.JsonpSerializable;
 import co.elastic.clients.transport.endpoints.BooleanResponse;
 import co.elastic.clients.util.ObjectBuilder;
 import jakarta.json.stream.JsonGenerator;
+import org.icedamericanomall.client.ItemSearchClient;
 import org.icedamericanomall.client.KnowledgeVectorClient;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.dto.ProductSearchItemCO;
+import org.icedamericanomall.dto.ProductSearchPageCO;
 import org.icedamericanomall.search.domain.gateway.EmbeddingGateway;
 import org.icedamericanomall.search.domain.model.search.ProductVectorDoc;
 import org.icedamericanomall.search.domain.model.search.SearchFacets;
 import org.icedamericanomall.search.domain.model.search.SearchQuery;
 import org.icedamericanomall.search.infrastructure.config.EmbeddingProperties;
-import org.icedamericanomall.search.infrastructure.persistence.ProductMapper;
-import org.icedamericanomall.search.infrastructure.persistence.ProductPO;
-import org.icedamericanomall.search.infrastructure.persistence.SkuMapper;
-import org.icedamericanomall.search.infrastructure.persistence.SkuPO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -47,7 +46,6 @@ import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
 
 import java.io.StringWriter;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -66,10 +64,14 @@ import static org.mockito.Mockito.when;
  * EsProductSearchGateway 测试 —— reindex 全量兜底路径的向量能力（ADR-046 §5 修复后口径）
  * + F8 SE1 检索过滤/排序透传与 SE6 facet 降级（05 规格 §4.14.10）。
  *
+ * <p><b>数据面（ADR-052）</b>：reindex 商品数据与 publishTime 回填改为 mock
+ * {@link ItemSearchClient}（item 域检索端点），取代原镜像表 Mapper mock；
+ * 分页循环拉取（页长 500）为新增覆盖。
+ *
  * <p>锁死不变量：①索引按 kNN mapping（knn 开关 + dense_vector，dims 同源配置）重建；
  * ②Embedding 已配置 → 逐商品生成向量写入；③单商品向量化失败 → 降级为无向量文档且不中断整批；
  * ④Embedding 未配置 → 向量生成整体跳过；⑤SE1 brand/price 过滤与排序透传 ES；
- * ⑥SE6 facet 聚合成功解析 / 异常降级空对象（不阻断 C 端）。
+ * ⑥SE6 facet 聚合成功解析 / 异常降级空对象（不阻断 C 端）；⑦reindex 分页拉取直至耗尽。
  * matcher 需显式类型化以消除 Request / Function 重载歧义（同 {@link KnowledgeVectorIndexAdapterTest}）。
  */
 @ExtendWith(MockitoExtension.class)
@@ -83,12 +85,6 @@ class EsProductSearchGatewayTest {
     private ElasticsearchOperations esOps;
 
     @Mock
-    private ProductMapper productMapper;
-
-    @Mock
-    private SkuMapper skuMapper;
-
-    @Mock
     private ElasticsearchClient esClient;
 
     @Mock
@@ -97,6 +93,9 @@ class EsProductSearchGatewayTest {
     @Mock
     private EmbeddingGateway embeddingGateway;
 
+    @Mock
+    private ItemSearchClient itemSearchClient;
+
     private EsProductSearchGateway gateway;
 
     @BeforeEach
@@ -104,8 +103,8 @@ class EsProductSearchGatewayTest {
     void setUp() throws Exception {
         EmbeddingProperties embeddingProperties = new EmbeddingProperties();
         embeddingProperties.setDims(DIMS);
-        gateway = new EsProductSearchGateway(esOps, productMapper, skuMapper, esClient,
-                embeddingProperties, embeddingGateway);
+        gateway = new EsProductSearchGateway(esOps, esClient, embeddingProperties, embeddingGateway,
+                itemSearchClient);
 
         when(esClient.indices()).thenReturn(indicesClient);
         BulkResponse bulkResponse = mock(BulkResponse.class);
@@ -116,32 +115,39 @@ class EsProductSearchGatewayTest {
         when(indicesClient.exists(anyExistsFn())).thenReturn(new BooleanResponse(false));
     }
 
-    private ProductPO product(long id) {
-        ProductPO po = new ProductPO();
-        po.setId(id);
-        po.setProductId("biz-" + id);
-        po.setName("无线蓝牙耳机" + id);
-        po.setDescription("主动降噪 头戴式");
-        po.setBrand("SoundMax");
-        po.setCategoryId(1L);
-        po.setMainImage("img");
-        po.setSoldCount(3);
-        po.setStatus(1);
-        return po;
+    /** item 域检索卡片（ADR-052 数据面形态：productId 已 hex、minPrice/publishTime 已归一）。 */
+    private ProductSearchItemCO item(long id) {
+        ProductSearchItemCO co = new ProductSearchItemCO();
+        co.setId(id);
+        co.setProductId("bbbbbbbb0000700080000000000000" + String.format("%02d", (int) (id % 100)));
+        co.setName("无线蓝牙耳机" + id);
+        co.setDescription("主动降噪 头戴式");
+        co.setBrand("SoundMax");
+        co.setCategoryId(1L);
+        co.setMainImage("img");
+        co.setSoldCount(3);
+        co.setMinPrice(100);
+        return co;
     }
 
-    private SkuPO sku(long productId, int price) {
-        SkuPO sku = new SkuPO();
-        sku.setProductId(productId);
-        sku.setPrice(price);
-        sku.setStatus(1);
-        return sku;
+    private static ProductSearchPageCO page(List<ProductSearchItemCO> records, long total) {
+        ProductSearchPageCO co = new ProductSearchPageCO();
+        co.setRecords(records);
+        co.setTotal(total);
+        return co;
+    }
+
+    private void stubExport(ProductSearchPageCO... pages) {
+        var stub = when(itemSearchClient.exportPage(ArgumentMatchers.anyInt(), ArgumentMatchers.anyInt()));
+        for (ProductSearchPageCO p : pages) {
+            stub = stub.thenReturn(p);
+        }
     }
 
     @Test
     @DisplayName("reindex — 按 kNN mapping 重建索引（knn 开关 + dense_vector，dims 同源配置）")
     void shouldRebuildIndexWithKnnMapping_whenReindex() throws Exception {
-        when(productMapper.selectList(ArgumentMatchers.any())).thenReturn(List.of(product(1L)));
+        stubExport(page(List.of(item(1L)), 1));
         when(embeddingGateway.isConfigured()).thenReturn(false);
 
         gateway.reindex();
@@ -163,8 +169,7 @@ class EsProductSearchGatewayTest {
     @Test
     @DisplayName("reindex — Embedding 已配置 → 逐商品生成向量写入（_id=商品 id）")
     void shouldEmbedEachProductAndWriteVector_whenEmbeddingConfigured() throws Exception {
-        when(productMapper.selectList(ArgumentMatchers.any())).thenReturn(List.of(product(1L), product(2L)));
-        when(skuMapper.selectList(ArgumentMatchers.any())).thenReturn(List.of(sku(1L, 100)));
+        stubExport(page(List.of(item(1L), item(2L)), 2));
         when(embeddingGateway.isConfigured()).thenReturn(true);
         when(embeddingGateway.embed(ArgumentMatchers.any())).thenReturn(new float[]{0.1f, 0.2f});
 
@@ -183,9 +188,23 @@ class EsProductSearchGatewayTest {
     }
 
     @Test
+    @DisplayName("reindex — 分页循环拉取：跨页累计直至耗尽（ADR-052 新增覆盖）")
+    void shouldFetchAllPages_whenReindex() throws Exception {
+        stubExport(page(List.of(item(1L), item(2L)), 3),
+                page(List.of(item(3L)), 3));
+        when(embeddingGateway.isConfigured()).thenReturn(false);
+
+        Map<String, Object> result = gateway.reindex();
+
+        assertEquals(3, result.get("count"));
+        verify(itemSearchClient, times(2)).exportPage(ArgumentMatchers.anyInt(), ArgumentMatchers.anyInt());
+        assertEquals(3, capturedBulkRequest().operations().size());
+    }
+
+    @Test
     @DisplayName("reindex — 单商品 Embedding 失败 → 该商品降级无向量文档且不中断整批")
     void shouldContinueWithoutVector_whenSingleProductEmbedFails() throws Exception {
-        when(productMapper.selectList(ArgumentMatchers.any())).thenReturn(List.of(product(1L), product(2L)));
+        stubExport(page(List.of(item(1L), item(2L)), 2));
         when(embeddingGateway.isConfigured()).thenReturn(true);
         when(embeddingGateway.embed(ArgumentMatchers.any()))
                 .thenThrow(new BizException(ErrorCode.THIRD_PARTY_CONNECT_FAILED, "embedding down"))
@@ -204,7 +223,7 @@ class EsProductSearchGatewayTest {
     @Test
     @DisplayName("reindex — Embedding 未配置 → 向量生成整体跳过（无向量重建，不报错）")
     void shouldSkipVectorGeneration_whenEmbeddingNotConfigured() throws Exception {
-        when(productMapper.selectList(ArgumentMatchers.any())).thenReturn(List.of(product(1L)));
+        stubExport(page(List.of(item(1L)), 1));
         when(embeddingGateway.isConfigured()).thenReturn(false);
 
         Map<String, Object> result = gateway.reindex();
@@ -220,10 +239,9 @@ class EsProductSearchGatewayTest {
     @Test
     @DisplayName("docMap — 有向量 → 带 embedding 字段（关键词/展示字段照常）")
     void shouldCarryEmbedding_whenPresent() {
-        Map<String, Object> doc = ProductEsDocuments.toDocMap(product(1L), Map.of(1L, 100),
-                new float[]{0.1f, 0.2f});
+        Map<String, Object> doc = ProductEsDocuments.toDocMap(item(1L), new float[]{0.1f, 0.2f});
 
-        assertEquals("biz-1", doc.get("productId"));
+        assertEquals("bbbbbbbb000070008000000000000001", doc.get("productId"));
         assertEquals(100, doc.get("price"));
         assertEquals(List.of(0.1f, 0.2f), doc.get("embedding"));
     }
@@ -231,27 +249,27 @@ class EsProductSearchGatewayTest {
     @Test
     @DisplayName("docMap — 无向量（降级/未配置）→ 不落 embedding 字段")
     void shouldOmitEmbedding_whenAbsent() {
-        Map<String, Object> doc = ProductEsDocuments.toDocMap(product(1L), Map.of(), null);
+        Map<String, Object> doc = ProductEsDocuments.toDocMap(item(1L), null);
 
         assertFalse(doc.containsKey("embedding"));
         assertEquals("无线蓝牙耳机1", doc.get("name"));
     }
 
     @Test
-    @DisplayName("docMap — publishTime → epoch millis 写入（SE1 newest 排序可比）")
+    @DisplayName("docMap — publishTime → epoch millis 写入（item 出口已归一，SE1 newest 可比）")
     void shouldWritePublishTime_whenPresent() {
-        ProductPO po = product(1L);
-        po.setPublishTime(LocalDateTime.of(2026, 1, 1, 10, 0));
+        ProductSearchItemCO co = item(1L);
+        co.setPublishTime(1_767_225_600_000L);
 
-        Map<String, Object> doc = ProductEsDocuments.toDocMap(po, Map.of(1L, 100), null);
+        Map<String, Object> doc = ProductEsDocuments.toDocMap(co, null);
 
-        assertEquals(ProductEsDocuments.toEpochMilli(po.getPublishTime()), doc.get("publishTime"));
+        assertEquals(1_767_225_600_000L, doc.get("publishTime"));
     }
 
     @Test
     @DisplayName("docMap — publishTime 缺失 → 不落字段（newest 排序自然靠后）")
     void shouldOmitPublishTime_whenAbsent() {
-        Map<String, Object> doc = ProductEsDocuments.toDocMap(product(1L), Map.of(), null);
+        Map<String, Object> doc = ProductEsDocuments.toDocMap(item(1L), null);
 
         assertFalse(doc.containsKey("publishTime"));
     }
@@ -318,23 +336,23 @@ class EsProductSearchGatewayTest {
     }
 
     @Test
-    @DisplayName("upsertVectorDoc — I47 覆盖写回填 publishTime（契约入参无此字段，从镜像表补齐）")
+    @DisplayName("upsertVectorDoc — I47 覆盖写回填 publishTime（摄取契约无此字段，经 item 端点补齐，ADR-052）")
     void shouldEnrichPublishTime_whenUpsertVectorDoc() {
-        ProductPO po = product(1L);
-        po.setPublishTime(LocalDateTime.of(2026, 1, 1, 10, 0));
-        when(productMapper.selectById(1L)).thenReturn(po);
+        ProductSearchItemCO co = item(1L);
+        co.setPublishTime(1_767_225_600_000L);
+        when(itemSearchClient.detail(1L)).thenReturn(co);
 
         gateway.upsertVectorDoc(vectorDoc(1L));
 
         ArgumentCaptor<ProductDocument> captor = ArgumentCaptor.forClass(ProductDocument.class);
         verify(esOps).save(captor.capture());
-        assertEquals(ProductEsDocuments.toEpochMilli(po.getPublishTime()), captor.getValue().getPublishTime());
+        assertEquals(1_767_225_600_000L, captor.getValue().getPublishTime());
     }
 
     @Test
-    @DisplayName("upsertVectorDoc — 镜像表无该商品/无发布时间 → 不回填不报错（fail-open）")
+    @DisplayName("upsertVectorDoc — item 端点无该商品/无发布时间 → 不回填不报错（fail-open）")
     void shouldSkipPublishTimeEnrichment_whenProductMissing() {
-        when(productMapper.selectById(1L)).thenReturn(null);
+        when(itemSearchClient.detail(1L)).thenReturn(null);
 
         gateway.upsertVectorDoc(vectorDoc(1L));
 

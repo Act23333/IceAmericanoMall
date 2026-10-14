@@ -4,17 +4,16 @@ server:
 spring:
   application:
     name: search-service
-  datasource:
-    url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    username: root
-    password: ${hm.db.pw:root}
   cloud:
     nacos:
       server-addr: 192.168.10.128:8848
       username: nacos
       password: nacos
       discovery:
+        enabled: true
+    openfeign:
+      # Feign 熔断降级（ADR-052）：ItemSearchClient 的 fallbackFactory 生效前提（fail-closed）
+      circuitbreaker:
         enabled: true
 
   data:
@@ -23,17 +22,8 @@ spring:
       host: 192.168.10.128
       password: redis
       client-name: search-service
-mybatis-plus:
-  configuration:
-    map-underscore-to-camel-case: true
-    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
-  global-config:
-    db-config:
-      update-strategy: not_null
-      id-type: auto
-
 # ElasticSearch 连接参数的唯一来源（SearchProperties + ElasticSearchConfig）：
-#   enabled=false（本地/无 ES 环境）走 DbSearchServiceImpl（@Primary 兜底，基于 MySQL LIKE）；
+#   enabled=false（本地/无 ES 环境）走 ItemServiceProductSearchGateway（item 域检索端点，ADR-052）；
 #   enabled=true 激活 EsSearchServiceImpl，host/port 由本段配置。
 # 注意：不要在此处添加 spring.elasticsearch.uris —— 本服务自建 ElasticsearchClient/RestClient，
 #       Spring Boot 的 ES 自动配置会被既有 Bean 抑制，重复配置只会造成双份连接参数漂移。
@@ -86,3 +76,19 @@ knife4j:
 springdoc:
   api-docs:
     enabled: true
+
+# Feign 熔断参数（配套 spring.cloud.openfeign.circuitbreaker.enabled=true，ADR-052）
+# 说明：缺省 TimeLimiter 仅 1 秒会把慢调用误判失败走降级；与 pay/authorization 保持一致口径。
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 5s

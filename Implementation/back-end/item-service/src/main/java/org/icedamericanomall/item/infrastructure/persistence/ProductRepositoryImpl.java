@@ -5,14 +5,20 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.item.domain.enums.ProductStatusEnum;
+import org.icedamericanomall.item.domain.model.PageResult;
 import org.icedamericanomall.item.domain.model.product.Product;
+import org.icedamericanomall.item.domain.model.product.ProductSearchCard;
+import org.icedamericanomall.item.domain.model.product.ProductSearchCriteria;
 import org.icedamericanomall.item.domain.repository.ProductRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -165,9 +171,60 @@ public class ProductRepositoryImpl implements ProductRepository {
                         ProductPO::getId, ProductPO::getFreightTemplateId, (a, b) -> a));
     }
 
+    // ==================== 检索出口（ADR-052：search-service 数据面） ====================
+
+    @Override
+    public PageResult<ProductSearchCard> searchPage(ProductSearchCriteria criteria) {
+        IPage<ProductPO> result = productMapper.selectSearchPage(
+                new Page<>(criteria.page(), criteria.size()),
+                criteria.keyword(), criteria.categoryId(), criteria.brand(),
+                criteria.minPrice(), criteria.maxPrice(), criteria.sort());
+        return new PageResult<>(result.getRecords().stream().map(ProductRepositoryImpl::toCard).toList(),
+                result.getTotal(), criteria.page(), criteria.size());
+    }
+
+    @Override
+    public PageResult<ProductSearchCard> exportPage(int page, int size) {
+        IPage<ProductPO> result = productMapper.selectExportPage(new Page<>(page, size));
+        return new PageResult<>(result.getRecords().stream().map(ProductRepositoryImpl::toCard).toList(),
+                result.getTotal(), page, size);
+    }
+
+    @Override
+    public List<String> suggestNames(String prefix, int limit) {
+        return productMapper.selectSuggestNames(prefix, limit).stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+    }
+
+    @Override
+    public ProductSearchCard findSearchCardById(Long id) {
+        ProductPO dataObject = productMapper.selectSearchCardById(id);
+        return dataObject == null ? null : toCard(dataObject);
+    }
+
+    /** PO → 检索卡片（业务 ID 出持久化边界转 hex，ADR-050；publishTime 转 epoch millis）。 */
+    static ProductSearchCard toCard(ProductPO dataObject) {
+        return new ProductSearchCard(
+                dataObject.getId(),
+                IdGenerator.toHexString(dataObject.getProductId()),
+                dataObject.getCategoryId(),
+                dataObject.getName(),
+                dataObject.getDescription(),
+                dataObject.getBrand(),
+                dataObject.getMainImage(),
+                dataObject.getMinPrice() == null ? 0 : dataObject.getMinPrice(),
+                dataObject.getSoldCount(),
+                dataObject.getPublishTime() == null ? null
+                        : dataObject.getPublishTime().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+    }
+
+    // ==================== PO <-> 聚合 ====================
+
     static Product toDomain(ProductPO po) {
         return Product.builder()
-                .id(po.getId()).productId(po.getProductId()).sellerId(po.getSellerId())
+                .id(po.getId()).productId(IdGenerator.toHexString(po.getProductId())).sellerId(po.getSellerId())
                 .categoryId(po.getCategoryId()).freightTemplateId(po.getFreightTemplateId())
                 .name(po.getName()).mainImage(po.getMainImage()).images(po.getImages())
                 .videoUrl(po.getVideoUrl()).attributes(po.getAttributes())
@@ -183,7 +240,7 @@ public class ProductRepositoryImpl implements ProductRepository {
     static ProductPO toPO(Product product) {
         ProductPO po = new ProductPO();
         po.setId(product.getId());
-        po.setProductId(product.getProductId());
+        po.setProductId(IdGenerator.toBytes(product.getProductId()));
         po.setSellerId(product.getSellerId());
         po.setCategoryId(product.getCategoryId());
         po.setFreightTemplateId(product.getFreightTemplateId());

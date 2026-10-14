@@ -13,7 +13,7 @@ import java.util.Optional;
 /**
  * 商品检索网关（领域端口）—— DB LIKE 与 ES 两条实现链的唯一契约。
  *
- * <p>实现方：{@code infrastructure.persistence.DbProductSearchGateway}（LIKE 降级，缺省）
+ * <p>实现方：{@code infrastructure.adapter.ItemServiceProductSearchGateway}（item 域检索端点降级，缺省；ADR-052）
  * 与 {@code infrastructure.es.EsProductSearchGateway}（{@code search.elasticsearch.enabled=true}），
  * 两者条件互补、同时最多装配一个。
  */

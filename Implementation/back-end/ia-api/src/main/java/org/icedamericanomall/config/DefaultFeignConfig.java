@@ -22,6 +22,7 @@ import org.icedamericanomall.fallback.SearchClientFallback;
 import org.icedamericanomall.fallback.SkuClientFallback;
 import org.icedamericanomall.fallback.UserClientFallback;
 import org.icedamericanomall.fallback.UserProfileClientFallback;
+import org.icedamericanomall.fallback.ItemSearchClientFallback;
 import org.icedamericanomall.fallback.VerificationClientFallback;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.Environment;
@@ -201,5 +202,10 @@ public class DefaultFeignConfig {
     @Bean
     public VerificationClientFallback verificationClientFallback() {
         return new VerificationClientFallback();
+    }
+
+    @Bean
+    public ItemSearchClientFallback itemSearchClientFallback() {
+        return new ItemSearchClientFallback();
     }
 }
