@@ -20,10 +20,20 @@
 | Performance (JMeter) | — | **0 tests** | ❌ 未开始 |
 | JaCoCo 覆盖率 | 70%(目标) | **V2.4 已接入**：父 POM `jacoco-maven-plugin`（report 随 test 生成；排除 POJO/config/生成代码）；`check` 门禁 30% **advisory(不阻断)**，随测试补齐逐步抬高至 70% | 🟡 已接入(advisory) |
 
-**已覆盖模块**: ia-common (8), user-service (9), cart-service (12), pay-service (14), trade-service (16), item-service (5), logistics-service (13)  
-**零测试模块**: authorization-service, gate-service, ia-api, search-service, database
+**当前覆盖（2026-10-10 实测）**: 18 个 Maven 模块全部有测试（合计 1636，模块计数明细见 `AGENTS.md`；`database` 仅 SQL 无测试）  
+**零测试模块**: 无
 
 **已知限制**: MyBatis-Plus `ServiceImpl` 的 `lambdaQuery()`/`lambdaUpdate()` 链无法被 Mockito mock（`currentModelClass()` 从 Mapper 接口读取泛型类型信息，在 Mockito 代理中丢失）。这些方法需要 `@SpringBootTest` + H2 或 Testcontainers 集成测试。
+
+### 〇.1 治理与补齐路线（2026-10-10 CR 决议）
+
+| 事项 | 状态 | 说明 |
+|---|---|---|
+| CI 不变量门禁 | ✅ 已落地 | `Implementation/back-end/scripts/check-id-invariants.sh`（UUID 生成唯一出口 / 包装器 byte[] 参数 / SQL 字面量禁令），`ci.yml` 编译前强制；`architecture-tests` 模块（ArchUnit）随全量 test 强制 |
+| H2 持久化回归 | ✅ 已扩 | BINARY(16) 往返 / `toBytesOrNull` 未命中语义 / 订单-发票-建账链路 / **商品检索与联想 SQL（ADR-052 自 search 迁入 item）**共 9 个 H2 测试类 |
+| 集成测试方案 | 🔵 方案修正，未实施 | **本拓扑（Nacos/MySQL/Redis/RocketMQ 等由 Docker 部署于独立 Linux 虚拟机）下不引入 Testcontainers**——改用「外部测试环境 profile 集成测试」：`@SpringBootTest` + 专用 test profile 指向 VM 内测试库/独立 Redis DB index/测试 Nacos namespace（隔离纪律：专用 schema + 运行前清场）；CI 内置 services 仅作可选补充。首批目标：① `BINARY(16)` 驱动级往返（真 MySQL）② Redis 验证码场景隔离端到端 ③ auth↔verification `scene` 契约。触发条件：功能开发完成后 |
+| ArchUnit 架构守卫 | ✅ 已落地（2026-10-14） | `architecture-tests` 模块（第 19 个 Maven 模块）：① domain 框架无关 ② PO 不出 persistence ③ adapter 不触 persistence ④ UUID 生成白名单。存量债务经 **FreezingArchRule 冻结 25 条**（22 处域端口 IPage 返回 + 3 处 trade 域枚举 @EnumValue；偿还方向：域层 `PageResult` 抽象 / PO Integer 映射——item 本次新代码已按 `PageResult` 形态落地）；`allowStoreCreation=false` 为治理红线（store 缺失必须失败而非静默重建）。原 CR 发现的 user oplog PO 越界（26 处）已**真实整改**（补 `OperationLogRepository` 端口与领域模型），未入基线 |
+| 压测基线 | ❌ 未开始 | 场景与 SLO 见 §五；执行前置=完整 compose 编排（MySQL/Redis/Nacos/RocketMQ/ES） |
 
 ---
 
@@ -140,7 +150,9 @@ PR 创建 → 消费者 Pact 生成 → 提供者 Pact 验证 → 契约不匹�
 | 创建订单 | 200 | ≥ 500 | < 500ms | < 0.1% |
 | 支付回调 | 100 | ≥ 800 | < 200ms | < 0.01% |
 
-**压测工具**：JMeter（计划中），每个 Sprint 至少跑一次基准测试。
+**压测工具**：JMeter（既有计划）或 k6（脚本化、可入 CI 冒烟），二选一落地；每个 Sprint 至少跑一次基准测试。
+
+**执行前置与新增场景（2026-10-10 CR 补）**：需完整依赖编排（docker-compose 拉起 MySQL/Redis/Nacos/RocketMQ/ES）；核心链路场景须覆盖本轮加固路径——注册（含**前置快拒绝**分支）、发码（含**日配额拒绝**分支）、验证码登录（场景隔离）、下单 Saga（库存原子扣减 + 状态条件更新竞态）。
 
 ---
 

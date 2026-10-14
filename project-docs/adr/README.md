@@ -53,3 +53,6 @@
 | [047](./047-daily-task-system.md) | 每日任务体系 —— 表驱动任务定义、每日幂等完成、积分单出口与旁路触发 | 2026-10-05 |
 | [048](./048-content-notes-in-item-domain.md) | 内容社区落位 item 域 —— 种草笔记与 review 同属商品 UGC，鉴定体系 Phase 2 立项 | 2026-10-05 |
 | [049](./049-group-buy-full-loop.md) | 拼团完整闭环 —— 两段式参团、幂等锚点泛化（修订 ADR-035）、结团退款联动 | 2026-10-05 |
+| [050](./050-business-id-binary16-uuidv7.md) | 业务标识存储升级 —— BINARY(16) + UUIDv7 + byte[] 持久化边界（修订 ADR-002 存储形态；27 列转换 / 11 项保留清单；🔧 2026-10-14 三批修订：+transaction_no、+coupon_id/ai 会话列契约收紧、+review 订单引用收敛（技术 id→业务键）） | 2026-10-07 |
+| [051](./051-register-fast-reject-and-verification-scene.md) | 注册前置快拒绝 + 验证码场景隔离（REGISTER/LOGIN/RESET_PASSWORD 独立码池与频控预算；否决 ProvisionResult 契约；🔧 修订：全局日配额 + scene 编码契约 + CI 守卫） | 2026-10-08 |
+| [052](./052-search-db-fallback-exemption.md) | search-service DB 降级直读 item 域表 —— 受控豁免登记与退出条件（分库分表前硬红线退出） | 2026-10-10 |

@@ -229,6 +229,22 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 
 ---
 
+## 三·五、业务标识（ID）约束（ADR-050，2026-10-08）
+
+| 规则 | 说明 |
+|------|------|
+| 生成唯一出口 | 业务 ID 一律 `IdGenerator.nextId()`（UUIDv7，32 位小写 hex）；**禁止**业务代码散落 `UUID.randomUUID()` / `IdUtil.fastSimpleUUID()`；凭据（refreshToken / JWT jti）一律 `IdGenerator.secureToken()`（256 位熵，禁止用时间有序 v7 生成凭据） |
+| PO 边界形态 | 业务标识列 `BINARY(16)`，PO 字段 `byte[]`（MyBatis 默认 ByteArrayTypeHandler）；**禁止**为业务 ID 引入自定义 TypeHandler / `autoResultMap` / String PO 路线——包装器查询参数按运行时类型解析，会**绕过** `@TableField(typeHandler)` 导致 String 对 BINARY 列**静默查空** |
+| 查询参数 | 包装器 `eq/in/ne` 与显式 SQL 参数对 BINARY(16) 列必须传 `IdGenerator.toBytes(...)`；**外部输入**（URL path、渠道回调单号）必须用 `toBytesOrNull(...)`（解析失败落空 = 未命中语义），漏传 = 静默查空，**评审必查项** |
+| 保留列 | 管理端输入分组（`stack_group`）、复合会话 ID（`chat_message.conversation_id`）、枚举/语义编码（`notification.type`/`identity_type`/task code）、复合/外部格式（`biz_ref`/`biz_no`/`channel_*`/`embedding_id`）保持 VARCHAR——新表同类列沿用，例外登记进 ADR-050 清单；**券业务码（`coupon_id`）创建端必须归一**：省略→系统生成 UUIDv7 / 提供→须 32-hex 或 36-hyphen（归一 32-hex 落库），可读编码 fail-fast（ADR-050 修订） |
+| 新表默认 | 新表业务标识列默认 `BINARY(16)` + `IdGenerator.nextId()`；运维 SQL 需 `HEX(col)` / `UNHEX('...')` 包裹；种子数据业务 ID 用 32-hex 定值 + `UNHEX()` |
+| 验证码场景隔离 | 验证码 issue/verify 的 `scene` **必填且两侧一致**（REGISTER / LOGIN / RESET_PASSWORD，ADR-051）：场景参与 Redis Key（`sms:code:{scene}:{target}`）与重发限流/失败计数隔离，跨场景验证码互不可用；scene 编码契约 `[A-Z][A-Z0-9_]{0,31}`（非法即 PARAM_INVALID）；目标**全局日配额** `sms:daily:{target}`（跨场景共享，默认 10 条/日，ADR-051 修订）；注册接口对「已注册（带密码凭证）」手机号**前置快拒绝**（不消费验证码，`PHONE_ALREADY_REGISTERED`） |
+| 双表示禁直连 | 复合/多格式 VARCHAR 列仍承载业务 ID 的 hex 字符串形态（如 `wallet_transaction.biz_no` 内含订单号/退款单号；`refund_order.biz_ref` 内嵌 `GB:{orderNo}`）——与对应 `BINARY(16)` 列**跨表 SQL JOIN/比较会静默不匹配**；需要跨表示匹配时，在同一表示层进行（应用层 String，或 SQL 内显式 `HEX()`/`UNHEX()` 转换，ADR-050；`transaction_no` 已转 BINARY，不再属此列） |
+| 编解码异常口径 | 业务错误一律 ia-common 异常；**编解码不变量违例**（如 `IdGenerator.toBytes` 收到非 hex 输入、`toHexString` 收到非 16 字节）属编程错误，用 `IllegalArgumentException` **fail-fast**（仓储/PO 映射路径的入参在领域内必然合法，出现即缺陷）；外部输入查询入口用 `toBytesOrNull` 落空为「未命中」，不得放大为异常 |
+| ID 不变量 CI 门禁 | `bash Implementation/back-end/scripts/check-id-invariants.sh`（UUID 生成唯一出口 / 包装器 byte[] 参数 / SQL 字面量禁令，ADR-050/051）——CI 编译前强制运行，本地提交前应复跑；修改 `product`/`sku` 表结构或 item 检索端点契约（`/internal/item/search/**`）时必须联动评审 search-service 消费面（ADR-052：直读已于 2026-10-14 退出，schema 联动义务转为端点契约评审） |
+
+---
+
 ## 四、安全约束
 
 | 规则 | 说明 |
@@ -240,7 +256,7 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 | 越权防护 | 商家只能操作自己的商品/订单；用户只能操作自己的数据 |
 | CORS | 跨域配置统一在 gateway-service，业务服务不配置 CORS |
 | 限流 | 发短信、登录、注册 等接口必须加 `@RateLimit`；限流键含方法维度（`rate:limit:{类.方法}:{业务键}`，V5.3 修正），超限返回 `FREQUENT_ERROR`(429) |
-| 验证码存储（verification-service 私有） | `sms:code:{target}`(TTL 5min)、`sms:limit:`、`email:code:` 等同构键与失败计数为 verification-service **服务私有 Key 空间**，仅该服务读写；签发/校验/消费一律经 `/internal/verification/**` 在线完成（fail-closed）。原「三端同步」要求已随边界重构解除（守护测试 `verification-service/.../VerificationContractTest` 随服务保留） |
+| 验证码存储（verification-service 私有） | `sms:code:{scene}:{target}`(TTL 5min，**场景隔离**，ADR-051)、`sms:limit:{scene}:`、`email:code:{scene}:` 等同构键与失败计数为 verification-service **服务私有 Key 空间**，仅该服务读写；签发/校验/消费一律经 `/internal/verification/**` 在线完成（fail-closed）。原「三端同步」要求已随边界重构解除（守护测试 `verification-service/.../VerificationContractTest` 随服务保留） |
 | 服务间状态传递 | ❌ 禁止以共享 Redis Key 作为跨服务契约（原 `sms:code:` 跨服务契约已解除）；跨服务一律走 Feign 在线调用，各服务 Key 空间互不直读。**唯一例外：显式豁免契约键（仅限「auth 写、网关只读」）**——`user:info:{userId}` / `user:perms:{userId}`（ADR-018）、`auth:blacklist:{jti}`（[ADR-027](../adr/027-jwt-blacklist-writer-and-contract-key.md)，TTL=max(access token 剩余有效期, 1s)）与 `auth:tokenver:{userId}`（[ADR-031](../adr/031-multi-granularity-token-revocation.md)，**不设 TTL**——TTL 过期会复活已吊销令牌）；第三方服务不得读写，改名或改 TTL 语义必须两侧同步发布 |
 | 校验降级 fail-closed | verification-service 不可用时，验证码/人机验证一律拒绝放行（Feign fallback 返回失败），禁止降级为"跳过校验"；Feign 熔断已启用（resilience4j），TimeLimiter 不得低于 5s |
 | 审计日志 PII | `@OperationLog` 审计**默认不记参数值**：`recordParams=true` 仅限「路径/查询参数且只含标识/状态」的端点，输出「类型 + id 摘要」且截断 200 字符；失败路径仅记异常类名（不含 message）；审计落库（user 域 `operation_log`）走**显式业务调用**，注解只写日志不落库（[ADR-032](../adr/032-operation-audit-dual-pipeline.md)） |

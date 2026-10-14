@@ -154,7 +154,7 @@
 | 类型            | 算法        | 存储             | 有效期    | 用途              |
 | ------------- | --------- | -------------- | ------ | --------------- |
 | Access Token  | JWT RS256 | 前端内存           | 30 min | API 请求鉴权        |
-| Refresh Token | UUID      | Redis + Cookie | 7 days | 刷新 Access Token |
+| Refresh Token | 64-hex 随机令牌（256 位熵，ADR-050） | Redis + Cookie | 7 days | 刷新 Access Token |
 
 ### 3.2 请求头
 
@@ -707,7 +707,7 @@ ws(s)://<gateway>/ws/chat/...?token=<accessToken>
 
 | #   | 方法   | 路径                                             | 认证  | 请求                                                                                              | 响应                | 阶段        |
 | --- | ---- | ---------------------------------------------- | --- | ----------------------------------------------------------------------------------------------- | ----------------- | --------- |
-| P12 | POST | `/api/item/review`                             | 🔒  | `ReviewCreateReq { orderId, productId, score(1-5), content?, mediaUrls?: [String] }`            | `ReviewVO`        | ✅         |
+| P12 | POST | `/api/item/review`                             | 🔒  | `ReviewCreateReq { orderNo(32-hex，来源 OrderVO.orderNo，ADR-050 三批), productId, rating(1-5), content?, images? }`            | `ReviewVO`        | ✅         |
 | P13 | GET  | `/api/item/review/product/{productId}`         | 🌐  | Path: `productId` (Long), Query: `page`(1), `size`(10), `sort?`(newest\|highest\|lowest)        | `IPage<ReviewVO>` | ✅         |
 | P14 | GET  | `/api/item/review/product/{productId}/filter`  | 🌐  | Path: `productId` (Long), Query: `rating?`(1-5), `hasMedia?`(Boolean), `sort?`(newest\|highest) | `IPage<ReviewVO>` | ✅ V3.5    |
 | P15 | GET  | `/api/item/review/product/{productId}/summary` | 🌐  | Path: `productId` (Long)                                                                        | `ReviewSummaryVO` | ✅ V3.5    |
@@ -1310,7 +1310,7 @@ Feature: 买家退款资金流（F1）
 
 | #   | 方法     | 路径                    | 认证  | 请求                                                                                                                                    | 响应                      | 阶段        |
 | --- | ------ | --------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | --------- |
-| SE1 | GET    | `/api/search/product` | 🌐  | Query: `keyword?`, `categoryId?`, `brand?`, `minPrice?`, `maxPrice?`, `sort?`(sales\|price\|newest\|relevance), `page`(1), `size`(20)（**V5.10 补齐实现**：brand/minPrice/maxPrice/sort 过滤此前声明未实现——ES 链 filter+sort，DB 链同口径过滤；`newest` 按 `publishTime`） | `Page<ProductSearchVO>` | ✅         |
+| SE1 | GET    | `/api/search/product` | 🌐  | Query: `keyword?`, `categoryId?`, `brand?`, `minPrice?`, `maxPrice?`, `sort?`(sales\|price\|newest\|relevance), `page`(1), `size`(20)（**V5.10 补齐实现**：brand/minPrice/maxPrice/sort 过滤此前声明未实现——ES 链 filter+sort，降级链同口径过滤；`newest` 按 `publishTime`） | `SearchPageVO<ProductSearchVO>`（records/total/size/current/pages；**ADR-052** 自持信封替换 MP Page——原核心字段不变） | ✅         |
 | SE2 | GET    | `/api/search/hot`     | 🌐  | Query: `limit`(10)                                                                                                                    | `List<String>`          | ✅         |
 | SE3 | GET    | `/api/search/history` | 🔒  | Query: `limit`(10)                                                                                                                    | `List<String>`          | ✅         |
 | SE4 | DELETE | `/api/search/history` | 🔒  | —                                                                                                                                     | `Void` (清空搜索历史)         | 🆕 ⚪ V5.0 |
@@ -1341,8 +1341,8 @@ Feature: 买家退款资金流（F1）
 
 | #   | 方法   | 路径                             | 认证  | 请求                                                         | 响应                                                 | 阶段        |
 | --- | ---- | ------------------------------ | --- | ---------------------------------------------------------- | -------------------------------------------------- | --------- |
-| M1  | POST | `/api/coupon/claim`            | 🔒  | Query: `couponId` (String)                                 | `UserCouponVO`                                     | ✅ V4.4    |
-| M2  | POST | `/api/coupon/grab`             | 🔒  | Query: `couponId` (String)                                 | `UserCouponVO` (Redis Lua 秒杀抢券)                    | ✅ V4.5    |
+| M1  | POST | `/api/coupon/claim`            | 🔒  | Query: `couponId` (String；32-hex，创建端归一规则见 ADR-050)                                 | `UserCouponVO`                                     | ✅ V4.4    |
+| M2  | POST | `/api/coupon/grab`             | 🔒  | Query: `couponId` (String；32-hex，创建端归一规则见 ADR-050)                                 | `UserCouponVO` (Redis Lua 秒杀抢券)                    | ✅ V4.5    |
 | M3  | GET  | `/api/coupon/available`        | 🔒  | —                                                          | `List<UserCouponVO>` (未使用未过期)                      | ✅         |
 | M4  | GET  | `/api/coupon/used`             | 🔒  | —                                                          | `List<UserCouponVO>` (已使用/已过期)                     | ✅         |
 | M5  | GET  | `/api/coupon/template`         | 🌐  | —                                                          | `List<CouponVO>` (可领取的券模板)                         | ✅         |
@@ -1491,15 +1491,15 @@ Feature: 买家退款资金流（F1）
 
 | #   | 方法   | 路径                    | 认证  | 请求                                           | 响应                      | 阶段     |
 | --- | ---- | --------------------- | --- | -------------------------------------------- | ----------------------- | ------ |
-| AI1 | POST | `/api/ai/chat`        | 🔒  | `AiChatRequest { message, conversationId? }` | `AiChatResponse`        | ✅ V2.0 |
-| AI2 | POST | `/api/ai/chat/stream` | 🔒  | `AiChatRequest { message, conversationId? }` | SSE `text/event-stream` | ✅ V2.5 |
+| AI1 | POST | `/api/ai/chat`        | 🔒  | `AiChatRequest { message, conversationId?（32-hex，省略由服务端生成并返回） }` | `AiChatResponse`        | ✅ V2.0 |
+| AI2 | POST | `/api/ai/chat/stream` | 🔒  | `AiChatRequest { message, conversationId?（32-hex，省略由服务端生成并返回） }` | SSE `text/event-stream` | ✅ V2.5 |
 
 **`AiChatRequest`** (AI1-AI4 共用；`sellerId` 为 V5.5 新增可空字段，仅 AI3/AI4 客服会话消费):
 
 ```json
 {
   "message": "500以内适合夏天穿的透气跑鞋",
-  "conversationId": "conv-uuid-xxx",
+  "conversationId": "3f2a9c81e0b74d5a9f6c2d1e8b0a4c73",
   "sellerId": null
 }
 ```
@@ -1509,7 +1509,7 @@ Feature: 买家退款资金流（F1）
 ```json
 {
   "reply": "为您找到3款适合夏天穿的透气跑鞋：1. Nike ZoomX ¥499...",
-  "conversationId": "conv-uuid-xxx",
+  "conversationId": "3f2a9c81e0b74d5a9f6c2d1e8b0a4c73",
   "products": [
     { "productId": 1, "name": "Nike ZoomX", "price": 49900, "image": "https://...", "reason": "透气网面，适合夏季跑步" }
   ]
@@ -1520,8 +1520,8 @@ Feature: 买家退款资金流（F1）
 
 | #   | 方法   | 路径                       | 认证  | 请求                                           | 响应                      | 阶段     |
 | --- | ---- | ------------------------ | --- | -------------------------------------------- | ----------------------- | ------ |
-| AI3 | POST | `/api/ai/cs/chat`        | 🔒  | `AiChatRequest { message, conversationId?, sellerId? }` | `AiChatResponse`        | ✅ V2.0 |
-| AI4 | POST | `/api/ai/cs/chat/stream` | 🔒  | `AiChatRequest { message, conversationId?, sellerId? }` | SSE `text/event-stream` | ✅ V2.5 |
+| AI3 | POST | `/api/ai/cs/chat`        | 🔒  | `AiChatRequest { message, conversationId?（32-hex，省略由服务端生成并返回）, sellerId? }` | `AiChatResponse`        | ✅ V2.0 |
+| AI4 | POST | `/api/ai/cs/chat/stream` | 🔒  | `AiChatRequest { message, conversationId?（32-hex，省略由服务端生成并返回）, sellerId? }` | SSE `text/event-stream` | ✅ V2.5 |
 
 > **sellerId（🆕 V5.5，向后兼容）**：可空——商家端客服会话传入，作为 RAG 检索范围（限定该商家知识库）。
 > `ai.rag.enabled=true` 时按 `sellerId` 检索商家知识向量注入上下文；RAG 关闭 / 未带 `sellerId` / 检索异常或无命中时**降级为无 RAG 直答**，绝不因检索问题打断客服应答。
@@ -1539,7 +1539,7 @@ Feature: 买家退款资金流（F1）
 
 ```json
 {
-  "conversationId": "conv-uuid-xxx",
+  "conversationId": "3f2a9c81e0b74d5a9f6c2d1e8b0a4c73",
   "agentType": "SHOPPING",
   "title": "推荐跑鞋",
   "messageCount": 8,
@@ -1553,7 +1553,7 @@ Feature: 买家退款资金流（F1）
 
 ```json
 {
-  "conversationId": "conv-uuid-xxx",
+  "conversationId": "3f2a9c81e0b74d5a9f6c2d1e8b0a4c73",
   "agentType": "SHOPPING",
   "messages": [
     {
@@ -2012,6 +2012,17 @@ Feature: 渠道对账（F4）
 | I14 | POST | `/internal/item/sku/deduct`     | `List<StockOpReq> [{ skuId(Long), quantity }]` | `void`         | ✅   |
 | I15 | POST | `/internal/item/sku/restore`    | `List<StockOpReq> [{ skuId(Long), quantity }]` | `void`         | ✅   |
 
+#### 4.14.5.1 InternalItemSearchController — `/internal/item/search` (item-service, 🆕 ADR-052)
+
+> 商品检索数据面出口（search-service 直读退出后唯一取数通道，ia-api `ItemSearchClient`，fail-closed 空结果降级）；SQL 语义在 item 侧 H2 集成测试锁死。
+
+| #    | 方法   | 路径                              | 请求                                                              | 响应                                              | 阶段      |
+| ---- | ---- | ------------------------------- | --------------------------------------------------------------- | ----------------------------------------------- | ------- |
+| I62  | POST | `/internal/item/search/page`   | `ProductSearchQueryCO { keyword?, categoryId?, brand?, minPrice?, maxPrice?, sort?, page, size }` | `ProductSearchPageCO { total, records: ProductSearchItemCO[] }` | 🆕 ADR-052 |
+| I63  | GET  | `/internal/item/search/suggest` | Query: `prefix`, `limit`（≤50 夹取） | `List<String>` | 🆕 ADR-052 |
+| I64  | GET  | `/internal/item/search/export`  | Query: `page`, `size`（≤100 夹取；在售全量，id 升序） | `ProductSearchPageCO` | 🆕 ADR-052 |
+| I65  | GET  | `/internal/item/search/detail/{id}` | Path: `id` (Long) | `ProductSearchItemCO`（不存在返回 null 体） | 🆕 ADR-052 |
+
 #### 4.14.6 InternalCartController — `/internal/cart` (cart-service)
 
 | #   | 方法     | 路径                        | 请求                                                     | 响应 (原始)             | 阶段     |
@@ -2151,15 +2162,15 @@ Feature: 渠道对账（F4）
 
 #### 4.14.13 InternalVerificationController — `/internal/verification` (verification-service:9401, 🆕 V5.2)
 
-> 校验收口服务：验证码签发/校验消费 + 人机验证。验证码存 Redis（短信沿用 `sms:code:` 契约与 user-service 直发互通，见 09-constraints）；**降级 fail-closed**——服务不可用时校验一律失败，绝不放行。
+> 校验收口服务：验证码签发/校验消费 + 人机验证。验证码存 Redis，Key 按场景隔离（`sms:code:{scene}:{target}`，ADR-051：REGISTER/LOGIN/RESET_PASSWORD 等独立码池，签发与校验必须同场景）；**降级 fail-closed**——服务不可用时校验一律失败，绝不放行。
 
 | #    | 方法   | 路径                              | 请求                                                              | 响应 (原始)                                                                                                  | 阶段      |
 | ---- | ---- | ------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------- |
-| I33  | POST | `/internal/verification/code/issue`   | `VerificationCodeIssueReqCO { channel: SMS\|EMAIL, target, scene }`   | `VerificationCodeIssueRespCO { success, reason, expireSeconds }`                                        | ✅ V5.2  |
-| I34  | POST | `/internal/verification/code/verify`  | `VerificationCodeVerifyReqCO { channel, target, code }`               | `VerificationCodeVerifyRespCO { success, reason }`（结果码词汇 `VerificationResultCode`）                       | ✅ V5.2  |
+| I33  | POST | `/internal/verification/code/issue`   | `VerificationCodeIssueReqCO { channel: SMS\|EMAIL, target, scene（**必填**，参与码池隔离，ADR-051） }`   | `VerificationCodeIssueRespCO { success, reason, expireSeconds }`                                        | ✅ V5.2 / 🔄 ADR-051 |
+| I34  | POST | `/internal/verification/code/verify`  | `VerificationCodeVerifyReqCO { channel, scene（**必填**，须与签发一致）, target, code }` | `VerificationCodeVerifyRespCO { success, reason }`（结果码词汇 `VerificationResultCode`）                       | ✅ V5.2 / 🔄 ADR-051 |
 | I35  | POST | `/internal/verification/captcha/verify` | `CaptchaVerifyReqCO`（Geetest v4 四要素）                                 | `CaptchaVerifyRespCO { success, reason }`                                                               | ✅ V5.2  |
 
-> 校验策略：6 位数字 / TTL 5 分钟 / 重发限流 60s / 错误 5 次作废（窗口 30min）/ 一次性消费（Redis Lua 原子）。`VerificationResultCode`：SUCCESS / CODE_MISMATCH / CODE_EXPIRED / TOO_MANY_ATTEMPTS / RATE_LIMITED / SEND_FAILED / SERVICE_UNAVAILABLE / CAPTCHA_FAILED / NOT_SUPPORTED / PARAM_INVALID。调用方：authorization-service（登录校验、邮箱发码；user-service 直发链路已随边界重构解散）。
+> 校验策略：6 位数字 / TTL 5 分钟 / 重发限流 60s（**按场景隔离**）/ 错误 5 次作废（窗口 30min，按场景隔离）/ 一次性消费（Redis Lua 原子）；目标**全局日配额 10 条**（跨场景共享，ADR-051 修订，`verification.code.daily-send-cap` 可配）；`scene` 编码契约 `[A-Z][A-Z0-9_]{0,31}`（非法即 `PARAM_INVALID`）。`VerificationResultCode`：SUCCESS / CODE_MISMATCH / CODE_EXPIRED / TOO_MANY_ATTEMPTS / RATE_LIMITED / SEND_FAILED / SERVICE_UNAVAILABLE / CAPTCHA_FAILED / NOT_SUPPORTED / PARAM_INVALID。调用方：authorization-service（登录校验、邮箱发码；user-service 直发链路已随边界重构解散）。
 
 #### 4.14.14 InternalAuthController — `/internal/auth` (authorization-service, 🆕 V5.5.1)
 

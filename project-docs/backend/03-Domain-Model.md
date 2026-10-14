@@ -90,7 +90,7 @@
 
 | 属性           | 类型（业务） | 说明        |
 | ------------ | ------ | --------- |
-| userId       | 标识     | 用户业务唯一标识（UUID，ADR-002 双主键）  |
+| userId       | 标识     | 用户业务唯一标识（UUIDv7，存储 `BINARY(16)`，ADR-002 双主键 / ADR-050 存储形态）  |
 | nickname     | 字符串    | 昵称（展示字段；V5.2 术语统一，原 username 语义）   |
 | phone        | 值对象    | 手机号 `EncryptedIdentifier`（cipher+hash+mask 三字段，等值查询走盲索引，见 §五/§六） |
 | email        | 值对象    | 邮箱 `EncryptedIdentifier`（三字段模型，V5.2 新增） |

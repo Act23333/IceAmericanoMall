@@ -355,6 +355,12 @@ upstream gateway_cluster {
 limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
 ```
 
+### 4.9 时钟同步（NTP）— 分布式 ID 的前置条件
+
+**为什么需要：** 分表后技术主键切换的雪花 ID 与业务标识 UUIDv7（ADR-050）都以内置时钟生成时间戳；多实例时钟漂移会错乱时间序、劣化索引局部性（v7 的唯一性由 74 位随机位兜底，不依赖时钟，但趋势递增依赖之）。
+
+**要求：** 所有服务实例启用 NTP/chrony 对时（漂移 < 50ms）；容器环境共享宿主机时钟；跨机房部署时确认各机房时间源一致。
+
 ---
 
 ## 五、第三方平台配置
@@ -384,6 +390,8 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
 ### 5.2 阿里云短信（verification-service → notification-service 投递链）
 
 > ⚠️ **能力已收口 verification-service**（ADR-016；2026-10 后 user-service `/api/user/code` 端点已整体下线）：各调用方侧直连短信的发码代码引用已删（本节 yml 键位暂保留）；签名/模板/AccessKey 现由 verification-service → notification-service 投递链路使用。
+>
+> **发码策略配置（`verification.code.*`，ADR-051 / 修订）**：`send-limit-seconds`（重发窗口，默认 60，**按场景隔离**）/ `max-failures`+`failure-window-seconds`（失败计数，按场景隔离）/ `daily-send-cap`（目标**全局日配额**，默认 10，跨场景共享，短信轰炸成本控制）/ `daily-window-seconds`（配额滚动窗口，默认 86400）；调整策略无需改代码。
 
 **注册步骤：**
 

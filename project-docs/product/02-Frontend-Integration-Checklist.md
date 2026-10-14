@@ -13,6 +13,7 @@
 | `POST /api/auth/wechat/mini/login` | 小程序 `wx.login()` 取 code → 换 JWT 与用户信息（V5.1 已有，直接对接） |
 
 - `wx_openid` 由后端落 `user_auth`；后续支付拉起所需 openid 与登录同源（见 §五 PAY7）。
+- **验证码场景（ADR-051，Web 端短信/邮箱流程适用）**：发码 `POST /code/issue` 的 `scene` **必填**且必须与页面流程一致（注册页 `REGISTER` / 登录页 `LOGIN` / 重置密码页 `RESET_PASSWORD`）——场景参与码池隔离，**错场景的验证码校验必然失败**；同一手机号各场景重发限流（60s）与失败计数（5 次作废）独立计算。注册接口对已注册（带密码）手机号直接返回 `PHONE_ALREADY_REGISTERED`（前端引导跳登录，无需再发码）。
 
 ## 二、拼团（V5.14）
 
@@ -81,3 +82,9 @@
 ## 八、既有高频契约（零改动提醒）
 
 登录（密码/短信/邮箱/微信网页 + `mini/login`）、商品/搜索（含 SE5 联想、SE6 facets、P27 相似、P2/P1 促销标签）、购物车、订单全生命周期（T1-T5/T12/T13）、支付（PAY1-PAY5）、售后（T17-T19/AD17/AD47）、优惠券/秒杀/积分/签到/任务中心/活动中心、收藏/历史/笔记（P28-P34）、IM 客服（CH1-CH5，AI 自动转人工）、通知中心（U28-U32）。全部契约见 05 各节，**本轮零改动**。
+
+## 契约收紧注记（ADR-050 修订，2026-10-14）
+
+- **券业务码（管理端）**：创建券时 `couponId` 可省略（服务端生成 32-hex）；如填写必须为 32 位 hex 或 36 位连字符 UUID（统一归一 32-hex 存储），`CPN-001` 这类可读编码会被拒绝（`PARAM_ERROR`）。C 端领取/查询接口的 `couponId` 一律为 32-hex；非法值按「券不存在」处理。
+- **AI 会话 ID**：`conversationId` 首次调用省略，由服务端生成（32-hex）并随响应返回；续聊时回传服务端返回值（用户侧唯一约定）。`ai_conversation`/`ai_message` 预留表列已按 `BINARY(16)` 建模，未来接入时写入值必须为该 32-hex。
+- **商品评价（P12）**：请求字段由 `orderId`(Long) 改为 `orderNo`（32 位 hex，直接取订单详情 `OrderVO.orderNo`，原字段前端本无从获得、已移除）；响应 `ReviewVO.orderNo` 同步。

@@ -179,6 +179,25 @@ public interface XxxMapper extends BaseMapper<XxxEntity> {
 }
 ```
 
+### 3.4·1 业务 ID 规范（ADR-050，全层适用）
+
+```java
+// 生成：全项目唯一出口（UUIDv7，32 位小写 hex）——业务 ID；凭据（refreshToken/jti）用 secureToken()
+order.setOrderNo(IdGenerator.nextId());            // org.icedamericanomall.common.utils.IdGenerator
+
+// PO：业务标识列 BINARY(16) ↔ PO 字段 byte[]（MyBatis 默认 ByteArrayTypeHandler，无需任何注解）
+private byte[] orderNo;                            // domain 层仍是 String，转换只发生在仓储边界
+
+// 仓储边界转换（toPO/toDomain 与查询参数）
+po.setOrderNo(IdGenerator.toBytes(order.getOrderNo()));        // 聚合 → PO
+order.setOrderNo(IdGenerator.toHexString(po.getOrderNo()));    // PO → 聚合
+wrapper.eq(OrderPO::getOrderNo, IdGenerator.toBytes(orderNo));         // 内部已校验值
+wrapper.eq(OrderPO::getOrderNo, IdGenerator.toBytesOrNull(orderNo));   // 外部输入（URL/回调）→ 解析失败落空=未命中
+
+// ❌ 反模式：eq 传裸 String（静默查空）、业务代码散落 UUID.randomUUID()/IdUtil.fastSimpleUUID()、
+//    自定义 TypeHandler / autoResultMap 路线、用 nextId() 生成凭据
+```
+
 ### 3.5 Converter 层（MapStruct）
 
 ```java

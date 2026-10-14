@@ -1,6 +1,9 @@
 # 04 — 数据模型文档
 
 > 来源：`doc/项目的分析流程/04.数据建模.md`、`doc/项目代码/数据库/Initialize.sql.md`、`doc/项目的分析流程/03.领域建模.md`、`drawio/IA_E-R.drawio`
+> **2026-10-14（引用收敛批次）**：`review` 订单引用由技术 id（`order_id BIGINT`）收敛为业务键 `order_no BINARY(16)`（含 ReviewAPI 契约缺口修复：`ReviewCreateReq.orderNo` 替代前端无从获得的 `orderId`）；主键决策矩阵补「引用分层规则」脚注；分片影响面清单增补「跨服务技术键收敛项（order_logistics）」「跨服务物理 FK 清单」「user_id 口径前提（永久身份红线）」三行；现状核对快照更新为 23+1+38。
+>
+> **最后更新: 2026-10-08（ADR-050 B+ 业务标识存储升级）**：业务标识列 `VARCHAR(32)/CHAR(36)` → **`BINARY(16)`**（22 列转换 / 10 列保留，含 `refund_order`/`reconciliation_detail` 的 VARCHAR(64) 复制列闭包），生成算法 v4 随机 → **UUIDv7**（`IdGenerator` 全项目唯一出口），PO 层 `byte[]` 边界、domain/对外全链路 String 零契约改动；`admin` 种子业务 ID 改 `UNHEX` 定值；包装器/显式 SQL 参数强制 `toBytes`（外部输入 `toBytesOrNull`）。此前——2026-10-03
 > 最后更新: 2026-10-03（**P0 四项落地同步（V5.5/V5.6 已建，ADR-035/036/037）**：§十二 12.1–12.4 状态由"规划"收敛为"已建"——退款资金流（refund_order/wallet_transaction，F1）、渠道对账（reconciliation_batch/detail，F4）随 `V5.5__refund_wallet_tx_and_reconciliation.sql` 落库；运费模型（freight_template + product/orders 增量，F2）、拆单发货（order_logistics 主键与包裹改造 + order_item.package_no，F3）随 `V5.6__freight_template_and_package_split.sql` 落库；全库 **45 张表、30 个迁移（V1.1.0→V5.6）**；金额不变式定稿 **V2：`payAmount = totalAmount − discountAmount + postFee`**；§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 规划标注同步收敛；§3.11「主键约定偏差」注记**清除**（代理主键 id 已补，ADR-037）；§12.3 纠错删除「order_id 转 UNIQUE uk_order_id」自相矛盾表述（实现为**普通外键 + uk_order_package**，未建单列唯一键）。此前——V5.6 规格先行：新增 §十二 四组 P0 规划表——refund_order/wallet_transaction/reconciliation_batch/reconciliation_detail（**V5.5 资金线迁移**）、freight_template 及 product/orders/order_logistics/order_item 变更（**V5.6 履约线迁移**），§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 补规划增量标注，金额不变式变更为 `payAmount = totalAmount − discountAmount + postFee`；规划表均未建库，以"🆕 V5.6 规划"标注，实现落库后本注记同步收敛。此前：数据库整治 + 1:N 拆分同步：seller 瘦身/shop 表（V5.4，ADR-019）、product/review 实际列修正、after_sale/order_logistics 补注、Initialize.sql 全量快照语义、迁移三段式版本号；遗留风险清零批次：`auth:blacklist:{jti}` 契约键注记（ADR-027）、`operation_log` 写入方恢复（ADR-032 管道二）、`merchant_knowledge_base.embedding_id` 口径 `es:{knowledgeId}`）
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/变更表结构时必须同步
 
@@ -43,6 +46,9 @@
 | **业务不需要看到**（子实体/关联表/内部表） | 仅 `id` (技术PK) | `order_item`、`cart`、`category`、`address`、`seller`、`order_logistics` |
 | **现代轻量项目，无客服/对账场景** | 雪花ID直出，不额外维护业务编号 | （本项目不适用，保留 `order_no`） |
 
+> **引用分层规则（2026-10-14 补注）**：①**服务内 / 同库强关联** → 技术主键 `id`（含 FK/JOIN；一服务一库与分片后仍永久正确，性能最优）；
+> ②**跨服务持久化引用 / 对外契约** → 全局稳定键（业务标识 `xxx_no`/`xxx_id`）——技术主键只在「双方永远同库同分片」前提下成立，且不受契约保护；现存跨域技术键一律登记为分表前收敛项（见「分片影响面清单」）。
+
 ### 技术主键 `id` 生成策略
 
 | 策略 | MyBatis-Plus 注解 | 适用场景 |
@@ -53,6 +59,21 @@
 冰美商城当前使用 `AUTO_INCREMENT`，分库分表前切换为 `ASSIGN_ID`。
 
 **分库分表路线**：当前单库单表满足 MVP 需求。当单表数据量超过 500 万行时，引入 **Apache ShardingSphere** 做水平分片，同时将主键策略切换为 `ASSIGN_ID`（雪花算法），避免 DB 自增冲突。
+
+**分片影响面清单（2026-10-10 CR 后新增，分片工程按此逐项处理）**：
+
+| 影响面 | 现状 | 分片后变化 | 处理 |
+|---|---|---|---|
+| 技术主键 | `AUTO_INCREMENT` | 跨片自增冲突 | `IdType.AUTO → ASSIGN_ID`，列/字段零改动 |
+| 业务标识 | `BINARY(16)` + UUIDv7，全局 UNIQUE | UNIQUE 退化为**分片内唯一** | 生成端不碰撞（v7 74 位随机）+ 单号路由（基因位/映射表，见主键决策矩阵） |
+| 跨库 JOIN | 库内 JOIN 可用 | **全灭** | 组装上移应用层；逐条排查存量 JOIN |
+| 跨服务读库 | search-service 直读 `product`/`sku`（LIKE 降级） | 直读失效 | **硬红线**：分片启动前必须退出，路线见 [ADR-052](../adr/052-search-db-fallback-exemption.md) |
+| 跨表唯一约束 | `uk_order_active(order_no, active_flag)`、`uk_order_package` 等 | 仅分片内生效 | 校验/幂等上移应用层或收敛到分片键内 |
+| 对账/报表 | 多表 JOIN 查询 | 失效 | 收敛到报表库/ES（pay 对账链路已单表化） |
+| ES/MQ 同步 | 全量重建 + 事件驱动 | 同步载荷需携带分片键 | 现有 Feign/MQ 载荷均为 String ID，天然可扩展 |
+| 跨服务技术键引用（收敛项） | `order_logistics.order_id`（logistics→trade：技术 id + 物理 FK） | 一服务一库/分片后 FK 与本地 join 失效、技术 id 不受契约保护 | **分表前必须收敛**：改 `order_no BINARY(16)` 业务键——范式见已收敛的 `review`（2026-10-14，含契约缺口修复） |
+| 跨服务物理 FK（共享单库期产物） | `fk_orderitem_sku`、`fk_order_user`、`fk_cart_*`、`fk_logistics_order`、`fk_seller_user`、`fk_user_auth_user`、`fk_review_like_user`、`fk_view_log_*` 等 | 一服务一库后全部不可建 | 完整性上移应用层校验（现状已主要依赖应用层）；拆库时随表迁移逐一移除 |
+| 平台级 `user_id` 口径（ADR-006） | 全平台以 `user.id`（BIGINT）跨服务引用（JWT claim / 各业务表 user_id） | **可持续**——前提：已分配 `user.id` 永久不变（大厂「用户 ID 永久身份」承诺）；生成策略切雪花仅影响新增 id | 已批准口径；此前提为长期红线（禁止重排/重建已分配 user.id） |
 
 ### 数据同步策略（计划 V1.2）
 
@@ -72,6 +93,33 @@
 | 对外暴露（API URL/响应） | 业务标识 `xxx_id` / `xxx_no` | 不暴露数据规模，语义明确 |
 | 订单/支付号 | 独立业务流水号 `xxx_no` | 客服可读、对账可追溯、支持日期前缀等格式规则 |
 | 内部调用（Feign） | 技术主键 `id` 或业务标识均可 | 视性能需求选择，id 更快 |
+
+### 业务标识存储规范（ADR-050，2026-10-08 定稿）
+
+> 完整决策、22 转 / 10 保留列清单与理由见 [ADR-050](../adr/050-business-id-binary16-uuidv7.md)。双 ID 架构（ADR-002）不变，仅存储形态升级。
+
+| 层 | 形态 | 规则 |
+|---|---|---|
+| 数据库 | `BINARY(16)` 原始字节 | 业务标识列默认类型；**严禁** `UUID_TO_BIN(x, true)` swap（v7 时间已在高字节，swap 破坏时间序） |
+| PO（infrastructure.persistence） | `byte[]` | MyBatis 默认 ByteArrayTypeHandler 原生支持；**禁止**自定义 TypeHandler / String PO（包装器参数绕过 typeHandler → 静默查空） |
+| domain / app / adapter / Feign / VO | `String`（32 位小写 hex） | 对外契约不变；转换只发生在仓储 toPO/toDomain |
+
+- **生成**：全项目唯一出口 `IdGenerator.nextId()`（UUIDv7，趋势递增）；凭据（refreshToken/jti）用 `IdGenerator.secureToken()`（256 位熵）；禁止散落 `UUID.randomUUID()` / `IdUtil.fastSimpleUUID()`；
+- **查询**：仓储等值查询参数必须 `IdGenerator.toBytes(...)`；**外部输入**（URL path / 渠道回调单号）用 `toBytesOrNull(...)`（解析失败落空 = 未命中，不放大成 500）；
+- **保留列**（不转 BINARY）：管理端输入分组（stack_group）、复合会话 ID（chat_message.conversation_id）、枚举/语义编码（notification.type/identity_type/task code）、复合/外部格式（biz_ref/biz_no/channel_*/embedding_id）；
+- **运维 SQL**：需 `HEX(col)` / `UNHEX('...')` 包裹业务标识列。
+
+### 现状核对快照（2026-10-14 全库审计，62 表）
+
+> 证据快照（防「漏改 / 过度设计」误读）。分诊口径 = 该表是否含业务标识列（`BINARY(16)` 或登记保留列）。
+
+| 类别 | 数量 | 说明与典型表 |
+|---|---|---|
+| **真双 ID**（技术键 + `BINARY(16)` 业务键） | 23 张 | 资金/凭证/订单链/身份/资源类：user、product、sku、freight_template、orders、pay_order、user_coupon、flash_order_log、after_sale、settlement、withdrawal、chat_message（message_id）、refund_order、wallet_transaction、reconciliation_detail、member_growth_log、group_team、group_team_member、invoice、coupon、ai_conversation（预留）、ai_message（预留）、review（订单引用业务键，2026-10-14 收敛） |
+| **特殊保留** | 1 张 | chat_message.conversation_id（复合格式，内嵌技术 id，不可二进制化） |
+| **仅技术主键**（零业务标识，刻意为之） | 38 张 | 子实体/关联/内部/台账：order_item、cart、address、category、note*、sys_*、operation_log、points_log、task_*、promotion、flash_sale、shop、home_config、currency、exchange_rate、reconciliation_batch 等 |
+
+> **灰区口径**：shop / flash_sale / promotion / note / group_buy_activity 等对 C 端可见但**技术 ID 直出**属有意识的务实豁免（大厂同类：类目/活动 ID 数字直出）；分库分表切换 `ASSIGN_ID` 时自动升级为雪花直出（稀疏空间，防密集枚举）；若单表先出现爬取/规模泄露顾虑，**补业务键为纯加法演进**（不破坏既有结构，不单独上雪花工程）。
 
 ---
 
@@ -123,7 +171,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
-| user_id | VARCHAR(32) | UNIQUE, NOT NULL | 业务唯一标识（UUID） |
+| user_id | BINARY(16) | UNIQUE, NOT NULL | 业务唯一标识（UUIDv7 原始字节，ADR-050） |
 | username | VARCHAR(50) | NULL | 昵称（V5.2 术语统一：原"用户名"语义降级为展示字段，可重复；列名保留历史兼容） |
 | phone | VARCHAR(20) | NULL | ⚠️ **deprecated V5.2**：明文手机号退役（迁移器搬数后置 NULL），权威数据在 phone_cipher/phone_hash/phone_mask |
 | phone_cipher | VARCHAR(512) | NULL | 手机号密文（AES-256-GCM，Base64，V5.2 新增） |
@@ -229,7 +277,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK | 技术主键 |
-| product_id | VARCHAR(32) | UNIQUE, NOT NULL | 业务商品编号 |
+| product_id | BINARY(16) | UNIQUE, NOT NULL | 业务商品编号（UUIDv7 原始字节，ADR-050） |
 | seller_id | BIGINT | FK → seller.id, NOT NULL | 所属商家 |
 | category_id | BIGINT | FK → category.id, NOT NULL | 所属类目 |
 | name | VARCHAR(200) | NOT NULL | 商品名称 |
@@ -260,7 +308,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK | 技术主键 |
-| sku_id | VARCHAR(32) | UNIQUE, NOT NULL | 业务 SKU 编码 |
+| sku_id | BINARY(16) | UNIQUE, NOT NULL | 业务 SKU 编码（UUIDv7 原始字节，ADR-050） |
 | product_id | BIGINT | FK → product.id, NOT NULL | 所属商品 |
 | spec | VARCHAR(200) | NOT NULL | 规格描述 |
 | price | INT | NOT NULL | 价格（分） |
@@ -284,7 +332,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK | 技术主键 |
-| order_no | VARCHAR(32) | UNIQUE, NOT NULL | 订单号 |
+| order_no | BINARY(16) | UNIQUE, NOT NULL | 订单号（UUIDv7 原始字节，ADR-050） |
 | user_id | BIGINT | FK → user.id, NOT NULL | 买家 |
 | seller_id | BIGINT | FK → seller.id, NOT NULL | 商家 |
 | order_type | TINYINT | NOT NULL, DEFAULT 1 | 订单类型: 1=NORMAL购物车, 2=DIRECT立即购买, 3=FLASH_SALE秒杀, 4=PRESALE预售 (V4.1) |
@@ -347,8 +395,8 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK | 技术主键 |
-| biz_order_no | VARCHAR(32) | NOT NULL | 业务订单号（关联 order.order_no） |
-| pay_order_no | VARCHAR(32) | UNIQUE, NOT NULL | 支付单号 |
+| biz_order_no | BINARY(16) | NOT NULL | 业务订单号（关联 orders.order_no，UUIDv7 原始字节，ADR-050） |
+| pay_order_no | BINARY(16) | UNIQUE, NOT NULL | 支付单号（UUIDv7 原始字节，ADR-050） |
 | biz_user_id | BIGINT | FK → user.id, NULL | 用户 |
 | pay_channel_code | VARCHAR(20) | NOT NULL | 支付渠道代码 |
 | amount | INT | NOT NULL | 支付金额（分） |
@@ -394,7 +442,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 技术主键（领域层不可见，仓储按业务键操作） |
 | user_id | BIGINT | NOT NULL, FK → user.id | 关联用户技术主键（跨服务 user_id 语义，见 ADR-006） |
-| identity_type | VARCHAR(32) | NOT NULL | 标识类型：USERNAME/PHONE/EMAIL/WECHAT/WECHAT_MINI |
+| identity_type | VARCHAR(32) | NOT NULL | 标识类型（保留列，枚举编码，ADR-050）：USERNAME/PHONE/EMAIL/WECHAT/WECHAT_MINI |
 | identifier_plain | VARCHAR(128) | NULL | 非敏感标识明文（openid/用户名） |
 | identifier_cipher | VARCHAR(512) | NULL | 敏感标识密文（AES-256-GCM，Base64 存储） |
 | identifier_hash | VARCHAR(128) | NULL | 敏感标识盲索引（HMAC-SHA256，查询定位用） |
@@ -482,7 +530,7 @@ public void createOrder(OrderDTO dto) {
 | id | BIGINT PK | |
 | user_id | BIGINT | |
 | product_id | BIGINT | |
-| order_id | BIGINT | 关联订单，唯一约束 `uk_order_user` |
+| order_no | BINARY(16) | 关联订单号（orders.order_no，无外键），唯一约束 `uk_order_user`（ADR-050 三批收敛） |
 | rating | TINYINT | 1-5 星 |
 | content | TEXT | |
 | create_time | DATETIME | |
@@ -513,7 +561,7 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK | |
-| order_no | VARCHAR(32) UNIQUE | 订单号 |
+| order_no | BINARY(16) UNIQUE | 订单号（UUIDv7 原始字节，ADR-050；当前无代码接入，与 orders 口径一致） |
 | flash_id | BIGINT | 秒杀活动ID |
 | user_id | BIGINT | 用户ID |
 | status | TINYINT DEFAULT 0 | 0=待处理, 1=已创建, 2=失败, 3=超时取消 |
@@ -554,7 +602,7 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK | |
-| coupon_id | VARCHAR(32) UNIQUE | 业务标识 |
+| coupon_id | BINARY(16) UNIQUE | 业务标识（创建端归一：空→系统生成/提供须 hex，ADR-050 修订） |
 | name | VARCHAR(100) | |
 | type | TINYINT | **DEPRECATED V4.0**: 请使用 discountType。1=满减, 2=折扣（保留向后兼容） |
 | value | INT | 满减金额(分) / 折扣百分比(85=8.5折) |
@@ -582,7 +630,7 @@ public void createOrder(OrderDTO dto) {
 | user_id | BIGINT | |
 | coupon_id | BIGINT | FK→coupon.id |
 | status | TINYINT | 1=未使用, 2=已使用, 3=已过期 |
-| used_order_no | VARCHAR(32) | |
+| used_order_no | BINARY(16) | orders.order_no 复制（UUIDv7 原始字节，ADR-050） |
 | use_time | DATETIME | |
 
 ### 7.3 V2.0 售后 & 入驻
@@ -591,7 +639,7 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK | |
-| order_no | VARCHAR(32) | 唯一约束 `uk_order_user` |
+| order_no | BINARY(16) | 唯一约束 `uk_order_user`（UUIDv7 原始字节，ADR-050） |
 | user_id | BIGINT | |
 | type | TINYINT | 1=退货退款, 2=仅退款 |
 | reason | VARCHAR(500) | |
@@ -619,7 +667,7 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK | |
-| settlement_no | VARCHAR(32) UNIQUE | |
+| settlement_no | BINARY(16) UNIQUE | UUIDv7 原始字节（ADR-050） |
 | seller_id | BIGINT | |
 | period_start / period_end | DATE | 结算周期 |
 | total_amount / commission / settlement_amount | INT | 订单总额/佣金(5%)/结算额（分） |
@@ -629,7 +677,7 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK | |
-| withdrawal_no | VARCHAR(32) UNIQUE | |
+| withdrawal_no | BINARY(16) UNIQUE | UUIDv7 原始字节（ADR-050） |
 | seller_id | BIGINT | |
 | amount | INT | 提现金额（分） |
 | status | TINYINT | 1=待审核, 2=已打款, 3=拒绝 |
@@ -648,7 +696,7 @@ public void createOrder(OrderDTO dto) {
 | sender_id | BIGINT NULL | 发送者用户ID（NULL=系统） |
 | sender_name | VARCHAR(100) | 发送者名称（用户名或店铺名，由调用方传入） |
 | sender_avatar | VARCHAR(255) | 发送者头像 |
-| type | VARCHAR(32) | LIKE / REPLY / APPEND / FOLLOW / ORDER / SYSTEM |
+| type | VARCHAR(32) | 通知类型（保留列，枚举编码，ADR-050）：LIKE / REPLY / APPEND / FOLLOW / ORDER / SYSTEM |
 | title | VARCHAR(200) | 通知标题 |
 | content | VARCHAR(500) | 通知摘要 |
 | link_url | VARCHAR(500) | 跳转链接 |
@@ -713,7 +761,7 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK AUTO_INCREMENT | 主键 |
-| conversation_id | VARCHAR(36) UNIQUE NOT NULL | 会话业务ID (UUID) |
+| conversation_id | BINARY(16) UNIQUE NOT NULL | 会话业务ID（预留表；服务端生成 32-hex，ADR-050 修订） |
 | user_id | BIGINT NOT NULL | 用户ID，FK → `user.id` |
 | agent_type | VARCHAR(20) NOT NULL | Agent 类型: `SHOPPING` / `CUSTOMER_SERVICE` |
 | title | VARCHAR(100) | 会话标题（取首条用户消息截断） |
@@ -729,7 +777,7 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK AUTO_INCREMENT | 主键 |
-| conversation_id | VARCHAR(36) NOT NULL | 会话ID，FK → `ai_conversation.conversation_id` |
+| conversation_id | BINARY(16) NOT NULL | 会话ID（= ai_conversation 复制；预留表，ADR-050 修订），FK → `ai_conversation.conversation_id` |
 | role | VARCHAR(10) NOT NULL | 角色: `USER` / `ASSISTANT` / `SYSTEM` / `TOOL` |
 | content | TEXT NOT NULL | 消息内容 |
 | tool_calls | JSON | Tool 调用记录: `[{toolName, input, output, latencyMs}]` |
@@ -798,8 +846,8 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK AUTO_INCREMENT | |
-| message_id | VARCHAR(36) UNIQUE NOT NULL | 消息业务ID (UUID) |
-| conversation_id | VARCHAR(36) NOT NULL | 会话ID (buyer_{buyerId}_seller_{sellerId}_product_{productId}) |
+| message_id | BINARY(16) UNIQUE NOT NULL | 消息业务ID（UUIDv7 原始字节，ADR-050） |
+| conversation_id | VARCHAR(36) NOT NULL | 会话ID（**保留 VARCHAR**：复合格式，ADR-050）(buyer_{buyerId}_seller_{sellerId}_product_{productId}) |
 | sender_id | BIGINT NOT NULL | 发送者用户ID |
 | sender_role | VARCHAR(10) NOT NULL | BUYER / SELLER / AI |
 | receiver_id | BIGINT NOT NULL | 接收者用户ID |
@@ -836,7 +884,7 @@ public void createOrder(OrderDTO dto) {
 
 **`product` 表已新增** (V3.5 migration)：`images` VARCHAR(2000)（多图，JSON 数组文本）/`video_url` VARCHAR(500)/`attributes` JSON（规格参数）/`service_tags` VARCHAR(500)（售后标签，JSON 数组文本）/`view_count` INT（浏览数）；V4.0 追加 `sales_tags` JSON（商品级销售标签）。
 **`sku` 表已新增** (V3.5 migration)：`original_price` INT（原价，分；V4.0 另增 stock_type/is_hot/hot_reason VARCHAR(50)/sales_tags JSON）。
-**`review` 表实际列**（V3.5 基线 + V5.0.2 增强，与早期文档"media_urls/is_anonymous/helpful_count"不符，以本节为准）：`sku_id`、`images` VARCHAR(500)（逗号分隔）、`reply`/`reply_time`（商家回复）、`append_content`/`append_media_urls`/`append_time`（追评）、`like_count`（点赞数）、`tags` VARCHAR(500)（评价标签 JSON 数组文本）；唯一约束 `uk_order_user(order_id, user_id)`。
+**`review` 表实际列**（V3.5 基线 + V5.0.2 增强，与早期文档"media_urls/is_anonymous/helpful_count"不符，以本节为准）：`sku_id`、`images` VARCHAR(500)（逗号分隔）、`reply`/`reply_time`（商家回复）、`append_content`/`append_media_urls`/`append_time`（追评）、`like_count`（点赞数）、`tags` VARCHAR(500)（评价标签 JSON 数组文本）；唯一约束 `uk_order_user(order_no, user_id)`（ADR-050 三批：订单引用由技术 id 收敛为业务键）。
 
 ### 11.2 已建表
 
@@ -873,9 +921,9 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
-| refund_no | CHAR(36) | UNIQUE (`uk_refund_no`), NOT NULL | 退款单号（业务唯一键，UUID；对外与幂等重试的定位键） |
-| order_no | VARCHAR(64) | NOT NULL | 关联订单号（`orders.order_no`，无外键，与 `pay_order.biz_order_no` 同口径） |
-| pay_order_no | VARCHAR(64) | NOT NULL | 关联支付单号（`pay_order.pay_order_no`） |
+| refund_no | BINARY(16) | UNIQUE (`uk_refund_no`), NOT NULL | 退款单号（业务唯一键，UUIDv7 原始字节；对外与幂等重试的定位键，ADR-050） |
+| order_no | BINARY(16) | NOT NULL | 关联订单号（`orders.order_no` 复制，UUIDv7 原始字节，ADR-050） |
+| pay_order_no | BINARY(16) | NOT NULL | 关联支付单号（`pay_order.pay_order_no` 复制，UUIDv7 原始字节，ADR-050） |
 | after_sale_id | BIGINT | NOT NULL, UNIQUE (`uk_after_sale`) | 关联售后单（`after_sale.id`）——**一售后单一次退款**，唯一约束天然幂等：同 `afterSaleId` 重复请求返回既有退款单 |
 | user_id | BIGINT | NOT NULL | 买家用户ID |
 | channel | VARCHAR(16) | NOT NULL | 退款渠道：`WECHAT` / `ALIPAY` / `BALANCE`（与原支付渠道一致，原路退回） |
@@ -895,7 +943,7 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
-| transaction_no | CHAR(36) | UNIQUE (`uk_transaction_no`), NOT NULL | 流水号（**幂等键**，UUID；重复请求按唯一约束/先查判定，幂等成功） |
+| transaction_no | BINARY(16) | UNIQUE (`uk_transaction_no`), NOT NULL | 流水号（幂等键，= refund_order.refund_no 复制，UUIDv7 原始字节，ADR-050 修订；重复请求按唯一约束/先查判定，幂等成功） |
 | user_id | BIGINT | NOT NULL | 用户ID（`wallet_account.user_id` 口径） |
 | type | TINYINT | NOT NULL | 1-收入，2-支出 |
 | amount | INT | NOT NULL | 变动金额（分，恒正；方向由 type 表达） |
@@ -915,7 +963,7 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
-| template_no | CHAR(36) | UNIQUE (`uk_template_no`), NOT NULL | 模板业务编号（UUID） |
+| template_no | BINARY(16) | UNIQUE (`uk_template_no`), NOT NULL | 模板业务编号（UUIDv7 原始字节，ADR-050） |
 | seller_id | BIGINT | NOT NULL | 商家ID——**口径 = 商家 `user_id`**（与 `product.seller_id` 等下游口径一致，ADR-019 Phase A） |
 | template_name | VARCHAR(50) | NOT NULL | 模板名称；同商家内唯一 `uk_seller_template(seller_id, template_name)` |
 | charge_mode | TINYINT | NOT NULL, DEFAULT 1 | 计费方式：1-固定运费（**Phase 1 唯一值**，为 Phase 2 模板/重量计费预留） |
@@ -987,7 +1035,7 @@ public void createOrder(OrderDTO dto) {
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
 | batch_id | BIGINT | FK → reconciliation_batch.id, NOT NULL | 所属批次 |
-| pay_order_no | VARCHAR(64) | NOT NULL | 本地支付单号（比对键） |
+| pay_order_no | BINARY(16) | NOT NULL | 本地支付单号（比对键，UUIDv7 原始字节，ADR-050） |
 | channel_txn_id | VARCHAR(64) | NULL | 渠道交易号（渠道账单有则回填） |
 | channel_amount | INT | NULL | 渠道账单金额（分；渠道无此单为 NULL） |
 | local_amount | INT | NULL | 本地金额（分；本地无此单为 NULL） |
