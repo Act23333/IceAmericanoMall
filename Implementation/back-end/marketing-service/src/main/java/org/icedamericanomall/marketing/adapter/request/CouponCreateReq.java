@@ -18,6 +18,7 @@ import java.time.LocalDateTime;
 public class CouponCreateReq implements Serializable {
     private static final long serialVersionUID = 1L;
 
+    /** 业务券 ID（可省略：系统生成 UUIDv7；如提供须为 32 位 hex/36 位连字符，归一为 32-hex 落库，ADR-050）。 */
     private String couponId;
     @NotBlank
     private String name;

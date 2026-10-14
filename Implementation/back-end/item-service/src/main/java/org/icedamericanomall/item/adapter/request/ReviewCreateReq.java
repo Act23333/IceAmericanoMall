@@ -19,8 +19,9 @@ public class ReviewCreateReq implements Serializable {
     @NotNull(message = "商品ID不能为空")
     private Long productId;
 
-    @NotNull(message = "订单ID不能为空")
-    private Long orderId;
+    /** 关联订单号（32 位 hex，来源订单详情的 {@code OrderVO.orderNo}，ADR-050 三批契约）。 */
+    @NotBlank(message = "订单号不能为空")
+    private String orderNo;
 
     private Long skuId;
 

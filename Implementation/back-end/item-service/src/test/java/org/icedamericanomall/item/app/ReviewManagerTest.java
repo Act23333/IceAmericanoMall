@@ -25,6 +25,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -36,6 +37,9 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ReviewManager 编排单元测试")
 class ReviewManagerTest {
+
+    /** 测试用订单号（32 位 hex 契约，ADR-050 三批）。 */
+    private static final String ORDER_NO = "aaaaaaaa000070008000000000000077";
 
     @Mock
     private ReviewRepository reviewRepository;
@@ -61,7 +65,7 @@ class ReviewManagerTest {
     }
 
     private Review review(Long userId, Long productId) {
-        return Review.post(userId, productId, 77L, 2L, 5, "很好", "img.jpg");
+        return Review.post(userId, productId, ORDER_NO, 2L, 5, "很好", "img.jpg");
     }
 
     private ReviewVO vo(Long id) {
@@ -72,7 +76,7 @@ class ReviewManagerTest {
 
     private ReviewCreateReq reviewReq() {
         ReviewCreateReq req = new ReviewCreateReq();
-        req.setOrderId(77L);
+        req.setOrderNo(ORDER_NO);
         req.setProductId(10L);
         req.setSkuId(2L);
         req.setRating(5);
@@ -87,9 +91,9 @@ class ReviewManagerTest {
     @DisplayName("createReview — 同订单同用户重复评价 → REVIEW_ALREADY_EXISTS")
     void shouldReject_whenAlreadyReviewed() {
         ReviewCreateReq req = new ReviewCreateReq();
-        req.setOrderId(77L);
+        req.setOrderNo(ORDER_NO);
         req.setProductId(10L);
-        when(reviewRepository.countByOrderIdAndUserId(77L, 1L)).thenReturn(1L);
+        when(reviewRepository.countByOrderNoAndUserId(ORDER_NO, 1L)).thenReturn(1L);
 
         BizException ex = assertThrows(BizException.class,
                 () -> reviewManager.createReview(1L, req));
@@ -100,13 +104,13 @@ class ReviewManagerTest {
     @DisplayName("createReview — 发布成功并累加商品评论数")
     void shouldSaveAndIncrementCommentCount() {
         ReviewCreateReq req = new ReviewCreateReq();
-        req.setOrderId(77L);
+        req.setOrderNo(ORDER_NO);
         req.setProductId(10L);
         req.setSkuId(2L);
         req.setRating(5);
         req.setContent("很好");
         req.setImages("img.jpg");
-        when(reviewRepository.countByOrderIdAndUserId(77L, 1L)).thenReturn(0L);
+        when(reviewRepository.countByOrderNoAndUserId(ORDER_NO, 1L)).thenReturn(0L);
         when(reviewConverter.toVO(any())).thenReturn(vo(1L));
 
         reviewManager.createReview(1L, req);
@@ -118,7 +122,7 @@ class ReviewManagerTest {
     @Test
     @DisplayName("createReview — F9 落库后触发每日评价任务：DAILY_REVIEW 携带 userId（ADR-047）")
     void shouldTriggerDailyReviewTask_whenReviewCreated() {
-        when(reviewRepository.countByOrderIdAndUserId(77L, 1L)).thenReturn(0L);
+        when(reviewRepository.countByOrderNoAndUserId(ORDER_NO, 1L)).thenReturn(0L);
         when(reviewConverter.toVO(any())).thenReturn(vo(1L));
 
         reviewManager.createReview(1L, reviewReq());
@@ -132,7 +136,7 @@ class ReviewManagerTest {
     @Test
     @DisplayName("createReview — 活动事务内注册 afterCommit：提交前不触发，提交后才触发（Feign 不入事务）")
     void shouldTriggerTaskOnlyAfterCommit_whenTransactionActive() {
-        when(reviewRepository.countByOrderIdAndUserId(77L, 1L)).thenReturn(0L);
+        when(reviewRepository.countByOrderNoAndUserId(ORDER_NO, 1L)).thenReturn(0L);
         when(reviewConverter.toVO(any())).thenReturn(vo(1L));
         TransactionSynchronizationManager.initSynchronization();
         try {
@@ -156,7 +160,7 @@ class ReviewManagerTest {
     @Test
     @DisplayName("createReview — 任务触发异常 fail-open：评价落库主流程不受影响")
     void shouldNotBlockReview_whenTaskTriggerFails() {
-        when(reviewRepository.countByOrderIdAndUserId(77L, 1L)).thenReturn(0L);
+        when(reviewRepository.countByOrderNoAndUserId(ORDER_NO, 1L)).thenReturn(0L);
         when(reviewConverter.toVO(any())).thenReturn(vo(1L));
         doThrow(new RuntimeException("marketing-service down")).when(taskClient).complete(any());
 
@@ -275,4 +279,13 @@ class ReviewManagerTest {
         verify(reviewRepository).deleteLike(5L, 2L);
         verify(notificationClient, never()).sendInAppMessage(any());
     }
+
+    @Test
+    @DisplayName("createReview — orderNo 非 hex（如旧 orderId 形态）→ PARAM_ERROR fail-fast")
+    void shouldRejectInvalidOrderNo_whenNotHex() {
+        ReviewCreateReq req = new ReviewCreateReq();
+        req.setOrderNo("77");
+        assertThrows(BizException.class, () -> reviewManager.createReview(1L, req));
+    }
+
 }

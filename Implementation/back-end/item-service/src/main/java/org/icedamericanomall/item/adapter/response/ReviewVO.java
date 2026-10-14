@@ -17,7 +17,7 @@ public class ReviewVO implements Serializable {
     private String username;
     private String avatar;
     private Long productId;
-    private Long orderId;
+    private String orderNo;
     private Long skuId;
     private Integer rating;
     private String content;

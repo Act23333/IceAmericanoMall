@@ -25,8 +25,8 @@ public class WalletTransactionPO implements Serializable {
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    /** 流水号（幂等键，业务唯一键）。 */
-    private String transactionNo;
+    /** 流水号（幂等键，业务唯一键；BINARY(16) ↔ byte[]，hex 形态仅在领域层，ADR-050）。 */
+    private byte[] transactionNo;
 
     private Long userId;
 

@@ -3,6 +3,7 @@ package org.icedamericanomall.marketing.infrastructure.persistence.coupon;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.marketing.domain.enums.CouponStatusEnum;
 import org.icedamericanomall.marketing.domain.model.coupon.Coupon;
 import org.icedamericanomall.marketing.domain.repository.CouponRepository;
@@ -25,13 +26,14 @@ public class CouponRepositoryImpl implements CouponRepository {
 
     @Override
     public Coupon findByCouponId(String couponId) {
-        return toDomain(couponMapper.selectByCouponId(couponId));
+        // 外部入参（领取/查询/停用路径）：非 hex 视为「不存在」，不放大为 500
+        return toDomain(couponMapper.selectByCouponId(IdGenerator.toBytesOrNull(couponId)));
     }
 
     @Override
     public Coupon findByCouponIdAndSeller(String couponId, Long sellerId) {
         return toDomain(couponMapper.selectOne(new LambdaQueryWrapper<CouponPO>()
-                .eq(CouponPO::getCouponId, couponId)
+                .eq(CouponPO::getCouponId, IdGenerator.toBytesOrNull(couponId))
                 .eq(CouponPO::getSellerId, sellerId)));
     }
 
@@ -92,7 +94,7 @@ public class CouponRepositoryImpl implements CouponRepository {
         }
         return Coupon.builder()
                 .id(po.getId())
-                .couponId(po.getCouponId())
+                .couponId(IdGenerator.toHexString(po.getCouponId()))
                 .name(po.getName())
                 .type(po.getType())
                 .value(po.getValue())
@@ -117,7 +119,7 @@ public class CouponRepositoryImpl implements CouponRepository {
     static CouponPO toPO(Coupon coupon) {
         CouponPO po = new CouponPO();
         po.setId(coupon.getId());
-        po.setCouponId(coupon.getCouponId());
+        po.setCouponId(IdGenerator.toBytes(coupon.getCouponId()));
         po.setName(coupon.getName());
         po.setType(coupon.getType());
         po.setValue(coupon.getValue());

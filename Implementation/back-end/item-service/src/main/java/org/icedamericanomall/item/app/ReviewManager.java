@@ -10,6 +10,7 @@ import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
 import org.icedamericanomall.dto.TaskCompleteCO;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.item.adapter.assembler.ReviewConverter;
 import org.icedamericanomall.item.adapter.request.ReviewCreateReq;
 import org.icedamericanomall.item.adapter.response.ReviewSummaryVO;
@@ -56,15 +57,30 @@ public class ReviewManager {
     /** 发表评价（同订单同用户去重），累加商品评论数，并在事务提交后触发每日评价任务（F9）。 */
     @Transactional(rollbackFor = Exception.class)
     public ReviewVO createReview(Long userId, ReviewCreateReq req) {
-        if (reviewRepository.countByOrderIdAndUserId(req.getOrderId(), userId) > 0) {
+        String orderNo = normalizeOrderNo(req.getOrderNo());
+        if (reviewRepository.countByOrderNoAndUserId(orderNo, userId) > 0) {
             throw new BizException(ErrorCode.REVIEW_ALREADY_EXISTS);
         }
-        Review review = Review.post(userId, req.getProductId(), req.getOrderId(), req.getSkuId(),
+        Review review = Review.post(userId, req.getProductId(), orderNo, req.getSkuId(),
                 req.getRating(), req.getContent(), req.getImages());
         reviewRepository.save(review);
         productRepository.incrementCommentCount(req.getProductId());
         triggerDailyReviewTask(userId);
         return reviewConverter.toVO(review);
+    }
+
+    /**
+     * 订单号归一（ADR-050 三批：跨域引用收敛为业务键）：必须为 32 位 hex/36 位连字符 UUID
+     * （来源 {@code OrderVO.orderNo}，现有契约缺口一并修复——此前 orderId(Long) 前端无从获得），
+     * 非法输入 fail-fast {@code PARAM_ERROR}。
+     */
+    private static String normalizeOrderNo(String orderNo) {
+        try {
+            return IdGenerator.toHexString(IdGenerator.toBytes(orderNo));
+        } catch (IllegalArgumentException e) {
+            throw new BizException(ErrorCode.PARAM_ERROR,
+                    "orderNo 必须为 32 位 hex 或 36 位连字符 UUID: " + orderNo);
+        }
     }
 
     /** 商品评价分页（创建时间倒序，带 likedByMe 回填）。 */

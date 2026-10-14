@@ -14,7 +14,7 @@ import java.util.List;
 public interface ReviewRepository {
 
     /** 同订单同用户是否已有评价（重复评价守卫）。 */
-    long countByOrderIdAndUserId(Long orderId, Long userId);
+    long countByOrderNoAndUserId(String orderNo, Long userId);
 
     /** 新增评价。 */
     void save(Review review);

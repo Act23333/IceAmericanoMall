@@ -28,7 +28,8 @@ public class CouponPO implements Serializable {
 
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String couponId;
+    /** 业务唯一标识（BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050）。 */
+    private byte[] couponId;
     private String name;
 
     /** DEPRECATED（V4.0）历史字段：折扣类型优先读 {@code discountType}。 */

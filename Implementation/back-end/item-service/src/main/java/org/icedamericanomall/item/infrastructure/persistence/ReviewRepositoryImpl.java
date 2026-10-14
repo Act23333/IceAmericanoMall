@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.item.domain.enums.ReviewSortEnum;
 import org.icedamericanomall.item.domain.model.review.RatingCount;
 import org.icedamericanomall.item.domain.model.review.Review;
@@ -24,9 +25,10 @@ public class ReviewRepositoryImpl implements ReviewRepository {
     private final ReviewMapper reviewMapper;
 
     @Override
-    public long countByOrderIdAndUserId(Long orderId, Long userId) {
+    public long countByOrderNoAndUserId(String orderNo, Long userId) {
+        // 管理端/仓储上游已做格式归一（ReviewManager），此处严格转换 fail-fast
         return reviewMapper.selectCount(new LambdaQueryWrapper<ReviewPO>()
-                .eq(ReviewPO::getOrderId, orderId)
+                .eq(ReviewPO::getOrderNo, IdGenerator.toBytes(orderNo))
                 .eq(ReviewPO::getUserId, userId));
     }
 
@@ -121,7 +123,7 @@ public class ReviewRepositoryImpl implements ReviewRepository {
         po.setId(review.getId());
         po.setUserId(review.getUserId());
         po.setProductId(review.getProductId());
-        po.setOrderId(review.getOrderId());
+        po.setOrderNo(IdGenerator.toBytes(review.getOrderNo()));
         po.setSkuId(review.getSkuId());
         po.setRating(review.getRating());
         po.setContent(review.getContent());
@@ -137,7 +139,7 @@ public class ReviewRepositoryImpl implements ReviewRepository {
     static Review toDomain(ReviewPO po) {
         return Review.builder()
                 .id(po.getId()).userId(po.getUserId()).productId(po.getProductId())
-                .orderId(po.getOrderId()).skuId(po.getSkuId()).rating(po.getRating())
+                .orderNo(IdGenerator.toHexString(po.getOrderNo())).skuId(po.getSkuId()).rating(po.getRating())
                 .content(po.getContent()).images(po.getImages()).reply(po.getReply())
                 .replyTime(po.getReplyTime()).appendContent(po.getAppendContent())
                 .appendMediaUrls(po.getAppendMediaUrls()).likeCount(po.getLikeCount())
