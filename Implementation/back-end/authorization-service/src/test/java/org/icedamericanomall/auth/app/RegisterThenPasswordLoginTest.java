@@ -17,6 +17,7 @@ import org.icedamericanomall.auth.domain.enums.CredentialTypeEnum;
 import org.icedamericanomall.auth.domain.enums.PlatformEnum;
 import org.icedamericanomall.auth.domain.enums.UserAuthStatusEnum;
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
+import org.icedamericanomall.auth.domain.enums.VerificationSceneEnum;
 import org.icedamericanomall.auth.domain.exception.DuplicateIdentityException;
 import org.icedamericanomall.auth.domain.gateway.UserAccountGateway;
 import org.icedamericanomall.auth.domain.model.LoginSpec;
@@ -148,7 +149,7 @@ class RegisterThenPasswordLoginTest {
         assertEquals(USER_ID, loggedIn.getUserId());
         assertEquals(IdentityTypeEnum.PHONE, loggedIn.getIdentityType());
         // 验证码已在注册用例中消费（一次性）
-        verify(verificationCodeService).verifyAndConsume(VerificationChannelEnum.SMS, PHONE, "123456");
+        verify(verificationCodeService).verifyAndConsume(VerificationSceneEnum.REGISTER, VerificationChannelEnum.SMS, PHONE, "123456");
     }
 
     @Test
@@ -174,6 +175,9 @@ class RegisterThenPasswordLoginTest {
                 () -> authManager.register(registerCommand()));
 
         assertEquals(ErrorCode.PHONE_ALREADY_REGISTERED, exception.getErrorCode());
+        // 前置快拒绝（ADR-051）：第二次注册在消费验证码之前即被拒绝，验证码只被消费一次
+        org.mockito.Mockito.verify(verificationCodeService, org.mockito.Mockito.times(1)).verifyAndConsume(
+                VerificationSceneEnum.REGISTER, VerificationChannelEnum.SMS, PHONE, "123456");
         // 既有凭证未被覆盖：原密码仍可登录
         PasswordLoginStrategy loginStrategy = new PasswordLoginStrategy(userAuthRepository, passwordVerifier);
         assertEquals(USER_ID, loginStrategy.login(passwordSpec(PHONE, PASSWORD)).getUserId());
@@ -184,7 +188,7 @@ class RegisterThenPasswordLoginTest {
     void shouldNotProvision_whenCodeRejected() {
         org.mockito.Mockito.doThrow(new BizException(ErrorCode.CAPTCHA_ERROR, "验证码错误"))
                 .when(verificationCodeService)
-                .verifyAndConsume(VerificationChannelEnum.SMS, PHONE, "000001");
+                .verifyAndConsume(VerificationSceneEnum.REGISTER, VerificationChannelEnum.SMS, PHONE, "000001");
 
         RegisterCommand bad = RegisterCommand.builder()
                 .username("小明").phone(PHONE).password(PASSWORD).code("000001")

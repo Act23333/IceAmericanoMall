@@ -1,6 +1,7 @@
 package org.icedamericanomall.auth.infrastructure.client;
 
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
+import org.icedamericanomall.auth.domain.enums.VerificationSceneEnum;
 import org.icedamericanomall.client.VerificationClient;
 import org.icedamericanomall.dto.VerificationCodeVerifyReqCO;
 import org.icedamericanomall.dto.VerificationCodeVerifyRespCO;
@@ -44,7 +45,7 @@ class VerificationCodeServiceImplTest {
         when(verificationClient.verifyCode(any())).thenReturn(VerificationCodeVerifyRespCO.ok());
 
         assertDoesNotThrow(() -> codeService.verifyAndConsume(
-                VerificationChannelEnum.SMS, "13888888888", "123456"));
+                VerificationSceneEnum.LOGIN, VerificationChannelEnum.SMS, "13888888888", "123456"));
 
         ArgumentCaptor<VerificationCodeVerifyReqCO> captor =
                 ArgumentCaptor.forClass(VerificationCodeVerifyReqCO.class);
@@ -52,6 +53,7 @@ class VerificationCodeServiceImplTest {
         assertEquals("SMS", captor.getValue().getChannel());
         assertEquals("13888888888", captor.getValue().getTarget());
         assertEquals("123456", captor.getValue().getCode());
+        assertEquals("LOGIN", captor.getValue().getScene(), "场景按契约传参（ADR-051）");
     }
 
     @Test
@@ -86,7 +88,7 @@ class VerificationCodeServiceImplTest {
                 .verifyCode(new VerificationCodeVerifyReqCO()));
 
         BizException exception = assertThrows(BizException.class, () -> codeService.verifyAndConsume(
-                VerificationChannelEnum.EMAIL, "buyer@example.com", "123456"));
+                VerificationSceneEnum.LOGIN, VerificationChannelEnum.EMAIL, "buyer@example.com", "123456"));
 
         assertEquals(ErrorCode.SYSTEM_BUSY, exception.getErrorCode());
     }
@@ -97,7 +99,7 @@ class VerificationCodeServiceImplTest {
         when(verificationClient.verifyCode(any())).thenReturn(null);
 
         BizException exception = assertThrows(BizException.class, () -> codeService.verifyAndConsume(
-                VerificationChannelEnum.SMS, "13888888888", "123456"));
+                VerificationSceneEnum.LOGIN, VerificationChannelEnum.SMS, "13888888888", "123456"));
 
         assertEquals(ErrorCode.SYSTEM_BUSY, exception.getErrorCode());
     }
@@ -106,7 +108,7 @@ class VerificationCodeServiceImplTest {
         when(verificationClient.verifyCode(any())).thenReturn(VerificationCodeVerifyRespCO.fail(reason));
 
         BizException exception = assertThrows(BizException.class, () -> codeService.verifyAndConsume(
-                VerificationChannelEnum.SMS, "13888888888", "000000"));
+                VerificationSceneEnum.LOGIN, VerificationChannelEnum.SMS, "13888888888", "000000"));
 
         assertEquals(expected, exception.getErrorCode());
     }

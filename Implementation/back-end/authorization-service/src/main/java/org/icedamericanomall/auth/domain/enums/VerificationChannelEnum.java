@@ -17,10 +17,10 @@ import org.icedamericanomall.common.exception.BizException;
 @Getter
 public enum VerificationChannelEnum {
 
-    /** 短信通道：{@code sms:code:{phone}}（与 user-service 直发链路同 Key） */
+    /** 短信通道：{@code sms:code:{scene}:{phone}}（场景隔离码池，ADR-051） */
     SMS("SMS", "短信"),
 
-    /** 邮件通道：{@code email:code:{email}} */
+    /** 邮件通道：{@code email:code:{scene}:{email}}（场景隔离码池，ADR-051） */
     EMAIL("EMAIL", "邮件"),
     ;
 

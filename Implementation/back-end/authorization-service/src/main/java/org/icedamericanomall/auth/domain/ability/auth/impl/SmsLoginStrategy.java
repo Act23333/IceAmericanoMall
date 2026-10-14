@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.auth.domain.ability.auth.LoginStrategy;
 import org.icedamericanomall.auth.domain.enums.CredentialTypeEnum;
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
+import org.icedamericanomall.auth.domain.enums.VerificationSceneEnum;
 import org.icedamericanomall.auth.domain.model.LoginSpec;
 import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
 import org.icedamericanomall.auth.domain.port.VerificationCodeService;
@@ -19,8 +20,8 @@ import org.icedamericanomall.common.utils.crypto.BlindIndexUtil;
  * <p>仅支持 PHONE + SMS_CODE：验证码校验通过后，按手机号盲索引查找本地凭证，
  * 不存在则由 {@link UserAuthProvisioner} 创建（含跨上下文取用户 ID）。
  *
- * <p>验证码校验委托 {@link VerificationCodeService}（verification-service 为校验能力唯一出口）；
- * 短信验证码的"签发/发送"仍由 user-service 直发，两侧通过 {@code sms:code:{phone}} 契约互通。
+ * <p>验证码校验委托 {@link VerificationCodeService}（verification-service 为签发与消费的唯一出口，
+ * 码池按场景隔离：{@code sms:code:LOGIN:{phone}}，ADR-051）。
  *
  * <p>无本地事务：验证码消费与凭证写入各自原子，失败时由下次登录重放（幂等）。
  */
@@ -43,7 +44,7 @@ public class SmsLoginStrategy implements LoginStrategy {
         validate(spec);
         // 1. 校验并消费验证码（委托 verification-service，一次性消费）
         verificationCodeService.verifyAndConsume(
-                VerificationChannelEnum.SMS, spec.identifier(), spec.credential());
+                VerificationSceneEnum.LOGIN, VerificationChannelEnum.SMS, spec.identifier(), spec.credential());
         // 2. 按盲索引查找或创建本地认证凭证
         String hash = BlindIndexUtil.hmac(spec.identifier());
         return userAuthProvisioner.findByHashOrCreate(spec.identityType(), hash, spec.identifier());

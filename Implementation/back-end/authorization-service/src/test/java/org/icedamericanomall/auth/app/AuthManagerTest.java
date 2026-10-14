@@ -18,6 +18,7 @@ import org.icedamericanomall.auth.domain.enums.CredentialTypeEnum;
 import org.icedamericanomall.auth.domain.enums.PlatformEnum;
 import org.icedamericanomall.auth.domain.enums.RiskLevel;
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
+import org.icedamericanomall.auth.domain.enums.VerificationSceneEnum;
 import org.icedamericanomall.auth.domain.gateway.UserAccountGateway;
 import org.icedamericanomall.auth.domain.model.RiskAssessment;
 import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
@@ -233,10 +234,26 @@ class AuthManagerTest {
 
         assertEquals(100L, loginDTO.userId());
         // 验证码先消费（一次性），再建档，最后本地凭证带有正确盲索引
-        verify(verificationCodeService).verifyAndConsume(VerificationChannelEnum.SMS, "13800138000", "123456");
+        verify(verificationCodeService).verifyAndConsume(VerificationSceneEnum.REGISTER, VerificationChannelEnum.SMS, "13800138000", "123456");
         verify(userAccountGateway).getOrCreateUserId("13800138000", IdentityTypeEnum.PHONE, "小明");
         verify(userAuthProvisioner).findByHashOrCreateWithCredential(
                 IdentityTypeEnum.PHONE, BlindIndexUtil.hmac("13800138000"), "13800138000", "$2a$hash", null);
+    }
+
+    @Test
+    @DisplayName("注册 — 前置快拒绝：已注册（带密码凭证）手机号直接拒绝，不消费验证码、不建档（ADR-051）")
+    void shouldFastRejectRegister_whenCredentialExists() {
+        when(userAuthRepository.findByIdentityHash(IdentityTypeEnum.PHONE, BlindIndexUtil.hmac("13800138000")))
+                .thenReturn(Optional.of(UserAuth.builder().userId(100L).identityType(IdentityTypeEnum.PHONE)
+                        .credential("$2a$hash").build()));
+
+        BizException exception = assertThrows(BizException.class, () -> authManager.register(
+                org.icedamericanomall.auth.app.command.RegisterCommand.builder()
+                        .username("小明").phone("13800138000").password("Aa123456!").code("123456")
+                        .platform(PlatformEnum.WEB).build()));
+
+        assertEquals(ErrorCode.PHONE_ALREADY_REGISTERED, exception.getErrorCode());
+        verifyNoInteractions(verificationCodeService, userAccountGateway, userAuthProvisioner);
     }
 
     @Test
@@ -244,7 +261,7 @@ class AuthManagerTest {
     void shouldNotRegister_whenCodeRejected() {
         org.mockito.Mockito.doThrow(new BizException(ErrorCode.CAPTCHA_ERROR, "验证码错误"))
                 .when(verificationCodeService)
-                .verifyAndConsume(VerificationChannelEnum.SMS, "13800138000", "bad");
+                .verifyAndConsume(VerificationSceneEnum.REGISTER, VerificationChannelEnum.SMS, "13800138000", "bad");
 
         assertThrows(BizException.class, () -> authManager.register(
                 org.icedamericanomall.auth.app.command.RegisterCommand.builder()
@@ -266,7 +283,7 @@ class AuthManagerTest {
         authManager.resetPassword(org.icedamericanomall.auth.app.command.ResetPasswordCommand.builder()
                 .phone("13800138000").code("123456").newPassword("NewPw123!").build());
 
-        verify(verificationCodeService).verifyAndConsume(VerificationChannelEnum.SMS, "13800138000", "123456");
+        verify(verificationCodeService).verifyAndConsume(VerificationSceneEnum.RESET_PASSWORD, VerificationChannelEnum.SMS, "13800138000", "123456");
         verify(userAuthRepository).updateByUserIdAndType(existing);
         assertEquals("$2a$new", existing.getCredential(), "凭证哈希已写入聚合");
     }

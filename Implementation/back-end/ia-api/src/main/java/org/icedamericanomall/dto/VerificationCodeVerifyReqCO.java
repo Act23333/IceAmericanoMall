@@ -28,4 +28,8 @@ public class VerificationCodeVerifyReqCO implements Serializable {
     /** 用户提交的验证码 */
     @NotBlank(message = "验证码不能为空")
     private String code;
+
+    /** 业务场景（REGISTER/LOGIN/RESET_PASSWORD，ADR-051：场景参与 Key 隔离，必须与签发时一致） */
+    @NotBlank(message = "验证场景不能为空")
+    private String scene;
 }

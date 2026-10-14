@@ -4,6 +4,7 @@ import org.icedamericanomall.auth.domain.ability.auth.impl.SmsLoginStrategy;
 import org.icedamericanomall.auth.domain.enums.CredentialTypeEnum;
 import org.icedamericanomall.auth.domain.enums.PlatformEnum;
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
+import org.icedamericanomall.auth.domain.enums.VerificationSceneEnum;
 import org.icedamericanomall.auth.domain.model.LoginSpec;
 import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
 import org.icedamericanomall.auth.domain.port.VerificationCodeService;
@@ -65,7 +66,7 @@ class SmsLoginStrategyTest {
 
         assertSame(userAuth, result);
         verify(verificationCodeService)
-                .verifyAndConsume(VerificationChannelEnum.SMS, "13888888888", "123456");
+                .verifyAndConsume(VerificationSceneEnum.LOGIN, VerificationChannelEnum.SMS, "13888888888", "123456");
         verify(userAuthProvisioner).findByHashOrCreate(eq(IdentityTypeEnum.PHONE), anyString(), eq("13888888888"));
     }
 
@@ -90,7 +91,7 @@ class SmsLoginStrategyTest {
     void shouldPropagateException_whenCodeRejected() {
         doThrow(new BizException(ErrorCode.CAPTCHA_ERROR, "验证码错误"))
                 .when(verificationCodeService)
-                .verifyAndConsume(VerificationChannelEnum.SMS, "13888888888", "999999");
+                .verifyAndConsume(VerificationSceneEnum.LOGIN, VerificationChannelEnum.SMS, "13888888888", "999999");
 
         BizException exception = assertThrows(BizException.class,
                 () -> strategy.login(spec("13888888888", "999999")));

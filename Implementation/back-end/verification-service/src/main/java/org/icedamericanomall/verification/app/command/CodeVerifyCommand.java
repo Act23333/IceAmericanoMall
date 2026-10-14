@@ -7,5 +7,5 @@ package org.icedamericanomall.verification.app.command;
  * @param target  目标（手机号 / 邮箱）
  * @param code    用户提交的验证码
  */
-public record CodeVerifyCommand(String channel, String target, String code) {
+public record CodeVerifyCommand(String channel, String scene, String target, String code) {
 }

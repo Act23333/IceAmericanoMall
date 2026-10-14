@@ -21,6 +21,7 @@ import org.icedamericanomall.auth.domain.ability.auth.LoginStrategy;
 import org.icedamericanomall.auth.domain.ability.auth.LoginStrategyFactory;
 import org.icedamericanomall.auth.domain.ability.risk.RiskHandlerFactory;
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
+import org.icedamericanomall.auth.domain.enums.VerificationSceneEnum;
 import org.icedamericanomall.auth.domain.gateway.UserAccountGateway;
 import org.icedamericanomall.auth.domain.model.LoginSpec;
 import org.icedamericanomall.auth.domain.model.RiskAssessment;
@@ -133,8 +134,17 @@ public class AuthManager {
     public LoginDTO register(RegisterCommand command) {
         String phone = command.phone();
 
-        // 1. 验证码校验（本地边界：注册与密码登录共用同一凭证所有权方）
-        verificationCodeService.verifyAndConsume(VerificationChannelEnum.SMS, phone, command.code());
+        // 0. 前置快拒绝（ADR-051）：带密码凭证的老用户误入注册直接引导登录——
+        //    不消费验证码、不发起跨服务建档（user_auth 本地表可判，无需 Feign）。
+        //    「存在但无凭证」（仅用过验证码登录的老用户）不拦截，走注册=补齐密码的合法路径。
+        if (userAuthRepository.findByIdentityHash(IdentityTypeEnum.PHONE, BlindIndexUtil.hmac(phone))
+                .map(auth -> auth.getCredential() != null && !auth.getCredential().isBlank())
+                .orElse(false)) {
+            throw new BizException(ErrorCode.PHONE_ALREADY_REGISTERED, "该手机号已注册，请直接登录或使用验证码登录");
+        }
+
+        // 1. 验证码校验（REGISTER 场景，与登录/重置密码码池隔离，本地边界：注册与密码登录共用同一凭证所有权方）
+        verificationCodeService.verifyAndConsume(VerificationSceneEnum.REGISTER, VerificationChannelEnum.SMS, phone, command.code());
 
         // 2. user-service 幂等建档（新用户发建档奖励；昵称落 user.nickname；已存在不覆盖）
         userAccountGateway.getOrCreateUserId(phone, IdentityTypeEnum.PHONE, command.username());
@@ -174,7 +184,7 @@ public class AuthManager {
     public void resetPassword(ResetPasswordCommand command) {
         String phone = command.phone();
         // 1. 校验并消费验证码（verification-service 在线校验，一次性消费）
-        verificationCodeService.verifyAndConsume(VerificationChannelEnum.SMS, phone, command.code());
+        verificationCodeService.verifyAndConsume(VerificationSceneEnum.RESET_PASSWORD, VerificationChannelEnum.SMS, phone, command.code());
 
         // 2. 盲索引定位本地凭证（user_auth 是密码凭证的唯一载体）
         UserAuth userAuth = userAuthRepository

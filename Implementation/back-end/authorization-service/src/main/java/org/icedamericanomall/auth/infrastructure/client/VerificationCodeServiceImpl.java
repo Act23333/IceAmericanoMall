@@ -3,6 +3,7 @@ package org.icedamericanomall.auth.infrastructure.client;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
+import org.icedamericanomall.auth.domain.enums.VerificationSceneEnum;
 import org.icedamericanomall.auth.domain.port.VerificationCodeService;
 import org.icedamericanomall.client.VerificationClient;
 import org.icedamericanomall.dto.VerificationCodeVerifyReqCO;
@@ -29,21 +30,22 @@ public class VerificationCodeServiceImpl implements VerificationCodeService {
     private final VerificationClient verificationClient;
 
     @Override
-    public void verifyAndConsume(VerificationChannelEnum channel, String target, String code) {
+    public void verifyAndConsume(VerificationSceneEnum scene, VerificationChannelEnum channel, String target, String code) {
         VerificationCodeVerifyReqCO request = new VerificationCodeVerifyReqCO();
+        request.setScene(scene.getCode());
         request.setChannel(channel.getCode());
         request.setTarget(target);
         request.setCode(code);
 
         VerificationCodeVerifyRespCO response = verificationClient.verifyCode(request);
         if (response != null && response.isSuccess()) {
-            log.info("[auth][code-verify][pass] channel={}, target={}",
-                    channel.getCode(), DesensitizeUtil.mask(target));
+            log.info("[auth][code-verify][pass] scene={}, channel={}, target={}",
+                    scene.getCode(), channel.getCode(), DesensitizeUtil.mask(target));
             return;
         }
         String reason = response == null ? null : response.getReason();
-        log.warn("[auth][code-verify][reject] channel={}, target={}, reason={}",
-                channel.getCode(), DesensitizeUtil.mask(target), reason);
+        log.warn("[auth][code-verify][reject] scene={}, channel={}, target={}, reason={}",
+                scene.getCode(), channel.getCode(), DesensitizeUtil.mask(target), reason);
         throw VerificationResultMapper.toVerifyException(reason, channel);
     }
 }

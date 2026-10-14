@@ -54,20 +54,32 @@ public class VerificationCodeIssuer {
      */
     public IssuedCode issue(VerificationChannel channel, String target, String scene, String requestId) {
         // 1. 重发限流（原子 SETNX）：窗口内重复请求直接拒绝
-        if (!repository.tryAcquireSendQuota(channel, target, policy.sendLimitWindow())) {
+        if (!repository.tryAcquireSendQuota(channel, scene, target, policy.sendLimitWindow())) {
+            return IssuedCode.fail(VerificationOutcome.RATE_LIMITED);
+        }
+
+        // 1.5 全局日配额（跨场景共享——场景隔离不得牺牲单目标成本控制，ADR-051 修订）：
+        //     INCR 先行、超限回补并释放重发配额；投递失败同样回补（计数 ≈ 实际发送量）
+        int dailyCount = repository.incrementDailySendCount(channel, target, policy.dailyWindow());
+        if (dailyCount > policy.dailySendCap()) {
+            repository.decrementDailySendCount(channel, target);
+            repository.releaseSendQuota(channel, scene, target);
+            log.warn("[verify][issue][daily-limit] 目标日配额超限 channel={}, requestId={}",
+                    channel, requestId);
             return IssuedCode.fail(VerificationOutcome.RATE_LIMITED);
         }
 
         // 2. 生成 + 3. 存储
         VerificationCode code = new VerificationCode(channel, target, codeGenerator.generate(policy.codeLength()));
-        repository.save(channel, target, code.code(), policy.codeTtl());
+        repository.save(channel, scene, target, code.code(), policy.codeTtl());
 
         // 4. 投递（失败回滚验证码与限流，允许立即重试）
         try {
             notificationGateway.sendVerificationCode(code, requestId, scene);
         } catch (RuntimeException e) {
-            repository.removeCode(channel, target);
-            repository.releaseSendQuota(channel, target);
+            repository.removeCode(channel, scene, target);
+            repository.releaseSendQuota(channel, scene, target);
+            repository.decrementDailySendCount(channel, target);
             log.error("[verify][issue][rollback] 验证码投递失败，已回滚验证码与限流 channel={}, requestId={}",
                     channel, requestId, e);
             return IssuedCode.fail(VerificationOutcome.SEND_FAILED);

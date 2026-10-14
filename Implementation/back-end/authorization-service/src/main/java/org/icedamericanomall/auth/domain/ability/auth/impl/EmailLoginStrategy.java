@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.auth.domain.ability.auth.LoginStrategy;
 import org.icedamericanomall.auth.domain.enums.CredentialTypeEnum;
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
+import org.icedamericanomall.auth.domain.enums.VerificationSceneEnum;
 import org.icedamericanomall.auth.domain.model.EmailAddress;
 import org.icedamericanomall.auth.domain.model.LoginSpec;
 import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
@@ -55,7 +56,7 @@ public class EmailLoginStrategy implements LoginStrategy {
 
         // 3. 校验并消费验证码（远程校验 + 一次性消费）
         verificationCodeService.verifyAndConsume(
-                VerificationChannelEnum.EMAIL, email.value(), spec.credential());
+                VerificationSceneEnum.LOGIN, VerificationChannelEnum.EMAIL, email.value(), spec.credential());
 
         // 4. 按盲索引查找或创建本地认证凭证
         return userAuthProvisioner.findByHashOrCreate(

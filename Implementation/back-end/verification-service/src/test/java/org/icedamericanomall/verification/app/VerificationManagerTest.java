@@ -56,8 +56,18 @@ class VerificationManagerTest {
         verifyNoInteractions(issuer);
 
         assertEquals(VerificationOutcome.PARAM_INVALID, verificationManager.verifyCode(
-                new CodeVerifyCommand("", "13800001111", "123456")));
+                new CodeVerifyCommand("", "LOGIN", "13800001111", "123456")));
         verifyNoInteractions(verifier);
+    }
+
+    @Test
+    @DisplayName("编排 — 场景编码非法（小写/含冒号）→ PARAM_INVALID，fail-loud 不静默开新码池（ADR-051 修订）")
+    void shouldReturnParamInvalid_whenSceneMalformed() {
+        assertEquals(VerificationOutcome.PARAM_INVALID, verificationManager.issueCode(
+                new CodeIssueCommand("SMS", "13800001111", "register", "req-bad")).outcome());
+        assertEquals(VerificationOutcome.PARAM_INVALID, verificationManager.verifyCode(
+                new CodeVerifyCommand("SMS", "LOGIN:X", "13800001111", "123456")));
+        verifyNoInteractions(issuer, verifier);
     }
 
     @Test
@@ -72,10 +82,10 @@ class VerificationManagerTest {
         assertTrue(result.isSuccess());
         assertEquals(300, result.expireSeconds());
 
-        when(verifier.verify(VerificationChannel.EMAIL, "a@b.com", "123456"))
+        when(verifier.verify(VerificationChannel.EMAIL, "LOGIN", "a@b.com", "123456"))
                 .thenReturn(VerificationOutcome.SUCCESS);
         assertEquals(VerificationOutcome.SUCCESS, verificationManager.verifyCode(
-                new CodeVerifyCommand("EMAIL", "a@b.com", "123456")));
+                new CodeVerifyCommand("EMAIL", "LOGIN", "a@b.com", "123456")));
     }
 
     @Test

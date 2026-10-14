@@ -1,6 +1,7 @@
 package org.icedamericanomall.auth.domain.port;
 
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
+import org.icedamericanomall.auth.domain.enums.VerificationSceneEnum;
 
 /**
  * 验证码校验能力（领域层定义，基础设施层调 verification-service 实现）。
@@ -23,10 +24,11 @@ public interface VerificationCodeService {
     /**
      * 校验并消费验证码（一次性：校验通过即作废，防重放）。
      *
+     * @param scene   业务场景（REGISTER / LOGIN / RESET_PASSWORD，参与码池隔离，ADR-051）
      * @param channel 验证通道（短信 / 邮件）
      * @param target  验证码接收目标（手机号 / 邮箱，需与签发时一致）
      * @param code    用户提交的验证码
      * @throws org.icedamericanomall.common.exception.BizException 校验未通过或校验服务不可用
      */
-    void verifyAndConsume(VerificationChannelEnum channel, String target, String code);
+    void verifyAndConsume(VerificationSceneEnum scene, VerificationChannelEnum channel, String target, String code);
 }

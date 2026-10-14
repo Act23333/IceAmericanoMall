@@ -56,7 +56,7 @@ public class InternalVerificationController {
     @PostMapping("/code/verify")
     public VerificationCodeVerifyRespCO verifyCode(@Valid @RequestBody VerificationCodeVerifyReqCO request) {
         VerificationOutcome outcome = verificationManager.verifyCode(new CodeVerifyCommand(
-                request.getChannel(), request.getTarget(), request.getCode()));
+                request.getChannel(), request.getScene(), request.getTarget(), request.getCode()));
         return outcome.isSuccess()
                 ? VerificationCodeVerifyRespCO.ok()
                 : VerificationCodeVerifyRespCO.fail(toResultCode(outcome));

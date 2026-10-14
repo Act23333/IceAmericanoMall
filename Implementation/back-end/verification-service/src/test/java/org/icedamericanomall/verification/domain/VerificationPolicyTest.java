@@ -31,7 +31,7 @@ class VerificationPolicyTest {
     }
 
     @Test
-    @DisplayName("策略 — 默认值与业务约定一致（6 位 / 5 分钟 / 60 秒 / 5 次 / 30 分钟）")
+    @DisplayName("策略 — 默认值与业务约定一致（6 位 / 5 分钟 / 60 秒 / 5 次 / 30 分钟 / 日配额 10）")
     void shouldExposeDefaultPolicy() {
         VerificationPolicy policy = VerificationPolicy.DEFAULT;
         assertEquals(6, policy.codeLength());
@@ -39,16 +39,27 @@ class VerificationPolicyTest {
         assertEquals(Duration.ofSeconds(60), policy.sendLimitWindow());
         assertEquals(5, policy.maxFailures());
         assertEquals(Duration.ofMinutes(30), policy.failureWindow());
+        assertEquals(10, policy.dailySendCap());
+        assertEquals(Duration.ofHours(24), policy.dailyWindow());
     }
 
     @Test
     @DisplayName("策略 — 非法参数直接拒绝（位数越界 / 负数窗口）")
     void shouldRejectInvalidPolicy() {
         assertThrows(IllegalArgumentException.class, () -> new VerificationPolicy(
-                2, Duration.ofMinutes(1), Duration.ofSeconds(60), 5, Duration.ofMinutes(30)));
+                2, Duration.ofMinutes(1), Duration.ofSeconds(60), 5, Duration.ofMinutes(30),
+                10, Duration.ofHours(24)));
         assertThrows(IllegalArgumentException.class, () -> new VerificationPolicy(
-                6, Duration.ZERO, Duration.ofSeconds(60), 5, Duration.ofMinutes(30)));
+                6, Duration.ZERO, Duration.ofSeconds(60), 5, Duration.ofMinutes(30),
+                10, Duration.ofHours(24)));
         assertThrows(IllegalArgumentException.class, () -> new VerificationPolicy(
-                6, Duration.ofMinutes(5), Duration.ofSeconds(60), 0, Duration.ofMinutes(30)));
+                6, Duration.ofMinutes(5), Duration.ofSeconds(60), 0, Duration.ofMinutes(30),
+                10, Duration.ofHours(24)));
+        assertThrows(IllegalArgumentException.class, () -> new VerificationPolicy(
+                6, Duration.ofMinutes(5), Duration.ofSeconds(60), 5, Duration.ofMinutes(30),
+                0, Duration.ofHours(24)), "日配额必须大于 0");
+        assertThrows(IllegalArgumentException.class, () -> new VerificationPolicy(
+                6, Duration.ofMinutes(5), Duration.ofSeconds(60), 5, Duration.ofMinutes(30),
+                10, Duration.ZERO), "日配额窗口必须为正");
     }
 }

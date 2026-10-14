@@ -16,10 +16,12 @@ import java.time.Duration;
  * verification:
  *   code:
  *     length: 6
- *     ttl-seconds: 300          # 验证码有效期（与 user-service 直发链路一致：5 分钟）
- *     send-limit-seconds: 60    # 重发限流窗口（与 user-service 一致：60 秒）
+ *     ttl-seconds: 300          # 验证码有效期（5 分钟）
+ *     send-limit-seconds: 60    # 重发限流窗口（60 秒，按场景隔离）
  *     max-failures: 5           # 连续错误上限，超过即作废验证码
  *     failure-window-seconds: 1800
+ *     daily-send-cap: 10        # 目标当日发送上限（跨场景共享，短信轰炸成本控制，ADR-051 修订）
+ *     daily-window-seconds: 86400
  * </pre>
  */
 @Data
@@ -42,6 +44,12 @@ public class VerificationCodeProperties {
     /** 错误计数窗口（秒） */
     private long failureWindowSeconds = 1800;
 
+    /** 目标当日发送上限（跨场景共享的全局配额，ADR-051 修订） */
+    private int dailySendCap = 10;
+
+    /** 日配额滚动窗口（秒） */
+    private long dailyWindowSeconds = 86400;
+
     /** 转换为领域策略对象。 */
     public org.icedamericanomall.verification.domain.model.VerificationPolicy toPolicy() {
         return new org.icedamericanomall.verification.domain.model.VerificationPolicy(
@@ -49,6 +57,8 @@ public class VerificationCodeProperties {
                 Duration.ofSeconds(ttlSeconds),
                 Duration.ofSeconds(sendLimitSeconds),
                 maxFailures,
-                Duration.ofSeconds(failureWindowSeconds));
+                Duration.ofSeconds(failureWindowSeconds),
+                dailySendCap,
+                Duration.ofSeconds(dailyWindowSeconds));
     }
 }

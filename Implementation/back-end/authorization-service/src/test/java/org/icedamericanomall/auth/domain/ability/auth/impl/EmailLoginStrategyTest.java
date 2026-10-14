@@ -7,6 +7,7 @@ import org.icedamericanomall.auth.domain.ability.auth.impl.PasswordLoginStrategy
 import org.icedamericanomall.auth.domain.enums.CredentialTypeEnum;
 import org.icedamericanomall.auth.domain.enums.PlatformEnum;
 import org.icedamericanomall.auth.domain.enums.VerificationChannelEnum;
+import org.icedamericanomall.auth.domain.enums.VerificationSceneEnum;
 import org.icedamericanomall.auth.domain.model.EmailAddress;
 import org.icedamericanomall.auth.domain.model.LoginSpec;
 import org.icedamericanomall.auth.domain.model.userauth.UserAuth;
@@ -87,7 +88,7 @@ class EmailLoginStrategyTest {
 
         assertSame(userAuth, result);
         verify(verificationCodeService)
-                .verifyAndConsume(VerificationChannelEnum.EMAIL, "buyer@example.com", "123456");
+                .verifyAndConsume(VerificationSceneEnum.LOGIN, VerificationChannelEnum.EMAIL, "buyer@example.com", "123456");
         verify(userAuthProvisioner)
                 .findByHashOrCreate(eq(IdentityTypeEnum.EMAIL), anyString(), eq("buyer@example.com"));
     }
@@ -101,7 +102,7 @@ class EmailLoginStrategyTest {
         strategy.login(spec("Buyer@Example.COM", "123456"));
 
         verify(verificationCodeService)
-                .verifyAndConsume(VerificationChannelEnum.EMAIL, "buyer@example.com", "123456");
+                .verifyAndConsume(VerificationSceneEnum.LOGIN, VerificationChannelEnum.EMAIL, "buyer@example.com", "123456");
     }
 
     @Test
@@ -109,7 +110,7 @@ class EmailLoginStrategyTest {
     void shouldReject_whenCodeRejected() {
         doThrow(new BizException(ErrorCode.CAPTCHA_ERROR, "验证码错误"))
                 .when(verificationCodeService)
-                .verifyAndConsume(VerificationChannelEnum.EMAIL, "buyer@example.com", "000000");
+                .verifyAndConsume(VerificationSceneEnum.LOGIN, VerificationChannelEnum.EMAIL, "buyer@example.com", "000000");
 
         BizException exception = assertThrows(BizException.class,
                 () -> strategy.login(spec("buyer@example.com", "000000")));

@@ -39,41 +39,41 @@ public class RedisVerificationCodeRepository implements VerificationCodeReposito
     private final StringRedisTemplate stringRedisTemplate;
 
     @Override
-    public void save(VerificationChannel channel, String target, String code, Duration ttl) {
-        stringRedisTemplate.opsForValue().set(VerificationRedisKeys.codeKey(channel, target), code, ttl);
+    public void save(VerificationChannel channel, String scene, String target, String code, Duration ttl) {
+        stringRedisTemplate.opsForValue().set(VerificationRedisKeys.codeKey(channel, scene, target), code, ttl);
     }
 
     @Override
-    public boolean consumeIfMatches(VerificationChannel channel, String target, String code) {
-        String key = VerificationRedisKeys.codeKey(channel, target);
+    public boolean consumeIfMatches(VerificationChannel channel, String scene, String target, String code) {
+        String key = VerificationRedisKeys.codeKey(channel, scene, target);
         Long consumed = stringRedisTemplate.execute(CONSUME_IF_MATCH_SCRIPT, List.of(key), code);
         return consumed != null && consumed == 1L;
     }
 
     @Override
-    public boolean exists(VerificationChannel channel, String target) {
-        return Boolean.TRUE.equals(stringRedisTemplate.hasKey(VerificationRedisKeys.codeKey(channel, target)));
+    public boolean exists(VerificationChannel channel, String scene, String target) {
+        return Boolean.TRUE.equals(stringRedisTemplate.hasKey(VerificationRedisKeys.codeKey(channel, scene, target)));
     }
 
     @Override
-    public void removeCode(VerificationChannel channel, String target) {
-        stringRedisTemplate.delete(VerificationRedisKeys.codeKey(channel, target));
+    public void removeCode(VerificationChannel channel, String scene, String target) {
+        stringRedisTemplate.delete(VerificationRedisKeys.codeKey(channel, scene, target));
     }
 
     @Override
-    public boolean tryAcquireSendQuota(VerificationChannel channel, String target, Duration window) {
-        String key = VerificationRedisKeys.limitKey(channel, target);
+    public boolean tryAcquireSendQuota(VerificationChannel channel, String scene, String target, Duration window) {
+        String key = VerificationRedisKeys.limitKey(channel, scene, target);
         return Boolean.TRUE.equals(stringRedisTemplate.opsForValue().setIfAbsent(key, QUOTA_OCCUPIED, window));
     }
 
     @Override
-    public void releaseSendQuota(VerificationChannel channel, String target) {
-        stringRedisTemplate.delete(VerificationRedisKeys.limitKey(channel, target));
+    public void releaseSendQuota(VerificationChannel channel, String scene, String target) {
+        stringRedisTemplate.delete(VerificationRedisKeys.limitKey(channel, scene, target));
     }
 
     @Override
-    public int incrementFailures(VerificationChannel channel, String target, Duration window) {
-        String key = VerificationRedisKeys.failureKey(channel, target);
+    public int incrementFailures(VerificationChannel channel, String scene, String target, Duration window) {
+        String key = VerificationRedisKeys.failureKey(channel, scene, target);
         Long failures = stringRedisTemplate.opsForValue().increment(key);
         if (failures != null && failures == 1L) {
             // 首次计数才设置过期，保证「30 分钟窗口」语义不被每次 INCR 重置
@@ -83,8 +83,29 @@ public class RedisVerificationCodeRepository implements VerificationCodeReposito
     }
 
     @Override
-    public void clearFailures(VerificationChannel channel, String target) {
-        stringRedisTemplate.delete(VerificationRedisKeys.failureKey(channel, target));
+    public void clearFailures(VerificationChannel channel, String scene, String target) {
+        stringRedisTemplate.delete(VerificationRedisKeys.failureKey(channel, scene, target));
+    }
+
+    @Override
+    public int incrementDailySendCount(VerificationChannel channel, String target, Duration window) {
+        String key = VerificationRedisKeys.dailyKey(channel, target);
+        Long count = stringRedisTemplate.opsForValue().increment(key);
+        if (count != null && count == 1L) {
+            // 首次计数才设置过期，保证「滚动窗口」语义不被每次 INCR 重置
+            stringRedisTemplate.expire(key, window);
+        }
+        return count == null ? 0 : count.intValue();
+    }
+
+    @Override
+    public void decrementDailySendCount(VerificationChannel channel, String target) {
+        String key = VerificationRedisKeys.dailyKey(channel, target);
+        Long remaining = stringRedisTemplate.opsForValue().decrement(key);
+        if (remaining != null && remaining <= 0) {
+            // 回补到零即清理（防负值残留与过期语义混淆）
+            stringRedisTemplate.delete(key);
+        }
     }
 
     private static RedisScript<Long> buildScript() {

@@ -35,27 +35,27 @@ public class VerificationCodeVerifier {
      * @param code    用户提交的验证码
      * @return 校验结果（{@link VerificationOutcome#SUCCESS} 表示通过且已消费）
      */
-    public VerificationOutcome verify(VerificationChannel channel, String target, String code) {
+    public VerificationOutcome verify(VerificationChannel channel, String scene, String target, String code) {
         if (code == null || code.isBlank()) {
             return VerificationOutcome.PARAM_INVALID;
         }
 
         // 1. 原子比对并消费：成功即删除，杜绝重放
-        if (repository.consumeIfMatches(channel, target, code)) {
-            repository.clearFailures(channel, target);
+        if (repository.consumeIfMatches(channel, scene, target, code)) {
+            repository.clearFailures(channel, scene, target);
             return VerificationOutcome.SUCCESS;
         }
 
         // 2. 不存在 → 未发送 / 已过期 / 已被消费（不细分，避免信息泄露）
-        if (!repository.exists(channel, target)) {
+        if (!repository.exists(channel, scene, target)) {
             return VerificationOutcome.CODE_EXPIRED;
         }
 
         // 3. 存在但不匹配 → 计数，达到上限即作废验证码
-        int failures = repository.incrementFailures(channel, target, policy.failureWindow());
+        int failures = repository.incrementFailures(channel, scene, target, policy.failureWindow());
         if (failures >= policy.maxFailures()) {
-            repository.removeCode(channel, target);
-            repository.clearFailures(channel, target);
+            repository.removeCode(channel, scene, target);
+            repository.clearFailures(channel, scene, target);
             return VerificationOutcome.TOO_MANY_ATTEMPTS;
         }
         return VerificationOutcome.CODE_MISMATCH;

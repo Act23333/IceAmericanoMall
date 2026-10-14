@@ -16,6 +16,7 @@ import org.icedamericanomall.common.utils.crypto.DesensitizeUtil;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * 校验用例编排器（应用层）。
@@ -50,6 +51,10 @@ public class VerificationManager {
      * @param captchaVerify 人机验证命令（参数集为空 = 未携带，跳过）
      * @return 领域签发结果
      */
+    /** 场景编码契约（ADR-051 修订）：大写字母开头 + 大写字母/数字/下划线，≤32。
+     *  拒绝错大小写/特殊字符——防 Key 结构注入；前端错场景 fail-loud，而非静默落入新码池。 */
+    private static final Pattern SCENE_PATTERN = Pattern.compile("^[A-Z][A-Z0-9_]{0,31}$");
+
     public VerificationCodeIssuer.IssuedCode issueCode(CodeIssueCommand command,
                                                        CaptchaVerifyCommand captchaVerify) {
         if (!captchaVerify.params().isEmpty() && !verifyCaptcha(captchaVerify)) {
@@ -66,15 +71,22 @@ public class VerificationManager {
      */
     public VerificationCodeIssuer.IssuedCode issueCode(CodeIssueCommand command) {
         Optional<VerificationChannel> channel = VerificationChannel.find(command.channel());
-        if (channel.isEmpty() || command.target() == null || command.target().isBlank()) {
+        if (channel.isEmpty() || command.target() == null || command.target().isBlank()
+                || command.scene() == null || command.scene().isBlank()) {
             log.warn("[verify][issue][reject] 入参非法 channel={}", command.channel());
             return VerificationCodeIssuer.IssuedCode.fail(VerificationOutcome.PARAM_INVALID);
         }
 
+        // 场景编码契约（ADR-051 修订）：trim 后须匹配 [A-Z][A-Z0-9_]{0,31}
+        String scene = command.scene().trim();
+        if (!SCENE_PATTERN.matcher(scene).matches()) {
+            log.warn("[verify][issue][reject] 场景编码非法 scene={}", command.scene());
+            return VerificationCodeIssuer.IssuedCode.fail(VerificationOutcome.PARAM_INVALID);
+        }
         VerificationCodeIssuer.IssuedCode result = verificationCodeIssuer.issue(
-                channel.get(), command.target().trim(), command.scene(), command.requestId());
+                channel.get(), command.target().trim(), scene, command.requestId());
         log.info("[verify][issue][done] channel={}, scene={}, requestId={}, target={}, outcome={}",
-                channel.get().getCode(), command.scene(), command.requestId(),
+                channel.get().getCode(), scene, command.requestId(),
                 DesensitizeUtil.mask(command.target()), result.outcome());
         return result;
     }
@@ -87,15 +99,22 @@ public class VerificationManager {
      */
     public VerificationOutcome verifyCode(CodeVerifyCommand command) {
         Optional<VerificationChannel> channel = VerificationChannel.find(command.channel());
-        if (channel.isEmpty() || command.target() == null || command.target().isBlank()) {
+        if (channel.isEmpty() || command.target() == null || command.target().isBlank()
+                || command.scene() == null || command.scene().isBlank()) {
             log.warn("[verify][verify][reject] 入参非法 channel={}", command.channel());
             return VerificationOutcome.PARAM_INVALID;
         }
 
+        // 场景编码契约（ADR-051 修订）：与签发侧同一守卫（双端一致才不会错池）
+        String scene = command.scene().trim();
+        if (!SCENE_PATTERN.matcher(scene).matches()) {
+            log.warn("[verify][verify][reject] 场景编码非法 scene={}", command.scene());
+            return VerificationOutcome.PARAM_INVALID;
+        }
         VerificationOutcome outcome = verificationCodeVerifier.verify(
-                channel.get(), command.target().trim(), command.code());
-        log.info("[verify][verify][done] channel={}, target={}, outcome={}",
-                channel.get().getCode(), DesensitizeUtil.mask(command.target()), outcome);
+                channel.get(), scene, command.target().trim(), command.code());
+        log.info("[verify][verify][done] channel={}, scene={}, target={}, outcome={}",
+                channel.get().getCode(), scene, DesensitizeUtil.mask(command.target()), outcome);
         return outcome;
     }
 

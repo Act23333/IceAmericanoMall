@@ -45,6 +45,9 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: ID Invariants Gate (ADR-050/051)
+        run: bash Implementation/back-end/scripts/check-id-invariants.sh
+
       - name: Build & Compile
         run: mvn -f Implementation/back-end/pom.xml clean compile -DskipTests
 
