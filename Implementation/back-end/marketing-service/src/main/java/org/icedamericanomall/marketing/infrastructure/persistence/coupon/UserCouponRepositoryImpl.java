@@ -25,6 +25,16 @@ public class UserCouponRepositoryImpl implements UserCouponRepository {
     }
 
     @Override
+    public List<UserCoupon> findByIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return userCouponMapper.selectByIds(ids).stream()
+                .map(UserCouponRepositoryImpl::toDomain)
+                .toList();
+    }
+
+    @Override
     public UserCoupon save(UserCoupon userCoupon) {
         UserCouponPO po = toPO(userCoupon);
         userCouponMapper.insert(po);

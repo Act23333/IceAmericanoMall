@@ -13,6 +13,14 @@ public interface UserCouponRepository {
     /** 按主键取券（不存在返回 null）。 */
     UserCoupon findById(Long id);
 
+    /**
+     * 按主键列表批量取券（I46 叠加信息批量查询，避免 N+1）。
+     *
+     * @param ids 持券主键列表（{@code null}/空 → 空列表；不存在的 id 自然不在结果中）
+     * @return 命中的持券列表（顺序不保证，调用方不应依赖）
+     */
+    List<UserCoupon> findByIds(List<Long> ids);
+
     /** 新增（id 回填）。 */
     UserCoupon save(UserCoupon userCoupon);
 

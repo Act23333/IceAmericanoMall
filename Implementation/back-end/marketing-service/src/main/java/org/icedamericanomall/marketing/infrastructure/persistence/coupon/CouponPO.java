@@ -50,6 +50,24 @@ public class CouponPO implements Serializable {
     private Integer grabType;
     private Integer priceInCents;
 
+    /**
+     * 适用范围（V4.3）：1=ALL / 2=CATEGORY / 3=PRODUCT。
+     */
+    private Integer scopeType;
+
+    /**
+     * 适用范围 ID 列表（V4.3）—— DB 为 {@code JSON} 列，本类用 {@code String} 承载
+     * （与 {@code CouponCreateReq.scopeValues} 同形态，<b>不引入 JSON TypeHandler</b>：
+     * MyBatis 默认按字符串写读，解析容错在领域层 {@code CouponScope}）。
+     */
+    private String scopeValues;
+
+    /** 叠加规则（V4.3）：1=MUTUAL_EXCLUSIVE / 2=STACKABLE。 */
+    private Integer stackRule;
+
+    /** 叠加分组（V4.3）：同组可叠加。 */
+    private String stackGroup;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 

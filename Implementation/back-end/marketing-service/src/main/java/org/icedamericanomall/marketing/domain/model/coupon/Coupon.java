@@ -47,6 +47,27 @@ public class Coupon {
     private Integer stockType;
     private Integer grabType;
     private Integer priceInCents;
+
+    /**
+     * 适用范围（V4.3）：1=ALL 全场 / 2=CATEGORY 限定品类 / 3=PRODUCT 限定单品。
+     *
+     * <p>{@code null} 一律按 ALL 处理（存量数据默认值为 1，此处仍防御 null，见
+     * {@code CouponUsageManager} 的范围校验与 {@link org.icedamericanomall.marketing.domain.service.CouponScope}）。
+     */
+    private Integer scopeType;
+
+    /**
+     * 适用范围 ID 列表（DB 为 JSON 列）—— 与 {@code CouponCreateReq.scopeValues} 同形态的 JSON 字符串，
+     * 形如 {@code ["1","2"]} 或 {@code [1,2]}；不引入 TypeHandler，解析在领域层容错处理。
+     */
+    private String scopeValues;
+
+    /** 叠加规则（V4.3）：1=MUTUAL_EXCLUSIVE 互斥 / 2=STACKABLE 可叠加。 */
+    private Integer stackRule;
+
+    /** 叠加分组（V4.3）：非空且相同者才允许一起使用。 */
+    private String stackGroup;
+
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 

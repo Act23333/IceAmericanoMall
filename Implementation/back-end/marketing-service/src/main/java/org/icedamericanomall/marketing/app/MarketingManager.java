@@ -13,6 +13,7 @@ import org.icedamericanomall.marketing.adapter.response.FlashBuyVO;
 import org.icedamericanomall.marketing.adapter.response.FlashSaleVO;
 import org.icedamericanomall.marketing.app.dto.FlashBuyResult;
 import org.icedamericanomall.marketing.app.flash.FlashSaleManager;
+import org.icedamericanomall.marketing.app.flash.FlashSaleViewManager;
 import org.icedamericanomall.marketing.domain.dto.FlashSaleOrderMessage;
 import org.icedamericanomall.marketing.infrastructure.messaging.FlashSaleOrderPublisher;
 import org.springframework.stereotype.Component;
@@ -48,13 +49,14 @@ public class MarketingManager {
     private static final int FLASH_PURCHASE_QUANTITY = 1;
 
     private final FlashSaleManager flashSaleManager;
+    private final FlashSaleViewManager flashSaleViewManager;
     private final OrderClient orderClient;
     private final FlashSaleOrderPublisher publisher;
     private final MarketingConverter marketingConverter;
 
-    /** 进行中的秒杀场次列表。 */
+    /** 进行中的秒杀场次列表（商品名/主图/原价/进度百分比由视图装配层批量回填，fail-open）。 */
     public List<FlashSaleVO> listActiveFlashSales() {
-        return marketingConverter.toFlashSaleVOList(flashSaleManager.listActive());
+        return flashSaleViewManager.toViewList(flashSaleManager.listActive());
     }
 
     /**

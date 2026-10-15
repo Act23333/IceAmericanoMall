@@ -73,6 +73,24 @@ public class FlashSale {
         return Math.max(total - sold, 0);
     }
 
+    /**
+     * 已售进度百分比（契约 {@code FlashSaleVO.progress_percent}，整数 0–100）。
+     *
+     * <p>口径：分母为<b>秒杀总库存</b> {@code stock}（{@code flash_sale.stock} 列注释「秒杀库存」= 总量，
+     * 剩余量见 {@link #remainingStock()}），分子为已售 {@code soldCount}——与契约样例一致
+     * （stock=100 / soldCount=35 → 35）。整数向下取整，异常数据（超卖）夹取到 100。
+     *
+     * @return 进度百分比；总库存缺失或非正时返回 0（展示字段不抛异常、不阻断列表）
+     */
+    public int progressPercent() {
+        int total = this.stock != null ? this.stock : 0;
+        int sold = this.soldCount != null ? this.soldCount : 0;
+        if (total <= 0) {
+            return 0;
+        }
+        return Math.min(sold * 100 / total, 100);
+    }
+
     /** DB 口径是否仍可售（异步统计前的兜底守卫）。 */
     public boolean hasSellableStock() {
         int total = this.stock != null ? this.stock : 0;

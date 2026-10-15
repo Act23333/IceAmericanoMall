@@ -38,13 +38,13 @@ public class CouponController {
 
     /** V4.4: 智能领取——根据 grabType 自动路由 DB 或 Redis Lua 通道（京东标准）。 */
     @PostMapping("/claim")
-    public Result<UserCouponVO> claim(@RequestParam String couponId) {
+    public Result<UserCouponVO> claim(@RequestParam(name = "coupon_id") String couponId) {
         return Result.ok(couponClaimManager.smartClaim(UserContext.getUserId(), couponId));
     }
 
     /** 秒杀级优惠券领取（直接走 Redis Lua 高并发通道，兼容保留）。 */
     @PostMapping("/grab")
-    public Result<UserCouponVO> grab(@RequestParam String couponId) {
+    public Result<UserCouponVO> grab(@RequestParam(name = "coupon_id") String couponId) {
         return Result.ok(couponClaimManager.claimWithGrab(UserContext.getUserId(), couponId));
     }
 

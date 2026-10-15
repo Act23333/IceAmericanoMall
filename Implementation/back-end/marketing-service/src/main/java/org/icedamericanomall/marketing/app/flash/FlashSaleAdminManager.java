@@ -38,11 +38,16 @@ public class FlashSaleAdminManager {
 
     private final FlashSaleRepository flashSaleRepository;
     private final MarketingConverter marketingConverter;
+    private final FlashSaleViewManager flashSaleViewManager;
 
     /**
      * AD40：创建秒杀活动（时间窗推导状态落库）。
      *
      * <p>整体已过期的时间窗拒绝创建——保证「已结束」状态不可能由创建产生。
+     *
+     * <p>回执复用 {@link FlashSaleViewManager}（与 M8 列表同一装配口径）：商品名/主图/原价
+     * 与进度百分比一并回填，fail-open 不回退创建结果；读模型为本地只读查询，不违反
+     * 「事务内禁止 Feign」。
      *
      * @param req 创建请求（字段必填与正数校验已在适配层完成）
      * @return 创建后的活动视图（含回填主键与推导状态）
@@ -57,7 +62,7 @@ public class FlashSaleAdminManager {
         flashSale.setStatus(flashSale.deriveStatus(now));
         flashSale.setSoldCount(INITIAL_SOLD_COUNT);
         flashSaleRepository.save(flashSale);
-        return marketingConverter.toVO(flashSale);
+        return flashSaleViewManager.toView(flashSale);
     }
 
     /**

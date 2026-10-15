@@ -44,8 +44,10 @@ import java.util.List;
  * <p>出参一律为 VO（聚合不泄漏到适配层之外）；入参 {@link CouponCreateReq} → 领域聚合在此完成，
  * 业务归一化由聚合自身负责（请求对象只做校验绑定）。
  *
- * <p>UNMAPPED 忽略口径：{@code id}/{@code issuedQty}/{@code sellerId}/审计字段由基础设施回填；
- * coupon 的 {@code scope*} 列历史上未映射到聚合（见数据模型），VO 对应字段恒为空。
+ * <p>UNMAPPED 忽略口径：{@code id}/{@code issuedQty}/{@code sellerId}/审计字段由基础设施回填。
+ * coupon 的 {@code scopeType}/{@code scopeValues}/{@code stackRule}/{@code stackGroup} 四字段
+ * 已与聚合同名同型（V4.3 范围与叠加维度落地），由 MapStruct 按名自动双向映射，无需显式
+ * {@code @Mapping}。
  */
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface MarketingConverter {

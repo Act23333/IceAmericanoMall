@@ -36,7 +36,7 @@ public class FlashSaleController {
 
     /** 秒杀抢购：Redis 预扣 → trade-service 落单 → 返回真实订单号。 */
     @PostMapping("/buy")
-    public Result<FlashBuyVO> buy(@RequestParam Long flashId, @RequestParam Long addressId) {
+    public Result<FlashBuyVO> buy(@RequestParam(name = "flash_id") Long flashId, @RequestParam(name = "address_id") Long addressId) {
         return Result.ok(marketingManager.buyFlashSale(flashId, addressId));
     }
 }

@@ -37,7 +37,7 @@ public class InternalPointsController {
 
     /** 添加积分（签到/下单/任务），返回当前总余额。 */
     @PostMapping("/add")
-    public long addPoints(@RequestParam @NotNull @Min(1) Long userId,
+    public long addPoints(@RequestParam(name = "user_id") @NotNull @Min(1) Long userId,
                           @RequestParam int points,
                           @RequestParam(defaultValue = DEFAULT_POINTS_TYPE) @Min(1) int type,
                           @RequestParam(defaultValue = DEFAULT_POINTS_SOURCE) @NotBlank String source) {

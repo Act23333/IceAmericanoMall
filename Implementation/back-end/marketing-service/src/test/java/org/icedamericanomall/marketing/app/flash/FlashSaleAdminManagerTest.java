@@ -3,6 +3,7 @@ package org.icedamericanomall.marketing.app.flash;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.marketing.adapter.assembler.MarketingConverter;
+import org.icedamericanomall.marketing.app.port.FlashSaleProductBriefQuery;
 import org.icedamericanomall.marketing.adapter.request.FlashSaleCreateReq;
 import org.icedamericanomall.marketing.adapter.request.FlashSaleUpdateReq;
 import org.icedamericanomall.marketing.adapter.response.FlashSaleVO;
@@ -47,13 +48,17 @@ class FlashSaleAdminManagerTest {
     @Mock
     private FlashSaleRepository flashSaleRepository;
 
+    @Mock
+    private FlashSaleProductBriefQuery flashSaleProductBriefQuery;
+
     private final MarketingConverter converter = Mappers.getMapper(MarketingConverter.class);
 
     private FlashSaleAdminManager flashSaleAdminManager;
 
     @BeforeEach
     void setUp() {
-        flashSaleAdminManager = new FlashSaleAdminManager(flashSaleRepository, converter);
+        flashSaleAdminManager = new FlashSaleAdminManager(flashSaleRepository, converter,
+                new FlashSaleViewManager(converter, flashSaleProductBriefQuery));
         // 仓储 INSERT 主键回填（模拟 MyBatis-Plus 生成主键后写回聚合）
         lenient().doAnswer(invocation -> {
             FlashSale sale = invocation.getArgument(0);

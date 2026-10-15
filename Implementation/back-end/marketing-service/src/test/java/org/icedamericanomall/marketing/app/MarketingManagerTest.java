@@ -11,7 +11,10 @@ import org.icedamericanomall.marketing.adapter.assembler.MarketingConverterImpl;
 import org.icedamericanomall.marketing.adapter.response.FlashBuyVO;
 import org.icedamericanomall.marketing.adapter.response.FlashSaleVO;
 import org.icedamericanomall.marketing.app.dto.FlashBuyResult;
+import org.icedamericanomall.marketing.app.dto.FlashSaleProductBrief;
 import org.icedamericanomall.marketing.app.flash.FlashSaleManager;
+import org.icedamericanomall.marketing.app.flash.FlashSaleViewManager;
+import org.icedamericanomall.marketing.app.port.FlashSaleProductBriefQuery;
 import org.icedamericanomall.marketing.domain.dto.FlashSaleOrderMessage;
 import org.icedamericanomall.marketing.domain.model.flash.FlashSale;
 import org.icedamericanomall.marketing.infrastructure.messaging.FlashSaleOrderPublisher;
@@ -53,6 +56,7 @@ class MarketingManagerTest {
     private static final String ORDER_NO = "ORD-FLASH-001";
 
     @Mock FlashSaleManager flashSaleManager;
+    @Mock FlashSaleProductBriefQuery flashSaleProductBriefQuery;
     @Mock OrderClient orderClient;
     @Mock FlashSaleOrderPublisher publisher;
 
@@ -60,8 +64,9 @@ class MarketingManagerTest {
 
     @BeforeEach
     void setUp() {
-        marketingManager = new MarketingManager(flashSaleManager, orderClient, publisher,
-                new MarketingConverterImpl());
+        marketingManager = new MarketingManager(flashSaleManager,
+                new FlashSaleViewManager(new MarketingConverterImpl(), flashSaleProductBriefQuery),
+                orderClient, publisher, new MarketingConverterImpl());
         UserContext.setUser(UserInfo.builder().userId(USER_ID).build());
     }
 
@@ -176,20 +181,30 @@ class MarketingManagerTest {
     }
 
     @Test
-    @DisplayName("listActiveFlashSales — 透传进行中场次")
+    @DisplayName("listActiveFlashSales — 透传进行中场次并回填商品名/主图/原价/进度百分比")
     void shouldPassThroughActiveFlashSales_whenList() {
         FlashSale flashSale = FlashSale.builder()
                 .id(FLASH_ID)
                 .productId(PRODUCT_ID)
                 .skuId(SKU_ID)
                 .flashPrice(FLASH_PRICE)
+                .stock(100)
+                .soldCount(35)
                 .build();
         when(flashSaleManager.listActive()).thenReturn(List.of(flashSale));
+        when(flashSaleProductBriefQuery.findBySkuIds(List.of(SKU_ID)))
+                .thenReturn(java.util.Map.of(SKU_ID, new FlashSaleProductBrief(SKU_ID,
+                        "手工陶瓷茶杯", "https://cdn.icedmall.com/product/main_100.jpg", 12800)));
 
         List<FlashSaleVO> result = marketingManager.listActiveFlashSales();
 
         assertEquals(1, result.size());
-        assertEquals(FLASH_ID, result.getFirst().getId());
+        FlashSaleVO vo = result.getFirst();
+        assertEquals(FLASH_ID, vo.getId());
+        assertEquals("手工陶瓷茶杯", vo.getProductName());
+        assertEquals("https://cdn.icedmall.com/product/main_100.jpg", vo.getProductImage());
+        assertEquals(12800, vo.getOriginalPrice());
+        assertEquals(35, vo.getProgressPercent());
     }
 
     private FlashBuyResult preDeducted() {

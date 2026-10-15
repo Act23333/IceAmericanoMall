@@ -111,6 +111,10 @@ public class CouponRepositoryImpl implements CouponRepository {
                 .stockType(po.getStockType())
                 .grabType(po.getGrabType())
                 .priceInCents(po.getPriceInCents())
+                .scopeType(po.getScopeType())
+                .scopeValues(po.getScopeValues())
+                .stackRule(po.getStackRule())
+                .stackGroup(po.getStackGroup())
                 .createTime(po.getCreateTime())
                 .updateTime(po.getUpdateTime())
                 .build();
@@ -136,6 +140,10 @@ public class CouponRepositoryImpl implements CouponRepository {
         po.setStockType(coupon.getStockType());
         po.setGrabType(coupon.getGrabType());
         po.setPriceInCents(coupon.getPriceInCents());
+        po.setScopeType(coupon.getScopeType());
+        po.setScopeValues(coupon.getScopeValues());
+        po.setStackRule(coupon.getStackRule());
+        po.setStackGroup(coupon.getStackGroup());
         po.setCreateTime(coupon.getCreateTime());
         po.setUpdateTime(coupon.getUpdateTime());
         return po;
