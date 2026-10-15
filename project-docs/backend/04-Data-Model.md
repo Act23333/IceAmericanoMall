@@ -1,10 +1,12 @@
 # 04 — 数据模型文档
 
 > 来源：`doc/项目的分析流程/04.数据建模.md`、`doc/项目代码/数据库/Initialize.sql.md`、`doc/项目的分析流程/03.领域建模.md`、`drawio/IA_E-R.drawio`
-> **2026-10-14（引用收敛批次）**：`review` 订单引用由技术 id（`order_id BIGINT`）收敛为业务键 `order_no BINARY(16)`（含 ReviewAPI 契约缺口修复：`ReviewCreateReq.orderNo` 替代前端无从获得的 `orderId`）；主键决策矩阵补「引用分层规则」脚注；分片影响面清单增补「跨服务技术键收敛项（order_logistics）」「跨服务物理 FK 清单」「user_id 口径前提（永久身份红线）」三行；现状核对快照更新为 23+1+38。
+> **2026-10-14（引用收敛批次）**：`review` 订单引用由技术 id（`order_id BIGINT`）收敛为业务键 `order_no BINARY(16)`（含 ReviewAPI 契约缺口修复：`ReviewCreateReq.orderNo` 替代前端无从获得的 `orderId`）；主键决策矩阵补「引用分层规则」脚注；分片影响面清单增补「跨服务技术键收敛项（order_logistics）」「跨服务物理 FK 清单」「user_id 口径前提（永久身份红线）」三行；现状核对快照口径统一为**全库表数 62 张**（分诊明细见 §一「现状核对快照」：真双 ID 23 + 特殊保留 1 + 仅技术主键 38 = 62）。
+>
+> **2026-10-15（fix-doc 表数与迁移残留批次）**：①全库表数口径统一为 **62 张**（实测 `grep -ciE '^\s*CREATE TABLE' Implementation/back-end/database/Initialize.sql` = 62），清除文中「45 张表 / 30 个迁移（V1.1.0→V5.6）」等过期表述（原 :7、:28）；②清除**全部** `database/migrations/V*.sql` 死链引用（该目录**已不存在**，ADR-045）；③补录 5 张此前缺条目的表（`shop_decoration`、`note_like`、`note_product`、`task_def`、`task_record`）。
 >
 > **最后更新: 2026-10-08（ADR-050 B+ 业务标识存储升级）**：业务标识列 `VARCHAR(32)/CHAR(36)` → **`BINARY(16)`**（22 列转换 / 10 列保留，含 `refund_order`/`reconciliation_detail` 的 VARCHAR(64) 复制列闭包），生成算法 v4 随机 → **UUIDv7**（`IdGenerator` 全项目唯一出口），PO 层 `byte[]` 边界、domain/对外全链路 String 零契约改动；`admin` 种子业务 ID 改 `UNHEX` 定值；包装器/显式 SQL 参数强制 `toBytes`（外部输入 `toBytesOrNull`）。此前——2026-10-03
-> 最后更新: 2026-10-03（**P0 四项落地同步（V5.5/V5.6 已建，ADR-035/036/037）**：§十二 12.1–12.4 状态由"规划"收敛为"已建"——退款资金流（refund_order/wallet_transaction，F1）、渠道对账（reconciliation_batch/detail，F4）随 `V5.5__refund_wallet_tx_and_reconciliation.sql` 落库；运费模型（freight_template + product/orders 增量，F2）、拆单发货（order_logistics 主键与包裹改造 + order_item.package_no，F3）随 `V5.6__freight_template_and_package_split.sql` 落库；全库 **45 张表、30 个迁移（V1.1.0→V5.6）**；金额不变式定稿 **V2：`payAmount = totalAmount − discountAmount + postFee`**；§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 规划标注同步收敛；§3.11「主键约定偏差」注记**清除**（代理主键 id 已补，ADR-037）；§12.3 纠错删除「order_id 转 UNIQUE uk_order_id」自相矛盾表述（实现为**普通外键 + uk_order_package**，未建单列唯一键）。此前——V5.6 规格先行：新增 §十二 四组 P0 规划表——refund_order/wallet_transaction/reconciliation_batch/reconciliation_detail（**V5.5 资金线迁移**）、freight_template 及 product/orders/order_logistics/order_item 变更（**V5.6 履约线迁移**），§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 补规划增量标注，金额不变式变更为 `payAmount = totalAmount − discountAmount + postFee`；规划表均未建库，以"🆕 V5.6 规划"标注，实现落库后本注记同步收敛。此前：数据库整治 + 1:N 拆分同步：seller 瘦身/shop 表（V5.4，ADR-019）、product/review 实际列修正、after_sale/order_logistics 补注、Initialize.sql 全量快照语义、迁移三段式版本号；遗留风险清零批次：`auth:blacklist:{jti}` 契约键注记（ADR-027）、`operation_log` 写入方恢复（ADR-032 管道二）、`merchant_knowledge_base.embedding_id` 口径 `es:{knowledgeId}`）
+> 最后更新: 2026-10-03（**P0 四项落地同步（V5.5/V5.6 已建，ADR-035/036/037）**：§十二 12.1–12.4 状态由"规划"收敛为"已建"——退款资金流（refund_order/wallet_transaction，F1）、渠道对账（reconciliation_batch/detail，F4）、运费模型（freight_template + product/orders 增量，F2）、拆单发货（order_logistics 主键与包裹改造 + order_item.package_no，F3）均已落库【**历史注记**：原文此处记为"随 `V5.5__…` / `V5.6__…` 迁移落库"——迁移机制已于 2026-10-05 废除（ADR-045），这些结构现全部直接位于 `Initialize.sql`，不存迁移文件】；金额不变式定稿 **V2：`payAmount = totalAmount − discountAmount + postFee`**；§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 规划标注同步收敛；§3.11「主键约定偏差」注记**清除**（代理主键 id 已补，ADR-037）；§12.3 纠错删除「order_id 转 UNIQUE uk_order_id」自相矛盾表述（实现为**普通外键 + uk_order_package**，未建单列唯一键）。此前——V5.6 规格先行：新增 §十二 四组 P0 规划表——refund_order/wallet_transaction/reconciliation_batch/reconciliation_detail（**V5.5 资金线**）、freight_template 及 product/orders/order_logistics/order_item 变更（**V5.6 履约线**），§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 补规划增量标注，金额不变式变更为 `payAmount = totalAmount − discountAmount + postFee`；规划表均未建库，以"🆕 V5.6 规划"标注，实现落库后本注记同步收敛。此前：数据库整治 + 1:N 拆分同步：seller 瘦身/shop 表（V5.4，ADR-019）、product/review 实际列修正、after_sale/order_logistics 补注、Initialize.sql 全量快照语义；遗留风险清零批次：`auth:blacklist:{jti}` 契约键注记（ADR-027）、`operation_log` 写入方恢复（ADR-032 管道二）、`merchant_knowledge_base.embedding_id` 口径 `es:{knowledgeId}`）
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/变更表结构时必须同步
 
 ---
@@ -25,7 +27,9 @@
 | **引擎** | InnoDB |
 | **JSON 扩展** | 使用 `JSON` 列类型（`expand_json`）预留灵活性 |
 
-> **数据库目录与装库语义（2026-10 整治）**：脚本目录 `Implementation/back-end/database/`。**`Initialize.sql` 为全量最新快照（45 张表，一次装库到位）**；`migrations/`（30 个版本化文件，V1.1.0 → V5.6）是**存量库升级路径**——新装库无需执行迁移，存量库按版本号顺序应用（同版本号共存文件已重命名去重：12 个迁移改为三段式 `V<major>.<minor>.<patch>__desc.sql`）。RBAC 种子与基线一致且幂等：`ROLE_ADMIN` 持有 `*:*:*` 超管权限。
+> **数据库目录与装库语义（2026-10 整治；2026-10-15 fix-doc 更正）**：脚本目录 `Implementation/back-end/database/`。**`Initialize.sql` 是唯一结构真相源（实测 62 张表，一次装库到位）**。
+>
+> ⚠️ **迁移机制已废除（[ADR-045](../adr/045-db-snapshot-single-source.md)，2026-10-05）**：原 `database/migrations/` 目录（曾含约 30 个 `V*.sql` 版本化文件、V1.1.0 → V5.6）**已整体删除，该目录现已不存在**（库无存量数据，无需升级路径）。**此后任何结构变更（新表 / 新列 / 约束 / 种子）一律直接修改 `Initialize.sql`**——不得再新增迁移文件、不得再引用 `database/migrations/V*.sql`。RBAC 种子与基线一致且幂等：`ROLE_ADMIN` 持有 `*:*:*` 超管权限。
 
 ### 主键决策矩阵
 
@@ -117,7 +121,7 @@
 |---|---|---|
 | **真双 ID**（技术键 + `BINARY(16)` 业务键） | 23 张 | 资金/凭证/订单链/身份/资源类：user、product、sku、freight_template、orders、pay_order、user_coupon、flash_order_log、after_sale、settlement、withdrawal、chat_message（message_id）、refund_order、wallet_transaction、reconciliation_detail、member_growth_log、group_team、group_team_member、invoice、coupon、ai_conversation（预留）、ai_message（预留）、review（订单引用业务键，2026-10-14 收敛） |
 | **特殊保留** | 1 张 | chat_message.conversation_id（复合格式，内嵌技术 id，不可二进制化） |
-| **仅技术主键**（零业务标识，刻意为之） | 38 张 | 子实体/关联/内部/台账：order_item、cart、address、category、note*、sys_*、operation_log、points_log、task_*、promotion、flash_sale、shop、home_config、currency、exchange_rate、reconciliation_batch 等 |
+| **仅技术主键**（零业务标识，刻意为之） | 38 张 | 子实体/关联/内部/台账：order_item、cart、address、category、**note**、**note_like**、**note_product**、**shop_decoration**、**task_def**、**task_record**、sys_*、operation_log、points_log、promotion、flash_sale、shop、home_config、currency、exchange_rate、reconciliation_batch 等（表级条目见 §3/§七） |
 
 > **灰区口径**：shop / flash_sale / promotion / note / group_buy_activity 等对 C 端可见但**技术 ID 直出**属有意识的务实豁免（大厂同类：类目/活动 ID 数字直出）；分库分表切换 `ASSIGN_ID` 时自动升级为雪花直出（稀疏空间，防密集枚举）；若单表先出现爬取/规模泄露顾虑，**补业务键为纯加法演进**（不破坏既有结构，不单独上雪花工程）。
 
@@ -197,7 +201,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 
 索引：`uk_user_id`, `uk_phone_hash`（V2.5）, `uk_email_hash`（V5.2 新增）, `uk_wx_openid`；`uk_phone` 已随明文手机号退役删除（V5.2）。
 
-> **V5.2 迁移说明**：结构变更脚本 `database/migrations/V5.2__user_profile_split_and_encryption.sql`。`Initialize.sql` 已是**全量最新快照**（V5.2 形态：已含 `uk_phone_hash` / `uk_email_hash` 唯一索引，明文列仅为带 deprecated 注释的保留列），**存量库**按版本顺序应用迁移升级。本 DDL **只做结构变更**：①新增资料列 gender / birthday / member_level；②PII 三字段激活（phone_cipher/phone_mask 补齐，email 三列新增）；③唯一索引 `uk_phone` → `uk_phone_hash` + `uk_email_hash`（盲索引唯一，明文列退役）；④旧列（password / wx_openid / role_type / 明文 phone / last_login_time）注释标 **deprecated**，代码停止读写，观察期后另行 DDL 删列。**数据搬迁由 authorization-service 存量迁移器执行**（`LegacyCredentialMigrationRunner`，开关 `auth.legacy-migration.enabled` 默认 false）：①user.password → `user_auth.credential`（PHONE 行）后置 NULL；②user.phone 明文 → 三列后置 NULL；③user.wx_openid → `user_auth` WECHAT 行（identifier_plain，本轮不清理列）；幂等可重跑、逐条独立事务、失败 WARN 不中断；前置条件为 PII 密钥已装载（`CryptoKeyConfig`）。
+> **V5.2 资料/凭证分离说明**：结构现状见 `Initialize.sql` 中 `user` 表的定义（**唯一结构真相源**；迁移机制已废除，ADR-045）。**⚠️ 历史注记**：原文此处引用结构变更脚本 `database/migrations/V5.2__user_profile_split_and_encryption.sql` —— 该文件与 `database/migrations/` 目录**均已不存在**，不得再引用。本节记录的 V5.2 形态（已含 `uk_phone_hash` / `uk_email_hash` 唯一索引，明文列仅为带 deprecated 注释的保留列）现直接体现在 `Initialize.sql`。该次变更**只做结构变更**：①新增资料列 gender / birthday / member_level；②PII 三字段激活（phone_cipher/phone_mask 补齐，email 三列新增）；③唯一索引 `uk_phone` → `uk_phone_hash` + `uk_email_hash`（盲索引唯一，明文列退役）；④旧列（password / wx_openid / role_type / 明文 phone / last_login_time）注释标 **deprecated**，代码停止读写，观察期后另行 DDL 删列。**数据搬迁由 authorization-service 存量迁移器执行**（`LegacyCredentialMigrationRunner`，开关 `auth.legacy-migration.enabled` 默认 false）：①user.password → `user_auth.credential`（PHONE 行）后置 NULL；②user.phone 明文 → 三列后置 NULL；③user.wx_openid → `user_auth` WECHAT 行（identifier_plain，本轮不清理列）；幂等可重跑、逐条独立事务、失败 WARN 不中断；前置条件为 PII 密钥已装载（`CryptoKeyConfig`）。
 
 ### 3.2 address（收货地址表）
 
@@ -436,7 +440,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 
 ### 3.12 user_auth（用户认证凭证表，V5.1）
 
-> 归属 authorization-service 认证上下文聚合。每种登录方式（手机号/邮箱/用户名/微信）一条记录，通过 `user_id` 关联 user-service 的 `user` 表（聚合间只存 ID 引用）。建表脚本：`database/migrations/V5.1__add_user_auth.sql`。
+> 归属 authorization-service 认证上下文聚合。每种登录方式（手机号/邮箱/用户名/微信）一条记录，通过 `user_id` 关联 user-service 的 `user` 表（聚合间只存 ID 引用）。**建表现状见 `Initialize.sql`（唯一结构真相源，ADR-045）——历史注记**：原文引用的 `database/migrations/V5.1__add_user_auth.sql` 与 `database/migrations/` 目录**均已不存在**，不得再引用。
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
@@ -617,11 +621,22 @@ public void createOrder(OrderDTO dto) {
 | stock_type | TINYINT | **V4.0**: 总量模型: 1=LIMITED限量, 2=UNLIMITED不限量 |
 | grab_type | TINYINT | **V4.0**: 领取方式: 1=NORMAL普通, 2=NEED_GRAB需抢(Redis Lua), 3=PLATFORM_EXCLUSIVE平台独占 |
 | price_in_cents | INT | **V4.0**: 付费券价格(分), grantType=PAID_PURCHASE时必填 |
-| **V4.3 适用范围** | | |
-| scope_type | TINYINT | **V4.3**: 适用范围: 1=ALL全场, 2=CATEGORY指定类目, 3=PRODUCT指定商品 (计划) |
-| scope_values | JSON | **V4.3**: 适用范围值: {"categoryIds":[1,2,3]} 或 {"productIds":[101,102]} (计划) |
-| stack_rule | TINYINT | **V4.3**: 叠加规则: 1=不可叠加, 2=可与其他券叠加, 3=可与活动叠加 (计划) |
-| stack_group | VARCHAR(50) | **V4.3**: 叠加分组: 同组券互斥、跨组可叠加 (计划) |
+| **V4.3 适用范围 / 叠加规则（✅ 已打通映射，2026-10-15 [ADR-055](../adr/055-coupon-scope-and-stack-rule-materialization.md)）** | | |
+| scope_type | TINYINT NOT NULL DEFAULT 1 | **V4.3**：适用范围：1=ALL全场，2=CATEGORY品类，3=PRODUCT单品 |
+| scope_values | JSON NULL | **V4.3**：适用范围的 ID 列表（`categoryIds` 或 `productIds` 的 JSON 数组） |
+| stack_rule | TINYINT NOT NULL DEFAULT 1 | **V4.3**：叠加规则：1=MUTUAL_EXCLUSIVE互斥，2=STACKABLE可叠加 |
+| stack_group | VARCHAR(32) NULL | **V4.3**：叠加分组 ID，**同组**券可叠加使用（跨组是否可叠由 `stack_rule` 决定） |
+
+> **✅ 四列映射已打通（2026-10-15，[ADR-055](../adr/055-coupon-scope-and-stack-rule-materialization.md)）——订正此前"四列未映射 / 计划"的描述**：`scope_type`/`scope_values`/`stack_rule`/`stack_group` 四列此前**已建但未被代码读写**（PO 无字段、写路径忽略、读路径不回吐），属"声明了却不生效"的静默忽略。ADR-055 已将四列**真正接入落库与回吐**：
+>
+> | 面 | 打通内容 |
+> | :-- | :-- |
+> | **落库** | `CouponPO` 新增四列映射；管理端/商家端创建券（AD24 / AD27）可写入适用范围与叠加规则 |
+> | **回吐** | `CouponVO` 回吐 `scope_type`/`scope_values`/`stack_rule`/`stack_group`（契约 §4.10.1 示例已含四字段） |
+> | **校验生效** | 核销侧 `POST /internal/coupon/use`（I22）新增可选 `productIds`/`categoryIds`（逗号分隔）——用于 `scope_type/scope_values` 匹配；**缺省时若该券限定了品类/单品则拒绝核销**（不再静默放行） |
+> | **叠加校验** | 补录 `GET /internal/coupon/batch`（契约编号 I69，源码自记 I46）供下单方一次往返校验多券叠加 |
+>
+> ⚠️ **订正记录**：ADR-038 曾有「下单侧不受影响」的推论，**该推论错误**（四列未映射意味着适用范围形同虚设）。ADR-055 已订正并闭环。
 
 **`user_coupon`** — 用户优惠券
 | 字段 | 类型 | 说明 |
@@ -651,7 +666,7 @@ public void createOrder(OrderDTO dto) {
 
 **`seller_application`** — 商家入驻申请 ⚠️ **deprecated（2026-10 第六轮）**
 
-> trade-service 平行入驻流程已退役删除（SellerApplicationController / AdminApplicationController / ApplicationService / SellerApplicationEntity / Mapper；原因：与商家域入驻流程平行重复，且网关 `/api/seller/**`、`/api/admin/**` 均路由不到 trade，早已不可达）。表保留在库作数据备份，DDL 保留于 `V2.0__add_after_sale_application.sql`；现行入驻以 merchant-service `seller` 表为准（见 03-Domain-Model §3.3）。
+> trade-service 平行入驻流程已退役删除（SellerApplicationController / AdminApplicationController / ApplicationService / SellerApplicationEntity / Mapper；原因：与商家域入驻流程平行重复，且网关 `/api/seller/**`、`/api/admin/**` 均路由不到 trade，早已不可达）。表保留在库作数据备份（**DDL 现状见 `Initialize.sql`；历史注记**：原文引用的 `V2.0__add_after_sale_application.sql` 所在 `database/migrations/` 目录**已不存在**，ADR-045）；现行入驻以 merchant-service `seller` 表为准（见 03-Domain-Model §3.3）。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -718,6 +733,80 @@ public void createOrder(OrderDTO dto) {
 
 > **V5.5 已建关联（买家退款资金流，[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)）**：本域流水表 `wallet_transaction`（余额每笔变动留痕，幂等键 `transaction_no`；退款入账 = pay-service 余额渠道退款经 `POST /internal/balance/refund` 触发）——见 §十二 12.1。
 
+### 7.7 V5.12 店铺装修（`shop_decoration`，merchant-service 所有）
+
+> **🆕 2026-10-15 fix-doc 补录**：本表此前全文 0 次出现（完全未收录），现按 `Initialize.sql` 补表级条目。**F11 店铺装修（[ADR-048](../adr/048-content-notes-in-item-domain.md)）**，与 `shop` **1:1**（`uk_shop` 唯一键）；契约端点 S1c/S1d（`/api/seller/shops/{shopId}/decoration`，§4.3.1）+ 公开页 SH1 的 `decoration` 增量。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | 技术主键 |
+| shop_id | BIGINT NOT NULL | 店铺 id（→ `shop.id`，1:1，`uk_shop` 唯一键） |
+| announcement | VARCHAR(200) NULL | 店铺公告（契约限 ≤200） |
+| banners | VARCHAR(2000) NULL | 轮播图 **JSON 数组文本**（≤5 个 URL；非 JSON 列类型） |
+| hot_product_ids | VARCHAR(1000) NULL | 推荐商品位 **JSON 数组文本**（≤8 个 `product.id`；**存 id 无 FK**——展示端过滤非在售，Phase 1 不校验商品归属，ADR-048） |
+| create_time / update_time | DATETIME NOT NULL | 审计字段 |
+
+> 未装修的店铺无本表行（契约面表现为各字段空值/空数组）；UPSERT 写入（改装修 = 覆盖式）。
+
+### 7.8 V5.12 内容社区（`note` / `note_product` / `note_like`，item-service 所有）
+
+> **🆕 2026-10-15 fix-doc 补录**：三表此前仅被正文「`note*`」通配串一笔带过，现补表级条目。**F12 内容社区 Phase 1（[ADR-048](../adr/048-content-notes-in-item-domain.md)）**——与 `review` 同属商品 UGC，落位 item-service；契约端点 P28–P34（§4.4.xa）。
+
+**`note`** — 种草笔记（主表）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | 技术主键 |
+| user_id | BIGINT NOT NULL | 作者 user_id（`idx_user`） |
+| title | VARCHAR(50) NOT NULL | 标题 |
+| content | VARCHAR(2000) NOT NULL | 正文（Phase 1 纯文本，富文本 Phase 2） |
+| cover_image | VARCHAR(255) NULL | 封面图 |
+| images | VARCHAR(2000) NULL | 图集 **JSON 数组文本**（≤9 个 URL；非 JSON 列类型） |
+| status | TINYINT NOT NULL DEFAULT 1 | 1=已发布，2=已删除（**软删**，流与详情不可见） |
+| like_count | INT NOT NULL DEFAULT 0 | 点赞数（冗余计数，**原子维护**，取消不为负） |
+| create_time / update_time | DATETIME NOT NULL | 审计字段（`idx_status_time` 支撑发布流倒序分页） |
+
+**`note_product`** — 笔记关联商品（≤5/篇，发布时校验存在且在售）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | 技术主键 |
+| note_id | BIGINT NOT NULL | 笔记 id（`uk_note_product(note_id, product_id)`） |
+| product_id | BIGINT NOT NULL | 关联商品 id（`idx_product`） |
+| sort | INT NOT NULL DEFAULT 0 | 展示顺序 |
+| create_time | DATETIME NOT NULL | |
+
+**`note_like`** — 笔记点赞（uk 幂等）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | 技术主键 |
+| note_id | BIGINT NOT NULL | 笔记 id（`idx_note`） |
+| user_id | BIGINT NOT NULL | 点赞用户 user_id（`uk_note_user(note_id, user_id)` —— 重复点赞空操作） |
+| create_time | DATETIME NOT NULL | |
+
+### 7.9 V5.10 每日任务体系（`task_def` / `task_record`，marketing-service 所有）
+
+> **🆕 2026-10-15 fix-doc 补录**：两表此前仅被正文「`task_*`」通配串一笔带过，现补表级条目。**F9 每日任务（[ADR-047](../adr/047-daily-task-system.md)）**——**表驱动**任务定义 + 每日幂等完成记录；契约端点 M14（`GET /api/task/daily`，§4.10.3）/ I49（`POST /internal/task/complete`，§4.14.8c）/ AD51-53（管理端 CRUD，§4.13.8c）。积分经 `PointsManager` 单出口写 `points_log`（type=3 任务奖励），与完成记录**同事务**。
+
+**`task_def`** — 任务定义（seed：`DAILY_ORDER` 确认收货 +20 / `DAILY_REVIEW` 发表评价 +10）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | 技术主键 |
+| code | VARCHAR(32) NOT NULL | 任务编码（`uk_code` 唯一；`[A-Z][A-Z0-9_]{0,31}`，调用方锚定，**创建后不可改**） |
+| name | VARCHAR(50) NOT NULL | 任务名称 |
+| type | TINYINT NOT NULL DEFAULT 1 | 1=每日重置（Phase 1 唯一值） |
+| reward_points | INT NOT NULL | 完成奖励积分（**管理端调整立即生效**，影响后续发放、不追溯已发） |
+| status | TINYINT NOT NULL DEFAULT 1 | 1=启用，0=停用（停用 → 触发口 I49 立即返回 `completed=false`） |
+| create_time / update_time | DATETIME NOT NULL | 审计字段 |
+
+**`task_record`** — 任务完成记录（每日幂等）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK AUTO_INCREMENT | 技术主键 |
+| user_id | BIGINT NOT NULL | 用户 user_id（`idx_user_date`） |
+| task_code | VARCHAR(32) NOT NULL | 任务编码（`uk_user_task_date(user_id, task_code, biz_date)` —— 同用户同任务同业务日唯一，**幂等锚点**） |
+| reward_points | INT NOT NULL | 实发积分（快照发放时刻的 `task_def.reward_points`） |
+| biz_date | DATE NOT NULL | 业务日（每日重置锚点） |
+| create_time | DATETIME NOT NULL | |
+
 ---
 
 ## 八、RBAC 权限体系 (V3.0+)
@@ -750,7 +839,7 @@ public void createOrder(OrderDTO dto) {
 
 ## 九、AI 服务数据模型 (V2.5+)
 
-> 状态（2026-10 核对）：`merchant_knowledge_base` **已建（V3.4 迁移）**，所有权归 ai-service（客服域，2026-10 迁入）；`ai_evaluation`、`ai_token_usage` 仍为计划表（未创建迁移文件）。
+> 状态（2026-10-15 核对）：`merchant_knowledge_base` **已建**（表结构见 `Initialize.sql`——**唯一结构真相源**；原文"V3.4 迁移"的引用已随 `database/migrations/` 目录删除而失效，ADR-045），所有权归 ai-service（客服域，2026-10 迁入）；`ai_evaluation`、`ai_token_usage` 仍为计划表（**未建**，且按 ADR-045 若落地将直接进 `Initialize.sql`，不再产生迁移文件）。
 
 > AI 数据表为 V2.5 新增，支撑会话管理、消息持久化和知识库功能。完整设计见 [13-AI-Technology-Selection.md](./13-AI-Technology-Selection.md)。
 
@@ -897,18 +986,21 @@ public void createOrder(OrderDTO dto) {
 
 ## 十二、V5.5/V5.6 新增表与变更（P0 四项，已建库）
 
-> **已建（2026-10-03 落地同步）**：本节四组表已随 `V5.5__refund_wallet_tx_and_reconciliation.sql`（资金线）与 `V5.6__freight_template_and_package_split.sql`（履约线）迁移落库并实现——F1 退款资金流（ADR-035）、F4 渠道对账（ADR-036）、F2 运费模型 + F3 拆单发货（ADR-037）及退款触发纠正；正文与 §3.5/§3.7/§3.8/§3.10/§3.11 的"🆕 V5.6 规划"标注已收敛为"已建"。API 契约见 `05-API-Specification.md` §4.4.9 / §4.7.3 / §4.13.14 / §4.14.15-17（"规划中"标注由 product-manager 收口中）。
+> **已建（2026-10-03 落地同步；2026-10-15 引用更正）**：本节四组表**均已实现并落库**——F1 退款资金流（ADR-035）、F4 渠道对账（ADR-036）、F2 运费模型 + F3 拆单发货（ADR-037）及退款触发纠正。**表结构现状见 `Initialize.sql`（唯一结构真相源）**；⚠️ 原文"随 `V5.5__…` / `V5.6__…` 迁移落库"的表述已失效——迁移机制于 2026-10-05 废除（[ADR-045](../adr/045-db-snapshot-single-source.md)），`database/migrations/` 目录已删除，下表文件名仅作**演进存档**，**不是现存文件、不得引用为建表依据**。正文与 §3.5/§3.7/§3.8/§3.10/§3.11 的"🆕 V5.6 规划"标注已收敛为"已建"。API 契约见 `05-API-Specification.md` §4.4.9 / §4.7.3 / §4.13.14 / §4.14.15-17。
 >
-> **迁移批次**（数据库三段式版本号，与 05 契约版本 V5.6.0 是两套序列）：
+> **变更批次（存档，与 05 契约版本 V5.6.0 是两套序列）**：
 >
-> | 迁移批次 | 表/变更 | 迁移文件（已落地） |
+> ⚠️ **下表"文件名"列全部为历史存档**——`database/migrations/` 目录**已删除**（ADR-045，2026-10-05），这些 `.sql` 文件**在仓库中不存在**，**不得作为建表/变更依据引用**。对应结构现状一律见 `Initialize.sql`。
+>
+> | 存档批次 | 表/变更 | 历史文件名（**已不存在**） |
 > | --- | --- | --- |
-> | **V5.5 资金线** | `refund_order`、`wallet_transaction`（F1）+ `reconciliation_batch`、`reconciliation_detail`（F4） | `V5.5__refund_wallet_tx_and_reconciliation.sql` |
-> | **V5.6 履约线** | `freight_template` 新表 + `product.freight_template_id` / `orders.post_fee`（F2）+ `order_logistics` 主键与包裹改造、`order_item.package_no`（F3） | `V5.6__freight_template_and_package_split.sql` |
-> | **V5.7 订单留言** | `orders.remark VARCHAR(200) NULL`（买家留言快照，T1/T6 请求增量） | `V5.7__order_remark.sql` |
-> | **V5.8 促销与会员** | `promotion`（F5 满减/满折活动）+ `member_level_rule`、`member_growth_log`（F6 等级规则与成长值流水，含 seed） | `V5.8__promotion_and_member_level.sql` |
+> | **V5.5 资金线** | `refund_order`、`wallet_transaction`（F1）+ `reconciliation_batch`、`reconciliation_detail`（F4） | ~~`V5.5__refund_wallet_tx_and_reconciliation.sql`~~ |
+> | **V5.6 履约线** | `freight_template` 新表 + `product.freight_template_id` / `orders.post_fee`（F2）+ `order_logistics` 主键与包裹改造、`order_item.package_no`（F3） | ~~`V5.6__freight_template_and_package_split.sql`~~ |
+> | **V5.7 订单留言** | `orders.remark VARCHAR(200) NULL`（买家留言快照，T1/T6 请求增量） | ~~`V5.7__order_remark.sql`~~ |
+> | **V5.8 促销与会员** | `promotion`（F5 满减/满折活动）+ `member_level_rule`、`member_growth_log`（F6 等级规则与成长值流水，含 seed） | ~~`V5.8__promotion_and_member_level.sql`~~ |
+> | **V5.9–V5.18 及后续** | P2/P3 与边界重构全部增量（`shop_decoration`/`note*`/`task_*`/`group_*`/`pairing_rule`/`currency`/`exchange_rate`/`invoice*` 等） | **无迁移文件**——直接改 `Initialize.sql`（ADR-045 口径） |
 >
-> ※ **2026-10-05 用户裁决：迁移文件机制废除**（[ADR-045](../adr/045-db-snapshot-single-source.md)）——`database/migrations/` 目录已删除（库无存量数据，无需升级路径），`Initialize.sql` 为唯一结构真相源，此后结构变更直接修改快照；上表批次与文件名仅作演进存档。
+> ※ **2026-10-05 用户裁决：迁移文件机制废除**（[ADR-045](../adr/045-db-snapshot-single-source.md)）——`database/migrations/` 目录已删除（库无存量数据，无需升级路径），`Initialize.sql` 为**唯一结构真相源**（实测 62 张表），此后结构变更直接修改快照；上表批次与文件名仅作演进存档。
 >
 > 全部新表遵循 §一 约定：`INT` 分、`TINYINT` 状态枚举、审计列 `create_time`/`update_time`、`utf8mb4` + InnoDB、技术主键 `id AUTO_INCREMENT` + 业务唯一键（主键决策矩阵）。
 >

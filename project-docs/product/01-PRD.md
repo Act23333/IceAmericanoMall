@@ -215,7 +215,7 @@
 |------|------|------|
 | 商家知识库管理 | ✅ V3.3 | 商家后台上传 FAQ/政策/产品手册 → `merchant_knowledge_base` 表 → ES 索引 |
 | 商家 AI 自动代答 | ✅ V3.3 | 仅检索本店知识库（非全平台），复用 `CustomerServiceAssistant` + `RAGRetriever` |
-| 商家对话模板 | ✅ V3.3 | `merchant_reply_template` CRUD：欢迎语/离线回复/FAQ 模板/快捷话术 |
+| 商家对话模板 | ⚪ 计划中 | `merchant_reply_template` CRUD：欢迎语/离线回复/FAQ 模板/快捷话术（**表已建、契约 CH6–CH9 已定义，代码零实现**；原标 `✅ V3.3` 与代码不符，2026-10-15 订正。属计划中功能，非冗余遗留） |
 | 人机转接通知 | ✅ V3.3 | AI 置信度 < 0.7 → 消息系统内通知商家（非独立工单系统） |
 
 **技术方案**：

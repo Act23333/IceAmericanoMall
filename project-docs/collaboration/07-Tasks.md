@@ -772,7 +772,7 @@ Scenario: 查看商品详情
 | V2.3 支付补齐   | 🟢 100% | 14 | 125+ | 130+ | DDD分层, 优惠券抵扣/找回密码/签到积分/微信OAuth, 支付宝(Mock)/余额支付/充值 |
 | V2.4 观测+测试   | 🟢 100% | 14 | 127+ | 140+ | JaCoCo 覆盖率, 补 H2 集成测试(search/cart), Actuator/Prometheus 指标, TraceId 日志, 观测栈(SkyWalking/Grafana/ELK)配置就绪 |
 | V2.5 安全+CI+功能 | 🟢 100% | 14 | 133+ | 150+ | 安全加固(SM2/JWT轮换/keystore-git/PII/空闲超时/RabbitMQ TLS/MinIO presigned)、CI/CD Stage2/3+Checkstyle、登录奖励/管理员统计/商家分析 |
-| Phase 5 前端  | 🔵 进行中   | —   | —   | —   | React 19 + Next.js 15 + Tailwind + Shadcn/ui（storefront）/ Ant Design 5（admin·seller），详见 15-Front-End-Technology-Selection |
+| Phase 5 前端  | 🔵 进行中   | —   | —   | —   | React 18.2 + Next.js 15 + Tailwind + Shadcn/ui（storefront）/ Ant Design 5（admin·seller），详见 15-Front-End-Technology-Selection |
 | V2.5 AI 生产就绪 | 🟢 100% | 14 | 137+ | 160+ | AI 会话隔离(Redis ChatMemory)、SSE流式(2端点)、ES向量索引+kNN、Feign迁移(SearchClient/OrderClient)、Conversation API、RAG Pipeline(EmbeddingService+RAGRetriever+RAGSearchTool)、内容安全(3层防御)、单元测试(10用例)、@RateLimit(4端点) |
 | V3.0 智能升级   | 🟡 85% | 14 | —   | —   | 完整RAG管线✅、多模型路由✅(ModelRouter已接线)、语义缓存✅、离线评测✅(LLMJudge+35条数据集)、人工转接✅(HandoffService)、Conversation API✅(Redis持久化)、AI Gateway✅(Token配额); 待完成: 主-子Agent编排、离线评测自动化、商家知识库CRUD完整 |
 | V3.1 RBAC授权  | 🟢 100% | 14 | 152+ | 160+ | @PreAuthorize方法级授权+PermissionService(@Service("ss"))、角色/权限管理CRUD、Admin端点保护(user:admin)、UserContext→SecurityContext桥接 |

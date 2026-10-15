@@ -1,846 +1,282 @@
-# 18 — 前端实施方案文档
+# 18 — 前端实施方案文档（总览）
 
-> 最后更新: 2026-08-02 | 版本: V1.0
+> 最后更新: 2026-10-14 | 版本: V2.0（多平台拆分：总览 + `18-platforms/`）
 >
 > 依赖: [16-Frontend-Product-Design](../product/16-Frontend-Product-Design.md) · [17-Frontend-Design-System](./17-Frontend-Design-System.md) · [05-API-Specification](../contract/05-API-Specification.md) · [15-Front-End-Technology-Selection](./15-Front-End-Technology-Selection.md)
 >
 > 前置条件: 设计系统 (§17) 和产品设计 (§16) 已定稿，本文档进入工程实施规划。
-> 归属域: frontend | Owner: doc-engineer | 更新触发条件: 实施阶段推进时
+> 归属域: frontend | Owner: doc-engineer | 更新触发条件: 任一平台实施阶段推进时
+
+> **V2.0 变更**：原单篇 Web 实施方案拆为「总览（本文）+ `18-platforms/<平台>.md`」。
+> Web 的平台专属内容**整体平移**至 [18-platforms/web.md](./18-platforms/web.md)，本文只保留跨平台共享内容。
+> 结构依据：[ADR-054](../adr/054-frontend-multi-platform-architecture-and-doc-axis.md) §一/§三（前端多平台化 —— 平台轴与文档结构）。
 
 ---
 
-## 一、实施总览
+## 一、文档结构与读法
 
-### 1.1 核心理念
+### 1.1 两级结构
+
+| 层 | 文件 | 管什么 | 更新触发条件 |
+| :-- | :-- | :-- | :-- |
+| **总览** | 本文 | Phase 模型定义、平台优先级与排期、跨平台共享物、Git 工作流、跨平台风险、全局 DoD | 阶段模型 / 平台优先级变更时 |
+| **平台细则** | `18-platforms/<平台>.md` | 该平台的环境准备、脚手架与目录、阶段拆解、CI/CD、签名与发布、灰度与回滚、平台 DoD | **该平台**实施阶段推进时 |
+
+### 1.2 平台文件清单
+
+| 平台 | 文件 | 状态 |
+| :-- | :-- | :-- |
+| Web | [web.md](./18-platforms/web.md) | 🟢 实稿（原 `18` 正文已平移，含现状校正） |
+| 桌面端 | [desktop.md](./18-platforms/desktop.md) | ⚪ 占位骨架 |
+| Android | [android.md](./18-platforms/android.md) | ⚪ 占位骨架 |
+| iOS | [ios.md](./18-platforms/ios.md) | ⚪ 占位骨架 |
+| 小程序 | [miniprogram.md](./18-platforms/miniprogram.md) | ⚪ 占位骨架（实码与阶段另见 [21 §五../21-Frontend-Refactor-Readiness.md)） |
+
+> **平台集合的单一来源**：上表的五个平台与 [15 §二 平台矩阵](./15-Front-End-Technology-Selection.md) 的行**必须一一对应**。
+> 任一平台选型定稿后，此处必须同步加行 —— 反之亦然。
+>
+> ⚠️ **`apps/mobile`（React Native）不在上表**：它是「承载方式」而非平台轴条目（Android / iOS 的候选实现之一，见 `15 §二` 的候选 A）。
+> 它的激活状态记录在 §二 的实施状态表，不单列平台文件。
+
+> **为什么用「编号 + `18-platforms/` 子目录」而不是新编号**：保住「一个编号 = 一个关注点」——
+> `18` 仍然是「实施方案」；不用申请新编号、不用重排 `00-README` 的编号顺序、不影响其他域的引用。
+> 与 `adr/` 的既有形态一致（一个概念下挂多个文件）。
+
+### 1.3 不要做的事
+
+- ❌ **不要在总览里复制平台细则**（单一事实来源：细则只在 `18-platforms/<平台>.md`）
+- ❌ **不要合并选型与实施**：选型（做什么技术选择）归 `15`，归 frontend-engineer；实施（怎么把选择落地）归 `18` + `18-platforms/`，归 doc-engineer
+- ❌ **不要为未开工的平台填内容**：占位骨架保持骨架，填入实稿的准入条件写在各文件 §九
+
+> **与 `15` 的结构差异（按 ADR-054 分阶段落地，不是不一致）**：
+> [ADR-054](../adr/054-frontend-multi-platform-architecture-and-doc-axis.md) §一 决定平台轴用 `NN-platforms/` 子目录承载，
+> 但**分阶段落地**：本轮只有 `18` 物理拆分（`18-platforms/`）；`15` 本轮以**文档内平台小节**（§八–§十二）承载，其 `15-platforms/` 物理拆分**推迟到对应平台开工时**。
+> 理由是四个平台尚无事实依据，立即建满会产生长期空壳并把「占位」误读成「已立项」。
+>
+> 代价是**迁移期同一份文档体系存在两种承载形态** —— 索引必须说明，否则子目录会被当成「未登记文件」。
+> 登记见 [00-README.md](../00-README.md) 的 frontend 域索引表。
+> **两处的平台集合必须始终一致**（Web / 桌面端 / Android / iOS / 小程序）。
+
+---
+
+## 二、平台矩阵（实施状态）
+
+> 技术选型（生态、语言框架、构建、包管理、最低支持版本）的权威表在 [15-Front-End-Technology-Selection.md](./15-Front-End-Technology-Selection.md) 的**平台矩阵**节，本文不复制。
+> 本节只记录**实施状态**（代码事实，取证 [20 §七](../quality/20-Doc-Code-Consistency-Audit.md) / [21 §一../21-Frontend-Refactor-Readiness.md)）。
+
+| 平台 | 仓库位置 | 实施状态 | 规模（实测） | 平台细则 |
+| :-- | :-- | :-- | :-- | :-- |
+| **Web** | `apps/web`（用户端）+ `apps/admin` + `apps/seller` | 🟡 **骨架已实现，API 层需重写** —— Phase 1 已落地；Phase 2/3 页面骨架在但引用了 8 组后端不存在的路径 | 59 文件 / 5,128 行（约 25 路由页）；admin 9/93、seller 8/85（纯骨架） | [web.md](./18-platforms/web.md) |
+| **小程序** | `apps/miniprogram`（Taro 4，微信 + 支付宝） | 🟡 **实码已存在，待对齐 API 层** —— 后端小程序增量已全量补齐（V5.18：微信小程序登录、PAY7 JSAPI 拉起支付、P37 分享码） | 48 文件 / 1,977 行 | [miniprogram.md](./18-platforms/miniprogram.md) |
+| **移动端（RN）** | `apps/mobile`（React Native 0.76+） | ⚪ **空占位，未激活** —— 策略是 PWA 先行；激活触发条件见 `Implementation/front-end/apps/mobile/README.md` | 1 文件 / 0 行 | 无独立平台细则（PWA 并入 web.md §4.5） |
+| **Android** | 无独立工程 | ⚪ **未开工** | — | [android.md](./18-platforms/android.md) |
+| **iOS** | 无独立工程 | ⚪ **未开工** | — | [ios.md](./18-platforms/ios.md) |
+| **桌面端** | 无 | ⚪ **未排期** | — | [desktop.md](./18-platforms/desktop.md) |
+
+### 2.1 平台优先级与排期
+
+```
+P0  Web（web / admin / seller）   ← 唯一在生产路径上的平台，当前唯一有排期的平台
+P1  小程序                        ← 实码已在，后端已就绪；工作量集中在 API 层对齐
+P2  移动端（RN，经 apps/mobile）   ← 仅在 PWA 能力不足时激活
+P3  Android / iOS 原生             ← 未决策（是否另立原生工程尚无人定）
+P4  桌面端                         ← 未排期，是否设立未决策
+```
+
+> ⚠️ **优先级不是人已确认的决策，而是从代码事实反推的现状描述**。
+> 正式的优先级与排期需 frontend-engineer / product-manager 确认（见 §六 待决表 #1）。
+> 依据多平台方案 §9：阶段 1 只建结构，其余平台开工时再填实稿。
+
+---
+
+## 三、Phase 模型（跨平台通用定义）
+
+> **这是 Phase 的唯一权威定义**，平台细则只填「该平台在每个 Phase 做什么、工期多少」，不重新定义 Phase。
+
+### 3.1 核心理念
 
 ```
 不让 AI 一次生成全部。
 分阶段、分层次、步步验证。
-
-Phase 1 → 地基 (设计系统落地)
-Phase 2 → 品牌 (品牌主页)
-Phase 3 → 交易 (商城核心链路)
-Phase 4 → 数据 (接入真实 API)
-Phase 5 → 优化 (性能 + 测试)
-Phase 6 → 扩展 (个人中心 + 后台)
 ```
 
-### 1.2 开发环境
+### 3.2 Phase 定义
 
-```bash
-# 前置条件
-Node.js >= 20
-pnpm >= 9
+| Phase | 主题 | 完成判据（通用形式） |
+| :-- | :-- | :-- |
+| **1 地基** | 设计系统落地 | 该平台有可运行的 token 层 + 基础组件，视觉规范可验证 |
+| **2 品牌** | 品牌体验入口 | 品牌主页/首屏完成，视觉 100% 还原设计稿 |
+| **3 交易** | 商城核心链路 | 浏览 → 搜索 → 详情 → 加购 → 结算 → 支付 端到端可走通 |
+| **4 数据** | 接入真实 API | 该平台脱离 Mock 能跑通核心链路；类型/客户端来自契约而非手写 |
+| **5 优化** | 性能 + 测试 | 该平台性能预算达标 + 核心 E2E 通过 |
+| **6 扩展** | 个人中心 + 后台 + 特色能力 | 计划内的业务域全部可用 |
 
-# 创建 Monorepo
-mkdir front-end && cd front-end
-pnpm init
-# 配置 pnpm-workspace.yaml + turbo.json
+> **Phase 是模型，不是日历**：各平台的 Phase 1-6 可以并行、可以跳过（如小程序无「品牌主页」需求时可合并 2→3）。
+> 但**每个平台都必须走完 4（接入真实 API）与 5（性能 + 测试）**——这两项是质量门禁，不可跳过。
 
-# 创建 apps
-mkdir -p apps/storefront apps/admin apps/seller
-mkdir -p packages/ui packages/api packages/auth packages/config packages/utils
+### 3.3 各平台进度总览
 
-# 安装核心依赖
-pnpm add -w next@latest react@latest react-dom@latest typescript@latest
-pnpm add -w tailwindcss@latest @tailwindcss/postcss
-pnpm add -w @tanstack/react-query zustand react-hook-form zod
-pnpm add -w lucide-react next-themes
-pnpm add -w -D vitest @testing-library/react @playwright/test msw
-```
+| Phase | Web | 小程序 | Android | iOS | 桌面端 |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| 1 设计系统 | 🟢 已落地 | 🟡 `app.scss` 充当事实 token 层 | ⚪ | ⚪ | ⚪ |
+| 2 品牌 | 🟡 组件在，未验收 | — | ⚪ | ⚪ | ⚪ |
+| 3 交易 | 🟡 骨架在，API 层需重写 | 🟡 页面在（20 页） | ⚪ | ⚪ | ⚪ |
+| 4 接入真实 API | 🔴 未开始 | 🔴 未开始 | ⚪ | ⚪ | ⚪ |
+| 5 优化 + 测试 | 🔴 未开始 | 🔴 未开始 | ⚪ | ⚪ | ⚪ |
+| 6 扩展 | 🟡 个人中心在；后台纯骨架 | 🟡 部分 | ⚪ | ⚪ | ⚪ |
 
-### 1.3 工程约束
-
-| 约束 | 标准 | 检查工具 |
-|------|------|---------|
-| TypeScript | strict 模式，禁止 `any` | `tsc --noEmit` |
-| ESLint | Flat config, `eslint-config-next` | `eslint .` |
-| Prettier | 3.x + `prettier-plugin-tailwindcss` | `prettier --check` |
-| 测试 | Vitest ≥ 80% 工具函数, Playwright ≥ 5 核心流程 | CI gate |
-| 性能 | Lighthouse ≥ 90, LCP < 2.5s | Lighthouse CI |
-| 包管理 | pnpm only | `engine-strict=true` |
+> 小程序的 `app.scss` 作为 token 层见 `Implementation/front-end/scripts/check-design-tokens.mjs` R3/R4 的现状注释（逐平台迁移中）。
 
 ---
 
-## 二、Phase 1 — 设计系统落地 (Day 1-3)
+## 四、跨平台必须统一的四件事
 
-> **目标**: 将 §17 的 Design Tokens 落地为可运行的 Tailwind 配置 + 基础组件。
+> 这四条是**硬约束**：平台可以有自己的导航范式与实现，但以下四项**只允许一处定义**。
 
-### 2.1 任务清单
+| # | 事项 | 唯一事实来源 | 各平台做什么 | 禁止 |
+| :-- | :-- | :-- | :-- | :-- |
+| 1 | **设计 token** | [17-Frontend-Design-System.md](./17-Frontend-Design-System.md)（代码侧为 `apps/web/app/globals.css` 的 `@theme`） | 各平台只做**注入**：CSS 变量 / Compose Theme / SwiftUI Environment / 小程序样式变量 | 硬编码色值与尺寸；自建 token 副本 |
+| 2 | **API 契约** | [contract/05-API-Specification.md](../contract/05-API-Specification.md) | 各平台的**网络层封装不同**（fetch client / URLSession / Retrofit / Taro.request），但路径、报文、错误码语义一致 | 复制端点表到本文档；硬编码 `/api/` 路径字面量 |
+| 3 | **认证语义** | [12-Security-Model.md](../backend/12-Security-Model.md) + `contract/05` | 语义一致（登录/刷新/登出/失效），**存储介质按平台安全能力选**：httpOnly Cookie / Keychain / Android Keystore / 小程序 storage | 各平台自定 token 生命周期 |
+| 4 | **信息架构** | [16-Frontend-Product-Design.md](../product/16-Frontend-Product-Design.md) | 主流程一致；**允许平台特有的导航范式**（iOS Tab Bar、Android 返回手势、小程序无 URL 导航），但差异必须登记进 [17 §十二 平台适配差异](./17-Frontend-Design-System.md) 表 | 平台各自发明主流程 |
 
-| # | 任务 | 产出 | 优先级 |
-|---|------|------|--------|
-| P1.1 | Monorepo 骨架搭建 | `pnpm-workspace.yaml`, `turbo.json`, 各 package 的 `package.json` | P0 |
-| P1.2 | Tailwind CSS v4 `@theme` 配置 | `packages/config/tailwind.config.ts` — 所有 Design Tokens | P0 |
-| P1.3 | 全局 CSS 变量 + 字体加载 | `apps/storefront/app/globals.css` — `next/font` 加载 Inter + Noto Sans SC + Playfair Display | P0 |
-| P1.4 | GlassCard 组件 | `packages/ui/components/shared/GlassCard.tsx` | P0 |
-| P1.5 | GlassButton 组件 (4 variants) | `packages/ui/components/shared/GlassButton.tsx` | P0 |
-| P1.6 | GlassInput 组件 | `packages/ui/components/shared/GlassInput.tsx` | P1 |
-| P1.7 | GlassModal 组件 | `packages/ui/components/shared/GlassModal.tsx` | P1 |
-| P1.8 | Skeleton 组件 | `packages/ui/components/shared/Skeleton.tsx` — shimmer 动画 | P0 |
-| P1.9 | EmptyState + ErrorState 组件 | `packages/ui/components/shared/EmptyState.tsx`, `ErrorState.tsx` | P1 |
-| P1.10 | ScrollReveal 组件 | `packages/ui/components/shared/ScrollReveal.tsx` — IntersectionObserver | P1 |
-| P1.11 | ImageWithBlur 组件 | `packages/ui/components/shared/ImageWithBlur.tsx` — 渐进式图片 | P1 |
-| P1.12 | 组件 Storybook (可选) | 基础组件可视化验收 | P2 |
+### 4.1 设计 token 的跨平台注入
 
-### 2.2 验收标准
+| 平台 | 注入机制 | 状态 |
+| :-- | :-- | :-- |
+| Web | Tailwind v4 `@theme`（CSS 变量） | 🟢 已落地 |
+| 小程序 | 样式变量（现为 `apps/miniprogram/src/app.scss` 充当事实 token 层） | 🟡 迁移中 |
+| Android | Compose Theme（Material 3 Theme / `ColorScheme`） | ⚪ 未开始 |
+| iOS | SwiftUI Environment / Asset Catalog | ⚪ 未开始 |
+| 桌面端 | 取决于所选生态（JS 生态可复用 Web 的 CSS 变量路线） | ⚪ 未决策 |
 
-- [ ] `pnpm dev` 启动 storefront，看到 Tailwind 样式生效
-- [ ] GlassCard 在所有视口正确渲染，hover/active 效果正常
-- [ ] GlassButton 4 种 variant 均正确
-- [ ] 暗色模式 / 亮色模式 CSS 变量正确切换
-- [ ] 字体加载无 FOIT (Flash of Invisible Text)
-- [ ] Skeleton shimmer 动画 60fps
-
-### 2.3 不在此阶段
-
-- ❌ 任何业务逻辑
-- ❌ API 调用
-- ❌ 路由
-- ❌ 状态管理
+> 强制比对手段：`node Implementation/front-end/scripts/check-design-tokens.mjs`
+> —— R1 死配置、R2 文档不撒谎（`17 §2.4` vs 线上 CSS 同值）、R3 不裸写色值、R4 平台覆盖。
+> 触发条件：**修改任何 token（代码或 `17 §2.4`）后必跑**；`17 §2.4` 是代码的镜像，顺序必须是**先改代码再改文档**。
 
 ---
 
-## 三、Phase 2 — 品牌主页 (Day 4-8)
+## 五、跨平台工程一致性
 
-> **目标**: 实现品牌主页 `/` — 沉浸式品牌体验，100% 视觉还原设计稿。
+### 5.1 Monorepo 与共享层边界
 
-### 3.1 任务清单
+单一 Monorepo（`Implementation/front-end/`，pnpm workspace + Turborepo）承载全部平台：
 
-| # | 任务 | 产出 | 优先级 |
-|---|------|------|--------|
-| P2.1 | `(brand)/layout.tsx` | 品牌 Layout: 透明毛玻璃导航 + 背景 | P0 |
-| P2.2 | HeroSection — Three.js 场景 | Canvas 东方庭院场景 + 昼夜循环 Shader | P0 |
-| P2.3 | HeroSection — 视差光照 | 鼠标移动光影跟随 (requestAnimationFrame + CSS variables) | P1 |
-| P2.4 | HeroSection — 中央内容 | 品牌名称 + 理念文字 + 探索商城按钮 | P0 |
-| P2.5 | BrandPhilosophy Section | 品牌理念区域: 文字 + 留白 + 植物装饰 | P0 |
-| P2.6 | FeaturedWorks Section | 精选作品横向滚动 (原生 CSS scroll-snap) | P0 |
-| P2.7 | CreatorSpace Section | 创作者空间: 毛玻璃卡片 + 理念文字 | P1 |
-| P2.8 | MarketplaceEntry Section | 进入商城入口: 巨型玻璃按钮 + 过渡动画 | P0 |
-| P2.9 | ScrollReveal 集成 | 各 Section 滚动渐显 + stagger 延迟 | P1 |
-| P2.10 | 响应式适配 | 移动端品牌主页布局 | P1 |
+| 共享包 | 可被谁消费 | 注意 |
+| :-- | :-- | :-- |
+| `packages/api` | 全部平台 | 类型与查询逻辑可共享；**fetch 实现不可共享**（DOM `fetch` / RN `fetch` / 小程序 `Taro.request` 各不同） |
+| `packages/utils` | 全部平台 | 纯函数（金额格式化、校验、常量）—— 必须零平台依赖 |
+| `packages/auth` | 仅 Web 生态 | 含 Next.js `middleware` 与浏览器 Cookie 操作，**不是跨平台包** |
+| `packages/ui` | 仅 Web 生态 | 基于 DOM + Tailwind，**RN / Compose / SwiftUI 均不可复用**（DOM vs Native View） |
+| `packages/config` | 构建期 | 各平台构建配置共享策略 |
 
-### 3.2 技术决策
+> ⚠️ **最大的跨生态陷阱**：把 `packages/ui` 当成"通用组件库"往 RN/小程序里搬。
+> 组件只能**按设计规范重写**，共享的是 **token 与交互规范**，不是组件代码。
 
-**Three.js 场景**:
-```tsx
-// 使用 @react-three/fiber + @react-three/drei
-// 品牌主页 Hero 背景
-
-import { Canvas } from '@react-three/fiber';
-import { Environment, OrbitControls } from '@react-three/drei';
-
-// 场景组件 — 仅在客户端加载
-const GardenScene = dynamic(() => import('./_scenes/GardenScene'), {
-  ssr: false,
-  loading: () => <div className="absolute inset-0 bg-ink" />
-});
-```
-
-**性能要求**:
-- Canvas 仅渲染背景 (不参与页面交互)
-- 使用 `frameloop="demand"` 仅在滚动/鼠标移动时渲染
-- 几何体面数 < 10k
-- Shader 复杂度: 仅色温 + 光照方向变化，无后处理
-- 移动端降级: 静态渐变背景
-
-### 3.3 验收标准
-
-- [ ] 品牌主页全屏展示，无滚动条异常
-- [ ] 滚动白天→黄昏→夜晚过渡平滑 (30fps+)
-- [ ] 鼠标视差光照跟随在 60fps
-- [ ] "探索商城"按钮跳转到 `/marketplace` (目前可 404)
-- [ ] 移动端降级为静态背景
-- [ ] Lighthouse 评分 ≥ 85 (品牌主页允许略低于商城)
-- [ ] 页面加载时间 < 3s (含 Three.js)
-
----
-
-## 四、Phase 3 — 商城核心链路 (Day 9-18)
-
-> **目标**: 实现商城首页 + 商品详情 + 购物车 + 结算 — 核心交易闭环。
-
-### 4.1 Phase 3.1 — 商城首页 (Day 9-11)
-
-| # | 任务 | 产出 | API |
-|---|------|------|-----|
-| P3.1 | `(marketplace)/layout.tsx` | 商城 Layout: Header + Main + Footer | — |
-| P3.2 | Header 导航栏 | Logo + SearchBar + 分类下拉 + 购物车图标 + 用户菜单 | — |
-| P3.3 | Footer | 品牌信息 + 链接 + 社交媒体 + 版权 | — |
-| P3.4 | Hero Banner | 轮播 Banner (Swiper/Embla) | `GET /api/home/config` |
-| P3.5 | 分类入口 (CategoryEntry) | 水平滚动分类图标 | `GET /api/item/category/tree` |
-| P3.6 | 精选推荐 (FeaturedProducts) | 横向滚动 ProductCard 列表 | `GET /api/item/product/page?sort=sales` |
-| P3.7 | 新品上市 (NewArrivals) | 2×4 商品网格 | `GET /api/item/product/page?sort=newest` |
-| P3.8 | 活动专区 (ActivityZone) | 秒杀 + 领券入口卡片 | `GET /api/flash`, `GET /api/coupon/template` |
-| P3.9 | ProductCard 组件 | 带 hover 效果的商品卡片 | — |
-| P3.10 | ProductGrid 组件 | 响应式商品网格 | — |
-| P3.11 | ProductHorizontalScroll 组件 | 横向滚动容器 + 箭头导航 | — |
-
-### 4.2 Phase 3.2 — 搜索 (Day 12-13)
-
-| # | 任务 | 产出 | API |
-|---|------|------|-----|
-| P3.12 | SearchBar 组件 | 搜索框 + 焦点展开 + 建议下拉 | `GET /api/search/suggest` |
-| P3.13 | 搜索页 | 搜索结果列表 + 筛选面板 | `GET /api/search/product` |
-| P3.14 | SearchFilter 组件 | 分类/价格/品牌/排序筛选 | — |
-| P3.15 | HotKeywords 组件 | 热门搜索标签云 | `GET /api/search/hot` |
-| P3.16 | SearchHistory 组件 | 搜索历史 (localStorage + API) | `GET /api/search/history` |
-
-### 4.3 Phase 3.3 — 商品详情 (Day 14-15)
-
-| # | 任务 | 产出 | API |
-|---|------|------|-----|
-| P3.17 | 商品图片轮播 | 多图滑动 + 缩略图导航 + 点击放大 (Lightbox) | — |
-| P3.18 | 商品信息区 | 名称/价格/标签/优惠券提示 | `GET /api/item/product/{id}/detail` |
-| P3.19 | SkuSelector 组件 | 多维度规格选择 (颜色/尺寸) | `GET /api/item/product/{id}/skus` |
-| P3.20 | QuantityStepper 组件 | 数量加减 (min 1, max stock) | — |
-| P3.21 | 店铺卡片 | 店铺信息 + 关注 + 进店 | `GET /api/shop/{sellerId}` |
-| P3.22 | 商品详情 Tab | 图文详情 / 规格参数 | — |
-| P3.23 | 评价摘要 | 评分分布 + 标签 | `GET /api/item/review/product/{id}/summary` |
-| P3.24 | 评价列表 | 筛选 + 分页 | `GET /api/item/review/product/{id}/filter` |
-| P3.25 | 推荐商品 | "看了又看"横向滚动 | `GET /api/item/product/page` |
-| P3.26 | 加购 / 立即购买 | 按钮交互 + Toast 反馈 | `POST /api/cart/item`, 跳转结算 |
-
-### 4.4 Phase 3.4 — 购物车 (Day 16-17)
-
-| # | 任务 | 产出 | API |
-|---|------|------|-----|
-| P3.27 | 购物车页 | 按店铺分组展示 | `GET /api/cart/grouped` |
-| P3.28 | CartItem 组件 | 商品行: 图片/名称/规格/价格/数量/小计 | — |
-| P3.29 | 数量修改 | + / - 按钮 + 输入框 (debounced API call) | `PUT /api/cart/item` |
-| P3.30 | 选中/取消 + 全选 | Checkbox + 汇总栏联动 | `PATCH /api/cart/item/{skuId}/selected` |
-| P3.31 | 删除商品 | 单删 + 批量删 | `DELETE /api/cart/item/{skuId}` |
-| P3.32 | 空购物车 | 空状态 + "去逛逛" CTA | — |
-| P3.33 | 底部汇总栏 | 合计金额 + 已选数量 + 结算按钮 | — |
-| P3.34 | CartDrawer 组件 | 侧边购物车抽屉 (悬浮快捷入口) | — |
-
-### 4.5 Phase 3.5 — 结算 & 支付 (Day 18)
-
-| # | 任务 | 产出 | API |
-|---|------|------|-----|
-| P3.35 | 结算页 | 地址 + 商品清单 + 优惠券 + 备注 + 金额汇总 | — |
-| P3.36 | AddressSelector 组件 | 地址单选列表 + 新增/编辑 inline | `GET /api/user/address/list`, `POST /api/user/address/add` |
-| P3.37 | CouponSelector 组件 | 可用优惠券列表 + 一键选用 | `POST /api/coupon/available/filter` |
-| P3.38 | 订单金额汇总 | 商品总额 - 优惠券 = 实付金额 | — |
-| P3.39 | 提交订单 | 调用 API + loading + 成功跳转支付 | `POST /api/trade/order` |
-| P3.40 | 支付页 | 微信二维码 + 支付宝 + 余额支付选择 | `POST /api/pay/order/{orderNo}` |
-| P3.41 | 支付状态轮询 | 3s 轮询 + 超时提示 + 成功跳转 | `GET /api/pay/order/{orderNo}/status` |
-| P3.42 | 支付结果页 | 成功/失败状态 + 查看订单 + 继续购物 | — |
-
-### 4.6 验收标准 (Phase 3 完成)
-
-- [ ] 完整交易闭环可走通: 浏览 → 搜索 → 详情 → 加购 → 结算 → 支付
-- [ ] 所有商品卡片 hover 效果 60fps
-- [ ] 搜索响应 < 300ms (含 API)
-- [ ] 购物车数量修改 debounce 防抖
-- [ ] 结算页地址/优惠券 inline 选择，无页面跳转
-- [ ] 移动端适配: 所有页面在 375px 宽度正常显示
-- [ ] 骨架屏在所有列表页生效
-
----
-
-## 五、Phase 4 — 接入真实 API (Day 19-22)
-
-> **目标**: 用 MSW 建立 API Mock → 前端开发完成 → 切换到真实后端。
-
-### 5.1 任务清单
-
-| # | 任务 | 产出 | 优先级 |
-|---|------|------|--------|
-| P4.1 | API 类型生成 | 从后端 OpenAPI spec 生成 TypeScript 类型到 `packages/api/types/` | P0 |
-| P4.2 | Zod Schema 库 | `packages/utils/validate.ts` — 前端校验规则 | P0 |
-| P4.3 | Fetch Client | `packages/api/client.ts` — Base URL + JWT interceptor + 错误处理 | P0 |
-| P4.4 | TanStack Query hooks — 商品 | `useProducts`, `useProduct`, `useProductDetail` | P0 |
-| P4.5 | TanStack Query hooks — 购物车 | `useCart`, `useAddToCart`, `useUpdateCartItem`, `useRemoveCartItem` | P0 |
-| P4.6 | TanStack Query hooks — 订单 | `useOrders`, `useOrder`, `useCreateOrder` | P0 |
-| P4.7 | TanStack Query hooks — 支付 | `usePayOrder`, `usePayStatus` | P0 |
-| P4.8 | TanStack Query hooks — 搜索 | `useSearch`, `useHotKeywords`, `useSuggestions` | P0 |
-| P4.9 | TanStack Query hooks — 用户 | `useUserInfo`, `useAddresses`, `useFavorites`, `useNotifications` | P1 |
-| P4.10 | TanStack Query hooks — 营销 | `useCoupons`, `useFlashSales`, `useClaimCoupon`, `useFlashBuy` | P1 |
-| P4.11 | TanStack Query hooks — AI | `useAiChat` (Vercel AI SDK `useChat`) | P1 |
-| P4.12 | MSW Mock handlers | 为所有 API 提供 mock 数据, 前端可脱离后端开发 | P0 |
-| P4.13 | Query Key 工厂 | `packages/api/queries/` — 统一 query key 管理 | P0 |
-| P4.14 | 乐观更新 | 购物车加减删使用 `onMutate` + `onError` rollback | P1 |
-
-### 5.2 Fetch Client 实现
-
-```typescript
-// packages/api/client.ts
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
-
-class ApiClient {
-  private async request<T>(path: string, options?: RequestInit): Promise<T> {
-    const res = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      credentials: 'include',  // Cookie 携带 JWT
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
-    });
-
-    // 401 → 触发 token 刷新
-    if (res.status === 401) {
-      const refreshed = await this.refreshToken();
-      if (refreshed) return this.request(path, options);
-      // 刷新失败 → 跳转登录
-      window.location.href = '/auth/login';
-      throw new Error('Unauthorized');
-    }
-
-    const json = await res.json();
-    if (json.code !== 200) {
-      throw new ApiError(json.code, json.msg);
-    }
-    return json.data as T;
-  }
-
-  async get<T>(path: string, params?: Record<string, any>): Promise<T> {
-    const query = params ? `?${new URLSearchParams(params)}` : '';
-    return this.request<T>(`${path}${query}`);
-  }
-
-  async post<T>(path: string, body?: unknown): Promise<T> {
-    return this.request<T>(path, { method: 'POST', body: JSON.stringify(body) });
-  }
-
-  async put<T>(path: string, body?: unknown): Promise<T> {
-    return this.request<T>(path, { method: 'PUT', body: JSON.stringify(body) });
-  }
-
-  async patch<T>(path: string, body?: unknown): Promise<T> {
-    return this.request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
-  }
-
-  async delete<T>(path: string): Promise<T> {
-    return this.request<T>(path, { method: 'DELETE' });
-  }
-
-  private async refreshToken(): Promise<boolean> {
-    // 读取 refresh_token cookie, 调 /api/auth/refresh
-    // 成功后新的 access_token 由后端 Set-Cookie
-    try {
-      await fetch(`${API_BASE}/api/auth/refresh`, { method: 'POST', credentials: 'include' });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-}
-
-export const api = new ApiClient();
-```
-
-### 5.3 Query Key 工厂示例
-
-```typescript
-// packages/api/queries/product.ts
-export const productKeys = {
-  all: ['products'] as const,
-  lists: () => [...productKeys.all, 'list'] as const,
-  list: (filters: ProductPageParams) => [...productKeys.lists(), filters] as const,
-  details: () => [...productKeys.all, 'detail'] as const,
-  detail: (id: number) => [...productKeys.details(), id] as const,
-  skus: (id: number) => [...productKeys.all, 'skus', id] as const,
-};
-```
-
-### 5.4 验收标准
-
-- [ ] `pnpm dev` 使用 MSW mock，所有页面正常渲染 mock 数据
-- [ ] 切换到真实后端 (改 env var)，核心交易链路正常
-- [ ] TanStack Query Devtools 显示请求去重生效
-- [ ] 购物车乐观更新: 网络慢时 UI 即时响应，失败时 rollback
-- [ ] JWT 过期自动刷新，用户无感知
-
----
-
-## 六、Phase 5 — 性能优化 & 测试 (Day 23-26)
-
-> **目标**: Lighthouse ≥ 90, 核心 E2E 通过, PWA 就绪。
-
-### 6.1 性能优化
-
-| # | 任务 | 产出 | 目标 |
-|---|------|------|------|
-| P5.1 | ISR 配置 | 商品列表 `revalidate=60`, 商品详情 `revalidate=300`, 秒杀 `revalidate=10` | TTFB < 200ms |
-| P5.2 | 图片优化 | `next/image` + WebP/AVIF + blurDataURL + 懒加载 | 图片体积 -60% |
-| P5.3 | 字体优化 | `next/font` + `subset` (仅中文字符集按需) | FOIT 0ms |
-| P5.4 | Bundle 分析 | `@next/bundle-analyzer` — 识别大 chunk | 首屏 JS < 100KB |
-| P5.5 | 代码分割 | `dynamic(() => import(...))` + `suspense` | 非首屏组件按需加载 |
-| P5.6 | Link prefetch | 视口内 `<Link>` 自动 prefetch | 页面切换 < 100ms |
-| P5.7 | 动画审查 | 检查所有动画是否仅用 transform/opacity | 60fps |
-| P5.8 | Lighthouse CI | 配置 GitHub Actions 门禁 | 评分 ≥ 90 |
-
-### 6.2 测试
-
-| # | 任务 | 工具 | 覆盖 |
-|---|------|------|------|
-| P5.9 | 工具函数单测 | Vitest | `formatPrice`, Zod schemas, query keys |
-| P5.10 | 组件测试 | Vitest + RTL | GlassCard, GlassButton, ProductCard, SkuSelector, QuantityStepper |
-| P5.11 | 购物车逻辑测试 | Vitest | 加购/去重/选中/全选/计算总价 |
-| P5.12 | E2E — 浏览商品 | Playwright | 首页→分类→详情, 验证 LCP < 2.5s |
-| P5.13 | E2E — 下单支付 | Playwright + MSW | 登录→加购→结算→提交→支付成功 |
-| P5.14 | E2E — 秒杀 | Playwright + MSW | 秒杀页→抢购→售罄/成功 |
-| P5.15 | E2E — 移动端 | Playwright (iPhone 14 viewport) | 移动端适配 + Touch 交互 |
-| P5.16 | 视觉回归 (可选) | Percy / Chromatic | 卡片/按钮组件视觉一致性 |
-
-### 6.3 PWA 配置
-
-```typescript
-// next.config.ts — PWA
-import withPWA from 'next-pwa';
-
-const nextConfig = withPWA({
-  dest: 'public',
-  register: true,
-  skipWaiting: true,
-  disable: process.env.NODE_ENV === 'development',
-  runtimeCaching: [
-    {
-      urlPattern: /^https?:\/\/cdn\.icedmall\.com\/.*/i,
-      handler: 'CacheFirst',
-      options: {
-        cacheName: 'images',
-        expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 },
-      },
-    },
-    {
-      urlPattern: /\/api\//i,
-      handler: 'NetworkFirst',
-      options: {
-        cacheName: 'api-cache',
-        expiration: { maxEntries: 50, maxAgeSeconds: 60 * 5 },
-      },
-    },
-  ],
-})(nextConfig);
-```
-
-### 6.4 验收标准
-
-- [ ] Lighthouse Desktop ≥ 95, Mobile ≥ 90
-- [ ] LCP < 2.5s, INP < 200ms, CLS < 0.1
-- [ ] 所有 E2E 测试通过
-- [ ] PWA 可安装, 离线可查看缓存的商品页
-- [ ] CI 门禁: lint + typecheck + test + Lighthouse
-
----
-
-## 七、Phase 6 — 扩展功能 (Day 27-35+)
-
-> **目标**: 个人中心 + 秒杀 + AI + 消息 + 商家/管理后台。
-
-### 7.1 Phase 6.1 — 个人中心 (Day 27-29)
-
-| 模块 | 页面 | API 依赖 |
-|------|------|---------|
-| 认证 | 登录/注册/找回密码 | `POST /api/auth/login`, `/register`, `/reset-password` |
-| 资料 | 个人中心 + 编辑 + 头像上传 | `GET /api/user/info`, `PATCH /api/user/profile`, `POST /api/user/profile/avatar` |
-| 地址 | 地址列表 + 新增/编辑/删除/设默认 | `GET/POST/PUT/DELETE /api/user/address/*` |
-| 订单 | 订单列表 + 详情 + 取消 + 确认收货 | `GET /api/trade/order/page`, `/{orderNo}`, `/cancel`, `/confirm` |
-| 收藏 | 收藏列表 + 取消收藏 | `GET/DELETE /api/user/favorite` |
-| 优惠券 | 可用/已用/已过期 Tab | `GET /api/coupon/available`, `/used` |
-| 积分 | 积分余额 + 明细 | `GET /api/user/points/balance`, `/history` |
-| 签到 | 签到日历 + 连续签到 | `POST /api/user/sign`, `GET /api/user/sign/status` |
-| 售后 | 申请 + 列表 | `POST /api/after-sale`, `GET /api/after-sale` |
-
-### 7.2 Phase 6.2 — 秒杀频道 (Day 30)
-
-| # | 任务 | API |
-|---|------|-----|
-| P6.1 | 秒杀频道页 | `GET /api/flash`, `GET /api/flash/timeline` |
-| P6.2 | FlashSaleCard 组件 | 倒计时 + 进度条 + 抢购按钮 |
-| P6.3 | FlashCountdown 组件 | 服务端时间校准 + 毫秒级倒计时 |
-| P6.4 | FlashProgress 组件 | 库存进度条 |
-| P6.5 | 抢购交互 | `POST /api/flash/buy` → loading → 成功/失败/售罄 |
-
-### 7.3 Phase 6.3 — AI 助手 & 消息 (Day 31-32)
-
-| # | 任务 | API |
-|---|------|-----|
-| P6.4 | AiChatPanel 组件 | `POST /api/ai/chat/stream` (SSE + Vercel AI SDK `useChat`) |
-| P6.5 | AiProductRecommend 组件 | AI 推荐商品卡片渲染 |
-| P6.6 | AiConversationHistory 组件 | `GET /api/ai/conversations` 会话列表 |
-| P6.7 | ChatWindow 组件 | WebSocket STOMP `/ws/chat` |
-| P6.8 | ConversationList 组件 | `GET /api/chat/conversations` |
-
-### 7.4 Phase 6.4 — 商家后台 + 管理后台 (Day 33-35+)
-
-| 模块 | 关键页面 | 技术 |
-|------|---------|------|
-| 商家后台 | 仪表盘、商品管理(ProTable)、订单管理、发货、优惠券、结算、店铺设置 | Ant Design 5 + ProComponents |
-| 管理后台 | 数据仪表盘、用户管理、商家审核、商品管理、订单管理、分类管理、首页装修、优惠券管理、秒杀管理、财务管理、角色权限、操作日志 | Ant Design 5 + ProComponents |
-
-**Ant Design 集成**:
-```bash
-pnpm add antd @ant-design/pro-components -F apps/admin
-pnpm add antd @ant-design/pro-components -F apps/seller
-```
-
-后台页面是**纯客户端渲染 (SPA 模式)**，不需要 SEO。使用 Ant Design ProLayout 开箱即用的侧边栏 + 面包屑 + 权限路由。
-
----
-
-## 八、认证方案实施
-
-### 8.1 认证流程
-
-```
-1. 用户提交登录表单
-2. POST /api/auth/login → 后端 Set-Cookie: access_token (httpOnly)
-3. Next.js Middleware 拦截需要认证的路由
-4. Middleware 验证 access_token (RS256 公钥)
-   ├── 有效 → 放行, headers 附加 userId/username
-   ├── 过期 → 尝试 refresh_token → 新 access_token
-   └── 失败 → 302 redirect /auth/login
-5. 前端不存储 Token, 不操作 Cookie, 全由 httpOnly Cookie 管理
-```
-
-### 8.2 Middleware 实现
-
-```typescript
-// packages/auth/middleware.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { jwtVerify, importSPKI } from 'jose';
-
-const PUBLIC_KEY = process.env.JWT_PUBLIC_KEY!;  // RS256 公钥
-
-const PROTECTED_PATHS = [
-  '/cart', '/checkout', '/orders', '/pay',
-  '/user', '/sign', '/ai', '/chat',
-  '/seller', '/admin',
-];
-
-const PUBLIC_PATHS = [
-  '/auth/login', '/auth/register', '/auth/reset-password',
-  '/api/auth', '/oauth2',
-];
-
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  // 公开路径直接放行
-  if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
-    return NextResponse.next();
-  }
-
-  // 需要认证的路径
-  if (PROTECTED_PATHS.some(p => pathname.startsWith(p))) {
-    const accessToken = request.cookies.get('access_token')?.value;
-
-    if (!accessToken) {
-      return NextResponse.redirect(new URL('/auth/login', request.url));
-    }
-
-    try {
-      const publicKey = await importSPKI(PUBLIC_KEY, 'RS256');
-      const { payload } = await jwtVerify(accessToken, publicKey);
-
-      // 附加用户信息到 headers (后端 Gateway 也需要)
-      const response = NextResponse.next();
-      response.headers.set('X-User-Id', String(payload.user_id));
-      response.headers.set('X-Username', String(payload.username));
-      return response;
-    } catch {
-      // Token 过期或无效
-      const refreshToken = request.cookies.get('refresh_token')?.value;
-      if (refreshToken) {
-        // 尝试刷新 (简化: 重定向到 refresh API)
-        // 生产环境应在此直接调用后端 refresh
-        const refreshRes = await fetch(`${request.nextUrl.origin}/api/auth/refresh?refresh_token=${refreshToken}`, {
-          method: 'POST',
-        });
-        if (refreshRes.ok) {
-          // 刷新成功, 带有新的 Set-Cookie, 继续请求
-          return NextResponse.next();
-        }
-      }
-
-      return NextResponse.redirect(new URL('/auth/login', request.url));
-    }
-  }
-
-  return NextResponse.next();
-}
-
-export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|public).*)',
-  ],
-};
-```
-
-### 8.3 Zustand Auth Store
-
-```typescript
-// packages/auth/store.ts
-import { create } from 'zustand';
-
-interface AuthState {
-  user: UserInfoResp | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  setUser: (user: UserInfoResp | null) => void;
-  fetchUser: () => Promise<void>;
-  logout: () => Promise<void>;
-}
-
-export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
-  isAuthenticated: false,
-  isLoading: true,
-
-  setUser: (user) => set({ user, isAuthenticated: !!user }),
-
-  fetchUser: async () => {
-    try {
-      const user = await api.get<UserInfoResp>('/api/user/info');
-      set({ user, isAuthenticated: true, isLoading: false });
-    } catch {
-      set({ user: null, isAuthenticated: false, isLoading: false });
-    }
-  },
-
-  logout: async () => {
-    await api.post('/api/auth/logout');
-    set({ user: null, isAuthenticated: false });
-  },
-}));
-```
-
----
-
-## 九、目录结构 (最终)
-
-```
-front-end/
-├── apps/
-│   ├── storefront/                  # 用户端 H5 + PWA
-│   │   ├── app/
-│   │   │   ├── (brand)/             # 品牌主页
-│   │   │   │   ├── layout.tsx
-│   │   │   │   ├── page.tsx
-│   │   │   │   └── _scenes/
-│   │   │   │       └── GardenScene.tsx   # Three.js 场景
-│   │   │   ├── (marketplace)/       # 商城
-│   │   │   │   ├── layout.tsx
-│   │   │   │   ├── page.tsx
-│   │   │   │   ├── search/
-│   │   │   │   ├── categories/
-│   │   │   │   ├── products/[id]/
-│   │   │   │   ├── shop/[sellerId]/
-│   │   │   │   ├── flash/
-│   │   │   │   └── coupons/
-│   │   │   ├── (shop)/              # 交易
-│   │   │   │   ├── layout.tsx
-│   │   │   │   ├── cart/
-│   │   │   │   ├── checkout/
-│   │   │   │   ├── orders/
-│   │   │   │   └── pay/
-│   │   │   ├── (user)/              # 个人中心
-│   │   │   │   ├── layout.tsx
-│   │   │   │   ├── profile/
-│   │   │   │   ├── addresses/
-│   │   │   │   ├── favorites/
-│   │   │   │   ├── coupons/
-│   │   │   │   ├── points/
-│   │   │   │   ├── after-sales/
-│   │   │   │   ├── notifications/
-│   │   │   │   └── security/
-│   │   │   ├── auth/
-│   │   │   ├── sign/
-│   │   │   ├── ai/
-│   │   │   ├── chat/
-│   │   │   ├── layout.tsx           # 根 Layout
-│   │   │   ├── globals.css
-│   │   │   └── providers.tsx        # QueryClient + Auth + Theme Providers
-│   │   ├── public/
-│   │   └── next.config.ts
-│   │
-│   ├── admin/                       # 平台管理后台
-│   │   ├── app/
-│   │   │   ├── layout.tsx           # Ant Design ProLayout
-│   │   │   ├── dashboard/
-│   │   │   ├── users/
-│   │   │   ├── sellers/
-│   │   │   ├── products/
-│   │   │   ├── orders/
-│   │   │   ├── categories/
-│   │   │   ├── home-config/
-│   │   │   ├── coupons/
-│   │   │   ├── flash/
-│   │   │   ├── after-sales/
-│   │   │   ├── finance/
-│   │   │   ├── roles/
-│   │   │   └── logs/
-│   │   └── next.config.ts
-│   │
-│   └── seller/                      # 商家后台
-│       ├── app/
-│       │   ├── layout.tsx           # Ant Design ProLayout
-│       │   ├── dashboard/
-│       │   ├── products/
-│       │   ├── orders/
-│       │   ├── shop/
-│       │   ├── coupons/
-│       │   ├── templates/
-│       │   ├── knowledge/
-│       │   ├── finance/
-│       │   └── apply/
-│       └── next.config.ts
-│
-├── packages/
-│   ├── ui/                          # 共享 UI 组件库
-│   │   ├── components/
-│   │   │   ├── shared/              # 基础组件 (GlassCard, GlassButton, ...)
-│   │   │   ├── product/             # 商品组件 (ProductCard, SkuSelector, ...)
-│   │   │   ├── cart/                # 购物车组件
-│   │   │   ├── order/               # 订单组件
-│   │   │   ├── checkout/            # 结算组件
-│   │   │   ├── user/                # 用户中心组件
-│   │   │   ├── search/              # 搜索组件
-│   │   │   ├── marketing/           # 营销组件
-│   │   │   ├── chat/                # 消息组件
-│   │   │   ├── ai/                  # AI 助手组件
-│   │   │   ├── auth/                # 认证组件
-│   │   │   └── shop/                # 店铺组件
-│   │   └── lib/
-│   │       └── utils.ts             # Shadcn/ui cn() 工具
-│   │
-│   ├── api/                         # API 客户端 + Hooks
-│   │   ├── client.ts                # Fetch wrapper
-│   │   ├── types/                   # TypeScript 类型定义
-│   │   ├── hooks/                   # TanStack Query hooks
-│   │   ├── queries/                 # Query key 工厂
-│   │   └── mocks/                   # MSW handlers
-│   │       ├── handlers/
-│   │       ├── fixtures/
-│   │       └── server.ts
-│   │
-│   ├── auth/                        # 认证模块
-│   │   ├── middleware.ts            # Next.js Middleware
-│   │   └── store.ts                 # Zustand auth store
-│   │
-│   ├── config/                      # 共享配置
-│   │   ├── tailwind.config.ts
-│   │   ├── eslint.config.ts
-│   │   └── tsconfig.base.json
-│   │
-│   └── utils/                       # 工具函数
-│       ├── format.ts                # 金额/日期格式化
-│       ├── validate.ts              # Zod schema
-│       └── constants.ts
-│
-├── pnpm-workspace.yaml
-├── package.json
-├── turbo.json
-└── .github/workflows/
-    └── frontend-ci.yml
-```
-
----
-
-## 十、Git 工作流
-
-### 10.1 分支策略
+### 5.2 Git 工作流
 
 ```
 main               # 生产就绪
   └── develop       # 集成分支
-        ├── feat/phase-1-design-system
-        ├── feat/phase-2-brand-home
-        ├── feat/phase-3-marketplace
-        ├── feat/phase-4-api-integration
-        ├── feat/phase-5-perf-testing
-        └── feat/phase-6-extensions
+        ├── feat/<platform>-<scope>     # 如 feat/miniprogram-pay
+        ├── fix/<platform>-<scope>      # 如 fix/web-cart-quantity
+        └── chore/<scope>
 ```
 
-### 10.2 Commit 规范
+**Commit 规范**（`<type>(<scope>): <subject>`）
 
 ```
 feat(ui): add GlassCard component
 feat(marketplace): implement product search page
+feat(miniprogram): wire JSAPI pay
 fix(cart): handle quantity debounce edge case
 perf(image): add blurDataURL for progressive loading
 test(e2e): add order placement flow
 ```
 
-### 10.3 CI/CD Pipeline
+> `scope` 用**功能域或平台名**。平台名建议用与 `18-platforms/` 一致的词（`web` / `desktop` / `android` / `ios` / `miniprogram`），
+> 但不含 `mobile`（RN 是承载方式，不是平台轴上的独立条目 —— 见 §二 表）。
 
-```yaml
-# .github/workflows/frontend-ci.yml
-name: Frontend CI
+**PR 要求**
 
-on:
-  pull_request:
-    paths: ['front-end/**']
+- 一个 PR 只做一件事；跨平台改动拆分为多个 PR
+- 触碰 token 的 PR 必附 `check-design-tokens.mjs` 输出
+- 触碰 `packages/*` 的 PR 必须说明影响哪些平台
 
-jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
-      - run: pnpm install
-      - run: pnpm lint
-      - run: pnpm typecheck
+### 5.3 CI 策略（跨平台）
 
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
-      - run: pnpm install
-      - run: pnpm test
-      - run: pnpm test:e2e
+| 检查 | 能上通用 Linux runner？ | 说明 |
+| :-- | :-- | :-- |
+| lint / type-check / 单元测试 | ✅ | 各平台 |
+| 设计 token 一致性 | ✅ | `check-design-tokens.mjs` |
+| Web 构建 + E2E + Lighthouse | ✅ | 见 [web.md §六](./18-platforms/web.md) |
+| 小程序构建（Taro） | 🟡 | CLI 构建可上 CI；**预览与真机调试需开发者工具** |
+| Android / iOS 构建 | 🟡 | 需相应 SDK；iOS 签名与 TestFlight 需 macOS runner |
+| 桌面端构建 | ⚪ | 取决于所选生态 |
 
-  lighthouse:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
-      - run: pnpm install
-      - run: pnpm build
-      - uses: treosh/lighthouse-ci-action@v12
-        with:
-          urls: |
-            http://localhost:3000/
-            http://localhost:3000/marketplace
-            http://localhost:3000/products/1
-          budgetPath: .github/lighthouse/budget.json
-```
+> **原则**：能在 CI 上跑的检查必须在 CI 上跑；跑不了的（真机、签名、商店提交）必须在平台细则里**显式列出人工步骤与责任人**，不能默认"有人会做"。
 
 ---
 
-## 十一、风险与缓解
+## 六、跨平台风险与待决事项
+
+### 6.1 跨平台风险
 
 | 风险 | 概率 | 影响 | 缓解措施 |
-|------|------|------|---------|
-| Three.js 场景性能差 | 中 | 品牌主页卡顿 | 移动端降级静态背景；frameloop="demand"；几何体 < 10k 面 |
-| ISR 缓存不一致 | 低 | 商品价格/库存显示过期 | 详情页库存 client fetch；revalidate 保守配置 |
-| JWT 刷新竞态条件 | 中 | 多个请求同时 401 | Token 刷新加锁 (Promise cache)；401 请求队列 |
-| 移动端适配遗漏 | 中 | 部分页面移动端不可用 | Playwright 移动端 E2E；375px 宽度强制检查 |
-| API 类型不同步 | 低 | 运行时类型错误 | CI 中 `openapi-typescript` 自动检查差异；Zod 运行时校验兜底 |
-| 购物车乐观更新冲突 | 中 | 数量显示不一致 | 版本号机制；onError 完整 rollback；后台定期全量刷新 |
+| :-- | :-- | :-- | :-- |
+| **跨生态套用写法** —— 把 React/Web 惯用法搬进 SwiftUI / Compose / RN | 高 | 代码风格割裂、评审成本高、AI 生成错误代码 | 各平台编码规范已写入 [08-agents.md](../collaboration/08-agents.md) §十，AI 必须遵守 |
+| **token 多副本** —— 各平台各自维护一套色值 | 中 | 设计系统失去一致性，改一处要改处处 | `check-design-tokens.mjs` 强制比对；R3 禁裸写色值 |
+| **`*-platforms/` 长期空壳** —— 平台迟迟不开工 | 中 | 目录冗余，读者误以为有内容 | 占位骨架显式标注「尚无事实依据」+ §九 准入条件 |
+| **平台间 API 层重复漂移** —— 各平台各写一套请求 | 高 | 同一契约在 N 处漂移 | 单一 OpenAPI 生成源（阶段 1）；`packages/api` 共享类型 |
+| **发布能力不对称被忽视** —— 把"随时回滚"当默认 | 中 | 应用商店版本发出去收不回，事故无法回滚 | 服务端开关优先策略；各平台细则 §六「灰度与回滚」必写 |
+| **文档可信度** —— 前端域文档停在 V1.0（2026-08-02），早于契约 V5.7–V5.18 | 高 | 照文档写出的代码必然错 | 见 [21 §七.3../21-Frontend-Refactor-Readiness.md)：**API 与页面映射以 `contract/05` + 代码为准** |
+
+### 6.2 待决事项（**非 doc-engineer 可定**）
+
+| # | 事项 | 归属 | 影响 |
+| :-- | :-- | :-- | :-- |
+| 1 | 平台优先级与排期（决定阶段 2 的先后） | product-manager + frontend-engineer | 决定哪个占位骨架先填实 |
+| 2 | 桌面端是否设立；走 JS 生态（Electron/Tauri）还是原生 | frontend-engineer | 决定桌面端并入 JS 生态还是独立一类 |
+| 3 | Android / iOS 是走 RN（`apps/mobile`）还是另立原生工程 | frontend-engineer | 决定 `android.md` / `ios.md` 是否长期保持骨架 |
+| 4 | 小程序是否同时做微信与支付宝（宿主 API 差异需在 `15` 显式分支） | product-manager + frontend-engineer | 影响 `miniprogram.md` 的分支结构与测试矩阵 |
+| 5 | 多平台前端架构与文档轴决策的 ADR | **frontend-engineer**（文档轴部分 doc-engineer 会签） | 本结构属结构性决定，按仓库惯例应留档（见多平台方案 §7） |
+| 6 | 契约收敛（33 条「计划中」端点移出、13 条更正、`/api/verification/codes` 补录） | product-manager | **所有平台 Phase 4 的硬前置** |
+| 7 | React 版本（`15` 声明 19 / 代码锁 18.2.0） | frontend-engineer | 影响 Web 与小程序（共用 React）的可用特性 |
 
 ---
 
-## 十二、完成定义 (Definition of Done)
+## 七、全局完成定义（Definition of Done）
 
-每个 Phase 完成时必须满足：
+**每个 Phase 完成时必须满足**（叠加在平台专属 DoD 之上）：
 
-- [ ] 代码通过 ESLint + TypeScript strict 检查
+- [ ] 代码通过 Lint + TypeScript/等价静态检查
 - [ ] 相关单元/组件/E2E 测试通过
-- [ ] 手动测试: 金路径 (Golden Path) 可走通
-- [ ] 响应式: Desktop + Tablet + Mobile 布局正确
-- [ ] 可访问性: 键盘导航 + 屏幕阅读器基本可用
-- [ ] 性能: 无新增 Lighthouse 退化
-- [ ] PR Review: 至少 1 人审核通过
-- [ ] 文档: 如有新增组件，更新 §16/§17 对应章节
+- [ ] 手动测试：金路径（Golden Path）可走通
+- [ ] 响应式 / 多分辨率：目标设备形态布局正确（矩阵见 [11-Test-Strategy.md](../quality/11-Test-Strategy.md)）
+- [ ] 可访问性：键盘/辅助技术基本可用（原生平台对应 a11y 语义）
+- [ ] 性能：无新增性能退化（各平台指标见各自细则）
+- [ ] PR Review：至少 1 人审核通过
+- [ ] 文档：新增组件/页面时更新对应平台细则；改 token 时更新 `17 §2.4` 并跑 `check-design-tokens.mjs`
+
+**进入代码的顺序**：各平台按 Phase 1 → 6 推进，每个 Phase 完成后 review 再进入下一 Phase。
 
 ---
 
-> **前置文档**: [16-Frontend-Product-Design](../product/16-Frontend-Product-Design.md) · [17-Frontend-Design-System](./17-Frontend-Design-System.md)
->
-> **进入代码**: 按 Phase 1 → Phase 6 顺序，每个 Phase 完成后 review 再进入下一 Phase。
+## 八、文档维护规则
+
+| 变更类型 | 要改哪里 |
+| :-- | :-- |
+| 新增/调整 Phase 定义 | 本文 §三（唯一权威） |
+| 某平台的实施细节 | 该平台的 `18-platforms/<平台>.md` |
+| 平台状态/规模变化 | 本文 §二 平台矩阵 |
+| 平台优先级调整 | 本文 §二.1 |
+| 某平台开工（骨架填实） | 该平台文件（先满足其 §九 准入条件） |
+| 新增平台 | 先定 `15` 的平台矩阵与选型，再建 `18-platforms/<平台>.md`，最后登记 `00-README` |
+
+> **触发条件**（本文头部声明）：**任一平台**实施阶段推进时。
+> 单平台的日常推进只需更新该平台文件 + 本文 §三.3 的进度格。
+
+---
+
+> **上游文档**: [15-Front-End-Technology-Selection.md](./15-Front-End-Technology-Selection.md)（选型）· [17-Frontend-Design-System.md](./17-Frontend-Design-System.md)（设计系统）· [21-Frontend-Refactor-Readiness.md../21-Frontend-Refactor-Readiness.md)（准入基线）
+> **平台细则**: [web](./18-platforms/web.md) · [desktop](./18-platforms/desktop.md) · [android](./18-platforms/android.md) · [ios](./18-platforms/ios.md) · [miniprogram](./18-platforms/miniprogram.md)

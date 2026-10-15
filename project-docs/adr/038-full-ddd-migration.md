@@ -36,7 +36,8 @@ org.icedamericanomall.<service>
 
 - 轻量 COLA 形态（顶层 service/、mapper/、entity/、convert/、job/、consumer/、producer/、strategy/ 包）在全仓已不存在；AGENTS.md 的包结构章节已同步重写。
 - 测试基线：18 模块 BUILD SUCCESS，全量 911 测试（trade 121 / item 51 / marketing 49 / pay 76 / ai 52，均不低于旧基线，迁移过程零语义丢失）；ai-service 游离包收口另见 ADR-039。
-- 既存缺口（未随本期处理，保持原状）：`coupon` 表的 scope_type/scope_values/stack_rule/stack_group 四列从未映射进 CouponPO/聚合——商家/平台建券时这些维度静默落 DB 默认值（scope_type=1 ALL、stack_rule=1 MUTUAL_EXCLUSIVE）；下单侧 stack 校验走 marketing 的 `batchGet` 内部接口返回的 PO 字段，不受影响。后续若启用多券叠加范围，需要先补列映射。
+- 既存缺口（未随本期处理，保持原状）：`coupon` 表的 scope_type/scope_values/stack_rule/stack_group 四列从未映射进 CouponPO/聚合——商家/平台建券时这些维度静默落 DB 默认值（scope_type=1 ALL、stack_rule=1 MUTUAL_EXCLUSIVE）；~~下单侧 stack 校验走 marketing 的 `batchGet` 内部接口返回的 PO 字段，不受影响~~。后续若启用多券叠加范围，需要先补列映射。
+  - 🔧 **2026-10-15 订正（ADR-055）**：上句划线部分**推论错误**。实测 `InternalCouponController` 没有 `/batch` 端点，`CouponClient.batchGet` 调用 404 后被 `CouponClientFallback.batchGet` 吞成空列表，`PricingService.validateStackRules` 首行即 `return` —— 该叠加校验自 V4.3 起从未执行过。同时 `/use` 的适用范围参数（`productIds`/`categoryIds`）也被 Spring 静默忽略，范围限制型券可用于任意商品。四列映射 + I46 `/batch` + 范围校验已由 ADR-055 一并落地，本条缺口关闭。
 
 ## 日期
 

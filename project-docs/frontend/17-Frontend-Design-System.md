@@ -1,11 +1,13 @@
 # 17 — 前端设计系统文档
 
-> 最后更新: 2026-08-02 | 版本: V1.0
+> 最后更新: 2026-10-15 | 版本: V1.1
 >
 > 依赖: [16-Frontend-Product-Design](../product/16-Frontend-Product-Design.md) · [15-Front-End-Technology-Selection](./15-Front-End-Technology-Selection.md) · [prompt.md](../collaboration/prompt.md)
 >
 > 下一文档: [18-Frontend-Implementation](./18-Frontend-Implementation.md)
-> 归属域: frontend | Owner: doc-engineer | 更新触发条件: 设计系统变更时
+> 归属域: frontend | Owner: frontend-engineer | 更新触发条件: 设计系统变更时；新增平台适配差异时
+>
+> **平台轴**：设计系统保持**跨平台单篇**（不按平台拆分）；五平台（Web / 桌面端 / Android / iOS / 小程序）的 token 注入机制与允许的偏离集中在 **§十二 平台适配差异**。
 
 ---
 
@@ -128,29 +130,36 @@
   --glass-border: rgba(255, 255, 255, 0.30);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
 
-  /* 阴影 */
+  /* 阴影（玻璃阴影的 token 名是上面的 --glass-shadow，不另立 --shadow-glass） */
   --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
   --shadow-card-hover: 0 4px 24px -8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
-  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.06);
   --shadow-button: 0 2px 8px rgba(45, 139, 110, 0.25);
 
-  /* 圆角 */
+  /* 圆角（--radius-full 无需定义：Tailwind v4 内建 rounded-full） */
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
   --radius-xl: 24px;
-  --radius-full: 9999px;
 
-  /* 间距 */
-  --spacing-section: 80px;
-  --spacing-section-mobile: 48px;
+  /* 区块间距：规格见 §8.2 的 section-xl / lg / md / sm 四档。
+     该阶梯**尚未**落进 @theme，故此处不列 token —— 落地时按 §8.2 一次性补齐四档，
+     而不是只补两档。 */
 
   /* 字体 */
-  --font-sans: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+  --font-sans: 'Inter', 'Noto Sans SC', system-ui, -apple-system, sans-serif;
   --font-display: 'Playfair Display', 'Noto Serif SC', serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 ```
+
+> **定位：本节是代码的镜像，不是独立规格。** 唯一来源是
+> `Implementation/front-end/apps/web/app/globals.css` 的 `@theme` 块，两处由
+> `node Implementation/front-end/scripts/check-design-tokens.mjs` 强制比对（CI 已接入）。
+> 改 token 的顺序是 **先改代码、再改本节**，否则检查失败。
+>
+> 与 §8.2 的区别：本节属**派生类**（代码的镜像，向事实源对齐）；§8.2 的间距阶梯属
+> **规格**（代码尚未实现）。本节没有某个 token，**不等于**设计上不需要它 —— 去规格节看。
+> 依据：ADR-053 的「规格 / 镜像」二分。
 
 ### 2.5 品牌主页专属配色
 
@@ -986,6 +995,7 @@ export const adminTheme: ThemeConfig = {
 在进入代码实现前，确认以下设计决策已达成：
 
 - [ ] 色彩 token 命名 + 数值已定稿
+- [ ] **token 一致性检查通过**：`cd Implementation/front-end && node scripts/check-design-tokens.mjs`（§2.4 必须与 `apps/web/app/globals.css` 同值；有偏差时**先改代码再改 §2.4**）
 - [ ] 字体栈已确认 (Inter + Noto Sans SC + Playfair Display)
 - [ ] 玻璃材质 CSS 变量已定义
 - [ ] 5 个核心组件 (GlassCard, ProductCard, ProductGrid, GlassButton, SearchBar) 设计稿已定
@@ -994,6 +1004,59 @@ export const adminTheme: ThemeConfig = {
 - [ ] 图片尺寸标准 + 渐进加载方案已确认
 - [ ] 响应式断点 + 移动端适配策略已确认
 - [ ] 管理后台 Ant Design 主题 token 已确认
+- [ ] **平台适配差异已登记**（§十二）：各平台 token 注入机制 + 允许的偏离 + 偏离原因；**不允许各端自定数值**
+
+---
+
+## 十二、平台适配差异
+
+> **本节位于检查清单之后**：它是**跨平台映射的登记处**，不改变 §一–§十一 的规范数值 —— 数值的唯一来源仍是各节（色彩 §二、字体 §三、组件 §四、动效 §五、明暗 §六、图标 §七、间距 §八、图片 §九、后台 §十）。
+>
+> **本节即 `Implementation/front-end/scripts/check-design-tokens.mjs` 的 R4 提示中所指「`17` §2.4 的平台映射要求」**：非 Web 平台不必用 `@theme`，但必须有一个**与 Web 同源**的 token 模块。
+
+### 12.1 设计系统的跨平台原则
+
+1. **规范单篇、映射分平台。** 设计系统**不按平台拆成五份** —— 拆了之后一致性将无人守。平台差异集中登记在本节。
+2. **token 单一来源不变。** 运行时唯一来源仍是 `Implementation/front-end/apps/web/app/globals.css` 的 `@theme`，§2.4 是它的**镜像**。新增或修改 token 的顺序：**先改代码 → 再改 §2.4 → 跑 `check-design-tokens.mjs`**（CI 已接入）。
+3. **非 Web 平台只做注入。** 各平台建立自己的 token 模块，取**同一批数值**，**不允许各端自定色板**；确有必须偏离时，先在 §12.3 登记「偏离 + 原因」，再落地。
+4. **落地判据可机械校验。** `check-design-tokens.mjs` 的 R4 报告每个 app 是否已有 token 层，R3 报告裸 hex 数量（当前小程序 152 处，见 §12.2）。
+
+### 12.2 各平台 token 落地机制
+
+| 平台 | 注入机制 | 现状（实测） |
+| --- | --- | --- |
+| **Web** | CSS 变量 —— Tailwind v4 `@theme`（`apps/web/app/globals.css`） | ✅ token 层就位（33 个 token 与 §2.4 同值，检查 R2 通过） |
+| **桌面端** | 未定：走 JS 生态可直接复用 Web 的 CSS 变量；走原生则另建 | ⚪ 未建（平台选型未决，见 `15` §九） |
+| **Android** | 计划：Compose Theme + `CompositionLocal`（色彩 / 字体 / 形状 / 排版各一份） | ⚪ 未建（平台选型未决，见 `15` §十） |
+| **iOS** | 计划：SwiftUI `Environment` + 资源目录（Asset Catalog）中的颜色与字体 | ⚪ 未建（平台选型未决，见 `15` §十一） |
+| **小程序** | 计划：样式变量层（宿主 CSS 变量）；**现状是 `apps/miniprogram/src/app.scss` 事实充当 token 层** | 🟡 152 处裸 hex（检查 R3 警告），待收敛为同源变量层 |
+| **管理后台**（`admin` / `seller`） | 同 Web 机制（CSS 变量），但**尚无 `@theme` token 层** | 🟡 检查 R4 报 `admin✗ seller✗`；Ant Design 主题 token 见 §十 |
+
+> **`admin` / `seller` 是 Web 平台内部的两个应用，不是独立平台** —— 它们缺 token 层属 Web 平台内部的收敛问题（已在 `15` §8.1 登记）。
+
+### 12.3 差异登记表
+
+> 「未定 / 未建」是**如实标注**（对应平台的选型尚未裁决，见 `15` §九–§十二）。表中「计划」列是**方向性主张**（按平台惯用做法取舍），不是已核实的事实；落地时以该平台官方文档为准。
+
+| token / 规范 | Web | 桌面端 | Android | iOS | 小程序 | 偏离原因 |
+| --- | --- | --- | --- | --- | --- | --- |
+| **色彩**（§2.1–2.4） | CSS 变量 `@theme`（实装） | 未定 | 未建 | 未建 | `app.scss` 手写色值（偏离） | 小程序样式能力受限且尚无同源变量层；**只允许机制不同，数值不得另定** |
+| **字体栈**（§三） | Inter + Noto Sans SC + Playfair Display + JetBrains Mono（Web 字体） | 未定 | 未建 | 未建 | 系统字体 + 少量 Web 字体 | 原生端字体需自带字体文件，受包体与授权约束；展示字体（Playfair Display）是否进原生端**待评估** |
+| **字号阶梯**（§3.2） | 固定 px | 未定 | 计划映射到 `sp`（随系统字体缩放） | 计划映射到 Dynamic Type | 计划映射到 `rpx`（随屏宽） | 单位制与系统无障碍设置不同；**比例关系必须一致，绝对值可不同** |
+| **图标**（§七） | Lucide SVG（`lucide-react`） | 未定 | 建议 Material Symbols | 建议 SF Symbols | 计划为图片 / 字体图标 | 原生端用平台符号更贴惯例，且支持动态粗细与系统缩放；**禁止把 Web 的 SVG 直接搬运到原生端**（小程序对 SVG 的支持范围待核实） |
+| **间距与圆角**（§2.4 / §八） | px；圆角 token 在 `@theme`；区块间距阶梯见 §8.2，**尚未落进 `@theme`** | 未定 | 计划 dp | 计划 pt | 计划 rpx / px | 单位制不同；**阶梯档位（xl / lg / md / sm）必须同名同序** |
+| **玻璃材质**（§1.2 / §4.1） | `backdrop-filter: blur(20px) saturate(180%)` | 未定 | 计划 Compose 模糊（与系统版本相关） | 计划 `UIVisualEffectView` / `.ultraThinMaterial` | 计划降级为半透明纯色 | 各平台模糊能力与性能代价不同，低端 Android 与小程序上易掉帧 —— **降级规则必须先登记**（具体支持范围待核实） |
+| **阴影**（§2.4） | CSS `box-shadow` | 未定 | 计划 elevation（Material） | 计划 `shadow` modifier | 计划以半透明描边近似 | 原生阴影模型与 CSS 不同（无 spread、性能敏感）；**层级语义（卡片浮起 vs 弹窗）必须一致** |
+| **动效**（§五） | CSS transition + `cubic-bezier`；`prefers-reduced-motion` | 未定 | 计划 Compose animation spec + 系统「移除动画」开关 | 计划 SwiftUI / UIKit 动画 + `isReduceMotionEnabled` | 计划 CSS 动画（`setData` 驱动动画能力有限） | 各平台的「减弱动效」开关 API 不同；**时长梯度与缓动语义必须一致，实现机制必须本地化** |
+| **明暗模式**（§六） | `data-theme-scope` 双作用域 + `prefers-color-scheme` | 未定 | 计划 `isSystemInDarkTheme()` | 计划 `@Environment(\.colorScheme)` | 计划宿主主题能力 + 手动开关 | 「品牌主页强制暗 / 商城随系统」的场景分离是**信息架构级决定**，各平台都要保留 |
+| **导航范式**（§4.7 / 信息架构） | sticky 顶部导航 + URL 路由 | 未定（窗口 / 快捷键 / 右键菜单） | 计划底部导航 + 系统返回手势 | 计划 Tab Bar + 导航栈 + 边缘返回手势 | 计划 `tabBar` + 页面栈（无 URL 导航） | 平台惯例不同，**允许差异**；但差异必须同时登记到 `product/16`（归 product-manager） |
+
+### 12.4 差异登记规则
+
+1. 新增平台，或新出现平台差异 → **先在本节登记**（机制 + 允许的偏离 + 原因），再改代码。
+2. 涉及 token 名称或数值的改动 → 走 §2.4 的顺序（先 `globals.css` → 再 §2.4 → 跑检查），**不允许只改某一端**。
+3. 涉及信息架构的差异 → 报 product-manager 写入 `product/16`；涉及组件视觉规范（§四）的差异 → 在本节登记，并说明是否沉淀为规范。
+4. **未登记的偏离视为缺陷，不视为适配。**
 
 ---
 

@@ -56,3 +56,7 @@
 | [050](./050-business-id-binary16-uuidv7.md) | 业务标识存储升级 —— BINARY(16) + UUIDv7 + byte[] 持久化边界（修订 ADR-002 存储形态；27 列转换 / 11 项保留清单；🔧 2026-10-14 三批修订：+transaction_no、+coupon_id/ai 会话列契约收紧、+review 订单引用收敛（技术 id→业务键）） | 2026-10-07 |
 | [051](./051-register-fast-reject-and-verification-scene.md) | 注册前置快拒绝 + 验证码场景隔离（REGISTER/LOGIN/RESET_PASSWORD 独立码池与频控预算；否决 ProvisionResult 契约；🔧 修订：全局日配额 + scene 编码契约 + CI 守卫） | 2026-10-08 |
 | [052](./052-search-db-fallback-exemption.md) | search-service DB 降级直读 item 域表 —— 受控豁免登记与退出条件（分库分表前硬红线退出） | 2026-10-10 |
+| [053](./053-doc-ownership-by-nature-and-two-layer-standards.md) | 文档 Owner 按「文档性质」分权 + 规范双层模型 —— 决策类归决策者、派生类归 doc-engineer、`00-README` 唯一 Owner、方法论层与项目层冲突裁决规则 | 2026-10-14 |
+| [054](./054-frontend-multi-platform-architecture-and-doc-axis.md) | 前端多平台化 —— 平台轴与文档结构（编号文件 + `NN-platforms/` 子目录分阶段落地；`17` 保持跨平台单篇；token 单一来源不容破坏、CI 强制） | 2026-10-15 |
+| [055](./055-coupon-scope-and-stack-rule-materialization.md) | 优惠券适用范围与叠加规则落地 —— scope/stack 四列映射打通、I46 `/batch` 补齐、范围校验补位（订正 ADR-038「下单侧不受影响」的错误推论） | 2026-10-15 |
+| [056](./056-wire-naming-snake-case.md) | 线上字段与查询参数命名统一为 snake_case —— 三类载体（Jackson / `@RequestParam` / POJO 绑定）、例外清单与大厂依据 |

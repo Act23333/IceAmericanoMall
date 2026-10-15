@@ -1,6 +1,6 @@
 # 16 — 前端产品设计文档
 
-> 最后更新: 2026-08-02 | 版本: V1.0
+> 最后更新: 2026-10-15 | 版本: V1.1
 >
 > 依赖: [05-API-Specification](../contract/05-API-Specification.md) · [15-Front-End-Technology-Selection](../frontend/15-Front-End-Technology-Selection.md) · [prompt.md](../collaboration/prompt.md)
 >
@@ -1016,4 +1016,76 @@ useConversations()                          // GET /api/ai/conversations
 
 ---
 
+## 十一、多平台信息架构差异
+
+> **本节定位（多平台化第一步，⏳ 阶段性）**：项目从单一 Web 扩展到多平台时，**主流程一致、导航范式按平台各异**——差异必须在本节登记，不允许各平台各自发挥。本节只写「信息架构与用户流程」，**不写技术栈**（选型归 [15-Front-End-Technology-Selection](../frontend/15-Front-End-Technology-Selection.md)）、**不重复 API 路径映射**（以 [05-API-Specification](../contract/05-API-Specification.md) §七 为准）、**不写视觉 token 适配**（归 [17-Frontend-Design-System](../frontend/17-Frontend-Design-System.md) 的平台适配差异表）。
+>
+> ⚠️ **本节是增量，不是改版**：§一–§十 仍停在 V1.0 的 Web 单平台视角（且早于契约 V5.7–V5.18 的全部增量，见 [21-Frontend-Refactor-Readiness](../frontend/21-Frontend-Refactor-Readiness.md) §七.3）。新增平台章节时需按此顺序逐节补写：信息架构 → 关键页面结构 → 转化漏斗。
+
+### 11.1 平台优先级与现状（事实源，非计划）
+
+| 平台 | 现状 | 事实源 | 已落地的信息架构 |
+| --- | --- | --- | --- |
+| **Web** | ✅ 已实现（`apps/web` 25 个页面骨架） | `Implementation/front-end/apps/web/app/**` | §2.1 站点地图即其**目标 IA**；实际代码的 Route Group 与 §2.2 未完全对齐（现有分组为 `marketplace/`、`shop/`、`user/`、`auth/` + 顶层 `product/`、`search/`），缺口与收敛顺序以 [21-Frontend-Refactor-Readiness](../frontend/21-Frontend-Refactor-Readiness.md) §五 为准 |
+| **微信小程序** | ✅ 骨架已存在（18 页 / Taro） | `Implementation/front-end/apps/miniprogram/src/app.config.ts` | 本 §11.2 / §11.3 |
+| **移动端（PWA → RN）** | ⏳ 未实现：`apps/mobile` 为空壳（仅 `package.json`/`README.md`，React Native，注「PWA 覆盖 App 场景，PWA 不够用时激活」） | `Implementation/front-end/apps/mobile/package.json`<br>[15](../frontend/15-Front-End-Technology-Selection.md) §2 移动端 = PWA 优先 | **暂无**——IA 由 PWA 复用 Web §10 的移动端适配策略；原生激活后在此补行 |
+| **桌面端** | ⚪ 未实现、无选型 | 无 | **暂无**（触发条件见 §11.5） |
+| **iOS / Android 原生** | ⚪ 未实现、无选型 | [09-constraints](../collaboration/09-constraints.md) §六「小程序/App 端」= 未实现 | **暂无**（触发条件见 §11.5） |
+
+> **上一阶段口径**（多平台立项门禁）：mini-program/App 启动前须先出独立 PRD，见 [01-PRD](01-PRD.md) §十四 末尾「mini-program/App 需独立 PRD（AGENTS ⚪ 门禁）」与 [AGENTS.md](../../AGENTS.md) ⚪ Not built 节。
+
+### 11.2 Web 与小程序的信息架构差异（按差异轴登记）
+
+| # | 差异轴 | Web (§2.1/§10 口径) | 微信小程序（实测 `apps/miniprogram`） | 产品约束 |
+| :-: | --- | --- | --- | --- |
+| 1 | **导航拓扑** | 顶部导航 + 品牌/商城/交易/用户中心组 + 后台 ProLayout；移动断点下为**汉堡抽屉**（`app/components/navbar.tsx`，非底部 Tab） | 全局 **tabBar 4 项**：首页 · 商城 · 购物车 · 我的（`src/app.config.ts`）——**无消息 tab** | 同一主流程，两侧入口数不同是**允许的**；差异必须留在本表 |
+| 2 | **定位模型** | URL 路径即信息架构（`/marketplace`、`/products/[id]`、`/user/*`），可深链、可分享、可后退 | **页面栈**（`navigateTo` / `redirectTo`）+ 页面参数 `?key=value`；**无 URL 语义** | 所有「把链接给用户」的场景在小程序必须走**页面路径或小程序码**，不能用 Web 链接 |
+| 3 | **返回语义** | 浏览器后退 / 面包屑（§5.3 PDP 面包屑） | `navigateTo` 入栈、返回上一层；tab 页切换**不重建栈**；`redirectTo` 替换当前页（支付完成跳订单详情即用此语义，`pages/pay/index.tsx`） | 产品只需约定**栈深与替换点**（支付后不可回到支付页）；手势差异见 §11.4 |
+| 4 | **首屏锚点** | `/` 品牌主页（沉浸式品牌体验）→ 「进入商城」再进商城（§1.3 / §4.1） | tab 首项 `pages/index/index`，直出商城视角（热销商品流），**无品牌主页** | 品牌体验是**Web 专属步骤**；小程序首屏目标是转化效率 |
+| 5 | **登录方式** | 账号密码 / 短信 / 邮箱 / 微信网页授权（§2.1 `/auth/*`） | **微信授权为主**（`Taro.login()` → code 换令牌，[AGENTS ⚪ 节](../../AGENTS.md)：`POST /api/auth/wechat/mini/login`），账号密码/短信为备选 | 认证**语义**一致、**入口**不同；token 存储介质按平台能力选（小程序无 `document.cookie`，用 `Taro.setStorageSync`） |
+| 6 | **支付发起** | 支付页 `/pay/[orderNo]`：微信 Native 扫码 + 余额（§4.1 主转化路径） | 支付页 `pages/pay/index.tsx`：**小程序内拉起**（PAY7 `wx.requestPayment`，见 [02-Frontend-Integration-Checklist](02-Frontend-Integration-Checklist.md) §六） | 两条通道共用同一支付单与回调链路（[05](../contract/05-API-Specification.md) §4.7 PAY1/PAY7） |
+| 7 | **分享与拉新** | 复制链接 / 分享 URL | **商品分享小程序码**（P37 `/api/item/product/{id}/wxa-code`，落地页 `pages/product/index`） | 分享载体差异属 IA 差异；分享目标的**落地页**必须在两端等价 |
+| 8 | **设置类偏好** | localStorage（如多币种展示偏好，[02-Frontend-Integration-Checklist](02-Frontend-Integration-Checklist.md) §五） | 小程序 storage（无 localStorage）；未配置时回落到**系统语言推断** | 偏好**语义**一致，存储介质按平台替换 |
+| 9 | **消息触达** | 站内信中心 + WebSocket 实时会话（§2.1 `/user/notifications`、`/chat`） | 个人中心承载消息入口（未读计数），读/已读走同一站内信契约 | 站内信是**三端共用**的触达底座（[05](../contract/05-API-Specification.md) §4.2.9）；系统级推送未立项（见 §11.5 待确认 3） |
+
+### 11.3 页面清单差异（登记，不计为缺陷）
+
+小程序 `app.config.ts` 的 18 页与 Web §2.1 站点地图的差集，按 IA 分层登记如下——**补页属小程序排期事项，不得靠「Web 链接」绕过**：
+
+| 分层 | 小程序已有页面 | Web 有、小程序当前缺（登记为待补） |
+| --- | --- | --- |
+| 品牌 / 商城 | 首页、商城、搜索、商品详情、秒杀、领券 | 品牌主页（§11.2 #4 刻意不设）、分类独立页（并入商城筛选）、商家店铺页、店铺装修、内容社区（笔记） |
+| 交易 | 购物车、结算、支付、订单列表、订单详情、地址 | 售后申请独立页、发票（申请/抬头/历史）、拼团 |
+
+### 11.4 平台导航惯例（谁能覆写通用行为）
+
+| 平台 | 平台自有导航行为 | 产品的处置 |
+| --- | --- | --- |
+| Web | 浏览器前进/后退、可刷新任意深层路由、可新开标签 | 深层路由必须可**直接访问**（认证页按 §3.1 的认证列拦截） |
+| 微信小程序 | 右上角胶囊（返回/关闭）、宿主返回、tabBar 切换 | 不自定义胶囊区域；**栈深与替换点**按 §11.2 #3 约定 |
+| iOS 原生 | 边缘右滑返回手势、Tab Bar、导航栏 | ⏳ **未选型、未实现**——写法待原生立项后按 `15-platforms/ios.md` 与 `17` 适配表定 |
+| Android 原生 | 系统返回键 / 手势（未必等同「页面返回」）、Material 导航惯例 | ⏳ **未选型、未实现**——同上；返回键语义须显式定义后再写 IA |
+| 桌面端 | 窗口/多窗口、系统级快捷键、系统菜单与托盘 | ⚪ **未选型、未实现**——见 §11.5 待确认 2 |
+
+### 11.5 待确认 3 项（阻断本节后续扩写）
+
+| # | 待确认 | 影响 | 依据 |
+| :-: | --- | --- | --- |
+| 1 | 小程序宿主范围：**仅微信**，还是同时支付宝/抖音？（宿主 API 与审核规则差异直接改变登录/支付/分享 IA） | §11.2 #5 #6 #7 | [15](../frontend/15-Front-End-Technology-Selection.md) 选型 Taro 4「一套代码编译到微信/支付宝/抖音」；平台方案 §10 开放问题 4 |
+| 2 | 桌面端走 JS 生态（Electron/Tauri）还是原生？ | §11.4 桌面行能否落地 | 平台方案 §10 开放问题 3 |
+| 3 | 是否需要**系统级推送**（iOS APNs / Android 厂商通道 / 小程序订阅消息）——决定「离开页面后如何触达」这条 IA 轴是否存在 | §11.2 #9 | 当前触达底座＝站内信（[05](../contract/05-API-Specification.md) §4.2.9）+ WebSocket；`01-PRD` §3.13 的「离线消息推送 → App 通知栏」能力尚未立项（无推送/设备注册端点，见 [05](../contract/05-API-Specification.md) §十二） |
+
+> **未登记即未定义**：任何平台若需要与上表不同的信息架构（新增一级入口、改变主流程顺序、绕过统一返回语义），**先在本节登记差异再实现**，避免「同一功能两个平台两套 IA」在实现阶段才被发现。
+
+---
+
 > **下一文档**: [17-Frontend-Design-System](../frontend/17-Frontend-Design-System.md) — 色彩、字体、组件视觉规范、动效系统
+
+---
+
+## 变更记录
+
+| 版本 | 日期 | 变更内容 |
+| :-- | :-- | :-- |
+| V1.1 | 2026-10-15 | 新增 **§十一 多平台信息架构差异**（平台优先级与现状、Web 与小程序 IA 差异 9 轴、页面清单差集、各平台导航惯例、3 项待确认）——多平台化第一阶段的差异登记表，**§一–§十 的 Web 单平台内容未动** |
+| V1.0 | 2026-08-02 | 初版：品牌定位与设计哲学、信息架构、页面路由与渲染策略、核心用户流程、关键页面结构、组件树、状态管理、转化路径优化、错误与边界状态、移动端适配策略 |

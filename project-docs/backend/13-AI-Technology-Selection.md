@@ -1,6 +1,25 @@
 # 13 — AI 技术体系与选型文档
 
-> 最后更新: 2026-07-19 | 覆盖版本: V2.0（已实现 MVP）→ V2.5（生产就绪）→ V3.0（智能升级）→ V3.x（高级 AI）
+> 最后更新: 2026-10-15（fix-doc 事实对齐批次） | 覆盖版本: V2.0（已实现 MVP）→ **V2.5（已实现：流式/会话隔离/知识库/RAG 接线/四层收口）** → V2.5+（生产就绪：观测/多模型路由/多模态 RAG）→ V3.0（智能升级：主-子 Agent 编排 / MCP）→ V3.x（高级 AI：知识图谱 Phase 2 / 多模态搜索）
+>
+> **本次对齐的事实（2026-10-15，实测）**——原文多处仍按 2026-07-19 的 V2.0 基线描述「计划」，与代码不符，逐条更正如下：
+>
+> | 文档原述 | 代码实测（事实源） | 处理 |
+> | :-- | :-- | :-- |
+> | §1.1 「流式响应 (SSE) 🔵 计划 V2.5」 | **已实现**：AI2/AI4 `POST /api/ai/chat/stream`、`/api/ai/cs/chat/stream` 返回 SSE（`05-API-Specification.md` §4.11） | ✅ 已实现 |
+> | §1.1 「会话隔离 🔵 计划 V2.5」（原文称"全局 Memory 跨用户泄漏"） | **已实现**：AI5-AI7 会话列表/详情/删除（`ConversationController`），`ai.memory.ttl: 24h` Redis ChatMemory | ✅ 已实现 |
+> | §1.1 「Feign 服务调用 🔵 计划 V2.5」（原文称"当前用 RestTemplate 直连"） | **已实现**：`ia-api` Feign 客户端（含 `ItemSearchClient`/`KnowledgeVectorClient`/`PointsClient` 等），四层收口（ADR-039） | ✅ 已实现 |
+> | §1.1 「RAG 检索增强 🔵 计划 V2.5」 | **已接线，默认关闭**：`ai.rag.enabled`（默认 `false`，缺省行为与现状一致）+ `ai.rag.top-k: 5`；知识库 CRUD 经 Feign 同步 search-service `knowledge_vectors`，客服应答带 `seller_id` 时检索并注入 prompt，**全链路 fail-open** | ✅ 已实现（opt-in） |
+> | §1.1 「可观测性 (Langfuse) 🔵 计划 V2.5」 | **仍为计划**：OTel/Prometheus 基础可观测已随 V2.x 落地（`management.endpoints` + Prometheus），**Langfuse 专项未接入** | 🔵 计划 |
+> | §1.1 「单元测试 🔵 计划 V2.5」（原文称"ai-service 零测试"） | **已实现**：ai-service 现 52 个测试 | ✅ 已实现 |
+> | §1.1 「商家知识库管理 ⚪ 计划 V3.0」 | **已实现**：CH10-CH13 `/api/seller/knowledge`（`merchant_knowledge_base` 表），V5.4 收敛字段 | ✅ 已实现 |
+> | §1.1 「内容安全审核 ⚪ 计划 V2.5」 | **部分实现**：`AI_CONTENT_FILTERED(3102)` 错误码就位；完整安全策略仍待细化 | 🟡 部分 |
+> | §1.1 「主-子Agent编排 / MCP 协议集成 ⚪ 计划 V3.0」 | **仍为计划** | ⚪ 计划 |
+> | §1.1 「知识图谱 ⚪ 计划 V3.x」 | **Phase 1 已落地（ADR/PRD §十六）**：search-service `kg_edges` 边索引 + item 域 P35 搭配卡 + AD61-65 治理；**Phase 2 政策问答/可视化仍计划** | ✅ Phase 1 已实现 |
+> | §3.4 Embedding 表「V2.5 MVP = DeepSeek Embedding API `text-embedding-3-small`」 | **与配置一致**：`langchain4j.open-ai.embedding-model.model: text-embedding-3-small` | ✅ 一致 |
+> | §四/§五 章节框架（"V2.0 MVP 无 RAG 能力"） | 见下方 §5.1 状态框与 §5.6 现状对齐表 | 已更正 |
+>
+> **AI 技术栈实测事实（写死于此，避免再次漂移）**：LangChain4j **`1.18.0-beta28`**（parent pom `langchain4j.version`，用于 `langchain4j-spring-boot-starter` + `langchain4j-open-ai-spring-boot-starter`）；模型 `deepseek-chat`（主力，`temperature 0.7`，timeout 60s）+ Qwen 备用（V3.0 路由配置，`ai.models.*.weight`）；**AI 总开关 `ai.enabled` 默认 `false`**（关闭时返回静态提示）。
 >
 > **大厂对标**：JD Oxygen/JoyAI 多 Agent 编排、Alibaba Bailian RAG 管线、Amazon Rufus 多模型路由、Shopify Sidekick Agentic Loop
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: ai-service 技术栈变更时
@@ -20,19 +39,21 @@
 | `@ConditionalOnProperty` 可插拔 | ✅ 已实现 | V1.2 | ✅ 生产级 | `ai.enabled=true` 控制，默认关闭 |
 | 多轮对话 | ✅ 已实现 | V1.2 | 🧪 实验级 | MessageWindowChatMemory(10-20轮滑动窗口) |
 | DeepSeek V3 API 对接 | ✅ 已实现 | V1.2 | ✅ 生产级 | OpenAI 兼容协议, api.deepseek.com |
-| 流式响应 (SSE) | 🔵 计划 V2.5 | — | — | 打字机效果，边生成边返回 |
-| 会话隔离 | 🔵 计划 V2.5 | — | — | 当前全局Memory存在跨用户泄漏 |
-| Feign 服务调用 | 🔵 计划 V2.5 | — | — | 当前用 RestTemplate 直连 |
-| RAG 检索增强 | 🔵 计划 V2.5 | — | — | ES向量索引 + BGE-reranker |
-| AI Gateway | 🔵 计划 V3.0 | — | — | 多Provider路由、限流、缓存 |
-| 可观测性 (Langfuse) | 🔵 计划 V2.5 | — | — | Token用量、工具调用链、用户反馈 |
-| 单元测试 | 🔵 计划 V2.5 | — | — | 当前 ai-service 零测试 |
-| 商家知识库管理 | ⚪ 计划 V3.0 | — | — | FAQ/产品手册上传、RAG索引 |
+| 流式响应 (SSE) | ✅ 已实现 | V2.5 | ✅ 生产级 | AI2/AI4 `/api/ai/chat/stream`、`/api/ai/cs/chat/stream` 返回 `text/event-stream` |
+| 会话隔离 | ✅ 已实现 | V2.5 | ✅ 生产级 | AI5-AI7 会话列表/详情/删除（`ConversationController`）；`ai.memory.ttl: 24h` Redis ChatMemory（**原"全局 Memory 跨用户泄漏"缺陷已消除**） |
+| Feign 服务调用 | ✅ 已实现 | V2.5 | ✅ 生产级 | `ia-api` Feign 客户端（`ItemSearchClient`/`KnowledgeVectorClient` 等）；**原"RestTemplate 直连"已退役**；Manager 层调用、四层收口（ADR-039） |
+| RAG 检索增强 | ✅ 已实现（**opt-in，默认关闭**） | V2.5 | 🟡 需显式开启 | `ai.rag.enabled`（默认 `false`）+ `top-k: 5`；知识库经 Feign 入 `knowledge_vectors`，客服带 `seller_id` 时检索注入 prompt；**fail-open**；BGE-reranker 仍关闭（§5.6） |
+| AI Gateway | 🔵 计划 V3.0 | — | — | 多Provider路由、限流、缓存（注：`ai.models.*` 路由权重配置与 `AiTokenQuotaFilter` 已就位，网关本体未建） |
+| 可观测性 (Langfuse) | 🔵 计划 V2.5 | — | — | Token用量、工具调用链、用户反馈（OTel + Prometheus 基础面已随 V2.x 落地；Langfuse 专项未接入） |
+| 单元测试 | ✅ 已实现 | V2.5 | ✅ 生产级 | ai-service **52 个测试**（**原"ai-service 零测试"已过时**）；四层收口 ADR-039 |
+| 商家知识库管理 | ✅ 已实现 | V2.5 | ✅ 生产级 | CH10-CH13 `/api/seller/knowledge`（`merchant_knowledge_base` 表，`embedding_id` 口径 `es:{knowledgeId}`）；RAG 索引随 `ai.rag.enabled` 摄取 |
 | 主-子Agent编排 | ⚪ 计划 V3.0 | — | — | Master路由→专业Subagent |
 | MCP 协议集成 | ⚪ 计划 V3.0 | — | — | 标准化Tool注册与发现 |
-| 内容安全审核 | ⚪ 计划 V2.5 | — | — | Prompt Injection防护、输出过滤 |
-| 知识图谱 | ⚪ 计划 V3.x | — | — | RAG+KG混合检索 |
+| 内容安全审核 | 🟡 部分实现 | V2.5 | — | `AI_CONTENT_FILTERED(3102)` 错误码出口已就位；Prompt Injection 防护与输出过滤策略待细化 |
+| 知识图谱 | ✅ Phase 1 已实现 / ⚪ Phase 2 计划 | — | ✅ Phase 1 生产级 | Phase 1 = RAG+KG **混合最小形态**（MySQL `pairing_rule` 真相源 + ES `kg_edges` 边索引投影；P35 搭配卡 / AD61-65 治理）；**Policy QA + 可视化（Phase 2）仍计划**，触发器见 PRD §16.9 |
 | 多模态搜索 | ⚪ 计划 V3.x | — | — | VLM微调、以图搜商品 |
+
+> **状态列口径（2026-10-15 更正）**：上表已按代码实测逐行核对，原文多处「🔵 计划 V2.5」实为**已实现**（流式/会话隔离/Feign/RAG/单元测试/知识库）。**未对齐的"计划项"仍以本文档 §十一 迁移路线为准**——本节只标志"是否已落地"，不代表质量评级达标。
 
 ### 1.2 当前架构（V2.0 MVP 实验级）
 
@@ -407,7 +428,19 @@ public Object search(String keyword) {
 
 ### 5.1 多阶段 RAG 管线设计
 
-> **当前状态**：V2.0 MVP 无 RAG 能力。V2.5 首次建立基础 RAG 管线。
+> **当前状态（2026-10-15 更正）**：**V2.5 的基础 RAG 管线已接线落地，但默认关闭**——原文"V2.0 MVP 无 RAG 能力 / V2.5 首次建立"的表述已过时。
+>
+> | 面 | 现状（实测） |
+> | :-- | :-- |
+> | 总开关 | `ai.rag.enabled`（环境变量 `AI_RAG_ENABLED`），**默认 `false`** = 行为与未接入一致 |
+> | 检索条数 | `ai.rag.top-k: 5`（送入 LLM 的上下文条数） |
+> | 重排 | `ai.rag.reranker.enabled: false`（BGE-reranker Docker 就绪后开启，`http://localhost:8001`）—— **Stage 3 重排序尚未启用** |
+> | 摄取 | ai-service 知识库 create/update/delete → Feign → search-service **`knowledge_vectors`** 索引（分块 + Embedding 均在 search-service，ai-service 只提交原文、取回 chunk 文本） |
+> | 触发 | 客服应答（AI3/AI4）请求带 `seller_id` 时，先检索该商家知识并拼进 prompt |
+> | 降级 | **任一环节失败只记 WARN 并降级**（无 RAG 直答），绝不阻断知识库 CRUD 与客服应答 —— 与 ADR-046 展示型查询的 fail-open 定类一致 |
+> | 下图覆盖度 | 下图 Stage 1 查询改写 / Stage 3 重排 / Stage 5 引用与置信度评估**均仍为规划**；已落地的实际链路为「Chunk 分块 → Embedding → ES kNN 召回 Top-5 → 直接拼 prompt → LLM 生成」 |
+>
+> **⚠️ 与 ADR 的一致性**：本管线的落地形态受 **ADR-039**（ai-service 四层 DDD 收口）与 **ADR-046**（商品向量推荐：复用向量管道 / 单向量不分块 / 全链路 fail-open）约束；三向量索引现状见 §5.6。
 
 ```
                          用户问题: "如何退货？"
@@ -563,6 +596,32 @@ ES 8.x dense_vector   Milvus 集群           Milvus + 自建Embedding
 ```
 
 > **大厂实践**：切分策略是 RAG 质量的第一决定因素。Shopify 和 DoorDash 的实践都强调"按文档类型定制切分策略"，投入 2-3 倍时间在切分策略的评估调优上是值得的。
+
+### 5.6 现状对齐：三向量索引与 ADR-039 / ADR-046（🆕 2026-10-15 fix-doc）
+
+> 本节为**代码事实对齐**，补齐原文缺失的向量底座现状——原文档写于向量管道落地之前（2026-07-19），§5.2 的演进路线仍停留在"V2.5 用 ES dense_vector 起步"的规划口径。
+
+**三向量索引（ES 域归 search-service 所有）**：
+
+| 索引 | 归属与用途 | 形态 | 契约端点 | 依据 |
+| :-- | :-- | :-- | :-- | :-- |
+| **`knowledge_vectors`** | 商家知识库 RAG 检索面（客服应答注入上下文） | **分块**（`search.knowledge-vector.max-chunks: 50`）+ Embedding，`default-top-k: 5` | I37 upsert / I38 delete / I28 `index=knowledge_vectors` | ADR-039 |
+| **`products`** | 商品向量推荐（相似商品）——与商品检索索引同体（`ProductDocument.embedding`） | **单向量不分块**（商品短文本，不走 DocumentChunker） | I47 upsert / I48 similar kNN（I28 `index=products`） | **ADR-046** |
+| **`notes`** | 种草笔记相似推荐（`NoteVectorDocument`，独立小索引） | **单向量不分块**（文本源 = title + content） | I50 upsert / I51 similar kNN | **ADR-046**（管道第二次复用） |
+
+**Embedding 与降级口径（实测 `search-service/application.yml`）**：
+
+- Embedding 开关 `search.embedding.enabled`（环境变量 `RAG_EMBEDDING_ENABLED`）**默认 `false`**；模型 `text-embedding-3-small`，**`dims: 1536` 为 `dense_vector` 维度唯一来源**（与 ai-service 检索侧模型必须一致）。
+- 未启用/降级时：摄取端点返回 **`0`**（静默跳过）/ Feign 降级哨兵 **`-1`**；相似检索返回**空列表**，**不抛异常**——与 §5.1 的 fail-open 定类一致（缺失 = 体验损失，非资损）。
+- ES 总开关 `search.elasticsearch.enabled`：关闭时 search-service 走 item 域检索端点降级链（**ADR-052**：search 已退出直读 item 库）。
+
+**与 ADR 的对应关系**：
+
+| ADR | 对本篇的影响 |
+| :-- | :-- |
+| **ADR-039**（ai-service 四层收口） | ai-service 的 LangChain4j agents/tools 与 RAG 装配归位到 `infrastructure/{agent,adapter/tool,rag,routing}`；领域端口与防腐适配器分层——§4.1/§4.3 的"当前实现"描述以此为准 |
+| **ADR-046**（商品向量推荐） | 确立**向量管道的可复用范式**（单向量不分块 + 幂等覆盖写 + 命中只出 id/score、组装归调用方 + 全链路 fail-open），笔记向量（用户侧 P34）与商品向量（P27）均按其复用 |
+| **ADR-052**（search 直读退出） | search-service 不再直读 item 域表；检索降级链改为调 item-service 内部检索数据面（I62-I65） |
 
 ---
 

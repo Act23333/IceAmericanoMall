@@ -45,7 +45,7 @@ mvn -f Implementation/back-end/pom.xml clean install -DskipTests
 # Build a single service (and its dependencies)
 mvn -f Implementation/back-end/pom.xml -pl user-service -am clean install
 
-# Run tests (1690 tests across all 18 modules, 0 failures, 1 pre-existing @Disabled skip — strict four-layer DDD everywhere, ADR-038/039)
+# Run tests (1775 tests across all 19 modules, 0 failures, 1 pre-existing @Disabled skip — strict four-layer DDD everywhere, ADR-038/039)
 mvn -f Implementation/back-end/pom.xml test
 
 # Run tests for a specific module
@@ -68,13 +68,13 @@ Running services locally requires these to be up:
 | ---------- | ---------------------------------------------------- | --------------------------------------------------------- |
 | Nacos      | `application.yml` — `spring.cloud.nacos.server-addr` | Default: `192.168.10.128:8848`                            |
 | Redis      | `application.yml` — `spring.data.redis.host`         | Used for token caching, rate limiting (Lua scripts)       |
-| MySQL      | `application.yml` — `spring.datasource.url`          | Schema: `Implementation/back-end/database/Initialize.sql`（**全量唯一结构真相源，57 张表**，装库一次到位；2026-10-05 起迁移文件机制废除（ADR-045，库无存量数据）——结构变更直接修改本文件） |
+| MySQL      | `application.yml` — `spring.datasource.url`          | Schema: `Implementation/back-end/database/Initialize.sql`（**全量唯一结构真相源，62 张表**，装库一次到位；2026-10-05 起迁移文件机制废除（ADR-045，库无存量数据）——结构变更直接修改本文件，`database/migrations/` 目录已不存在） |
 
 Docker Compose infra exists: `Implementation/back-end/docker-compose.yml` + `docker/` (MySQL / Redis / Nacos / ES / RocketMQ / MinIO / Prometheus / Grafana / ELK / SkyWalking). Backend service processes run locally (IDE / CLI), not via compose.
 
 ## Architecture Overview
 
-IceAmericanoMall is a B2B2C e-commerce platform (similar to Taobao/JD) built as a distributed microservices system. **Backend is fully implemented** (35/35 PRD features + P1/P2 growth lines + P3 拼团/发票/知识图谱/多币种 Phase 1 + 需求对账缺口收敛 + 小程序后端增量; 18 Maven modules, ~278 HTTP endpoints (incl. 57 `/internal/**`), 1690 tests green (all services strict four-layer DDD, ADR-038/039)). The core transaction flow (register → browse → cart → order → pay → ship → confirm) is implemented end-to-end; module boundaries were finalized in the 2026-10 boundary refactor, round 6 (merchant-service) included (see `project-docs/backend/02-Architecture.md` §3).
+IceAmericanoMall is a B2B2C e-commerce platform (similar to Taobao/JD) built as a distributed microservices system. **Backend is fully implemented** (35/35 PRD features + P1/P2 growth lines + P3 拼团/发票/知识图谱/多币种 Phase 1 + 需求对账缺口收敛 + 小程序后端增量; **19 Maven modules** = 15 services + `architecture-tests` + 3 shared libs (`ia-common`/`ia-api`/`ia-integration`; `database/` is a script dir, **not** a module), **287 HTTP endpoints** measured (225 public + **62** `/internal/**`) — `project-docs/contract/05-API-Specification.md` §四 is the single source of truth (code↔contract diff closed: 0 un-documented), **1775 tests green** (all services strict four-layer DDD, ADR-038/039); re-measured 2026-10-15). The core transaction flow (register → browse → cart → order → pay → ship → confirm) is implemented end-to-end; module boundaries were finalized in the 2026-10 boundary refactor, round 6 (merchant-service) included (see `project-docs/backend/02-Architecture.md` §3).
 
 ### Technical Stack
 
@@ -113,7 +113,8 @@ gateway-service (API Gateway — Spring Cloud Gateway + Nacos + JWT/header filte
   ├── pay-service (WeChat Pay, callback, multi-channel incl. balance)              ✅ COMPLETE
   ├── logistics-service (shipping records, status tracking)                        ✅ COMPLETE
   ├── search-service (ES full search + MySQL LIKE fallback, dual impl)             ✅ COMPLETE
-  └── ia-api / ia-common / ia-integration (shared modules)                         ✅ COMPLETE
+  ├── ia-api / ia-common / ia-integration (shared modules)                         ✅ COMPLETE
+  └── architecture-tests (ArchUnit guards — 19th module, no service code)          ✅ COMPLETE
 ```
 
 **Status legend**: ✅ COMPLETE = business logic fully implemented, compiles, tested | 🟡 SKELETON = minimal scaffold only (none currently — every module is implemented)
@@ -220,14 +221,14 @@ throw new BadRequestException(ErrorCode.USER_NOT_FOUND);
 
 ### What's Already Implemented
 
-#### ✅ 完全实现 (18 modules — business logic complete, compiles, tested)
+#### ✅ 完全实现 (19 modules — business logic complete, compiles, tested)
 
 | Module | Key Features | Test Count |
 |--------|-------------|------------|
-| `ia-common` | `Result<T>`, `ErrorCode`, 6 exception types, `GlobalExceptionHandler` (`/internal/**` → real HTTP status + minimal JSON; `ConstraintViolationException` → 400), `@RateLimit` + AOP (method-scoped key), `common/lock/DistributedLock` (ADR-024), `lua/rate_limit.lua` only, `CryptoKeyConfig` (PII keys), `IpUtil` client-IP (trusts gateway `X-Client-Ip`), `AuditFieldMetaObjectHandler` audit-field fill (auto-registered, ADR-030; user-service keeps its own `registerTime` variant), `SecurityHeaders` header constants (ADR-034), `DesensitizeUtil` mask family (ADR-034), MyBatis-Plus config (+ `OptimisticLockerInnerInterceptor`) | 61 |
+| `ia-common` | `Result<T>`, `ErrorCode`, 6 exception types, `GlobalExceptionHandler` (`/internal/**` → real HTTP status + minimal JSON; `ConstraintViolationException` → 400), `@RateLimit` + AOP (method-scoped key), `common/lock/DistributedLock` (ADR-024), `lua/rate_limit.lua` only, `CryptoKeyConfig` (PII keys), `IpUtil` client-IP (trusts gateway `X-Client-Ip`), `AuditFieldMetaObjectHandler` audit-field fill (auto-registered, ADR-030; user-service keeps its own `registerTime` variant), `SecurityHeaders` header constants (ADR-034), `DesensitizeUtil` mask family (ADR-034), MyBatis-Plus config (+ `OptimisticLockerInnerInterceptor`) | 79 |
 | `ia-api` | 15 Feign clients (`UserClient`, `SkuClient`, `AuthContextClient`, `BalanceClient`, `NotificationClient`, `PointsClient`, `VerificationClient`, ...); shared DTOs; fallback factories (ADR-011) | 14 |
 | `ia-integration` | Third-party SDK hub: WeChat Pay v3 (Native + **JSAPI 小程序拉起 V5.18**) / Alipay mock / Aliyun SMS / email (SMTP+Mock) / Geetest v4 / MinIO / WeChat OAuth / **WeChat Mini API (stable_token + wxacode 分享码 V5.18)** | 66 |
-| `gateway-service` | Spring Cloud Gateway routes (17 route blocks / 34 path predicates; `/api/shops/**` + `/api/home/**` patched 2026-10; **`/api/admin/pay/**` admin route to pay-service, precedes `/api/admin/**` — ADR-035/036**), `JwtBlacklistFilter` (reactive, order -700, fail-open; one MGET merging `auth:blacklist:{jti}` + `auth:tokenver:{userId}` per ADR-031; write side in authorization-service), `WsHandshakeTokenFilter` (WebFilter, order -900: swaps WS handshake `?token=` into `Authorization: Bearer` and strips the query param, ADR-026), `UntrustedHeaderSanitizerFilter` (order -1100, strips XFF + overwrites `X-Client-Ip`), method-level GET-only whitelist, auth/verification Redis `RequestRateLimiter`, `AiTokenQuotaFilter` | 74 |
+| `gateway-service` | Spring Cloud Gateway routes (**20 route blocks / 48 path predicates**, re-measured 2026-10-15; `/api/shops/**` + `/api/home/**` patched 2026-10; **admin/seller-specific prefixes must precede the `/api/admin/**` fallback — `/api/admin/{home,kg,invoice,roles,permissions,seller,pay,currency,flash,promotion,task,group-buy}/**`; ADR-035/036**), `JwtBlacklistFilter` (reactive, order -700, fail-open; one MGET merging `auth:blacklist:{jti}` + `auth:tokenver:{userId}` per ADR-031; write side in authorization-service), `WsHandshakeTokenFilter` (WebFilter, order -900: swaps WS handshake `?token=` into `Authorization: Bearer` and strips the query param, ADR-026), `UntrustedHeaderSanitizerFilter` (order -1100, strips XFF + overwrites `X-Client-Ip`), method-level GET-only whitelist, auth/verification Redis `RequestRateLimiter`, `AiTokenQuotaFilter` | 74 |
 | `authorization-service` | Login (password/SMS/email/WeChat) + register + reset-password, `user_auth` credential ownership, **RBAC five tables + `user:perms:` cache (write / evict / warm-up)**, JWKS, refresh rotation, **tokenVer revocation (password reset / admin disable → all-device logout via `revokeUserTokens`, ADR-031)**, `AuthContextClient` internal contract | 136 |
 | `user-service` | Profile (PII-encrypted phone/email), avatar upload, address CRUD + default, favorite/history, **`operation_log` audit ledger writer for user-domain admin ops (status/role changes, ADR-032 pipe 2)**, **member level engine (growth log `uk_order_no` idempotent, rise-only recalc, I45 level benefits / I46 growth — ADR-044)**, idempotent `getOrCreate` provisioning | 77 |
 | `merchant-service` | Merchant onboarding (`POST /api/seller/apply`, approve auto-grants ROLE_SELLER via `AuthContextClient`), merchant identity (`seller` table) + **shop profile (`shop` table, 1 merchant : N shops, ADR-019)**, public shop pages (`/api/shop/{sellerId}` legacy + `/api/shops/{shopId}`), store follow (Redis Sets), admin review (`/api/admin/seller/**`) | 48 |
@@ -299,7 +300,7 @@ void shouldReturnToken_whenNewPhoneAndValidCode() { ... }
 - Service/Domain unit tests use JUnit 5 + Mockito (`@ExtendWith(MockitoExtension.class)`)
 - Controller integration tests use `@SpringBootTest` + Testcontainers
 
-**Current test coverage**: 1690 tests across all 18 Maven modules (0 failures, 1 pre-existing `@Disabled` skip; `database` ships SQL only and carries no tests). Tests are mostly JUnit 5 + Mockito unit tests; several services carry self-contained H2-backed persistence tests (`UserProvisioningH2Test` in user, `OrderRepositoryImplH2Test` in trade, `FlashSaleManagerH2Test` in marketing — manual MyBatis-Plus wiring against repository impls). No `@SpringBootTest`/Testcontainers integration tests yet.
+**Current test coverage**: **1775 tests** across all **19 Maven modules** (0 failures, 0 errors, **1** pre-existing `@Disabled` skip; `database/` ships SQL only, is **not** a module, and carries no tests). Per-module counts in the table above are last fully re-measured 2026-10-10 (sums to 1667 incl. the `database` row) — the 2026-10-15 baseline of **1775** is authoritative for the repo total; refresh the per-module column with `mvn -f Implementation/back-end/pom.xml clean test` + surefire report parse when convenient. Tests are mostly JUnit 5 + Mockito unit tests; several services carry self-contained H2-backed persistence tests (`UserProvisioningH2Test` in user, `OrderRepositoryImplH2Test` in trade, `FlashSaleManagerH2Test` in marketing — manual MyBatis-Plus wiring against repository impls). No `@SpringBootTest`/Testcontainers integration tests yet.
 
 **MyBatis-Plus testing limitation**: Methods using `lambdaQuery()`/`lambdaUpdate()` chains cannot be unit-tested with Mockito mocks (the mapper proxy's `currentModelClass()` reads generic type info lost on Mockito proxies). These methods require `@SpringBootTest` with H2 or Testcontainers. Methods using only standard `BaseMapper` methods (`save()`, `getById()`, `updateById()`) are fully testable with Mockito.
 
@@ -326,8 +327,10 @@ Single MySQL schema under `Implementation/back-end/database/`. **`Initialize.sql
 
 ### Project Documentation
 
+> **⚠️ 镜像说明**：`AGENTS.md` 是本文件的**镜像副本**（面向 Codex/其他 agent 宿主），两者内容基本一致。**计数类事实（表数 / 模块数 / 端点数 / 路由块数 / 测试数）以本文件为准**；修改其中任一份时请同步另一份，避免再次出现「57 张表 vs 62 tables」式的自相矛盾。完整 ADR 索引见 `project-docs/adr/README.md`（当前 001–056）。
+
 - `doc/methodology/` — Generic analysis methodology (11-phase pipeline: BDD→DDD→SDD→TDD→SPC), reusable for any project
-- `project-docs/adr/` — Architecture Decision Records (001–040): DDD layering, dual primary keys, DO/DTO/VO isolation, internal API exception passthrough, unified identity + RBAC ownership (ADR-018), merchant/shop 1:N (ADR-019), SKU atomic SQL (ADR-020), cart read-time enrichment (ADR-021), Feign circuit breaker enablement (ADR-022), adapter layer structure (ADR-023), distributed lock consolidation (ADR-024), aggregate packaging (ADR-025), WS handshake token swap (ADR-026), jti blacklist (ADR-027), trade Sentinel wiring (ADR-028), channel callback protocol (ADR-029), MyMetaObjectHandler consolidation (ADR-030), multi-granularity token revocation (ADR-031), audit dual pipeline (ADR-032), cross-module utility consolidation (ADR-034), refund fund flow (ADR-035), channel reconciliation record-only (ADR-036), freight model + package split + refund trigger (ADR-037), full four-layer DDD unification (ADR-038), ai-service DDD completion (ADR-039), ia-common shared-kernel package rename (ADR-040), etc.
+- `project-docs/adr/` — Architecture Decision Records (**001–056**, canonical index in `project-docs/adr/README.md`): DDD layering, dual primary keys, DO/DTO/VO isolation, internal API exception passthrough, unified identity + RBAC ownership (ADR-018), merchant/shop 1:N (ADR-019), SKU atomic SQL (ADR-020), cart read-time enrichment (ADR-021), Feign circuit breaker enablement (ADR-022), adapter layer structure (ADR-023), distributed lock consolidation (ADR-024), aggregate packaging (ADR-025), WS handshake token swap (ADR-026), jti blacklist (ADR-027), trade Sentinel wiring (ADR-028), channel callback protocol (ADR-029), MyMetaObjectHandler consolidation (ADR-030), multi-granularity token revocation (ADR-031), audit dual pipeline (ADR-032), cross-module utility consolidation (ADR-034), refund fund flow (ADR-035), channel reconciliation record-only (ADR-036), freight model + package split + refund trigger (ADR-037), full four-layer DDD unification (ADR-038), ai-service DDD completion (ADR-039), ia-common shared-kernel package rename (ADR-040), refund-resume/aftersale guard (ADR-041), buyer notification wiring (ADR-042), pricing center (ADR-043), member level (ADR-044), DB snapshot single source (ADR-045), product vector recommendation (ADR-046), daily task system (ADR-047), content notes (ADR-048), group buy (ADR-049), BINARY(16)+UUIDv7 (ADR-050), register fast-reject (ADR-051), search DB-fallback exemption (ADR-052), doc ownership by nature (ADR-053), frontend multi-platform doc axis (ADR-054), coupon scope/stack materialization (ADR-055), 线上字段与查询参数命名统一为 snake_case (ADR-056).
 - `project-docs/` — IceAmericanoMall-specific deliverables (PRD, Architecture, Domain Model, API Spec, Data Model, Workflow, Test Strategy, Security Model)
 - `project-docs/collaboration/08-agents.md` — **AI coding instructions** (layer templates, naming, test patterns, forbidden patterns). Read before writing any code.
 - `project-docs/collaboration/09-constraints.md` — **Hard constraints & anti-patterns** (version locks, layer rules, security rules, coding rules). Check before committing.
