@@ -2658,8 +2658,8 @@ data: [DONE]
 ### 8.9 营销
 
 ```json
-// CouponVO (模板；V5.4 字段名对齐实现：min_amount/total_qty/issued_qty)
-{ "coupon_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name":"618满200减30", "value":3000, "min_amount":20000, "type":1, "seller_id":null, "total_qty":10000, "issued_qty":6523, "start_time":"...", "end_time":"...", "status":1, "discount_type":1, "coupon_category":1, "grant_type":1, "stock_type":1, "grab_type":1, "price_in_cents":3000, "scope_type":1, "scope_values":null, "stack_rule":1, "stack_group":null }
+// CouponVO (模板；V5.4 字段名对齐实现：min_amount/total_qty/issued_qty)；`type` 自 V4.0 DEPRECATED，**契约不载**，后端 `CouponVO` 仍投影该字段，属「代码有文档无」待清理项）
+{ "coupon_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name":"618满200减30", "value":3000, "min_amount":20000, "seller_id":null, "total_qty":10000, "issued_qty":6523, "start_time":"...", "end_time":"...", "status":1, "discount_type":1, "coupon_category":1, "grant_type":1, "stock_type":1, "grab_type":1, "price_in_cents":3000, "scope_type":1, "scope_values":null, "stack_rule":1, "stack_group":null }
 
 // UserCouponVO (已领取；V5.4 字段名对齐实现：id/create_time；2026-10-15 补券面 name/value/min_amount/discount_type)
 { "id":5, "coupon_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name":"618满200减30", "value":3000, "min_amount":20000, "discount_type":1, "status":1, "used_order_no":null, "use_time":null, "create_time":"..." }
