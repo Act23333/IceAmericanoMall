@@ -149,7 +149,7 @@ public class CouponUsageManager {
     }
 
     /**
-     * 批量查询持券的叠加信息（I46 {@code GET /internal/coupon/batch}，供 trade-service
+     * 批量查询持券的叠加信息（I69 {@code GET /internal/coupon/batch}，供 trade-service
      * 下单时校验多券叠加规则）。
      *
      * <p><b>入参口径</b>：{@code userCouponIds} 是 {@code user_coupon.id}（与

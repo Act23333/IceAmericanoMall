@@ -27,14 +27,14 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * {@code CouponUsageManager.batchStackInfo} 单元测试（I46 {@code GET /internal/coupon/batch}）。
+ * {@code CouponUsageManager.batchStackInfo} 单元测试（I69 {@code GET /internal/coupon/batch}）。
  *
  * <p>契约要点：入参是 {@code user_coupon.id} 列表，返回对象的 {@code id} 亦为该持券 ID
  * （便于调用方按原入参对应），{@code couponId} 为券模板业务券号；券模板不存在时跳过（fail-open），
  * 入参为空时返回空列表且不触达仓储。
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("CouponUsageManager.batchStackInfo — I46 叠加信息批量查询")
+@DisplayName("CouponUsageManager.batchStackInfo — I69 叠加信息批量查询")
 class CouponStackInfoBatchTest {
 
     private static final Long TEMPLATE_A = 11L;

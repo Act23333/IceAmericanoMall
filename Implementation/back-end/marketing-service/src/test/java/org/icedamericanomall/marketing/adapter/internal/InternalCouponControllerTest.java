@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * InternalCouponController 适配层接线测试（I46 {@code /batch} + {@code /use} 范围参数透传）。
+ * InternalCouponController 适配层接线测试（I69 {@code /batch} + {@code /use} 范围参数透传）。
  *
  * <p>控制器只做参数绑定与委托：{@code ids} 按逗号切分为 {@code user_coupon.id} 列表（与
  * {@code /use} 的 {@code user_coupon_id} 同口径），{@code product_ids}/{@code category_ids} 原样透传给
@@ -35,7 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@code @RequestParam(name = ...)} 显式钉死。
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("InternalCouponController — I46 /batch 与 /use 范围参数")
+@DisplayName("InternalCouponController — I69 /batch 与 /use 范围参数")
 class InternalCouponControllerTest {
 
     @Mock

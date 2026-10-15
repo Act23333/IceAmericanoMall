@@ -53,7 +53,7 @@ public class InternalCouponController {
     }
 
     /**
-     * V4.3: 批量查询持券的叠加信息（I46），供下调方校验多券叠加规则。
+     * V4.3: 批量查询持券的叠加信息（I69），供下调方校验多券叠加规则。
      *
      * <p>入参 {@code ids} 为 <b>{@code user_coupon.id}</b> 列表（与 {@code /use} 的
      * {@code userCouponId} 同口径）；Spring 按逗号切分绑定（Feign 亦以逗号分隔传输）。

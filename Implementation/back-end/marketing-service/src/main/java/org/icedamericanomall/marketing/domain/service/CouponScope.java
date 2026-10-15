@@ -8,7 +8,7 @@ import java.util.Set;
 
 /**
  * 优惠券适用范围判定（纯领域服务，零框架依赖）—— V4.3 {@code coupon.scope_type} /
- * {@code coupon.scope_values} 的唯一解释口径，供下单核销路径（I46 {@code /internal/coupon/use}）复用。
+ * {@code coupon.scope_values} 的唯一解释口径，供下单核销路径（I22 {@code /internal/coupon/use}）复用。
  *
  * <p><b>适用范围口径</b>（{@link ScopeTypeEnum}）：
  * <ul>
