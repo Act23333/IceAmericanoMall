@@ -126,11 +126,25 @@ public class ProductManager {
         kgEdgeIngestManager.ingestProductAfterCommit(saved);
     }
 
-    /** 上下架/删除状态变更。 */
-    public void updateProductStatus(Long productId, Integer status) {
+    /**
+     * 上下架/删除状态变更（**越权防护**：商家仅限自有商品，管理员放行）。
+     *
+     * <p>为何必须校验：{@code PUT /api/item/product/{id}/status} 的 path 只带商品 id，
+     * 若不做归属断言，任一经认证买家即可上下架甚至删除他人商品
+     * （status=3 即删除语义）；同文件 {@link #updateProduct} 已有归属断言先例。
+     *
+     * @param productId  商品 id
+     * @param operatorId 操作人 user_id（商家身份即其 user_id，与 {@code product.sellerId} 同口径）
+     * @param isAdmin    是否平台管理员（放行，对应契约 P5「商家/管理员上下架」）
+     * @param status     目标状态（1 上架 / 2 下架 / 3 删除）
+     */
+    public void updateProductStatus(Long productId, Long operatorId, boolean isAdmin, Integer status) {
         Product product = productRepository.findById(productId);
         if (product == null) {
             throw new BizException(ErrorCode.PRODUCT_NOT_FOUND);
+        }
+        if (!isAdmin && !product.isOwnedBy(operatorId)) {
+            throw new BizException(ErrorCode.FORBIDDEN, "无权操作该商品");
         }
         productRepository.updateStatus(productId, status);
         // KG 直建边口径（F15）：在售持有直建边 / 下架删除清边（I59）——提交后旁路执行，

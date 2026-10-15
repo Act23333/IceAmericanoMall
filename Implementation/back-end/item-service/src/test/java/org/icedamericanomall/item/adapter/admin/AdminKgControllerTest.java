@@ -57,8 +57,8 @@ class AdminKgControllerTest {
         when(kgAdminManager.page(10L, 20L, 1, 2, 5)).thenReturn(page);
 
         mockMvc.perform(MockMvcRequestBuilders.get("/api/admin/kg/rule/page")
-                        .param("srcCategoryId", "10")
-                        .param("dstCategoryId", "20")
+                        .param("src_category_id", "10")
+                        .param("dst_category_id", "20")
                         .param("status", "1")
                         .param("page", "2")
                         .param("size", "5"))
@@ -114,10 +114,10 @@ class AdminKgControllerTest {
                 .thenReturn(List.of(new KgNeighborCO("category", 20L, "PAIR_WITH", 8, 1.5f)));
 
         mockMvc.perform(MockMvcRequestBuilders.get("/api/admin/kg/neighbors")
-                        .param("srcType", "category")
-                        .param("srcId", "10")
-                        .param("relType", "PAIR_WITH")
-                        .param("dstType", "category")
+                        .param("src_type", "category")
+                        .param("src_id", "10")
+                        .param("rel_type", "PAIR_WITH")
+                        .param("dst_type", "category")
                         .param("depth", "2")
                         .param("status", "0"))
                 .andExpect(status().isOk())

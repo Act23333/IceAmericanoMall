@@ -72,6 +72,7 @@ class GroupBuyOrderStrategyTest {
     private AddressCO address() {
         AddressCO a = new AddressCO();
         a.setId(1L);
+        a.setUserId(100L); // 归属校验：与 ctx.userId 一致
         a.setReceiver("张三");
         a.setPhone("13800138000");
         a.setProvince("广东省");

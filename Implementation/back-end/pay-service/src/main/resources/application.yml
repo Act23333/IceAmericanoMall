@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: pay-service
+  # 线上字段命名统一为 snake_case（ADR 决策：全平台 snake_case；契约 §1.x 一致）
+  jackson:
+    property-naming-strategy: SNAKE_CASE
   datasource:
     url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
     driver-class-name: com.mysql.cj.jdbc.Driver

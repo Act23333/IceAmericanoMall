@@ -46,7 +46,7 @@ public class AdminUserController {
      * 经 ADR-018 委托 authorization-service 执行，变更后远端主动失效该用户的权限缓存。
      */
     @PutMapping("/user/{id}/role")
-    public Result<Void> setUserRole(@PathVariable Long id, @RequestParam Integer roleType) {
+    public Result<Void> setUserRole(@PathVariable Long id, @RequestParam(name = "role_type") Integer roleType) {
         userAdminManager.setUserRole(id, roleType);
         return Result.ok();
     }

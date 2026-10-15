@@ -163,7 +163,9 @@ class OrderCreationManagerTest {
 
     private AddressCO address() {
         AddressCO a = new AddressCO();
-        a.setId(1L); a.setReceiver("张三"); a.setPhone("13800138000");
+        a.setId(1L);
+        a.setUserId(100L); // 归属校验：与 ctx.userId 一致
+        a.setReceiver("张三"); a.setPhone("13800138000");
         a.setProvince("广东省"); a.setCity("深圳市"); a.setDistrict("南山区");
         a.setStreet("科技路"); a.setDetail("1号");
         return a;
@@ -334,6 +336,19 @@ class OrderCreationManagerTest {
     void shouldReject_whenStockInsufficient() {
         when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 5)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 3)));
+
+        assertThrows(BizException.class, () -> orderManager.createOrder(ctx(OrderTypeEnum.NORMAL)));
+        verify(skuClient, never()).deductStock(anyList());
+    }
+
+    @Test
+    @DisplayName("createOrder(NORMAL) — 越权防护：addressId 不属于当前用户 → 拒绝下单且不扣库存")
+    void shouldRejectOrder_whenAddressNotOwnedByUser() {
+        AddressCO othersAddress = address();
+        othersAddress.setUserId(999L); // 他人地址（ctx.userId = 100L）
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(othersAddress);
 
         assertThrows(BizException.class, () -> orderManager.createOrder(ctx(OrderTypeEnum.NORMAL)));
         verify(skuClient, never()).deductStock(anyList());

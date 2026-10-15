@@ -332,7 +332,7 @@ class ProductManagerTest {
     void shouldUpdateStatus_whenExists() {
         when(productRepository.findById(1L)).thenReturn(productWithId(100L, 1L));
 
-        productManager.updateProductStatus(1L, ProductStatusEnum.OFF_SHELF.getCode());
+        productManager.updateProductStatus(1L, 100L, false, ProductStatusEnum.OFF_SHELF.getCode());
 
         verify(productRepository).updateStatus(1L, ProductStatusEnum.OFF_SHELF.getCode());
     }
@@ -343,8 +343,29 @@ class ProductManagerTest {
         when(productRepository.findById(1L)).thenReturn(null);
 
         BizException ex = assertThrows(BizException.class,
-                () -> productManager.updateProductStatus(1L, ProductStatusEnum.OFF_SHELF.getCode()));
+                () -> productManager.updateProductStatus(1L, 100L, false, ProductStatusEnum.OFF_SHELF.getCode()));
         assertEquals(ErrorCode.PRODUCT_NOT_FOUND, ex.getErrorCode());
+    }
+
+    @Test
+    @DisplayName("updateProductStatus — 越权防护：非商品归属商家 → FORBIDDEN 且不落库")
+    void shouldRejectStatusChange_whenNotOwner() {
+        when(productRepository.findById(1L)).thenReturn(productWithId(100L, 1L));
+
+        BizException ex = assertThrows(BizException.class, () -> productManager
+                .updateProductStatus(1L, 999L, false, ProductStatusEnum.OFF_SHELF.getCode()));
+        assertEquals(ErrorCode.FORBIDDEN, ex.getErrorCode());
+        verify(productRepository, never()).updateStatus(anyLong(), anyInt());
+    }
+
+    @Test
+    @DisplayName("updateProductStatus — 管理员放行：非归属商家亦可上下架")
+    void shouldAllowStatusChange_whenAdmin() {
+        when(productRepository.findById(1L)).thenReturn(productWithId(100L, 1L));
+
+        productManager.updateProductStatus(1L, 999L, true, ProductStatusEnum.OFF_SHELF.getCode());
+
+        verify(productRepository).updateStatus(1L, ProductStatusEnum.OFF_SHELF.getCode());
     }
 
     @Test
@@ -352,7 +373,7 @@ class ProductManagerTest {
     void shouldNotIngest_whenUpdateStatus() {
         when(productRepository.findById(1L)).thenReturn(productWithId(100L, 1L));
 
-        productManager.updateProductStatus(1L, ProductStatusEnum.OFF_SHELF.getCode());
+        productManager.updateProductStatus(1L, 100L, false, ProductStatusEnum.OFF_SHELF.getCode());
 
         verify(productVectorClient, never()).upsert(any(ProductVectorUpsertCO.class));
     }

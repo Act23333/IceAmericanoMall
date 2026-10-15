@@ -6,7 +6,6 @@ import org.icedamericanomall.client.GroupBuyClient;
 import org.icedamericanomall.client.SkuClient;
 import org.icedamericanomall.trade.app.order.GroupBuyJoinContextStore;
 import org.icedamericanomall.trade.domain.model.order.Order;
-import org.icedamericanomall.dto.AddressCO;
 import org.icedamericanomall.dto.GroupBuyValidateCO;
 import org.icedamericanomall.dto.GroupBuyValidateResultCO;
 import org.icedamericanomall.dto.SkuCO;
@@ -79,10 +78,8 @@ public class GroupBuyOrderStrategy implements OrderCreateStrategy {
         ctx.setSnapshots(List.of(snap));
         ctx.setSellerId(sku.getSellerId());
 
-        // 3. 地址快照
-        AddressCO address = addressClient.getAddress(ctx.getAddressId());
-        if (address == null) throw new BizException(ErrorCode.PARAM_ERROR, "收货地址不存在");
-        ctx.setAddress(address);
+        // 3. 地址快照 + 越权防护唯一出口：归属校验在 bindAddress 内（内部端点不校验归属）
+        ctx.bindAddress(addressClient.getAddress(ctx.getAddressId()));
     }
 
     @Override

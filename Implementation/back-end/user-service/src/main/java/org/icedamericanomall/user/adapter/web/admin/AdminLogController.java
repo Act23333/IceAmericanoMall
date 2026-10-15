@@ -5,12 +5,14 @@ import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.user.adapter.response.OperationLogVO;
 import org.icedamericanomall.user.app.oplog.OperationLogManager;
 import org.icedamericanomall.common.api.Result;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 /**
  * 操作日志查询 — 管理后台。
  */
 @RestController
+@PreAuthorize("@ss.hasPermi('user:admin')")
 @RequestMapping("/api/admin/log")
 @RequiredArgsConstructor
 public class AdminLogController {

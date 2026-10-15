@@ -44,10 +44,10 @@ public class AddressController {
         return Result.ok();
     }
 
-    /** 查询收货地址详情。 */
+    /** 查询收货地址详情（仅限本人 —— 归属取自登录上下文，越权读一律拒绝）。 */
     @GetMapping("/{id}")
     public Result<AddressResp> getById(@PathVariable Long id) {
-        return Result.ok(addressManager.getById(id));
+        return Result.ok(addressManager.getOwnedByUser(UserContext.getUserId(), id));
     }
 
     /** 修改收货地址（仅限本人）。 */

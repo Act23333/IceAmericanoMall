@@ -20,8 +20,9 @@ public class InternalSkuController {
     private final SkuManager skuManager;
     private final ProductManager productManager;
 
+    /** 批量查 SKU（线格式查询参数 `sku_ids`，逗号分隔；Feign 侧 `SkuClient` 同名）。 */
     @GetMapping("/list/batch")
-    public List<SkuCO> getSkuListByIds(@RequestParam("ids") List<Long> skuIds) {
+    public List<SkuCO> getSkuListByIds(@RequestParam(name = "sku_ids") List<Long> skuIds) {
         return skuManager.getCosByIds(skuIds);
     }
 

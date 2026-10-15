@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.common.security.UserContext;
+import org.icedamericanomall.common.web.QueryModel;
 import org.icedamericanomall.item.adapter.request.CreateProductReq;
 import org.icedamericanomall.item.adapter.request.ProductPageReq;
 import org.icedamericanomall.item.adapter.request.UpdateProductReq;
@@ -45,7 +46,7 @@ public class ProductController {
     // ==================== 查询 (游客/用户/VIP/SVIP 共享) ====================
 
     @GetMapping("/page")
-    public Result<IPage<ProductVO>> page(ProductPageReq req) {
+    public Result<IPage<ProductVO>> page(@QueryModel ProductPageReq req) {
         IPage<ProductVO> page = productManager.pageProducts(
                 req.getSellerId(), req.getCategoryId(), req.getKeyword(),
                 req.getSort(), req.getOrder(),
@@ -110,9 +111,16 @@ public class ProductController {
         return Result.ok();
     }
 
+    /**
+     * 商家/管理员上下架（P5）—— 商家仅限自有商品，管理员放行。
+     *
+     * <p>归属校验在 {@code ProductManager#updateProductStatus} 内完成（同一越权防护出口）；
+     * 本方法只负责从登录上下文取操作人身份与管理员标记。
+     */
     @PutMapping("/{id}/status")
     public Result<Void> updateStatus(@PathVariable Long id, @RequestParam Integer status) {
-        productManager.updateProductStatus(id, status);
+        productManager.updateProductStatus(id, UserContext.getUserId(),
+                UserContext.hasPermission("user:admin"), status);
         return Result.ok();
     }
 }

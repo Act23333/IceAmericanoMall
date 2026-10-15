@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.common.security.UserContext;
+import org.icedamericanomall.common.web.QueryModel;
 import org.icedamericanomall.item.adapter.request.ReviewAppendReq;
 import org.icedamericanomall.item.adapter.request.ReviewCreateReq;
 import org.icedamericanomall.item.adapter.request.ReviewFilterReq;
@@ -42,7 +43,7 @@ public class ReviewController {
 
     /** V5.0: 评价筛选 (按星级/有无图片/排序) — query 参数由 {@link ReviewFilterReq} 属性绑定 */
     @GetMapping("/product/{productId}/filter")
-    public Result<IPage<ReviewVO>> filter(@PathVariable Long productId, ReviewFilterReq req) {
+    public Result<IPage<ReviewVO>> filter(@PathVariable Long productId, @QueryModel ReviewFilterReq req) {
         return Result.ok(reviewManager.pageByProductFiltered(productId, req.getRating(), req.getHasMedia(),
                 req.getSort(), req.getPage(), req.getSize()));
     }

@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.client.AddressClient;
 import org.icedamericanomall.client.SkuClient;
 import org.icedamericanomall.trade.domain.model.order.Order;
-import org.icedamericanomall.dto.AddressCO;
 import org.icedamericanomall.dto.SkuCO;
 import org.icedamericanomall.trade.domain.enums.OrderTypeEnum;
 import org.icedamericanomall.common.enums.ErrorCode;
@@ -53,10 +52,8 @@ public class FlashSaleOrderStrategy implements OrderCreateStrategy {
         ctx.setSnapshots(List.of(snap));
         ctx.setSellerId(sku.getSellerId());
 
-        // 地址快照
-        AddressCO address = addressClient.getAddress(ctx.getAddressId());
-        if (address == null) throw new BizException(ErrorCode.PARAM_ERROR, "收货地址不存在");
-        ctx.setAddress(address);
+        // 地址快照 + 越权防护唯一出口：归属校验在 bindAddress 内（内部端点不校验归属）
+        ctx.bindAddress(addressClient.getAddress(ctx.getAddressId()));
     }
 
     @Override

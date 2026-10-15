@@ -42,11 +42,21 @@ public class AddressManager {
         addressRepository.insert(address);
     }
 
-    /** 查询地址详情。 */
+    /** 查询地址详情（**不校验归属**，仅供集群内部 Feign 快照使用 —— 见 {@code /internal/address/{id}}）。 */
     public AddressResp getById(Long id) {
         return addressRepository.findById(id)
                 .map(AddressResp::from)
                 .orElseThrow(() -> new BizException(ErrorCode.USER_NOT_FOUND, "地址不存在"));
+    }
+
+    /**
+     * 查询**本人**地址详情（越权读防护：先验归属，非本人一律拒绝）。
+     *
+     * <p>公开端点 {@code GET /api/user/address/{id}} 必须走本方法；
+     * {@link #getById(Long)} 不得暴露给公开端点（否则任意登录用户可读他人 PII）。
+     */
+    public AddressResp getOwnedByUser(Long userId, Long id) {
+        return AddressResp.from(loadOwned(userId, id));
     }
 
     /** 修改地址（先验归属，再按 {userId, id} 更新）。 */

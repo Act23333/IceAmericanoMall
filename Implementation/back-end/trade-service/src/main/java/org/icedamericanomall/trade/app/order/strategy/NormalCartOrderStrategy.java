@@ -94,9 +94,8 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
         ctx.setSnapshots(snapshots);
         ctx.setSellerId(sellerId);
 
-        AddressCO address = addressClient.getAddress(ctx.getAddressId());
-        if (address == null) throw new BizException(ErrorCode.PARAM_ERROR, "收货地址不存在");
-        ctx.setAddress(address);
+        // 越权防护唯一出口：地址归属校验在 bindAddress 内（addressId 由前端传入，内部端点不校验归属）
+        ctx.bindAddress(addressClient.getAddress(ctx.getAddressId()));
     }
 
     @Override

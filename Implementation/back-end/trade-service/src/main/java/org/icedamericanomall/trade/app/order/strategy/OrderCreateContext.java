@@ -1,11 +1,14 @@
 package org.icedamericanomall.trade.app.order.strategy;
 
 import lombok.Data;
+import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.AddressCO;
 import org.icedamericanomall.dto.CartItemCO;
 import org.icedamericanomall.trade.domain.enums.OrderTypeEnum;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * V4.1: 订单创建上下文（京东/淘宝 OrderContext 模式）。
@@ -60,6 +63,30 @@ public class OrderCreateContext {
     private Long sellerId;
     private int totalAmount;
     private int discountAmount;
+
+    /**
+     * 绑定收货地址快照，并**校验归属**（越权防护唯一出口）。
+     *
+     * <p>为什么必须校验：{@code addressId} 由前端传入，user-service 的
+     * {@code /internal/address/{id}} 是集群内部端点、**不校验归属**；若不在此校验，
+     * 买家可传入他人 addressId，把他人收货人姓名/手机号/详细地址快照进自己的订单后读取
+     * （等价于 {@code GET /api/user/address/{id}} 的 IDOR）。
+     *
+     * <p>归属依据 {@link AddressCO#getUserId()}（user-service 侧 {@code user_id} NOT NULL，
+     * 生产必非空）；不匹配一律拒绝。
+     *
+     * @param address 由 {@code AddressClient.getAddress} 取回的地址快照
+     * @throws BizException 地址不存在或不属于当前下单用户
+     */
+    public void bindAddress(AddressCO address) {
+        if (address == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "收货地址不存在");
+        }
+        if (!Objects.equals(userId, address.getUserId())) {
+            throw new BizException(ErrorCode.FORBIDDEN, "收货地址不属于当前用户");
+        }
+        this.address = address;
+    }
 
     @Data
     public static class CartItemSnapshot {

@@ -7,6 +7,7 @@ import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.trade.adapter.request.AfterSalePageReq;
 import org.icedamericanomall.trade.adapter.response.AfterSaleVO;
 import org.icedamericanomall.trade.app.aftersale.AfterSaleManager;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.*;
  * 产出单行 JSON 审计日志（logger {@code AUDIT}，经 ELK 采集，不落库）。
  */
 @RestController
+@PreAuthorize("@ss.hasPermi('user:admin')")
 @RequestMapping("/api/admin/after-sale")
 @RequiredArgsConstructor
 public class AdminAfterSaleController {

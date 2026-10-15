@@ -57,8 +57,8 @@ public class AdminKgController {
 
     /** AD61：分页查询搭配规则（src/dst/status 过滤可选；page 缺省 1，size 缺省 20）。 */
     @GetMapping("/rule/page")
-    public Result<IPage<PairingRuleVO>> page(@RequestParam(required = false) Long srcCategoryId,
-                                             @RequestParam(required = false) Long dstCategoryId,
+    public Result<IPage<PairingRuleVO>> page(@RequestParam(name = "src_category_id", required = false) Long srcCategoryId,
+                                             @RequestParam(name = "dst_category_id", required = false) Long dstCategoryId,
                                              @RequestParam(required = false) Integer status,
                                              @RequestParam(defaultValue = "1") int page,
                                              @RequestParam(defaultValue = "20") int size) {
@@ -95,10 +95,10 @@ public class AdminKgController {
      * {@link KgAdminManager#neighbors}（缺失/超界 → 1101/400）。
      */
     @GetMapping("/neighbors")
-    public Result<List<KgNeighborCO>> neighbors(@RequestParam(required = false) String srcType,
-                                                @RequestParam(required = false) Long srcId,
-                                                @RequestParam(required = false) String relType,
-                                                @RequestParam(required = false) String dstType,
+    public Result<List<KgNeighborCO>> neighbors(@RequestParam(name = "src_type", required = false) String srcType,
+                                                @RequestParam(name = "src_id", required = false) Long srcId,
+                                                @RequestParam(name = "rel_type", required = false) String relType,
+                                                @RequestParam(name = "dst_type", required = false) String dstType,
                                                 @RequestParam(defaultValue = "1") Integer depth,
                                                 @RequestParam(required = false) Integer status) {
         return Result.ok(kgAdminManager.neighbors(srcType, srcId, relType, dstType, depth, status));

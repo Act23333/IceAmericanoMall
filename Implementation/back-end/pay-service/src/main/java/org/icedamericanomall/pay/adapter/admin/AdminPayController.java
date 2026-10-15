@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.annotation.OperationLog;
 import org.icedamericanomall.common.api.Result;
+import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.ForbiddenException;
+import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.pay.adapter.request.ReconciliationQueryReq;
 import org.icedamericanomall.pay.adapter.response.ReconciliationBatchVO;
 import org.icedamericanomall.pay.adapter.response.ReconciliationDetailVO;
@@ -32,6 +35,12 @@ import java.util.List;
  * <p><b>审计（ADR-032 管道一）</b>：AD43（退款重试）与 AD46（手动触发对账）为写操作，
  * 标注 {@code @OperationLog} 产出单行 JSON 审计日志（logger {@code AUDIT}，经 ELK 采集，不落库）；
  * 入参为标识/日期，故开启参数摘要。AD44/AD45 为只读查询，不产生审计留痕。
+ *
+ * <p><b>管理端鉴权</b>：本服务未引入 {@code spring-boot-starter-security}
+ * （ia-common 中该依赖为 {@code <optional>true</optional>}，不传递），故 {@code @PreAuthorize}
+ * 在此不可用；改用 {@link UserContext#hasPermission} 显式判断，语义等价于
+ * {@code @PreAuthorize("@ss.hasPermi('user:admin')")}（同 merchant-service
+ * {@code AdminMerchantController.assertAdmin()} 既有范式）。
  *
  * <pre>
  * AD43 POST /refund/{refundNo}/retry                       退款重试（仅失败单）
@@ -67,6 +76,7 @@ public class AdminPayController {
             description = "退款重试", recordParams = true)
     @PostMapping("/refund/{refundNo}/retry")
     public Result<RefundVO> retryRefund(@PathVariable String refundNo) {
+        assertAdmin();
         return Result.ok(refundManager.retry(refundNo));
     }
 
@@ -77,6 +87,7 @@ public class AdminPayController {
      */
     @GetMapping("/reconciliation/batches")
     public Result<IPage<ReconciliationBatchVO>> listBatches(ReconciliationQueryReq req) {
+        assertAdmin();
         return Result.ok(reconciliationManager
                 .pageBatches(req.getPage(), req.getSize(), req.getChannel(), req.getStatus(),
                         req.parseBillDate(false)));
@@ -91,6 +102,7 @@ public class AdminPayController {
     @GetMapping("/reconciliation/batches/{id}/details")
     public Result<IPage<ReconciliationDetailVO>> listBatchDetails(@PathVariable Long id,
                                                                   ReconciliationQueryReq req) {
+        assertAdmin();
         return Result.ok(reconciliationManager
                 .pageDetails(id, req.getPage(), req.getSize(), req.getResult()));
     }
@@ -108,6 +120,14 @@ public class AdminPayController {
             description = "手动触发渠道对账", recordParams = true)
     @PostMapping("/reconciliation/run")
     public Result<List<ReconciliationBatchVO>> runReconciliation(ReconciliationQueryReq req) {
+        assertAdmin();
         return Result.ok(reconciliationManager.run(req.parseBillDate(true), req.getChannel()));
+    }
+
+    /** 管理员权限守卫（网关透传权限；非管理员一律拒绝）。 */
+    private void assertAdmin() {
+        if (!UserContext.hasPermission("user:admin")) {
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "仅管理员可操作支付对账与退款重试");
+        }
     }
 }

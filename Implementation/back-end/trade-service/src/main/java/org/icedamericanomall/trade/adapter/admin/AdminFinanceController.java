@@ -9,6 +9,7 @@ import org.icedamericanomall.trade.adapter.response.SettlementVO;
 import org.icedamericanomall.trade.adapter.response.WithdrawalVO;
 import org.icedamericanomall.trade.app.finance.SettlementManager;
 import org.icedamericanomall.trade.app.finance.WithdrawalManager;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
  * 两者入参均为标识/状态/日期，故开启参数摘要（非 id 类值仍只记类型名）。
  */
 @RestController
+@PreAuthorize("@ss.hasPermi('user:admin')")
 @RequestMapping("/api/admin/finance")
 @RequiredArgsConstructor
 public class AdminFinanceController {
@@ -39,9 +41,9 @@ public class AdminFinanceController {
     @OperationLog(module = MODULE_TRADE_FINANCE, action = ACTION_GENERATE_SETTLEMENT,
             description = "生成结算单", recordParams = true)
     @PostMapping("/settlement/generate")
-    public Result<SettlementVO> generate(@RequestParam Long sellerId,
-                                         @RequestParam String periodStart,
-                                         @RequestParam String periodEnd) {
+    public Result<SettlementVO> generate(@RequestParam(name = "seller_id") Long sellerId,
+                                         @RequestParam(name = "period_start") String periodStart,
+                                         @RequestParam(name = "period_end") String periodEnd) {
         return Result.ok(settlementManager.generate(sellerId, periodStart, periodEnd));
     }
 

@@ -33,7 +33,7 @@ public class InternalMemberController {
 
     /** I45 查询会员等级与权益（会员折扣率万分比 + 积分倍率百分比）。 */
     @GetMapping("/level")
-    public MemberLevelCO getLevel(@RequestParam("userId") Long userId) {
+    public MemberLevelCO getLevel(@RequestParam(name = "user_id") Long userId) {
         return memberLevelManager.getLevel(userId);
     }
 
