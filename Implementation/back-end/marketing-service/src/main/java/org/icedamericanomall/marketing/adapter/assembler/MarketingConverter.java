@@ -61,11 +61,14 @@ public interface MarketingConverter {
     /** 优惠券聚合列表 → 视图对象列表（列表方法按类型区分命名，避免泛型疑符冲突）。 */
     List<CouponVO> toCouponVOList(List<Coupon> coupons);
 
-    /** 用户持券聚合 → 视图对象。 */
+    /**
+     * 用户持券聚合 → 视图对象（仅本体字段）。
+     *
+     * <p>券面展示字段 {@code name}/{@code value}/{@code min_amount} 由应用层
+     * {@code UserCouponViewAssembler} 按券模板 ID 批量回填（ADR-057）；此前按列表批量映射的
+     * {@code toUserCouponVOList} 因回填改为逐元素装配已无调用方，随本批删除。
+     */
     UserCouponVO toVO(UserCoupon userCoupon);
-
-    /** 用户持券聚合列表 → 视图对象列表。 */
-    List<UserCouponVO> toUserCouponVOList(List<UserCoupon> userCoupons);
 
     /**
      * 秒杀聚合 → 视图对象（仅本体字段）。

@@ -71,7 +71,9 @@ class ProductManagerTest {
                 new org.icedamericanomall.item.adapter.assembler.ProductConverterImpl(),
                 new org.icedamericanomall.item.adapter.assembler.SkuConverterImpl(),
                 freightTemplateManager, new SkuManager(skuRepository,
-                new org.icedamericanomall.item.adapter.assembler.SkuConverterImpl()),
+                new org.icedamericanomall.item.adapter.assembler.SkuConverterImpl(),
+                // 商品展示字段回填端口：本测试不覆盖该链路（真实 SQL 语义见 SkuProductDisplayQueryImplH2Test）
+                skuIds -> java.util.Map.of()),
                 productVectorClient, new ProductRecommendManager(productVectorClient),
                 new ProductPromotionManager(promotionClient), kgEdgeIngestManager);
     }

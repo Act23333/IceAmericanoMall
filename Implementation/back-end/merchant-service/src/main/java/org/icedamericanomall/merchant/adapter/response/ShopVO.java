@@ -34,6 +34,15 @@ public class ShopVO implements Serializable {
     /** 省市区摘要 */
     private String address;
 
+    /**
+     * 店铺粉丝数（契约 §4.3.1 `ShopVO.follower_count`，ADR-057 回填）。
+     *
+     * <p>数据源与 {@code GET /api/shop/follow/count}（SF4）同源：Redis Set
+     * {@code shop:followers:{shopId}} 的基数；店铺列表按 ID 集合<b>批量</b>（pipeline 单次往返）读取。
+     * fail-open：Redis 不可用时为 {@code null}（<b>不是</b> 0 —— 0 表示确实无人关注），店铺信息照常返回。
+     */
+    private Long followerCount;
+
     /** 状态：0=审核中，1=正常，2=冻结 */
     private Integer status;
 

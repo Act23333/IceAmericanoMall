@@ -51,6 +51,10 @@ class ShopManagerDecorationTest {
     @Mock
     private ShopDecorationRepository shopDecorationRepository;
 
+    /** 粉丝数读模型端口：本测试只覆盖装修装配（未打桩 → 返回 null Map，粉丝数字段留空）。 */
+    @Mock
+    private org.icedamericanomall.merchant.app.port.StoreFollowStore storeFollowStore;
+
     @InjectMocks
     private ShopManager shopManager;
 

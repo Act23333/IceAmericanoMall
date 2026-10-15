@@ -53,7 +53,8 @@ class CouponClaimManagerTest {
     @BeforeEach
     void setUp() {
         couponClaimManager = new CouponClaimManager(couponRepository, userCouponRepository,
-                couponClaimDedupStore, couponGrabStore, new MarketingConverterImpl());
+                couponClaimDedupStore, couponGrabStore,
+                new UserCouponViewAssembler(new MarketingConverterImpl(), couponIds -> java.util.Map.of()));
     }
 
     @Test
@@ -84,7 +85,7 @@ class CouponClaimManagerTest {
     }
 
     @Test
-    @DisplayName("claimWithGrab — DB 落库成功 → 不回滚 Redis，返回持券记录")
+    @DisplayName("claimWithGrab — DB 落库成功 → 不回滚 Redis，返回持券记录（含券面三字段）")
     void shouldNotRollbackRedis_whenDbInsertSucceeds() {
         when(couponRepository.findByCouponId(COUPON_ID)).thenReturn(grabCoupon());
         when(couponGrabStore.tryClaim(anyLong(), anyLong(), any())).thenReturn(4L);
@@ -95,6 +96,10 @@ class CouponClaimManagerTest {
 
         assertNotNull(result);
         assertEquals(1, result.getStatus().intValue());
+        // 契约 §4.10.1：领取回执与「我的券」是同一个 VO —— 券面三字段必须同样在场
+        assertEquals("秒杀券", result.getName());
+        assertEquals(Integer.valueOf(3000), result.getValue());
+        assertEquals(Integer.valueOf(20000), result.getMinAmount());
         verify(couponGrabStore, never()).rollbackClaim(anyLong(), anyLong());
     }
 
@@ -133,6 +138,8 @@ class CouponClaimManagerTest {
                 .id(COUPON_PK)
                 .couponId(COUPON_ID)
                 .name("秒杀券")
+                .value(3000)
+                .minAmount(20000)
                 .status(CouponStatusEnum.ACTIVE.getCode())
                 .grabType(GrabTypeEnum.NEED_GRAB.getCode())
                 .startTime(LocalDateTime.now().minusHours(1))

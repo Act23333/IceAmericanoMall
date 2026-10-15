@@ -2,7 +2,7 @@
 
 ## 状态
 
-已实施（user-service 收藏、marketing-service 秒杀）；优惠券券面与店铺关注数随契约补丁落地
+已实施（user-service 收藏、marketing-service 秒杀、marketing-service 券面、merchant-service 店铺关注数、item-service I13 商品字段）
 
 ## 背景
 
@@ -42,6 +42,33 @@
 
 **正面**：契约声明的展示字段可补齐，且不同步引入 N+1、脆弱性与事务违规；前端不再需要多端点本地 join（消除双端口径分叉）。
 **负面 / 风险**：产生对**他域表的只读耦合**（表结构变更会波及读模型实现）。缓解：SQL 限定在端口实现内，并由 H2 语义测试锁定列口径。
+
+## 落地清单（2026-10-16 本批）
+
+| 域 | 展示字段 | 端口（app/port） | 实现 | 数据源 |
+| :-- | :-- | :-- | :-- | :-- |
+| user | `FavoriteVO.product_name/main_image/price/status` | `FavoriteProductBriefQuery` | `infrastructure/persistence/favorite/FavoriteProductBriefQueryImpl` | 同库 `product`/`sku` JOIN |
+| marketing | `FlashSaleVO.product_name/product_image/original_price` | `FlashSaleProductBriefQuery` | `infrastructure/persistence/flash/FlashSaleProductBriefQueryImpl` | 同库 `sku` JOIN `product` |
+| marketing | `UserCouponVO.name/value/min_amount` | `CouponFaceQuery` | `infrastructure/persistence/coupon/CouponFaceQueryImpl` | 同库 `coupon` 按 ID 批量 |
+| merchant | `ShopVO.follower_count` | `StoreFollowStore.followerCounts`（既有端口扩批量方法） | `infrastructure/adapter/RedisStoreFollowStoreAdapter`（pipeline + `SCARD`） | 本地 Redis Set 基数（与 SF4 同源） |
+| item | `SkuCO.product_name/seller_id/category_id/freight_template_id`（I13） | `SkuProductDisplayQuery` | `infrastructure/persistence/SkuProductDisplayQueryImpl` | 同库 `sku LEFT JOIN product` |
+
+### I13 根因与收口（本批最高优先）
+
+`sku` 表**没有商品名列**，而 `SkuCO` 的四个展示/计价字段只能来自 `product` 表；此前 I13 =
+纯 `sku` 表查询 + MapStruct 投影，**无源可映射 → 四字段恒 null**（上层单测因 mock `SkuCO`
+而看不见）。已按本 ADR 在 item 域加读模型端口并**联表一次**回填（无 N+1），缺失商品时四字段
+为 null、SKU 本体照常返回（`LEFT JOIN`，见下）。
+
+**为何用 `LEFT JOIN` 而非 `INNER JOIN`**：I13 的两个调用方（购物车回填、trade 下单取数）必须先
+拿到 SKU 本体（价格/库存/规格）；`INNER JOIN` 会让「商品行缺失」等价于「SKU 不存在」，
+把展示字段的缺失放大成购物车漏项/下单失败，违反本 ADR 的 fail-open 口径。
+
+**连带收益（trade-service，本批未改 trade 代码）**：`DirectOrderStrategy` /
+`NormalCartOrderStrategy` / `GroupBuyOrderStrategy` / `FlashSaleOrderStrategy` 都从同一个 `SkuCO`
+取这四字段 —— 修复前订单快照 `product_name` / `seller_id` 亦为空，并连带影响「单店铺校验」、
+`orders.seller_id`（结算归属）与运费计价（`sellerId` 为空时 `FreightPostageResolver` 直接返回 0）。
+本批修复后这些字段开始有值，**运费将从「恒 0」恢复到按模板计价**（ADR-037 设计口径）。
 
 ## 参考
 

@@ -43,7 +43,9 @@ class CouponUsageManagerTest {
 
     @BeforeEach
     void setUp() {
-        couponUsageManager = new CouponUsageManager(couponRepository, userCouponRepository, converter);
+        // 券面读模型端口：本测试不覆盖券面回填链路（真实 SQL 语义见 CouponFaceQueryImplH2Test）
+        couponUsageManager = new CouponUsageManager(couponRepository, userCouponRepository,
+                new UserCouponViewAssembler(converter, couponIds -> java.util.Map.of()));
     }
 
     @Test

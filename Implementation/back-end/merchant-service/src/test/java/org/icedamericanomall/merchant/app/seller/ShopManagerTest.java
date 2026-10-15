@@ -5,6 +5,7 @@ import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.exception.ForbiddenException;
 import org.icedamericanomall.merchant.adapter.request.UpdateShopReq;
 import org.icedamericanomall.merchant.adapter.response.ShopVO;
+import org.icedamericanomall.merchant.app.port.StoreFollowStore;
 import org.icedamericanomall.merchant.domain.enums.MerchantStatusEnum;
 import org.icedamericanomall.merchant.domain.model.shop.ShopStatusEnum;
 import org.icedamericanomall.merchant.domain.model.merchant.Merchant;
@@ -21,18 +22,22 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * 店铺查询与维护编排单元测试 —— 公开页可见性、遗留 sellerId → 默认店铺解析、
- * 店铺列表、归属校验与资料更新。
+ * 店铺列表、归属校验与资料更新、粉丝数回填（批量 + fail-open）。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ShopManager 店铺编排单元测试")
@@ -46,6 +51,9 @@ class ShopManagerTest {
 
     @Mock
     private ShopDecorationRepository shopDecorationRepository;
+
+    @Mock
+    private StoreFollowStore storeFollowStore;
 
     @InjectMocks
     private ShopManager shopManager;
@@ -240,5 +248,61 @@ class ShopManagerTest {
         BizException ex = assertThrows(BizException.class, () -> shopManager.getMyDefaultShop(100L));
 
         assertEquals(ErrorCode.SHOP_NOT_FOUND, ex.getErrorCode());
+    }
+
+    // ==================== 粉丝数回填（契约 follower_count，ADR-057） ====================
+
+    @Test
+    @DisplayName("公开店铺页 — 回填 follower_count（与 SF4 同源：Redis Set 基数）")
+    void shouldFillFollowerCount_whenShopVisible() {
+        when(shopRepository.findById(5L)).thenReturn(Optional.of(shop(5L, 1L, ShopStatusEnum.NORMAL)));
+        when(merchantRepository.findById(1L)).thenReturn(Optional.of(merchant(1L, 100L)));
+        when(storeFollowStore.followerCounts(List.of(5L))).thenReturn(Map.of(5L, 128L));
+
+        ShopVO vo = shopManager.getVisibleShop(5L);
+
+        assertEquals(128L, vo.getFollowerCount());
+        assertEquals("冰美式旗舰店", vo.getShopName(), "本体字段不受回填影响");
+    }
+
+    @Test
+    @DisplayName("店铺列表 — 整批一次批量读（不逐店铺往返），逐店铺回填")
+    void shouldBatchFollowerCounts_forShopList() {
+        when(merchantRepository.findByUserId(100L)).thenReturn(Optional.of(merchant(1L, 100L)));
+        when(shopRepository.findByMerchantId(1L)).thenReturn(List.of(
+                shop(5L, 1L, ShopStatusEnum.NORMAL),
+                shop(6L, 1L, ShopStatusEnum.NORMAL)));
+        when(storeFollowStore.followerCounts(List.of(5L, 6L))).thenReturn(Map.of(5L, 128L, 6L, 7L));
+
+        List<ShopVO> shops = shopManager.listMyShops(100L);
+
+        assertEquals(128L, shops.get(0).getFollowerCount());
+        assertEquals(7L, shops.get(1).getFollowerCount());
+        verify(storeFollowStore, times(1)).followerCounts(anyCollection());
+    }
+
+    @Test
+    @DisplayName("店铺列表 — Redis 异常 → follower_count 为 null（fail-open，不回落 0），店铺信息照常返回")
+    void shouldFailOpen_whenFollowerCountUnavailable() {
+        when(merchantRepository.findByUserId(100L)).thenReturn(Optional.of(merchant(1L, 100L)));
+        when(shopRepository.findByMerchantId(1L)).thenReturn(List.of(shop(5L, 1L, ShopStatusEnum.NORMAL)));
+        when(storeFollowStore.followerCounts(anyCollection()))
+                .thenThrow(new IllegalStateException("redis down"));
+
+        List<ShopVO> shops = shopManager.listMyShops(100L);
+
+        assertEquals(1, shops.size());
+        assertNull(shops.get(0).getFollowerCount(), "Redis 不可用 → null（不是 0），店铺信息不受影响");
+        assertEquals("冰美式旗舰店", shops.get(0).getShopName());
+    }
+
+    @Test
+    @DisplayName("公开店铺页 — 粉丝数端口缺失该店铺 → follower_count 为 null")
+    void shouldLeaveFollowerCountNull_whenMissingInPortResult() {
+        when(shopRepository.findById(5L)).thenReturn(Optional.of(shop(5L, 1L, ShopStatusEnum.NORMAL)));
+        when(merchantRepository.findById(1L)).thenReturn(Optional.of(merchant(1L, 100L)));
+        when(storeFollowStore.followerCounts(List.of(5L))).thenReturn(Map.of());
+
+        assertNull(shopManager.getVisibleShop(5L).getFollowerCount());
     }
 }

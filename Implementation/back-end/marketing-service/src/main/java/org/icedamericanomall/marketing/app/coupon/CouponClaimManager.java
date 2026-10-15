@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
-import org.icedamericanomall.marketing.adapter.assembler.MarketingConverter;
 import org.icedamericanomall.marketing.adapter.response.UserCouponVO;
 import org.icedamericanomall.marketing.domain.enums.CouponStatusEnum;
 import org.icedamericanomall.marketing.domain.enums.CouponStockTypeEnum;
@@ -41,7 +40,7 @@ public class CouponClaimManager {
     private final UserCouponRepository userCouponRepository;
     private final CouponClaimDedupStore couponClaimDedupStore;
     private final CouponGrabStore couponGrabStore;
-    private final MarketingConverter marketingConverter;
+    private final UserCouponViewAssembler userCouponViewAssembler;
 
     /**
      * 智能领取：按 {@code grabType} 自动路由 Redis Lua 通道或普通领取通道。
@@ -82,7 +81,7 @@ public class CouponClaimManager {
                 throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券已领完");
             }
         }
-        return marketingConverter.toVO(insertUserCoupon(userId, coupon.getId()));
+        return userCouponViewAssembler.assemble(insertUserCoupon(userId, coupon.getId()), coupon);
     }
 
     /**
@@ -123,7 +122,7 @@ public class CouponClaimManager {
         } catch (Exception e) {
             log.error("秒杀券 issued_qty 同步失败（非关键）: couponId={}", coupon.getId(), e);
         }
-        return marketingConverter.toVO(uc);
+        return userCouponViewAssembler.assemble(uc, coupon);
     }
 
     /**

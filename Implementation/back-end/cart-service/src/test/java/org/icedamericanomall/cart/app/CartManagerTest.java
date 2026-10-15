@@ -199,4 +199,32 @@ class CartManagerTest {
         verify(cartRepository, never()).updateQuantity(anyLong(), anyInt());
         verify(cartRepository, never()).delete(anyLong());
     }
+
+    @Test
+    @DisplayName("购物车视图 — product_name 是 I13 的纯透传：上游为空则线上为空（缺陷根因在 item-service，本侧无兜底）")
+    void shouldPassThroughProductName_fromUpstreamSkuCo() {
+        when(cartRepository.findByUserIdOrderByCreateTimeDesc(USER_ID))
+                .thenReturn(List.of(item(100L, 1, true)));
+        // 修复前的 I13 真实返回形状：sku 表无商品名 → product_name 恒 null
+        SkuCO upstream = sku(100L, 1000);
+        upstream.setProductName(null);
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(upstream));
+
+        CartItemVO item = cartManager.getCartView(USER_ID).getItems().get(0);
+
+        assertNull(item.getProductName(), "购物车不补商品名：上游为空即线上为空 —— 修复必须落在 item-service I13");
+        assertEquals(Integer.valueOf(1000), item.getPrice(), "商品名缺失不影响计价");
+    }
+
+    @Test
+    @DisplayName("购物车视图 — I13 修复后（product_name 非空）原样透出到 product_name")
+    void shouldExposeProductName_whenUpstreamSkuCoFilled() {
+        when(cartRepository.findByUserIdOrderByCreateTimeDesc(USER_ID))
+                .thenReturn(List.of(item(100L, 1, true)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(100L, 1000)));
+
+        CartItemVO item = cartManager.getCartView(USER_ID).getItems().get(0);
+
+        assertEquals("商品100", item.getProductName());
+    }
 }

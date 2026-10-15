@@ -54,7 +54,9 @@ class CouponStackInfoBatchTest {
 
     @BeforeEach
     void setUp() {
-        couponUsageManager = new CouponUsageManager(couponRepository, userCouponRepository, converter);
+        // 券面读模型端口：本测试只覆盖 I69 叠加信息批量查询
+        couponUsageManager = new CouponUsageManager(couponRepository, userCouponRepository,
+                new UserCouponViewAssembler(converter, couponIds -> java.util.Map.of()));
     }
 
     @Test

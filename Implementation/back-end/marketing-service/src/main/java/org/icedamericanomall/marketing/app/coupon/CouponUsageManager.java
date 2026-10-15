@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.CouponStackInfoCO;
-import org.icedamericanomall.marketing.adapter.assembler.MarketingConverter;
 import org.icedamericanomall.marketing.adapter.response.UserCouponVO;
 import org.icedamericanomall.marketing.domain.enums.CouponCategoryEnum;
 import org.icedamericanomall.marketing.domain.enums.OrderTypeEnum;
@@ -40,16 +39,22 @@ public class CouponUsageManager {
 
     private final CouponRepository couponRepository;
     private final UserCouponRepository userCouponRepository;
-    private final MarketingConverter marketingConverter;
+    private final UserCouponViewAssembler userCouponViewAssembler;
 
-    /** 未使用券列表（向后兼容口径）。 */
+    /**
+     * 未使用券列表（向后兼容口径）。
+     *
+     * <p>券面三字段（{@code name}/{@code value}/{@code min_amount}）由
+     * {@link UserCouponViewAssembler} 按券模板 ID <b>整页批量</b>回填（ADR-057）；
+     * 券面缺失不影响列表返回（fail-open）。
+     */
     public List<UserCouponVO> listAvailableCoupons(Long userId) {
-        return marketingConverter.toUserCouponVOList(userCouponRepository.findUnusedByUserId(userId));
+        return userCouponViewAssembler.assembleList(userCouponRepository.findUnusedByUserId(userId));
     }
 
-    /** 已使用/已过期券列表（按使用时间倒序）。 */
+    /** 已使用/已过期券列表（按使用时间倒序；券面回填口径同 {@link #listAvailableCoupons}）。 */
     public List<UserCouponVO> listUsedCoupons(Long userId) {
-        return marketingConverter.toUserCouponVOList(userCouponRepository.findUsedByUserId(userId));
+        return userCouponViewAssembler.assembleList(userCouponRepository.findUsedByUserId(userId));
     }
 
     /**

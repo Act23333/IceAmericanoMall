@@ -62,7 +62,9 @@ class CouponUsageScopeTest {
 
     @BeforeEach
     void setUp() {
-        couponUsageManager = new CouponUsageManager(couponRepository, userCouponRepository, converter);
+        // 券面读模型端口：本测试只覆盖 useCoupon 适用范围校验
+        couponUsageManager = new CouponUsageManager(couponRepository, userCouponRepository,
+                new UserCouponViewAssembler(converter, couponIds -> java.util.Map.of()));
     }
 
     // ==================== 放行路径 ====================
