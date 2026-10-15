@@ -619,6 +619,7 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
   "shop_logo": "https://cdn.icedmall.com/shop/logo_5.jpg",
   "contact_phone": "13900139000",
   "address": "江西省景德镇市珠山区",
+    "follower_count": 128,
   "status": 1
 }
 ```
@@ -1434,6 +1435,9 @@ Feature: 买家退款资金流（F1）
 {
   "id": 5,
   "coupon_id": "cpn-001",
+    "name": "618满200减30",
+    "value": 3000,
+    "min_amount": 20000,
   "status": 1,
   "used_order_no": null,
   "use_time": null,
@@ -1465,6 +1469,7 @@ Feature: 买家退款资金流（F1）
 ```json
 {
   "id": 1,
+    "product_id": 3,
   "sku_id": 10,
   "product_name": "手工陶瓷茶杯",
   "product_image": "https://...",
@@ -2071,7 +2076,7 @@ Feature: 渠道对账（F4）
 
 | #   | 方法   | 路径                              | 请求                                             | 响应 (原始)        | 状态 | 阶段  |
 | --- | ---- | ------------------------------- | ---------------------------------------------- | -------------- | --- | --- |
-| I13 | GET  | `/internal/item/sku/list/batch` | Query: `ids` (List\<Long\>)                    | `List<SkuCO>` | ✅ | ✅   |
+| I13 | GET  | `/internal/item/sku/list/batch` | Query: `sku_ids` (List\<Long\>)                    | `List<SkuCO>` | ✅ | ✅   |
 | I14 | POST | `/internal/item/sku/deduct`     | `List<StockOpReq> [{ sku_id(Long), quantity }]` | `void`         | ✅ | ✅   |
 | I15 | POST | `/internal/item/sku/restore`    | `List<StockOpReq> [{ sku_id(Long), quantity }]` | `void`         | ✅ | ✅   |
 
@@ -2646,13 +2651,13 @@ data: [DONE]
 
 ```json
 // CouponVO (模板；V5.4 字段名对齐实现：min_amount/total_qty/issued_qty)
-{ "coupon_id":"cpn-001", "name":"618满200减30", "type":1, "value":3000, "min_amount":20000, "seller_id":null, "total_qty":10000, "issued_qty":6523, "start_time":"...", "end_time":"...", "status":1, "discount_type":1, "coupon_category":1, "grant_type":1, "stock_type":1, "grab_type":1, "price_in_cents":3000, "scope_type":1, "scope_values":null, "stack_rule":1, "stack_group":null }
+{ "coupon_id":"cpn-001", "name":"618满200减30", "value":3000, "min_amount":20000, "name":"618满200减30", "type":1, "value":3000, "min_amount":20000, "seller_id":null, "total_qty":10000, "issued_qty":6523, "start_time":"...", "end_time":"...", "status":1, "discount_type":1, "coupon_category":1, "grant_type":1, "stock_type":1, "grab_type":1, "price_in_cents":3000, "scope_type":1, "scope_values":null, "stack_rule":1, "stack_group":null }
 
 // UserCouponVO (已领取；V5.4 字段名对齐实现：id/create_time)
 { "id":5, "coupon_id":"cpn-001", "status":1, "used_order_no":null, "use_time":null, "create_time":"..." }
 
 // FlashSaleVO
-{ "id":1, "sku_id":10, "product_name":"手工陶瓷茶杯", "product_image":"https://...", "flash_price":9900, "original_price":12800, "stock":100, "sold_count":35, "start_time":"...", "end_time":"...", "status":1, "progress_percent":35 }
+{ "id":1, "sku_id":10, "product_id":3, "product_name":"手工陶瓷茶杯", "product_image":"https://...", "flash_price":9900, "original_price":12800, "stock":100, "sold_count":35, "start_time":"...", "end_time":"...", "status":1, "progress_percent":35 }
 
 // FlashBuyVO (V5.4 order_no 为真实订单号；seller_id=0 口径见 M10)
 { "success":true, "order_no":"ord-...", "flash_id":1, "flash_price":9900, "product_id":1, "remaining_stock":65 }

@@ -60,3 +60,4 @@
 | [054](./054-frontend-multi-platform-architecture-and-doc-axis.md) | 前端多平台化 —— 平台轴与文档结构（编号文件 + `NN-platforms/` 子目录分阶段落地；`17` 保持跨平台单篇；token 单一来源不容破坏、CI 强制） | 2026-10-15 |
 | [055](./055-coupon-scope-and-stack-rule-materialization.md) | 优惠券适用范围与叠加规则落地 —— scope/stack 四列映射打通、I46 `/batch` 补齐、范围校验补位（订正 ADR-038「下单侧不受影响」的错误推论） | 2026-10-15 |
 | [056](./056-wire-naming-snake-case.md) | 线上字段与查询参数命名统一为 snake_case —— 三类载体（Jackson / `@RequestParam` / POJO 绑定）、例外清单与大厂依据 |
+| [057](./057-display-field-read-model-ports.md) | 契约声明的展示字段回填 —— 应用层读模型端口 + 按 ID 批量 + fail-open；事务型 Manager 只能调本地只读 |
