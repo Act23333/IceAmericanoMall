@@ -87,9 +87,9 @@ class CouponJoinKeyCompatibilityTest {
         try (var conn = dataSource.getConnection(); var stmt = conn.createStatement()) {
             stmt.execute("CREATE TABLE coupon ("
                     + "id BIGINT PRIMARY KEY, coupon_id BINARY(16), "
-                    + "name VARCHAR(100), `value` INT, min_amount INT)");
-            stmt.execute("INSERT INTO coupon (id, coupon_id, name, `value`, min_amount) VALUES "
-                    + "(" + TEMPLATE_ID + ", X'" + COUPON_NO + "', '618满200减30', 3000, 20000)");
+                    + "name VARCHAR(100), `value` INT, min_amount INT, discount_type INT)");
+            stmt.execute("INSERT INTO coupon (id, coupon_id, name, `value`, min_amount, discount_type) VALUES "
+                    + "(" + TEMPLATE_ID + ", X'" + COUPON_NO + "', '618满200减30', 3000, 20000, 1)");
         }
 
         // 券模板侧链路：真实仓储（BINARY(16) ↔ hex 转换）
@@ -112,7 +112,7 @@ class CouponJoinKeyCompatibilityTest {
     }
 
     @Test
-    @DisplayName("我的券列表（M3）— UserCouponVO.couponId 与 CouponVO.couponId 字符串相等（前端 join 命中）")
+    @DisplayName("我的券列表（M3）— coupon_id 与 CouponVO.coupon_id 相等，且 discount_type 与券模板同值")
     void shouldShareSameCouponId_whenListingAvailableCoupons() {
         CouponVO templateVO = couponTemplateVO();
         UserCouponVO userCouponVO = assembler.assembleList(List.of(userCoupon())).get(0);
@@ -120,6 +120,9 @@ class CouponJoinKeyCompatibilityTest {
         assertEquals(templateVO.getCouponId(), userCouponVO.getCouponId(),
                 "两侧 coupon_id 必须逐位相等，否则前端按 coupon_id 本地 join 永远匹配不上");
         assertEquals(COUPON_NO, userCouponVO.getCouponId());
+        assertEquals(templateVO.getDiscountType(), userCouponVO.getDiscountType(),
+                "两侧 discount_type 也必须同值（同一物理行）：前端 join 后按类型渲染才一致");
+        assertEquals(1, userCouponVO.getDiscountType(), "本行 discount_type=1（FIXED）");
     }
 
     @Test

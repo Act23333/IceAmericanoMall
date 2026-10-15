@@ -9,7 +9,7 @@ import java.util.Map;
  * 优惠券券面读模型查询（应用层端口，读路径 CQRS）。
  *
  * <p><b>为何单独走读模型</b>：{@code user_coupon} 与 {@code coupon} 分属两个聚合 ——
- * 持券聚合只以 ID 引用券模板（ADR-025），券面三列属券模板聚合。本端口即这一跨聚合读数的
+ * 持券聚合只以 ID 引用券模板（ADR-025），券面列属券模板聚合。本端口即这一跨聚合读数的
  * 隔离点（ADR-057：端口在 {@code app/port/}，实现在 {@code infrastructure/persistence/}，
  * 不外泄到适配层）。
  *
@@ -30,11 +30,11 @@ import java.util.Map;
 public interface CouponFaceQuery {
 
     /**
-     * 按券模板 ID 批量查询券面信息（含业务券号）。
+     * 按券模板 ID 批量查询券面信息（含业务券号与优惠类型）。
      *
      * @param couponIds 券模板主键集合（可空；实现需去重并忽略 {@code null} 元素）
-     * @return 券模板 ID → 券面（含业务券号 {@code couponId}）；<b>模板已删除时该键不出现</b>
-     *         （调用方按缺失把字段留空，持券行照常返回）
+     * @return 券模板 ID → 券面（含业务券号 {@code couponId}、优惠类型 {@code discountType}）；
+     *         <b>模板已删除时该键不出现</b>（调用方按缺失把字段留空，持券行照常返回）
      */
     Map<Long, CouponFace> findByCouponIds(Collection<Long> couponIds);
 }

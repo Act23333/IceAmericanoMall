@@ -49,7 +49,7 @@
 | :-- | :-- | :-- | :-- | :-- |
 | user | `FavoriteVO.product_name/main_image/price/status` | `FavoriteProductBriefQuery` | `infrastructure/persistence/favorite/FavoriteProductBriefQueryImpl` | 同库 `product`/`sku` JOIN |
 | marketing | `FlashSaleVO.product_name/product_image/original_price` | `FlashSaleProductBriefQuery` | `infrastructure/persistence/flash/FlashSaleProductBriefQueryImpl` | 同库 `sku` JOIN `product` |
-| marketing | `UserCouponVO.name/value/min_amount` | `CouponFaceQuery` | `infrastructure/persistence/coupon/CouponFaceQueryImpl` | 同库 `coupon` 按 ID 批量 |
+| marketing | `UserCouponVO.name/value/min_amount/discount_type` | `CouponFaceQuery` | `infrastructure/persistence/coupon/CouponFaceQueryImpl` | 同库 `coupon` 按 ID 批量（`discount_type` 于 2026-10-15 在同一语句上增列，契约 §4.10.1） |
 | merchant | `ShopVO.follower_count` | `StoreFollowStore.followerCounts`（既有端口扩批量方法） | `infrastructure/adapter/RedisStoreFollowStoreAdapter`（pipeline + `SCARD`） | 本地 Redis Set 基数（与 SF4 同源） |
 | item | `SkuCO.product_name/seller_id/category_id/freight_template_id`（I13） | `SkuProductDisplayQuery` | `infrastructure/persistence/SkuProductDisplayQueryImpl` | 同库 `sku LEFT JOIN product` |
 

@@ -21,14 +21,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 券面读模型 H2 集成测试 —— 锁死 {@code coupon} 表列口径（mock 无法覆盖的部分）。
  *
- * <p>契约 §4.10.1 {@code UserCouponVO} 声明的券面三字段此前未投影，前端只能用
+ * <p>契约 §4.10.1 {@code UserCouponVO} 声明的券面字段此前未投影，前端只能用
  * {@code GET /api/coupon/available} + {@code GET /api/coupon/template} 本地 join。
  *
- * <p>覆盖：①{@code coupon_id}/{@code name}/{@code value}/{@code min_amount} 逐列映射，
- * 其中 {@code coupon_id} 是 {@code BINARY(16)} → <b>32 位小写 hex 业务券号</b>（ADR-050 转换口径，
- * 复用 {@code IdGenerator.toHexString}）；②{@code min_amount=0}（无门槛券）照常返回 0，不回落为
- * null；③模板已删除 → 该键不出现（调用方按缺失留空字段，持券行照常返回）；④部分命中时命中行
- * 不缩、不降级；⑤空集合 / 全 null 入参不发查询且返回空 Map。
+ * <p>覆盖：①{@code coupon_id}/{@code name}/{@code value}/{@code min_amount}/{@code discount_type}
+ * 逐列映射，其中 {@code coupon_id} 是 {@code BINARY(16)} → <b>32 位小写 hex 业务券号</b>
+ * （ADR-050 转换口径，复用 {@code IdGenerator.toHexString}）；
+ * ②{@code discount_type} 三型（1=FIXED / 2=PERCENTAGE / 3=CASH_COUPON）逐型读出<b>具体值</b>，
+ * 且 SQL 里<b>没有</b> DEPRECATED 的 {@code coupon.type}（契约不纳入，前端错渲染的根因即
+ * 折扣券的 {@code value} 被当作分额）；
+ * ③{@code min_amount=0}（无门槛券）照常返回 0，不回落为 null；
+ * ④模板已删除 → 该键不出现（调用方按缺失留空字段，持券行照常返回）；
+ * ⑤部分命中时命中行不缩、不降级；⑥空集合 / 全 null 入参不发查询且返回空 Map。
  */
 @DisplayName("券面读模型 — H2 SQL 语义")
 class CouponFaceQueryImplH2Test {
@@ -38,6 +42,9 @@ class CouponFaceQueryImplH2Test {
 
     /** 无门槛券的业务券号。 */
     private static final String COUPON_NO_FREE = "1a2b3c4d5e6f708192a3b4c5d6e7f809";
+
+    /** 折扣券的业务券号（{@code discount_type=2}）。 */
+    private static final String COUPON_NO_PERCENT = "2b3c4d5e6f708192a3b4c5d6e7f8091a";
 
     private CouponFaceQueryImpl query;
 
@@ -51,16 +58,19 @@ class CouponFaceQueryImplH2Test {
         try (var conn = dataSource.getConnection(); var stmt = conn.createStatement()) {
             stmt.execute("CREATE TABLE coupon ("
                     + "id BIGINT PRIMARY KEY, coupon_id BINARY(16), "
-                    + "name VARCHAR(100), `value` INT, min_amount INT)");
-            stmt.execute("INSERT INTO coupon (id, coupon_id, name, `value`, min_amount) VALUES "
-                    + "(1, X'" + COUPON_NO_HIT + "', '618满200减30', 3000, 20000),"
-                    + "(2, X'" + COUPON_NO_FREE + "', '无门槛5元券', 500, 0)");
+                    + "name VARCHAR(100), `value` INT, min_amount INT, discount_type INT)");
+            // 1=满减 / 2=折扣（value 为百分比）/ 3=代金券 / 4=类型列缺失（历史数据）
+            stmt.execute("INSERT INTO coupon (id, coupon_id, name, `value`, min_amount, discount_type) VALUES "
+                    + "(1, X'" + COUPON_NO_HIT + "', '618满200减30', 3000, 20000, 1),"
+                    + "(2, X'" + COUPON_NO_FREE + "', '无门槛5元券', 500, 0, 3),"
+                    + "(3, X'" + COUPON_NO_PERCENT + "', '全场8.5折', 85, 0, 2),"
+                    + "(4, X'3c4d5e6f708192a3b4c5d6e7f8091a2b', '历史券', 100, 0, NULL)");
         }
         query = new CouponFaceQueryImpl(new JdbcTemplate(dataSource));
     }
 
     @Test
-    @DisplayName("findByCouponIds — 业务券号/券名/券面值/最低消费逐列映射")
+    @DisplayName("findByCouponIds — 业务券号/券名/券面值/最低消费/优惠类型逐列映射")
     void shouldMapFaceColumns() {
         Map<Long, CouponFace> faces = query.findByCouponIds(List.of(1L));
 
@@ -69,7 +79,37 @@ class CouponFaceQueryImplH2Test {
         assertEquals("618满200减30", face.name(), "coupon.name → name");
         assertEquals(3000, face.value(), "coupon.value → value（分）");
         assertEquals(20000, face.minAmount(), "coupon.min_amount → min_amount（分）");
+        assertEquals(1, face.discountType(), "coupon.discount_type → discount_type（1=FIXED 满减）");
         assertEquals(1L, face.id(), "键口径仍是券模板技术主键 coupon.id（内部字段）");
+    }
+
+    @Test
+    @DisplayName("findByCouponIds — discount_type=2（折扣券）照常读出 2，value 为百分比（非分）")
+    void shouldReadPercentageDiscountType() {
+        CouponFace face = query.findByCouponIds(List.of(3L)).get(3L);
+
+        assertEquals(2, face.discountType(), "折扣券的类型码必须是 2=PERCENTAGE（不回落 1）");
+        assertEquals(85, face.value(), "折扣券 value 是百分比（85 = 8.5 折），不是分");
+        assertEquals(COUPON_NO_PERCENT, face.couponId());
+    }
+
+    @Test
+    @DisplayName("findByCouponIds — discount_type=3（代金券）与 1（满减）各自读出具体值")
+    void shouldReadCashCouponAndFixedDistinctly() {
+        Map<Long, CouponFace> faces = query.findByCouponIds(List.of(1L, 2L));
+
+        assertEquals(1, faces.get(1L).discountType(), "id=1 满减券 → 1");
+        assertEquals(3, faces.get(2L).discountType(), "id=2 代金券 → 3（与满减可区分）");
+        assertEquals(2, faces.size(), "两行必须都在（不得因类型不同而丢弃任一行）");
+    }
+
+    @Test
+    @DisplayName("findByCouponIds — discount_type 列为 NULL（历史数据）→ 读出 null，不回落为 1")
+    void shouldKeepNullDiscountType_whenColumnNull() {
+        CouponFace face = query.findByCouponIds(List.of(4L)).get(4L);
+
+        assertNull(face.discountType(), "列本身为 NULL 时不得回落为 FIXED(1) —— 否则前端无法区分「未知」");
+        assertEquals(100, face.value());
     }
 
     @Test
@@ -95,17 +135,18 @@ class CouponFaceQueryImplH2Test {
     }
 
     @Test
-    @DisplayName("findByCouponIds — 模板已删除 → 键不出现（调用方按缺失留空字段）")
+    @DisplayName("findByCouponIds — 模板已删除 → 键不出现，命中行照常带回 discount_type")
     void shouldOmitUnknownCouponId() {
         Map<Long, CouponFace> faces = query.findByCouponIds(List.of(1L, 999L));
 
-        assertEquals(1, faces.size());
+        assertEquals(1, faces.size(), "缺失模板不得让命中行消失/缩行");
         assertTrue(faces.containsKey(1L));
-        assertNull(faces.get(999L));
+        assertNull(faces.get(999L), "缺失模板不得给出占位对象（否则调用方会投影出 0 与 null 混杂字段）");
+        assertEquals(1, faces.get(1L).discountType(), "命中行的类型码不因同批有缺失模板而降级");
     }
 
     @Test
-    @DisplayName("findByCouponIds — 部分命中：命中行不缩、业务券号照常解码")
+    @DisplayName("findByCouponIds — 部分命中：命中行不缩、业务券号与优惠类型照常读出")
     void shouldKeepHitRowIntact_whenPartiallyMissing() {
         Map<Long, CouponFace> faces = query.findByCouponIds(List.of(1L, 999L));
 
@@ -113,6 +154,7 @@ class CouponFaceQueryImplH2Test {
         CouponFace hit = faces.get(1L);
         assertEquals(COUPON_NO_HIT, hit.couponId());
         assertTrue(hit.couponId().matches("[0-9a-f]{32}"));
+        assertEquals(1, hit.discountType(), "命中行的 discount_type 必须与券号同时在场");
     }
 
     @Test

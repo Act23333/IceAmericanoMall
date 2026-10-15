@@ -10,9 +10,9 @@ import java.time.LocalDateTime;
  *
  * <p>字段口径（契约 §4.10.1，05-API-Specification 为唯一真相源）：
  * {@code id}/{@code coupon_id}/{@code status}/{@code used_order_no}/{@code use_time}/
- * {@code create_time} 为持券聚合本体字段；{@code name}/{@code value}/{@code min_amount}
- * 为<b>券面展示字段</b>，由 {@code UserCouponViewAssembler} 按券模板 ID 批量回填
- * （ADR-057：批量 + fail-open；查不到模板 → 字段为 null，券列表照常返回）。
+ * {@code create_time} 为持券聚合本体字段；{@code name}/{@code value}/{@code min_amount}/
+ * {@code discount_type} 为<b>券面展示字段</b>，由 {@code UserCouponViewAssembler} 按券模板 ID
+ * 批量回填（ADR-057：批量 + fail-open；查不到模板 → 字段为 null，券列表照常返回）。
  *
  * <p><b>双主键标识语义（ADR-002 + ADR-050，本 VO 的两个 ID 不可互换）</b>：
  * <ul>
@@ -30,7 +30,10 @@ import java.time.LocalDateTime;
  * 把技术主键写成券号会导致前端 join 永远匹配不上（同名不同型不同义）。
  *
  * <p>fail-open 口径：券模板已删除 / 券面读模型异常 → {@link #couponId} 为 {@code null}
- * （与券面三字段同口径），持券行照常返回、不缩行。
+ * （与券面字段、{@link #discountType} 同口径），持券行照常返回、不缩行。
+ *
+ * <p><b>不投影 {@code coupon.type}</b>：该列自 V4.0 起 DEPRECATED，明确不纳入契约
+ * （契约 §4.10.1；折扣类型唯一口径为 {@link #discountType}）。
  */
 @Data
 public class UserCouponVO implements Serializable {
@@ -52,9 +55,19 @@ public class UserCouponVO implements Serializable {
     /** 券名称（{@code coupon.name}）；模板已删除时为 null */
     private String name;
 
-    /** 券面值（分；满减=减免金额，折扣=百分比口径） */
+    /** 券面值（分；满减=减免金额，折扣=百分比口径，含义由 {@link #discountType} 决定） */
     private Integer value;
 
     /** 最低消费金额（分） */
     private Integer minAmount;
+
+    /**
+     * 优惠类型（{@code coupon.discount_type}，契约 §4.10.1；线上键 {@code discount_type}）：
+     * {@code 1}=FIXED 满减（{@link #value} 为<b>分</b>）/ {@code 2}=PERCENTAGE 折扣
+     * （{@link #value} 为<b>百分比</b>，{@code 85} 表 8.5 折）/ {@code 3}=CASH_COUPON 代金券。
+     *
+     * <p><b>前端据此区分面额渲染</b>：折扣券按 {@code -¥value} 渲染是错的。
+     * 取值链路上无任何回落（取不到即 {@code null}），与券面其余字段同口径。
+     */
+    private Integer discountType;
 }

@@ -74,9 +74,16 @@ public interface MarketingConverter {
      * 故此处忽略，交由应用层 {@code UserCouponViewAssembler} 从券模板读模型
      * （列表路径）/ 已加载的券模板聚合（领取回执路径）显式回填，取不到则留 null（fail-open）。
      *
-     * <p>券面展示字段 {@code name}/{@code value}/{@code min_amount} 同样由
-     * {@code UserCouponViewAssembler} 批量回填（ADR-057）；此前按列表批量映射的
-     * {@code toUserCouponVOList} 因回填改为逐元素装配已无调用方，随该批删除。
+     * <p>券面展示字段 {@code name}/{@code value}/{@code min_amount}/{@code discount_type}
+     * 同样由 {@code UserCouponViewAssembler} 批量回填（ADR-057）。其中
+     * {@code discountType} <b>无需 {@code ignore}</b>：持券聚合 {@link UserCoupon} 上
+     * <b>没有该属性</b>（无同名可映射，不构成 ADR-058 的跨层同名异义），MapStruct 不会静默写入
+     * —— 但装配器仍然显式赋值，且<b>券模板缺失时必须保持 null</b>（禁止回落为 FIXED/0）。
+     * 折扣类型的聚合侧回退口径（{@code CouponPricing.resolveDiscountType} 的
+     * {@code type} 回退只服务于<b>折扣计算</b>）不参与 VO 投影。
+     *
+     * <p>此前按列表批量映射的 {@code toUserCouponVOList} 因回填改为逐元素装配已无调用方，
+     * 随该批删除。
      */
     @Mapping(target = "couponId", ignore = true)
     UserCouponVO toVO(UserCoupon userCoupon);

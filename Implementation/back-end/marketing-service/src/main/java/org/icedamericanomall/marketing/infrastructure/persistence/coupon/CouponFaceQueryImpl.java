@@ -18,8 +18,15 @@ import java.util.stream.Collectors;
  *
  * <p>字段口径（契约 §4.10.1 {@code UserCouponVO}）：{@code coupon_id} ← {@code coupon.coupon_id}；
  * {@code name} ← {@code coupon.name}；{@code value} ← {@code coupon.value}；
- * {@code min_amount} ← {@code coupon.min_amount}。键口径：{@code coupon.id}
+ * {@code min_amount} ← {@code coupon.min_amount}；{@code discount_type} ←
+ * {@code coupon.discount_type}（{@code 1}=FIXED / {@code 2}=PERCENTAGE / {@code 3}=CASH_COUPON）。
+ * 键口径：{@code coupon.id}
  * （= {@code user_coupon.coupon_id} 指向的模板技术主键，<b>内部字段</b>，不出 VO）。
+ *
+ * <p><b>同一条 SQL 取列，不新增查询</b>：{@code discount_type} 是券面读模型新增的投影列，
+ * 与既有四列同源同行，故只在本语句的 SELECT 列表上加一列 —— 调用方仍是整页一次查询
+ * （无 N+1、无第二条语句、无新端点）。DEPRECATED 的 {@code coupon.type} 明确不投影
+ * （契约 §4.10.1 不纳入）。
  *
  * <p><b>业务券号解码（ADR-050）</b>：{@code coupon.coupon_id} 是 {@code BINARY(16)}，
  * 对外唯一口径为 32 位小写 hex —— 解码复用全项目唯一出口
@@ -35,7 +42,8 @@ public class CouponFaceQueryImpl implements CouponFaceQuery {
 
     private static final String SQL_SELECT_FACE =
             "SELECT c.id AS id, c.coupon_id AS coupon_id, c.name AS name, "
-                    + "c.value AS value, c.min_amount AS min_amount "
+                    + "c.value AS value, c.min_amount AS min_amount, "
+                    + "c.discount_type AS discount_type "
                     + "FROM coupon c WHERE c.id IN (%s)";
 
     private final JdbcTemplate jdbcTemplate;
@@ -54,7 +62,8 @@ public class CouponFaceQueryImpl implements CouponFaceQuery {
                         IdGenerator.toHexString(rs.getBytes("coupon_id")),
                         rs.getString("name"),
                         rs.getObject("value", Integer.class),
-                        rs.getObject("min_amount", Integer.class)),
+                        rs.getObject("min_amount", Integer.class),
+                        rs.getObject("discount_type", Integer.class)),
                 ids.toArray());
         return rows.stream()
                 .filter(row -> row.id() != null)

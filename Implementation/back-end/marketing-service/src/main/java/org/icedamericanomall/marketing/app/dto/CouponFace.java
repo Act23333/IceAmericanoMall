@@ -5,9 +5,10 @@ package org.icedamericanomall.marketing.app.dto;
  *
  * <p><b>存在理由</b>：{@code user_coupon} 只存 {@code coupon_id}（券模板<b>技术外键</b>），而契约
  * （{@code contract/05-API-Specification.md} §4.10.1）声明的 {@code UserCouponVO} 要求
- * 投影券面 {@code name} / {@code value} / {@code min_amount} <b>以及业务券号 {@code coupon_id}</b>
- * —— 前端因此不得不再打一次 {@code GET /api/coupon/template} 在本地 join（双端口径分叉）。
- * 本记录即这四列的载体，由 {@code CouponFaceQuery} 按 <b>券模板 ID 批量</b>装配
+ * 投影券面 {@code name} / {@code value} / {@code min_amount} / {@code discount_type}
+ * <b>以及业务券号 {@code coupon_id}</b>
+ * —— 前端因此不得再打一次 {@code GET /api/coupon/template} 在本地 join（双端口径分叉）。
+ * 本记录即这五列的载体，由 {@code CouponFaceQuery} 按 <b>券模板 ID 批量</b>装配
  * （整页一次查询，无 N+1）。
  *
  * <p>刻意不用 {@code DTO}/{@code CO} 后缀：它不跨进程、不出现在任何线格式契约中。
@@ -23,13 +24,18 @@ package org.icedamericanomall.marketing.app.dto;
  * @param couponId  券业务唯一标识（券号）：{@code coupon.coupon_id}（{@code BINARY(16)}）经
  *                  {@code IdGenerator.toHexString} 解出的 32 位小写 hex；对外唯一口径
  * @param name      券名称（{@code coupon.name}）
- * @param value     券面值（分；满减券为减免金额，折扣券为百分比口径，见 {@code discount_type}）
+ * @param value     券面值（分；满减券为减免金额，折扣券为百分比口径，见 {@code discountType}）
  * @param minAmount 最低消费金额（分）
+ * @param discountType 优惠类型（{@code coupon.discount_type}）：{@code 1}=FIXED 满减 /
+ *                  {@code 2}=PERCENTAGE 折扣 / {@code 3}=CASH_COUPON 代金券。
+ *                  折扣券的 {@code value} 为百分比，前端必须据此区分面额渲染。
+ *                  <b>刻意不投影 DEPRECATED 的 {@code coupon.type}</b>（契约 §4.10.1 不纳入）
  */
 public record CouponFace(
         Long id,
         String couponId,
         String name,
         Integer value,
-        Integer minAmount) {
+        Integer minAmount,
+        Integer discountType) {
 }
