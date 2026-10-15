@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCartStore } from '@/app/stores/cart-store';
 import { useAddresses, useCreateOrder, useCheckoutCoupons } from '@icedmall/api';
 import { Button, GlassCard, PriceDisplay } from '@icedmall/ui';
-import { formatPrice } from '@icedmall/utils';
+import { formatPrice, formatCouponFace, estimateCouponDiscountCents } from '@icedmall/utils';
 import { Ticket, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import Link from 'next/link';
 
@@ -21,8 +21,12 @@ import Link from 'next/link';
  *   5. 金额汇总 → 提交订单
  *
  * ★ 可用券为**前端本地筛选**：后端不存在 `POST /api/coupon/available/filter`。
- *   现口径 = **单请求** `GET /api/coupon/available`（券面 name/value/min_amount 已随
- *   `UserCouponVO` 一并返回，见 useCheckoutCoupons）—— 不再二次请求 /coupon/template 本地 join。
+ *   现口径 = **单请求** `GET /api/coupon/available`（券面 name/value/min_amount/discount_type
+ *   已随 `UserCouponVO` 一并返回，见 useCheckoutCoupons）—— 不再二次请求 /coupon/template 本地 join。
+ *
+ * ★ 券面渲染口径：`value` 的单位随 `discount_type` 变化（1/3=分，2=百分比），
+ *   本页**统一经** `formatCouponFace()`（`@icedmall/utils`）渲染 ——
+ *   折扣券渲染为 `8.5折`，未知类型渲染为「优惠券」，**不再按 -¥value 满减口径兜底**。
  */
 export default function CheckoutPage() {
   const router = useRouter();
@@ -44,7 +48,25 @@ export default function CheckoutPage() {
   const { data: couponOptions, isLoading: couponsLoading } = useCheckoutCoupons(totalCents);
 
   const selectedCoupon = couponOptions.find((c) => c.userCouponId === selectedCouponId);
-  const discountCents = selectedCoupon?.value ?? 0;
+  // 已选券的面额文案（按 discount_type 解释 value 单位；未知类型 → 「优惠券」降级）
+  const selectedFace = selectedCoupon
+    ? formatCouponFace({
+        discountType: selectedCoupon.discountType,
+        value: selectedCoupon.value,
+        minAmount: selectedCoupon.minAmount,
+      })
+    : null;
+  // 抵扣金额为**展示预估**：口径镜像后端 CouponPricing（下行真值由后端计算）；未知类型 → 0
+  const discountCents = selectedCoupon
+    ? estimateCouponDiscountCents(
+        {
+          discountType: selectedCoupon.discountType,
+          value: selectedCoupon.value,
+          minAmount: selectedCoupon.minAmount,
+        },
+        totalCents,
+      )
+    : 0;
   const payCents = Math.max(0, totalCents - discountCents);
 
   const toggleCoupon = (userCouponId: number) => {
@@ -193,7 +215,9 @@ export default function CheckoutPage() {
             <Ticket className="h-4 w-4" />
             优惠券
             {selectedCouponId !== null && (
-              <span className="text-xs text-accent">(已选 1 张)</span>
+              <span className="text-xs text-accent">
+                (已选 1 张{selectedFace && !selectedFace.isUnknown ? ` · ${selectedFace.amountText}` : ''})
+              </span>
             )}
           </span>
           {showCoupons ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -203,6 +227,12 @@ export default function CheckoutPage() {
             {(couponOptions?.length ?? 0) > 0 ? (
               couponOptions!.map((c) => {
                 const isSelected = selectedCouponId === c.userCouponId;
+                // 面额按 discount_type 解释（1/3=分 → -¥30.00；2=百分比 → 8.5折；未知 → 「优惠券」）
+                const face = formatCouponFace({
+                  discountType: c.discountType,
+                  value: c.value,
+                  minAmount: c.minAmount,
+                });
                 return (
                   <button
                     key={c.userCouponId}
@@ -223,12 +253,11 @@ export default function CheckoutPage() {
                       {isSelected && <Check className="h-3 w-3" />}
                     </span>
                     <div className="flex-1 text-left">
-                      <p className="text-sm text-ink-black">{c.name || `满${formatPrice(c.minAmount)}减${formatPrice(c.value)}`}</p>
-                      <p className="text-xs text-text-tertiary">
-                        {c.minAmount > 0 ? `满¥${formatPrice(c.minAmount)}可用` : '无门槛'}
-                      </p>
+                      {/* 券名缺失（模板已删/降级）时用面额兜底名，不再假定满减口径 */}
+                      <p className="text-sm text-ink-black">{c.name || face.fallbackName}</p>
+                      <p className="text-xs text-text-tertiary">{face.thresholdText}</p>
                     </div>
-                    <span className="text-sm font-medium text-accent">-¥{formatPrice(c.value)}</span>
+                    <span className="text-sm font-medium text-accent">{face.deductionText}</span>
                   </button>
                 );
               })
@@ -261,7 +290,9 @@ export default function CheckoutPage() {
         </div>
         {discountCents > 0 && (
           <div className="flex justify-between text-sm">
-            <span className="text-accent">优惠券</span>
+            <span className="text-accent">
+              优惠券{selectedFace?.isPercentage ? `（${selectedFace.amountText}）` : ''}
+            </span>
             <span className="text-accent">-¥{formatPrice(discountCents)}</span>
           </div>
         )}

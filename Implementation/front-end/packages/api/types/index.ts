@@ -469,9 +469,16 @@ export interface PayOrderVO {
 export interface CouponVO {
   coupon_id: string;
   name: string;
-  /** 类型：1-满减 2-折扣。 */
-  type: number;
-  /** 面额（分）或折扣值。 */
+  /**
+   * @deprecated 历史字段 `coupon.type`，自 V4.0 起 DEPRECATED（契约 §4.10.1 明确不纳入契约，
+   * 后端 `UserCouponVO` 已不投影）。**前端不得据此渲染** —— 折扣类型唯一口径为 `discount_type`
+   * （券模板接口仍回传该字段仅为报文形状兼容，本仓 Web 端已 0 消费）。
+   */
+  type?: number | null;
+  /**
+   * 券面值 —— **单位随 `discount_type` 变化**：`1`/`3` 为**分**，`2` 为**百分比**（`85` = 8.5 折）。
+   * ⚠️ 展示必须经 `@icedmall/utils` 的 `formatCouponFace()`，**禁止**直接 `formatPrice(value)`。
+   */
   value: number;
   min_amount: number;
   seller_id?: number | null;
@@ -480,11 +487,16 @@ export interface CouponVO {
   start_time: string;
   end_time: string;
   status?: number | null;
+  /** 折扣类型明细口径见 `UserCouponVO.discount_type`（`1` 满减 / `2` 折扣 / `3` 代金券）。 */
   discount_type?: number | null;
   coupon_category?: number | null;
   grant_type?: number | null;
   stock_type?: number | null;
   grab_type?: number | null;
+  /**
+   * 付费券**售价**（分；`grant_type=PAID_PURCHASE` 时必填，见 `backend/04-Data-Model.md`）。
+   * ⚠️ 不是券面额 —— 券面展示取 `value` + `discount_type`，勿用本字段当面额渲染。
+   */
   price_in_cents?: number | null;
   scope_type?: number | null;
   scope_values?: string | null;
@@ -496,9 +508,9 @@ export interface CouponVO {
  * `GET /api/coupon/available`、`/used`、`POST /coupon/claim`、`/coupon/grab` 响应 `UserCouponVO`
  * （契约 §4.10.1 / §8.9）。
  *
- * 2026-10-15 后端补齐：券面三字段 `name` / `value` / `min_amount` 已**随本 VO 一并返回**
- * （同库本地 join 回填 + fail-open）→ 结算页/我的券**不再需要** `GET /api/coupon/template`
- * 做前端本地 join。
+ * 2026-10-15 后端补齐：券面四字段 `name` / `value` / `min_amount` / `discount_type` 已**随本 VO
+ * 一并返回**（同库本地 join 回填 + fail-open）→ 结算页/我的券**不再需要** `GET /api/coupon/template`
+ * 做前端本地 join；面额渲染口径由 `discount_type` 决定（见下方字段注释）。
  *
  * 双 ID 口径（不可混用，ADR-002 / ADR-050）：
  *   - `id`        = 持券**技术主键**（`user_coupon.id`），即下单 `CreateOrderReq.user_coupon_id`；
@@ -516,10 +528,25 @@ export interface UserCouponVO {
   create_time?: string;
   /** 券名称（券面回填；缺失为 null）。 */
   name: string | null;
-  /** 券面值（分；满减=减免金额，折扣=百分比口径；缺失为 null）。 */
+  /**
+   * 券面值（券面回填；缺失为 null）—— **单位随 `discount_type` 变化**：
+   * `discount_type=1`/`3` 为**分**（`3000` = 30 元）；`discount_type=2` 为**百分比**（`85` = 8.5 折）。
+   * ⚠️ 展示必须经 `@icedmall/utils` 的 `formatCouponFace()`，**禁止**直接 `formatPrice(value)`。
+   */
   value: number | null;
   /** 最低消费金额（分；缺失为 null）。 */
   min_amount: number | null;
+  /**
+   * 折扣类型（2026-10-15 后端新增投影，契约 §4.10.1）：
+   * `1`=FIXED 满减（`value` 为**分**）/ `2`=PERCENTAGE 折扣（`value` 为**百分比**，`85`=8.5 折）
+   * / `3`=CASH_COUPON 代金券（`value` 为**分**）。
+   *
+   * `null` = 未知（券模板缺失 / 读模型降级，fail-open，与券面其余字段同口径）→
+   * 前端**降级为「优惠券」文案**，绝不可按满减口径渲染。
+   *
+   * ⚠️ `coupon.type` 自 V4.0 起 DEPRECATED（后端不投影）→ 折扣类型唯一口径是本字段。
+   */
+  discount_type: number | null;
 }
 
 /**

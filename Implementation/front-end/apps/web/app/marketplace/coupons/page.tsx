@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useCouponTemplates, useClaimCoupon, useGrabCoupon } from '@icedmall/api';
 import { GlassCard, Button } from '@icedmall/ui';
-import { formatPrice } from '@icedmall/utils';
+import { formatCouponFace } from '@icedmall/utils';
 import { Ticket, Users, Clock, Zap } from 'lucide-react';
 import Link from 'next/link';
 
@@ -80,18 +80,24 @@ export default function CouponsPage() {
           const issuedQty = tpl.issued_qty ?? 0;
           const remaining = totalQty > 0 ? Math.max(0, totalQty - issuedQty) : Infinity;
           const isSoldOut = totalQty > 0 && remaining <= 0;
+          // 券面额：按 `discount_type` 解释 `value` 单位 —— 1/3（分）→ `¥30.00`；2（百分比）→ `8.5折`；
+          // 未知类型 → 「优惠券」。⚠️ 不用 DEPRECATED 的 `coupon.type`；`price_in_cents` 是付费券售价，
+          // 不是面额（曾把售价当面额渲染）。未知类型不再按面额兜底，避免编造金额。
+          const face = formatCouponFace({
+            discountType: tpl.discount_type,
+            value: tpl.value,
+            minAmount: tpl.min_amount,
+          });
 
           return (
             <GlassCard key={cid} className="flex overflow-hidden" blur="sm">
               {/* 左侧金额区 */}
               <div className="flex w-28 shrink-0 flex-col items-center justify-center bg-accent-light py-4">
                 <span className="text-3xl font-bold text-accent price">
-                  {tpl.discount_type === 1 /* FIXED */ ? '¥' : ''}
-                  {tpl.price_in_cents ? formatPrice(tpl.price_in_cents) : formatPrice(tpl.value || 0)}
-                  {tpl.discount_type === 2 /* PERCENTAGE */ ? '折' : ''}
+                  {face.amountText}
                 </span>
                 <span className="text-xs text-text-secondary mt-1">
-                  {tpl.min_amount > 0 ? `满¥${formatPrice(tpl.min_amount)}可用` : '无门槛'}
+                  {face.thresholdText}
                 </span>
               </div>
 

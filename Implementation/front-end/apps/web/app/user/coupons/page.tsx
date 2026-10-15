@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useAvailableCoupons, useUsedCoupons, useCouponTemplates, useClaimCoupon } from '@icedmall/api';
 import { Button, GlassCard } from '@icedmall/ui';
-import { formatPrice } from '@icedmall/utils';
+import { formatCouponFace } from '@icedmall/utils';
 
 /**
  * `user_coupon.status` 口径 —— 后端 `UserCouponStatusEnum`（**1=未使用 / 2=已使用 / 3=已过期**）。
@@ -17,7 +17,8 @@ const COUPON_STATUS_TEXT: Record<number, string> = {
 
 export default function CouponsPage() {
   const [tab, setTab] = useState<'mine' | 'center'>('center');
-  // 券面 `name` / `value` / `min_amount` 已随 `UserCouponVO` 一并返回（后端本地 join 回填）
+  // 券面 `name` / `value` / `min_amount` / `discount_type` 已随 `UserCouponVO` 一并返回
+  // （后端本地 join 回填 + fail-open）；面额渲染一律经 `formatCouponFace()`（按 discount_type 解释 value 单位）
   const { data: available, isLoading: availableLoading } = useAvailableCoupons();
   const { data: used } = useUsedCoupons();
   const { data: templates } = useCouponTemplates();
@@ -42,21 +43,30 @@ export default function CouponsPage() {
 
       {tab === 'center' && (
         <div className="space-y-3">
-          {templates?.map((c) => (
-            <GlassCard key={c.coupon_id} className="p-4 flex items-center justify-between" blur="sm">
-              <div>
-                <p className="text-sm font-medium text-ink-black">{c.name}</p>
-                <p className="text-xs text-warm-400 mt-1">
-                  {c.type === 1 ? `满减 ¥${formatPrice(c.value)}` : `${c.value}折`}
-                  {c.min_amount > 0 && <> · 满¥{formatPrice(c.min_amount)}可用</>}
-                </p>
-              </div>
-              <Button variant="secondary" size="sm" loading={claim.isPending}
-                onClick={() => claim.mutate(c.coupon_id, { onSuccess: () => setMsg('领取成功!'), onError: (e: any) => setMsg(e?.message ?? '领取失败') })}>
-                立即领取
-              </Button>
-            </GlassCard>
-          ))}
+          {templates?.map((c) => {
+            // 券模板面额：同样按 `discount_type` 解释 `value` 单位（1/3=分 → ¥30.00；2=百分比 → 8.5折）
+            // ⚠️ 不用已 DEPRECATED 的 `coupon.type`；`price_in_cents` 是付费券售价，不是面额
+            const face = formatCouponFace({
+              discountType: c.discount_type,
+              value: c.value,
+              minAmount: c.min_amount,
+            });
+            return (
+              <GlassCard key={c.coupon_id} className="p-4 flex items-center justify-between" blur="sm">
+                <div>
+                  <p className="text-sm font-medium text-ink-black">{c.name}</p>
+                  <p className="text-xs text-warm-400 mt-1">
+                    {face.amountText}
+                    {face.thresholdText !== '无门槛' && <> · {face.thresholdText}</>}
+                  </p>
+                </div>
+                <Button variant="secondary" size="sm" loading={claim.isPending}
+                  onClick={() => claim.mutate(c.coupon_id, { onSuccess: () => setMsg('领取成功!'), onError: (e: any) => setMsg(e?.message ?? '领取失败') })}>
+                  立即领取
+                </Button>
+              </GlassCard>
+            );
+          })}
           {(!templates || templates.length === 0) && <p className="text-center text-sm text-warm-400 py-10">暂无可用优惠券</p>}
         </div>
       )}
@@ -66,17 +76,24 @@ export default function CouponsPage() {
           {myCoupons.map((uc) => {
             // status: 1=未使用（可用）2=已使用 3=已过期 —— 非「未使用」一律渲染失效样式
             const usable = uc.status === 1;
+            // 券面（可用 / 已使用 / 已过期同一 VO 形状）按 `discount_type` 渲染；
+            // 未知类型 → 「优惠券」，**绝不按满减口径渲染**（折扣券曾被渲染成 -¥0.85）
+            const face = formatCouponFace({
+              discountType: uc.discount_type,
+              value: uc.value,
+              minAmount: uc.min_amount,
+            });
             return (
               <GlassCard key={uc.id} className="p-4 flex items-center justify-between gap-3" blur="sm">
                 <div className="min-w-0">
-                  {/* 券面 name 直接来自本响应；模板已删除（fail-open → null）时才回落占位文案 */}
+                  {/* 券面 name 直接来自本响应；模板已删除（fail-open → null）时才回落面额兜底文案 */}
                   <p className={`text-sm font-medium truncate ${usable ? 'text-ink-black' : 'text-warm-400'}`}>
-                    {uc.name ?? '优惠券'}
+                    {uc.name ?? face.fallbackName}
                   </p>
                   <p className="text-xs text-warm-400 mt-1">
-                    {uc.min_amount != null && uc.min_amount > 0
-                      ? `满¥${formatPrice(uc.min_amount)}可用`
-                      : '无门槛'}
+                    <span className={usable ? 'text-accent' : undefined}>{face.amountText}</span>
+                    {' · '}
+                    {face.thresholdText}
                   </p>
                 </div>
                 <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full ${

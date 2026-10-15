@@ -5,5 +5,6 @@
  */
 
 export * from './format';
+export * from './coupon-face';
 export * from './validate';
 export * from './constants';

@@ -60,12 +60,16 @@ export function useGrabCoupon() {
    后端 `CouponController` 只有 claim / grab / available / used / template / count，
    **不存在** `POST /api/coupon/available/filter`（原前端该调用指向不存在的端点）。
 
-   现口径：**只打 `GET /api/coupon/available`（M3）**，券面 `name` / `value` / `min_amount`
-   已由后端应用层读模型回填在同一响应里（ADR-057，fail-open → null），
+   现口径：**只打 `GET /api/coupon/available`（M3）**，券面 `name` / `value` / `min_amount` /
+   `discount_type` 已由后端应用层读模型回填在同一响应里（ADR-057，fail-open → null），
    故**不再**额外请求 `GET /api/coupon/template` 做前端本地 join。
 
-   保留的空值兜底：券面三字段为 null（模板已删除 / 回填降级）时仍展示该券行，
-   名称回空串，由结算页渲染「满 X 减 Y」式占位文案 —— 不因展示字段缺失而丢券。
+   面额口径：`value` 的单位随 `discount_type` 变化（1/3=分，2=百分比），本 hook 只做**透传**，
+   不在视图模型里做任何类型归一（归一由 `@icedmall/utils` 的 `formatCouponFace()` 承担）。
+
+   保留的空值兜底：券面字段为 null（模板已删除 / 回填降级）时仍展示该券行，
+   名称回空串、面额原样 null，由结算页经 `formatCouponFace()` 渲染「优惠券」降级文案 ——
+   不因展示字段缺失而丢券。
    ================================================================ */
 
 /** 结算页可选用券（前端本地视图模型 —— 内部标识符保持 camelCase）。 */
@@ -75,11 +79,14 @@ export interface CheckoutCoupon {
   /** 券业务券号（32-hex）；后端 fail-open 时为 null（不影响下单，下单用 userCouponId）。 */
   couponId: string | null;
   name: string;
-  /** 1-满减 2-折扣。 */
-  type: number;
-  /** 面额（分）或折扣值。 */
-  value: number;
-  /** 使用门槛（分）。 */
+  /**
+   * 折扣类型（契约 §4.10.1）：`1`-满减 / `2`-折扣 / `3`-代金券；`null` = 未知（降级）。
+   * 面额渲染必须传 `@icedmall/utils` 的 `formatCouponFace()`，**不得**再假定满减口径。
+   */
+  discountType: number | null;
+  /** 券面值：满减/代金券为**分**，折扣为**百分比**；券面缺失为 null（**不回落为 0**）。 */
+  value: number | null;
+  /** 使用门槛（分）；券面缺失时回落 0（= 无门槛，仅用于本地预过滤）。 */
   minAmount: number;
 }
 
@@ -99,14 +106,16 @@ export function useCheckoutCoupons(totalAmount: number) {
       // 后端 `UserCouponStatusEnum`：1=未使用 2=已使用 3=已过期（`/available` 只返未使用，此处仍显式守卫）
       .filter((uc) => uc.status === 1)
       .map((uc) => {
-        // 券面缺失（模板已删除 / 回填降级）时为 null → 名称为空串，由消费端（结算页）渲染占位文案
+        // 券面缺失（模板已删除 / 回填降级）时为 null → 名称为空串、面额原样透传 null，
+        // 由消费端（结算页）经 `formatCouponFace()` 渲染「优惠券」降级文案 ——
+        // ⚠️ 不回落为 0：0 是「减 0 元」的合法面额，会把「未知」伪装成「满减 0 元」。
         return {
           userCouponId: uc.id,
           couponId: uc.coupon_id,
           name: uc.name ?? '',
-          // `type` 未随 `UserCouponVO` 返回（后端未投影）→ 结算页只按面额展示，恒按满减口径
-          type: 1,
-          value: uc.value ?? 0,
+          // 折扣类型唯一口径 `discount_type`（`coupon.type` 自 V4.0 DEPRECATED，后端不投影）
+          discountType: uc.discount_type,
+          value: uc.value,
           minAmount: uc.min_amount ?? 0,
         };
       })
