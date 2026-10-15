@@ -20,16 +20,21 @@ import java.util.Map;
  * 只能调本地只读实现）。
  *
  * <p><b>fail-open 归属</b>：本端口不吞异常（真实故障需在调用侧可见）；由调用方
- * {@code UserCouponViewAssembler} 兜住异常并把三字段留空 —— 券面取不到绝不能让券列表失败。
+ * {@code UserCouponViewAssembler} 兜住异常并把字段留空 —— 券面取不到绝不能让券列表失败。
+ *
+ * <p><b>为何同时返回业务券号</b>：{@code user_coupon} 只存技术外键，而 {@code UserCouponVO}
+ * 的 {@code coupon_id} 是<b>业务券号</b>（ADR-002/ADR-050）。本端口一次按 PK 批量读
+ * {@code coupon} 时顺带解出 {@code coupon.coupon_id}（{@code BINARY(16)} → 32-hex），
+ * 调用方无需第二次查询、也无需新增端点。
  */
 public interface CouponFaceQuery {
 
     /**
-     * 按券模板 ID 批量查询券面信息。
+     * 按券模板 ID 批量查询券面信息（含业务券号）。
      *
      * @param couponIds 券模板主键集合（可空；实现需去重并忽略 {@code null} 元素）
-     * @return 券模板 ID → 券面；<b>模板已删除时该键不出现</b>（调用方按缺失把三字段留空，
-     *         持券行照常返回）
+     * @return 券模板 ID → 券面（含业务券号 {@code couponId}）；<b>模板已删除时该键不出现</b>
+     *         （调用方按缺失把字段留空，持券行照常返回）
      */
     Map<Long, CouponFace> findByCouponIds(Collection<Long> couponIds);
 }

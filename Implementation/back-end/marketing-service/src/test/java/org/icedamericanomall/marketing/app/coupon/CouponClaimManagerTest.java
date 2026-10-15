@@ -20,8 +20,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
@@ -40,7 +42,9 @@ import static org.mockito.Mockito.when;
 class CouponClaimManagerTest {
 
     private static final Long USER_ID = 7L;
-    private static final String COUPON_ID = "CPN-001";
+
+    /** 业务券号（券模板 {@code coupon.coupon_id} 的 32-hex 对外形态，ADR-050）。 */
+    private static final String COUPON_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
     private static final Long COUPON_PK = 1L;
 
     @Mock CouponRepository couponRepository;
@@ -85,7 +89,7 @@ class CouponClaimManagerTest {
     }
 
     @Test
-    @DisplayName("claimWithGrab — DB 落库成功 → 不回滚 Redis，返回持券记录（含券面三字段）")
+    @DisplayName("claimWithGrab — DB 落库成功 → 不回滚 Redis，返回持券记录（含业务券号与券面三字段）")
     void shouldNotRollbackRedis_whenDbInsertSucceeds() {
         when(couponRepository.findByCouponId(COUPON_ID)).thenReturn(grabCoupon());
         when(couponGrabStore.tryClaim(anyLong(), anyLong(), any())).thenReturn(4L);
@@ -100,6 +104,12 @@ class CouponClaimManagerTest {
         assertEquals("秒杀券", result.getName());
         assertEquals(Integer.valueOf(3000), result.getValue());
         assertEquals(Integer.valueOf(20000), result.getMinAmount());
+        // 券号取自已加载的券模板聚合的业务券号（非 user_coupon.coupon_id 技术外键）
+        assertEquals(COUPON_ID, result.getCouponId());
+        assertTrue(result.getCouponId().matches("[0-9a-f]{32}"),
+                "回执 coupon_id 必须是 32 位小写 hex 业务券号，实际: " + result.getCouponId());
+        assertNotEquals(String.valueOf(COUPON_PK), result.getCouponId(),
+                "技术主键 coupon.id 不得泄漏为回执 coupon_id");
         verify(couponGrabStore, never()).rollbackClaim(anyLong(), anyLong());
     }
 

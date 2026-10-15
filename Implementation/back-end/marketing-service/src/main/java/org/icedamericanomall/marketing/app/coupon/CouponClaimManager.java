@@ -30,6 +30,12 @@ import java.time.LocalDateTime;
  *
  * <p>事务口径与原实现一致：普通领取/发券整体事务；抢券路径不加事务——
  * DB 落库失败时靠显式回滚 Redis 补偿，不能依赖事务回滚兜底（Redis 在库外）。
+ *
+ * <p><b>回执字段口径（契约 §4.10.1）</b>：领取回执（M1/M2）与「我的券」（M3/M4）是同一个
+ * {@code UserCouponVO}，统一由 {@code UserCouponViewAssembler} 装配 —— 其
+ * {@code coupon_id} 取<b>本编排已加载的券模板聚合</b>的业务券号（{@code Coupon.couponId}，
+ * {@code BINARY(16)} 已在仓储 {@code toDomain} 解为 32-hex），不再多打一次库；
+ * {@code user_coupon.coupon_id}（技术外键，本类用于定位模板）只存在于领域层与 PO，不出 VO。
  */
 @Slf4j
 @Component

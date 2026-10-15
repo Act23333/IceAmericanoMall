@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -29,18 +30,22 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 持券视图装配单元测试（契约 §4.10.1 {@code UserCouponVO} 券面字段投影）。
+ * 持券视图装配单元测试（契约 §4.10.1 {@code UserCouponVO} 业务券号 + 券面字段投影）。
  *
- * <p>覆盖：①券名/券面值/最低消费被正确回填且整页只查一次（无 N+1）；
- * ②模板缺失 / 数据源异常 → 三字段置空但列表照常返回（fail-open）；
- * ③领取回执路径直接透出聚合字段（不再多打一次库）；④空列表不触发券面查询。
+ * <p>覆盖：①业务券号（32-hex）与券名/券面值/最低消费被正确回填，且整页只查一次（无 N+1）；
+ * ②模板缺失 / 数据源异常 → 字段置空但列表照常返回（fail-open）；
+ * ③领取回执路径（M1/M2）直接透出已加载模板聚合的业务券号与券面字段（不再多打一次库）；
+ * ④技术主键 {@code user_coupon.coupon_id} 不得泄漏为 {@code couponId}；⑤空列表不触发券面查询。
  */
-@DisplayName("持券视图装配 — UserCouponVO 券面字段投影（契约 §4.10.1）")
+@DisplayName("持券视图装配 — UserCouponVO 业务券号/券面字段投影（契约 §4.10.1）")
 @ExtendWith(MockitoExtension.class)
 class UserCouponViewAssemblerTest {
 
     private static final Long USER_ID = 9L;
     private static final Long TEMPLATE_ID = 1L;
+
+    /** 业务券号（券模板 {@code coupon.coupon_id} 的 32-hex 对外形态）。 */
+    private static final String COUPON_NO = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
 
     @Mock
     private CouponFaceQuery couponFaceQuery;
@@ -53,20 +58,36 @@ class UserCouponViewAssemblerTest {
     }
 
     @Test
-    @DisplayName("assembleList — 券面在 → name/value/min_amount 被正确填充，本体字段不受影响")
+    @DisplayName("assembleList — 券模板在 → coupon_id/name/value/min_amount 被正确填充，本体字段不受影响")
     void shouldFillCouponFace_whenFaceAvailable() {
         when(couponFaceQuery.findByCouponIds(List.of(TEMPLATE_ID)))
-                .thenReturn(Map.of(TEMPLATE_ID, new CouponFace(TEMPLATE_ID, "618满200减30", 3000, 20000)));
+                .thenReturn(Map.of(TEMPLATE_ID,
+                        new CouponFace(TEMPLATE_ID, COUPON_NO, "618满200减30", 3000, 20000)));
 
         List<UserCouponVO> views = assembler.assembleList(List.of(userCoupon(5L, TEMPLATE_ID)));
 
         UserCouponVO vo = views.get(0);
         assertEquals(5L, vo.getId());
-        assertEquals(TEMPLATE_ID, vo.getCouponId());
+        assertEquals(COUPON_NO, vo.getCouponId(), "coupon_id 取券模板业务券号");
         assertEquals(UserCouponStatusEnum.UNUSED.getCode(), vo.getStatus());
         assertEquals("618满200减30", vo.getName());
         assertEquals(3000, vo.getValue());
         assertEquals(20000, vo.getMinAmount());
+    }
+
+    @Test
+    @DisplayName("assembleList — coupon_id 形态为 32 位小写 hex，且不等于技术主键")
+    void shouldExposeCouponNoAs32Hex_notTechnicalKey() {
+        when(couponFaceQuery.findByCouponIds(List.of(TEMPLATE_ID)))
+                .thenReturn(Map.of(TEMPLATE_ID, new CouponFace(TEMPLATE_ID, COUPON_NO, "券", 100, 0)));
+
+        UserCouponVO vo = assembler.assembleList(List.of(userCoupon(5L, TEMPLATE_ID))).get(0);
+
+        assertTrue(vo.getCouponId().matches("[0-9a-f]{32}"),
+                "业务券号必须为 32 位小写 hex（非法/越界形态不得出现），实际: " + vo.getCouponId());
+        assertNotEquals(String.valueOf(TEMPLATE_ID), vo.getCouponId(),
+                "技术外键 user_coupon.coupon_id 不得泄漏为 VO.couponId");
+        assertNotEquals(COUPON_NO.toUpperCase(), vo.getCouponId(), "统一小写口径");
     }
 
     @Test
@@ -86,13 +107,14 @@ class UserCouponViewAssemblerTest {
     }
 
     @Test
-    @DisplayName("assembleList — 模板已删除（券面缺失）→ 三字段为 null，持券行照常返回")
+    @DisplayName("assembleList — 模板已删除（券面缺失）→ coupon_id 与三字段为 null，持券行照常返回")
     void shouldLeaveFaceNull_whenTemplateMissing() {
         when(couponFaceQuery.findByCouponIds(List.of(TEMPLATE_ID))).thenReturn(Map.of());
 
         List<UserCouponVO> views = assembler.assembleList(List.of(userCoupon(5L, TEMPLATE_ID)));
 
         assertEquals(1, views.size(), "券面缺失不能让「我的券」列表缩行");
+        assertNull(views.get(0).getCouponId(), "券模板缺失 → 业务券号无来源，置 null（不回落技术主键）");
         assertNull(views.get(0).getName());
         assertNull(views.get(0).getValue());
         assertNull(views.get(0).getMinAmount());
@@ -100,7 +122,7 @@ class UserCouponViewAssemblerTest {
     }
 
     @Test
-    @DisplayName("assembleList — 券面数据源异常 → 三字段置空（fail-open），列表照常返回")
+    @DisplayName("assembleList — 券面数据源异常 → coupon_id 与三字段置空（fail-open），列表照常返回")
     void shouldDegradeGracefully_whenFaceQueryThrows() {
         when(couponFaceQuery.findByCouponIds(List.of(TEMPLATE_ID)))
                 .thenThrow(new IllegalStateException("coupon 表不可用"));
@@ -108,6 +130,7 @@ class UserCouponViewAssemblerTest {
         List<UserCouponVO> views = assembler.assembleList(List.of(userCoupon(5L, TEMPLATE_ID)));
 
         assertEquals(1, views.size());
+        assertNull(views.get(0).getCouponId());
         assertNull(views.get(0).getName());
         assertEquals(5L, views.get(0).getId());
     }
@@ -121,13 +144,14 @@ class UserCouponViewAssemblerTest {
     }
 
     @Test
-    @DisplayName("assemble（领取回执 M1/M2）— 券面直接取自已加载的模板聚合，不再查库")
+    @DisplayName("assemble（领取回执 M1/M2）— 业务券号与券面直接取自已加载的模板聚合，不再查库")
     void shouldFillFaceFromAggregate_withoutExtraQuery() {
-        Coupon template = Coupon.builder().id(TEMPLATE_ID).name("新人满100减20")
+        Coupon template = Coupon.builder().id(TEMPLATE_ID).couponId(COUPON_NO).name("新人满100减20")
                 .value(2000).minAmount(10000).build();
 
         UserCouponVO vo = assembler.assemble(userCoupon(5L, TEMPLATE_ID), template);
 
+        assertEquals(COUPON_NO, vo.getCouponId(), "回执 coupon_id 取聚合业务券号（toDomain 已解 hex）");
         assertEquals("新人满100减20", vo.getName());
         assertEquals(2000, vo.getValue());
         assertEquals(10000, vo.getMinAmount());
@@ -135,11 +159,12 @@ class UserCouponViewAssemblerTest {
     }
 
     @Test
-    @DisplayName("assemble — 模板已被删除（聚合为 null）→ 三字段 null，回执照常返回")
+    @DisplayName("assemble — 模板已被删除（聚合为 null）→ coupon_id 与三字段 null，回执照常返回")
     void shouldLeaveFaceNull_whenAggregateMissing() {
         UserCouponVO vo = assembler.assemble(userCoupon(5L, TEMPLATE_ID), null);
 
         assertEquals(5L, vo.getId());
+        assertNull(vo.getCouponId());
         assertNull(vo.getName());
         assertNull(vo.getValue());
         assertNull(vo.getMinAmount());

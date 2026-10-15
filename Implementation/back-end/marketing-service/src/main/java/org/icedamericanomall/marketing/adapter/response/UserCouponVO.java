@@ -12,14 +12,36 @@ import java.time.LocalDateTime;
  * {@code id}/{@code coupon_id}/{@code status}/{@code used_order_no}/{@code use_time}/
  * {@code create_time} 为持券聚合本体字段；{@code name}/{@code value}/{@code min_amount}
  * 为<b>券面展示字段</b>，由 {@code UserCouponViewAssembler} 按券模板 ID 批量回填
- * （ADR-057：批量 + fail-open；查不到模板 → 三字段为 null，券列表照常返回）。
+ * （ADR-057：批量 + fail-open；查不到模板 → 字段为 null，券列表照常返回）。
+ *
+ * <p><b>双主键标识语义（ADR-002 + ADR-050，本 VO 的两个 ID 不可互换）</b>：
+ * <ul>
+ *   <li>{@link #id} —— 持券的<b>技术主键</b> {@code user_coupon.id}，即契约的
+ *       {@code user_coupon_id}（下单时回传 {@code CreateOrderReq.user_coupon_id}）；</li>
+ *   <li>{@link #couponId} —— 券的<b>业务唯一标识</b>（券号）：{@code coupon.coupon_id}
+ *       的对外字符串形态（32 位小写 hex，由 {@code BINARY(16)} 经
+ *       {@code IdGenerator.toHexString} 产出），与 {@code CouponVO.couponId}
+ *       <b>同型同义</b> —— 前端因此可按 {@code coupon_id} 对
+ *       {@code GET /api/coupon/available} 与 {@code GET /api/coupon/template} 做本地 join。</li>
+ * </ul>
+ *
+ * <p><b>禁止暴露技术字段</b>：{@code user_coupon.coupon_id}（BIGINT）是<b>技术外键</b>
+ * （指向 {@code coupon.id}），只允许存在于 PO 与领域层，<b>不得出现在任何 VO/DTO</b>；
+ * 把技术主键写成券号会导致前端 join 永远匹配不上（同名不同型不同义）。
+ *
+ * <p>fail-open 口径：券模板已删除 / 券面读模型异常 → {@link #couponId} 为 {@code null}
+ * （与券面三字段同口径），持券行照常返回、不缩行。
  */
 @Data
 public class UserCouponVO implements Serializable {
     private static final long serialVersionUID = 1L;
 
+    /** 持券技术主键（{@code user_coupon.id}）= 契约的 {@code user_coupon_id}。 */
     private Long id;
-    private Long couponId;
+
+    /** 券业务唯一标识（券号）：{@code coupon.coupon_id} 的 32 位小写 hex 形态。 */
+    private String couponId;
+
     private Integer status;
     private String usedOrderNo;
     private LocalDateTime useTime;

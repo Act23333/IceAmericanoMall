@@ -32,6 +32,7 @@ import org.icedamericanomall.marketing.domain.model.points.PointsLog;
 import org.icedamericanomall.marketing.domain.model.promotion.Promotion;
 import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 import org.mapstruct.NullValuePropertyMappingStrategy;
 import org.mapstruct.ReportingPolicy;
@@ -64,10 +65,20 @@ public interface MarketingConverter {
     /**
      * 用户持券聚合 → 视图对象（仅本体字段）。
      *
-     * <p>券面展示字段 {@code name}/{@code value}/{@code min_amount} 由应用层
-     * {@code UserCouponViewAssembler} 按券模板 ID 批量回填（ADR-057）；此前按列表批量映射的
-     * {@code toUserCouponVOList} 因回填改为逐元素装配已无调用方，随本批删除。
+     * <p><b>{@code couponId} 必须显式忽略（禁止自动同名映射）</b>：聚合
+     * {@code UserCoupon.couponId} 是<b>技术外键</b>（{@code user_coupon.coupon_id BIGINT}
+     * → {@code coupon.id}），而 VO {@code UserCouponVO.couponId} 是<b>业务券号</b>
+     * （{@code coupon.coupon_id} 的 32 位 hex，ADR-002/ADR-050）—— <b>同名不同义</b>。
+     * MapStruct 的内置 {@code Long → String} 转换会把技术主键写成 {@code "5"} 这类值，
+     * 静默产出错误券号且与 {@code CouponVO.couponId} 永不相等（前端 join 必失败），
+     * 故此处忽略，交由应用层 {@code UserCouponViewAssembler} 从券模板读模型
+     * （列表路径）/ 已加载的券模板聚合（领取回执路径）显式回填，取不到则留 null（fail-open）。
+     *
+     * <p>券面展示字段 {@code name}/{@code value}/{@code min_amount} 同样由
+     * {@code UserCouponViewAssembler} 批量回填（ADR-057）；此前按列表批量映射的
+     * {@code toUserCouponVOList} 因回填改为逐元素装配已无调用方，随该批删除。
      */
+    @Mapping(target = "couponId", ignore = true)
     UserCouponVO toVO(UserCoupon userCoupon);
 
     /**
