@@ -4,8 +4,18 @@ import path from 'node:path';
 
 import { fileURLToPath } from 'node:url';
 // 仓库根：脚本位于 <root>/Implementation/back-end/scripts/，故上溯 3 层
+let code;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const code = JSON.parse(fs.readFileSync(path.join(ROOT, 'audit-out/endpoints-code.json'), 'utf8'));
+// 代码端点清单：调用同目录的 extract-endpoints.mjs 生成到【系统临时目录】，
+// 不再依赖仓库内 audit-out/ 产物（该产物已废弃；此前它使本脚本"必须有游离文件才能跑"）。
+import { execFileSync } from 'node:child_process';
+import os from 'node:os';
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ep-check-'));
+try {
+  execFileSync(process.execPath,
+    [path.join(path.dirname(fileURLToPath(import.meta.url)), 'extract-endpoints.mjs'), `--out=${TMP}`],
+    { stdio: 'ignore' });
+  code = JSON.parse(fs.readFileSync(path.join(TMP, 'endpoints-code.json'), 'utf8'));
 const md = fs.readFileSync(path.join(ROOT, 'project-docs/contract/05-API-Specification.md'), 'utf8').split(/\r?\n/);
 
 const norm = (p) => {
@@ -60,4 +70,8 @@ if (wrongMethod.length) {
     const cand = code.filter((e) => norm(e.path) === norm(r.path)).map((e) => e.method);
     console.log(`  [:${r.line}] ${r.method} ${r.path}  → 实际方法: ${[...new Set(cand)].join('/')}   (页面: ${r.page})`);
   }
+}
+
+} finally {
+  fs.rmSync(TMP, { recursive: true, force: true });
 }
