@@ -67,11 +67,14 @@ public interface MarketingConverter {
     /** 用户持券聚合列表 → 视图对象列表。 */
     List<UserCouponVO> toUserCouponVOList(List<UserCoupon> userCoupons);
 
-    /** 秒杀聚合 → 视图对象。 */
+    /**
+     * 秒杀聚合 → 视图对象（仅本体字段）。
+     *
+     * <p>商品名/主图/原价需跨聚合回填、{@code progress_percent} 为派生值，二者由
+     * {@code FlashSaleViewManager} 在装配后补齐；此前按列表批量映射的
+     * {@code toFlashSaleVOList} 因回填改为逐元素装配已无调用方，随本批删除。
+     */
     FlashSaleVO toVO(FlashSale flashSale);
-
-    /** 秒杀聚合列表 → 视图对象列表。 */
-    List<FlashSaleVO> toFlashSaleVOList(List<FlashSale> flashSales);
 
     /** 秒杀创建请求 → 秒杀聚合（status/soldCount/version 由创建编排推导回填，AD40）。 */
     FlashSale toDomain(FlashSaleCreateReq req);
