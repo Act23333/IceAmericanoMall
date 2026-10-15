@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import type { ProductVO } from '@icedmall/api';
+import { formatPrice } from '@icedmall/utils';
 
 function useCarousel(total: number, intervalMs = 3000) {
   const [idx, setIdx] = useState(0);
@@ -44,7 +45,7 @@ export function ProductScroll({ products }: { products: ProductVO[] }) {
               className="shrink-0 w-full grid grid-cols-1 md:grid-cols-2 gap-6 p-6 md:p-10 no-underline group">
               {/* 图片 */}
               <div className="aspect-square rounded-xl overflow-hidden bg-warm-100">
-                <img src={p.mainImage} alt={p.name}
+                <img src={p.main_image} alt={p.name}
                   className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
                   loading="lazy" decoding="async" />
               </div>
@@ -55,9 +56,10 @@ export function ProductScroll({ products }: { products: ProductVO[] }) {
                 <p className="mt-3 text-sm text-warm-600 line-clamp-2 leading-relaxed">{p.description}</p>
                 <div className="mt-4 flex items-baseline gap-3">
                   <span className="text-lg text-accent-green font-medium">
-                    ¥{(p.skus?.[0]?.price ?? 0) / 100}
+                    {/* 列表页 ProductVO 不装配 skus，展示价取 min_price（分） */}
+                    ¥{formatPrice(p.min_price ?? p.skus?.[0]?.price ?? 0)}
                   </span>
-                  <span className="text-xs text-warm-400">已售 {p.soldCount}</span>
+                  <span className="text-xs text-warm-400">已售 {p.sold_count}</span>
                 </div>
                 <span className="mt-4 inline-block text-sm text-accent-green group-hover:underline">
                   查看详情 →

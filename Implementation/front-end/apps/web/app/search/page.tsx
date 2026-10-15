@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ProductCard, SearchBar } from '@icedmall/ui';
-import type { ProductVO } from '@icedmall/api';
+import type { PageResult, ProductSearchVO, ProductVO, CategoryVO } from '@icedmall/api';
 
 const API = process.env.NEXT_PUBLIC_API_URL || '';
 
-interface PageData { records: ProductVO[]; total: number; pages: number; }
+/** `GET /api/search/product` 返回 `SearchPageVO<ProductSearchVO>`（信封字段与 IPage 同名）。 */
+type PageData = PageResult<ProductSearchVO>;
 
 /** 关键词高亮 — 将搜索词拆分为单个字符和词组，红色标出 */
 function HighlightName({ name, keyword }: { name: string; keyword: string }) {
@@ -74,7 +75,7 @@ export default function SearchPage() {
   const [categoryId, setCategoryId] = useState<number | undefined>();
   const [page, setPage] = useState(1);
   const [data, setData] = useState<PageData | null>(null);
-  const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
+  const [categories, setCategories] = useState<CategoryVO[]>([]);
   const [hotKeywords, setHotKeywords] = useState<string[]>([]);
   const [recommend, setRecommend] = useState<ProductVO[]>([]);
   const [loading, setLoading] = useState(false);
@@ -110,9 +111,9 @@ export default function SearchPage() {
       .then((r) => r.json())
       .then((j) => {
         if (j.code === 200) setData(j.data);
-        else setData({ records: [], total: 0, pages: 0 });
+        else setData({ records: [], total: 0, size: 20, current: 1, pages: 0 });
       })
-      .catch(() => setData({ records: [], total: 0, pages: 0 }))
+      .catch(() => setData({ records: [], total: 0, size: 20, current: 1, pages: 0 }))
       .finally(() => setLoading(false));
 
     // URL 同步

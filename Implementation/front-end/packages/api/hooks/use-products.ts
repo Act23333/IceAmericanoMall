@@ -24,6 +24,9 @@ export function useProducts(filters: ProductFilters = {}) {
     queryKey: queryKeys.products.list(filters as Record<string, unknown>),
     queryFn: async () => {
       const params = new URLSearchParams();
+      // 注意：`categoryId` 不在此次「@RequestParam 统一 snake_case」范围内 —— 后端
+      // `/api/item/product/page` 以 `ProductPageReq` **POJO 属性绑定**取值（非 @RequestParam），
+      // 契约 §P1 写作 `category_id?`。保留现名以免与后端失配，见交接摘要「待确认项」。
       if (filters.categoryId) params.set('categoryId', String(filters.categoryId));
       if (filters.keyword) params.set('keyword', filters.keyword);
       if (filters.sort) params.set('sort', filters.sort);

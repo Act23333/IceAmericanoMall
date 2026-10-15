@@ -54,10 +54,10 @@ export default function OrdersPage() {
 
       <div className="space-y-3">
         {data?.records?.map((order) => (
-          <Link key={order.orderNo} href={`/shop/orders/${order.orderNo}`}>
+          <Link key={order.order_no} href={`/shop/orders/${order.order_no}`}>
             <GlassCard className="p-4 hover:shadow-glass-lg transition-shadow" blur="sm">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs text-warm-400">{order.orderNo}</p>
+                <p className="text-xs text-warm-400">{order.order_no}</p>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-accent-green/10 text-accent-green-dark">
                   {ORDER_STATUS_TEXT[order.status] ?? order.status}
                 </span>
@@ -66,11 +66,11 @@ export default function OrdersPage() {
                 {order.items?.slice(0, 3).map((item) => (
                   <div key={item.id} className="flex items-center gap-3">
                     <div className="h-14 w-14 shrink-0 rounded-lg bg-warm-100 overflow-hidden">
-                      <img src={item.image} alt={item.productName} className="h-full w-full object-cover" loading="lazy" decoding="async" />
+                      <img src={item.image} alt={item.product_name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-ink-black truncate">{item.productName}</p>
-                      <p className="text-xs text-warm-400">{item.skuSpec} x{item.quantity}</p>
+                      <p className="text-sm text-ink-black truncate">{item.product_name}</p>
+                      <p className="text-xs text-warm-400">{item.sku_spec} x{item.quantity}</p>
                     </div>
                     <p className="text-sm text-ink-soft">¥{formatPrice(item.price)}</p>
                   </div>
@@ -80,15 +80,15 @@ export default function OrdersPage() {
                 )}
               </div>
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-warm-100">
-                <PriceDisplay cents={order.totalAmount} size="sm" />
+                <PriceDisplay cents={order.total_amount} size="sm" />
                 <div className="flex gap-2" onClick={(e) => e.preventDefault()}>
                   {order.status === 1 && (
                     <Button size="sm" variant="secondary"
-                      onClick={() => cancelOrder.mutate(order.orderNo)}>取消</Button>
+                      onClick={() => cancelOrder.mutate(order.order_no)}>取消</Button>
                   )}
                   {order.status === 3 && (
                     <Button size="sm" variant="primary"
-                      onClick={() => confirmOrder.mutate(order.orderNo)}>确认收货</Button>
+                      onClick={() => confirmOrder.mutate(order.order_no)}>确认收货</Button>
                   )}
                 </div>
               </div>

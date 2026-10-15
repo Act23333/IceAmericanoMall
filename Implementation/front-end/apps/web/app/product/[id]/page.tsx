@@ -41,7 +41,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       openGraph: {
         title: product.name,
         description: product.description || '',
-        images: product.mainImage ? [product.mainImage] : [],
+        images: product.main_image ? [product.main_image] : [],
       },
     };
   } catch {
@@ -71,17 +71,17 @@ export default async function ProductDetailPage({ params }: Props) {
   let relatedProducts: Awaited<ReturnType<typeof getProducts>>['records'] = [];
   try {
     const related = await getProducts({
-      categoryId: product.categoryId,
+      categoryId: product.category_id,
       size: 4,
       sort: 'sales',
       order: 'desc',
     });
-    relatedProducts = related?.records?.filter((p) => p.productId !== id) ?? [];
+    relatedProducts = related?.records?.filter((p) => p.product_id !== id) ?? [];
   } catch {
     relatedProducts = [];
   }
 
-  const images = product.mainImage ? [product.mainImage] : [];
+  const images = product.main_image ? [product.main_image] : [];
 
   return (
     <div className="mx-auto max-w-7xl px-4 pt-24 pb-20">
@@ -105,9 +105,9 @@ export default async function ProductDetailPage({ params }: Props) {
           <AddToCart product={product} />
 
           {/* 店铺信息卡片 — 京东标准 */}
-          {product.sellerId && (
+          {product.seller_id && (
             <div className="mt-6">
-              <ShopInfoCard sellerId={product.sellerId} />
+              <ShopInfoCard sellerId={product.seller_id} />
             </div>
           )}
 

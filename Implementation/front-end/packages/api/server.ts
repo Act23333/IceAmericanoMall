@@ -73,6 +73,8 @@ export async function getProducts(params: {
   size?: number;
 }): Promise<PageResult<ProductVO>> {
   const sp = new URLSearchParams();
+  // `categoryId` 走 `ProductPageReq` POJO 属性绑定（非 @RequestParam），不属本次 snake 收敛范围
+  // （契约 §P1 写作 `category_id?`）——保留现名，见交接摘要「待确认项」。
   if (params.categoryId) sp.set('categoryId', String(params.categoryId));
   if (params.keyword) sp.set('keyword', params.keyword);
   if (params.sort) sp.set('sort', params.sort);

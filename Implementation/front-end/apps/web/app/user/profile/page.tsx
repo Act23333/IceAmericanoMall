@@ -2,53 +2,33 @@
 
 import { useState } from 'react';
 import { useAuthStore } from '@icedmall/auth';
-import { Button, GlassCard } from '@icedmall/ui';
-import { formatPrice } from '@icedmall/utils';
+import { useBalance, useRecharge, apiClient, type UserInfoResp } from '@icedmall/api';
+import { Button, GlassCard, PriceDisplay } from '@icedmall/ui';
 import Link from 'next/link';
-
-function yuanToCents(yuan: number): number {
-  return Math.round(yuan * 100);
-}
 
 export default function ProfilePage() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
 
+  // 余额域归 wallet-service —— `GET /api/wallet` / `POST /api/wallet/recharge?amount=`
+  // ★ 原 `/api/user/balance[/recharge]` 已下线；`UserInfoResp` 自 V5.4 起也不含 balance
+  const { data: balance } = useBalance();
+  const recharge = useRecharge();
+
   const [rechargeYuan, setRechargeYuan] = useState('');
   const [rechargeMsg, setRechargeMsg] = useState('');
-  const [recharging, setRecharging] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const handleRecharge = async () => {
+  const handleRecharge = () => {
     const val = Number(rechargeYuan);
     if (isNaN(val) || val <= 0) { setRechargeMsg('请输入有效金额'); return; }
-    setRecharging(true);
     setRechargeMsg('');
-    try {
-      const base = process.env.NEXT_PUBLIC_API_URL || '';
-      const token = document.cookie.split('; ').find(r => r.startsWith('access_token='))?.split('=')[1];
-      const res = await fetch(`${base}/api/user/balance/recharge?amount=${yuanToCents(val)}`, {
-        method: 'POST', credentials: 'include',
-        headers: token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {},
-      });
-      const data = await res.json();
-      if (data.code === 200) {
-        setRechargeYuan('');
-        setRechargeMsg(`充值成功，余额 ¥${formatPrice(data.data)}`);
-        const infoRes = await fetch(`${base}/api/user/info`, {
-          credentials: 'include',
-          headers: token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {},
-        });
-        const infoData = await infoRes.json();
-        if (infoData.code === 200 && infoData.data) setUser(infoData.data);
-      } else {
-        setRechargeMsg(data.msg || '充值失败');
-      }
-    } catch {
-      setRechargeMsg('网络错误，请重试');
-    } finally {
-      setRecharging(false);
-    }
+    // 金额一律以「分」的整数提交（展示层才 /100），不使用浮点参与计算
+    const cents = Math.round(val * 100);
+    recharge.mutate(cents, {
+      onSuccess: () => { setRechargeYuan(''); setRechargeMsg('充值成功'); },
+      onError: (e: any) => setRechargeMsg(e?.message ?? '充值失败'),
+    });
   };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -62,6 +42,9 @@ export default function ProfilePage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      // 注意：不能用 apiClient —— 它强制 `Content-Type: application/json`，
+      // 会破坏 multipart 边界；这里保留裸 fetch 以让浏览器自行设置 boundary。
+      // 路径 `/api/user/profile/avatar` 与后端一致（POST multipart, ≤5MB, jpg/png/webp）。
       const base = process.env.NEXT_PUBLIC_API_URL || '';
       const token = document.cookie.split('; ').find(r => r.startsWith('access_token='))?.split('=')[1];
       const res = await fetch(`${base}/api/user/profile/avatar`, {
@@ -73,13 +56,14 @@ export default function ProfilePage() {
       if (!res.ok) throw new Error(`上传失败: ${res.status}`);
       const data = await res.json();
       if (data.code === 200) {
-        // 刷新用户信息（含新头像URL）
-        const infoRes = await fetch(`${base}/api/user/info`, {
-          credentials: 'include',
-          headers: token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {},
+        // 刷新用户信息（含新头像 URL）—— 报文 snake_case → 视图模型 camelCase
+        const info = await apiClient<UserInfoResp>('/api/user/info');
+        setUser({
+          userId: String(info.user_id ?? ''),
+          username: info.username ?? '',
+          phone: info.phone,
+          avatar: info.avatar,
         });
-        const infoData = await infoRes.json();
-        if (infoData.code === 200 && infoData.data) setUser(infoData.data);
       }
     } catch (err) {
       console.error('头像上传失败', err);
@@ -123,15 +107,13 @@ export default function ProfilePage() {
       <GlassCard className="p-6 mb-6">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm text-text-secondary">账户余额</span>
-          <span className="text-lg font-semibold text-ink-black">
-            ¥{user?.balance !== undefined ? formatPrice(user.balance) : '---'}
-          </span>
+          <PriceDisplay cents={balance ?? 0} size="md" />
         </div>
         <div className="flex gap-2">
           <input type="number" value={rechargeYuan} onChange={(e) => setRechargeYuan(e.target.value)}
             placeholder="充值金额（元）" min="0.01" step="0.01"
             className="flex-1 rounded-xl border border-warm-gray-200 bg-white px-4 py-2 text-sm outline-none focus:border-accent" />
-          <Button variant="secondary" size="md" loading={recharging} onClick={handleRecharge}>充值</Button>
+          <Button variant="secondary" size="md" loading={recharge.isPending} onClick={handleRecharge}>充值</Button>
         </div>
         {rechargeMsg && <p className="mt-2 text-xs text-accent">{rechargeMsg}</p>}
       </GlassCard>

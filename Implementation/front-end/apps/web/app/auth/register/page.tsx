@@ -6,7 +6,7 @@ import { Button, GlassCard } from '@icedmall/ui';
 import { register } from '@icedmall/auth';
 import { useAuthStore } from '@icedmall/auth';
 import { phoneSchema, passwordSchema, usernameSchema, smsCodeSchema } from '@icedmall/utils';
-import { getUserMessage } from '@icedmall/api';
+import { getUserMessage, sendVerificationCode } from '@icedmall/api';
 import Link from 'next/link';
 
 /**
@@ -28,22 +28,19 @@ export default function RegisterPage() {
   const sendSms = async () => {
     if (smsCountdown > 0) return;
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/user/code`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone,
-          requestId: crypto.randomUUID?.() ?? `${Date.now()}`,
-          captchaTicket: 'mock_ticket',
-          lotNumber: 'mock_lot',
-          captchaOutput: 'mock_output',
-          passToken: 'mock_token',
-          genTime: String(Math.floor(Date.now() / 1000)),
-        }),
+      // 发码统一走 verification-service（ADR-016 收口）——`POST /api/verification/codes`
+      // ★ 原 `/api/user/code` 已下线（该路径在后端不存在）
+      await sendVerificationCode({
+        channel: 'SMS',
+        target: phone,
+        scene: 'REGISTER',
+        request_id: crypto.randomUUID?.() ?? `${Date.now()}`,
       });
       setSmsCountdown(60);
       const timer = setInterval(() => setSmsCountdown((c) => { if (c <= 1) { clearInterval(timer); return 0; } return c - 1; }), 1000);
-    } catch { /* ignore */ }
+    } catch (err: unknown) {
+      setError(getUserMessage(err as { code?: number; message?: string }));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -67,9 +64,10 @@ export default function RegisterPage() {
         username: username.trim() || undefined,
       });
 
+      // LoginVO 不返回 username —— 展示名用注册时填的用户名，否则回落到手机号
       setUser({
         userId: String(result.user_id ?? ''),
-        username: result.username ?? phone,
+        username: username.trim() || phone,
       });
       router.push('/marketplace');
     } catch (err: unknown) {

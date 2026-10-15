@@ -23,7 +23,7 @@ export function AddToCart({ product }: AddToCartProps) {
   useEffect(() => {
     const base = process.env.NEXT_PUBLIC_API_URL || '';
     const token = document.cookie.split('; ').find(r => r.startsWith('access_token='))?.split('=')[1];
-    fetch(`${base}/api/user/history?productId=${product.id}`, {
+    fetch(`${base}/api/user/history?product_id=${product.id}`, {
       method: 'POST',
       credentials: 'include',
       headers: token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {},
@@ -34,9 +34,12 @@ export function AddToCart({ product }: AddToCartProps) {
     });
   }, [product.id]);
 
-  // SKU 选项
+  // SKU 选项 —— ⚠️ 这里是本仓**唯一**的字段边界转换点：
+  // 后端报文 `SkuVO`（snake_case）→ 前端本地视图模型（camelCase）。
+  // 理由：本地购物车是前端自有域模型（Zustand + localStorage），不属于后端报文，
+  // 故 `cart-store.CartItem` 保持 camelCase（TS 生态惯例），转换只在这一处发生。
   const skuOptions = (product.skus ?? []).map((s) => ({
-    id: s.id, skuId: s.skuId, spec: s.spec, price: s.price, stock: s.stock, image: s.image,
+    id: s.id, skuId: s.sku_id, spec: s.spec, price: s.price, stock: s.stock, image: s.image,
   }));
   const defaultSku = skuOptions.find((s) => s.stock > 0);
   const [selectedSkuId, setSelectedSkuId] = useState(defaultSku?.skuId ?? '');
@@ -55,7 +58,7 @@ export function AddToCart({ product }: AddToCartProps) {
       skuId: sku.skuId,
       productName: product.name,
       spec: sku.spec,
-      image: sku.image || product.mainImage || '',
+      image: sku.image || product.main_image || '',
       price: sku.price,
       quantity,
     });

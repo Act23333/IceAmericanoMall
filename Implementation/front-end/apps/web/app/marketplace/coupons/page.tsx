@@ -72,28 +72,26 @@ export default function CouponsPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {templates.map((tpl: any) => {
-          const cid = tpl.couponId || String(tpl.id);
+        {templates.map((tpl) => {
+          const cid = tpl.coupon_id;
           const isClaimed = claimed.has(cid);
-          const isGrab = (tpl.grabType === 'NEED_GRAB' || tpl.grabType === 2);
-          const remaining = tpl.totalStock > 0 ? Math.max(0, tpl.totalStock - (tpl.claimedCount || 0)) : Infinity;
-          const isSoldOut = tpl.totalStock > 0 && remaining <= 0;
+          const isGrab = tpl.grab_type === 2 /* NEED_GRAB */;
+          const totalQty = tpl.total_qty ?? 0;
+          const issuedQty = tpl.issued_qty ?? 0;
+          const remaining = totalQty > 0 ? Math.max(0, totalQty - issuedQty) : Infinity;
+          const isSoldOut = totalQty > 0 && remaining <= 0;
 
           return (
             <GlassCard key={cid} className="flex overflow-hidden" blur="sm">
               {/* 左侧金额区 */}
               <div className="flex w-28 shrink-0 flex-col items-center justify-center bg-accent-light py-4">
                 <span className="text-3xl font-bold text-accent price">
-                  {tpl.discountType === 1 /* FIXED */ ? '¥' : ''}
-                  {tpl.priceInCents ? formatPrice(tpl.priceInCents) : formatPrice(tpl.value || 0)}
-                  {tpl.discountType === 2 /* PERCENTAGE */ ? '折' : ''}
+                  {tpl.discount_type === 1 /* FIXED */ ? '¥' : ''}
+                  {tpl.price_in_cents ? formatPrice(tpl.price_in_cents) : formatPrice(tpl.value || 0)}
+                  {tpl.discount_type === 2 /* PERCENTAGE */ ? '折' : ''}
                 </span>
                 <span className="text-xs text-text-secondary mt-1">
-                  {tpl.minAmountInCents > 0
-                    ? `满¥${formatPrice(tpl.minAmountInCents)}可用`
-                    : tpl.minAmount > 0
-                    ? `满¥${formatPrice(tpl.minAmount)}可用`
-                    : '无门槛'}
+                  {tpl.min_amount > 0 ? `满¥${formatPrice(tpl.min_amount)}可用` : '无门槛'}
                 </span>
               </div>
 
@@ -104,26 +102,26 @@ export default function CouponsPage() {
                   <div className="flex items-center gap-3 mt-1.5 text-xs text-text-tertiary">
                     <span className="flex items-center gap-1">
                       <Users className="h-3 w-3" />
-                      {tpl.couponCategory === 1 || tpl.couponCategory === 'PLATFORM' ? '平台券' : '店铺券'}
+                      {tpl.coupon_category === 1 /* PLATFORM */ ? '平台券' : '店铺券'}
                     </span>
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      {tpl.endTime ? new Date(tpl.endTime).toLocaleDateString() : '有效期见详情'}
+                      {tpl.end_time ? new Date(tpl.end_time).toLocaleDateString() : '有效期见详情'}
                     </span>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between mt-2">
-                  {tpl.totalStock > 0 && (
+                  {totalQty > 0 && (
                     <div className="flex-1 mr-3">
                       <div className="flex justify-between text-xs text-text-tertiary mb-0.5">
-                        <span>已领 {Math.round(((tpl.claimedCount || 0) / tpl.totalStock) * 100)}%</span>
+                        <span>已领 {Math.round((issuedQty / totalQty) * 100)}%</span>
                         <span>剩 {remaining} 张</span>
                       </div>
                       <div className="h-1 rounded-full bg-warm-gray-200 overflow-hidden">
                         <div
                           className="h-full rounded-full bg-accent transition-all duration-300"
-                          style={{ width: `${Math.min(100, ((tpl.claimedCount || 0) / tpl.totalStock) * 100)}%` }}
+                          style={{ width: `${Math.min(100, (issuedQty / totalQty) * 100)}%` }}
                         />
                       </div>
                     </div>

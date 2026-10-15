@@ -7,5 +7,13 @@ export * from './queries';
 export { apiClient, ApiError } from './client';
 export { getAccessToken, getRefreshToken, setTokens, clearTokens } from './token';
 export { scheduleProactiveRefresh, clearProactiveRefresh, AUTH_LOGOUT_EVENT } from './client';
-export { getUserMessage } from './error-codes';
+export { getUserMessage, ERROR_CODE } from './error-codes';
+export type { ErrorCodeValue } from './error-codes';
+export {
+  isAuthError,
+  requiresCaptcha,
+  isRateLimited,
+  isParamError,
+  isThirdPartyError,
+} from './error-codes';
 export { getProducts, getProduct, getCategories } from './server';

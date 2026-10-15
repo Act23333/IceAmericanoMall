@@ -112,7 +112,7 @@ export function ReviewsSection({ productId }: { productId: number }) {
 
       {/* Review list */}
       <div className="space-y-4">
-        {data?.records?.map((r: any) => (
+        {data?.records?.map((r) => (
           <GlassCard key={r.id} className="p-4" blur="sm">
             <div className="flex items-center gap-2 mb-2">
               <span className="flex items-center gap-0.5 text-amber text-xs">
@@ -120,8 +120,8 @@ export function ReviewsSection({ productId }: { productId: number }) {
                   <Star key={i} className={`h-3 w-3 ${i < r.rating ? 'fill-amber' : 'text-warm-gray-400'}`} />
                 ))}
               </span>
-              <span className="text-sm font-medium text-ink-black">{r.username || `用户 #${r.userId}`}</span>
-              <span className="text-xs text-text-tertiary ml-auto">{r.createTime ? timeAgo(r.createTime) : ''}</span>
+              <span className="text-sm font-medium text-ink-black">{r.username || `用户 #${r.user_id}`}</span>
+              <span className="text-xs text-text-tertiary ml-auto">{r.create_time ? timeAgo(r.create_time) : ''}</span>
             </div>
 
             <p className="text-sm text-text-secondary leading-relaxed">{r.content}</p>
@@ -146,18 +146,18 @@ export function ReviewsSection({ productId }: { productId: number }) {
               <div className="mt-3 p-3 rounded-lg bg-warm-gray-100/50 border border-warm-gray-200/50">
                 <p className="text-xs font-medium text-accent mb-1">
                   <MessageSquare className="h-3 w-3 inline mr-1" />商家回复
-                  {r.replyTime && <span className="text-text-tertiary font-normal ml-2">{timeAgo(r.replyTime)}</span>}
+                  {r.reply_time && <span className="text-text-tertiary font-normal ml-2">{timeAgo(r.reply_time)}</span>}
                 </p>
                 <p className="text-xs text-text-secondary">{r.reply}</p>
               </div>
             )}
 
-            {r.appendContent && (
+            {r.append_content && (
               <div className="mt-3 p-3 rounded-lg bg-accent-light/30 border border-accent/10">
                 <p className="text-xs font-medium text-ink-black mb-1">
-                  追评 {r.appendTime && <span className="text-text-tertiary font-normal ml-2">{timeAgo(r.appendTime)}</span>}
+                  追评 {r.append_time && <span className="text-text-tertiary font-normal ml-2">{timeAgo(r.append_time)}</span>}
                 </p>
-                <p className="text-xs text-text-secondary">{r.appendContent}</p>
+                <p className="text-xs text-text-secondary">{r.append_content}</p>
               </div>
             )}
 
@@ -165,11 +165,11 @@ export function ReviewsSection({ productId }: { productId: number }) {
               <button
                 onClick={() => handleLike(r.id)}
                 className={`flex items-center gap-1 text-xs transition-colors ${
-                  r.likedByMe ? 'text-danger' : 'text-text-tertiary hover:text-danger'
+                  r.liked_by_me ? 'text-danger' : 'text-text-tertiary hover:text-danger'
                 }`}
               >
-                <Heart className={`h-3.5 w-3.5 ${r.likedByMe ? 'fill-current' : ''}`} />
-                {(r.likeCount || 0) > 0 ? r.likeCount : '赞'}
+                <Heart className={`h-3.5 w-3.5 ${r.liked_by_me ? 'fill-current' : ''}`} />
+                {(r.like_count || 0) > 0 ? r.like_count : '赞'}
               </button>
             </div>
           </GlassCard>

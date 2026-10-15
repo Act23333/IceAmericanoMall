@@ -5,9 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, GlassCard } from '@icedmall/ui';
 import { login } from '@icedmall/auth';
 import { useAuthStore } from '@icedmall/auth';
-import { apiClient } from '@icedmall/api';
+import { apiClient, sendVerificationCode, getUserMessage, type LoginResp } from '@icedmall/api';
 import { phoneSchema, passwordSchema, smsCodeSchema } from '@icedmall/utils';
-import { getUserMessage } from '@icedmall/api';
 import Link from 'next/link';
 
 /**
@@ -46,33 +45,31 @@ export default function LoginPage() {
     if (smsCountdown > 0 || smsSending) return;
     setSmsSent(false); setSmsSending(true);
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/user/code`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone,
-          requestId: crypto.randomUUID?.() ?? `${Date.now()}`,
-          captchaTicket: 'mock_ticket',
-          lotNumber: 'mock_lot',
-          captchaOutput: 'mock_output',
-          passToken: 'mock_token',
-          genTime: String(Math.floor(Date.now() / 1000)),
-        }),
+      // 发码统一走 verification-service（ADR-016 收口）——`POST /api/verification/codes`
+      // ★ 原 `/api/user/code` 已下线（该路径在后端不存在）
+      await sendVerificationCode({
+        channel: 'SMS',
+        target: phone,
+        scene: 'LOGIN',
+        request_id: crypto.randomUUID?.() ?? `${Date.now()}`,
       });
       setSmsCountdown(60);
       setSmsSent(true);
       const timer = setInterval(() => setSmsCountdown((c) => { if (c <= 1) { clearInterval(timer); return 0; } return c - 1; }), 1000);
-    } catch { /* ignore */ }
+    } catch (err: unknown) {
+      setError(getUserMessage(err as { code?: number; message?: string }));
+    }
     setSmsSending(false);
   };
 
-  /** 微信 OAuth 登录（Mock: code 固定为 mock_code_web） */
+  /** 微信网页授权登录（Mock: code 固定为 mock_code_web）—— `POST /api/auth/web/wechat/login` */
   const handleWechatLogin = async () => {
     setError(''); setLoading(true);
     try {
-      const result = await apiClient<{ access_token: string; refresh_token: string; user_id: number; username: string }>(
-        '/api/auth/login/wechat', { method: 'POST', body: JSON.stringify({ code: 'mock_code_web' }) });
-      setUser({ userId: String(result.user_id ?? ''), username: result.username ?? '' });
+      const result = await apiClient<LoginResp>(
+        '/api/auth/web/wechat/login', { method: 'POST', body: JSON.stringify({ code: 'mock_code_web', state: 'web' }) });
+      // LoginVO 不返回 username（后端只回 token + user_id），昵称请取 GET /api/user/info
+      setUser({ userId: String(result.user_id ?? ''), username: '微信用户' });
       goAfterLogin('/marketplace');
     } catch (err: unknown) {
       setError(getUserMessage(err as { code?: number; message?: string }));
@@ -99,17 +96,20 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
+      // 请求体 WebLoginReq 无 @JsonProperty → 全平台 SNAKE_CASE 下键名为
+      // identity_type / credential_type（旧代码的 identityType/credentialType 会被静默忽略）
       const identityType = tab === 'sms' ? 'PHONE' : detectIdentityType(account);
       const result = await login({
         account: tab === 'sms' ? phone : account.trim(),
         credential: tab === 'sms' ? smsCode : password,
-        identityType,
-        credentialType: tab === 'sms' ? 'SMS_CODE' : 'PASSWORD',
+        identity_type: identityType,
+        credential_type: tab === 'sms' ? 'SMS_CODE' : 'PASSWORD',
       });
 
+      // LoginVO 不返回 username —— 展示名先用输入的账号，真实昵称由 GET /api/user/info 覆盖
       setUser({
         userId: String(result.user_id ?? ''),
-        username: result.username ?? '',
+        username: tab === 'sms' ? phone : account.trim(),
       });
       goAfterLogin('/marketplace');
     } catch (err: unknown) {

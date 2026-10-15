@@ -52,7 +52,7 @@ export default function PayPage() {
     );
   }
 
-  const insufficient = channel === 'BALANCE' && (balance ?? 0) < order.payAmount;
+  const insufficient = channel === 'BALANCE' && (balance ?? 0) < order.pay_amount;
 
   const handlePay = () => {
     setError(undefined);
@@ -63,8 +63,8 @@ export default function PayPage() {
         onSuccess: (pay) => {
           if (pay.status === 3) {
             router.push(`/shop/orders/${orderNo}`); // 余额支付即时完成
-          } else if (pay.qrCodeUrl) {
-            setPayUrl(pay.qrCodeUrl); // 微信/支付宝返回支付链接
+          } else if (pay.qr_code_url) {
+            setPayUrl(pay.qr_code_url); // 微信/支付宝返回支付链接
           }
         },
         onError: (e) => setError(e instanceof ApiError ? e.message : '支付失败，请重试'),
@@ -82,10 +82,10 @@ export default function PayPage() {
       <h1 className="text-xl font-light text-ink-black mb-6">收银台</h1>
 
       <GlassCard className="p-4 mb-4" blur="sm">
-        <p className="text-xs text-warm-400">订单号: {order.orderNo}</p>
+        <p className="text-xs text-warm-400">订单号: {order.order_no}</p>
         <div className="flex items-baseline justify-between mt-3">
           <span className="text-sm text-warm-600">应付金额</span>
-          <PriceDisplay cents={order.payAmount} size="lg" />
+          <PriceDisplay cents={order.pay_amount} size="lg" />
         </div>
       </GlassCard>
 

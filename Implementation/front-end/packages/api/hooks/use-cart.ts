@@ -12,6 +12,7 @@ export function useCart() {
   });
 }
 
+/** 加购 —— 请求体 `CartAddReq` 走全局 SNAKE_CASE，字段为 `sku_id` / `quantity`。 */
 export function useAddToCart() {
   const qc = useQueryClient();
   return useMutation({
@@ -20,6 +21,7 @@ export function useAddToCart() {
   });
 }
 
+/** 改数量 —— 请求体 `CartUpdateReq`（`sku_id` / `quantity`；quantity ≤ 0 即删除）。 */
 export function useUpdateCartItem() {
   const qc = useQueryClient();
   return useMutation({
@@ -28,6 +30,7 @@ export function useUpdateCartItem() {
   });
 }
 
+/** 删除单项 —— path variable `skuId` 由 `@PathVariable Long skuId` 决定，保持 camelCase。 */
 export function useRemoveCartItem() {
   const qc = useQueryClient();
   return useMutation({
@@ -36,6 +39,7 @@ export function useRemoveCartItem() {
   });
 }
 
+/** 单选切换 —— query 参数名为 `selected`（`@RequestParam Boolean selected`）。 */
 export function useToggleSelect() {
   const qc = useQueryClient();
   return useMutation({

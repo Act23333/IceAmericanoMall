@@ -18,8 +18,9 @@ export default function AfterSalePage() {
 
   const handleSubmit = () => {
     if (!reason.trim()) { setMsg('请填写退货/退款原因'); return; }
+    // 请求体 `AfterSaleApplyReq` = { order_no, type, reason?, refund_amount?, logistics_number? }
     create.mutate(
-      { orderNo, type, reason, refundAmount: amount ? Number(amount) * 100 : undefined },
+      { order_no: orderNo, type, reason, refund_amount: amount ? Math.round(Number(amount) * 100) : undefined },
       { onSuccess: () => router.push('/shop/orders'),
         onError: (e: any) => setMsg(e?.message ?? '提交失败') },
     );

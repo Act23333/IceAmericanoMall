@@ -35,15 +35,15 @@ export default function OrderDetailPage() {
       </div>
 
       <GlassCard className="p-4 mb-4" blur="sm">
-        <p className="text-xs text-warm-400">订单号: {order.orderNo}</p>
-        <p className="text-xs text-warm-400 mt-1">创建时间: {order.createTime}</p>
+        <p className="text-xs text-warm-400">订单号: {order.order_no}</p>
+        <p className="text-xs text-warm-400 mt-1">创建时间: {order.create_time}</p>
       </GlassCard>
 
       {/* 收货信息 */}
       <GlassCard className="p-4 mb-4" blur="sm">
         <h3 className="text-sm font-medium text-ink-black mb-2">收货信息</h3>
-        <p className="text-sm">{order.receiverName} {order.receiverPhone}</p>
-        <p className="text-xs text-warm-600 mt-1">{order.receiverAddress}</p>
+        <p className="text-sm">{order.receiver_name} {order.receiver_phone}</p>
+        <p className="text-xs text-warm-600 mt-1">{order.receiver_address}</p>
       </GlassCard>
 
       {/* 商品清单 */}
@@ -52,11 +52,11 @@ export default function OrderDetailPage() {
         {order.items?.map((item) => (
           <div key={item.id} className="flex items-center gap-3 py-2 border-b border-warm-100 last:border-0">
             <div className="h-14 w-14 shrink-0 rounded-lg bg-warm-100 overflow-hidden">
-              <img src={item.image} alt={item.productName} className="h-full w-full object-cover" loading="lazy" decoding="async" />
+              <img src={item.image} alt={item.product_name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-ink-black truncate">{item.productName}</p>
-              <p className="text-xs text-warm-400">{item.skuSpec}</p>
+              <p className="text-sm text-ink-black truncate">{item.product_name}</p>
+              <p className="text-xs text-warm-400">{item.sku_spec}</p>
             </div>
             <div className="text-right">
               <p className="text-sm text-ink-black">¥{formatPrice(item.price)}</p>
@@ -69,9 +69,10 @@ export default function OrderDetailPage() {
       {/* 金额 */}
       <GlassCard className="p-4 mb-6" blur="sm">
         <div className="space-y-1 text-sm">
-          <div className="flex justify-between"><span className="text-warm-600">商品总额</span><span>¥{formatPrice(order.totalAmount)}</span></div>
-          <div className="flex justify-between"><span className="text-warm-600">优惠</span><span>-¥{formatPrice(order.discountAmount)}</span></div>
-          <div className="flex justify-between pt-2 border-t border-warm-100"><span className="font-medium">实付</span><PriceDisplay cents={order.payAmount} size="sm" /></div>
+          <div className="flex justify-between"><span className="text-warm-600">商品总额</span><span>¥{formatPrice(order.total_amount)}</span></div>
+          <div className="flex justify-between"><span className="text-warm-600">优惠</span><span>-¥{formatPrice(order.discount_amount)}</span></div>
+          <div className="flex justify-between"><span className="text-warm-600">运费</span><span>¥{formatPrice(order.post_fee ?? 0)}</span></div>
+          <div className="flex justify-between pt-2 border-t border-warm-100"><span className="font-medium">实付</span><PriceDisplay cents={order.pay_amount} size="sm" /></div>
         </div>
       </GlassCard>
 
@@ -79,17 +80,17 @@ export default function OrderDetailPage() {
       <div className="flex gap-3">
         {order.status === 1 && (
           <>
-            <Link href={`/shop/pay/${order.orderNo}`} className="flex-1">
+            <Link href={`/shop/pay/${order.order_no}`} className="flex-1">
               <Button variant="primary" size="md" className="w-full">去支付</Button>
             </Link>
-            <Button variant="secondary" size="md" onClick={() => cancelOrder.mutate(order.orderNo)}>取消订单</Button>
+            <Button variant="secondary" size="md" onClick={() => cancelOrder.mutate(order.order_no)}>取消订单</Button>
           </>
         )}
         {order.status === 3 && (
-          <Button variant="primary" size="md" onClick={() => confirmOrder.mutate(order.orderNo)}>确认收货</Button>
+          <Button variant="primary" size="md" onClick={() => confirmOrder.mutate(order.order_no)}>确认收货</Button>
         )}
         {order.status === 4 && (
-          <Link href={`/shop/after-sale?orderNo=${order.orderNo}`} className="flex-1">
+          <Link href={`/shop/after-sale?orderNo=${order.order_no}`} className="flex-1">
             <Button variant="secondary" size="md" className="w-full">申请售后</Button>
           </Link>
         )}

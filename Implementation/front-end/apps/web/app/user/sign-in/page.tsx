@@ -2,20 +2,28 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { apiClient } from '@icedmall/api';
+import { apiClient, type SignResultVO } from '@icedmall/api';
 import { Button, GlassCard } from '@icedmall/ui';
 
+/**
+ * 每日签到。
+ *
+ * ✅ 路径更正（积分/签到域归 marketing-service）：
+ *    `GET /api/sign/status`、`POST /api/sign` —— 原 `/api/user/sign(+/status)` 在后端不存在。
+ * ✅ 字段更正：响应 `SignResultVO` = `{ signed, earned_points, month_count, continuous_days }`
+ *    （旧代码读的 `continuousDays` / `points` 均不存在）。
+ */
 export default function SignInPage() {
   const [signed, setSigned] = useState(false);
   const [errMsg, setErrMsg] = useState('');
 
-  const { data: status, refetch } = useQuery({
+  const { data: status, refetch } = useQuery<SignResultVO>({
     queryKey: ['sign', 'status'],
-    queryFn: () => apiClient<{ signed: boolean; continuousDays: number; points: number }>('/api/user/sign/status'),
+    queryFn: () => apiClient<SignResultVO>('/api/sign/status'),
   });
 
   const signMutation = useMutation({
-    mutationFn: () => apiClient<{ points: number }>('/api/user/sign', { method: 'POST' }),
+    mutationFn: () => apiClient<SignResultVO>('/api/sign', { method: 'POST' }),
     onSuccess: () => { setSigned(true); setErrMsg(''); refetch(); },
     onError: (e: any) => setErrMsg(e?.message ?? '签到失败'),
   });
@@ -30,9 +38,11 @@ export default function SignInPage() {
           {status?.signed ? '今日已签到' : signed ? '签到成功!' : '签到领积分'}
         </h2>
         <p className="text-sm text-warm-600 mt-2">
-          {status?.continuousDays ? `已连续签到 ${status.continuousDays} 天` : '每天签到，积分翻倍'}
+          {status?.continuous_days ? `已连续签到 ${status.continuous_days} 天` : '每天签到，积分翻倍'}
         </p>
-        {status?.points !== undefined && <p className="mt-1 text-accent-gold text-sm">当前积分: {status.points}</p>}
+        {status?.earned_points !== undefined && status.earned_points > 0 && (
+          <p className="mt-1 text-accent-gold text-sm">本次获得 {status.earned_points} 积分</p>
+        )}
 
         {!status?.signed && !signed && (
           <Button variant="gold" size="lg" className="mt-6 w-full" loading={signMutation.isPending}
@@ -46,7 +56,7 @@ export default function SignInPage() {
         <div className="mt-8 grid grid-cols-7 gap-2">
           {Array.from({ length: 7 }).map((_, i) => (
             <div key={i} className={`w-9 h-9 rounded-full flex items-center justify-center text-xs ${
-              i < (status?.continuousDays ?? 0) % 7
+              i < (status?.continuous_days ?? 0) % 7
                 ? 'bg-accent-green text-white'
                 : 'bg-warm-100 text-warm-400'
             }`}>

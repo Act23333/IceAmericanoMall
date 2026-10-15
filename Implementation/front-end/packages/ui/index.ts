@@ -18,6 +18,7 @@ export { PriceDisplay } from './components/price-display';
 
 // 业务组件
 export { ProductCard } from './components/product-card';
+export type { ProductCardData } from './components/product-card';
 export { SearchBar } from './components/search-bar';
 export { SectionReveal } from './components/section-reveal';
 

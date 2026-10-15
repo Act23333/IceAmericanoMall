@@ -2,28 +2,15 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { apiClient } from '@icedmall/api';
+import { apiClient, type PageResult, type HistoryVO } from '@icedmall/api';
 import { GlassCard, Button } from '@icedmall/ui';
 import { formatPrice } from '@icedmall/utils';
 import { Search, Trash2, Clock } from 'lucide-react';
 import Link from 'next/link';
 
-interface FootprintItem {
-  id: number;
-  product_id: number;
-  view_time: string;
-  product_name: string;
-  main_image: string;
-  price: number;
-  brand: string;
-}
-
-interface PageData {
-  records: FootprintItem[];
-  total: number;
-  pages: number;
-  current: number;
-}
+/** 浏览足迹 —— 直接使用契约类型 `HistoryVO`（多词键名由后端 `@JsonProperty` 固定为 snake_case）。 */
+type FootprintItem = HistoryVO;
+type PageData = PageResult<HistoryVO>;
 
 /** 日期分组 */
 function groupByDate(items: FootprintItem[]): { label: string; items: FootprintItem[] }[] {
@@ -151,7 +138,7 @@ export default function HistoryPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-ink-black truncate">{item.product_name}</p>
                     <div className="flex items-center gap-3 mt-1">
-                      <span className="text-sm font-medium text-ink-black">¥{formatPrice(item.price)}</span>
+                      <span className="text-sm font-medium text-ink-black">¥{formatPrice(item.price ?? 0)}</span>
                       <span className="flex items-center gap-1 text-xs text-text-tertiary">
                         <Clock className="h-3 w-3" />
                         {formatViewTime(item.view_time)}

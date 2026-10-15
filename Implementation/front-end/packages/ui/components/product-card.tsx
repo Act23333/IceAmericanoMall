@@ -3,16 +3,44 @@
 import Link from 'next/link';
 import { cn } from '../lib/utils';
 import { formatPrice } from '@icedmall/utils';
-import type { ProductVO } from '@icedmall/api';
+
+/**
+ * 卡片可消费的最小报文形状 —— 兼容三种后端 VO：
+ *   - `ProductVO`（列表页：只有 `min_price`，**不装配 skus**）
+ *   - `ProductVO`（详情页：装配 `skus`）
+ *   - `ProductSearchVO`（搜索结果：字段为 `price` = 最低 SKU 价）
+ *
+ * ★ 修复点：原实现只读 `skus?.[0]?.price` —— 列表页 / 搜索结果都不带 skus，
+ *   导致价格恒显示 ¥0.00。现按 `skus → min_price → price` 依次回落。
+ * 字段名一律 snake_case（对应线上 JSON 键名）。
+ */
+export interface ProductCardData {
+  id: number;
+  name: string;
+  main_image?: string | null;
+  description?: string | null;
+  brand?: string | null;
+  sold_count?: number | null;
+  /** ProductVO 列表页展示价（分）。 */
+  min_price?: number | null;
+  /** ProductSearchVO 最低 SKU 价（分）。 */
+  price?: number | null;
+  skus?: Array<{ price: number }> | null;
+}
 
 type ProductCardVariant = 'default' | 'glass' | 'horizontal';
 
 interface ProductCardProps {
-  product: ProductVO;
+  product: ProductCardData;
   className?: string;
   variant?: ProductCardVariant;
   href?: string;
   onClick?: () => void;
+}
+
+/** 展示价（分）—— 逐级回落：详情页 sku → 列表页 min_price → 搜索 price。 */
+function displayPriceCents(product: ProductCardData): number {
+  return product.skus?.[0]?.price ?? product.min_price ?? product.price ?? 0;
 }
 
 const variantClasses: Record<ProductCardVariant, string> = {
@@ -26,10 +54,11 @@ const cardClasses =
   'border border-transparent hover:border-accent/20 hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40';
 
 function CardContent({ product, variant = 'default' }: Omit<ProductCardProps, 'href' | 'onClick' | 'className'>) {
+  const soldCount = product.sold_count ?? 0;
   return (
     <>
       <div className={cn('overflow-hidden bg-warm-100', variant === 'horizontal' ? 'w-1/3 shrink-0' : 'aspect-square w-full')}>
-        <img src={product.mainImage} alt={product.name}
+        <img src={product.main_image ?? ''} alt={product.name}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           loading="lazy" decoding="async" />
       </div>
@@ -37,11 +66,11 @@ function CardContent({ product, variant = 'default' }: Omit<ProductCardProps, 'h
         <h3 className="text-sm font-medium text-ink-black line-clamp-2 leading-snug">{product.name}</h3>
         {product.description && <p className="mt-1 text-xs text-warm-600 line-clamp-1">{product.description}</p>}
         <div className="mt-2 flex items-baseline gap-2">
-          <span className="text-base font-semibold text-ink-black">¥{formatPrice(product.skus?.[0]?.price ?? 0)}</span>
+          <span className="text-base font-semibold text-ink-black">¥{formatPrice(displayPriceCents(product))}</span>
         </div>
-        {product.soldCount > 0 && (
+        {soldCount > 0 && (
           <p className="mt-1.5 text-xs text-warm-600">
-            {product.soldCount > 10000 ? `${(product.soldCount / 10000).toFixed(1)}万人已购` : `${product.soldCount}人已购`}
+            {soldCount > 10000 ? `${(soldCount / 10000).toFixed(1)}万人已购` : `${soldCount}人已购`}
           </p>
         )}
       </div>

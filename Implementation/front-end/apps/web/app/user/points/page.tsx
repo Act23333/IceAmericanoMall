@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@icedmall/api';
+import { apiClient, type PageResult, type PointsBalanceVO, type PointsLogVO } from '@icedmall/api';
 import { GlassCard } from '@icedmall/ui';
 import { Coins, TrendingUp } from 'lucide-react';
 
@@ -10,19 +10,22 @@ import { Coins, TrendingUp } from 'lucide-react';
  * 积分中心 — V5.0
  *
  * 展示: 积分余额 + 积分明细(获取/消费记录)
+ *
+ * ✅ V5.4 路径更正：积分域归 marketing-service，网关路由 `/api/points/**`；
+ *    历史文档路径 `/api/user/points/*` 在后端**不存在**。
  */
 export default function PointsPage() {
   const [page, setPage] = useState(1);
 
-  const { data: balance } = useQuery<{ userId: number; balance: number }>({
+  const { data: balance } = useQuery<PointsBalanceVO>({
     queryKey: ['points', 'balance'],
-    queryFn: () => apiClient('/api/user/points/balance'),
+    queryFn: () => apiClient<PointsBalanceVO>('/api/points/balance'),
     staleTime: 60_000,
   });
 
-  const { data: history, isLoading } = useQuery<any>({
+  const { data: history, isLoading } = useQuery<PageResult<PointsLogVO>>({
     queryKey: ['points', 'history', page],
-    queryFn: () => apiClient(`/api/user/points/history?page=${page}&size=20`),
+    queryFn: () => apiClient<PageResult<PointsLogVO>>(`/api/points/history?page=${page}&size=20`),
   });
 
   return (
@@ -47,9 +50,9 @@ export default function PointsPage() {
             <div key={i} className="h-14 rounded-xl bg-warm-gray-100 animate-pulse" />
           ))}
         </div>
-      ) : history?.records?.length > 0 ? (
+      ) : (history?.records?.length ?? 0) > 0 ? (
         <div className="space-y-2">
-          {history.records.map((log: any, i: number) => (
+          {history!.records.map((log, i) => (
             <GlassCard key={log.id || i} className="flex items-center justify-between p-3" blur="sm">
               <div className="flex items-center gap-3">
                 <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${log.type === 1 ? 'bg-accent/10 text-accent' : 'bg-warm-gray-200 text-text-tertiary'}`}>
@@ -57,7 +60,7 @@ export default function PointsPage() {
                 </div>
                 <div>
                   <p className="text-sm text-ink-black">{log.source || (log.type === 1 ? '获取积分' : '消费积分')}</p>
-                  <p className="text-xs text-text-tertiary">{log.createTime ? new Date(log.createTime).toLocaleDateString() : ''}</p>
+                  <p className="text-xs text-text-tertiary">{log.create_time ? new Date(log.create_time).toLocaleDateString() : ''}</p>
                 </div>
               </div>
               <span className={`text-sm font-medium ${log.type === 1 ? 'text-accent' : 'text-text-tertiary'}`}>

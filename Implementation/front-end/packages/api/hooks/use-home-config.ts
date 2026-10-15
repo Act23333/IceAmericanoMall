@@ -1,23 +1,13 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '../client';
+import { apiClient, type HomeConfigVO } from '@icedmall/api';
 
-export interface HomeConfigItem {
-  id: number;
-  /** 后端发 Integer，对应 HomeConfigEntity.type */
-  type: number;
-  title: string;
-  /** 后端字段名 image，对应 HomeConfigEntity.image */
-  image: string;
-  linkUrl: string;
-  sortOrder: number;
-}
-
+/** 首页装修位配置 —— `GET /api/home/config`，响应 `HomeConfigVO[]`。 */
 export function useHomeConfig() {
-  return useQuery<HomeConfigItem[]>({
+  return useQuery<HomeConfigVO[]>({
     queryKey: ['home', 'config'],
-    queryFn: () => apiClient<HomeConfigItem[]>('/api/home/config'),
+    queryFn: () => apiClient<HomeConfigVO[]>('/api/home/config'),
     staleTime: 5 * 60 * 1000,
   });
 }
