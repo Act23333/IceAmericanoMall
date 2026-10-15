@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCartStore } from '@/app/stores/cart-store';
-import { useAddresses, useCreateOrder, useCouponFilter, useAvailableCoupons } from '@icedmall/api';
+import { useAddresses, useCreateOrder, useCheckoutCoupons } from '@icedmall/api';
 import { Button, GlassCard, PriceDisplay } from '@icedmall/ui';
 import { formatPrice } from '@icedmall/utils';
 import { Ticket, ChevronDown, ChevronUp, Check } from 'lucide-react';
@@ -15,51 +15,40 @@ import Link from 'next/link';
  * 功能:
  *   1. 收货地址选择 (inline, 不跳转)
  *   2. 商品清单
- *   3. 优惠券选择 (V4.3 预过滤 + 多券叠加)
+ *   3. 优惠券选择（★ 后端 `CreateOrderReq.user_coupon_id` 为**单券标量**，
+ *      多券叠加契约尚未支持 → 本页改为单选，见 §4.6 CreateOrderReq）
  *   4. 订单备注
  *   5. 金额汇总 → 提交订单
+ *
+ * ★ 可用券为**前端本地筛选**：后端不存在 `POST /api/coupon/available/filter`。
+ *   现口径 = **单请求** `GET /api/coupon/available`（券面 name/value/min_amount 已随
+ *   `UserCouponVO` 一并返回，见 useCheckoutCoupons）—— 不再二次请求 /coupon/template 本地 join。
  */
 export default function CheckoutPage() {
   const router = useRouter();
   const { items } = useCartStore();
   const selected = items.filter((i) => i.selected);
   const { data: addresses } = useAddresses();
-  const { data: allCoupons } = useAvailableCoupons();
-  const couponFilter = useCouponFilter();
   const createOrder = useCreateOrder();
 
   const [addressId, setAddressId] = useState<number | null>(null);
   const [remark, setRemark] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showCoupons, setShowCoupons] = useState(false);
-  const [selectedCouponIds, setSelectedCouponIds] = useState<number[]>([]);
-  const [filteredCoupons, setFilteredCoupons] = useState<any[]>([]);
+  const [selectedCouponId, setSelectedCouponId] = useState<number | null>(null);
 
   const totalCents = selected.reduce((s, i) => s + i.price * i.quantity, 0);
-  const skuIds = selected.map((i) => Number(i.skuId));
   const defaultAddr = addresses?.find((a) => a.defaulted) ?? addresses?.[0];
 
-  // 预过滤可用券
-  useEffect(() => {
-    if (skuIds.length > 0 && allCoupons && allCoupons.length > 0) {
-      couponFilter.mutate(
-        { skuIds, totalAmount: totalCents },
-        { onSuccess: (data) => setFilteredCoupons(data) }
-      );
-    }
-  }, [items]);
+  // 可用券预过滤（单请求 GET /api/coupon/available —— 券面已随 UserCouponVO 返回）
+  const { data: couponOptions, isLoading: couponsLoading } = useCheckoutCoupons(totalCents);
 
-  // 计算优惠金额
-  const discountCents = selectedCouponIds.reduce((sum, id) => {
-    const c = filteredCoupons.find((f: any) => f.id === id);
-    return sum + (c?.value ?? 0);
-  }, 0);
+  const selectedCoupon = couponOptions.find((c) => c.userCouponId === selectedCouponId);
+  const discountCents = selectedCoupon?.value ?? 0;
   const payCents = Math.max(0, totalCents - discountCents);
 
-  const toggleCoupon = (id: number) => {
-    setSelectedCouponIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
+  const toggleCoupon = (userCouponId: number) => {
+    setSelectedCouponId((prev) => (prev === userCouponId ? null : userCouponId));
   };
 
   const handleSubmit = async () => {
@@ -70,13 +59,15 @@ export default function CheckoutPage() {
     }
     setSubmitting(true);
     try {
+      // 请求体 `CreateOrderReq` = { address_id, user_coupon_id?, remark?, display_currency? }
+      // ⚠️ 后端**不接受** `cart_item_ids` —— 下单件数取自服务端购物车（/api/cart）。
+      //    本地 Zustand 购物车与 /api/cart 的同步是独立缺口（见交接摘要「发现但未改」）。
       const order = await createOrder.mutateAsync({
-        addressId: addressId ?? defaultAddr!.id,
-        cartItemIds: selected.map((i) => Number(i.skuId)),
-        userCouponIds: selectedCouponIds.length > 0 ? selectedCouponIds : undefined,
+        address_id: addressId ?? defaultAddr!.id,
+        user_coupon_id: selectedCouponId ?? undefined,
         remark: remark || undefined,
-      } as any);
-      router.push(`/shop/pay/${order.orderNo}`);
+      });
+      router.push(`/shop/pay/${order.order_no}`);
     } catch (e: any) {
       alert(e?.message ?? '下单失败');
     } finally {
@@ -201,21 +192,21 @@ export default function CheckoutPage() {
           <span className="flex items-center gap-1.5">
             <Ticket className="h-4 w-4" />
             优惠券
-            {selectedCouponIds.length > 0 && (
-              <span className="text-xs text-accent">(已选 {selectedCouponIds.length} 张)</span>
+            {selectedCouponId !== null && (
+              <span className="text-xs text-accent">(已选 1 张)</span>
             )}
           </span>
           {showCoupons ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
         {showCoupons && (
           <div className="space-y-2 animate-fade-in">
-            {filteredCoupons.length > 0 ? (
-              filteredCoupons.map((c: any) => {
-                const isSelected = selectedCouponIds.includes(c.id);
+            {(couponOptions?.length ?? 0) > 0 ? (
+              couponOptions!.map((c) => {
+                const isSelected = selectedCouponId === c.userCouponId;
                 return (
                   <button
-                    key={c.id}
-                    onClick={() => toggleCoupon(c.id)}
+                    key={c.userCouponId}
+                    onClick={() => toggleCoupon(c.userCouponId)}
                     className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all duration-200 ${
                       isSelected
                         ? 'border-accent bg-accent-light/30'
@@ -243,7 +234,7 @@ export default function CheckoutPage() {
               })
             ) : (
               <p className="text-xs text-text-tertiary py-3 text-center">
-                {allCoupons ? '暂无可用优惠券' : '加载中...'}
+                {couponsLoading ? '加载中...' : '暂无可用优惠券'}
               </p>
             )}
           </div>

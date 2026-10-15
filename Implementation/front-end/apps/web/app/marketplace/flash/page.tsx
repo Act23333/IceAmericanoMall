@@ -9,12 +9,13 @@ import { Zap, Clock, ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
 
 /**
- * 秒杀频道 — V5.0
+ * 秒杀频道 — V5.0（2026-10-15 契约补齐后消费增量字段）
  *
  * 京东标准秒杀页:
  *   - 进行中的秒杀场次
  *   - 毫秒级倒计时
- *   - 库存进度条
+ *   - 已售进度（**后端 `progress_percent`**，分母 = 秒杀总库存 `stock`）
+ *   - 真实商品（`product_name` / `product_image` / `original_price`，后端读时回填 fail-open）
  *   - 立即抢购 (需要地址)
  */
 export default function FlashSalePage() {
@@ -34,9 +35,10 @@ export default function FlashSalePage() {
       const addressId = prompt('请输入收货地址ID (演示: 输入数字ID)');
       if (!addressId) return;
       try {
-        const result = await flashBuy.mutateAsync({ flashId, addressId: Number(addressId) } as any);
-        if ((result as any)?.orderNo) {
-          router.push(`/shop/pay/${(result as any).orderNo}`);
+        // 响应 `FlashBuyVO` = { success, order_no, flash_id, flash_price, product_id, remaining_stock }
+        const result = await flashBuy.mutateAsync({ flashId, addressId: Number(addressId) });
+        if (result?.order_no) {
+          router.push(`/shop/pay/${result.order_no}`);
         }
       } catch (e: any) {
         alert(e?.message ?? '抢购失败');
@@ -86,15 +88,16 @@ export default function FlashSalePage() {
 
       {/* 秒杀商品列表 */}
       <div className="grid gap-4 md:grid-cols-2">
-        {flashSales.map((fs: any) => {
-          const startMs = new Date(fs.startTime).getTime();
-          const endMs = new Date(fs.endTime).getTime();
+        {flashSales.map((fs) => {
+          const startMs = new Date(fs.start_time).getTime();
+          const endMs = new Date(fs.end_time).getTime();
           const isUpcoming = now < startMs;
           const isEnded = now > endMs;
           const remaining = isUpcoming ? startMs - now : endMs - now;
-          // 库存进度
-          const stockTotal = (fs.stock || 0) + (fs.soldCount || 0);
-          const stockProgress = stockTotal > 0 ? Math.round(((fs.soldCount || 0) / stockTotal) * 100) : 0;
+          // 已售进度：直接用后端 progress_percent（分母 = 秒杀**总**库存 stock，整数向下取整）
+          const stockProgress = fs.progress_percent ?? 0;
+          // 剩余量 = 总库存 − 已售（后端 FlashSale.remainingStock() 同口径；stock 是总量而非余量）
+          const remainingStock = Math.max(0, (fs.stock ?? 0) - (fs.sold_count ?? 0));
 
           const h = Math.floor(remaining / 3600000);
           const m = Math.floor((remaining % 3600000) / 60000);
@@ -118,40 +121,51 @@ export default function FlashSalePage() {
 
               {/* 商品信息 */}
               <div className="flex gap-4 p-4">
-                <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-warm-gray-100">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={fs.mainImage || fs.productImage || '/placeholder.png'}
-                    alt={fs.productName || '秒杀商品'}
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                  />
-                </div>
+                <Link
+                  href={`/product/${fs.product_id}`}
+                  className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-warm-gray-100"
+                >
+                  {fs.product_image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={fs.product_image}
+                      alt={fs.product_name ?? ''}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-3xl select-none">⚡</div>
+                  )}
+                </Link>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-medium text-ink-black line-clamp-2">
-                    {fs.productName || '秒杀商品'}
-                  </h3>
+                  <Link href={`/product/${fs.product_id}`}>
+                    {/* product_name 由后端读时回填；缺失（SKU 已删除/降级）时才回落占位 */}
+                    <h3 className="text-sm font-medium text-ink-black line-clamp-2 hover:text-amber transition-colors">
+                      {fs.product_name ?? `秒杀商品 #${fs.product_id}`}
+                    </h3>
+                  </Link>
                   <div className="mt-1.5 flex items-baseline gap-2">
                     <span className="text-lg font-bold text-amber price">
-                      ¥{formatPrice(fs.flashPrice ?? fs.price ?? 0)}
+                      ¥{formatPrice(fs.flash_price ?? 0)}
                     </span>
-                    {fs.price && fs.flashPrice && fs.flashPrice < fs.price && (
+                    {fs.original_price != null && fs.original_price > (fs.flash_price ?? 0) && (
                       <span className="text-xs text-text-tertiary line-through">
-                        ¥{formatPrice(fs.price)}
+                        ¥{formatPrice(fs.original_price)}
                       </span>
                     )}
                   </div>
 
-                  {/* 库存进度 */}
+                  {/* 已售进度（后端 progress_percent）+ 剩余件数 */}
                   <div className="mt-2">
                     <div className="flex justify-between text-xs text-text-tertiary mb-0.5">
                       <span>已抢 {stockProgress}%</span>
-                      <span>剩余 {fs.stock ?? 0} 件</span>
+                      <span>剩余 {remainingStock} 件</span>
                     </div>
                     <div className="h-1.5 rounded-full bg-warm-gray-200 overflow-hidden">
                       <div
                         className="h-full rounded-full bg-gradient-to-r from-amber to-amber/60 transition-all duration-500"
-                        style={{ width: `${stockProgress}%` }}
+                        style={{ width: `${Math.min(100, stockProgress)}%` }}
                       />
                     </div>
                   </div>
@@ -161,12 +175,12 @@ export default function FlashSalePage() {
                     variant={isEnded ? 'ghost' : 'primary'}
                     size="sm"
                     className="mt-3 w-full"
-                    disabled={isEnded || isUpcoming || (fs.stock ?? 0) <= 0}
+                    disabled={isEnded || isUpcoming || remainingStock <= 0}
                     loading={flashBuy.isPending}
                     onClick={() => handleBuy(fs.id)}
                   >
                     <ShoppingCart className="h-3.5 w-3.5 mr-1" />
-                    {isEnded ? '已结束' : isUpcoming ? '即将开始' : (fs.stock ?? 0) <= 0 ? '已售罄' : '立即抢购'}
+                    {isEnded ? '已结束' : isUpcoming ? '即将开始' : remainingStock <= 0 ? '已售罄' : '立即抢购'}
                   </Button>
                 </div>
               </div>
