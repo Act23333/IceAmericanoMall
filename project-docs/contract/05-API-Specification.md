@@ -1432,6 +1432,9 @@ Feature: 买家退款资金流（F1）
 **`UserCouponVO`** (用户持有的券；V5.4 按实现修正字段名：`id` / `create_time`):
 
 > **两个 ID 不可混用（2026-10-15 裁决）**：`id` = `user_coupon` 的技术主键（持券实例键）；`coupon_id` = **券模板的业务券号**（`coupon.coupon_id`，`BINARY(16)` UUIDv7 的 **32-hex** 形态），与 `CouponVO.coupon_id` **同型同义、可直接 join**。技术外键（`user_coupon.coupon_id` → `coupon.id`）**禁止出现在任何 VO**（ADR-002/ADR-050：VO 不得暴露技术字段）。
+> **`status` 枚举（2026-10-15 补注，消除前端错位实现）**：`1`=未使用 / `2`=已使用 / `3`=已过期（`UserCouponStatusEnum`，与 `user_coupon.status` 同口径）。**契约曾只给样例 `status:1` 而无枚举表，前端因此整表错位一格按 `0/1/2` 实现**，导致结算页可用券被全部滤光。
+> **`coupon_id` 可空（2026-10-15 补注）**：券模板已删除或券面读模型降级时，`coupon_id` / `name` / `value` / `min_amount` / `discount_type` **均为 `null`**（fail-open：不回落为 0、**不回落为技术主键**），券列表照常返回、不缩行。
+> **`discount_type`（2026-10-15 新增投影）**：`1`=FIXED 满减（`value` 为**分**）/ `2`=PERCENTAGE 折扣（`value` 为**百分比**，`85`=8.5 折）/ `3`=CASH_COUPON 代金券。**前端必须据此区分面额渲染**（折扣券按 `-¥value` 渲染是错的）。`coupon.type` 自 V4.0 起 **DEPRECATED**，**不纳入契约**。
 > 示例值中的 32-hex 为规范形态；可读编码（如 `CPN-001`）在创建端即被 fail-fast 拒绝。
 
 ```json
@@ -1441,6 +1444,7 @@ Feature: 买家退款资金流（F1）
     "name": "618满200减30",
     "value": 3000,
     "min_amount": 20000,
+    "discount_type": 1,
   "status": 1,
   "used_order_no": null,
   "use_time": null,
@@ -1484,6 +1488,7 @@ Feature: 买家退款资金流（F1）
   "end_time": "2026-08-02T12:00:00",
   "status": 1,
   "progress_percent": 35
+  > **口径（2026-10-15 补注）**：`stock` 为秒杀**总**库存，剩余量 = `stock - sold_count`；`progress_percent` 的**分母即 `stock`**（`stock<=0` → 0）。前端不得把 `stock` 当剩余量，售罄判定须用 `stock - sold_count <= 0`。
 }
 ```
 
@@ -2656,8 +2661,8 @@ data: [DONE]
 // CouponVO (模板；V5.4 字段名对齐实现：min_amount/total_qty/issued_qty)
 { "coupon_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name":"618满200减30", "value":3000, "min_amount":20000, "type":1, "seller_id":null, "total_qty":10000, "issued_qty":6523, "start_time":"...", "end_time":"...", "status":1, "discount_type":1, "coupon_category":1, "grant_type":1, "stock_type":1, "grab_type":1, "price_in_cents":3000, "scope_type":1, "scope_values":null, "stack_rule":1, "stack_group":null }
 
-// UserCouponVO (已领取；V5.4 字段名对齐实现：id/create_time；2026-10-15 补券面 name/value/min_amount)
-{ "id":5, "coupon_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name":"618满200减30", "value":3000, "min_amount":20000, "status":1, "used_order_no":null, "use_time":null, "create_time":"..." }
+// UserCouponVO (已领取；V5.4 字段名对齐实现：id/create_time；2026-10-15 补券面 name/value/min_amount/discount_type)
+{ "id":5, "coupon_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name":"618满200减30", "value":3000, "min_amount":20000, "discount_type":1, "status":1, "used_order_no":null, "use_time":null, "create_time":"..." }
 
 // FlashSaleVO
 { "id":1, "sku_id":10, "product_id":3, "product_name":"手工陶瓷茶杯", "product_image":"https://...", "flash_price":9900, "original_price":12800, "stock":100, "sold_count":35, "start_time":"...", "end_time":"...", "status":1, "progress_percent":35 }
