@@ -31,7 +31,7 @@ public class InternalWalletController {
 
     /** 原子扣减余额（余额支付）。 */
     @PostMapping("/deduct")
-    public void deductBalance(@RequestParam Long userId, @RequestParam Integer amount) {
+    public void deductBalance(@RequestParam(name = "user_id") Long userId, @RequestParam Integer amount) {
         walletManager.deductBalance(userId, amount);
     }
 

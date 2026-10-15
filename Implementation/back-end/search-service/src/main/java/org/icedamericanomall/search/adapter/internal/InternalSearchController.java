@@ -107,7 +107,7 @@ public class InternalSearchController {
      * @return 是否处理；ES 未启用返回 false
      */
     @PostMapping("/vector/knowledge/delete")
-    public boolean deleteKnowledgeVector(@RequestParam("knowledgeId") Long knowledgeId) {
+    public boolean deleteKnowledgeVector(@RequestParam(name = "knowledge_id") Long knowledgeId) {
         KnowledgeVectorManager manager = knowledgeVectorManager.getIfAvailable();
         if (manager == null) {
             log.warn("知识库向量删除未启用（ES 关闭），跳过: knowledgeId={}", knowledgeId);
@@ -140,7 +140,7 @@ public class InternalSearchController {
      */
     @GetMapping("/vector/product/similar")
     public List<ProductVectorHitCO> similarProductVector(
-            @RequestParam("productId") Long productId,
+            @RequestParam(name = "product_id") Long productId,
             @RequestParam(value = "size", defaultValue = "5") Integer size) {
         ProductVectorManager manager = productVectorManager.getIfAvailable();
         if (manager == null) {
@@ -185,7 +185,7 @@ public class InternalSearchController {
      */
     @GetMapping("/vector/note/similar")
     public List<NoteVectorHitCO> similarNoteVector(
-            @RequestParam("noteId") Long noteId,
+            @RequestParam(name = "note_id") Long noteId,
             @RequestParam(value = "size", defaultValue = "5") Integer size) {
         NoteVectorManager manager = noteVectorManager.getIfAvailable();
         if (manager == null) {

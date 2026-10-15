@@ -41,8 +41,8 @@ public class NotificationController {
     /** 通知列表（分页，可按类型筛选）。 */
     @GetMapping
     public Result<IPage<InAppMessageVO>> list(@RequestParam(required = false) String type,
-                                              @RequestParam(defaultValue = "1") long pageNum,
-                                              @RequestParam(defaultValue = "10") long pageSize) {
+                                              @RequestParam(name = "page_num", defaultValue = "1") long pageNum,
+                                              @RequestParam(name = "page_size", defaultValue = "10") long pageSize) {
         Long userId = UserContext.getUserId();
         return Result.ok(InAppMessageVO.fromPage(
                 inAppMessageManager.pageInApp(userId, type, pageNum, pageSize)));

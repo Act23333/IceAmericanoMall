@@ -12,6 +12,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -143,5 +146,42 @@ class GlobalExceptionHandlerTest {
         when(violation.getPropertyPath()).thenReturn(propertyPath);
         when(violation.getMessage()).thenReturn(message);
         return violation;
+    }
+
+    // ==================== 缺参 / 类型不符 / 请求体不可读（2026-10-15 补出口）====================
+
+    @Test
+    @DisplayName("缺必填参数 → 400 PARAM_ERROR（回归：此前落兜底 500；ADR-055 实测缺口）")
+    void shouldReturn400_whenMissingServletRequestParameter() {
+        bindRequest(PUBLIC_URI);
+
+        Object response = handler.handleMissingServletRequestParameterException(
+                new MissingServletRequestParameterException("ids", "Long"));
+
+        ResponseEntity<?> entity = (ResponseEntity<?>) response;
+        assertThat(entity.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(((Result<?>) entity.getBody()).getCode()).isEqualTo(ErrorCode.PARAM_ERROR.getCode());
+    }
+
+    @Test
+    @DisplayName("参数类型不匹配 → 400 PARAM_ERROR（回归：此前落兜底 500）")
+    void shouldReturn400_whenMethodArgumentTypeMismatch() {
+        bindRequest(PUBLIC_URI);
+
+        Object response = handler.handleMethodArgumentTypeMismatchException(
+                new MethodArgumentTypeMismatchException("abc", Integer.class, "page", null, null));
+
+        assertThat(((ResponseEntity<?>) response).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("请求体不可读 → 400 PARAM_ERROR（回归：此前落兜底 500）")
+    void shouldReturn400_whenHttpMessageNotReadable() {
+        bindRequest(PUBLIC_URI);
+
+        Object response = handler.handleHttpMessageNotReadableException(
+                new HttpMessageNotReadableException("bad json"));
+
+        assertThat(((ResponseEntity<?>) response).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 }

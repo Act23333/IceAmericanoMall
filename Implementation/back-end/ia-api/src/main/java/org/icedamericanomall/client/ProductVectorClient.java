@@ -46,6 +46,6 @@ public interface ProductVectorClient {
      * @return 命中 id + 相似度得分（按相似度降序）；降级/无向量时为空列表
      */
     @GetMapping("/similar")
-    List<ProductVectorHitCO> similar(@RequestParam("productId") Long productId,
+    List<ProductVectorHitCO> similar(@RequestParam(name = "product_id") Long productId,
                                      @RequestParam(value = "size", defaultValue = "5") int size);
 }

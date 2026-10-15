@@ -33,7 +33,7 @@ public class InternalLogisticsController {
     @PutMapping("/{orderId}/status")
     public void updateStatus(@PathVariable Long orderId,
                              @RequestParam Integer status,
-                             @RequestParam(required = false, defaultValue = "1") Integer packageNo) {
+                             @RequestParam(name = "package_no", required = false, defaultValue = "1") Integer packageNo) {
         logisticsManager.updateStatus(orderId, packageNo, status);
     }
 }

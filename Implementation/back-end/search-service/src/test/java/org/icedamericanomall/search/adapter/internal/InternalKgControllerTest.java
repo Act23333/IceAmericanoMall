@@ -144,7 +144,7 @@ class InternalKgControllerTest {
                 .thenReturn(List.of(new KgNeighborCO("category", 10L, "BELONGS_TO", 0, 1.5F)));
 
         mockMvc.perform(get(NEIGHBORS_URL)
-                        .param("srcType", "product").param("srcId", String.valueOf(SRC_ID)))
+                        .param("src_type", "product").param("src_id", String.valueOf(SRC_ID)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].dstType").value("category"))
                 .andExpect(jsonPath("$[0].dstId").value(10))
@@ -158,7 +158,7 @@ class InternalKgControllerTest {
     @DisplayName("I58 邻居 — ES 关闭（Bean 不存在）→ 空列表且不触达 Manager")
     void shouldReturnEmptyList_whenNeighborsAndEsDisabled() throws Exception {
         mockMvc.perform(get(NEIGHBORS_URL)
-                        .param("srcType", "product").param("srcId", String.valueOf(SRC_ID)))
+                        .param("src_type", "product").param("src_id", String.valueOf(SRC_ID)))
                 .andExpect(status().isOk())
                 .andExpect(result -> assertEquals("[]", result.getResponse().getContentAsString()));
         verifyNoInteractions(kgEdgeManager);
@@ -172,7 +172,7 @@ class InternalKgControllerTest {
                 .thenThrow(new BadRequestException(ErrorCode.PARAM_ERROR, "depth 超出能力边界"));
 
         mockMvc.perform(get(NEIGHBORS_URL)
-                        .param("srcType", "product").param("srcId", String.valueOf(SRC_ID))
+                        .param("src_type", "product").param("src_id", String.valueOf(SRC_ID))
                         .param("depth", "3"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.PARAM_ERROR.getCode()));
@@ -184,7 +184,7 @@ class InternalKgControllerTest {
         when(kgEdgeManagerProvider.getIfAvailable()).thenReturn(kgEdgeManager);
 
         mockMvc.perform(delete(DELETE_URL)
-                        .param("srcType", "product").param("srcId", String.valueOf(SRC_ID)))
+                        .param("src_type", "product").param("src_id", String.valueOf(SRC_ID)))
                 .andExpect(status().isOk());
 
         verify(kgEdgeManager).deleteEdges("product", SRC_ID);
@@ -194,7 +194,7 @@ class InternalKgControllerTest {
     @DisplayName("I59 清边 — ES 关闭（Bean 不存在）→ 空操作且不触达 Manager")
     void shouldNoOp_whenDeleteAndEsDisabled() throws Exception {
         mockMvc.perform(delete(DELETE_URL)
-                        .param("srcType", "product").param("srcId", String.valueOf(SRC_ID)))
+                        .param("src_type", "product").param("src_id", String.valueOf(SRC_ID)))
                 .andExpect(status().isOk());
 
         verifyNoInteractions(kgEdgeManager);

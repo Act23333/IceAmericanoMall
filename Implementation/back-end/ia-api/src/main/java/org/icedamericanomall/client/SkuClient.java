@@ -23,8 +23,9 @@ import java.util.List;
         fallbackFactory = SkuClientFallback.class)
 public interface SkuClient {
 
+    /** 批量查 SKU（线格式查询参数 `sku_ids`，逗号分隔；与 item-service `InternalSkuController` 字面一致）。 */
     @GetMapping("/list/batch")
-    List<SkuCO> getSkuListByIds(@RequestParam("ids") List<Long> skuIds);
+    List<SkuCO> getSkuListByIds(@RequestParam(name = "sku_ids") List<Long> skuIds);
 
     /**
      * Batch deduct stock — used during order creation.

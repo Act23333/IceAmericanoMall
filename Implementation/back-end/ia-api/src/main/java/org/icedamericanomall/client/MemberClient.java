@@ -34,7 +34,7 @@ public interface MemberClient {
      * @return 等级权益；降级时为默认 NORMAL（不折扣、1 倍积分）
      */
     @GetMapping("/level")
-    MemberLevelCO getLevel(@RequestParam("userId") Long userId);
+    MemberLevelCO getLevel(@RequestParam(name = "user_id") Long userId);
 
     /**
      * 订单完成成长值入账（幂等：orderNo 唯一，重复请求返回当前等级，ADR-044）。

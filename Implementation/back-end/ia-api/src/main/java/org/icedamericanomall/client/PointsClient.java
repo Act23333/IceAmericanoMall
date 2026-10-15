@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public interface PointsClient {
 
     @PostMapping("/add")
-    Long addPoints(@RequestParam Long userId, @RequestParam int points,
+    Long addPoints(@RequestParam(name = "user_id") Long userId, @RequestParam int points,
                    @RequestParam(defaultValue = "2") int type,
                    @RequestParam(defaultValue = "下单奖励") String source);
 }

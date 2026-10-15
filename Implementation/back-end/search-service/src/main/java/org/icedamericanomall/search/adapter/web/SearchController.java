@@ -9,6 +9,7 @@ import org.icedamericanomall.search.adapter.response.ProductSearchVO;
 import org.icedamericanomall.search.adapter.response.SearchPageVO;
 import org.icedamericanomall.search.adapter.response.SearchFacetsVO;
 import org.icedamericanomall.search.app.SearchManager;
+import org.icedamericanomall.common.web.QueryModel;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -34,7 +35,7 @@ public class SearchController {
      * V5.10 补齐 {@code brand}/{@code minPrice}/{@code maxPrice}/{@code sort} 过滤透传）。
      */
     @GetMapping("/product")
-    public Result<SearchPageVO<ProductSearchVO>> search(SearchPageReq req) {
+    public Result<SearchPageVO<ProductSearchVO>> search(@QueryModel SearchPageReq req) {
         return Result.ok(converter.toPage(searchManager.search(req.getKeyword(), req.getCategoryId(),
                 req.getBrand(), req.getMinPrice(), req.getMaxPrice(), req.getSort(),
                 req.getPage(), req.getSize())));
@@ -46,7 +47,7 @@ public class SearchController {
      * ES 链实现，DB 链与聚合异常降级为空对象。
      */
     @GetMapping("/facets")
-    public Result<SearchFacetsVO> facets(SearchPageReq req) {
+    public Result<SearchFacetsVO> facets(@QueryModel SearchPageReq req) {
         return Result.ok(converter.toVO(searchManager.getFacets(req.getKeyword(), req.getCategoryId())));
     }
 

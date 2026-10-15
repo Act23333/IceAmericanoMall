@@ -38,13 +38,13 @@ public interface AuthContextClient {
      * 批量角色编码（管理后台列表派生 roleType，避免逐行 N+1）。
      */
     @GetMapping("/roles")
-    Map<Long, Set<String>> rolesByUserIds(@RequestParam("userIds") Collection<Long> userIds);
+    Map<Long, Set<String>> rolesByUserIds(@RequestParam(name = "user_ids") Collection<Long> userIds);
 
     /**
      * 设置用户角色（覆盖式；远端变更后失效该用户权限缓存）。
      */
     @PutMapping("/user/{id}/role")
-    void setUserRole(@PathVariable("id") Long id, @RequestParam("roleType") Integer roleType);
+    void setUserRole(@PathVariable("id") Long id, @RequestParam(name = "role_type") Integer roleType);
 
     /**
      * 用户级令牌吊销：推进 {@code auth:tokenver:{userId}} 版本 + 拆除该用户全部 refresh 会话（ADR-031）。

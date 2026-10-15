@@ -68,7 +68,7 @@ public interface KnowledgeVectorClient {
      * @return 是否成功；降级为 {@code false}
      */
     @PostMapping("/vector/knowledge/delete")
-    Boolean deleteKnowledgeVectors(@RequestParam("knowledgeId") Long knowledgeId);
+    Boolean deleteKnowledgeVectors(@RequestParam(name = "knowledge_id") Long knowledgeId);
 
     /**
      * 向量 kNN 检索（商品 / 知识 chunk 由 {@code index} 区分）。

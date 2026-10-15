@@ -5,6 +5,9 @@ spring:
     allow-bean-definition-overriding: true # 开启bean覆盖
   application:
     name: gateway-service
+  # 线上字段命名统一为 snake_case（ADR 决策：全平台 snake_case；契约 §1.x 一致）
+  jackson:
+    property-naming-strategy: SNAKE_CASE
   data:
     redis:
       client-name: gateway-service
@@ -134,6 +137,16 @@ spring:
               uri: lb://wallet-service
               predicates:
                 - Path=/api/admin/currency/**
+            # 营销管理路由（AD40-42 秒杀 / AD48-50 满减满折 / AD51-53 任务 / AD54-56 拼团，
+            #   须先于 /api/admin/** 声明——ADR-035/036 先例）
+            #   未声明时会被兜底路由 /api/admin/** 送到 user-service 而 404（实测 12 个端点不可达）
+            - id: marketing-admin-routes
+              uri: lb://marketing-service
+              predicates:
+                - Path=/api/admin/flash/**
+                - Path=/api/admin/promotion/**
+                - Path=/api/admin/task/**
+                - Path=/api/admin/group-buy/**
             # 管理员路由
             - id: admin-user-routes
               uri: lb://user-service

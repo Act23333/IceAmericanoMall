@@ -16,6 +16,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.validation.BindException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -169,6 +172,48 @@ public class GlobalExceptionHandler {
                         .collect(Collectors.joining("；"));
         BadRequestException badRequestException = new BadRequestException(ErrorCode.PARAM_ERROR, msg, e);
         printLog(badRequestException, "方法参数校验异常: url={}, httpStatus={}, bizCode={}, msg={}");
+        return processResponse(badRequestException);
+    }
+
+    /**
+     * 处理「必填请求参数缺失」（{@code @RequestParam} 未传且非可选）。
+     *
+     * <p>此前无专属出口 → 落 {@link #handleException} 兜底为 500 {@code INTERNAL_ERROR}，
+     * 与契约 §1.3「全平台方法参数校验失败统一映射为 400 {@code PARAM_ERROR(1101)}」冲突。
+     * 实测缺口：{@code GET /internal/coupon/batch} 不带 {@code ids} 时返回 500（ADR-055 登记）。
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public Object handleMissingServletRequestParameterException(MissingServletRequestParameterException e) {
+        BadRequestException badRequestException = new BadRequestException(
+                ErrorCode.PARAM_ERROR, "缺少必填参数: " + e.getParameterName(), e);
+        printLog(badRequestException, "请求参数缺失: url={}, httpStatus={}, bizCode={}, msg={}");
+        return processResponse(badRequestException);
+    }
+
+    /**
+     * 处理「参数类型不匹配」（如 {@code ?page=abc}、路径变量非数字）→ 400 {@code PARAM_ERROR}。
+     *
+     * <p>此前同样落兜底 500；类型错误属调用方输入错误，语义上是参数校验失败而非服务异常。
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public Object handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException e) {
+        BadRequestException badRequestException = new BadRequestException(
+                ErrorCode.PARAM_ERROR,
+                "参数类型不匹配: " + e.getName() + "=" + e.getValue(), e);
+        printLog(badRequestException, "请求参数类型异常: url={}, httpStatus={}, bizCode={}, msg={}");
+        return processResponse(badRequestException);
+    }
+
+    /**
+     * 处理「请求体不可读」（JSON 语法错误 / 字段类型不符 / body 为空）→ 400 {@code PARAM_ERROR}。
+     *
+     * <p>此前落兜底 500；报文格式错误属调用方输入错误。
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public Object handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
+        BadRequestException badRequestException = new BadRequestException(
+                ErrorCode.PARAM_ERROR, "请求体格式错误或不可读", e);
+        printLog(badRequestException, "请求体解析异常: url={}, httpStatus={}, bizCode={}, msg={}");
         return processResponse(badRequestException);
     }
 

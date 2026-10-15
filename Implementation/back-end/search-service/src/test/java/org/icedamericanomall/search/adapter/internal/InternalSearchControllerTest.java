@@ -151,7 +151,7 @@ class InternalSearchControllerTest {
         when(productVectorManager.similar(PRODUCT_ID, 5)).thenReturn(List.of(
                 hitCO(100L, 0.9), hitCO(200L, 0.8)));
 
-        mockMvc.perform(get(SIMILAR_URL).param("productId", String.valueOf(PRODUCT_ID)).param("size", "5"))
+        mockMvc.perform(get(SIMILAR_URL).param("product_id", String.valueOf(PRODUCT_ID)).param("size", "5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].productId").value(100))
                 .andExpect(jsonPath("$[0].score").value(0.9))
@@ -163,7 +163,7 @@ class InternalSearchControllerTest {
     @Test
     @DisplayName("I48 相似检索 — ES 关闭（Bean 不存在）→ 空列表且不触达 Manager")
     void shouldReturnEmptyList_whenSimilarAndVectorUnavailable() throws Exception {
-        mockMvc.perform(get(SIMILAR_URL).param("productId", String.valueOf(PRODUCT_ID)))
+        mockMvc.perform(get(SIMILAR_URL).param("product_id", String.valueOf(PRODUCT_ID)))
                 .andExpect(status().isOk())
                 .andExpect(result -> assertEquals("[]",
                         result.getResponse().getContentAsString()));
@@ -243,7 +243,7 @@ class InternalSearchControllerTest {
         when(noteVectorManager.similar(NOTE_ID, 5)).thenReturn(List.of(
                 noteHitCO(100L, 0.9), noteHitCO(200L, 0.8)));
 
-        mockMvc.perform(get(NOTE_SIMILAR_URL).param("noteId", String.valueOf(NOTE_ID)).param("size", "5"))
+        mockMvc.perform(get(NOTE_SIMILAR_URL).param("note_id", String.valueOf(NOTE_ID)).param("size", "5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].noteId").value(100))
                 .andExpect(jsonPath("$[0].score").value(0.9))
@@ -255,7 +255,7 @@ class InternalSearchControllerTest {
     @Test
     @DisplayName("I51 相似笔记 — ES 关闭（Bean 不存在）→ 空列表且不触达 Manager")
     void shouldReturnEmptyList_whenNoteSimilarAndVectorUnavailable() throws Exception {
-        mockMvc.perform(get(NOTE_SIMILAR_URL).param("noteId", String.valueOf(NOTE_ID)))
+        mockMvc.perform(get(NOTE_SIMILAR_URL).param("note_id", String.valueOf(NOTE_ID)))
                 .andExpect(status().isOk())
                 .andExpect(result -> assertEquals("[]",
                         result.getResponse().getContentAsString()));

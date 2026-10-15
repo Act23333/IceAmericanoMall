@@ -27,17 +27,17 @@ public interface CartClient {
      * Get selected cart items for order creation.
      */
     @GetMapping("/selected")
-    List<CartItemCO> getSelectedItems(@RequestParam Long userId);
+    List<CartItemCO> getSelectedItems(@RequestParam(name = "user_id") Long userId);
 
     /**
      * Clear cart after successful order.
      */
     @DeleteMapping("/clear")
-    void clearCart(@RequestParam Long userId);
+    void clearCart(@RequestParam(name = "user_id") Long userId);
 
     /**
      * V4.0: Delete specific cart items by their IDs (only ordered items, not entire cart).
      */
     @DeleteMapping("/items")
-    void deleteByIds(@RequestParam Long userId, @RequestBody List<Long> cartItemIds);
+    void deleteByIds(@RequestParam(name = "user_id") Long userId, @RequestBody List<Long> cartItemIds);
 }

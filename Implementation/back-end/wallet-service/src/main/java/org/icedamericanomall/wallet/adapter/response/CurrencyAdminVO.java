@@ -1,6 +1,5 @@
 package org.icedamericanomall.wallet.adapter.response;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -14,7 +13,7 @@ import java.time.LocalDateTime;
  *
  * <p>含 {@code source}/{@code effectTime}/{@code updaterId} 留痕字段，供汇率 stale 告警
  * 与人工兜底；不含技术主键 id 与 version/cipher/hash 技术字段（09-Constraints VO 约束）。
- * 多词字段钉 camelCase（契约口径）。
+ * 多词字段走**全局 snake_case**（契约口径）。
  */
 @Data
 @NoArgsConstructor
@@ -40,18 +39,15 @@ public class CurrencyAdminVO implements Serializable {
     private Integer status;
 
     /** 定点整数汇率：每 1 元人民币兑换目标币主单位数 × 10⁶（未配置为 null）。 */
-    @JsonProperty("rateScaled")
     private Long rateScaled;
 
     /** 汇率来源：API（定时拉取）/ MANUAL（人工修正）（未配置为 null）。 */
     private String source;
 
     /** 汇率生效时间（上次成功更新时点；未配置为 null）。 */
-    @JsonProperty("effectTime")
     private LocalDateTime effectTime;
 
     /** 修正人（MANUAL 时记录；API 拉取为 null）。 */
-    @JsonProperty("updaterId")
     private Long updaterId;
 
     /** 备注。 */

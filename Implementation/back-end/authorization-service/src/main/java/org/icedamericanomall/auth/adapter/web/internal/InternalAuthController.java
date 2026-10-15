@@ -25,7 +25,7 @@ import java.util.Set;
  * <p>端点清单（ADR-018：RBAC 归属授权域后新增）：
  * <pre>
  * GET  /internal/auth/context/{userId}      用户角色+权限（聚合并回填网关权限缓存）
- * GET  /internal/auth/roles?userIds=        批量角色编码（管理后台列表派生 roleType）
+ * GET  /internal/auth/roles?user_ids=       批量角色编码（管理后台列表派生 role_type）
  * PUT  /internal/auth/user/{id}/role        设置用户角色（覆盖式，变更后失效权限缓存）
  * POST /internal/auth/token-version/revoke  用户级令牌吊销（tokenVer INCR + 拆除全部 refresh 会话，ADR-031）
  * </pre>
@@ -50,13 +50,13 @@ public class InternalAuthController {
 
     /** 批量角色编码（管理后台列表派生 roleType）。 */
     @GetMapping("/roles")
-    public Map<Long, Set<String>> rolesByUserIds(@RequestParam("userIds") Collection<Long> userIds) {
+    public Map<Long, Set<String>> rolesByUserIds(@RequestParam(name = "user_ids") Collection<Long> userIds) {
         return securityContextManager.rolesByUserIds(userIds);
     }
 
     /** 设置用户角色（覆盖式；变更后失效该用户权限缓存）。 */
     @PutMapping("/user/{id}/role")
-    public void setUserRole(@PathVariable Long id, @RequestParam Integer roleType) {
+    public void setUserRole(@PathVariable Long id, @RequestParam(name = "role_type") Integer roleType) {
         roleManageManager.setUserRole(id, roleType);
     }
 

@@ -36,14 +36,14 @@ public interface KgClient {
 
     /** 图邻居查询（≤2 跳；降级返回空列表）。 */
     @GetMapping("/neighbors")
-    List<KgNeighborCO> neighbors(@RequestParam("srcType") String srcType,
-                                 @RequestParam("srcId") Long srcId,
-                                 @RequestParam(value = "relType", required = false) String relType,
-                                 @RequestParam(value = "dstType", required = false) String dstType,
+    List<KgNeighborCO> neighbors(@RequestParam(name = "src_type") String srcType,
+                                 @RequestParam(name = "src_id") Long srcId,
+                                 @RequestParam(name = "rel_type", required = false) String relType,
+                                 @RequestParam(name = "dst_type", required = false) String dstType,
                                  @RequestParam(value = "depth", defaultValue = "1") Integer depth,
                                  @RequestParam(value = "status", required = false) Integer status);
 
     /** 按 src 清边（下架清理 / 重建前置）。 */
     @DeleteMapping("/edges")
-    void deleteEdges(@RequestParam("srcType") String srcType, @RequestParam("srcId") Long srcId);
+    void deleteEdges(@RequestParam(name = "src_type") String srcType, @RequestParam(name = "src_id") Long srcId);
 }

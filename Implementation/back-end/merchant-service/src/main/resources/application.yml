@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: merchant-service
+  # 线上字段命名统一为 snake_case（ADR 决策：全平台 snake_case；契约 §1.x 一致）
+  jackson:
+    property-naming-strategy: SNAKE_CASE
   # 档案落库：seller（商家身份 + 生命周期）+ shop（店铺档案，1 商家 : N 店铺；ADR-019 / V5.4）
   datasource:
     url: jdbc:mysql://${ia.db.host:192.168.10.128}:3306/icedamericano_mall?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai

@@ -11,13 +11,13 @@ import org.springframework.web.bind.annotation.*;
 /**
  * 关注 / 取消关注店铺（京东标准 — 店铺关注；V5.4 起以 shopId 记账，ADR-019）。
  *
- * <p>参数二选一：新接入方传 {@code shopId}（请求参数），遗留前端仍可走
+ * <p>参数二选一：新接入方传 {@code shop_id}（请求参数），遗留前端仍可走
  * {@code /follow/{sellerId}} 路径（解析为该商家默认店铺）。
  * Controller 仅做参数校验 + Result 包装，Redis 与解析逻辑均在
  * {@link StoreFollowManager} / {@code ShopManager}。
  *
  * <pre>
- * POST   /api/shop/follow?shopId=1          新：按店铺关注
+ * POST   /api/shop/follow?shop_id=1          新：按店铺关注
  * POST   /api/shop/follow/{sellerId}        遗留：按商家 user_id 关注默认店铺
  * DELETE 同上（取消关注）
  * GET    /api/shop/follow/status|{sellerId}/status
@@ -35,21 +35,21 @@ public class StoreFollowController {
 
     /** 关注店铺（shopId 口径）。 */
     @PostMapping("/follow")
-    public Result<Boolean> followByShopId(@RequestParam Long shopId) {
+    public Result<Boolean> followByShopId(@RequestParam(name = "shop_id") Long shopId) {
         storeFollowManager.follow(requireUserId(), shopId, null);
         return Result.ok(true);
     }
 
     /** 取消关注（shopId 口径）。 */
     @DeleteMapping("/follow")
-    public Result<Boolean> unfollowByShopId(@RequestParam Long shopId) {
+    public Result<Boolean> unfollowByShopId(@RequestParam(name = "shop_id") Long shopId) {
         storeFollowManager.unfollow(requireUserId(), shopId, null);
         return Result.ok(false);
     }
 
     /** 查询当前用户是否已关注（shopId 口径）。 */
     @GetMapping("/follow/status")
-    public Result<Boolean> isFollowingByShopId(@RequestParam Long shopId) {
+    public Result<Boolean> isFollowingByShopId(@RequestParam(name = "shop_id") Long shopId) {
         Long userId = UserContext.getUserId();
         if (userId == null) {
             return Result.ok(false);
@@ -59,7 +59,7 @@ public class StoreFollowController {
 
     /** 店铺粉丝数（shopId 口径）。 */
     @GetMapping("/follow/count")
-    public Result<Long> followerCountByShopId(@RequestParam Long shopId) {
+    public Result<Long> followerCountByShopId(@RequestParam(name = "shop_id") Long shopId) {
         return Result.ok(storeFollowManager.followerCount(shopId, null));
     }
 
@@ -68,7 +68,7 @@ public class StoreFollowController {
     /**
      * 关注店铺（遗留 sellerId 口径）。
      *
-     * @deprecated 改用 {@code POST /api/shop/follow?shopId=}。
+     * @deprecated 改用 {@code POST /api/shop/follow?shop_id=}。
      */
     @Deprecated
     @PostMapping("/follow/{sellerId}")
@@ -80,7 +80,7 @@ public class StoreFollowController {
     /**
      * 取消关注（遗留 sellerId 口径）。
      *
-     * @deprecated 改用 {@code DELETE /api/shop/follow?shopId=}。
+     * @deprecated 改用 {@code DELETE /api/shop/follow?shop_id=}。
      */
     @Deprecated
     @DeleteMapping("/follow/{sellerId}")
@@ -92,7 +92,7 @@ public class StoreFollowController {
     /**
      * 关注状态（遗留 sellerId 口径）。
      *
-     * @deprecated 改用 {@code GET /api/shop/follow/status?shopId=}。
+     * @deprecated 改用 {@code GET /api/shop/follow/status?shop_id=}。
      */
     @Deprecated
     @GetMapping("/follow/{sellerId}/status")
@@ -107,7 +107,7 @@ public class StoreFollowController {
     /**
      * 店铺粉丝数（遗留 sellerId 口径）。
      *
-     * @deprecated 改用 {@code GET /api/shop/follow/count?shopId=}。
+     * @deprecated 改用 {@code GET /api/shop/follow/count?shop_id=}。
      */
     @Deprecated
     @GetMapping("/follow/{sellerId}/count")

@@ -59,10 +59,10 @@ public class InternalKgController {
      * @return 邻居列表；未启用/无命中返回空列表
      */
     @GetMapping("/neighbors")
-    public List<KgNeighborCO> neighbors(@RequestParam("srcType") String srcType,
-                                        @RequestParam("srcId") Long srcId,
-                                        @RequestParam(value = "relType", required = false) String relType,
-                                        @RequestParam(value = "dstType", required = false) String dstType,
+    public List<KgNeighborCO> neighbors(@RequestParam(name = "src_type") String srcType,
+                                        @RequestParam(name = "src_id") Long srcId,
+                                        @RequestParam(name = "rel_type", required = false) String relType,
+                                        @RequestParam(name = "dst_type", required = false) String dstType,
                                         @RequestParam(value = "depth", defaultValue = "1") Integer depth,
                                         @RequestParam(value = "status", required = false) Integer status) {
         KgEdgeManager manager = kgEdgeManager.getIfAvailable();
@@ -77,8 +77,8 @@ public class InternalKgController {
      * 按 src 清边（I59，下架清理 / 重建前置）。
      */
     @DeleteMapping("/edges")
-    public void deleteEdges(@RequestParam("srcType") String srcType,
-                            @RequestParam("srcId") Long srcId) {
+    public void deleteEdges(@RequestParam(name = "src_type") String srcType,
+                            @RequestParam(name = "src_id") Long srcId) {
         KgEdgeManager manager = kgEdgeManager.getIfAvailable();
         if (manager == null) {
             log.warn("图边清理未启用（ES 关闭），跳过: srcType={}, srcId={}", srcType, srcId);

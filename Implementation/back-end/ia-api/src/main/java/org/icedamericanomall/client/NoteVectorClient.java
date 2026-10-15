@@ -42,6 +42,6 @@ public interface NoteVectorClient {
      * @return 命中 id + 相似度得分（降序）；降级/无向量时为空列表
      */
     @GetMapping("/similar")
-    List<NoteVectorHitCO> similar(@RequestParam("noteId") Long noteId,
+    List<NoteVectorHitCO> similar(@RequestParam(name = "note_id") Long noteId,
                                   @RequestParam(value = "size", defaultValue = "5") int size);
 }

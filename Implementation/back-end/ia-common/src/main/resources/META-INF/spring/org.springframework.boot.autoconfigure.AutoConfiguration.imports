@@ -21,3 +21,5 @@ org.icedamericanomall.common.config.DistributedLockConfig
 # 审计字段填充（V5.5 归并：cart/item/logistics/merchant/pay/search/trade 的 MyMetaObjectHandler 副本收敛到此处；
 # user-service 因多填 registerTime 保留自有实现，靠 @ConditionalOnMissingBean 自动退避）
 org.icedamericanomall.common.config.MyMetaObjectHandlerAutoConfiguration
+# 查询参数对象绑定（ADR-056 第③类载体：POJO 查询绑定走 Jackson，命名策略只此一份）
+org.icedamericanomall.common.web.QueryModelWebConfig
