@@ -59,14 +59,15 @@ public interface ItemSearchClient {
     /**
      * 单商品检索条目；不存在返回 {@code null}。
      *
-     * <p><b>入参既接受技术键也接受业务键</b>（ADR-061 §决策 2）：纯数字入参按
-     * {@code spu.id} 技术键查；32-hex 入参按 {@code spu.spu_id} 业务键查（走唯一索引，等价性能）。
+     * <p><b>入参单形态（ADR-062 §决策 1/4，契约 §1.9③）</b>：{@code {spuId}} 只接受
+     * <b>SPU 业务键</b> 32-hex（{@code spu.spu_id}，走唯一索引 {@code uk_spu_id}），
+     * 原「纯数字 = 技术键」的双形态分支<b>已删除</b>；形态非法 → 400 {@code PARAM_ERROR}。
      * 同一条查询顺带带回 {@code publishTime}，故商品向量摄取（I47）的
      * 「业务键 → 技术键」解析与 publishTime 回填合并为<b>一次</b>往返。
      *
-     * <p>本端点<b>不新增路径</b>：业务键入参沿用既有 {@code /detail/{id}} 路由
-     * （端点对账必须保持 287/0/43，新增路径属契约外变更）。
+     * <p>本端点<b>不新增路径</b>：沿用既有 {@code /detail/{spuId}} 路由，仅路径变量改名
+     * （ADR-062 §决策 2 表 A #22；端点对账保持 287/0/43，新增路径属契约外变更）。
      */
-    @GetMapping("/detail/{id}")
-    SpuSearchItemCO detail(@PathVariable("id") String id);
+    @GetMapping("/detail/{spuId}")
+    SpuSearchItemCO detail(@PathVariable("spuId") String spuId);
 }

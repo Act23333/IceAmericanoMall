@@ -87,7 +87,7 @@ class CacheBodyGlobalFilterTest {
     @DisplayName("非缓存方法 — GET 请求体不缓存、直接分发")
     void shouldSkipCaching_whenGetRequest() {
         MockServerWebExchange exchange = MockServerWebExchange.from(
-                MockServerHttpRequest.get("/api/item/product/1"));
+                MockServerHttpRequest.get("/api/item/spu/1"));
 
         new CacheBodyGlobalFilter(true, 1024).filter(exchange, chain).block();
 

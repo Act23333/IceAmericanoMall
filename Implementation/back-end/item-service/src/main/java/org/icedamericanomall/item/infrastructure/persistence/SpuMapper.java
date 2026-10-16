@@ -86,19 +86,27 @@ public interface SpuMapper extends BaseMapper<SpuPO> {
             """)
     IPage<SpuPO> selectExportPage(IPage<SpuPO> page);
 
-    /** 单商品检索卡片（publishTime 回填用；含最低价计算列）。 */
-    @Select("SELECT p.*, COALESCE((SELECT MIN(s.price) FROM sku s WHERE s.spu_id = p.id AND s.status = 1), 0) AS min_price "
-            + "FROM spu p WHERE p.id = #{id}")
-    SpuPO selectSearchCardById(@Param("id") Long id);
-
     /**
      * 单商品检索卡片 —— 按 <b>业务键</b>（{@code spu.spu_id} BINARY(16)）查询，供线格式
-     * 入参（I47 摄取幂等键 / I48 相似检索锚点）解析技术键（ADR-061 §决策 2：入参收业务键、
-     * 同库内部保持技术键）。参数传 {@code byte[]} 走 {@code spu_id} 唯一索引，与按技术键等价。
+     * 入参（I65 详情 / I47 摄取幂等键 / I48 相似检索锚点）解析技术键（ADR-062 §决策 3：
+     * 入参收业务键、同库内部保持技术键）。参数传 {@code byte[]} 走 {@code spu_id} 唯一索引。
+     *
+     * <p><b>注</b>：原按技术键查询的 {@code selectSearchCardById} 已随 I65「业务键单形态」
+     * 退役（ADR-062 §决策 4/§守卫 2：技术键查询不再留在检索出口）。
      */
     @Select("SELECT p.*, COALESCE((SELECT MIN(s.price) FROM sku s WHERE s.spu_id = p.id AND s.status = 1), 0) AS min_price "
             + "FROM spu p WHERE p.spu_id = #{spuId}")
     SpuPO selectSearchCardByBusinessId(@Param("spuId") byte[] spuId);
+
+    /**
+     * 按 <b>SPU 业务键</b>载入整行（ADR-062 §决策 3：外部寻址一律业务键，解析只许在服务内）。
+     *
+     * <p>与 {@link #selectSearchCardByBusinessId} 的差别：本方法供「实体详情」类用例取完整聚合
+     * （不附加最低价计算列），走 {@code uk_spu_id} 唯一索引；入参为 {@code byte[]}
+     * （{@code ByteArrayTypeHandler}），避免 String 对 {@code BINARY(16)} 列静默查空（ADR-050）。
+     */
+    @Select("SELECT p.* FROM spu p WHERE p.spu_id = #{spuId}")
+    SpuPO selectByBusinessId(@Param("spuId") byte[] spuId);
 
     /**
      * 业务键批量解析：{@code spu.spu_id}（BINARY(16)）→ 技术主键。

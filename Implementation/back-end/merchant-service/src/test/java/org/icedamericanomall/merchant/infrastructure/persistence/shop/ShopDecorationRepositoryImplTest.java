@@ -37,11 +37,17 @@ class ShopDecorationRepositoryImplTest {
     @InjectMocks
     private ShopDecorationRepositoryImpl shopDecorationRepository;
 
+    /** 技术键 → SPU 业务键（32-hex；推荐位列收口后的唯一合法元素形态）。 */
+    private static String spuKey(long technicalId) {
+        return String.format("%032x", technicalId);
+    }
+
     @Test
     @DisplayName("save — 落库为 upsert 单语句：JSON 列按数组序列化（首次插入路径）")
     void shouldUpsertWithJsonColumns_whenFirstSave() {
         ShopDecoration decoration = ShopDecoration.of(5L, "欢迎光临",
-                List.of("https://a.png", "https://b.png"), List.of(11L, 22L, 11L));
+                List.of("https://a.png", "https://b.png"),
+                List.of(spuKey(11), spuKey(22), spuKey(11)));
 
         shopDecorationRepository.save(decoration);
 
@@ -51,7 +57,8 @@ class ShopDecorationRepositoryImplTest {
         assertEquals(5L, saved.getShopId());
         assertEquals("欢迎光临", saved.getAnnouncement());
         assertEquals("[\"https://a.png\",\"https://b.png\"]", saved.getBanners());
-        assertEquals("[11,22]", saved.getHotSpuIds(), "领域层已去重，序列化不再重复");
+        assertEquals("[\"" + spuKey(11) + "\",\"" + spuKey(22) + "\"]", saved.getHotSpuIds(),
+                "领域层已去重，序列化不再重复；JSON 元素为业务键字符串（不是数字）");
     }
 
     @Test
@@ -59,14 +66,14 @@ class ShopDecorationRepositoryImplTest {
     void shouldUpsertAgainWithLatestValues_whenSavedTwice() {
         shopDecorationRepository.save(ShopDecoration.of(5L, "第一版", List.of("https://old.png"), null));
         shopDecorationRepository.save(ShopDecoration.of(5L, "第二版",
-                List.of("https://new1.png", "https://new2.png"), List.of(9L)));
+                List.of("https://new1.png", "https://new2.png"), List.of(spuKey(9))));
 
         ArgumentCaptor<ShopDecorationPO> captor = ArgumentCaptor.forClass(ShopDecorationPO.class);
         verify(shopDecorationMapper, times(2)).upsert(captor.capture());
         ShopDecorationPO second = captor.getAllValues().get(1);
         assertEquals("第二版", second.getAnnouncement());
         assertEquals("[\"https://new1.png\",\"https://new2.png\"]", second.getBanners());
-        assertEquals("[9]", second.getHotSpuIds());
+        assertEquals("[\"" + spuKey(9) + "\"]", second.getHotSpuIds());
     }
 
     @Test
@@ -87,7 +94,7 @@ class ShopDecorationRepositoryImplTest {
         dataObject.setShopId(5L);
         dataObject.setAnnouncement("欢迎光临");
         dataObject.setBanners("[\"https://a.png\",\"https://b.png\"]");
-        dataObject.setHotSpuIds("[11,22]");
+        dataObject.setHotSpuIds("[\"" + spuKey(11) + "\",\"" + spuKey(22) + "\"]");
         when(shopDecorationMapper.selectOne(any())).thenReturn(dataObject);
 
         Optional<ShopDecoration> found = shopDecorationRepository.findByShopId(5L);
@@ -95,7 +102,7 @@ class ShopDecorationRepositoryImplTest {
         assertTrue(found.isPresent());
         assertEquals("欢迎光临", found.get().getAnnouncement());
         assertEquals(List.of("https://a.png", "https://b.png"), found.get().getBanners());
-        assertEquals(List.of(11L, 22L), found.get().getHotSpuIds());
+        assertEquals(List.of(spuKey(11), spuKey(22)), found.get().getHotSpuIds());
     }
 
     @Test

@@ -57,29 +57,21 @@ public class ItemSearchQueryManager {
     /**
      * 单商品检索卡片；不存在返回 {@code null}。
      *
-     * <p><b>入参既接受技术键也接受业务键</b>（ADR-061 §决策 2 / ADR-050）：
-     * 纯数字入参按 {@code spu.id}（技术键）查；32-hex 入参按 {@code spu.spu_id}（业务键 BINARY(16)）
-     * 查 —— 后者由 search-service 在商品向量摄取（I47 幂等键为业务键）与相似检索（I48 锚点）
-     * 时使用，两条路径都走唯一索引，性能等价；同一条查询顺带带出 {@code publishTime}。
+     * <p><b>入参单形态（ADR-062 §决策 1/4，契约 §1.9③）</b>：只接受 <b>SPU 业务键</b>
+     * （32-hex，{@code spu.spu_id} BINARY(16)，走唯一索引 {@code uk_spu_id}）。
+     * 原「纯数字 = 技术键 / 32-hex = 业务键」的双形态分支已删除 —— 双形态是绕开
+     * 「不新增端点」门禁的垫片，代价是永久留下一个接受技术键的入口；形态非法由适配层
+     * 以 400 {@code PARAM_ERROR} fail-fast 拦下（不再静默落 null）。
      *
-     * <p>非法/不存在的入参一律返回 {@code null}（调用方按「商品不存在」处理，不放大成 500）。
+     * <p>不存在（业务键合法但库中无此商品）仍返回 {@code null}：调用方按「商品不存在」
+     * 处理（fail-open），与既有语义一致。
      */
-    public SpuSearchItemCO detail(String id) {
-        if (id == null || id.isBlank()) {
+    public SpuSearchItemCO detail(String spuId) {
+        if (spuId == null || spuId.isBlank()) {
             return null;
         }
-        String trimmed = id.trim();
-        if (isTechnicalKey(trimmed)) {
-            SpuSearchCard card = spuRepository.findSearchCardById(Long.valueOf(trimmed));
-            return card == null ? null : toItemCO(card);
-        }
-        SpuSearchCard card = spuRepository.findSearchCardByBusinessId(trimmed);
+        SpuSearchCard card = spuRepository.findSearchCardByBusinessId(spuId);
         return card == null ? null : toItemCO(card);
-    }
-
-    /** 纯数字（≤19 位）= 技术键；32-hex 业务键含字母或长度不符，一律走业务键分支。 */
-    private static boolean isTechnicalKey(String id) {
-        return id.length() <= 19 && id.chars().allMatch(Character::isDigit);
     }
 
     private static SpuSearchCriteria toCriteria(SpuSearchQueryCO query) {

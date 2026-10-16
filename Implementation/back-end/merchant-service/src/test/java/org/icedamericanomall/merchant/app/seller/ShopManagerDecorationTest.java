@@ -81,7 +81,12 @@ class ShopManagerDecorationTest {
         when(shopRepository.findById(shopId)).thenReturn(Optional.of(shop(shopId, ownerMerchantId, ShopStatusEnum.NORMAL)));
     }
 
-    private ShopDecorationReq req(String announcement, List<String> banners, List<Long> hotSpuIds) {
+    /** 技术键 → SPU 业务键（32-hex；写读同型同义的唯一合法元素形态，ADR-062 §决策 3）。 */
+    private static String spuKey(long technicalId) {
+        return String.format("%032x", technicalId);
+    }
+
+    private ShopDecorationReq req(String announcement, List<String> banners, List<String> hotSpuIds) {
         ShopDecorationReq req = new ShopDecorationReq();
         req.setAnnouncement(announcement);
         req.setBanners(banners);
@@ -95,14 +100,14 @@ class ShopManagerDecorationTest {
         givenOwnedShop(100L, 5L, 1L);
 
         shopManager.saveDecoration(100L, 5L,
-                req("  欢迎光临  ", List.of("https://a.png"), List.of(3L, 1L, 3L)));
+                req("  欢迎光临  ", List.of("https://a.png"), List.of(spuKey(3), spuKey(1), spuKey(3))));
 
         ArgumentCaptor<ShopDecoration> captor = ArgumentCaptor.forClass(ShopDecoration.class);
         verify(shopDecorationRepository).save(captor.capture());
         assertEquals(5L, captor.getValue().getShopId());
         assertEquals("欢迎光临", captor.getValue().getAnnouncement());
         assertEquals(List.of("https://a.png"), captor.getValue().getBanners());
-        assertEquals(List.of(3L, 1L), captor.getValue().getHotSpuIds());
+        assertEquals(List.of(spuKey(3), spuKey(1)), captor.getValue().getHotSpuIds());
     }
 
     @Test
@@ -164,13 +169,13 @@ class ShopManagerDecorationTest {
     void shouldReturnDecorationVO_whenDecorated() {
         givenOwnedShop(100L, 5L, 1L);
         when(shopDecorationRepository.findByShopId(5L)).thenReturn(Optional.of(ShopDecoration.of(5L,
-                "欢迎光临", List.of("https://a.png"), List.of(11L))));
+                "欢迎光临", List.of("https://a.png"), List.of(spuKey(11)))));
 
         ShopDecorationVO vo = shopManager.getDecoration(100L, 5L);
 
         assertEquals("欢迎光临", vo.getAnnouncement());
         assertEquals(List.of("https://a.png"), vo.getBanners());
-        assertEquals(List.of(11L), vo.getHotSpuIds());
+        assertEquals(List.of(spuKey(11)), vo.getHotSpuIds());
     }
 
     @Test
@@ -190,13 +195,13 @@ class ShopManagerDecorationTest {
         when(shopRepository.findById(5L)).thenReturn(Optional.of(shop(5L, 1L, ShopStatusEnum.NORMAL)));
         when(merchantRepository.findById(1L)).thenReturn(Optional.of(merchant(1L, 100L)));
         when(shopDecorationRepository.findByShopId(5L)).thenReturn(Optional.of(ShopDecoration.of(5L,
-                "欢迎光临", List.of("https://a.png"), List.of(11L))));
+                "欢迎光临", List.of("https://a.png"), List.of(spuKey(11)))));
 
         ShopVO vo = shopManager.getVisibleShop(5L);
 
         assertEquals("欢迎光临", vo.getDecoration().getAnnouncement());
         assertEquals(List.of("https://a.png"), vo.getDecoration().getBanners());
-        assertEquals(List.of(11L), vo.getDecoration().getHotSpuIds());
+        assertEquals(List.of(spuKey(11)), vo.getDecoration().getHotSpuIds());
     }
 
     @Test

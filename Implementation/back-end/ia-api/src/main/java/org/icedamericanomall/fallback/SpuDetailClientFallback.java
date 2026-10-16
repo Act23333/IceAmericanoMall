@@ -37,9 +37,9 @@ public class SpuDetailClientFallback implements FallbackFactory<SpuDetailClient>
         return new SpuDetailClient() {
 
             @Override
-            public Result<SpuDetailCO> getSpuDetail(Long id) {
+            public Result<SpuDetailCO> getSpuDetail(String spuId) {
                 log.error("商品详情服务降级：查询失败（禁止降级为 data=null，AI 工具会误判为「商品不存在」）"
-                        + " spuId={}", id, cause);
+                        + " spuId={}", spuId, cause);
                 throw new BizException(ErrorCode.SYSTEM_BUSY, "商品服务暂不可用，请稍后重试");
             }
         };

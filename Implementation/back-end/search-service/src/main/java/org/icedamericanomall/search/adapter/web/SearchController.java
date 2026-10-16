@@ -33,8 +33,11 @@ public class SearchController {
     /**
      * 关键词搜索（SE1）— query 参数由 {@link SearchPageReq} 属性绑定（参数名不变；
      * V5.10 补齐 {@code brand}/{@code minPrice}/{@code maxPrice}/{@code sort} 过滤透传）。
+     *
+     * <p>资源段口径（ADR-062 §决策 2 表 A #18）：检索对象是 SPU，故路径段为 {@code /spu}
+     * （原 {@code /product}），与商品域表 {@code spu}/聚合 {@code Spu}/业务键 {@code spu_id} 同词。
      */
-    @GetMapping("/product")
+    @GetMapping("/spu")
     public Result<SearchPageVO<SpuSearchVO>> search(@QueryModel SearchPageReq req) {
         return Result.ok(converter.toPage(searchManager.search(req.getKeyword(), req.getCategoryId(),
                 req.getBrand(), req.getMinPrice(), req.getMaxPrice(), req.getSort(),

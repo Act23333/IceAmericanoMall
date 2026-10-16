@@ -1168,7 +1168,7 @@ CREATE TABLE `shop_decoration` (
     `shop_id`         BIGINT       NOT NULL COMMENT '店铺 id（shop.id，1:1）',
     `announcement`    VARCHAR(200) DEFAULT NULL COMMENT '店铺公告',
     `banners`         VARCHAR(2000) DEFAULT NULL COMMENT '轮播图 JSON 数组（≤5 个 URL）',
-    `hot_spu_ids` VARCHAR(1000) DEFAULT NULL COMMENT '推荐商品位 JSON 数组（≤8 个 spu.id，展示端过滤非在售）',
+    `hot_spu_ids` VARCHAR(1000) DEFAULT NULL COMMENT '推荐商品位 JSON 数组（≤8 个 SPU 业务键 32-hex，展示端过滤非在售；ADR-062）',
     `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY `uk_shop` (`shop_id`)

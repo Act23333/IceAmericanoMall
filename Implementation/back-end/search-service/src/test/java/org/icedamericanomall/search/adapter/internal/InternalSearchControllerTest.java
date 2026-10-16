@@ -48,8 +48,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @MockitoSettings(strictness = Strictness.LENIENT)
 class InternalSearchControllerTest {
 
-    private static final String UPSERT_URL = "/internal/search/vector/product/upsert";
-    private static final String SIMILAR_URL = "/internal/search/vector/product/similar";
+    private static final String UPSERT_URL = "/internal/search/vector/spu/upsert";
+    private static final String SIMILAR_URL = "/internal/search/vector/spu/similar";
     private static final String NOTE_UPSERT_URL = "/internal/search/vector/note/upsert";
     private static final String NOTE_SIMILAR_URL = "/internal/search/vector/note/similar";
     /** 商品 <b>业务键</b>（32-hex，ADR-061 §决策 2：I47 幂等键 / I48 锚点与命中的线格式）。 */

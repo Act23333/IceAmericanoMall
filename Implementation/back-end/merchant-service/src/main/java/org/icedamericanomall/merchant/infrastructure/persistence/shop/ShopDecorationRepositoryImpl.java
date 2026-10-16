@@ -28,10 +28,8 @@ public class ShopDecorationRepositoryImpl implements ShopDecorationRepository {
     /** 仅供 JSON 字符串列互转（独立实例，不挂全局 Long→String 定制） */
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
+    /** 两个 JSON 列的元素类型均为字符串（banners = URL；hotSpuIds = SPU 业务键 32-hex，ADR-062 §决策 3）。 */
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
-    };
-
-    private static final TypeReference<List<Long>> LONG_LIST = new TypeReference<>() {
     };
 
     private final ShopDecorationMapper shopDecorationMapper;
@@ -69,7 +67,7 @@ public class ShopDecorationRepositoryImpl implements ShopDecorationRepository {
         }
         return ShopDecoration.of(dataObject.getShopId(), dataObject.getAnnouncement(),
                 parse(dataObject.getBanners(), STRING_LIST, "轮播图数据解析失败"),
-                parse(dataObject.getHotSpuIds(), LONG_LIST, "推荐商品位数据解析失败"));
+                parse(dataObject.getHotSpuIds(), STRING_LIST, "推荐商品位数据解析失败"));
     }
 
     // ==================== JSON 字符串列互转（收口） ====================

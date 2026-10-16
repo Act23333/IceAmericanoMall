@@ -84,9 +84,19 @@ class ReviewManagerTest {
         lenient().when(spuRepository.idMapByBusinessIds(List.of(SPU_BIZ))).thenReturn(Map.of(SPU_BIZ, 10L));
         lenient().when(skuSpuDisplayQuery.findBySkuBusinessIds(List.of(SKU_BIZ)))
                 .thenReturn(Map.of(SKU_BIZ, skuDisplay()));
+        // 读取路径的锚点解析：SPU 业务键 → 本域聚合（ADR-062 §决策 3：解析只许在服务内）
+        lenient().when(spuRepository.findByBusinessId(SPU_BIZ)).thenReturn(spuWithTechnicalId());
         // 读取路径的业务键回填：技术键 → 业务键
         lenient().when(spuRepository.businessIdMapByTechnicalIds(anyList())).thenReturn(Map.of(10L, SPU_BIZ));
         lenient().when(skuSpuDisplayQuery.findBySkuIds(anyList())).thenReturn(Map.of(2L, skuDisplay()));
+    }
+
+    /** 读取路径的锚点聚合：技术键 10L / 业务键 {@link #SPU_BIZ}。 */
+    private static Spu spuWithTechnicalId() {
+        Spu spu = Spu.publish(100L, 1L, null, "商品", "img.jpg", "描述", "品牌");
+        spu.setId(10L);
+        spu.setSpuId(SPU_BIZ);
+        return spu;
     }
 
     private static SkuSpuDisplay skuDisplay() {
@@ -244,7 +254,7 @@ class ReviewManagerTest {
                 new org.icedamericanomall.item.domain.model.review.RatingCount(9, 7L),
                 new org.icedamericanomall.item.domain.model.review.RatingCount(null, 2L)));
 
-        ReviewSummaryVO summary = reviewManager.reviewSummary(10L);
+        ReviewSummaryVO summary = reviewManager.reviewSummary(SPU_BIZ);
 
         assertEquals(4L, summary.getTotalCount());
         assertEquals(0L, summary.getDistribution().get(1));
@@ -259,7 +269,7 @@ class ReviewManagerTest {
     void shouldSummarizeZeros_whenNoReviews() {
         when(reviewRepository.countByRating(10L)).thenReturn(List.of());
 
-        ReviewSummaryVO summary = reviewManager.reviewSummary(10L);
+        ReviewSummaryVO summary = reviewManager.reviewSummary(SPU_BIZ);
 
         assertEquals(0L, summary.getTotalCount());
         assertEquals(0.0, summary.getAverageScore(), 0.001);
@@ -272,7 +282,7 @@ class ReviewManagerTest {
     void shouldNotThrow_whenCountByRatingReturnsNull() {
         when(reviewRepository.countByRating(10L)).thenReturn(null);
 
-        ReviewSummaryVO summary = reviewManager.reviewSummary(10L);
+        ReviewSummaryVO summary = reviewManager.reviewSummary(SPU_BIZ);
 
         assertEquals(0L, summary.getTotalCount());
         assertEquals(0.0, summary.getAverageScore(), 0.001);
@@ -354,7 +364,7 @@ class ReviewManagerTest {
         when(reviewRepository.pageBySpu(10L, 1, 10)).thenReturn(page);
         when(reviewConverter.toVO(any())).thenAnswer(inv -> vo(1L));
 
-        ReviewVO vo = reviewManager.pageBySpu(10L, 1, 10).getRecords().get(0);
+        ReviewVO vo = reviewManager.pageBySpu(SPU_BIZ, 1, 10).getRecords().get(0);
 
         assertEquals(SPU_BIZ, vo.getSpuId());
         assertEquals(SKU_BIZ, vo.getSkuId());
@@ -373,10 +383,27 @@ class ReviewManagerTest {
         when(spuRepository.businessIdMapByTechnicalIds(anyList()))
                 .thenThrow(new RuntimeException("db down"));
 
-        IPage<ReviewVO> result = reviewManager.pageBySpu(10L, 1, 10);
+        IPage<ReviewVO> result = reviewManager.pageBySpu(SPU_BIZ, 1, 10);
 
         assertEquals(2, result.getRecords().size(), "读模型失败不得让评价少一条");
         assertNull(result.getRecords().get(0).getSpuId());
+    }
+
+    @Test
+    @DisplayName("pageBySpu — 业务键解析不到（商品不存在）→ 空页 fail-open，不查评价表、不报错")
+    void shouldReturnEmptyPage_whenSpuBusinessKeyUnknown() {
+        when(spuRepository.findByBusinessId(UNKNOWN_BIZ)).thenReturn(null);
+
+        IPage<ReviewVO> page = reviewManager.pageBySpu(UNKNOWN_BIZ, 2, 5);
+        assertTrue(page.getRecords().isEmpty(), "未知商品按「无评价」处理，不放大成异常");
+        assertEquals(0L, page.getTotal());
+
+        ReviewSummaryVO summary = reviewManager.reviewSummary(UNKNOWN_BIZ);
+        assertEquals(0L, summary.getTotalCount());
+        assertEquals(5, summary.getDistribution().size());
+
+        verify(reviewRepository, never()).pageBySpu(anyLong(), anyInt(), anyInt());
+        verify(reviewRepository, never()).countByRating(anyLong());
     }
 
     @Test

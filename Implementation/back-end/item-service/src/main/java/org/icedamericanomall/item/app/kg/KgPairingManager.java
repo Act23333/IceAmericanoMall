@@ -55,11 +55,12 @@ public class KgPairingManager {
     /**
      * 搭配推荐卡（P35，全链路 fail-open，恒不抛错）。
      *
-     * @param spuId 锚点商品 id
-     * @param limit     期望条数（null/非正 → 缺省 6，&gt;10 归一为 10）
+     * @param spuId 锚点 SPU <b>业务键</b>（32-hex，路径变量 {@code {spuId}} 口径，ADR-062 §决策 2）；
+     *              形态校验在适配层，本层做业务键 → 技术键解析（同库 {@code uk_spu_id}）
+     * @param limit 期望条数（null/非正 → 缺省 6，&gt;10 归一为 10）
      * @return 搭配卡（KG / FALLBACK / NONE 三态，items 恒非 null）
      */
-    public PairingCardVO pairing(Long spuId, Integer limit) {
+    public PairingCardVO pairing(String spuId, Integer limit) {
         try {
             return assemblePairing(spuId, normalizeSize(limit));
         } catch (Exception e) {
@@ -71,17 +72,19 @@ public class KgPairingManager {
 
     // ==================== 内部方法 ====================
 
-    /** 组装主流水线：在售校验 → 图召回 → 向量兜底 → 空态。 */
-    private PairingCardVO assemblePairing(Long spuId, int size) {
-        Spu spu = spuRepository.findById(spuId);
+    /** 组装主流水线：业务键 → 技术键 → 在售校验 → 图召回 → 向量兜底 → 空态。 */
+    private PairingCardVO assemblePairing(String spuBusinessId, int size) {
+        Spu spu = spuRepository.findByBusinessId(spuBusinessId);
         if (spu == null || !isOnShelf(spu)) {
             return PairingCardVO.none();
         }
+        Long spuId = spu.getId();
         List<RecommendSpuVO> items = itemsFromGraph(spuId, spu.getCategoryId(), size);
         if (!items.isEmpty()) {
             return PairingCardVO.kg(items);
         }
-        List<RecommendSpuVO> fallback = spuManager.similarSpus(spuId, size);
+        // 向量兜底复用 P27 管道（同样以业务键入参，ADR-062 §决策 3）
+        List<RecommendSpuVO> fallback = spuManager.similarSpus(spu.getSpuId(), size);
         return fallback.isEmpty() ? PairingCardVO.none() : PairingCardVO.fallback(fallback);
     }
 
@@ -152,10 +155,16 @@ public class KgPairingManager {
         return spu.getSoldCount() == null ? 0 : spu.getSoldCount();
     }
 
-    /** 命中商品 → 搭配卡（字段集对齐 P27 相似卡：展示价 = 在售 SKU 最低价，分）。 */
+    /**
+     * 命中商品 → 搭配卡（字段集对齐 P27 相似卡：展示价 = 在售 SKU 最低价，分）。
+     *
+     * <p>{@code spuId} 出 <b>SPU 业务键</b>（32-hex，ADR-062 §决策 3）：与 P27 同一张卡、
+     * 同一条回链路径（{@code GET /api/item/spu/{spuId}}），口径收敛后不再有「卡内技术键」
+     * 的例外（ADR-062 §后果 E3 已闭合）。
+     */
     private RecommendSpuVO toCard(Spu spu, Integer minPrice) {
         RecommendSpuVO vo = new RecommendSpuVO();
-        vo.setSpuId(spu.getId());
+        vo.setSpuId(spu.getSpuId());
         vo.setName(spu.getName());
         vo.setMainImage(spu.getMainImage());
         vo.setPrice(minPrice);

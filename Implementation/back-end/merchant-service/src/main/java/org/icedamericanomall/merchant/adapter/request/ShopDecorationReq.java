@@ -28,7 +28,15 @@ public class ShopDecorationReq implements Serializable {
     @Size(max = 5, message = "轮播图最多 5 张")
     private List<String> banners;
 
-    /** 推荐商品位（spu.id，≤8 个，去重） */
+    /**
+     * 推荐商品位（SPU <b>业务键</b> 32-hex，≤8 个，去重）。
+     *
+     * <p>标识口径（ADR-062 §决策 3）：写侧与 {@code ShopDecorationVO} 读侧<b>同型同义</b>；
+     * 形态校验（32-hex，非法即 400 {@code PARAM_ERROR} fail-fast）在领域工厂
+     * {@code ShopDecoration.of} 内收口（适配层入参的唯一出口，ADR-062 §决策 7）。
+     * 不做跨域存在性校验：ADR-048 Phase 1 口径（展示端过滤），且 ADR-057 明确
+     * 「业务判断不得同库直读他域表」—— 需要校验时须走 item 域出口，属另批决策。
+     */
     @Size(max = 8, message = "推荐商品位最多 8 个")
-    private List<Long> hotSpuIds;
+    private List<String> hotSpuIds;
 }

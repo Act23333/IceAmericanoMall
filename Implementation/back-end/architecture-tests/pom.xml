@@ -35,5 +35,21 @@
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+          ADR-062 §守卫 3（线格式标识字段的 JSON 往返性质测试，IdWireRoundTripTest）：
+          需要 Jackson 把被测 DTO/VO 按线上命名策略（SNAKE_CASE）渲染/解析。
+          ⚠ 仍**不依赖任何业务模块** —— 业务类由测试用 URLClassLoader 从各模块 target/classes
+          装载（见该类注释），本处仅引入第三方库。
+        -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

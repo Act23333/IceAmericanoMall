@@ -76,7 +76,14 @@ public class AdminManager {
         return orders.stream().mapToInt(o -> o.getTotalAmount() != null ? o.getTotalAmount() : 0).sum();
     }
 
-    /** 销量 Top N（V2.5 详细统计）。 */
+    /**
+     * 销量 Top N（V2.5 详细统计）。
+     *
+     * <p>返回行的 SPU 名称键为 <b>{@code spu_name}</b>（ADR-056 snake_case +
+     * ADR-061 §决策 5；ADR-062 §后果 E2 收口，原 camelCase {@code productName} 为 BREAKING）。
+     * 响应元素类型是 {@code Map<String,Object>}（契约 AD14 曾写 {@code SpuStatVO}，
+     * 该类在代码中不存在，已由 B4 按实测订正）。
+     */
     public List<Map<String, Object>> topSpus(int limit) {
         int completedCode = OrderStatusEnum.COMPLETED.getCode();
         return orderRepository.findByStatus(completedCode)
@@ -92,7 +99,7 @@ public class AdminManager {
                 .entrySet().stream()
                 .sorted((a, b) -> Integer.compare(b.getValue()[0], a.getValue()[0]))
                 .limit(limit)
-                .map(e -> Map.<String, Object>of("productName", e.getKey(),
+                .map(e -> Map.<String, Object>of("spu_name", e.getKey(),
                         "quantity", e.getValue()[0], "revenue", e.getValue()[1]))
                 .collect(java.util.stream.Collectors.toList());
     }

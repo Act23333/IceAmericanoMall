@@ -58,7 +58,7 @@ public interface CartConverter {
     @Mapping(target = "cartItemId", source = "id")
     @Mapping(target = "skuId", ignore = true)
     @Mapping(target = "spuId", ignore = true)
-    @Mapping(target = "productName", ignore = true)
+    @Mapping(target = "spuName", ignore = true)
     @Mapping(target = "spec", ignore = true)
     @Mapping(target = "image", ignore = true)
     @Mapping(target = "price", ignore = true)

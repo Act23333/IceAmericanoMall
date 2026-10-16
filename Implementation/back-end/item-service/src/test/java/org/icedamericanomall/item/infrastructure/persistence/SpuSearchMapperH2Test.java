@@ -175,26 +175,10 @@ class SpuSearchMapperH2Test {
         assertEquals("小米手机", result.getRecords().get(1).getName());
     }
 
-    @Test
-    @DisplayName("detail — 单商品卡片（含最低价计算列，publishTime 供回填）")
-    void shouldLoadSearchCardById() {
-        SpuPO card = spuMapper.selectSearchCardById(1L);
-
-        assertEquals(599900, card.getMinPrice());
-        assertEquals("Apple", card.getBrand());
-        assertEquals(java.time.LocalDateTime.of(2026, 1, 1, 10, 0), card.getPublishTime());
-    }
+    // ==================== 业务键口径（ADR-061 §决策 2；ADR-062 §决策 4 单形态） ====================
 
     @Test
-    @DisplayName("detail — 不存在返回 null（调用方按缺失处理）")
-    void shouldReturnNullCard_whenIdMissing() {
-        assertEquals(null, spuMapper.selectSearchCardById(999L));
-    }
-
-    // ==================== 业务键口径（ADR-061 §决策 2） ====================
-
-    @Test
-    @DisplayName("detail/key — 按 32-hex 业务键命中（spu_id 唯一索引，同库内部技术键不变）")
+    @DisplayName("detail — 按 32-hex 业务键命中（spu_id 唯一索引，同库内部技术键不变）")
     void shouldLoadSearchCardByBusinessId() {
         SpuPO card = spuMapper.selectSearchCardByBusinessId(
                 org.icedamericanomall.common.utils.IdGenerator.toBytes("00000000000000000000000000000001"));
@@ -202,10 +186,12 @@ class SpuSearchMapperH2Test {
         assertEquals(1L, card.getId());
         assertEquals(599900, card.getMinPrice());
         assertEquals("Apple", card.getBrand());
+        // publishTime（ES 回填用，SE1 newest 排序）随同一次往返取回
+        assertEquals(java.time.LocalDateTime.of(2026, 1, 1, 10, 0), card.getPublishTime());
     }
 
     @Test
-    @DisplayName("detail/key — 未知业务键返回 null（不放大成异常）")
+    @DisplayName("detail — 未知业务键返回 null（不放大成异常）")
     void shouldReturnNullCard_whenBusinessIdMissing() {
         assertEquals(null, spuMapper.selectSearchCardByBusinessId(
                 org.icedamericanomall.common.utils.IdGenerator.toBytes("00000000000000000000000000000009")));

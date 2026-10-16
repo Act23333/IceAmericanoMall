@@ -33,6 +33,18 @@ public interface SpuRepository {
     /** 按 ID 载入（可为 null；DELETED 态判定由应用层做）。 */
     Spu findById(Long id);
 
+    /**
+     * 按 <b>SPU 业务键</b>载入聚合（{@code spu.spu_id}，ADR-062 §决策 3/§决策 7）。
+     *
+     * <p>外部寻址口径的唯一解析入口：路径变量 / 查询参数拿到的是 32-hex 业务键，
+     * 解析为技术键的动作<b>只许在服务内</b>完成（同库、走 {@code uk_spu_id} 唯一索引）；
+     * 非法/不存在的业务键返回 {@code null}（调用方按「商品不存在」处理：详情 fail-loud、
+     * 列表/推荐 fail-open），<b>不</b>放大成 500。
+     *
+     * @param spuBusinessId SPU 业务键（32-hex）；{@code null}/形态非法 → {@code null}
+     */
+    Spu findByBusinessId(String spuBusinessId);
+
     /** 批量按 ID 载入。 */
     List<Spu> findAllByIds(List<Long> ids);
 
@@ -77,14 +89,15 @@ public interface SpuRepository {
     /** 商品名前缀联想（在售，销量降序，去重截断）。 */
     List<String> suggestNames(String prefix, int limit);
 
-    /** 单商品检索卡片（ES 摄取 publishTime 回填用）；不存在返回 null。 */
-    SpuSearchCard findSearchCardById(Long id);
-
     /**
      * 单商品检索卡片 —— 按 <b>SPU 业务键</b>（32-hex，{@code spu.spu_id}）查询（ADR-061 §决策 2）。
      *
      * <p>供商品向量摄取（I47）与相似检索（I48）把线格式的业务键入参解析为本域技术键；
      * 非法/不存在的业务键一律返回 {@code null}（调用方按「商品不存在」处理，不放大成 500）。
+     *
+     * <p><b>注（2026-10-17 B5，ADR-062 §决策 4）</b>：原按技术键查询的同名变体
+     * （{@code findSearchCardById}）已随「删除双形态」一并退役 —— 该端点（I65）现为
+     * 业务键单形态，技术键查询在本域不再有任何调用方。
      *
      * @param spuBusinessId SPU 业务键（32-hex）；{@code null}/格式非法 → null
      */

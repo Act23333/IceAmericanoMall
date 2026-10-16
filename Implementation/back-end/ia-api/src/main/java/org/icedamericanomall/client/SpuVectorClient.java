@@ -24,8 +24,11 @@ import java.util.List;
  *   <li>相似检索（I48）失败返回空列表——推荐位可空是接受的产品形态，商品页不可被推荐拖垮
  *       （与 I43/I44 fail-closed 刻意不同：定价是资金事实，推荐不是）。</li>
  * </ul>
+ *
+ * <p><b>路径口径（ADR-062 §决策 2）</b>：SPU 资源段为 {@code spu} —— 类级前缀
+ * {@code /internal/search/vector/spu} 与 §4.14.10 I47/I48 同步（原 {@code .../product}）。
  */
-@FeignClient(name = "search-service", path = "/internal/search/vector/product",
+@FeignClient(name = "search-service", path = "/internal/search/vector/spu",
         contextId = "spuVector", fallbackFactory = SpuVectorClientFallback.class)
 public interface SpuVectorClient {
 

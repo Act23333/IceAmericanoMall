@@ -35,7 +35,7 @@ public class ShopDecorationPO implements Serializable {
     /** 轮播图 JSON 数组字符串（≤5 个 http(s) URL） */
     private String banners;
 
-    /** 推荐商品位 JSON 数组字符串（≤8 个 spu.id，去重） */
+    /** 推荐商品位 JSON 数组字符串（≤8 个 SPU <b>业务键</b> 32-hex，去重；ADR-062 §决策 3） */
     private String hotSpuIds;
 
     private LocalDateTime createTime;

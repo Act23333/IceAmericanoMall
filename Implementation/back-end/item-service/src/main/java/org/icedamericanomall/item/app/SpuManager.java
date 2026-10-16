@@ -16,7 +16,6 @@ import org.icedamericanomall.item.adapter.response.RecommendSpuVO;
 import org.icedamericanomall.item.adapter.response.SkuVO;
 import org.icedamericanomall.item.domain.enums.SpuStatusEnum;
 import org.icedamericanomall.item.domain.model.spu.Spu;
-import org.icedamericanomall.item.domain.model.spu.SpuSearchCard;
 import org.icedamericanomall.item.domain.model.sku.Sku;
 import org.icedamericanomall.item.domain.repository.SpuRepository;
 import org.icedamericanomall.item.domain.repository.SkuRepository;
@@ -85,14 +84,17 @@ public class SpuManager {
      * 商品详情（含全部 SKU 与在售最低价、店铺进行中促销标签）；DELETED 视为不存在。
      * <p>促销标签 fail-open（{@link SpuPromotionManager} 内部已兜底空列表），
      * 详情主流程绝不因促销查询失败而失败。读操作无事务，Feign 调用不入事务。
+     *
+     * @param spuId SPU <b>业务键</b>（32-hex，来自路径变量 {@code {spuId}}）；形态校验在适配层，
+     *              本层负责业务键 → 技术键解析（同库 {@code uk_spu_id}）
      */
-    public SpuVO getSpuDetail(Long id) {
-        Spu spu = spuRepository.findById(id);
+    public SpuVO getSpuDetail(String spuId) {
+        Spu spu = spuRepository.findByBusinessId(spuId);
         if (spu == null || SpuStatusEnum.DELETED.getCode() == spu.getStatus()) {
             throw new BizException(ErrorCode.PRODUCT_NOT_FOUND);
         }
         SpuVO vo = spuConverter.toVO(spu);
-        List<Sku> skus = skuRepository.findBySpuId(id);
+        List<Sku> skus = skuRepository.findBySpuId(spu.getId());
         List<SkuVO> skuVos = skuConverter.toVOs(skus);
         // ADR-061：SKU 视图带出 SPU/SKU 业务键（一次联表，fail-open），供前端回链与跨接口 join
         skuManager.fillSpuBusinessKey(spu.getSpuId(), skuVos);
@@ -134,33 +136,38 @@ public class SpuManager {
     /**
      * 上下架/删除状态变更（**越权防护**：商家仅限自有商品，管理员放行）。
      *
-     * <p>为何必须校验：{@code PUT /api/item/product/{id}/status} 的 path 只带商品 id，
+     * <p>为何必须校验：{@code PUT /api/item/spu/{spuId}/status} 的 path 只带商品标识，
      * 若不做归属断言，任一经认证买家即可上下架甚至删除他人商品
      * （status=3 即删除语义）；同文件 {@link #updateSpu} 已有归属断言先例。
      *
-     * @param spuId  商品 id
+     * @param spuId      SPU <b>业务键</b>（32-hex，路径变量口径；§1.9②）
      * @param operatorId 操作人 user_id（商家身份即其 user_id，与 {@code spu.sellerId} 同口径）
      * @param isAdmin    是否平台管理员（放行，对应契约 P5「商家/管理员上下架」）
      * @param status     目标状态（1 上架 / 2 下架 / 3 删除）
      */
-    public void updateSpuStatus(Long spuId, Long operatorId, boolean isAdmin, Integer status) {
-        Spu spu = spuRepository.findById(spuId);
+    public void updateSpuStatus(String spuId, Long operatorId, boolean isAdmin, Integer status) {
+        Spu spu = spuRepository.findByBusinessId(spuId);
         if (spu == null) {
             throw new BizException(ErrorCode.PRODUCT_NOT_FOUND);
         }
         if (!isAdmin && !spu.isOwnedBy(operatorId)) {
             throw new BizException(ErrorCode.FORBIDDEN, "无权操作该商品");
         }
-        spuRepository.updateStatus(spuId, status);
+        spuRepository.updateStatus(spu.getId(), status);
         // KG 直建边口径（F15）：在售持有直建边 / 下架删除清边（I59）——提交后旁路执行，
         // 聚合先同步新状态再摄取，快照与落库一致
         spu.changeStatus(status);
         kgEdgeIngestManager.ingestSpuAfterCommit(spu);
     }
 
-    /** 商家编辑商品（归属校验；F2：运费绑定非空即改，须归属当前商家）。 */
-    public void updateSpu(Long spuId, Long sellerId, UpdateSpuReq req) {
-        Spu spu = spuRepository.findById(spuId);
+    /**
+     * 商家编辑商品（归属校验；F2：运费绑定非空即改，须归属当前商家）。
+     *
+     * @param spuId    SPU <b>业务键</b>（32-hex，路径变量口径）
+     * @param sellerId 当前登录商家（{@code spu.seller_id} 同口径）
+     */
+    public void updateSpu(String spuId, Long sellerId, UpdateSpuReq req) {
+        Spu spu = spuRepository.findByBusinessId(spuId);
         if (spu == null) {
             throw new BizException(ErrorCode.PRODUCT_NOT_FOUND);
         }
@@ -170,21 +177,30 @@ public class SpuManager {
         if (req.getFreightTemplateId() != null) {
             freightTemplateManager.requireBindable(sellerId, req.getFreightTemplateId());
         }
-        spuRepository.updateEditable(spuId, req.getName(), req.getMainImage(),
+        Long spuTechnicalId = spu.getId();
+        spuRepository.updateEditable(spuTechnicalId, req.getName(), req.getMainImage(),
                 req.getDescription(), req.getBrand(), req.getCategoryId(), req.getFreightTemplateId());
 
         // 向量摄取钩子（ADR-046）：PATCH 后重读合并态（null 字段保留原值），无活动事务 → 直接旁路发送
-        Spu merged = spuRepository.findById(spuId);
-        spuRecommendManager.ingestAfterCommit(merged, onSaleMinPrice(spuId));
+        Spu merged = spuRepository.findById(spuTechnicalId);
+        spuRecommendManager.ingestAfterCommit(merged, onSaleMinPrice(spuTechnicalId));
         // KG 直建边摄取钩子（F15，I57）：合并态幂等覆盖写（改类目/品牌/店铺 → 边随真相更新）
         kgEdgeIngestManager.ingestSpuAfterCommit(merged);
     }
 
-    /** 商品在售 SKU 视图。 */
-    public List<SkuVO> listSkus(Long spuId) {
-        List<SkuVO> skuVos = skuConverter.toVOs(skuRepository.findOnSaleBySpuId(spuId));
-        Spu spu = spuRepository.findById(spuId);
-        skuManager.fillSpuBusinessKey(spu == null ? null : spu.getSpuId(), skuVos);
+    /**
+     * 商品在售 SKU 视图。
+     *
+     * @param spuId SPU <b>业务键</b>（32-hex）；商品不存在/已删除 → 空列表（与既有
+     *              「未知 id → 空列表」语义一致，不放大成异常）
+     */
+    public List<SkuVO> listSkus(String spuId) {
+        Spu spu = spuRepository.findByBusinessId(spuId);
+        if (spu == null) {
+            return List.of();
+        }
+        List<SkuVO> skuVos = skuConverter.toVOs(skuRepository.findOnSaleBySpuId(spu.getId()));
+        skuManager.fillSpuBusinessKey(spu.getSpuId(), skuVos);
         return skuVos;
     }
 
@@ -197,24 +213,24 @@ public class SpuManager {
      * （ReviewManager 触达先例口径）；命中商品<b>恒过滤在售</b>并剔除自身/已删除，
      * 按命中顺序（= 相似度降序）组装，不足 size 按实际数量返回——推荐位可空。
      *
-     * <p><b>标识口径（ADR-061 §决策 2）</b>：I48 命中是 <b>SPU 业务键</b>（32-hex），
-     * 本方法内的比对与取数一律在业务键空间完成；出参 {@code RecommendSpuVO.spuId} 保持
-     * <b>技术主键</b>（P27 既有寻址口径，同商品详情路径变量，ADR-061 §后果 R1 已登记）。
-     * 业务键 ↔ 技术键解析在同库读模型内<b>一次批量</b>完成（A 案：表结构不动，无 N+1）。
+     * <p><b>标识口径（ADR-062 §决策 2/3）</b>：入参锚点与出参 {@code RecommendSpuVO.spuId}
+     * 一律 <b>SPU 业务键</b> 32-hex（外部寻址口径统一，路径变量/卡片回链同型同义）；
+     * 本方法内的比对与取数在业务键空间完成，业务键 ↔ 技术键解析在同库读模型内
+     * <b>一次批量</b>完成（A 案：表结构不动，无 N+1）。
      *
-     * @param spuId 锚点商品<b>技术键</b>（路径变量口径）
-     * @param size      期望条数（null/非正 → 缺省 5，&gt;20 归一为 20）
-     * @return 相似商品卡（相似度降序，{@code spuId} 为技术键）；无命中/降级时为空列表，不报错
+     * @param spuId 锚点 SPU <b>业务键</b>（32-hex，路径变量口径；形态校验在适配层）
+     * @param size  期望条数（null/非正 → 缺省 5，&gt;20 归一为 20）
+     * @return 相似商品卡（相似度降序，{@code spuId} 为业务键）；无命中/降级时为空列表，不报错
      */
-    public List<RecommendSpuVO> similarSpus(Long spuId, Integer size) {
-        // 锚点：技术键 → 业务键（I48 入参口径，ADR-061 §决策 2）。商品不存在即无「相似商品」可言，
+    public List<RecommendSpuVO> similarSpus(String spuId, Integer size) {
+        // 锚点：业务键 → 本域聚合（同库 uk_spu_id）。商品不存在即无「相似商品」可言，
         // 直接返回空列表（fail-open：推荐位可空，不报错、不打远程调用）
-        SpuSearchCard anchor = spuId == null ? null : spuRepository.findSearchCardById(spuId);
-        if (anchor == null || anchor.spuId() == null) {
+        Spu anchor = spuId == null ? null : spuRepository.findByBusinessId(spuId);
+        if (anchor == null || anchor.getSpuId() == null) {
             log.debug("相似商品推荐跳过：锚点商品不存在或缺业务键: spuId={}", spuId);
             return List.of();
         }
-        List<SpuVectorHitCO> hits = similarSafely(anchor.spuId(), normalizeSize(size));
+        List<SpuVectorHitCO> hits = similarSafely(anchor.getSpuId(), normalizeSize(size));
         if (hits.isEmpty()) {
             return List.of();
         }
@@ -229,7 +245,8 @@ public class SpuManager {
         // 业务键 → 技术键（一次批量 SQL，走 spu_id 唯一索引，无 N+1）
         Map<String, Long> idByBusinessId = spuRepository.idMapByBusinessIds(hitBusinessIds);
         Map<Long, Spu> cardById = onShelfCardsByIds(List.copyOf(idByBusinessId.values()));
-        cardById.remove(spuId);
+        // 排除自身：命中列表按业务键返回，锚点已在上面解析为聚合，按技术键剔除即可
+        cardById.remove(anchor.getId());
         Map<Long, Integer> minPriceMap = cardById.isEmpty() ? Map.of()
                 : skuManager.getMinPriceMapBySpuIds(List.copyOf(cardById.keySet()));
         return hitBusinessIds.stream()
@@ -324,13 +341,13 @@ public class SpuManager {
     /**
      * 命中商品 → 推荐卡（字段集对齐商品列表卡：展示价 = 在售 SKU 最低价）。
      *
-     * <p>{@code spuId} 出 <b>技术主键</b>：P27 推荐卡的寻址语义与商品详情路径变量
-     * （{@code GET /api/item/product/{id}}，技术键口径）一致，本批不改其口径（ADR-061 §后果 R1
-     * 已登记「路径变量按 A 案保持技术键」）；I48 命中的业务键仅用于本方法内的比对与取数。
+     * <p>{@code spuId} 出 <b>SPU 业务键</b>（32-hex）：卡内回链与详情路径变量
+     * （{@code GET /api/item/spu/{spuId}}）同型同义（ADR-062 §决策 3、契约 §1.9②）；
+     * 此前为技术键的口径并存已按 B4 裁决收敛（ADR-062 §后果 E3）。
      */
     private RecommendSpuVO toRecommendVO(Spu spu, Integer minPrice) {
         RecommendSpuVO vo = new RecommendSpuVO();
-        vo.setSpuId(spu.getId());
+        vo.setSpuId(spu.getSpuId());
         vo.setName(spu.getName());
         vo.setMainImage(spu.getMainImage());
         vo.setPrice(minPrice);
@@ -339,7 +356,7 @@ public class SpuManager {
     }
 
     /** 单商品在售 SKU 最低价（分，对齐商品列表卡 minPrice 口径）；无在售 SKU 时为 null。 */
-    private Integer onSaleMinPrice(Long spuId) {
-        return skuManager.getMinPriceMapBySpuIds(List.of(spuId)).get(spuId);
+    private Integer onSaleMinPrice(Long spuTechnicalId) {
+        return skuManager.getMinPriceMapBySpuIds(List.of(spuTechnicalId)).get(spuTechnicalId);
     }
 }

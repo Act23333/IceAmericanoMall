@@ -63,11 +63,11 @@ class SecurityConfigTest {
 
     @ParameterizedTest(name = "{0} {1} 匿名可访问")
     @CsvSource({
-            "GET,  /api/item/product/1",
+            "GET,  /api/item/spu/1",
             "GET,  /api/item/category/tree",
-            "GET,  /api/item/review/product/1",
+            "GET,  /api/item/review/spu/1",
             "GET,  /api/home/config",
-            "GET,  /api/search/product",
+            "GET,  /api/search/spu",
             "GET,  /api/shop/100",
             "GET,  /api/shops/1",
             "GET,  /api/flash",
@@ -89,8 +89,8 @@ class SecurityConfigTest {
     @ParameterizedTest(name = "{0} {1} 匿名被拒")
     @CsvSource({
             "POST,   /api/flash/buy",
-            "POST,   /api/item/product",
-            "PUT,    /api/item/product/1",
+            "POST,   /api/item/spu",
+            "PUT,    /api/item/spu/1",
             "POST,   /api/item/category",
             "POST,   /api/shop/follow",
             "DELETE, /api/shop/follow",

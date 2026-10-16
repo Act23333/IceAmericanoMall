@@ -87,7 +87,7 @@ class UntrustedHeaderSanitizerFilterTest {
     @DisplayName("覆写 — 未携带任何伪造头时仍注入真实 X-Client-Ip（匿名请求同样不可伪造来源）")
     void shouldOverwriteClientIp_whenNoForgedHeaders() {
         MockServerWebExchange exchange = MockServerWebExchange.from(
-                MockServerHttpRequest.get("/api/item/product/1")
+                MockServerHttpRequest.get("/api/item/spu/1")
                         .remoteAddress(new InetSocketAddress(REAL_REMOTE_IP, 12345))
                         .header("Accept", "application/json"));
 
@@ -115,7 +115,7 @@ class UntrustedHeaderSanitizerFilterTest {
     @DisplayName("透传 — 未携带伪造头时业务请求头不受影响（正常请求零副作用）")
     void shouldPassThrough_whenNoForgedHeaders() {
         MockServerWebExchange exchange = MockServerWebExchange.from(
-                MockServerHttpRequest.get("/api/item/product/1")
+                MockServerHttpRequest.get("/api/item/spu/1")
                         .header("Accept", "application/json"));
 
         ServerHttpRequest request = runFilter(exchange);

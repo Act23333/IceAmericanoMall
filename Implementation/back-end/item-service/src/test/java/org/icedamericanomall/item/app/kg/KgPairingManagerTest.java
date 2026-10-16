@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
@@ -44,6 +44,9 @@ class KgPairingManagerTest {
 
     private static final Long ANCHOR_ID = 1L;
     private static final Long ANCHOR_CATEGORY = 10L;
+
+    /** 锚点 SPU <b>业务键</b>（32-hex，路径变量 {@code {spuId}} 口径；ADR-062 §决策 2/3）。 */
+    private static final String ANCHOR_BIZ = businessKey(ANCHOR_ID);
 
     @Mock
     private KgClient kgClient;
@@ -64,17 +67,23 @@ class KgPairingManagerTest {
         kgPairingManager = new KgPairingManager(kgClient, spuRepository, skuManager, spuManager);
     }
 
+    /** 技术键 → SPU 业务键（32-hex 线格式，ADR-062 §决策 3）。 */
+    private static String businessKey(long spuTechnicalId) {
+        return String.format("%032x", spuTechnicalId);
+    }
+
     private Spu spu(Long id, Long categoryId, int soldCount, SpuStatusEnum status) {
         Spu spu = Spu.publish(100L, categoryId, null, "商品" + id, "img" + id + ".jpg",
                 "描述", "品牌A");
         spu.setId(id);
+        spu.setSpuId(businessKey(id));
         spu.setSoldCount(soldCount);
         spu.setStatus(status.getCode());
         return spu;
     }
 
     private void stubAnchor() {
-        when(spuRepository.findById(ANCHOR_ID))
+        when(spuRepository.findByBusinessId(ANCHOR_BIZ))
                 .thenReturn(spu(ANCHOR_ID, ANCHOR_CATEGORY, 50, SpuStatusEnum.ON_SHELF));
     }
 
@@ -104,10 +113,11 @@ class KgPairingManagerTest {
                 .thenReturn(pageOf(spu(3L, 30L, 1, SpuStatusEnum.ON_SHELF)));
         when(skuManager.getMinPriceMapBySpuIds(any())).thenReturn(Map.of(2L, 1200, 3L, 3400));
 
-        PairingCardVO card = kgPairingManager.pairing(ANCHOR_ID, null);
+        PairingCardVO card = kgPairingManager.pairing(ANCHOR_BIZ, null);
 
         assertEquals(PairingCardVO.SOURCE_KG, card.getSource());
-        assertEquals(List.of(3L, 2L),
+        // 卡内 spu_id 为 SPU 业务键（ADR-062 §决策 3），实现与本断言同源同型
+        assertEquals(List.of(businessKey(3L), businessKey(2L)),
                 card.getItems().stream().map(RecommendSpuVO::getSpuId).toList());
         assertEquals(3400, card.getItems().get(0).getPrice());
         assertEquals(1200, card.getItems().get(1).getPrice());
@@ -126,10 +136,10 @@ class KgPairingManagerTest {
                         spu(4L, 20L, 100, SpuStatusEnum.ON_SHELF)));
         when(skuManager.getMinPriceMapBySpuIds(any())).thenReturn(Map.of());
 
-        PairingCardVO card = kgPairingManager.pairing(ANCHOR_ID, null);
+        PairingCardVO card = kgPairingManager.pairing(ANCHOR_BIZ, null);
 
         assertEquals(PairingCardVO.SOURCE_KG, card.getSource());
-        assertEquals(List.of(2L, 4L),
+        assertEquals(List.of(businessKey(2L), businessKey(4L)),
                 card.getItems().stream().map(RecommendSpuVO::getSpuId).toList());
     }
 
@@ -146,7 +156,7 @@ class KgPairingManagerTest {
                         spu(4L, 20L, 100, SpuStatusEnum.ON_SHELF)));
         when(skuManager.getMinPriceMapBySpuIds(any())).thenReturn(Map.of());
 
-        PairingCardVO card = kgPairingManager.pairing(ANCHOR_ID, 3);
+        PairingCardVO card = kgPairingManager.pairing(ANCHOR_BIZ, 3);
 
         assertEquals(3, card.getItems().size());
     }
@@ -162,7 +172,7 @@ class KgPairingManagerTest {
                 .thenReturn(pageOf(spu(2L, 20L, 300, SpuStatusEnum.ON_SHELF)));
         when(skuManager.getMinPriceMapBySpuIds(any())).thenReturn(Map.of(2L, 900));
 
-        PairingCardVO card = kgPairingManager.pairing(ANCHOR_ID, null);
+        PairingCardVO card = kgPairingManager.pairing(ANCHOR_BIZ, null);
 
         assertEquals(PairingCardVO.SOURCE_KG, card.getSource());
         assertEquals(1, card.getItems().size());
@@ -178,10 +188,10 @@ class KgPairingManagerTest {
         when(kgClient.neighbors(any(), any(), any(), any(), anyInt(), any()))
                 .thenReturn(List.of());
         RecommendSpuVO similar = new RecommendSpuVO();
-        similar.setSpuId(9L);
-        when(spuManager.similarSpus(ANCHOR_ID, 6)).thenReturn(List.of(similar));
+        similar.setSpuId(businessKey(9L));
+        when(spuManager.similarSpus(ANCHOR_BIZ, 6)).thenReturn(List.of(similar));
 
-        PairingCardVO card = kgPairingManager.pairing(ANCHOR_ID, null);
+        PairingCardVO card = kgPairingManager.pairing(ANCHOR_BIZ, null);
 
         assertEquals(PairingCardVO.SOURCE_FALLBACK, card.getSource());
         assertEquals(1, card.getItems().size());
@@ -194,9 +204,9 @@ class KgPairingManagerTest {
         stubAnchor();
         when(kgClient.neighbors(any(), any(), any(), any(), anyInt(), any()))
                 .thenReturn(List.of());
-        when(spuManager.similarSpus(ANCHOR_ID, 6)).thenReturn(List.of());
+        when(spuManager.similarSpus(ANCHOR_BIZ, 6)).thenReturn(List.of());
 
-        PairingCardVO card = kgPairingManager.pairing(ANCHOR_ID, null);
+        PairingCardVO card = kgPairingManager.pairing(ANCHOR_BIZ, null);
 
         assertEquals(PairingCardVO.SOURCE_NONE, card.getSource());
         assertTrue(card.getItems().isEmpty());
@@ -207,12 +217,12 @@ class KgPairingManagerTest {
     @Test
     @DisplayName("锚点商品不存在/不在售 — 空态 NONE，且不产生图查询")
     void shouldReturnNoneWithoutGraphQuery_whenAnchorMissingOrOffShelf() {
-        when(spuRepository.findById(ANCHOR_ID)).thenReturn(null);
-        assertEquals(PairingCardVO.SOURCE_NONE, kgPairingManager.pairing(ANCHOR_ID, null).getSource());
+        when(spuRepository.findByBusinessId(ANCHOR_BIZ)).thenReturn(null);
+        assertEquals(PairingCardVO.SOURCE_NONE, kgPairingManager.pairing(ANCHOR_BIZ, null).getSource());
 
-        when(spuRepository.findById(ANCHOR_ID))
+        when(spuRepository.findByBusinessId(ANCHOR_BIZ))
                 .thenReturn(spu(ANCHOR_ID, ANCHOR_CATEGORY, 50, SpuStatusEnum.OFF_SHELF));
-        assertEquals(PairingCardVO.SOURCE_NONE, kgPairingManager.pairing(ANCHOR_ID, null).getSource());
+        assertEquals(PairingCardVO.SOURCE_NONE, kgPairingManager.pairing(ANCHOR_BIZ, null).getSource());
 
         verify(kgClient, never()).neighbors(any(), any(), any(), any(), anyInt(), any());
     }
@@ -221,19 +231,19 @@ class KgPairingManagerTest {
     @DisplayName("全链路异常（Feign 意外抛错/仓储异常）— 空态 NONE 不报错（US-KG-9）")
     void shouldReturnNone_whenAnyExceptionThrown() {
         doReturn(spu(ANCHOR_ID, ANCHOR_CATEGORY, 50, SpuStatusEnum.ON_SHELF))
-                .when(spuRepository).findById(ANCHOR_ID);
+                .when(spuRepository).findByBusinessId(ANCHOR_BIZ);
         doThrow(new RuntimeException("unexpected")).when(kgClient)
                 .neighbors(any(), any(), any(), any(), anyInt(), any());
-        assertEquals(PairingCardVO.SOURCE_NONE, kgPairingManager.pairing(ANCHOR_ID, null).getSource());
+        assertEquals(PairingCardVO.SOURCE_NONE, kgPairingManager.pairing(ANCHOR_BIZ, null).getSource());
 
-        doThrow(new RuntimeException("db down")).when(spuRepository).findById(ANCHOR_ID);
-        assertEquals(PairingCardVO.SOURCE_NONE, kgPairingManager.pairing(ANCHOR_ID, null).getSource());
+        doThrow(new RuntimeException("db down")).when(spuRepository).findByBusinessId(ANCHOR_BIZ);
+        assertEquals(PairingCardVO.SOURCE_NONE, kgPairingManager.pairing(ANCHOR_BIZ, null).getSource());
 
         doReturn(spu(ANCHOR_ID, ANCHOR_CATEGORY, 50, SpuStatusEnum.ON_SHELF))
-                .when(spuRepository).findById(ANCHOR_ID);
+                .when(spuRepository).findByBusinessId(ANCHOR_BIZ);
         doReturn(List.of()).when(kgClient).neighbors(any(), any(), any(), any(), anyInt(), any());
-        when(spuManager.similarSpus(ANCHOR_ID, 6)).thenThrow(new RuntimeException("boom"));
-        assertEquals(PairingCardVO.SOURCE_NONE, kgPairingManager.pairing(ANCHOR_ID, null).getSource());
+        when(spuManager.similarSpus(ANCHOR_BIZ, 6)).thenThrow(new RuntimeException("boom"));
+        assertEquals(PairingCardVO.SOURCE_NONE, kgPairingManager.pairing(ANCHOR_BIZ, null).getSource());
     }
 
     // ==================== limit 归一 ====================
@@ -243,13 +253,13 @@ class KgPairingManagerTest {
     void shouldNormalizeLimit() {
         stubAnchor();
         when(kgClient.neighbors(any(), any(), any(), any(), anyInt(), any())).thenReturn(List.of());
-        when(spuManager.similarSpus(anyLong(), anyInt())).thenReturn(List.of());
+        when(spuManager.similarSpus(anyString(), anyInt())).thenReturn(List.of());
 
-        kgPairingManager.pairing(ANCHOR_ID, null);
-        kgPairingManager.pairing(ANCHOR_ID, 0);
-        kgPairingManager.pairing(ANCHOR_ID, 50);
+        kgPairingManager.pairing(ANCHOR_BIZ, null);
+        kgPairingManager.pairing(ANCHOR_BIZ, 0);
+        kgPairingManager.pairing(ANCHOR_BIZ, 50);
 
-        verify(spuManager, times(2)).similarSpus(ANCHOR_ID, 6);
-        verify(spuManager, times(1)).similarSpus(ANCHOR_ID, 10);
+        verify(spuManager, times(2)).similarSpus(ANCHOR_BIZ, 6);
+        verify(spuManager, times(1)).similarSpus(ANCHOR_BIZ, 10);
     }
 }

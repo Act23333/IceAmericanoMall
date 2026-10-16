@@ -1,5 +1,8 @@
 package org.icedamericanomall.common.utils;
 
+import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BadRequestException;
+
 import java.security.SecureRandom;
 import java.util.HexFormat;
 
@@ -30,8 +33,20 @@ import java.util.HexFormat;
  * <p><b>格式契约</b>：
  * <ul>
  *   <li>{@link #nextId()} —— UUIDv7，输出 32 位小写 hex（无连字符），对外唯一口径；</li>
- *   <li>{@link #toBytes(String)} / {@link #toHexString(byte[])} —— 仅限仓储边界转换用，
- *       不得在领域层 / 应用层 / 适配层出现 {@code byte[]} 形态的业务 ID；</li>
+ *   <li>{@link #toWire(byte[])} / {@link #parseWire(String)} —— <b>编解码唯一出口</b>
+ *       （ADR-062 §决策 1/7：出方向 {@code toWire}、入方向 {@code parseWire}），
+ *       两方向互逆（{@code parseWire(toWire(b))} 逐字节等于 {@code b}）；
+ *       仓储层不得各自实现 {@code byte[]} ↔ {@code String} 的手工转换；</li>
+ *   <li>{@link #requireWire(String, String)} —— 适配层入参的<b>形态校验唯一口</b>：
+ *       合法返回归一化 32-hex，非法抛 {@code PARAM_ERROR}（HTTP 400）<b>fail-fast</b>，
+ *       绝不把非法形态静默变成「查不到」；</li>
+ *   <li>{@link #toBytes(String)} / {@link #toHexString(byte[])} —— 前两者的内核，
+ *       保留供仓储边界直接调用；{@code byte[]} 形态的业务 ID <b>不得</b>出现在
+ *       适配层（{@code adapter/} 包内只许 {@code String} 形态）；</li>
+ *   <li>{@link #toBytesOrNull(String)} —— <b>宽松语义，只许内部防御用</b>
+ *       （仓储等值查询的「未命中」归一、已通过适配层形态校验后的二次解析）；
+ *       <b>不得</b>作为线格式入口的解析路径（ADR-062 §决策 7：客户端拼错一个 hex
+ *       字符应得到 400，而不是 404/空列表）；</li>
  *   <li>{@link #secureToken()} —— 32 字节（256 位熵）SecureRandom hex，<b>专供
  *       refreshToken / jti 等凭据场景</b>：凭据要求不可预测且不可从时间序推断，
  *       绝不允许用时间有序的 v7 生成凭据。</li>
@@ -122,10 +137,15 @@ public final class IdGenerator {
     }
 
     /**
-     * 宽松解析版 {@link #toBytes(String)} —— 专供<b>外部输入</b>的等值查询入口
-     * （URL path 参数、渠道回调携带的单号等）：解析失败返回 {@code null}，
-     * 包装器等值比较落空（{@code col = NULL} 永不命中）→ 天然"未命中"语义，
-     * 不把垃圾入参放大成 500。仓储的 toPO/toDomain 映射仍用严格的 {@link #toBytes(String)}。
+     * 宽松解析版 {@link #toBytes(String)} —— <b>只许内部防御用</b>：仓储等值查询
+     * （解析失败返回 {@code null}，包装器等值比较落空 {@code col = NULL} 永不命中 → 天然
+     * 「未命中」语义，不把垃圾入参放大成 500），或用在对「已通过适配层形态校验」的入参
+     * 做二次解析之后。
+     *
+     * <p><b>不得作为线格式入口的解析路径</b>（ADR-062 §决策 7 / §守卫 4）：适配层的
+     * 外部入参（路径变量 / 查询参数 / 请求体）必须先过 {@link #requireWire(String, String)}，
+     * 非法即 400 fail-fast；把宽松语义当入口，等于「客户端拼错一个字符 → 静默变成查不到」，
+     * 排查成本全部转嫁给调用方。
      *
      * @param id 任意外部输入字符串
      * @return 16 字节；{@code null} 或格式非法均返回 {@code null}
@@ -170,6 +190,72 @@ public final class IdGenerator {
         byte[] bytes = new byte[TOKEN_BYTES];
         RANDOM.nextBytes(bytes);
         return HEX.formatHex(bytes);
+    }
+
+    // ==================== 编解码唯一出口（ADR-062 §决策 1） ====================
+
+    /**
+     * <b>出方向（toWire）</b>：{@code BINARY(16)} 原始字节 → 线格式 32 位小写 hex。
+     *
+     * <p>与 {@link #toHexString(byte[])} 同实现，独立命名是为了让「线格式出口」在
+     * 调用点<b>可检索</b>：全仓业务标识字符串只许由本方法产出（ADR-062 §决策 1
+     * 「唯一一处实现」），将来若要给 id 值加类型前缀，只改这里。
+     *
+     * @param bytes 数据库读出的 16 字节；{@code null} → {@code null}
+     * @return 32 位小写 hex 线格式
+     * @throws IllegalArgumentException 长度不为 16 字节
+     */
+    public static String toWire(byte[] bytes) {
+        return toHexString(bytes);
+    }
+
+    /**
+     * <b>入方向（parseWire）</b>：线格式字符串 → {@code BINARY(16)} 原始字节（严格形态）。
+     *
+     * <p>与 {@link #toBytes(String)} 同实现；<b>解析方向只许在服务内</b>（仓储/领域），
+     * 适配层入参一律先过 {@link #requireWire(String, String)} 形态校验。
+     *
+     * @param wire 32 位 hex 或 36 位连字符 UUID
+     * @return 16 字节
+     * @throws IllegalArgumentException 长度或字符不符合 hex 契约
+     */
+    public static byte[] parseWire(String wire) {
+        return toBytes(wire);
+    }
+
+    /**
+     * <b>线格式形态是否合法</b>（不抛异常）：32 位 hex 或 36 位连字符 UUID（大小写均可）。
+     *
+     * @param wire 待判定字符串；{@code null}/空白 → {@code false}
+     */
+    public static boolean isWire(String wire) {
+        return wire != null && !wire.isBlank() && toBytesOrNull(wire.strip()) != null;
+    }
+
+    /**
+     * <b>适配层入参形态校验唯一口</b>（ADR-062 §决策 7.1）——外部路径变量 / 查询参数 /
+     * 请求体字段的业务键一律经此校验：合法返回<b>归一化</b>的 32 位小写 hex（统一大小写与
+     * 连字符形态，保证同一 id 在库内/线格式只有一种写法），非法直接
+     * {@code PARAM_ERROR(1101) → HTTP 400} <b>fail-fast</b>。
+     *
+     * <p><b>为何不返回 {@code null}</b>：非法形态若落成「查不到」，客户端拼错一个 hex 字符
+     * 得到的是 404/空列表而非 400，排查成本被完全转嫁给调用方（ADR-062 §决策 7）。
+     *
+     * @param field 字段/变量名（进错误消息，便于定位是哪个入参）
+     * @param wire  入参原值
+     * @return 归一化 32 位小写 hex
+     * @throws BadRequestException 形态非法（HTTP 400 / {@code PARAM_ERROR}）
+     */
+    public static String requireWire(String field, String wire) {
+        if (wire == null || wire.isBlank()) {
+            throw new BadRequestException(ErrorCode.PARAM_ERROR, field + " 不能为空（应为 32 位 hex 业务键）");
+        }
+        try {
+            return toHexString(toBytes(wire.strip()));
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException(ErrorCode.PARAM_ERROR,
+                    field + " 必须为 32 位 hex 业务键（或 36 位连字符 UUID）: " + preview(wire));
+        }
     }
 
     /** 标准连字符 UUID（36 位，8-4-4-4-12）→ 去连字符；其余原样返回。 */

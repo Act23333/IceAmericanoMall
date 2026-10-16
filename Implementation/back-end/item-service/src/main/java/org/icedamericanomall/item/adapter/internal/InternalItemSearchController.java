@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.dto.SpuSearchItemCO;
 import org.icedamericanomall.dto.SpuSearchPageCO;
 import org.icedamericanomall.dto.SpuSearchQueryCO;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.item.app.search.ItemSearchQueryManager;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -51,12 +52,15 @@ public class InternalItemSearchController {
     /**
      * 单商品检索卡片；不存在返回 null 体。
      *
-     * <p><b>入参既接受技术键也接受业务键</b>（ADR-061 §决策 2）：纯数字按 {@code spu.id} 查，
-     * 32-hex 按 {@code spu.spu_id} 查。消费方：search-service 的 publishTime 回填（技术键）
-     * 与商品向量摄取/相似检索的锚点解析（业务键）。<b>不新增路由</b>（端点对账保持 287/0/43）。
+     * <p><b>入参口径（ADR-062 §决策 1/4、契约 §1.9③）</b>：{@code {spuId}} 为
+     * <b>SPU 业务键 32-hex 单形态</b>（{@code spu.spu_id}）—— 原「纯数字 = 技术键 /
+     * 32-hex = 业务键」的<b>双形态入参已废止</b>（它是绕开「不新增端点」门禁的垫片，
+     * 代价是永久留下一个接受技术键的入口）；形态非法 → 400 {@code PARAM_ERROR} fail-fast，
+     * 不再「静默落 null」。消费方：search-service 的 publishTime 回填（业务键）与
+     * 商品向量摄取/相似检索的锚点解析（业务键）。
      */
-    @GetMapping("/detail/{id}")
-    public SpuSearchItemCO detail(@PathVariable("id") String id) {
-        return itemSearchQueryManager.detail(id);
+    @GetMapping("/detail/{spuId}")
+    public SpuSearchItemCO detail(@PathVariable("spuId") String spuId) {
+        return itemSearchQueryManager.detail(IdGenerator.requireWire("spuId", spuId));
     }
 }

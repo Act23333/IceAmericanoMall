@@ -94,6 +94,23 @@ public class SpuRepositoryImpl implements SpuRepository {
         return po == null ? null : toDomain(po);
     }
 
+    /**
+     * 按 SPU 业务键载入聚合（ADR-062 §决策 3/7）。
+     *
+     * <p>单条 SQL 走 {@code uk_spu_id} 唯一索引；入参先经宽松解析归一为 {@code byte[]}
+     * （<b>内部防御</b>语义：非法/缺省 → {@code null} → 直接「未命中」，不放大成 500）——
+     * 适配层已用 {@code IdGenerator.requireWire} 做过形态校验，此处是第二道防线。
+     */
+    @Override
+    public Spu findByBusinessId(String spuBusinessId) {
+        byte[] businessId = IdGenerator.toBytesOrNull(spuBusinessId);
+        if (businessId == null) {
+            return null;
+        }
+        SpuPO po = spuMapper.selectByBusinessId(businessId);
+        return po == null ? null : toDomain(po);
+    }
+
     @Override
     public List<Spu> findAllByIds(List<Long> ids) {
         if (ids == null || ids.isEmpty()) {
@@ -196,12 +213,6 @@ public class SpuRepositoryImpl implements SpuRepository {
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-    }
-
-    @Override
-    public SpuSearchCard findSearchCardById(Long id) {
-        SpuPO dataObject = spuMapper.selectSearchCardById(id);
-        return dataObject == null ? null : toCard(dataObject);
     }
 
     @Override

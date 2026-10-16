@@ -22,11 +22,12 @@ public class SpuDetailTool {
     /**
      * 查询商品详情。
      *
-     * @param spuId 商品ID
+     * @param spuId SPU <b>业务键</b>（32-hex 字符串，来源为搜索/列表响应的 {@code spu_id}；
+     *              ADR-062 §决策 3：跨服务边界不收技术键）
      * @return 商品详情文本；商品不存在或查询失败返回提示文案
      */
-    @Tool("获取指定商品的详细信息：名称、品牌、描述、属性参数、图片等")
-    public String getSpuDetail(Long spuId) {
+    @Tool("获取指定商品的详细信息：名称、品牌、描述、属性参数、图片等。spuId 传搜索/列表结果中的 spu_id（32 位字符串）")
+    public String getSpuDetail(String spuId) {
         try {
             SpuDetailInfo detail = spuDetailPort.getSpuDetail(spuId);
             if (detail == null) {

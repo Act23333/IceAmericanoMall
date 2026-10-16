@@ -13,8 +13,13 @@ import org.springframework.web.bind.annotation.*;
  *
  * POST   /api/user/history?spu_id=        记录浏览
  * GET    /api/user/history?page=&size=&keyword=&sort=  分页查询(含商品详情+浏览时间)
- * DELETE /api/user/history/{id}              删除单条
+ * DELETE /api/user/history/{historyId}       删除单条
  * DELETE /api/user/history                   清空全部
+ *
+ * <p><b>路径变量口径（ADR-062 §决策 2 表 C 末行 · 勘误）</b>：{@code {historyId}} 是
+ * <b>足迹行主键</b>（{@code spu_view_log.id}），<b>不是</b> SPU 标识 —— 契约原写
+ * {@code {productId}} 是「命名说 A、实现是 B」型漂移，本批订正为 {@code {historyId}}
+ * 且保持 {@code Long}（ADR-058 §1 例外：{@code id} 类资源行主键）。
  */
 @RestController
 @RequestMapping("/api/user/history")
@@ -40,10 +45,10 @@ public class HistoryController {
         return Result.ok(historyManager.page(UserContext.getUserId(), page, size, keyword, sort));
     }
 
-    /** 删除单条足迹（仅限本人）。 */
-    @DeleteMapping("/{id}")
-    public Result<Void> deleteById(@PathVariable Long id) {
-        historyManager.deleteById(UserContext.getUserId(), id);
+    /** 删除单条足迹（仅限本人）。{@code historyId} 为足迹行主键（非 SPU 标识，见类注释）。 */
+    @DeleteMapping("/{historyId}")
+    public Result<Void> deleteById(@PathVariable Long historyId) {
+        historyManager.deleteById(UserContext.getUserId(), historyId);
         return Result.ok();
     }
 

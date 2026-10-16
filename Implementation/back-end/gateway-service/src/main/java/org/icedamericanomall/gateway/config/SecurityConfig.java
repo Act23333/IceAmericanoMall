@@ -75,7 +75,7 @@ public class SecurityConfig {
      * 浏览类只读路径：<b>仅 GET</b> 匿名放行。
      *
      * <p>同路径的写方法一律落到 {@code authenticated()}，例如
-     * {@code POST /api/flash/buy}（秒杀下单）、{@code POST /api/item/product}（商品维护）、
+     * {@code POST /api/flash/buy}（秒杀下单）、{@code POST /api/item/spu}（商品维护）、
      * {@code POST /api/item/category}（分类维护）、{@code POST|DELETE /api/shop/follow}（店铺关注）。
      */
     static final String[] PUBLIC_GET_PATHS = {

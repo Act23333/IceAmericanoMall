@@ -1,6 +1,7 @@
 package org.icedamericanomall.item.app;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.NotificationClient;
@@ -99,18 +100,31 @@ public class ReviewManager {
         }
     }
 
-    /** 商品评价分页（创建时间倒序，带 likedByMe 回填 + 业务键回填）。 */
-    public IPage<ReviewVO> pageBySpu(Long spuId, int page, int size) {
-        IPage<ReviewVO> result = reviewRepository.pageBySpu(spuId, page, size)
+    /**
+     * 商品评价分页（创建时间倒序，带 likedByMe 回填 + 业务键回填）。
+     *
+     * @param spuId SPU <b>业务键</b>（32-hex，路径变量 {@code {spuId}} 口径，ADR-062 §决策 2）；
+     *              商品不存在/已删除 → 空页（fail-open，列表位不放大成异常）
+     */
+    public IPage<ReviewVO> pageBySpu(String spuId, int page, int size) {
+        Long technicalId = spuTechnicalIdOrNull(spuId);
+        if (technicalId == null) {
+            return new Page<>(page, size);
+        }
+        IPage<ReviewVO> result = reviewRepository.pageBySpu(technicalId, page, size)
                 .convert(r -> enrichVO(reviewConverter.toVO(r)));
         fillBusinessKeys(result.getRecords());
         return result;
     }
 
-    /** 商品评价分页（星级/有图过滤 + 排序归一）。 */
-    public IPage<ReviewVO> pageBySpuFiltered(Long spuId, Integer rating, Boolean hasMedia,
+    /** 商品评价分页（星级/有图过滤 + 排序归一）。入参口径同 {@link #pageBySpu}。 */
+    public IPage<ReviewVO> pageBySpuFiltered(String spuId, Integer rating, Boolean hasMedia,
                                                  String sort, int page, int size) {
-        IPage<ReviewVO> result = reviewRepository.pageFiltered(spuId, rating, hasMedia, sort, page, size)
+        Long technicalId = spuTechnicalIdOrNull(spuId);
+        if (technicalId == null) {
+            return new Page<>(page, size);
+        }
+        IPage<ReviewVO> result = reviewRepository.pageFiltered(technicalId, rating, hasMedia, sort, page, size)
                 .convert(r -> enrichVO(reviewConverter.toVO(r)));
         fillBusinessKeys(result.getRecords());
         return result;
@@ -118,9 +132,13 @@ public class ReviewManager {
 
     /**
      * 评价汇总 —— 一次 GROUP BY 聚合得到星级分布；rating 为 null 或超出 1~5 的
-     * 历史脏数据被忽略，不参与均分。
+     * 历史脏数据被忽略，不参与均分。入参口径同 {@link #pageBySpu}（业务键；不存在 → 零值汇总）。
      */
-    public ReviewSummaryVO reviewSummary(Long spuId) {
+    public ReviewSummaryVO reviewSummary(String spuId) {
+        Long technicalId = spuTechnicalIdOrNull(spuId);
+        if (technicalId == null) {
+            return emptySummary();
+        }
         long total = 0L;
         long weightedSum = 0L;
         Map<Integer, Long> distribution = new LinkedHashMap<>();
@@ -128,7 +146,7 @@ public class ReviewManager {
             distribution.put(star, 0L);
         }
         List<org.icedamericanomall.item.domain.model.review.RatingCount> rows =
-                reviewRepository.countByRating(spuId);
+                reviewRepository.countByRating(technicalId);
         if (rows != null) {
             for (org.icedamericanomall.item.domain.model.review.RatingCount row : rows) {
                 Integer rating = row.rating();
@@ -146,6 +164,34 @@ public class ReviewManager {
         summary.setDistribution(distribution);
         summary.setAverageScore(total == 0L ? 0.0 : Math.round(weightedSum * 10.0 / total) / 10.0);
         return summary;
+    }
+
+    /** 零值汇总（商品不存在时的空对象，分布按 1~5 星全零）。 */
+    private static ReviewSummaryVO emptySummary() {
+        ReviewSummaryVO summary = new ReviewSummaryVO();
+        summary.setTotalCount(0L);
+        Map<Integer, Long> distribution = new LinkedHashMap<>();
+        for (int star = Review.MIN_RATING; star <= Review.MAX_RATING; star++) {
+            distribution.put(star, 0L);
+        }
+        summary.setDistribution(distribution);
+        summary.setAverageScore(0.0);
+        return summary;
+    }
+
+    /**
+     * SPU <b>业务键</b>（32-hex）→ 本域技术键（{@code spu.id}）。
+     *
+     * <p>解析只许在服务内完成（ADR-062 §决策 3）：同库 {@code uk_spu_id} 唯一索引一次查询。
+     * 读路径（评价列表/汇总）取不到商品时按「无评价」处理返回 {@code null}（fail-open，
+     * 与既有「未知 id → 空列表」语义一致）——写路径的 fail-closed 口径见 {@link #resolveSpuTechnicalId}.
+     */
+    private Long spuTechnicalIdOrNull(String spuBusinessId) {
+        if (spuBusinessId == null || spuBusinessId.isBlank()) {
+            return null;
+        }
+        Spu spu = spuRepository.findByBusinessId(spuBusinessId);
+        return spu == null ? null : spu.getId();
     }
 
     /**

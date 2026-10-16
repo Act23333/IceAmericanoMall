@@ -120,9 +120,12 @@ public class InternalSearchController {
     /**
      * 商品向量摄取（契约 I47）—— 单向量幂等覆盖写（spuId 幂等键，ADR-046）。
      *
+     * <p>资源段口径（ADR-062 §决策 2 表 A #19）：SPU 资源段 {@code /vector/spu/upsert}
+     * （原 {@code /vector/product/upsert}）。
+     *
      * @return 1=已写入向量；0=ES/Embedding 未启用（静默跳过，不报错）
      */
-    @PostMapping("/vector/product/upsert")
+    @PostMapping("/vector/spu/upsert")
     public int upsertSpuVector(@RequestBody @Valid SpuVectorUpsertReq req) {
         SpuVectorManager manager = spuVectorManager.getIfAvailable();
         if (manager == null) {
@@ -136,12 +139,15 @@ public class InternalSearchController {
      * 相似商品检索（契约 I48）—— 自身向量 kNN，排除自身，只出 {@code spuId + score}
      * （商品卡组装归 item-service，MySQL 是展示真相源）。
      *
-     * <p><b>入参口径（ADR-061 §决策 2）</b>：{@code spu_id} 为 SPU <b>业务键</b>（32-hex），
+     * <p><b>入参口径（ADR-062 §决策 3）</b>：{@code spu_id} 为 SPU <b>业务键</b>（32-hex），
      * 与 I47 摄取幂等键、I48 命中 {@code spuId} 同源 —— 调用方（item-service）无需解析技术键。
+     *
+     * <p>资源段口径（ADR-062 §决策 2 表 A #20）：{@code /vector/spu/similar}
+     * （原 {@code /vector/product/similar}）。
      *
      * @return 命中列表；ES 关闭/自身无向量 → 空列表
      */
-    @GetMapping("/vector/product/similar")
+    @GetMapping("/vector/spu/similar")
     public List<SpuVectorHitCO> similarSpuVector(
             @RequestParam(name = "spu_id") String spuId,
             @RequestParam(value = "size", defaultValue = "5") Integer size) {

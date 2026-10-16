@@ -18,7 +18,7 @@ public class FeignSpuDetailAdapter implements SpuDetailPort {
     private final SpuDetailClient spuDetailClient;
 
     @Override
-    public SpuDetailInfo getSpuDetail(Long spuId) {
+    public SpuDetailInfo getSpuDetail(String spuId) {
         Result<SpuDetailCO> result = spuDetailClient.getSpuDetail(spuId);
         if (result == null || result.getData() == null) {
             return null;

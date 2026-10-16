@@ -33,12 +33,22 @@ import static org.mockito.Mockito.when;
 /**
  * SpuShareManager 单元测试（P37）—— mock MinIO（{@link StorageClient}）与微信客户端，
  * 锁定：商品不存在/不在售 1103、缓存未命中「生成→上传→URL」、缓存命中直返（零微信调用）。
+ *
+ * <p><b>入参口径（ADR-062 §决策 3）</b>：入参是 SPU <b>业务键</b> 32-hex，服务内解析为技术键；
+ * objectKey 与微信 {@code scene} 仍按技术键出（P37 冲突的寄存形态，见 {@code SpuShareManager}
+ * 类注释），故本测试对 {@code scene}/{@code objectKey} 的断言保持技术键形态 —— 这是
+ * 「本规则唯一例外」的落地证据，不得被当成漏改。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("SpuShareManager —— 商品分享小程序码编排")
 class SpuShareManagerTest {
 
-    private static final Long SPU_ID = 7L;
+    /** 商品技术键（{@code spu.id}，仅供 objectKey/scene 使用）。 */
+    private static final Long SPU_TECHNICAL_ID = 7L;
+
+    /** 商品业务键（{@code spu.spu_id} 的 32-hex 形态，路径变量口径）。 */
+    private static final String SPU_ID = String.format("%032x", SPU_TECHNICAL_ID);
+
     private static final String PAGE = "pages/product/detail/index";
     private static final String OBJECT_KEY = "wxa-code/product/7.png";
     private static final byte[] PNG_BYTES = {(byte) 0x89, 0x50, 0x4E, 0x47};
@@ -61,17 +71,17 @@ class SpuShareManagerTest {
                 new StorageProperties(), wechatMiniApiClient, PAGE);
     }
 
-    /** 在售商品桩。 */
+    /** 在售/下架商品桩（技术键与业务键成对，模拟同库 {@code uk_spu_id} 命中）。 */
     private Spu spu(int status) {
-        return Spu.builder().id(SPU_ID).name("测试商品").status(status).build();
+        return Spu.builder().id(SPU_TECHNICAL_ID).spuId(SPU_ID).name("测试商品").status(status).build();
     }
 
     // ==================== 商品守卫 ====================
 
     @Test
-    @DisplayName("getWxaCode — 商品不存在 → 1103，不触达微信与存储")
+    @DisplayName("getWxaCode — 业务键解析不到（商品不存在）→ 1103，不触达微信与存储")
     void shouldThrow1103_whenSpuAbsent() {
-        when(spuRepository.findById(SPU_ID)).thenReturn(null);
+        when(spuRepository.findByBusinessId(SPU_ID)).thenReturn(null);
 
         BizException ex = assertThrows(BizException.class, () -> manager.getWxaCode(SPU_ID));
 
@@ -82,7 +92,7 @@ class SpuShareManagerTest {
     @Test
     @DisplayName("getWxaCode — 商品下架（非在售）→ 1103")
     void shouldThrow1103_whenSpuOffShelf() {
-        when(spuRepository.findById(SPU_ID)).thenReturn(spu(SpuStatusEnum.OFF_SHELF.getCode()));
+        when(spuRepository.findByBusinessId(SPU_ID)).thenReturn(spu(SpuStatusEnum.OFF_SHELF.getCode()));
 
         BizException ex = assertThrows(BizException.class, () -> manager.getWxaCode(SPU_ID));
 
@@ -95,9 +105,9 @@ class SpuShareManagerTest {
     @Test
     @DisplayName("getWxaCode — 缓存未命中：调微信生成 → 上传 MinIO → 返回预签名 URL")
     void shouldGenerateUploadAndReturnUrl_whenCacheMissed() {
-        when(spuRepository.findById(SPU_ID)).thenReturn(spu(SpuStatusEnum.ON_SHELF.getCode()));
+        when(spuRepository.findByBusinessId(SPU_ID)).thenReturn(spu(SpuStatusEnum.ON_SHELF.getCode()));
         when(storageClient.download(anyString(), eq(OBJECT_KEY))).thenReturn(null);
-        when(wechatMiniApiClient.getWxaCodeUnlimited("p=" + SPU_ID, PAGE)).thenReturn(PNG_BYTES);
+        when(wechatMiniApiClient.getWxaCodeUnlimited("p=" + SPU_TECHNICAL_ID, PAGE)).thenReturn(PNG_BYTES);
         when(storageClient.upload(anyString(), eq(OBJECT_KEY), any(InputStream.class), eq("image/png")))
                 .thenReturn("http://minio/icedmall/" + OBJECT_KEY);
         when(storageClient.getPresignedUrl(anyString(), eq(OBJECT_KEY), anyInt()))
@@ -106,14 +116,14 @@ class SpuShareManagerTest {
         WxaCodeVO vo = manager.getWxaCode(SPU_ID);
 
         assertEquals("http://presigned/" + OBJECT_KEY, vo.getUrl());
-        verify(wechatMiniApiClient).getWxaCodeUnlimited("p=" + SPU_ID, PAGE);
+        verify(wechatMiniApiClient).getWxaCodeUnlimited("p=" + SPU_TECHNICAL_ID, PAGE);
         verify(storageClient).upload(anyString(), eq(OBJECT_KEY), any(InputStream.class), eq("image/png"));
     }
 
     @Test
     @DisplayName("getWxaCode — 缓存命中：MinIO 已有对象 → 直返 URL，零微信调用零上传")
     void shouldReturnCachedUrlDirectly_whenObjectExists() {
-        when(spuRepository.findById(SPU_ID)).thenReturn(spu(SpuStatusEnum.ON_SHELF.getCode()));
+        when(spuRepository.findByBusinessId(SPU_ID)).thenReturn(spu(SpuStatusEnum.ON_SHELF.getCode()));
         when(storageClient.download(anyString(), eq(OBJECT_KEY)))
                 .thenReturn(new ByteArrayInputStream(PNG_BYTES));
         when(storageClient.getPresignedUrl(anyString(), eq(OBJECT_KEY), anyInt()))

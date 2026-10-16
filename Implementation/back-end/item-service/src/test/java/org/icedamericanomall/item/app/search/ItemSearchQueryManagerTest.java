@@ -110,28 +110,26 @@ class ItemSearchQueryManagerTest {
     }
 
     @Test
-    @DisplayName("detail — 仓储缺失返回 null；命中映射为 CO（技术键入参）")
+    @DisplayName("detail — 空白入参返回 null；合法业务键未命中（仓储缺失）同样返回 null")
     void shouldReturnNull_whenDetailMissing() {
-        assertNull(manager.detail((String) null));
         assertNull(manager.detail("  "));
-        when(spuRepository.findSearchCardById(9L)).thenReturn(null);
-        assertNull(manager.detail("9"));
+        assertNull(manager.detail(null));
 
-        when(spuRepository.findSearchCardById(1L)).thenReturn(card(1L));
-        assertEquals(businessKey(1L), manager.detail("1").getSpuId());
-        // 纯数字（≤19 位）一律走技术键分支，不得误入业务键分支
-        verify(spuRepository, never()).findSearchCardByBusinessId(anyString());
+        String key = businessKey(9L);
+        when(spuRepository.findSearchCardByBusinessId(key)).thenReturn(null);
+        assertNull(manager.detail(key));
     }
 
     @Test
-    @DisplayName("detail — 32-hex 入参走业务键分支（ADR-061 §决策 2，I47 幂等键解析）")
-    void shouldResolveByBusinessKey_whenHexIdProvided() {
+    @DisplayName("detail — 单形态：只按 SPU 业务键解析（技术键/纯数字分支已废止，ADR-062 §决策 4）")
+    void shouldResolveByBusinessKeyOnly() {
         String key = businessKey(1L);
         when(spuRepository.findSearchCardByBusinessId(key)).thenReturn(card(1L));
 
         assertEquals(key, manager.detail(key).getSpuId());
-        // 业务键分支不得回落到技术键查询（否则 spu_id 无法解析）
-        verify(spuRepository, never()).findSearchCardById(anyLong());
+        // 原「纯数字 = 技术键」分支已删除：数字入参只会被当成业务键字符串去查（不落技术键解析）
+        when(spuRepository.findSearchCardByBusinessId("9")).thenReturn(null);
+        assertNull(manager.detail("9"));
 
         when(spuRepository.findSearchCardByBusinessId("not-a-hex-key")).thenReturn(null);
         assertNull(manager.detail("not-a-hex-key"));

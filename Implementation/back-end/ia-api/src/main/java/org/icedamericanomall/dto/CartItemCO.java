@@ -28,7 +28,15 @@ public class CartItemCO implements Serializable {
     /** SPU 业务键（{@code spu.spu_id} 的 32-hex 形态；由 cart 编排层按 I13 回填）。 */
     private String spuId;
 
-    private String productName;
+    /**
+     * SPU 名称（线格式键 {@code spu_name}）。
+     *
+     * <p>键名收口（ADR-062 §后果 E2、ADR-056 snake_case、ADR-061 §决策 5）：原
+     * {@code productName}（线格式键 {@code product_name}）已退役 —— 同一概念在
+     * 两处用不同词正是本会话多次静默失效的成因。本字段在下单链路里仍由下单侧以
+     * 商品域为准填充（购物车侧不回填，避免快照腐化）。
+     */
+    private String spuName;
 
     private String spec;
 

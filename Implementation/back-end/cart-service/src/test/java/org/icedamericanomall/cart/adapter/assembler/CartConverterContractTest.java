@@ -74,7 +74,7 @@ class CartConverterContractTest {
     void shouldLeaveSnapshotFieldsNull_whenConvertingToInternalCo() {
         CartItemCO co = converter.itemToCO(cartItem(1L, 1000L, 3, true));
 
-        assertNull(co.getProductName(), "快照字段由下单侧以商品域为准，避免购物车侧快照腐化");
+        assertNull(co.getSpuName(), "快照字段由下单侧以商品域为准，避免购物车侧快照腐化");
         assertNull(co.getSpec());
         assertNull(co.getImage());
         assertNull(co.getPrice());

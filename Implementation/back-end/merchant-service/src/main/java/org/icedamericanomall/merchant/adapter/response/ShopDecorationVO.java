@@ -12,6 +12,10 @@ import java.util.List;
  *
  * <p>字段口径（S1c）：未装修 → 公告为空值、两个列表为空数组；
  * 作为 SH1 内嵌对象时未装修 → 整体 {@code null}（由装配方决定）。
+ *
+ * <p><b>标识口径（ADR-062 §决策 3，闭合 §后果 E4）</b>：{@code hotSpuIds} 为 SPU
+ * <b>业务键</b> 32-hex 列表（{@code spu.spu_id}），与 {@code ShopDecorationReq} 写侧
+ * <b>同型同义</b>（禁止半侧收口）；此前 {@code List<Long>}（技术键）已随之退役。
  */
 @Data
 public class ShopDecorationVO implements Serializable {
@@ -25,8 +29,8 @@ public class ShopDecorationVO implements Serializable {
     /** 轮播图 URL（≤5） */
     private List<String> banners;
 
-    /** 推荐商品位（spu.id，≤8，去重保序；展示端过滤失效 / 非在售 id） */
-    private List<Long> hotSpuIds;
+    /** 推荐商品位（SPU 业务键 32-hex，≤8，去重保序；展示端过滤失效 / 非在售商品） */
+    private List<String> hotSpuIds;
 
     /** 领域模型 → 视图对象。 */
     public static ShopDecorationVO from(ShopDecoration decoration) {

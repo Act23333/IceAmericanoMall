@@ -119,12 +119,6 @@ class SpuManagerTest {
         return p;
     }
 
-    /** 锚点解析桩：返回带业务键的检索卡片（I47/I48 的线格式入参口径）。 */
-    private static org.icedamericanomall.item.domain.model.spu.SpuSearchCard card(Long id) {
-        return new org.icedamericanomall.item.domain.model.spu.SpuSearchCard(
-                id, businessKey(id), 10L, "手机", "旗舰", "品牌A", "img.jpg", 800, 0, null);
-    }
-
     private CreateSpuReq createReq() {
         CreateSpuReq req = new CreateSpuReq();
         req.setCategoryId(10L);
@@ -157,13 +151,13 @@ class SpuManagerTest {
     @Test
     @DisplayName("getSpuDetail — 存在：返回 VO 并附在售 SKU 与最低价")
     void shouldReturnDetailWithSkus_whenSpuExists() {
-        Spu p = spu(100L);
-        when(spuRepository.findById(1L)).thenReturn(p);
+        Spu p = spuWithId(100L, 1L);
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(p);
         when(skuRepository.findBySpuId(1L)).thenReturn(List.of(
                 org.icedamericanomall.item.domain.model.sku.Sku.builder()
                         .id(1L).spuId(1L).price(599900).status(1).build()));
 
-        SpuVO vo = spuManager.getSpuDetail(1L);
+        SpuVO vo = spuManager.getSpuDetail(businessKey(1L));
 
         assertEquals("手机", vo.getName());
         assertEquals(599900, vo.getMinPrice());
@@ -173,16 +167,16 @@ class SpuManagerTest {
     @Test
     @DisplayName("getSpuDetail — 不存在 → PRODUCT_NOT_FOUND")
     void shouldThrowNotFound_whenSpuMissing() {
-        when(spuRepository.findById(1L)).thenReturn(null);
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(null);
 
-        BizException ex = assertThrows(BizException.class, () -> spuManager.getSpuDetail(1L));
+        BizException ex = assertThrows(BizException.class, () -> spuManager.getSpuDetail(businessKey(1L)));
         assertEquals(ErrorCode.PRODUCT_NOT_FOUND, ex.getErrorCode());
     }
 
     @Test
     @DisplayName("getSpuDetail — 店铺有进行中促销 → promotions 回填满减/满折标签（V5.11 增量）")
     void shouldFillPromotions_whenShopHasActivePromotion() {
-        when(spuRepository.findById(1L)).thenReturn(spu(100L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
         when(skuRepository.findBySpuId(1L)).thenReturn(List.of(
                 org.icedamericanomall.item.domain.model.sku.Sku.builder()
                         .id(1L).spuId(1L).price(599900).status(1).build()));
@@ -190,7 +184,7 @@ class SpuManagerTest {
                 new PromotionCO(1L, "满1000减200", 100L, 1, 100000, 20000, 0, null),
                 new PromotionCO(2L, "满500打8.5折", 100L, 2, 50000, 8500, 10000, null)));
 
-        SpuVO vo = spuManager.getSpuDetail(1L);
+        SpuVO vo = spuManager.getSpuDetail(businessKey(1L));
 
         assertEquals(2, vo.getPromotions().size());
         assertEquals("FULL_REDUCE", vo.getPromotions().get(0).getType());
@@ -201,14 +195,14 @@ class SpuManagerTest {
     @Test
     @DisplayName("getSpuDetail — 促销查询失败（fail-open）→ 详情正常返回，promotions 为空列表")
     void shouldStillReturnDetail_whenPromotionQueryFails() {
-        when(spuRepository.findById(1L)).thenReturn(spu(100L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
         when(skuRepository.findBySpuId(1L)).thenReturn(List.of(
                 org.icedamericanomall.item.domain.model.sku.Sku.builder()
                         .id(1L).spuId(1L).price(599900).status(1).build()));
         when(promotionClient.queryActive(any(PromotionQueryCO.class)))
                 .thenThrow(new BizException(ErrorCode.SYSTEM_BUSY, "促销服务暂不可用"));
 
-        SpuVO vo = spuManager.getSpuDetail(1L);
+        SpuVO vo = spuManager.getSpuDetail(businessKey(1L));
 
         assertEquals("手机", vo.getName());
         assertNotNull(vo.getPromotions());
@@ -308,23 +302,23 @@ class SpuManagerTest {
     @Test
     @DisplayName("updateSpu — 非本人商品 → FORBIDDEN")
     void shouldThrowForbidden_whenNotOwner() {
-        when(spuRepository.findById(1L)).thenReturn(spu(999L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spu(999L));
 
         UpdateSpuReq req = new UpdateSpuReq();
         BizException ex = assertThrows(BizException.class,
-                () -> spuManager.updateSpu(1L, 100L, req));
+                () -> spuManager.updateSpu(businessKey(1L), 100L, req));
         assertEquals(ErrorCode.FORBIDDEN, ex.getErrorCode());
     }
 
     @Test
     @DisplayName("updateSpu — 本人商品：条件覆盖更新（运费绑定非空即校验）")
     void shouldUpdateEditable_whenOwner() {
-        when(spuRepository.findById(1L)).thenReturn(spuWithId(100L, 1L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
 
         UpdateSpuReq req = new UpdateSpuReq();
         req.setName("新款手机");
         req.setFreightTemplateId(5L);
-        spuManager.updateSpu(1L, 100L, req);
+        spuManager.updateSpu(businessKey(1L), 100L, req);
 
         verify(freightTemplateManager).requireBindable(100L, 5L);
         verify(spuRepository).updateEditable(eq(1L), eq("新款手机"), any(), any(), any(), any(), eq(5L));
@@ -337,14 +331,16 @@ class SpuManagerTest {
         Spu after = spuWithId(100L, 1L);
         after.setName("新款手机");
         after.setCategoryId(20L);
-        when(spuRepository.findById(1L)).thenReturn(before, after);
+        // 解析（业务键 → 技术键）与「重读合并态」是两次不同口径的查询：前者按业务键，后者按本域技术键
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(before);
+        when(spuRepository.findById(1L)).thenReturn(after);
         when(skuRepository.findOnSaleBySpuIds(List.of(1L))).thenReturn(List.of(
                 Sku.builder().id(9L).spuId(1L).price(1200).status(1).build()));
 
         UpdateSpuReq req = new UpdateSpuReq();
         req.setName("新款手机");
         req.setCategoryId(20L);
-        spuManager.updateSpu(1L, 100L, req);
+        spuManager.updateSpu(businessKey(1L), 100L, req);
 
         ArgumentCaptor<SpuVectorUpsertCO> captor = ArgumentCaptor.forClass(SpuVectorUpsertCO.class);
         verify(spuVectorClient).upsert(captor.capture());
@@ -365,9 +361,9 @@ class SpuManagerTest {
     @Test
     @DisplayName("updateSpuStatus — 存在：状态变更落库")
     void shouldUpdateStatus_whenExists() {
-        when(spuRepository.findById(1L)).thenReturn(spuWithId(100L, 1L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
 
-        spuManager.updateSpuStatus(1L, 100L, false, SpuStatusEnum.OFF_SHELF.getCode());
+        spuManager.updateSpuStatus(businessKey(1L), 100L, false, SpuStatusEnum.OFF_SHELF.getCode());
 
         verify(spuRepository).updateStatus(1L, SpuStatusEnum.OFF_SHELF.getCode());
     }
@@ -375,20 +371,20 @@ class SpuManagerTest {
     @Test
     @DisplayName("updateSpuStatus — 不存在 → PRODUCT_NOT_FOUND")
     void shouldThrowNotFound_whenStatusChangeOnMissing() {
-        when(spuRepository.findById(1L)).thenReturn(null);
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(null);
 
         BizException ex = assertThrows(BizException.class,
-                () -> spuManager.updateSpuStatus(1L, 100L, false, SpuStatusEnum.OFF_SHELF.getCode()));
+                () -> spuManager.updateSpuStatus(businessKey(1L), 100L, false, SpuStatusEnum.OFF_SHELF.getCode()));
         assertEquals(ErrorCode.PRODUCT_NOT_FOUND, ex.getErrorCode());
     }
 
     @Test
     @DisplayName("updateSpuStatus — 越权防护：非商品归属商家 → FORBIDDEN 且不落库")
     void shouldRejectStatusChange_whenNotOwner() {
-        when(spuRepository.findById(1L)).thenReturn(spuWithId(100L, 1L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
 
         BizException ex = assertThrows(BizException.class, () -> spuManager
-                .updateSpuStatus(1L, 999L, false, SpuStatusEnum.OFF_SHELF.getCode()));
+                .updateSpuStatus(businessKey(1L), 999L, false, SpuStatusEnum.OFF_SHELF.getCode()));
         assertEquals(ErrorCode.FORBIDDEN, ex.getErrorCode());
         verify(spuRepository, never()).updateStatus(anyLong(), anyInt());
     }
@@ -396,9 +392,9 @@ class SpuManagerTest {
     @Test
     @DisplayName("updateSpuStatus — 管理员放行：非归属商家亦可上下架")
     void shouldAllowStatusChange_whenAdmin() {
-        when(spuRepository.findById(1L)).thenReturn(spuWithId(100L, 1L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
 
-        spuManager.updateSpuStatus(1L, 999L, true, SpuStatusEnum.OFF_SHELF.getCode());
+        spuManager.updateSpuStatus(businessKey(1L), 999L, true, SpuStatusEnum.OFF_SHELF.getCode());
 
         verify(spuRepository).updateStatus(1L, SpuStatusEnum.OFF_SHELF.getCode());
     }
@@ -406,9 +402,9 @@ class SpuManagerTest {
     @Test
     @DisplayName("updateSpuStatus — 上下架不摄取向量（内容未变，下架商品由 P27 组装过滤，ADR-046）")
     void shouldNotIngest_whenUpdateStatus() {
-        when(spuRepository.findById(1L)).thenReturn(spuWithId(100L, 1L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
 
-        spuManager.updateSpuStatus(1L, 100L, false, SpuStatusEnum.OFF_SHELF.getCode());
+        spuManager.updateSpuStatus(businessKey(1L), 100L, false, SpuStatusEnum.OFF_SHELF.getCode());
 
         verify(spuVectorClient, never()).upsert(any(SpuVectorUpsertCO.class));
     }
@@ -421,7 +417,7 @@ class SpuManagerTest {
         Spu p5 = spuWithId(200L, 5L);
         p5.setSoldCount(11);
         // 锚点 1L：技术键 → 业务键解析（I48 入参口径）
-        when(spuRepository.findSearchCardById(1L)).thenReturn(card(1L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
         when(spuVectorClient.similar(businessKey(1L), 5)).thenReturn(List.of(
                 new org.icedamericanomall.dto.SpuVectorHitCO(businessKey(5L), 0.92),
                 new org.icedamericanomall.dto.SpuVectorHitCO(businessKey(3L), 0.71)));
@@ -436,11 +432,11 @@ class SpuManagerTest {
                 Sku.builder().id(51L).spuId(5L).price(500).status(1).build(),
                 Sku.builder().id(31L).spuId(3L).price(300).status(1).build()));
 
-        List<RecommendSpuVO> result = spuManager.similarSpus(1L, null);
+        List<RecommendSpuVO> result = spuManager.similarSpus(businessKey(1L), null);
 
         assertEquals(2, result.size());
-        assertEquals(5L, result.get(0).getSpuId());
-        assertEquals(3L, result.get(1).getSpuId());
+        assertEquals(businessKey(5L), result.get(0).getSpuId());
+        assertEquals(businessKey(3L), result.get(1).getSpuId());
         assertEquals(500, result.get(0).getPrice());
         assertEquals(11, result.get(0).getSoldCount());
         assertEquals("手机", result.get(0).getName());
@@ -449,7 +445,7 @@ class SpuManagerTest {
     @Test
     @DisplayName("similarSpus — 恒过滤在售并剔除自身：非在售/自身命中不出卡")
     void shouldFilterNonOnSaleAndSelf_whenAssembling() {
-        when(spuRepository.findSearchCardById(1L)).thenReturn(card(1L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
         when(spuVectorClient.similar(businessKey(1L), 5)).thenReturn(List.of(
                 new org.icedamericanomall.dto.SpuVectorHitCO(businessKey(1L), 0.99),
                 new org.icedamericanomall.dto.SpuVectorHitCO(businessKey(2L), 0.9),
@@ -467,18 +463,18 @@ class SpuManagerTest {
         when(skuRepository.findOnSaleBySpuIds(List.of(3L))).thenReturn(List.of(
                 Sku.builder().id(31L).spuId(3L).price(300).status(1).build()));
 
-        List<RecommendSpuVO> result = spuManager.similarSpus(1L, null);
+        List<RecommendSpuVO> result = spuManager.similarSpus(businessKey(1L), null);
 
         assertEquals(1, result.size());
-        assertEquals(3L, result.get(0).getSpuId());
+        assertEquals(businessKey(3L), result.get(0).getSpuId());
     }
 
     @Test
     @DisplayName("similarSpus — 锚点商品不存在（无业务键）→ 空列表且不打远程调用")
     void shouldReturnEmpty_whenAnchorMissing() {
-        when(spuRepository.findSearchCardById(1L)).thenReturn(null);
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(null);
 
-        List<RecommendSpuVO> result = spuManager.similarSpus(1L, null);
+        List<RecommendSpuVO> result = spuManager.similarSpus(businessKey(1L), null);
 
         assertTrue(result.isEmpty());
         verify(spuVectorClient, never()).similar(anyString(), anyInt());
@@ -487,10 +483,10 @@ class SpuManagerTest {
     @Test
     @DisplayName("similarSpus — 命中为空 → 空列表不报错，不触发本地批量查询")
     void shouldReturnEmpty_whenClientReturnsEmpty() {
-        when(spuRepository.findSearchCardById(1L)).thenReturn(card(1L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
         when(spuVectorClient.similar(businessKey(1L), 5)).thenReturn(List.of());
 
-        List<RecommendSpuVO> result = spuManager.similarSpus(1L, null);
+        List<RecommendSpuVO> result = spuManager.similarSpus(businessKey(1L), null);
 
         assertTrue(result.isEmpty());
         verify(spuRepository, never()).findAllByIds(any());
@@ -499,11 +495,11 @@ class SpuManagerTest {
     @Test
     @DisplayName("similarSpus — client 抛异常（防御层）→ 空列表不报错")
     void shouldReturnEmpty_whenClientThrows() {
-        when(spuRepository.findSearchCardById(1L)).thenReturn(card(1L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
         when(spuVectorClient.similar(businessKey(1L), 5))
                 .thenThrow(new RuntimeException("search-service 不可用"));
 
-        List<RecommendSpuVO> result = spuManager.similarSpus(1L, null);
+        List<RecommendSpuVO> result = spuManager.similarSpus(businessKey(1L), null);
 
         assertTrue(result.isEmpty());
     }
@@ -511,13 +507,13 @@ class SpuManagerTest {
     @Test
     @DisplayName("similarSpus — size 归一：缺省 5、上限 20（与服务端 I48 归一一致）")
     void shouldNormalizeSize_whenSimilar() {
-        when(spuRepository.findSearchCardById(1L)).thenReturn(card(1L));
-        when(spuRepository.findSearchCardById(2L)).thenReturn(card(2L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
+        when(spuRepository.findByBusinessId(businessKey(2L))).thenReturn(spuWithId(100L, 2L));
         when(spuVectorClient.similar(businessKey(1L), 5)).thenReturn(List.of());
         when(spuVectorClient.similar(businessKey(2L), 20)).thenReturn(List.of());
 
-        spuManager.similarSpus(1L, null);
-        spuManager.similarSpus(2L, 50);
+        spuManager.similarSpus(businessKey(1L), null);
+        spuManager.similarSpus(businessKey(2L), 50);
 
         verify(spuVectorClient).similar(businessKey(1L), 5);
         verify(spuVectorClient).similar(businessKey(2L), 20);
