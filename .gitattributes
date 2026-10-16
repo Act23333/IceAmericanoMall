@@ -1,0 +1,75 @@
+# ============================================================================
+# 行尾与文本归一化规则
+#
+# 背景：本仓库此前没有 .gitattributes，且 core.autocrlf 行为不一致 —— 仓库内
+#       同一文件可能是 LF，而工作区是 CRLF。任何脚本按工作区形态写回（如用
+#       Python 按 CRLF 落盘）都会让"改 1 行"变成"全文件重写"的伪差异
+#       （本项目已实际发生：契约文件出现 2829 增 / 2829 删的整文件差异）。
+#
+# 策略：仓库内一律 LF；Windows 专用脚本保持 CRLF。
+# 注意：本文件只声明规则，不触发历史重写。已入库文件在【下次被 add 时】逐个
+#       归一 —— 这是安全渐进路径，避免一次性全仓 renormalize 产生跨模块大提交。
+#       如需立即全量归一，须单独决策并单独提交：git add --renormalize .
+# ============================================================================
+
+# 默认：自动识别文本文件，且工作区与仓库统一使用 LF
+* text=auto eol=lf
+
+# ---- Windows 专用脚本保留 CRLF（否则 cmd/PowerShell 可能解析异常）----
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# ---- 源码/文档明确按 LF（显式声明，避免依赖 text=auto 的猜测）----
+*.java  text eol=lf
+*.kt    text eol=lf
+*.xml   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.properties text eol=lf
+*.sql   text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.css   text eol=lf
+*.sh    text eol=lf
+
+# ---- 二进制：禁止行尾转换与文本 diff ----
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.bmp   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.eot   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.7z    binary
+*.jar   binary
+*.xlsx  binary
+*.xls   binary
+*.docx  binary
+*.pptx  binary
+*.drawio binary
+
+# ---- 生成物 / 依赖：不参与 diff、不计入语言统计 ----
+# （注：apps/miniprogram/dist 当前仍被 git 跟踪，属待清理项；此处仅消除其 diff 噪声）
+Implementation/front-end/node_modules/**                -diff -text
+**/target/**                                            -diff -text
+Implementation/front-end/apps/miniprogram/dist/**       -diff -text -linguist-generated
+Implementation/front-end/**/.next/**                    -diff -text -linguist-generated
+
+# ---- 锁文件：内容由工具生成，不参与 diff 阅读 ----
+pnpm-lock.yaml      -diff
+package-lock.json   -diff
+yarn.lock           -diff
+skills-lock.json    -diff
