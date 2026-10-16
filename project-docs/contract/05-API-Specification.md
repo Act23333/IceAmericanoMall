@@ -106,6 +106,27 @@
 
 所有日期时间字段使用 ISO 8601 格式：`2026-08-02T10:30:00`。时区：Asia/Shanghai (UTC+8)。
 
+### 1.8 SPU/SKU 标识口径（🆕 2026-10-16，ADR-058/059/061）
+
+> 本节是**全平台标识口径的唯一真相源**；§四各端点的字段表与 §八 样例如与本节冲突，以本节为准（并应修正该处）。
+
+**① 什么算「SPU/SKU 标识」**：凡**代表 SPU 或 SKU 实体**、用于指向/回链/比对该实体的标识，一律为**业务键**：
+
+| 术语 | 载体 | 线格式形态 | 来源 |
+| --- | --- | --- | --- |
+| **SPU 业务键** | DB 列 `spu.spu_id BINARY(16)`（`UNIQUE KEY uk_spu_id`） | `String`，**32 位小写 hex**（如 `0f1e2d3c4b5a69788796a5b4c3d2e1f0`） | ADR-050（`BINARY(16)` + UUIDv7；`ia-common` `IdGenerator` 为唯一编解码出口） |
+| **SKU 业务键** | DB 列 `sku.sku_id BINARY(16)`（`UNIQUE KEY uk_sku_id`） | 同上 | 同上 |
+
+- **示例值规范形态为 32-hex**；可读编码（`prod-001`/`sku-001`）在写入端即被 fail-fast 拒绝。
+- **技术键（`spu.id`/`sku.id`）与技术外键（`sku.spu_id BIGINT`、`order_item.order_id` 等）只保留在 PO 与领域层**，不得出现在任何 VO/DTO（ADR-058 §1）。**类型也是口径的一部分**：字段名对而类型为 `Long` 同样是违规（ADR-061 §守卫）。
+- **命名必须显式区分 SPU 与 SKU**：线格式中**不得出现** `product_id`（歧义源，ADR-059 §2）；SPU 的名称/主图字段为 `spu_name` / `spu_image`（**不是** `product` 前缀旧名；旧名清单与本批收口记录见 [ADR-061](../adr/061-order-item-business-key-snapshot-and-price-compare.md) §决策 5）。
+- **例外（明确登记）**：`id` 字段指**资源行主键**（渲染/定位用），不属「SPU/SKU 实体标识」——`SpuVO.id`/`SkuVO.id`/`OrderItemVO.id`/`ReviewVO.id` 保持现状（其收敛属 ADR-058 §1 的既有偏差，另行排期）；路径变量（`{id}`/`{spuId}`/`{skuId}`/`{productId}`）**本期未收口**，仍为技术键 —— 见 §十二 12.2 待裁决项。
+- **`/internal/**` 内部契约**：I13 `SkuCO` 等**必须**按业务键口径**补齐**业务标识字段（ADR-058 §3：读模型按技术键批量取数时须顺带返回业务标识）；内部 DTO 标识字段的类型收口口径见 §十二 12.2 待裁决项（**未裁决前不得按技术键新增对外字段**）。
+
+**② 请求侧同样适用**：名称含 `spu_id`/`spu_ids`/`sku_id`/`sku_ids` 的**查询参数与请求体字段**（含 `Path:` 中显式标注为 SPU/SKU 标识者）一律按业务键消费；服务端负责业务键 → 内部技术键的解析（不要求调用方持有技术键）。
+
+**③ 订单项特别口径（ADR-061）**：`OrderItemVO` = **业务键标识** + **快照**，二者不得互相顶替；比价/失效提示为**读时增强、fail-open**（见 §4.6.1）。
+
 ---
 
 ## 二、错误码体系
@@ -475,17 +496,17 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 
 | #   | 方法     | 路径                   | 认证  | 请求                           | 响应                  | 状态 | 阶段  |
 | --- | ------ | -------------------- | --- | ---------------------------- | ------------------- | --- | --- |
-| U18 | POST   | `/api/user/favorite` | 🔒  | Query: `spu_id` (Long)    | `Void`              | ✅ | ✅   |
-| U19 | DELETE | `/api/user/favorite` | 🔒  | Query: `spu_id` (Long)    | `Void`              | ✅ | ✅   |
+| U18 | POST   | `/api/user/favorite` | 🔒  | Query: `spu_id` (String, SPU 业务键 32-hex，§1.8)    | `Void`              | ✅ | ✅   |
+| U19 | DELETE | `/api/user/favorite` | 🔒  | Query: `spu_id` (String, SPU 业务键 32-hex，§1.8)    | `Void`              | ✅ | ✅   |
 | U20 | GET    | `/api/user/favorite` | 🔒  | Query: `page`(1), `size`(20) | `IPage<FavoriteVO>` | ✅ | ✅   |
 
-**`FavoriteVO`**:
+**`FavoriteVO`**（标识口径见 §1.8；SPU 名称字段已收口为 `spu_name`、`spu_id` 改业务键，2026-10-16，ADR-061）：
 
 ```json
 {
   "id": 1,
-  "spu_id": 1001,
-  "product_name": "手工陶瓷茶杯",
+  "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "spu_name": "手工陶瓷茶杯",
   "main_image": "https://...",
   "price": 12800,
   "status": 1,
@@ -493,11 +514,14 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 }
 ```
 
+> - `id` = 收藏记录行主键（非 SPU 标识）；`spu_id` = **SPU 业务键**，与 `SpuVO.spu_id`/`SpuSearchVO.spu_id` **同型同义**，可与 U18/U19 的 `spu_id` 参数**逐位一致**地互操作。
+> - `spu_name` / `main_image` / `price` / `status` 为读时回填（ADR-057 读模型）；商品已删除或读模型降级 → 四者为 `null`，**列表照常返回、不缩行**（fail-open）。
+
 #### 4.2.7 HistoryController — `/api/user/history`
 
 | #   | 方法     | 路径                  | 认证  | 请求                        | 响应                         | 状态 | 阶段  |
 | --- | ------ | ------------------- | --- | ------------------------- | -------------------------- | --- | --- |
-| U21 | POST   | `/api/user/history` | 🔒  | Query: `spu_id` (Long) | `Void`                     | ✅ | ✅   |
+| U21 | POST   | `/api/user/history` | 🔒  | Query: `spu_id` (String, SPU 业务键 32-hex，§1.8) | `Void`                     | ✅ | ✅   |
 | U22 | GET    | `/api/user/history` | 🔒  | Query: `size`(20)         | `List<HistoryVO>`（V5.4 弱类型 `List<Map>` → 强类型，JSON 键名不变） | ✅ | ✅   |
 | U23 | DELETE | `/api/user/history` | 🔒  | —                         | `Void`（清空全部）               | ✅ | ✅   |
 
@@ -507,19 +531,21 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 | --- | ------ | ----------------------------- | --- | ------------------------- | ---- | --- | --- |
 | U33 | DELETE | `/api/user/history/{productId}` | 🔒  | Path: `productId` (Long)  | `Void` | ✅ | ✅   |
 
-**`HistoryVO`**（snake_case JSON 键名沿用迁移前报文，显式 `@JsonProperty` 固定）:
+**`HistoryVO`**（snake_case JSON 键名沿用迁移前报文，显式 `@JsonProperty` 固定；标识口径见 §1.8）:
 
 ```json
 {
   "id": 1,
-  "spu_id": 1001,
+  "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
   "view_time": "2026-08-02T10:30:00",
-  "product_name": "手工陶瓷茶杯",
+  "spu_name": "手工陶瓷茶杯",
   "main_image": "https://...",
   "brand": "冰美精选",
   "price": 12800
 }
 ```
+
+> - `spu_id` = **SPU 业务键**（2026-10-16 收口，ADR-061；原为 `Long` 技术键）；SPU 名称字段收口为 `spu_name`（SPU 实体化后的命名统一，ADR-061 §决策 5）。U21/U33 的入参口径与此对齐。
 
 #### 4.2.8 Account Security (🆕 V5.0 计划)
 
@@ -600,8 +626,8 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 | S1   | POST | `/api/seller/apply`        | 🔒  | `MerchantApplyReq { shop_name, contact_phone, province?, city?, district?, detail_address? }`（语义见 §4.6.6 T25） | `Void`     | ✅ | ✅ V5.4（原 `/api/seller/register` 更名） |
 | S1a  | GET  | `/api/seller/shops`        | 🔒  | —                                                                                                    | `List<ShopVO>`（本人全部店铺；单店铺商家返回长度 1） | ✅ | 🆕 V5.4 |
 | S1b  | PUT  | `/api/seller/shops/{shopId}` | 🔒 | Path: `shopId` (Long), Body: `UpdateShopReq { shop_name?, shop_logo?, contact_phone?, province?, city?, district?, detail_address? }` | `Void`（null-safe 部分更新；非本人店铺 → 403 FORBIDDEN） | ✅ | 🆕 V5.4 |
-| S1c  | GET  | `/api/seller/shops/{shopId}/decoration` | 🔒 | Path: `shopId` (Long) | `ShopDecorationVO { announcement?, banners:[String], hot_spu_ids:[Long] }`（未装修 → 各字段空值/空数组） | ✅ | ✅ V5.12 |
-| S1d  | PUT  | `/api/seller/shops/{shopId}/decoration` | 🔒 | Path: `shopId` (Long), Body: `ShopDecorationReq { announcement?(≤200), banners?(≤5 个 URL), hot_spu_ids?(≤8 个商品 id，去重) }` | `Void`（归属校验同 S1b；UPSERT；**hot_spu_ids Phase 1 不校验商品归属**——展示端过滤失效 id，ADR-048） | ✅ | ✅ V5.12 |
+| S1c  | GET  | `/api/seller/shops/{shopId}/decoration` | 🔒 | Path: `shopId` (Long) | `ShopDecorationVO { announcement?, banners:[String], hot_spu_ids:[String] }`（未装修 → 各字段空值/空数组；`hot_spu_ids` 为 **SPU 业务键 32-hex 数组**，§1.8） | ✅ | ✅ V5.12 |
+| S1d  | PUT  | `/api/seller/shops/{shopId}/decoration` | 🔒 | Path: `shopId` (Long), Body: `ShopDecorationReq { announcement?(≤200), banners?(≤5 个 URL), hot_spu_ids?(≤8 个 SPU 业务键 32-hex，去重) }` | `Void`（归属校验同 S1b；UPSERT；**hot_spu_ids Phase 1 不校验商品归属**——展示端过滤失效 id，ADR-048） | ✅ | ✅ V5.12 |
 | S2   | GET  | `/api/seller/shop`         | 🔒  | —                                                                                                    | `ShopVO`（默认店铺） | ✅ | ✅ @Deprecated V5.4 |
 | S3   | PUT  | `/api/seller/shop`         | 🔒  | `UpdateShopReq { shop_name?, shop_logo?, contact_phone?, province?, city?, district?, detail_address? }` | `Void`（更新默认店铺） | ✅ | ✅ @Deprecated V5.4 |
 
@@ -657,7 +683,7 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 | #   | 方法  | 路径                                          | 认证  | 请求                | 响应                                                                         | 状态 | 阶段     |
 | --- | --- | ------------------------------------------- | --- | ----------------- | -------------------------------------------------------------------------- | --- | ------ |
 | S10 | GET | `/api/trade/seller/dashboard`               | 🏪  | —                 | `Map<String,Object>` `{today_order_count, pending_ship_count, monthly_revenue}` | ✅ | ✅      |
-| S11 | GET | `/api/trade/seller/dashboard/product-stats` | 🏪  | Query: `days`(30) | `List<Map<String,Object>>` (product_name/quantity/revenue)                  | ✅ | ✅ V4.0 |
+| S11 | GET | `/api/trade/seller/dashboard/product-stats` | 🏪  | Query: `days`(30) | `List<Map<String,Object>>` (spu_name/quantity/revenue)                  | ✅ | ✅ V4.0 |
 
 ---
 
@@ -673,12 +699,12 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 | P4  | PUT  | `/api/item/product/{id}`        | 🏪  | Path: `id` (Long), Body: `UpdateSpuReq { name?, main_image?, description?, brand?, category_id? }`                                            | `Void`             | ✅ | ✅   |
 | P5  | PUT  | `/api/item/product/{id}/status` | 🏪  | Path: `id` (Long), Query: `status` (Integer: 1上架/0下架)                                                                                           | `Void`             | ✅ | ✅   |
 
-**`SpuVO`**:
+**`SpuVO`**（标识口径见 §1.8；`spu_id` 为 SPU 业务键 32-hex）:
 
 ```json
 {
   "id": 1,
-  "spu_id": "prod-001",
+  "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
   "seller_id": 5,
   "shop_name": "冰美精选陶瓷",
   "shop_logo": "https://...",
@@ -699,13 +725,13 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 }
 ```
 
-**`SkuVO`**:
+**`SkuVO`**（标识口径见 §1.8：`sku_id` / `spu_id` **均为业务键 32-hex `String`**）:
 
 ```json
 {
   "id": 1,
-  "sku_id": "sku-001",
-  "spu_id": 1,
+  "sku_id": "1a2b3c4d5e6f708192a3b4c5d6e7f809",
+  "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
   "spec": "天青/标准",
   "spec_dimensions": { "颜色": "天青", "尺寸": "标准" },
   "price": 12800,
@@ -722,6 +748,8 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 ```
 
 > **hot_reason 口径（V5.4）**：取值为枚举码 `discount`(限时优惠) / `new_arrival`(新品上市) / `best_seller`(热卖爆款) / `clearance`(清仓特价)（`HotReasonEnum`，非法码服务端归一为 null 丢弃，不阻断发布）。
+
+> **`SkuVO.spu_id` 类型收口（🆕 2026-10-16，ADR-061；⏳ 代码待补）**：**契约口径为 SPU 业务键 32-hex `String`**；⚠ **实测实现仍是 `Long` 技术外键**（`item-service` `adapter/response/SkuVO.java` L14 `private Long spuId`）——ADR-059 §2 的既有违规（其守卫只查命名未查类型，故漏放），本批按 ADR-061 补齐契约并登记代码侧待补（§十二 12.2）。在代码落码前，该键实际回吐技术键，**前端不得依赖它做跨接口 join**。
 
 #### 4.4.2 SpuDetailController — `/api/item/product` (V3.5 详情页增强)
 
@@ -759,7 +787,7 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 
 | #   | 方法   | 路径                                             | 认证  | 请求                                                                                              | 响应                | 状态 | 阶段        |
 | --- | ---- | ---------------------------------------------- | --- | ----------------------------------------------------------------------------------------------- | ----------------- | --- | --------- |
-| P12 | POST | `/api/item/review`                             | 🔒  | `ReviewCreateReq { order_no(32-hex，来源 OrderVO.order_no，ADR-050 三批), spu_id, rating(1-5), content?, images? }`            | `ReviewVO`        | ✅ | ✅         |
+| P12 | POST | `/api/item/review`                             | 🔒  | `ReviewCreateReq { order_no(32-hex，来源 OrderVO.order_no，ADR-050 三批), spu_id(String, **SPU 业务键 32-hex**，§1.8), rating(1-5), content?, images? }`            | `ReviewVO`        | ✅ | ✅         |
 | P13 | GET  | `/api/item/review/product/{productId}`         | 🌐  | Path: `productId` (Long), Query: `page`(1), `size`(10), `sort?`(newest\|highest\|lowest)        | `IPage<ReviewVO>` | ✅ | ✅         |
 | P14 | GET  | `/api/item/review/product/{productId}/filter`  | 🌐  | Path: `productId` (Long), Query: `rating?`(1-5), `has_media?`(Boolean), `page`(默认 1), `size`(默认 10), `sort?`(newest\|highest) | `IPage<ReviewVO>` | ✅ | ✅ V3.5    |
 | P15 | GET  | `/api/item/review/product/{productId}/summary` | 🌐  | Path: `productId` (Long)                                                                        | `ReviewSummaryVO` | ✅ | ✅ V3.5    |
@@ -767,7 +795,7 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 | P17 | POST | `/api/item/review/{id}/append`                 | 🔒  | Path: `id` (Long), Body: `{ content, media_urls? }` (追评)                                         | `Void`            | ✅ | ✅ V5.0 |
 | P18 | POST | `/api/item/review/{id}/like`                   | 🔒  | Path: `id` (Long)                                                                               | `Void` (点赞)       | ✅ | ✅ V5.0 |
 
-**`ReviewVO`**:
+**`ReviewVO`**（标识口径见 §1.8；`spu_id` 为 SPU 业务键 32-hex）:
 
 ```json
 {
@@ -775,7 +803,7 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
   "user_id": 1001,
   "username": "匿名用户",
   "avatar": "https://...",
-  "spu_id": 1,
+  "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
   "order_no": "ord-xxx",
   "score": 5,
   "content": "质量很好，做工精细，推荐购买！",
@@ -852,7 +880,7 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 | --- | ------ | ------------------------------------ | --- | -------------------- | ---------------- | --- | ------ |
 | P25 | POST   | `/api/item/sku/{skuId}/stock-notify` | 🔒  | Path: `skuId` (Long) | `Void` (到货后推送通知) | ⚪ | ⚪ V5.0 |
 | P26 | DELETE | `/api/item/sku/{skuId}/stock-notify` | 🔒  | Path: `skuId` (Long) | `Void`           | ⚪ | ⚪ V5.0 |
-| P27 | GET  | `/api/item/product/{productId}/similar` | 🌐  | Path: `productId` (Long), Query: `size`(缺省5, ≤20) | `List<RecommendSpuVO>`（相似商品卡：按向量相似度降序，**恒过滤在售**并排除自身；ES 关闭/无相似命中 → 空列表不报错） | ✅ | ✅ V5.9 |
+| P27 | GET  | `/api/item/product/{productId}/similar` | 🌐  | Path: `productId` (Long，⚠ 路径变量本期未收口，见 §1.8/§十二 12.2), Query: `size`(缺省5, ≤20) | `List<RecommendSpuVO>`（相似商品卡 `{ spu_id(SPU 业务键 32-hex), name, main_image, min_price }`：按向量相似度降序，**恒过滤在售**并排除自身；ES 关闭/无相似命中 → 空列表不报错） | ✅ | ✅ V5.9 |
 
 #### 4.4.xa NoteController — `/api/notes` (item-service, ✅ V5.12 — F12 内容社区 Phase 1，[ADR-048](../adr/048-content-notes-in-item-domain.md))
 
@@ -860,14 +888,14 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 
 | #   | 方法   | 路径                     | 认证 | 请求                                                                                                                                    | 响应                                                                                     | 状态 | 阶段      |
 | --- | ---- | ---------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --- | ------- |
-| P28 | POST | `/api/notes`             | 🔒  | `NotePublishReq { title(必填, ≤50), content(必填, ≤2000), cover_image?, images?(≤9 个 URL), spu_ids?(≤5，去重) }`                     | `NoteVO { id }`（发布即上架）                                                              | ✅ | ✅ V5.12 |
+| P28 | POST | `/api/notes`             | 🔒  | `NotePublishReq { title(必填, ≤50), content(必填, ≤2000), cover_image?, images?(≤9 个 URL), spu_ids?(≤5 个 **SPU 业务键 32-hex**，去重，§1.8) }`                     | `NoteVO { id }`（发布即上架）                                                              | ✅ | ✅ V5.12 |
 | P29 | GET  | `/api/notes`             | 🌐  | Query: `page`(1), `size`(20)                                                                                                          | `Page<NoteCardVO>`（已发布，按发布时间倒序；`NoteCardVO { id, title, cover_image, like_count, author_id, create_time }`） | ✅ | ✅ V5.12 |
-| P30 | GET  | `/api/notes/{id}`        | 🌐  | Path: `id` (Long)                                                                                                                     | `NoteDetailVO { id, title, content, images, like_count, liked(登录用户视角，匿名恒 false), author_id, create_time, spus: [{ spu_id, name, main_image, min_price }] }`（已发布；关联商品**在售过滤**，本地库直查） | ✅ | ✅ V5.12 |
+| P30 | GET  | `/api/notes/{id}`        | 🌐  | Path: `id` (Long)                                                                                                                     | `NoteDetailVO { id, title, content, images, like_count, liked(登录用户视角，匿名恒 false), author_id, create_time, spus: [{ spu_id(SPU 业务键 32-hex), name, main_image, min_price }] }`（已发布；关联商品**在售过滤**，本地库直查） | ✅ | ✅ V5.12 |
 | P31 | POST | `/api/notes/{id}/like`   | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（uk 幂等：重复点赞空操作；首次原子 +1）                                              | ✅ | ✅ V5.12 |
 | P32 | DELETE | `/api/notes/{id}/like` | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（未点赞空操作；取消原子 -1 且不为负）                                                | ✅ | ✅ V5.12 |
 | P33 | DELETE | `/api/notes/{id}`      | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（**仅作者本人**，非本人 → 403；软删 status=2，流与详情不可见）                          | ✅ | ✅ V5.12 |
 | P34 | GET  | `/api/notes/{id}/similar` | 🌐  | Path: `id` (Long), Query: `size`(缺省5, ≤20)                                                                                          | `List<NoteCardVO>`（相似笔记卡：I51 kNN 命中 id 由 item 组装**发布态**笔记卡、排除自身、按相似度降序；ES 关闭/无命中 → 空列表不报错） | ✅ | ✅ V5.13 |
-| P35 | GET  | `/api/item/product/{productId}/pairing` | 🌐  | Path: `productId` (Long), Query: `limit`(缺省6, ≤10)                                                                             | `PairingCardVO { source: KG\|FALLBACK\|NONE, items: List<SpuCardVO> }`（**KG 搭配推荐卡**：图主召回（I58 类目 PAIR_WITH 邻居 → item 组装在售商品卡，按规则 weight 与销量排序、排除自身）→ 无规则回退向量相似（FALLBACK）→ 空态（NONE）；全链路 fail-open 不报错；O6 裁决与 P27 同页共存、位次随前端设计） | ✅ | ✅ V5.16 |
+| P35 | GET  | `/api/item/product/{productId}/pairing` | 🌐  | Path: `productId` (Long，⚠ 路径变量本期未收口，见 §1.8/§十二 12.2), Query: `limit`(缺省6, ≤10)                                                                             | `PairingCardVO { source: KG\|FALLBACK\|NONE, items: List<SpuCardVO> }`（卡内 `spu_id` 为 **SPU 业务键 32-hex**；**KG 搭配推荐卡**：图主召回（I58 类目 PAIR_WITH 邻居 → item 组装在售商品卡，按规则 weight 与销量排序、排除自身）→ 无规则回退向量相似（FALLBACK）→ 空态（NONE）；全链路 fail-open 不报错；O6 裁决与 P27 同页共存、位次随前端设计） | ✅ | ✅ V5.16 |
 
 #### 4.4.9 FreightTemplateController — `/api/item/freight-template` (item-service)
 
@@ -939,15 +967,17 @@ Feature: 运费模型（F2）
 | #   | 方法     | 路径                                        | 认证  | 请求                                                | 响应              | 状态 | 阶段        |
 | --- | ------ | ----------------------------------------- | --- | ------------------------------------------------- | --------------- | --- | --------- |
 | C1  | GET    | `/api/cart`                               | 🔒  | —                                                 | `CartVO`        | ✅ | ✅         |
-| C2  | POST   | `/api/cart/item`                          | 🔒  | `CartAddReq { sku_id(Long), quantity(1) }`         | `Void`          | ✅ | ✅         |
-| C3  | PUT    | `/api/cart/item`                          | 🔒  | `CartUpdateReq { sku_id(Long), quantity }`         | `Void`          | ✅ | ✅         |
-| C4  | DELETE | `/api/cart/item/{skuId}`                  | 🔒  | Path: `skuId` (Long)                              | `Void`          | ✅ | ✅         |
-| C5  | PATCH  | `/api/cart/item/{skuId}/selected`         | 🔒  | Path: `skuId` (Long), Query: `selected` (Boolean) | `Void`          | ✅ | ✅         |
+| C2  | POST   | `/api/cart/item`                          | 🔒  | `CartAddReq { sku_id(String, **SKU 业务键 32-hex**，§1.8), quantity(1) }`         | `Void`          | ✅ | ✅         |
+| C3  | PUT    | `/api/cart/item`                          | 🔒  | `CartUpdateReq { sku_id(String, **SKU 业务键 32-hex**), quantity }`         | `Void`          | ✅ | ✅         |
+| C4  | DELETE | `/api/cart/item/{skuId}`                  | 🔒  | Path: `skuId` (String, **SKU 业务键 32-hex** — 与 `CartItemVO.sku_id` 同型同义，可直接互操作)                              | `Void`          | ✅ | ✅         |
+| C5  | PATCH  | `/api/cart/item/{skuId}/selected`         | 🔒  | Path: `skuId` (String, **SKU 业务键 32-hex**), Query: `selected` (Boolean) | `Void`          | ✅ | ✅         |
 | C6  | DELETE | `/api/cart/clear`                         | 🔒  | —                                                 | `Void`          | ✅ | ✅         |
 | C7  | GET    | `/api/cart/grouped`                       | 🔒  | —                                                 | `CartGroupedVO` | ⚪ | ⚪ V3.5 规划，未实现    |
 | C8  | PATCH  | `/api/cart/select-all`                    | 🔒  | Query: `selected` (Boolean)                       | `Void`          | ⚪ | 🆕 ⚪ V5.0 |
-| C9  | DELETE | `/api/cart/batch`                         | 🔒  | Body: `{ sku_ids: [Long] }`                        | `Void` (批量删除)   | ⚪ | 🆕 ⚪ V5.0 |
-| C10 | POST   | `/api/cart/item/{skuId}/move-to-favorite` | 🔒  | Path: `skuId` (Long)                              | `Void` (移入收藏夹)  | ⚪ | 🆕 ⚪ V5.0 |
+| C9  | DELETE | `/api/cart/batch`                         | 🔒  | Body: `{ sku_ids: ["SKU 业务键 32-hex", ...] }`                        | `Void` (批量删除)   | ⚪ | 🆕 ⚪ V5.0 |
+| C10 | POST   | `/api/cart/item/{skuId}/move-to-favorite` | 🔒  | Path: `skuId` (String, **SKU 业务键 32-hex**)                              | `Void` (移入收藏夹)  | ⚪ | 🆕 ⚪ V5.0 |
+
+> **购物车标识口径（🆕 2026-10-16，ADR-061，§1.8）**：C2-C5/C9/C10 的 SKU 标识**全部为 SKU 业务键 32-hex `String`**（C4/C5/C10 的**路径变量**亦属本口径——它们是**明确代表 SKU 实体的标识**，且必须与 `CartItemVO.sku_id` 同型同义，否则前端拿到列表后无法删/改自己的购物车行）。服务端负责业务键 → 内部技术键解析。⚠ **代码待补**：当前 `cart-service` 的 `cart.sku_id` 为 `BIGINT` 技术外键，C2-C5/C9/C10 入参为 `Long`（见 §十二 12.2）。
 
 **`CartVO`** (V5.4: `CartItemResp` 更名 `CartItemVO`，删除 `create_time`):
 
@@ -960,15 +990,15 @@ Feature: 运费模型（F2）
 }
 ```
 
-> - **读时回填（V5.4 口径）**：购物车表不存商品快照，`GET /api/cart` / `GET /api/cart/grouped` 读时经 item-service 批量回填 `product_name / price / spec / image / sub_total`，并计算 `total_price / selected_price`。
+> - **读时回填（V5.4 口径）**：购物车表不存商品快照，`GET /api/cart` / `GET /api/cart/grouped` 读时经 item-service 批量回填 `spu_name / price / spec / image / sub_total`，并计算 `total_price / selected_price`。
 > - **all_selected 语义**：购物车**非空** 且 全部条目已选中 且 全部可计价（回填命中）才为 `true`；空购物车为 `false`。
 
-**`CartItemVO`**:
+**`CartItemVO`**（标识口径见 §1.8：`sku_id` 为 **SKU 业务键 32-hex**；`spu_name` 为 SPU 名称回填）:
 
 ```json
 {
-  "sku_id": 10,
-  "product_name": "手工陶瓷茶杯",
+  "sku_id": "1a2b3c4d5e6f708192a3b4c5d6e7f809",
+  "spu_name": "手工陶瓷茶杯",
   "spec": "天青/标准",
   "image": "https://...",
   "price": 12800,
@@ -977,6 +1007,8 @@ Feature: 运费模型（F2）
   "sub_total": 25600
 }
 ```
+
+> ⚠ **代码待补（§十二 12.2）**：当前 `CartItemVO.skuId` 为 `Long`（技术键）——本 VO **没有** `spu_id` 字段，与其对应的 C4/C5/C10 路径也仍收技术键；收口后三者（列表 ↔ 删除/改选/移收藏）必须同型同义，否则「从购物车列表操作自己的行」在类型层不成立。
 
 **`CartGroupedVO`** (按店铺分组):
 
@@ -1010,7 +1042,7 @@ Feature: 运费模型（F2）
 | T3  | GET  | `/api/trade/order/page`              | 🔒  | Query: `status?`, `page`(1), `size`(20)（**V5.4 漂移更正**：原契约多列的 `keyword?`/`start_date?`/`end_date?` 在代码中 **0 命中**——`OrderPageReq` 仅 `status`/`page`/`size` 三参数，**已删**；按关键字/时间范围筛单未实现，如需请走 roadmap）        | `IPage<OrderVO>` | ✅ | ✅      |
 | T4  | POST | `/api/trade/order/{orderNo}/cancel`  | 🔒  | Path: `orderNo` (String), Body: `{ reason? }`                                        | `Void`           | ✅ | ✅      |
 | T5  | POST | `/api/trade/order/{orderNo}/confirm` | 🔒  | Path: `orderNo` (String)                                                             | `Void`           | ✅ | ✅      |
-| T6  | POST | `/api/trade/order/direct`            | 🔒  | `DirectOrderReq { sku_id(Long, 必填), quantity(≥1, 缺省1), address_id(必填), user_coupon_id?(单券, 可选), remark?(买家留言, ≤200, 可选——V5.7), display_currency?(展示币种, ISO 4217, 可选——V5.17 快照锁汇) }`（**V5.5 已决**：删除未接线的 `user_coupon_ids`） | `OrderVO`        | ✅ | ✅ V4.0 |
+| T6  | POST | `/api/trade/order/direct`            | 🔒  | `DirectOrderReq { sku_id(String, **SKU 业务键 32-hex**，§1.8, 必填), quantity(≥1, 缺省1), address_id(必填), user_coupon_id?(单券, 可选), remark?(买家留言, ≤200, 可选——V5.7), display_currency?(展示币种, ISO 4217, 可选——V5.17 快照锁汇) }`（**V5.5 已决**：删除未接线的 `user_coupon_ids`） | `OrderVO`        | ✅ | ✅ V4.0 |
 | T27 | POST | `/api/trade/order/group-buy`         | 🔒  | `GroupBuyOrderReq { activity_id(Long, 必填), team_no?(String, 可选——空=开团), address_id(Long, 必填), remark?(≤200, 可选), display_currency?(ISO 4217, 可选——V5.17 快照锁汇) }`（quantity 恒 1；拼团价快照，**不叠加**券/促销/会员——与秒杀同口径；下单不占团位，未支付走既有 30 分钟超时取消；下单前置校验经 I52） | `OrderVO`        | ✅ | ✅ V5.14 |
 
 **`CreateOrderReq`**:
@@ -1055,14 +1087,14 @@ Feature: 运费模型（F2）
 > - **`post_fee`（✅ V5.6 已实现增量，ADR-037）**：运费（分）。**金额不变式（V5.6 起生效）**：`pay_amount = total_amount − discount_amount + post_fee`（`total_amount` 仍 = Σ orderItem.sub_total，运费不进商品小计；计价口径见 §4.4.9 与 04-Data-Model §十二 12.2；存量库须先执行 V5.6 迁移补 `orders.post_fee` 列）。
 > - **`items[].package_no`（✅ V5.6 已实现增量）**：见 `OrderItemVO`。
 
-**`OrderItemVO`**:
+**`OrderItemVO`**（标识口径见 §1.8；ADR-061）：
 
 ```json
 {
   "id": 1,
-  "sku_id": 10,
-  "spu_id": 1,
-  "product_name": "手工陶瓷茶杯",
+  "sku_id": "1a2b3c4d5e6f708192a3b4c5d6e7f809",
+  "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "spu_name": "手工陶瓷茶杯",
   "sku_spec": "天青/标准",
   "price": 12800,
   "quantity": 2,
@@ -1073,12 +1105,19 @@ Feature: 运费模型（F2）
 ```
 
 > **`package_no`（✅ V5.6 已实现增量）**：明细归属包裹号（对应物流记录 `package_no`，§4.8.1）；`null`=尚未发货（一明细只发一次）。
-> **`spu_id`（✅ 契约既有 / ⚠ 实现待补——见 §十二 12.2）**：**SPU 业务标识**，供前端由订单项回链商品页（P1 `GET /api/item/product/{productId}` 用 `SpuVO.spu_id` 定位）；与 `sku_id` 并列，二者是**标识**，不是快照。
+> **`spu_id` / `sku_id`（ADR-061 口径；⏳ 实现待补——见 §十二 12.2）**：**均为业务键 32-hex `String`**。`spu_id` 供前端由订单项回链商品页（P1 `GET /api/item/product/{productId}` 用 `SpuVO.spu_id` 定位），并经比价读模型做「同款现价/上下架/缺货」比对；`sku_id` 定位具体规格。与 `spu_name`/`sku_spec`/`image`/`price`/`sub_total`/`quantity` 等**快照**并列，二者是**标识**，不是快照。
+> ⚠ **实测实现现状**：后端 `OrderItemVO` 目前**既无 `spuId` 也无业务键 `skuId`**（`trade-service` `adapter/response/OrderItemVO.java`：`Long id` + `Long skuId` + 商品名快照字段（旧名）…）；`order_item` 表亦**无 `spu_id` 列**、商品名快照列未改名、`sku_id` 仍为 `BIGINT` 技术外键。本段为**契约先行**，代码由 B2 补齐。
 > **订单项不变式（订单项 = 标识 + 快照）**：`OrderItemVO` 由两部分组成，不得混用——
-> - **标识（可回链实时表）**：`id`（明细技术主键，仅作渲染 key）/ `sku_id` / `spu_id`；
-> - **快照（下单冻结，绝不回查实时表）**：`product_name` / `sku_spec` / `image` / `price` / `sub_total` / `quantity` —— 下单时从 `sku`/`spu` 复制进 `order_item`（04-Data-Model §3.x 快照模式）。
+> - **标识（业务键，可回链实时表）**：`id`（明细行主键，仅作渲染 key）/ `sku_id`（SKU 业务键）/ `spu_id`（SPU 业务键）；
+> - **快照（下单冻结，绝不回查实时表）**：`spu_name` / `sku_spec` / `image` / `price` / `sub_total` / `quantity` —— 下单时从 `sku`/`spu` 复制进 `order_item`（04-Data-Model §3.x 快照模式）。
 >
-> 快照字段**不得**在读取路径上回查 `spu`/`sku` 活表补齐或刷新（活表改名、改价、下架后，历史订单必须仍显示下单时点的事实）。`spu_id` 的引入只为「跳商品页」这一交互服务，**不构成**把活表数据引入订单项的理由——商品页展示什么由商品页自己决定（已下架则展示下架态，不回写订单项）。
+> 快照字段**不得**在读取路径上回查 `spu`/`sku` 活表补齐或刷新（活表改名、改价、下架后，历史订单必须仍显示下单时点的事实）。`spu_id`/`sku_id` 的引入只为「跳商品页」「比价/失效提示」服务，**不构成**把活表数据引入订单项的理由——商品页展示什么由商品页自己决定（已下架则展示下架态，不回写订单项）。
+> **比价 / 失效提示（🆕 ADR-061）**：为**读时增强（read-time enrichment）**，**fail-open**——
+> - 按**业务键批量**查当前 `spu`/`sku`（现价、状态、库存）与快照比对，整页一次查询（无 N+1）；
+> - 数据源异常 / 商品已删除 / 端口未接线 → **明细照常返回**，比价态为「无法比对」（**不报错、不缩行**、**不回落技术键**）；
+> - 「缺货」判定必须结合 `sku.stock_type`（`UNLIMITED 不限量` 库存恒 0 **不是**缺货）；
+> - 该能力**不写入订单**、不改变任何金额与状态机；输出**仅用于展示**，**不得**作为下单/退款/售后等业务判定的依据；
+> - ⚠ **线格式字段形态未定**：本批不定义比价结果字段（避免无排期承诺），**前端不得对接**——形态与排期见 §十二 12.2。
 
 #### 4.6.2 Order Lifecycle (🆕 V5.0 计划)
 
@@ -1094,7 +1133,7 @@ Feature: 运费模型（F2）
 | --- | ---- | ------------------------------------------ | --- | ----------------------------------------------------------------------- | ---------------- | --- | --------- |
 | T10 | GET  | `/api/trade/seller/order/page`             | 🏪  | Query: `status?`, `keyword?`, `page`(1), `size`(20)                     | `IPage<OrderVO>` | ✅ | ✅         |
 | T11 | GET  | `/api/trade/seller/order/{orderNo}`        | 🏪  | Path: `orderNo` (String)                                                | `OrderVO`        | ✅ | ✅         |
-| T12 | POST | `/api/trade/seller/order/{orderNo}/ship`   | 🏪  | Path: `orderNo` (String), Body: `ShipOrderReq { logistics_number(必填), logistics_company(必填), sku_ids?: [Long]（✅ V5.6 已实现增量——本包裹发货明细；空/缺省=全部剩余明细，兼容单包裹语义） }`（**V5.4 收紧**：logistics_number/logistics_company 缺失 → 400 `PARAM_ERROR`） | `Void`           | ✅ | ✅（sku_ids 增量 V5.6） |
+| T12 | POST | `/api/trade/seller/order/{orderNo}/ship`   | 🏪  | Path: `orderNo` (String), Body: `ShipOrderReq { logistics_number(必填), logistics_company(必填), sku_ids?: ["SKU 业务键 32-hex", ...]（✅ V5.6 已实现增量——本包裹发货明细；空/缺省=全部剩余明细，兼容单包裹语义；标识口径见 §1.8） }`（**V5.4 收紧**：logistics_number/logistics_company 缺失 → 400 `PARAM_ERROR`） | `Void`           | ✅ | ✅（sku_ids 增量 V5.6） |
 | T13 | PUT  | `/api/trade/seller/order/{orderNo}/remark` | 🏪  | Path: `orderNo` (String), Body: `{ seller_remark }`                      | `Void`           | ⚪ | 🆕 ⚪ V5.0 |
 | T14 | PUT  | `/api/trade/seller/order/{orderNo}/price`  | 🏪  | Path: `orderNo` (String), Body: `{ discount_amount }` (商家改价，仅限待付款)       | `Void`           | ⚪ | 🆕 ⚪ V5.0 |
 
@@ -1375,12 +1414,12 @@ Feature: 买家退款资金流（F1）
 | SE5 | GET    | `/api/search/suggest` | 🌐  | Query: `keyword` (前缀, 必填)                                                                                                           | `List<String>` (≤10：热搜词前缀命中在前 + 商品名前缀在后，去重；**Redis+DB 双源，ES 关闭可用**) | ✅ | ✅ V5.13 |
 | SE6 | GET    | `/api/search/facets`  | 🌐  | Query: `keyword?`, `category_id?`                                                                                                        | `SearchFacetsVO { brands:[{name,count}], price_ranges:[{min,max,count}] }`（品牌 terms 聚合 + 固定价格档位计数：0-50/50-100/100-200/200-500/500+ 元；**ES 链实现，DB 链返回空对象**） | ✅ | ✅ V5.10 |
 
-**`SpuSearchVO`** (V5.4: 删除 `embedding` 字段):
+**`SpuSearchVO`** (V5.4: 删除 `embedding` 字段；标识口径见 §1.8——`spu_id` 为 SPU 业务键 32-hex):
 
 ```json
 {
   "id": 1,
-  "spu_id": "prod-001",
+  "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
   "category_id": 1,
   "name": "手工陶瓷茶杯",
   "description": "纯手工制作...",
@@ -1435,15 +1474,22 @@ Feature: 买家退款资金流（F1）
 }
 ```
 
+> **`scope_values` 口径（🆕 2026-10-16，与 `UserCouponVO` 互链）**：
+> - **形态：对外 CSV 串 / 存储 JSON 数组** —— DB 列 `coupon.scope_values` 是 **`JSON`**（唯一存储真相源，`CouponScope.parseIds` 按 JSON 数组解析）；**本 VO 与 `UserCouponVO` 对外一律回吐 `String` 的逗号分隔 ID 串**（如 `"1001,1002"`，值内不含分隔符，故 CSV 无歧义），由服务端归一，前端**不要**按 JSON 解析。两 VO 该字段**同型同义**（ADR-058 §2）。
+> - 样例上方给的 `"scope_type": 1, "scope_values": null` 是 **ALL 全场**的合法形态（`scope_type=1` 时对外恒为 `null`）；`scope_type=2` 例 `"1001,1002"`（category id）；`scope_type=3` 例 `"0f1e…e1f0"`（SPU **业务键**）。
+> - ⚠ **`scope_type=3` 取值语义待裁决（不得据此做客户端预过滤）**：本行原记「装的就是 spu 业务标识」；**实测并非如此**——`trade` 侧 `PricingService#buildSpuIds` 取 `SkuCO.spuId`（`Long` **技术键**）逗号拼接后经 I22 传入，`coupon.scope_values` 实际存的是 `spu.id` **技术键字符串**，与 `spu_id`（32-hex 业务键，§1.8）**不同型**，用作客户端预过滤会**永不命中**。服务端 `CouponScope.accepts` 两侧同为技术键，**校验仍然正确**（故非资损，属功能失效）。目标口径 = SPU 业务键，随内部契约收口一并落地 —— 见 §十二 12.2 待裁决项。
+> - ⏳ **实现待补（§十二 12.2）**：实测 `marketing-service` `adapter/response/CouponVO.java` 的 `scopeValues` 为领域对象原样透传，当前回吐的是 **DB JSON 原样串**（`["1001","1002"]`）而非上述 CSV 口径；归一实现由 B2 补齐（届时 `CouponVO` 与 `UserCouponVO` 两处同口径）。
+
 **`UserCouponVO`** (用户持有的券；V5.4 按实现修正字段名：`id` / `create_time`):
 
 > **两个 ID 不可混用（2026-10-15 裁决）**：`id` = `user_coupon` 的技术主键（持券实例键）；`coupon_id` = **券模板的业务券号**（`coupon.coupon_id`，`BINARY(16)` UUIDv7 的 **32-hex** 形态），与 `CouponVO.coupon_id` **同型同义、可直接 join**。技术外键（`user_coupon.coupon_id` → `coupon.id`）**禁止出现在任何 VO**（ADR-002/ADR-050：VO 不得暴露技术字段）。
 > **`status` 枚举（2026-10-15 补注，消除前端错位实现）**：`1`=未使用 / `2`=已使用 / `3`=已过期（`UserCouponStatusEnum`，与 `user_coupon.status` 同口径）。**契约曾只给样例 `status:1` 而无枚举表，前端因此整表错位一格按 `0/1/2` 实现**，导致结算页可用券被全部滤光。
 > **`coupon_id` 可空（2026-10-15 补注）**：券模板已删除或券面读模型降级时，`coupon_id` / `name` / `value` / `min_amount` / `discount_type` **均为 `null`**（fail-open：不回落为 0、**不回落为技术主键**），券列表照常返回、不缩行。
 > **`discount_type`（2026-10-15 新增投影）**：`1`=FIXED 满减（`value` 为**分**）/ `2`=PERCENTAGE 折扣（`value` 为**百分比**，`85`=8.5 折）/ `3`=CASH_COUPON 代金券。**前端必须据此区分面额渲染**（折扣券按 `-¥value` 渲染是错的）。`coupon.type` 自 V4.0 起 **DEPRECATED**，**不纳入契约**。
-> **`scope_type` / `scope_values`（🆕 2026-10-16 新增投影，券适用范围）**：与 `CouponVO` **同型同义**。取值：`scope_type` `1`=ALL 全场 / `2`=CATEGORY 限定品类 / `3`=PRODUCT 限定单品（对齐后端 `ScopeTypeEnum`）。**注意 `PRODUCT` 此处是「券适用范围种类」的枚举名，与商品实体词汇无关**——商品实体自 V5.16 起统一为 **SPU**（[ADR-059](../adr/059-spu-sku-vocabulary-disambiguation.md)），线格式字段一律 `spu_id`；`scope_type=3` 的 `scope_values` 装的就是 **spu 业务标识**。
+> **`scope_type` / `scope_values`（🆕 2026-10-16 新增投影，券适用范围）**：与 `CouponVO` **同型同义**。取值：`scope_type` `1`=ALL 全场 / `2`=CATEGORY 限定品类 / `3`=PRODUCT 限定单品（对齐后端 `ScopeTypeEnum`）。**注意 `PRODUCT` 此处是「券适用范围种类」的枚举名，与商品实体词汇无关**——商品实体自 V5.16 起统一为 **SPU**（[ADR-059](../adr/059-spu-sku-vocabulary-disambiguation.md)），线格式字段一律 `spu_id`；`scope_type=3` 的 `scope_values` **目标口径**为 SPU **业务键**——⏳ **当前实现为 `spu.id` 技术键**（实测），见本节下条与 `CouponVO` 互链注记。
 > - **`scope_type` 缺省语义**：为 `null` 时按 `1`（ALL）处理（存量数据/历史调用方向后兼容）。
-> - **`scope_values` 形态**：`String`，**逗号分隔的 ID 串**——`scope_type=2` 时为 category id、`scope_type=3` 时为 spu id；**`scope_type=1` 时为 `null`**。（DB 列 `coupon.scope_values` 是 `JSON` 数组；本 VO 对外统一回吐为 CSV 串，由服务端归一，前端**不要**按 JSON 解析。）
+> - **`scope_values` 形态：对外 CSV 串 / 存储 JSON 数组**（与 `CouponVO.scope_values` **同口径、同型同义**，互见 §4.10.1 `CouponVO` 注记）——`String`，**逗号分隔的 ID 串**：`scope_type=2` 时为 category id、`scope_type=3` 时为 SPU 标识、**`scope_type=1` 时为 `null`**。DB 列 `coupon.scope_values` 保持 **`JSON` 数组**（唯一存储真相源）；本 VO 对外统一回吐 CSV 串（值内不含分隔符，无歧义），由服务端归一，前端**不要**按 JSON 解析。
+> - ⏳ **`scope_type` / `scope_values` 实现待补（§十二 12.2）**：本二字段为 **2026-10-16 契约新增投影（B1 批次）**，**实测 `marketing-service` `UserCouponVO` 尚无这两个字段**（`adapter/response/UserCouponVO.java` 仅到 `discountType`），投影与装配（含 CSV 归一）由 B2 补齐；在落码前券列表报文**不含**这两个键，前端不得依赖。
 > - **这些字段的用途 = 客户端预过滤依据，不是安全边界**：前端可用它把"明显不适用的券"提前从结算页滤掉（体验优化）。**服务端在核销时仍强制做权威校验**（marketing 侧 `CouponScope.accepts`，经 I22 `/internal/coupon/use` 的 `spu_ids`/`category_ids` 入参路径）——**客户端过滤放行 ≠ 服务端会放行**；同理客户端过滤拦截也不能替代服务端校验。任何"我在前端已过滤"的假定都不构成跳过服务端校验的理由。
 > - **fail-open 口径与券面其余字段一致**：券模板已删除 / 读模型降级时 `scope_type` 与 `scope_values` **同为 `null`**（不回落为 `1`、不回落为空串）。**⚠ 前端必须把「`scope_type=null`」按 `ALL` 消费**，否则降级态下会把本可用券错滤掉。
 > 示例值中的 32-hex 为规范形态；可读编码（如 `CPN-001`）在创建端即被 fail-fast 拒绝。
@@ -1484,15 +1530,15 @@ Feature: 买家退款资金流（F1）
 | --- | -- | -------------- | --- | --- | ------------------------------------------------------------------ | --- | ------- |
 | M14 | GET | `/api/task/daily` | 🔒  | —   | `List<DailyTaskVO> { code, name, reward_points, completed }`（今日任务 + 完成状态） | ✅ | ✅ V5.10 |
 
-**`FlashSaleVO`**:
+**`FlashSaleVO`**（标识口径见 §1.8：`spu_id`/`sku_id` 均为业务键 32-hex；`spu_name`/`spu_image` 为读时回填，ADR-057）:
 
 ```json
 {
   "id": 1,
-    "spu_id": 3,
-  "sku_id": 10,
-  "product_name": "手工陶瓷茶杯",
-  "product_image": "https://...",
+  "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "sku_id": "1a2b3c4d5e6f708192a3b4c5d6e7f809",
+  "spu_name": "手工陶瓷茶杯",
+  "spu_image": "https://...",
   "flash_price": 9900,
   "original_price": 12800,
   "stock": 100,
@@ -1501,11 +1547,15 @@ Feature: 买家退款资金流（F1）
   "end_time": "2026-08-02T12:00:00",
   "status": 1,
   "progress_percent": 35
-  > **口径（2026-10-15 补注）**：`stock` 为秒杀**总**库存，剩余量 = `stock - sold_count`；`progress_percent` 的**分母即 `stock`**（`stock<=0` → 0）。前端不得把 `stock` 当剩余量，售罄判定须用 `stock - sold_count <= 0`。
 }
 ```
 
-**`FlashBuyVO`** (V5.4: `order_no` 修复为真实订单号——此前落单链路断裂恒空):
+> **口径（2026-10-15 补注）**：`stock` 为秒杀**总**库存，剩余量 = `stock - sold_count`；`progress_percent` 的**分母即 `stock`**（`stock<=0` → 0）。前端不得把 `stock` 当剩余量，售罄判定须用 `stock - sold_count <= 0`。
+> **标识与命名（🆕 2026-10-16，ADR-061）**：`spu_id`/`sku_id` 为**业务键 32-hex `String`**（原样例为数字，属类型未收口）；SPU 名称/主图字段收口为 **`spu_name`/`spu_image`**（旧名见 ADR-061 §决策 5）。⏳ **实现待补**：marketing `FlashSaleVO` 当前 `spuId`/`skuId` 仍为 `Long`，名称/主图字段仍用旧名（§十二 12.2）。
+> ⚠ **SPU 主图线上名存在两种方言（本批登记待裁决）**：本 VO 为 **`spu_image`**；而 `SpuVO` / `FavoriteVO` / `HistoryVO` / `SpuSearchVO` / `RecommendSpuVO` / `NoteDetailVO.spus[]` 等同概念字段为 **`main_image`**（与 DB 列 `spu.main_image` 同名）。**同一概念两种线上名**违背 ADR-058 §2 的「同型同义」精神。**建议**：后续批次统一——推荐 **`main_image`**（与 DB 列同名，改动面最小：仅本 VO 一处）；若统一为 `spu_image` 则须同时演进 DB 列名。**需仲裁**（见 §十二 12.2）。
+> **`spu_name` / `spu_image` / `original_price` 为读时回填（ADR-057 读模型）**：SKU/SPU 已删除或读模型降级 → 为 `null`，**报名单照常返回、不缩行**（fail-open）。
+
+**`FlashBuyVO`** (V5.4: `order_no` 修复为真实订单号——此前落单链路断裂恒空；标识口径见 §1.8):
 
 ```json
 {
@@ -1513,7 +1563,7 @@ Feature: 买家退款资金流（F1）
   "order_no": "ord-20260802-001",
   "flash_id": 1,
   "flash_price": 9900,
-  "spu_id": 1,
+  "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
   "remaining_stock": 65
 }
 ```
@@ -1556,7 +1606,7 @@ Feature: 买家退款资金流（F1）
 | M16 | GET | `/api/group-buy/activity/{id}` | 🌐 | Path: `id` (Long)                                              | `GroupBuyActivityVO`（详情 + 最近进行中团列表 ≤10：team_no/current_members/required_members/expire_time，**不含他人 user_id**） | ✅ | ✅ V5.14 |
 | M17 | GET | `/api/group-buy/team/{teamNo}` | 🌐 | Path: `teamNo` (String)                                        | `GroupTeamVO { team_no, status(1拼团中/2已成团/3已失败), current_members, required_members, expire_time, success_time? }` | ✅ | ✅ V5.14 |
 
-> - **GroupBuyActivityVO**：id/name/seller_id/spu_id/sku_id/group_price/required_members/time_limit_hours/start_time/end_time/status。
+> - **GroupBuyActivityVO**：id/name/seller_id/**spu_id（SPU 业务键 32-hex）/sku_id（SKU 业务键 32-hex）**/group_price/required_members/time_limit_hours/start_time/end_time/status（标识口径见 §1.8；⏳ 实现待补：当前 `GroupBuyActivityVO.spuId`/`skuId` 仍为 `Long`，§十二 12.2）。
 > - 错误口径：活动/团不存在 → `NO_RESOURCE_FOUND(1103)`。
 
 ### 4.11 AI 服务 (ai-service)
@@ -1865,7 +1915,7 @@ Feature: 买家退款资金流（F1）
 
 | #    | 方法   | 路径                          | 认证 | 请求                                                                                                                                                                                              | 响应                | 状态 | 阶段      |
 | ---- | ---- | --------------------------- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ | --- | ------- |
-| AD54 | POST | `/api/admin/group-buy`        | 🔑  | `GroupBuyCreateReq { name(必填, ≤50), seller_id(必填), spu_id(必填), sku_id(必填), group_price(必填, >0, 分), required_members(必填, ≥2), time_limit_hours(必填, ≥1), start_time(必填), end_time(必填, >start_time) }` | `GroupBuyActivityVO` | ✅ | ✅ V5.14 |
+| AD54 | POST | `/api/admin/group-buy`        | 🔑  | `GroupBuyCreateReq { name(必填, ≤50), seller_id(必填), spu_id(String, SPU 业务键 32-hex, 必填), sku_id(String, SKU 业务键 32-hex, 必填), group_price(必填, >0, 分), required_members(必填, ≥2), time_limit_hours(必填, ≥1), start_time(必填), end_time(必填, >start_time) }` | `GroupBuyActivityVO` | ✅ | ✅ V5.14 |
 | AD55 | PUT  | `/api/admin/group-buy/{id}`   | 🔑  | Path: `id` (Long), Body: `GroupBuyUpdateReq`（同 CreateReq 全可选，null-safe；已结束活动不可编辑）                                                                                                                | `Void`              | ✅ | ✅ V5.14 |
 | AD56 | DELETE | `/api/admin/group-buy/{id}` | 🔑  | Path: `id` (Long)                                                                                                                                                                                | `Void`（进行中活动禁删 → 400） | ✅ | ✅ V5.14 |
 
@@ -1954,7 +2004,7 @@ Feature: 买家退款资金流（F1）
 
 | #    | 方法     | 路径                      | 认证  | 请求                                            | 响应            | 状态 | 阶段     |
 | ---- | ------ | ----------------------- | --- | --------------------------------------------- | ------------- | --- | ------ |
-| AD40 | POST   | `/api/admin/flash`      | 🔑  | `FlashSaleCreateReq { spu_id(必填), sku_id(必填), flash_price(必填, >0, 分), stock(必填, >0), start_time(必填), end_time(必填, >start_time) }` | `FlashSaleVO`（活动状态由时间窗推导：1未开始/2进行中/3已结束） | ✅ | ✅ V5.7 |
+| AD40 | POST   | `/api/admin/flash`      | 🔑  | `FlashSaleCreateReq { spu_id(String, SPU 业务键 32-hex, 必填), sku_id(String, SKU 业务键 32-hex, 必填), flash_price(必填, >0, 分), stock(必填, >0), start_time(必填), end_time(必填, >start_time) }` | `FlashSaleVO`（活动状态由时间窗推导：1未开始/2进行中/3已结束） | ✅ | ✅ V5.7 |
 | AD41 | PUT  | `/api/admin/flash/{id}` | 🔑  | Path: `id` (Long), Body: `FlashSaleUpdateReq`（同 CreateReq 字段全可选，null-safe 局部更新；已结束活动不可编辑） | `Void`        | ✅ | ✅ V5.7 |
 | AD42 | DELETE | `/api/admin/flash/{id}` | 🔑  | Path: `id` (Long)                             | `Void`（**进行中活动禁删** → 400；物理删除，表无逻辑删除列） | ✅ | ✅ V5.7 |
 
@@ -2108,11 +2158,16 @@ Feature: 渠道对账（F4）
 
 #### 4.14.5 InternalSkuController — `/internal/item/sku` (item-service)
 
+> **标识口径（🆕 2026-10-16，ADR-058 §3 + ADR-061）**：内部契约按**技术键**取数（批量入参保技术键，库内 join 性能最优），但**响应体必须顺带带出业务标识**（ADR-058 §3：读模型按技术键批量取数时须返回业务标识，不得让调用方为拿业务标识再打一次库）。
+> - **I13 响应 `SkuCO` 须补齐**：`sku_id`（**SKU 业务键**，32-hex `String`）+ `spu_id`（**SPU 业务键**，32-hex `String`）——来源 `sku LEFT JOIN spu` 同一语句带出，**零额外往返**（ADR-057 读模型先例：`SkuSpuDisplayQuery` 已联表，增列即可）。
+> - ⚠ **`SkuCO.spuId` 的类型收口待裁决**：当前为 `Long` **技术外键**（trade 侧 `CartItemSnapshot.spuId` 与 I22 `spu_ids` 均依赖该技术键）。若采用 ADR-061 §1.8 的「内部 DTO 亦按业务键」口径，则需改型并连带 I22 `spu_ids` 取值语义；**未裁决前仅「增」业务键字段，不改型** —— 见 §十二 12.2 待裁决项 R2/R3。
+> - 商品名展示字段（旧名）→ **`spu_name`**（语义为 `spu.name`，随命名收口改名；线上键 `spu_name`）。
+
 | #   | 方法   | 路径                              | 请求                                             | 响应 (原始)        | 状态 | 阶段  |
 | --- | ---- | ------------------------------- | ---------------------------------------------- | -------------- | --- | --- |
-| I13 | GET  | `/internal/item/sku/list/batch` | Query: `sku_ids` (List\<Long\>)                    | `List<SkuCO>` | ✅ | ✅   |
-| I14 | POST | `/internal/item/sku/deduct`     | `List<StockOpReq> [{ sku_id(Long), quantity }]` | `void`         | ✅ | ✅   |
-| I15 | POST | `/internal/item/sku/restore`    | `List<StockOpReq> [{ sku_id(Long), quantity }]` | `void`         | ✅ | ✅   |
+| I13 | GET  | `/internal/item/sku/list/batch` | Query: `sku_ids` (List\<Long\>，**内部技术键**；`List<String>` 业务键形态待 §十二 12.2 裁决)                    | `List<SkuCO>`（**须含 `sku_id`/`spu_id` 业务键**，见上） | ✅ | ✅   |
+| I14 | POST | `/internal/item/sku/deduct`     | `List<StockOpReq> [{ sku_id(Long, 内部技术键), quantity }]` | `void`         | ✅ | ✅   |
+| I15 | POST | `/internal/item/sku/restore`    | `List<StockOpReq> [{ sku_id(Long, 内部技术键), quantity }]` | `void`         | ✅ | ✅   |
 
 #### 4.14.5.1 InternalItemSearchController — `/internal/item/search` (item-service, 🆕 ADR-052)
 
@@ -2175,6 +2230,7 @@ Feature: 渠道对账（F4）
 | I69 | GET  | `/internal/coupon/batch`    | Query: `ids`（`List<Long>`，逗号分隔，**入参为 `user_coupon.id`**——与 I22 的 `user_coupon_id` 同口径，Spring 按逗号切分绑定） | `List<CouponStackInfoCO>`（`{ id(=持券ID), couponId(=券业务标识), …叠加信息 }`；券不存在则跳过，**fail-open**） | ✅ | ✅ V4.3（源码自记 I46，本批次补录；编号见上方冲突提示） |
 
 > - **I22 新增 2 参数语义（ADR-055，订正 ADR-038「下单侧不受影响」的错误推论）**：`spu_ids`/`category_ids` 均**可缺省**；缺省时若该券限定了品类/单品（`scope_type` 非全店）则**拒绝核销**——即"声明了适用范围就必须能校验"，不再静默放行。二者与 `scope_type/scope_values` 四列**现已真正参与落库与回吐**（此前四列未映射，见 04-Data-Model）。
+> - **`spu_ids` 取值语义（🆕 2026-10-16 实测记录 + 待裁决）**：本参数为**逗号分隔串**，其**内容**须与 `coupon.scope_values` 同源同型（`CouponScope.accepts` 做逐项字符串比较）。**实测实现**：trade `PricingService#buildSpuIds` 取 `CartItemSnapshot.spuId`（来源 `SkuCO.spuId`，`Long` **技术键**）拼接 → 即当前传的是 `spu.id` 技术键，因此 `scope_type=3` 的 `scope_values` 实存技术键；**目标口径**为 **SPU 业务键 32-hex**（与线格式 `spu_id` 同型，客户端预过滤才可能命中）—— 改型含 `SkuCO.spuId` 与 `coupon.scope_values` 同批，见 §十二 12.2 待裁决项 R2/R3。
 > - **I69 用途**：供下单方**一次往返**校验多券叠加规则（`stack_rule`/`stack_group`）；与 I22 同属 coupon 内部面，调用方 trade-service（ia-api `CouponClient`）。
 
 #### 4.14.8b InternalPromotionController — `/internal/promotion` (marketing-service, ✅ V5.8)
@@ -2593,8 +2649,8 @@ data: [DONE]
 // PointsBalanceVO (GET /api/points/balance, V5.4 强类型化)
 { "user_id":1001, "balance":150 }
 
-// HistoryVO (GET /api/user/history, snake_case 键名不变)
-{ "id":1, "spu_id":1001, "view_time":"...", "product_name":"手工陶瓷茶杯", "main_image":"https://...", "brand":"冰美精选", "price":12800 }
+// HistoryVO (GET /api/user/history, snake_case 键名不变；标识口径见 §1.8：spu_id 为 SPU 业务键 32-hex；spu_name 为 SPU 名称收口）
+{ "id":1, "spu_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "view_time":"...", "spu_name":"手工陶瓷茶杯", "main_image":"https://...", "brand":"冰美精选", "price":12800 }
 
 // SignResultVO
 { "signed":true, "earned_points":10, "month_count":15, "continuous_days":5 }
@@ -2603,11 +2659,11 @@ data: [DONE]
 ### 8.3 商品
 
 ```json
-// SpuVO
-{ "id":1, "spu_id":"prod-001", "seller_id":5, "shop_name":"冰美精选陶瓷", "category_id":1, "name":"手工陶瓷茶杯", "main_image":"https://...", "images":[...], "description":"...", "brand":"冰美精选", "sold_count":1280, "comment_count":86, "rating":4.7, "status":1, "sales_tags":["热销"], "publish_time":"...", "skus":[...] }
+// SpuVO (标识口径见 §1.8：spu_id 为 SPU 业务键 32-hex)
+{ "id":1, "spu_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "seller_id":5, "shop_name":"冰美精选陶瓷", "category_id":1, "name":"手工陶瓷茶杯", "main_image":"https://...", "images":[...], "description":"...", "brand":"冰美精选", "sold_count":1280, "comment_count":86, "rating":4.7, "status":1, "sales_tags":["热销"], "publish_time":"...", "skus":[...] }
 
-// SkuVO
-{ "id":1, "sku_id":"sku-001", "spu_id":1, "spec":"天青/标准", "price":12800, "original_price":15800, "stock":50, "stock_type":1, "is_hot":true, "image":"https://...", "sold_count":320, "status":1 }
+// SkuVO (标识口径见 §1.8：sku_id / spu_id 均为业务键 32-hex String)
+{ "id":1, "sku_id":"1a2b3c4d5e6f708192a3b4c5d6e7f809", "spu_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "spec":"天青/标准", "price":12800, "original_price":15800, "stock":50, "stock_type":1, "is_hot":true, "image":"https://...", "sold_count":320, "status":1 }
 
 // CategoryTreeVO
 { "id":1, "name":"陶瓷器具", "level":1, "sort_order":1, "children":[...] }
@@ -2616,11 +2672,11 @@ data: [DONE]
 ### 8.4 购物车
 
 ```json
-// CartVO (all_selected: 非空且全选中且全可计价；读时回填 product_name/price/spec/image/sub_total)
+// CartVO (all_selected: 非空且全选中且全可计价；读时回填 spu_name/price/spec/image/sub_total)
 { "items":[...], "total_price":38400, "selected_price":25600, "all_selected":false }
 
-// CartItemVO (原 CartItemResp 更名；V5.4 删除 create_time)
-{ "sku_id":10, "product_name":"手工陶瓷茶杯", "spec":"天青/标准", "image":"https://...", "price":12800, "quantity":2, "selected":true, "sub_total":25600 }
+// CartItemVO (原 CartItemResp 更名；V5.4 删除 create_time；标识口径见 §1.8：sku_id 为 SKU 业务键 32-hex)
+{ "sku_id":"1a2b3c4d5e6f708192a3b4c5d6e7f809", "spu_name":"手工陶瓷茶杯", "spec":"天青/标准", "image":"https://...", "price":12800, "quantity":2, "selected":true, "sub_total":25600 }
 
 // CartGroupedVO
 { "groups":[{ "seller_id":5, "shop_name":"...", "items":[...], "shop_total_price":25600 }], "total_price":38400, "selected_price":25600 }
@@ -2632,14 +2688,14 @@ data: [DONE]
 // CreateOrderReq (⚠️ cart_item_ids 已于 V5.4 删除、保持废弃——传了被忽略，非入参；V5.5 删 user_coupon_ids；address_id 必填；user_coupon_id 为单券可选)
 { "address_id":1, "user_coupon_id":5 }
 
-// DirectOrderReq (V5.5 删 user_coupon_ids，多券叠加挂账 §十二/§十一 O1)
-{ "sku_id":10, "quantity":1, "address_id":1, "user_coupon_id":5 }
+// DirectOrderReq (V5.5 删 user_coupon_ids，多券叠加挂账 §十二/§十一 O1；sku_id 为 SKU 业务键 32-hex，§1.8)
+{ "sku_id":"1a2b3c4d5e6f708192a3b4c5d6e7f809", "quantity":1, "address_id":1, "user_coupon_id":5 }
 
 // OrderVO (V5.4 删除 id/payment_type；详情含 items，列表 items=null；✅ V5.6 增量 post_fee——金额不变式 pay_amount=total_amount−discount_amount+post_fee，见 §4.6.1)
 { "order_no":"ord-...", "user_id":1001, "seller_id":5, "total_amount":25600, "pay_amount":24400, "discount_amount":2000, "post_fee":800, "status":1, "order_type":1, "receiver_name":"张三", "receiver_phone":"138...", "receiver_address":"...", "create_time":"...", "pay_time":null, "consign_time":null, "end_time":null, "items":[...] }
 
-// OrderItemVO (✅ V5.6 增量 package_no——明细归属包裹，null=未发货，对应 §8.7 LogisticsVO.package_no；⚠ spu_id 为契约既有但**实现待补**字段，见 §十二 12.2；不变式「订单项 = 标识(sku_id/spu_id) + 快照(product_name/sku_spec/image/price/sub_total)」，快照绝不回查实时表，见 §4.6.1)
-{ "id":1, "sku_id":10, "spu_id":1, "product_name":"手工陶瓷茶杯", "sku_spec":"天青/标准", "price":12800, "quantity":2, "sub_total":25600, "image":"https://...", "package_no":null }
+// OrderItemVO (✅ V5.6 增量 package_no——明细归属包裹，null=未发货，对应 §8.7 LogisticsVO.package_no；🆕 2026-10-16 标识收口（ADR-061）：sku_id/spu_id 均为**业务键 32-hex String**，spu_name 为 SPU 名称收口；⚠ 二标识与 spu_name 均「契约先行·实现待补」，见 §十二 12.2；不变式「订单项 = 标识(sku_id/spu_id) + 快照(spu_name/sku_spec/image/price/sub_total)」，快照绝不回查实时表；比价/失效提示为读时增强 fail-open，见 §4.6.1)
+{ "id":1, "sku_id":"1a2b3c4d5e6f708192a3b4c5d6e7f809", "spu_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "spu_name":"手工陶瓷茶杯", "sku_spec":"天青/标准", "price":12800, "quantity":2, "sub_total":25600, "image":"https://...", "package_no":null }
 
 // WithdrawalVO (V5.5 收款账号分端口径：商家端仅脱敏、管理端明文+脱敏，见 §4.6.5)
 { "id":1, "withdrawal_no":"5f8a9c0d...(uuid)", "seller_id":5, "amount":1280000, "status":1, "bank_account":null, "bank_account_masked":"****1234", "bank_name":"中国工商银行", "admin_remark":null, "create_time":"..." }
@@ -2677,24 +2733,24 @@ data: [DONE]
 ### 8.8 搜索
 
 ```json
-// SpuSearchVO (V5.4 删除 embedding；无 original_price/rating/shop_name/sales_tags)
-{ "id":1, "spu_id":"prod-001", "category_id":1, "name":"手工陶瓷茶杯", "description":"...", "brand":"冰美精选", "main_image":"https://...", "price":12800, "sold_count":1280 }
+// SpuSearchVO (V5.4 删除 embedding；无 original_price/rating/shop_name/sales_tags；标识口径见 §1.8：spu_id 为 SPU 业务键 32-hex)
+{ "id":1, "spu_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "category_id":1, "name":"手工陶瓷茶杯", "description":"...", "brand":"冰美精选", "main_image":"https://...", "price":12800, "sold_count":1280 }
 ```
 
 ### 8.9 营销
 
 ```json
-// CouponVO (模板；V5.4 字段名对齐实现：min_amount/total_qty/issued_qty)；`type` 自 V4.0 DEPRECATED，**契约不载**，后端 `CouponVO` 仍投影该字段，属「代码有文档无」待清理项）
+// CouponVO (模板；V5.4 字段名对齐实现：min_amount/total_qty/issued_qty；scope_values 形态见 §4.10.1：**对外 CSV 串 / 存储 JSON 数组**，且 ⏳ 归一实现待补；`type` 自 V4.0 DEPRECATED，**契约不载**，后端 `CouponVO` 仍投影该字段，属「代码有文档无」待清理项）
 { "coupon_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name":"618满200减30", "value":3000, "min_amount":20000, "seller_id":null, "total_qty":10000, "issued_qty":6523, "start_time":"...", "end_time":"...", "status":1, "discount_type":1, "coupon_category":1, "grant_type":1, "stock_type":1, "grab_type":1, "price_in_cents":3000, "scope_type":1, "scope_values":null, "stack_rule":1, "stack_group":null }
 
-// UserCouponVO (已领取；V5.4 字段名对齐实现：id/create_time；2026-10-15 补券面 name/value/min_amount/discount_type；🆕 2026-10-16 补 scope_type/scope_values——scope_type 1=ALL/2=CATEGORY/3=PRODUCT(套用商品种类,非实体词汇)、scope_values 为逗号分隔 ID 串(scope_type=2→category id / =3→spu id / =1→null)；**仅供客户端预过滤，服务端核销仍强制校验 CouponScope.accepts**)
+// UserCouponVO (已领取；V5.4 字段名对齐实现：id/create_time；2026-10-15 补券面 name/value/min_amount/discount_type；🆕 2026-10-16 补 scope_type/scope_values——scope_type 1=ALL/2=CATEGORY/3=PRODUCT(套用商品种类,非实体词汇；其值**目标口径**为 SPU 业务键，⚠ 实测当前为技术键，见 §4.10.1 互链注记)、scope_values 形态与 CouponVO **同口径：对外逗号分隔串(CSV) / 存储 JSON 数组**(scope_type=2→category id / =3→SPU 标识 / =1→null)；**仅供客户端预过滤，服务端核销仍强制校验 CouponScope.accepts**；⏳ 本二字段在代码侧**尚未投影**，见 §十二 12.2)
 { "id":5, "coupon_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name":"618满200减30", "value":3000, "min_amount":20000, "discount_type":1, "scope_type":2, "scope_values":"1001,1002", "status":1, "used_order_no":null, "use_time":null, "create_time":"..." }
 
-// FlashSaleVO
-{ "id":1, "sku_id":10, "spu_id":3, "product_name":"手工陶瓷茶杯", "product_image":"https://...", "flash_price":9900, "original_price":12800, "stock":100, "sold_count":35, "start_time":"...", "end_time":"...", "status":1, "progress_percent":35 }
+// FlashSaleVO (标识口径见 §1.8：spu_id/sku_id 均为业务键 32-hex；spu_name/spu_image 为读时回填 ADR-057)
+{ "id":1, "sku_id":"1a2b3c4d5e6f708192a3b4c5d6e7f809", "spu_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "spu_name":"手工陶瓷茶杯", "spu_image":"https://...", "flash_price":9900, "original_price":12800, "stock":100, "sold_count":35, "start_time":"...", "end_time":"...", "status":1, "progress_percent":35 }
 
-// FlashBuyVO (V5.4 order_no 为真实订单号；seller_id=0 口径见 M10)
-{ "success":true, "order_no":"ord-...", "flash_id":1, "flash_price":9900, "spu_id":1, "remaining_stock":65 }
+// FlashBuyVO (V5.4 order_no 为真实订单号；seller_id=0 口径见 M10；spu_id 为 SPU 业务键 32-hex)
+{ "success":true, "order_no":"ord-...", "flash_id":1, "flash_price":9900, "spu_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "remaining_stock":65 }
 ```
 
 ### 8.10 AI
@@ -2792,6 +2848,7 @@ data: [DONE]
 | **V5.16.1** | **2026-10-06** | **P3 需求对账缺口收敛（web 端需求对账：§十五/§十六 用户故事逐条核对，三处缺口补契约）**：①§4.15 新增 **INV6-9** 常用抬头 CRUD（US-INV-2——仓储 `InvoiceTitleRepository` V5.15 已就绪，本次补契约与实现；INV1 的 `title_id` 引用自此可用）；②§4.14.16c 新增 **I60** `partial-refund-flag`（US-INV-8/D4 部分退款自动置标触发口——pay 判定 full→I56 / partial→I60，两侧 fail-open）；③§4.13.8f 新增 **AD65** 管理端关系邻居查询（US-KG-5 表格化核查视图，包装 I58） |
 | **V5.17.0** | **2026-10-06** | **P3 第四批（F16 多币种 Phase 1：展示换算 + 订单快照锁汇）契约先行——完整 PRD 定稿（01-PRD §十七，O1 核心裁决采纳 B 折中，裁决记录 17.2.0）后规格收口**：①§1.5 金额约定增补「定点整数汇率」口径（rate_scaled BIGINT 10⁻⁶ 刻度 + half-up 到最小单位；换算仅展示、**前端执行 D7-A**、金额 INT 分语义零改动）；②§4.2.11 新增 **P36** `GET /api/currency/list`（wallet 数据面，🌐 仅启用币种）；③§4.14.3b 新增 **I61** `GET /internal/currency/current`（trade 下单快照消费，未启用 1103/降级哨兵 -1，fail-open）；④§4.13.8g 新增管理端 **AD66-68**（币种分页/汇率人工修正/启停，`@OperationLog`；定时拉取 job 开关默认 false）；⑤T1/T6/T27 请求增量可选 `display_currency` + OrderVO 增量 `display_currency/display_rate_scaled` 可空回显（快照锁汇 D1-B）；⑥数据模型 `currency`/`exchange_rate` 两表 + `orders` 增 `display_currency/display_rate` 两可空列（Initialize.sql 直改 59→62 表，列注释强制「非结算币种」隔离）；⑦网关 `/api/currency/**` GET 匿名 + `/api/admin/currency/**` 先于兜底声明；资金链路（支付/退款/钱包/对账/发票）**全程 CNY 分零改动**（NFR 硬验收）；Phase 2 结算触发器量化（PRD §17.8） |
 | **V5.18.0** | **2026-10-06** | **小程序后端增量核对项补齐（AGENTS ⚪ 口径修正后的两处增量；mini-program 本体为前端工程，业务契约全量共享）**：①**PAY7** `POST /api/pay/wechat/jsapi`——小程序内拉起支付：JSAPI 下单（`payer.openid` 与商户下单 appid 同源 + 补齐 WechatPayProperties `app-id` 配置——修正 Native 下单缺 appid 的既有缺陷）→ SDK `prepayWithRequestPayment` 返回带签名拉起参数集，前端直传 `wx.requestPayment`；回调/退款/对账零改动（复用 PAY2/PAY6/I55 全链路）；②**P37** `GET /api/item/product/{id}/wxa-code`——商品分享小程序码（微信 `wxacode.getUnlimited`，复用 `wechat.mini` 登录配置取 stable_token，scene=`p={id}`，MinIO 缓存直返 URL）；网关零新增（/api/pay/** 与 /api/item/** 路由既有） |
+| **V5.19.0** | **2026-10-16** | **标识与命名口径统一（批次 B1.5，[ADR-061](../adr/061-order-item-business-key-snapshot-and-price-compare.md)；**BREAKING** — 代码由 B2/B3 实施）**：①**新增 §1.8「SPU/SKU 标识口径」**——全平台标识口径唯一真相源（业务键 32-hex `String` / 技术键仅留 PO 与领域层 / 命名收口 `spu_name`·`spu_image` / 例外与未收口项登记）；②**命名收口**：契约全文 SPU 名称字段 14 处 → `spu_name`、主图字段 2 处 → `spu_image`（旧名清单见 ADR-061 §决策 5；DB 侧 `order_item` 的商品名快照列由 B2 改名）；③**标识类型收口（BREAKING）**：`SkuVO.spu_id`、`OrderItemVO.spu_id`/`sku_id`、`CartItemVO.sku_id` 与 C2-C5/C9/C10 入参、`FavoriteVO.spu_id`/`HistoryVO.spu_id` 与 U18/U19/U21 入参、`ReviewVO.spu_id`/`ReviewCreateReq.spu_id`、`FlashSaleVO.spu_id`/`sku_id`、`FlashBuyVO.spu_id`、`GroupBuyActivityVO`/`GroupBuyCreateReq`、`FlashSaleCreateReq`、`ShopDecorationVO.hot_spu_ids`、`NotePublishReq.spu_ids`/`NoteDetailVO.spus[].spu_id`、`RecommendSpuVO`/`SpuCardVO`、T6 `DirectOrderReq.sku_id`、T12 `ShipOrderReq.sku_ids` 一律改 **32-hex `String` 业务键**，样例值同步 32-hex；④**订单项口径**：§4.6.1 明文「订单项 = 业务键标识 + 快照；比价/失效提示为读时增强、fail-open、不缩行」；⑤**I13 响应须补 `sku_id`/`spu_id` 业务键**（ADR-058 §3）；I22 `spu_ids` 取值语义实测记录 + 待裁决；⑥**券范围口径**：`CouponVO`/`UserCouponVO` 的 `scope_values` **对外 CSV 串 / 存储 JSON 数组**并互链，订正原「scope_type=3 装 spu 业务标识」的失实表述（实测为技术键）；⑦**§十二 12.2 汇总**：B1 遗留（`OrderItemVO.spu_id`、`AiChatResponse.spus[]`、`UserCouponVO.scope_type/scope_values`）+ 本批新增（命名收口/类型收口/比价读模型/CSV 归一）+ 待裁决 R1-R3（路径变量、内部契约、券 scope 取值）+ 既有样本漂移 |
 | **V5.16.0** | **2026-10-06** | **P3 第三批（F15 知识图谱 Phase 1：商品关系导购）契约先行——完整 PRD 定稿（01-PRD §十六，O1 聚焦导购/O2 混合最小形态已裁决）后规格收口**：①§4.14.10b 新增 **I57 edge/upsert（先删后写幂等，哨兵 -1）/ I58 neighbors（≤2 跳 terms，fail-open 空列表）/ I59 edges 清边**（search `kg_edges` 边索引投影；I57-I59 全链路 fail-open 对齐 ADR-046 定类）；②§4.4.x 新增 **P35** `GET /api/item/product/{id}/pairing`（KG 图主召回 → 向量兜底 → 空态，与 P27 同页共存 O6）；③§4.13.8f 新增管理端 **AD61-63** 规则 CRUD + **AD64** 全量重建（裁决增量，兑现 US-KG-8）；④Phase 1 唯一新增 MySQL 表 `pairing_rule`（Initialize.sql 直改 59→60 表）+ ES `kg_edges` 边索引（D1 混合最小形态：MySQL 真相源 + ES 检索面；NebulaGraph 触发器化 §16.9）；⑤网关 `/api/admin/kg/**` 先于兜底声明；LLM 抽取/审核队列/政策问答/可视化均 Phase 2（触发器量化） |
 
 ---
@@ -2840,11 +2897,28 @@ data: [DONE]
 
 ### 12.2 未排期字段 / 能力
 
+> **本表是「契约已声明 / 代码未落地」与「未排期能力」的唯一挂账处。** 下游（B2 后端 / B3 前端）实施时以本表「说明」列的口径为准确依据；**未登记项不得自行发挥**，已登记项**必须**按口径落码后从本表移除或改标 ✅。
+>
+> **🆕 2026-10-16 批次 B1.5 汇总（本批新增 + B1 遗留 + 待裁决项，同表登记便于按图实施）**：
+> **① 命名收口** `spu_name`；**② 标识类型收口** 业务键 32-hex；**③ 比价/失效读时增强**（ADR-061）；**④ 券范围投影与形态**（B1 遗留）；**⑤ 待裁决 R1-R3**（路径变量 / 内部契约 / 券 scope 取值语义）；**⑥ 既有样本漂移（漏改）**。
+
 | 事项 | 说明 |
 | ---- | ---- |
+| **【② 类型收口】线格式 SPU/SKU 标识一律业务键（🆕 2026-10-16，ADR-061）** | 下列字段**契约口径已收口为 32-hex `String`**，代码待补：`SkuVO.spu_id`（现 `Long`，item）/ `CartItemVO.sku_id` + `CartAddReq.sku_id` + `CartUpdateReq.sku_id` + C4/C5/C10 路径 `skuId`（现 `Long`，cart）/ `FavoriteVO.spu_id` + U18/U19/U21 的 `spu_id` 入参（现 `Long`，user）/ `HistoryVO.spu_id`（现 `Long`，user）/ `ReviewVO.spu_id` + `ReviewCreateReq.spu_id`（现 `Long`，item）/ `FlashSaleVO.spu_id`/`sku_id` + `FlashBuyVO.spu_id` + `FlashSaleCreateReq.spu_id`/`sku_id` + `GroupBuyCreateReq.spu_id`/`sku_id` + `GroupBuyActivityVO.spu_id`/`sku_id`（现 `Long`，marketing）/ `ShopDecorationVO.hot_spu_ids`（现 `[Long]`）/ `NotePublishReq.spu_ids` + `NoteDetailVO.spus[].spu_id`（现 `Long`）/ `RecommendSpuVO.spu_id` + `SpuCardVO.spu_id`（现 `Long`）。**对照口径见 §1.8**；落码后须同时满足 ADR-061 §守卫 的类型断言 |
+| **【① 命名收口】SPU 名称字段 → `spu_name`、主图字段 → `spu_image`（列名 + 线上名）（🆕 2026-10-16，ADR-061；旧名见 ADR-061 §决策 5，契约内已清零）** | 契约 14 处名称 + 2 处主图已改；**代码待补**（处数为取证时点快照）：`order_item` 商品名快照列（`Initialize.sql` L356，唯一列定义）→ `spu_name`；后端 Java 旧名标识符 **36 处**（主代码 29 + 测试 7；含 3 处 MapStruct `@Mapping(target = …, ignore = true)`）——item 8 / user 6 / trade 6 / marketing 6 / cart 5 / ia-api 3 / search 2；主图旧名 `productImage` **5 处**（marketing，含 1 测试）；前端名称旧名 **32 处**（12 文件）、主图旧名 **9 处**（5 文件）。**`merchant_reply_template.content` 的模板占位符不属本项**（该功能 CH6-CH8 未实现，随实现一并改名，见下表末） |
+| **【③ 比价读时增强】订单项比价 / 失效提示需落码（🆕 2026-10-16，ADR-061）** | §4.6.1 已定口径（业务键批量 + fail-open + 不缩行 + 结合 `stock_type` 判缺货 + 仅展示不作业务判定）。**待落码**：`order_item` 补 `spu_id`/`sku_id` 业务键列 + trade 侧 ADR-057 读模型端口（签名建议见 ADR-061 §决策 3）+ 装配层比对纯函数 + 单测（含「端口异常 → 明细条数不变」断言）|
+| **【③ 线格式字段待规划】比价 / 失效提示的结果字段** | 本批**不定义**线格式比价字段（避免无排期承诺）；**前端不得对接**。建议最小形态（**仅供参考，未定稿**）：`OrderItemVO.current_price` / `current_status` / `price_changed` / `compare_state`（`IN_SYNC`/`PRICE_CHANGED`/`OFF_SHELF`/`DISCONTINUED`/`OUT_OF_STOCK`/`UNCOMPARABLE`）。正式立项须先更新本契约 + PRD |
+| **【④ 券范围投影待补】`UserCouponVO.scope_type` / `scope_values`（B1 遗留，本次补登记）** | 契约 §4.10.1 已声明（2026-10-16 B1 批次），**实测 `marketing-service` `adapter/response/UserCouponVO.java` 尚无这两个字段**——「文档有代码无」的**代码缺失**项。落码前券列表报文**不含**该二键，前端不得依赖 |
+| **【④ 券范围形态】`CouponVO`/`UserCouponVO` 的 `scope_values` CSV 归一（🆕 2026-10-16）** | 口径已裁决：**对外 CSV 串 / 存储 JSON 数组**（两 VO 同型同义）。**待落码**：`CouponVO.scopeValues` 现为领域对象原样透传（回吐 DB JSON 原样串），需在适配层归一为 CSV；`UserCouponVO` 侧随上条投影一并实现同一归一 |
+| **【⑤ 待裁决 R1】路径变量未收口（ADR-061 §后果 R1）** | 路径变量 `{id}`/`{spuId}`/`{skuId}`/`{productId}` 仍为技术键（如 `GET /api/item/product/{id}`、`GET /api/item/review/product/{productId}`、`GET /api/notes/{id}`、P27/P35 的 `{productId}`）。**影响**：客户端拿到业务键后无法直接用于这些路径。**注**：C4/C5/C10（`/api/cart/item/{skuId}` 系列）**已在本批按业务键收口**（与 `CartItemVO.sku_id` 必须同型同义）。**建议**：后续批次把「标识 SPU/SKU 实体」的路径变量一并收口为业务键，随 BREAKING 批次发布。**需仲裁**：范围与批次 |
+| **【⑤ 待裁决 R2】`/internal/**` 内部契约的标识收口（ADR-061 §后果 R2）** | 现状：`SkuCO.spuId`（`Long` 技术外键）、`SkuCO` 无业务键字段、`SpuVectorHitCO.spuId`（`Long`）、`KgEdgeUpsertCO.srcId`（`Long`）、I13/I14/I15 入参为技术键。**I13 响应须先「增」`sku_id`/`spu_id` 业务键字段**（ADR-058 §3，§4.14.5 已记）；**是否把 `SkuCO.spuId` 一并改型为业务键**（进而 `CartItemSnapshot.spuId` → `String`、I22 `spu_ids` 传业务键）**需仲裁**。ADR-058 §1/§059 §2 的字面（「任何 VO/DTO」）支持改型；A 案 DB 口径（内部外键保持技术键）支持仅增字段 |
+| **【⑤ 待裁决 R3】券 `scope_values` 的取值语义（技术键 → 业务键）** | 实测：`scope_type=3` 时存的是 `spu.id` 技术键（`PricingService#buildSpuIds` ← `SkuCO.spuId: Long`），与契约原记「spu 业务标识」及线格式 `spu_id`（32-hex）**不同型**，客户端预过滤**永不命中**（服务端校验仍正确，非资损）。**目标口径**：SPU 业务键。**与 R2 同批裁决**——R2 采纳改型则该缺陷自动消解 |
+| **【⑥ 漏改】既有样本与实现的漂移（非本批引入，登记待清）** | ①`SpuVO` 样例仍含 `shop_name`/`shop_logo`/`category_name`/`rating`/`sales_tags`，`SkuVO` 样例仍含 `spec_dimensions` —— 与 §11.1 已决第 8 条（「全部删除，以实现为准」）矛盾，实现均无此字段；②`ReviewVO` 样例用 `score`/`media_urls`/`reply{}`/`append{}`，实现为 `rating`/`images`/`reply`(String)+`replyTime`/`appendContent`+`appendMediaUrls`；③`OrderVO.order_no` 样例 `"ord-20260802-001"` / `OrderItemVO.order_no` 等非 32-hex，与 ADR-050 形态不符（同类：`RefundVO.refund_no`、`WithdrawalVO.withdrawal_no`、`FreightTemplateVO.template_no`）；④`CouponVO` 样例仍带 `type`（§11.1 已声明不纳入契约）；⑤`SpuVO.id`/`SkuVO.id`/`ReviewVO.id` 等**资源行主键**仍为技术键（ADR-058 §1 的既有偏差，本批按 §1.8「例外」显式登记，不扩范围） |
+| **「`merchant_reply_template` 模板变量」** | `content` 注释内的商品名占位符用旧名（`Initialize.sql` L841）：该端点 CH6-CH8 `/api/seller/templates` **未实现**，故不为未实现功能预先定名；**实现时一并改为 `{spu_name}`**（顺手可改，属 SQL 注释） |
+| **【⑤ 待裁决 R4】SPU 主图线上名两种方言（🆕 2026-10-16）** | `FlashSaleVO` 用 **`spu_image`**（本批由旧名收口）；`SpuVO`/`FavoriteVO`/`HistoryVO`/`SpuSearchVO`/`RecommendSpuVO`/`NoteDetailVO.spus[]` 用 **`main_image`**（与 DB 列 `spu.main_image` 同名）。**同一概念两种线上名**。**建议统一为 `main_image`**（与 DB 列对齐，仅需回退本 VO 一处）；若统一为 `spu_image` 则须演进而非仅改线上名。**需仲裁**（受影响实现：`FlashSaleVO.productImage` 1 字段 + 前端 9 处 `product_image`） |
 | 售后凭证图 `evidenceImages` | `AfterSaleApplyReq` 不接受该字段；凭证图上传与存储方案待排期 |
 | **`AiChatResponse.spus[]`（🆕 2026-10-16 记入待规划）** | 实现只有 `reply` + `conversation_id`（Record 两字段）；商品命中是 ai-service 内部 `SpuHit`，经 `SearchTool` 渲染成文本进 LLM 上下文，**不做结构化出参**。原样例（含 `image`/`reason`/`spu_id:1`）与实现三重不符，已按实现修正并移出正文（§4.11.1）。**重开需先更新 PRD/规格**；计划形态以 `SpuHit` 实有字段为准（`spu_id` 32-hex / `name` / `description` / `price_cents` / `sold_count`），**不含** `image`/`reason` |
-| **`OrderItemVO.spu_id`（🆕 2026-10-16 记入待补）** | 契约 §4.6.1 既有字段（样例一直带 `spu_id`），**后端 `OrderItemVO` 实体当前缺该字段**（实现待补：`order_item` 无 `spu_id` 快照列，须先补列再补投影，口径见 §4.6.1「订单项不变式」）。在补齐前，订单项报文**不含** `spu_id`，前端不得依赖该键做回链；此为「文档有代码无」的**代码缺失**项（非删契约） |
+| **`OrderItemVO` 标识与快照（🆕 2026-10-16 扩写，原「`spu_id` 待补」条）** | 契约 §4.6.1：`OrderItemVO = 标识(sku_id/spu_id 业务键 32-hex) + 快照(spu_name/sku_spec/image/price/sub_total)`，**比价/失效提示为读时增强 fail-open**。**实现待补**：`order_item` 无 `spu_id` 列且 `sku_id` 为 `BIGINT` 技术外键、商品名快照列未改名；`trade` 侧 `OrderItemVO` **既无 `spuId` 也无业务键 `skuId`**。在补齐前，订单项报文**不含** `spu_id` 且 `sku_id` 仍为技术键，前端不得依赖二者做回链 |
 | 多券叠加 `user_coupon_ids` | 已从下单请求体删除（V5.5）；策略层多券逻辑保留，接线需先出《多券金额分摊规则》PRD（§十一 11.2 O1） |
 | 微信回调 `out_trade_no` 断链修复 | **已完成**（ADR-033 落地：验签+AES-GCM 解密+字段提取收口 ia-integration 通道适配层，V5.5）；PAY2 对外契约不变（§4.7.1） |
 | 知识图谱（RAG+KG 混合检索） | ✅ **Phase 1 已定稿并落地（V5.16）**：I57-I59（§4.14.10b）/ P35（§4.4.x）/ AD61-64（§4.13.8f）；完整 PRD 见 `../product/01-PRD.md` §十六；P2 政策问答/可视化随 §16.9 触发器另案 |
