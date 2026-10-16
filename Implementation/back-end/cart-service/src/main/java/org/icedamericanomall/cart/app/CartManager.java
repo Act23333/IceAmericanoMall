@@ -27,6 +27,8 @@ import java.util.stream.Collectors;
  *
  * <p>职责：购物车用例编排（事务边界）+ 跨服务（item-service）批量回填 SKU 信息与金额计算。
  * 购物车表不存商品快照，商品名/规格/单价/图片均在读时回填；Feign 调用只允许出现在本层。
+ * 回填属<b>纯展示字段</b>，按 ADR-057 fail-open：item-service 不可用时列表照常返回、
+ * 字段留空（见 {@link #loadSkuMap}）；下单计价/扣库存链路另行 fail-closed。
  */
 @Slf4j
 @Component
@@ -168,7 +170,16 @@ public class CartManager {
 
     // ==================== 私有方法 ====================
 
-    /** 批量查询 SKU（一次 Feign 调用，禁止逐项查询）。 */
+    /**
+     * 批量查询 SKU（一次 Feign 调用，禁止逐项查询）。
+     *
+     * <p><b>fail-open（ADR-057 展示字段口径）</b>：商品名/规格/单价/图片在购物车是<b>纯展示回填</b>
+     * （见类注释），item-service 不可用时必须让购物车列表照常返回，故降级为空 {@code Map} + WARN；
+     * 逐项后果由 {@link #getCartView} 现有分支承接（单价为空 → 该项小计 0、不计入总价、
+     * {@code allSelected=false}），前端仍可渲染「暂不可用」并提示重试。
+     * <p>与下单链路刻意不同：I13 在 {@code NormalCartOrderStrategy} 里是<b>判别型查询</b>
+     * （空列表 = SKU 不存在），必须 fail-closed —— 扣库存/计价绝不允许静默降级。
+     */
     private Map<Long, SkuCO> loadSkuMap(List<CartItemVO> items) {
         List<Long> skuIds = items.stream()
                 .map(CartItemVO::getSkuId)
@@ -178,7 +189,15 @@ public class CartManager {
         if (skuIds.isEmpty()) {
             return Map.of();
         }
-        List<SkuCO> skus = skuClient.getSkuListByIds(skuIds);
+        List<SkuCO> skus;
+        try {
+            skus = skuClient.getSkuListByIds(skuIds);
+        } catch (Exception e) {
+            // 展示回填失败不阻断列表：降级为空 Map（不回填、不计价），仅告警
+            log.warn("购物车商品回填失败，展示字段置空（fail-open）: skuIds={}, cause={}",
+                    skuIds, e.getMessage());
+            return Map.of();
+        }
         if (skus == null || skus.isEmpty()) {
             log.warn("购物车商品回填为空，可能存在已下架或已删除的 SKU: skuIds={}", skuIds);
             return Map.of();

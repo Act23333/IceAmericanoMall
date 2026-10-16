@@ -9,6 +9,8 @@ import org.icedamericanomall.cart.domain.model.cart.CartItem;
 import org.icedamericanomall.cart.domain.repository.CartRepository;
 import org.icedamericanomall.client.SkuClient;
 import org.icedamericanomall.dto.SkuCO;
+import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BizException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -198,6 +201,28 @@ class CartManagerTest {
 
         verify(cartRepository, never()).updateQuantity(anyLong(), anyInt());
         verify(cartRepository, never()).delete(anyLong());
+    }
+
+    @Test
+    @DisplayName("购物车视图 — I13 回填抛异常（含降级 fail-closed 的 BizException）→ 展示字段置空、列表照常返回（fail-open，ADR-057）")
+    void shouldDegradeGracefully_whenSkuEnrichmentFails() {
+        when(cartRepository.findByUserIdOrderByCreateTimeDesc(USER_ID)).thenReturn(List.of(
+                item(100L, 2, true),
+                item(200L, 1, true)));
+        // SkuClientFallback 的降级语义是 fail-closed（抛 BizException），购物车展示回填必须自行 fail-open
+        when(skuClient.getSkuListByIds(anyList()))
+                .thenThrow(new BizException(ErrorCode.SYSTEM_BUSY, "商品服务暂不可用，请稍后重试"));
+
+        CartVO vo = assertDoesNotThrow(() -> cartManager.getCartView(USER_ID),
+                "购物车列表不得因展示字段回填失败而整体不可用");
+
+        assertEquals(2, vo.getItems().size(), "降级不丢项：购物车项来自本地表");
+        assertNull(vo.getItems().get(0).getProductName());
+        assertNull(vo.getItems().get(0).getPrice());
+        assertEquals(0, vo.getItems().get(0).getSubTotal().intValue());
+        assertEquals(0, vo.getTotalPrice().intValue(), "取不到单价即不计价（宁可少计不可错计）");
+        assertEquals(0, vo.getSelectedPrice().intValue());
+        assertFalse(vo.getAllSelected(), "无法计价时不得标记全选");
     }
 
     @Test

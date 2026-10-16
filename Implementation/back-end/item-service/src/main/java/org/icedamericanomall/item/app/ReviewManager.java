@@ -32,7 +32,8 @@ import java.util.Map;
  * 评价编排（应用层）—— 评价用例（发布/分页/汇总/回复/追评/点赞）+ 站内信通知触发
  * + 每日评价任务旁路触发（F9，ADR-047）。
  *
- * <p>跨服务调用（notification-service / marketing-service）只允许出现在本层；
+ * <p>跨服务调用（notification-service / marketing-service）只允许出现在本层，且一律经
+ * {@link #runAfterCommit} 在<b>事务提交后</b>发起（硬约束：Feign 严禁进事务）；
  * 回复/追评/点赞的守卫 SQL（reply IS NULL、本人追评）在仓储实现内。
  */
 @Slf4j
@@ -131,6 +132,9 @@ public class ReviewManager {
     /**
      * 点赞/取消点赞（仓储幂等矩阵），点赞成功时通知评价作者。
      *
+     * <p><b>事务纪律（硬约束：Feign 严禁进事务）</b>：本方法带写事务，故站内信通知经
+     * {@link #runAfterCommit} 移到<b>事务提交后</b>发送（回滚即不发送）；通知本身 fail-open。
+     *
      * @return 1=点赞成功，-1=取消点赞
      */
     @Transactional(rollbackFor = Exception.class)
@@ -149,14 +153,21 @@ public class ReviewManager {
         if (result > 0) {
             Review review = reviewRepository.findById(reviewId);
             if (review != null) {
-                notifyReviewAuthor(review.getUserId(), userId, NOTIFY_TYPE_LIKE,
-                        NOTIFY_TITLE_LIKE, null, review.getProductId());
+                Long recipientId = review.getUserId();
+                Long productId = review.getProductId();
+                runAfterCommit(() -> notifyReviewAuthor(recipientId, userId, NOTIFY_TYPE_LIKE,
+                        NOTIFY_TITLE_LIKE, null, productId));
             }
         }
         return result;
     }
 
-    /** 商家回复评价（商品归属校验），成功后通知评价作者。 */
+    /**
+     * 商家回复评价（商品归属校验），成功后通知评价作者。
+     *
+     * <p><b>事务纪律（硬约束：Feign 严禁进事务）</b>：通知经 {@link #runAfterCommit}
+     * 移到事务提交后发送（回滚即不发送）；通知本身 fail-open，不阻断回复主流程。
+     */
     @Transactional(rollbackFor = Exception.class)
     public void replyToReview(Long sellerId, Long reviewId, String content) {
         Review review = reviewRepository.findById(reviewId);
@@ -171,8 +182,10 @@ public class ReviewManager {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "已回复过该评价");
         }
         log.info("商家回复评价: reviewId={}, sellerId={}", reviewId, sellerId);
-        notifyReviewAuthor(review.getUserId(), sellerId, NOTIFY_TYPE_REPLY,
-                NOTIFY_TITLE_REPLY, content, review.getProductId());
+        Long recipientId = review.getUserId();
+        Long productId = review.getProductId();
+        runAfterCommit(() -> notifyReviewAuthor(recipientId, sellerId, NOTIFY_TYPE_REPLY,
+                NOTIFY_TITLE_REPLY, content, productId));
     }
 
     /** 用户追评（非本人/已追评由仓储守卫拒绝）。 */
@@ -223,18 +236,31 @@ public class ReviewManager {
      * 每日评价任务旁路触发（F9 DAILY_REVIEW，ADR-047）—— 评价落库成功后触发。
      *
      * <p><b>事务纪律（硬约束：Feign 严禁进事务）</b>：调用点处于 {@code createReview} 的
-     * 写事务内，故对齐 {@link ProductRecommendManager} 摄取先例 —— 有活动事务时注册
-     * {@code afterCommit} 回调（回滚即不触发，提交后才远程调用），无活动事务直接发送。
+     * 写事务内，故对齐 {@link ProductRecommendManager} 摄取先例 —— 走 {@link #runAfterCommit}，
+     * 有活动事务时注册 {@code afterCommit} 回调（回滚即不触发，提交后才远程调用）。
      */
     private void triggerDailyReviewTask(Long userId) {
+        runAfterCommit(() -> completeDailyReviewTask(userId));
+    }
+
+    /**
+     * 事务提交后执行（<b>Feign 严禁进事务</b>，硬约束）—— 本类所有跨服务调用的统一出口。
+     *
+     * <p>有活动事务（{@code TransactionSynchronizationManager} 已同步）时注册 {@code afterCommit}
+     * 回调：主事务回滚则回调不执行，提交后才发起远程调用，从而不会把 Feign 的耗时与失败
+     * 混进本地写事务（连接池占用 / 回滚语义错乱）。无活动事务（单测直调、非事务入口）时直接执行。
+     *
+     * <p>回调内的失败语义由 {@code action} 自负（本类传入的两处均 fail-open）。
+     */
+    private void runAfterCommit(Runnable action) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            completeDailyReviewTask(userId);
+            action.run();
             return;
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                completeDailyReviewTask(userId);
+                action.run();
             }
         });
     }

@@ -125,6 +125,21 @@ class CartManagerH2Test {
     }
 
     @Test
+    @DisplayName("getSelectedItemCos — I14 端到端：cartItemId 回传真实主键（防映射缺口回归，trade 据此删已购项）")
+    void shouldCarryPersistedCartItemId_whenListingSelectedItems() {
+        cartManager.addItem(1L, addReq(1000L, 2));
+        Long rowId = cartRepository.findByUserIdOrderByCreateTimeDesc(1L).get(0).getId();
+
+        List<org.icedamericanomall.dto.CartItemCO> selected = cartManager.getSelectedItemCos(1L);
+
+        assertEquals(1, selected.size());
+        assertEquals(rowId, selected.get(0).getCartItemId(),
+                "cartItemId 必须是落库主键：为 null 时 trade 侧删车会静默跳过（真仓储 + 真 CartConverterImpl 链路）");
+        assertTrue(selected.stream().allMatch(co -> co.getCartItemId() != null),
+                "I14 明细不允许出现无主键项");
+    }
+
+    @Test
     @DisplayName("clearCart — 清空用户购物车")
     void shouldClearCart() {
         cartManager.addItem(1L, addReq(1000L, 1));

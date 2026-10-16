@@ -317,6 +317,20 @@
                                 <version>${mapstruct.version}</version>
                             </path>
                         </annotationProcessorPaths>
+
+                        <!--
+                          构建期守卫（全仓唯一开关）：MapStruct 的「未映射目标属性」由 WARN 升级为 ERROR。
+                          动因：目标字段被静默丢弃（如 cart CartItem.id → CartItemCO.cartItemId 名字不同无法自动映射）
+                          此前只以 `Unmapped target properties` 警告形式出现在构建日志里，无人阅读 → 线上恒 null。
+                          此处是**唯一**的开关点：新增 @Mapper 自动纳入守卫，禁止在单个 @Mapper 上写
+                          unmappedTargetPolicy = WARN/IGNORE 局部放宽（那会成为下一个盲区）。
+                          已确认属设计例外（由编排层读时回填 / 跨域补齐）的字段，在对应 mapper 用
+                          @Mapping(target = "...", ignore = true) 逐字段显式声明意图（见 CartConverter / SkuConverter /
+                          ProductConverter / ReviewConverter）。
+                        -->
+                        <compilerArgs>
+                            <arg>-Amapstruct.unmappedTargetPolicy=ERROR</arg>
+                        </compilerArgs>
                     </configuration>
                 </plugin>
 
