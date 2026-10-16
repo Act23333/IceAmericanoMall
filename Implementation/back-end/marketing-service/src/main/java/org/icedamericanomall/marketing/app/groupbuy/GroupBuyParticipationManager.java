@@ -1,6 +1,7 @@
 package org.icedamericanomall.marketing.app.groupbuy;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.GroupBuyTeamClient;
@@ -15,6 +16,7 @@ import org.icedamericanomall.dto.GroupTeamRefundCO;
 import org.icedamericanomall.marketing.adapter.assembler.MarketingConverter;
 import org.icedamericanomall.marketing.adapter.response.GroupBuyActivityVO;
 import org.icedamericanomall.marketing.adapter.response.GroupTeamVO;
+import org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief;
 import org.icedamericanomall.marketing.domain.enums.GroupBuyActivityStatusEnum;
 import org.icedamericanomall.marketing.domain.enums.GroupTeamStatusEnum;
 import org.icedamericanomall.marketing.domain.model.groupbuy.GroupBuyActivity;
@@ -57,19 +59,25 @@ public class GroupBuyParticipationManager {
     private final GroupTeamMemberRepository groupTeamMemberRepository;
     private final MarketingConverter marketingConverter;
     private final GroupBuyTeamClient groupBuyTeamClient;
+    private final GroupBuyViewManager groupBuyViewManager;
 
     // ==================== C 端只读（M15-M17，🌐 匿名） ====================
 
-    /** M15：进行中拼团活动分页（时间窗推导口径，id 降序）。 */
+    /** M15：进行中拼团活动分页（时间窗推导口径，id 降序；业务键 + SPU 名整页一次回填）。 */
     public IPage<GroupBuyActivityVO> pageActiveActivities(int pageNum, int pageSize) {
-        return groupBuyActivityRepository.findActiveActivities(LocalDateTime.now(), pageNum, pageSize)
-                .convert(marketingConverter::toVO);
+        IPage<GroupBuyActivity> page =
+                groupBuyActivityRepository.findActiveActivities(LocalDateTime.now(), pageNum, pageSize);
+        List<GroupBuyActivityVO> vos = groupBuyViewManager.toViewList(page.getRecords());
+        IPage<GroupBuyActivityVO> result = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
+        result.setRecords(vos);
+        result.setPages(page.getPages());
+        return result;
     }
 
     /** M16：活动详情 + 最近进行中团 ≤10（团队列表不含他人 userId）。 */
     public GroupBuyActivityVO getActivityDetail(Long id) {
         GroupBuyActivity activity = requireActivity(id);
-        GroupBuyActivityVO vo = marketingConverter.toVO(activity);
+        GroupBuyActivityVO vo = groupBuyViewManager.toView(activity);
         vo.setTeams(marketingConverter.toGroupTeamVOList(groupTeamRepository
                 .findTeamsByActivityAndStatus(activity.getId(), GroupTeamStatusEnum.ONGOING.getCode(), TEAM_LIST_LIMIT)));
         return vo;
@@ -101,9 +109,16 @@ public class GroupBuyParticipationManager {
         if (query.getTeamNo() != null && !query.getTeamNo().isBlank()) {
             ensureTeamJoinable(requireTeamByNo(query.getTeamNo()), query.getUserId());
         }
+        // 出参 SKU 一律业务键（ADR-061 §决策 2）：I52 回执 → trade 下单取数（I13）与订单项标识列
+        // 同口径；活动行本身存技术键，故经读模型换算一次（解析不到即视为活动配置异常，
+        // 抛 PARAM_ERROR 让下单 fail-closed，而不是下出一个没有商品标识的订单）
+        FlashSaleSpuBrief brief = groupBuyViewManager.findBySkuTechnicalId(activity.getSkuId());
+        if (brief == null || brief.skuBusinessId() == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "拼团活动绑定的 SKU 不存在或已删除");
+        }
         return new GroupBuyValidateResultCO(activity.getId(), query.getTeamNo(),
                 activity.getGroupPrice(), activity.getRequiredMembers(), activity.getTimeLimitHours(),
-                activity.getSkuId());
+                brief.skuBusinessId());
     }
 
     // ==================== I53 支付成功参团（fail-closed，uk 幂等） ====================

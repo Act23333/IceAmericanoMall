@@ -1,5 +1,6 @@
 package org.icedamericanomall.trade.adapter.admin;
 
+import org.icedamericanomall.common.web.QueryModel;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.annotation.OperationLog;
@@ -47,7 +48,7 @@ public class AdminAfterSaleController {
 
     /** 售后申请分页（query: status / page / size，属性绑定）。 */
     @GetMapping
-    public Result<IPage<AfterSaleVO>> list(AfterSalePageReq req) {
+    public Result<IPage<AfterSaleVO>> list(@QueryModel AfterSalePageReq req) {
         return Result.ok(afterSaleManager.pageByStatus(req.getStatus(), req.getPage(), req.getSize()));
     }
 

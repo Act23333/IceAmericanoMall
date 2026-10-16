@@ -41,7 +41,8 @@ import static org.mockito.Mockito.when;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class SpuVectorManagerTest {
 
-    private static final Long SPU_ID = 9L;
+    /** SPU <b>业务键</b>（32-hex，ADR-061 §决策 2：I47/I48 线格式标识一律业务键）。 */
+    private static final String SPU_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
     private static final String NAME = "无线蓝牙耳机";
     private static final String DESCRIPTION = "主动降噪 头戴式";
     private static final String BRAND = "SoundMax";
@@ -76,8 +77,13 @@ class SpuVectorManagerTest {
         return co;
     }
 
-    private SpuSearchHit hit(Long id, Double score) {
-        return new SpuSearchHit(id, "biz-" + id, 1L, "n", "d", "b", "img", 100, 5, score);
+    /**
+     * 领域命中构造：{@code id} 为技术键（ES 文档 {@code _id}），{@code spuId} 为业务键
+     * —— I48 命中出的是 <b>业务键</b>（ADR-061 §决策 2），故这里刻意让两者不同值，
+     * 断言一旦退回技术键即失败。
+     */
+    private SpuSearchHit hit(Long id, String spuBusinessId, Double score) {
+        return new SpuSearchHit(id, spuBusinessId, 1L, "n", "d", "b", "img", 100, 5, score);
     }
 
     @Test
@@ -120,7 +126,6 @@ class SpuVectorManagerTest {
         assertArrayEquals(toDoubles(VECTOR_V2), docs.get(1).embedding());
         assertEquals(NAME + "（新款）", docs.get(1).name());
     }
-
     @Test
     @DisplayName("摄取 — 展示字段一并以入参为准落文档")
     void shouldCarryDisplayFieldsToDoc_whenUpsert() {
@@ -167,19 +172,24 @@ class SpuVectorManagerTest {
         verify(spuSearchGateway, never()).vectorSearch(any(), anyInt());
     }
 
+    /** 命中业务键（与技术键刻意不同值：断言一旦退回技术键即失败）。 */
+    private static String hitKey(long technicalId) {
+        return String.format("%032x", 9000L + technicalId);
+    }
+
     @Test
-    @DisplayName("相似检索 — 命中含自身 → 过滤自身，出 spuId + score")
+    @DisplayName("相似检索 — 命中含自身 → 过滤自身，出 spuId（业务键）+ score")
     void shouldFilterSelf_whenHitsContainSelf() {
         when(spuSearchGateway.findVectorById(SPU_ID)).thenReturn(Optional.of(toDoubles(VECTOR_V1)));
         when(spuSearchGateway.vectorSearch(any(), anyInt())).thenReturn(List.of(
-                hit(SPU_ID, 1.0), hit(100L, 0.9), hit(200L, 0.8)));
+                hit(100L, SPU_ID, 1.0), hit(101L, hitKey(100L), 0.9), hit(102L, hitKey(200L), 0.8)));
 
         List<SpuVectorHitCO> hits = manager.similar(SPU_ID, 5);
 
         assertEquals(2, hits.size());
-        assertEquals(100L, hits.get(0).getSpuId());
+        assertEquals(hitKey(100L), hits.get(0).getSpuId());
         assertEquals(0.9, hits.get(0).getScore());
-        assertEquals(200L, hits.get(1).getSpuId());
+        assertEquals(hitKey(200L), hits.get(1).getSpuId());
         assertEquals(0.8, hits.get(1).getScore());
     }
 
@@ -188,8 +198,8 @@ class SpuVectorManagerTest {
     void shouldLimitToRequestedSize_whenSelfNotInHits() {
         when(spuSearchGateway.findVectorById(SPU_ID)).thenReturn(Optional.of(toDoubles(VECTOR_V1)));
         when(spuSearchGateway.vectorSearch(any(), eq(6))).thenReturn(List.of(
-                hit(100L, 0.9), hit(101L, 0.9), hit(102L, 0.9),
-                hit(103L, 0.9), hit(104L, 0.9), hit(105L, 0.9)));
+                hit(100L, hitKey(100L), 0.9), hit(101L, hitKey(101L), 0.9), hit(102L, hitKey(102L), 0.9),
+                hit(103L, hitKey(103L), 0.9), hit(104L, hitKey(104L), 0.9), hit(105L, hitKey(105L), 0.9)));
 
         List<SpuVectorHitCO> hits = manager.similar(SPU_ID, 5);
 

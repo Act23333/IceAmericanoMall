@@ -7,6 +7,7 @@ import org.icedamericanomall.marketing.adapter.assembler.MarketingConverter;
 import org.icedamericanomall.marketing.adapter.request.FlashSaleCreateReq;
 import org.icedamericanomall.marketing.adapter.request.FlashSaleUpdateReq;
 import org.icedamericanomall.marketing.adapter.response.FlashSaleVO;
+import org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief;
 import org.icedamericanomall.marketing.domain.enums.FlashSaleStatusEnum;
 import org.icedamericanomall.marketing.domain.model.flash.FlashSale;
 import org.icedamericanomall.marketing.domain.repository.FlashSaleRepository;
@@ -45,8 +46,12 @@ public class FlashSaleAdminManager {
      *
      * <p>整体已过期的时间窗拒绝创建——保证「已结束」状态不可能由创建产生。
      *
-     * <p>回执复用 {@link FlashSaleViewManager}（与 M8 列表同一装配口径）：商品名/主图/原价
-     * 与进度百分比一并回填，fail-open 不回退创建结果；读模型为本地只读查询，不违反
+     * <p><b>入参口径（契约 §1.8② + ADR-061 §决策 2）</b>：{@code spu_id}/{@code sku_id} 收
+     * <b>业务键</b> 32-hex，写入 {@code flash_sale} 前经读模型解析为技术键（A 案：该表保持
+     * 技术键不动）；解析不到 → {@code PARAM_ERROR}（fail-fast，不落半条脏数据）。
+     *
+     * <p>回执复用 {@link FlashSaleViewManager}（与 M8 列表同一装配口径）：业务键/商品名/主图/
+     * 原价与进度百分比一并回填，fail-open 不回退创建结果；读模型为本地只读查询，不违反
      * 「事务内禁止 Feign」。
      *
      * @param req 创建请求（字段必填与正数校验已在适配层完成）
@@ -56,6 +61,7 @@ public class FlashSaleAdminManager {
     @Transactional(rollbackFor = Exception.class)
     public FlashSaleVO createFlashSale(FlashSaleCreateReq req) {
         FlashSale flashSale = marketingConverter.toDomain(req);
+        applyResolvedKeys(flashSale, req.getSpuId(), req.getSkuId());
         flashSale.ensureTimeWindowOrdered();
         LocalDateTime now = LocalDateTime.now();
         ensureNotEnded(flashSale, now, "秒杀活动时间窗已整体过期，不可创建");
@@ -68,16 +74,23 @@ public class FlashSaleAdminManager {
     /**
      * AD41：编辑秒杀活动（null-safe 局部更新 + 状态重推导）。
      *
+     * <p>{@code spu_id}/{@code sku_id}（可选、业务键）同样先解析再合并 —— 二者同名异义
+     * （请求侧业务键 vs 聚合侧技术键），MapStruct 已 ignore，由本类显式赋值（ADR-058 §4）。
+     *
      * @param id  活动主键
      * @param req 编辑请求（字段全可选，仅覆盖传入字段）
      * @throws BizException 活动不存在（{@link ErrorCode#NO_RESOURCE_FOUND}，404）；
-     *                      已结束活动不可编辑 / 合并后时间窗无序（{@link ErrorCode#PARAM_ERROR}，400）
+     *                      已结束活动不可编辑 / 合并后时间窗无序 / 业务键解析失败（{@link ErrorCode#PARAM_ERROR}，400）
      */
     @Transactional(rollbackFor = Exception.class)
     public void updateFlashSale(Long id, FlashSaleUpdateReq req) {
         FlashSale flashSale = requireFlashSale(id);
         ensureNotEnded(flashSale, LocalDateTime.now(), "已结束的秒杀活动不可编辑");
         marketingConverter.mergeFlashSaleUpdate(req, flashSale);
+        // 仅当请求真的传了键才覆盖（null = 不更新，与其余字段的 null-safe 语义一致）
+        if (req.getSkuId() != null || req.getSpuId() != null) {
+            applyResolvedKeys(flashSale, req.getSpuId(), req.getSkuId());
+        }
         flashSale.ensureTimeWindowOrdered();
         flashSale.setStatus(flashSale.deriveStatus(LocalDateTime.now()));
         flashSaleRepository.update(flashSale);
@@ -100,6 +113,30 @@ public class FlashSaleAdminManager {
     }
 
     // ==================== 内部方法 ====================
+
+    /**
+     * SPU/SKU <b>业务键</b> → 技术键并写入聚合（ADR-061 §决策 2 + A 案）。
+     *
+     * <p>解析走 {@code sku.sku_id} 唯一索引（本地只读，无 Feign，事务安全）；解析不到即
+     * {@code PARAM_ERROR} —— 写路径必须 fail-fast，不得落一条「指向不存在 SKU」的活动。
+     * {@code spuId} 以 <b>SKU 行所属 SPU</b> 为准（入参 SPU 仅作一致性校验），
+     * 避免「SKU 与 SPU 不匹配」的脏数据。
+     *
+     * @throws BizException 业务键格式非法 / SKU 不存在 / SPU 与 SKU 不匹配
+     */
+    private void applyResolvedKeys(FlashSale flashSale, String spuBusinessId, String skuBusinessId) {
+        FlashSaleSpuBrief brief = flashSaleViewManager.findBySkuBusinessId(skuBusinessId);
+        if (brief == null || brief.skuId() == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "SKU 不存在（sku_id 业务键无效）");
+        }
+        if (spuBusinessId != null && brief.spuBusinessId() != null
+                && !spuBusinessId.equals(brief.spuBusinessId())) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "SPU 与 SKU 不匹配");
+        }
+        // 技术键一律取自读模型解析结果（SKU 行所属 SPU 为准），不采信入参技术键
+        flashSale.setSkuId(brief.skuId());
+        flashSale.setSpuId(brief.spuId());
+    }
 
     /** 按主键取活动，不存在抛 NO_RESOURCE_FOUND（AD41/AD42 契约错误口径 1103）。 */
     private FlashSale requireFlashSale(Long id) {

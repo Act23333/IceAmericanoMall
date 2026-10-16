@@ -42,9 +42,10 @@ public class FlashSaleOrderStrategy implements OrderCreateStrategy {
 
         // 构建秒杀价快照
         OrderCreateContext.CartItemSnapshot snap = new OrderCreateContext.CartItemSnapshot();
-        snap.setSkuId(ctx.getSkuId());
+        snap.setSkuId(sku.getSkuId());        // ADR-061：订单项 SKU 业务键快照
+        snap.setSpuId(sku.getSpuId());        // ADR-061：订单项 SPU 业务键快照
         snap.setSellerId(sku.getSellerId());
-        snap.setProductName(sku.getProductName());
+        snap.setSpuName(sku.getSpuName());
         snap.setSkuSpec(sku.getSpec());
         snap.setPrice(ctx.getFlashPrice());  // ← 秒杀价，非 SKU 原价
         snap.setQuantity(ctx.getQuantity());

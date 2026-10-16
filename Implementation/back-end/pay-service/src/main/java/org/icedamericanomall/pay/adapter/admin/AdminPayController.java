@@ -1,5 +1,6 @@
 package org.icedamericanomall.pay.adapter.admin;
 
+import org.icedamericanomall.common.web.QueryModel;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.annotation.OperationLog;
@@ -86,7 +87,7 @@ public class AdminPayController {
      * @param req 查询参数（page / size / channel / status / billDate[可空]）
      */
     @GetMapping("/reconciliation/batches")
-    public Result<IPage<ReconciliationBatchVO>> listBatches(ReconciliationQueryReq req) {
+    public Result<IPage<ReconciliationBatchVO>> listBatches(@QueryModel ReconciliationQueryReq req) {
         assertAdmin();
         return Result.ok(reconciliationManager
                 .pageBatches(req.getPage(), req.getSize(), req.getChannel(), req.getStatus(),
@@ -101,7 +102,7 @@ public class AdminPayController {
      */
     @GetMapping("/reconciliation/batches/{id}/details")
     public Result<IPage<ReconciliationDetailVO>> listBatchDetails(@PathVariable Long id,
-                                                                  ReconciliationQueryReq req) {
+                                                                  @QueryModel ReconciliationQueryReq req) {
         assertAdmin();
         return Result.ok(reconciliationManager
                 .pageDetails(id, req.getPage(), req.getSize(), req.getResult()));
@@ -119,7 +120,7 @@ public class AdminPayController {
     @OperationLog(module = MODULE_PAY, action = ACTION_RUN_RECONCILIATION,
             description = "手动触发渠道对账", recordParams = true)
     @PostMapping("/reconciliation/run")
-    public Result<List<ReconciliationBatchVO>> runReconciliation(ReconciliationQueryReq req) {
+    public Result<List<ReconciliationBatchVO>> runReconciliation(@QueryModel ReconciliationQueryReq req) {
         assertAdmin();
         return Result.ok(reconciliationManager.run(req.parseBillDate(true), req.getChannel()));
     }

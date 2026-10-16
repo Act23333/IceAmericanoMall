@@ -18,9 +18,11 @@ import java.time.LocalDateTime;
 public class FlashSaleUpdateReq implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    private Long spuId;
+    /** SPU 业务键（32-hex，可选；null 字段不更新）。 */
+    private String spuId;
 
-    private Long skuId;
+    /** SKU 业务键（32-hex，可选；null 字段不更新）。 */
+    private String skuId;
 
     /** 秒杀价（分，&gt;0，可选）。 */
     @Positive

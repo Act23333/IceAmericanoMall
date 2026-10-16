@@ -48,9 +48,15 @@ public class InternalItemSearchController {
         return itemSearchQueryManager.exportPage(page, size);
     }
 
-    /** 单商品检索卡片（publishTime 回填用）；不存在返回 null 体。 */
+    /**
+     * 单商品检索卡片；不存在返回 null 体。
+     *
+     * <p><b>入参既接受技术键也接受业务键</b>（ADR-061 §决策 2）：纯数字按 {@code spu.id} 查，
+     * 32-hex 按 {@code spu.spu_id} 查。消费方：search-service 的 publishTime 回填（技术键）
+     * 与商品向量摄取/相似检索的锚点解析（业务键）。<b>不新增路由</b>（端点对账保持 287/0/43）。
+     */
     @GetMapping("/detail/{id}")
-    public SpuSearchItemCO detail(@PathVariable("id") Long id) {
+    public SpuSearchItemCO detail(@PathVariable("id") String id) {
         return itemSearchQueryManager.detail(id);
     }
 }

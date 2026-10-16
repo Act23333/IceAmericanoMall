@@ -44,11 +44,21 @@ final class SpuEsDocuments {
         return doc;
     }
 
-    /** 领域向量文档 → ES 文档（_id = 商品 id，幂等覆盖；展示字段一并以入参为准）。 */
-    static SpuDocument toDocument(SpuVectorDoc doc) {
+    /**
+     * 领域向量文档 → ES 文档。
+     *
+     * <p><b>标识分工（ADR-061 §决策 2 / ADR-046）</b>：{@code _id}/{@code id} = 商品
+     * <b>技术键</b>（与 reindex / I28 检索卡片命中 id 同源，ES 侧仅此一种文档键），
+     * {@code spuId} = 商品<b>业务键</b> 32-hex（I47 幂等键与 I48 命中的线格式标识）。
+     * 技术键由网关先经 item 域检索出口解析（{@code /detail/key/{spuId}}）后传入。
+     *
+     * @param doc    领域向量文档（{@code spuId} 为业务键）
+     * @param id     商品技术键（调用方保证非空；解析不到时调用方不写文档）
+     */
+    static SpuDocument toDocument(SpuVectorDoc doc, Long id) {
         SpuDocument document = new SpuDocument();
-        document.setId(doc.spuId());
-        document.setSpuId(String.valueOf(doc.spuId()));
+        document.setId(id);
+        document.setSpuId(doc.spuId());
         document.setName(doc.name());
         document.setDescription(doc.description());
         document.setBrand(doc.brand());

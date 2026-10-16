@@ -51,7 +51,7 @@ class InternalGroupBuyControllerTest {
     @DisplayName("validate — 合法 body → 委托 validate 且透传 activityId/teamNo/userId，裸 CO 透出")
     void shouldDelegateValidate() throws Exception {
         when(groupBuyParticipationManager.validate(anyValidateCO()))
-                .thenReturn(new GroupBuyValidateResultCO(1L, "team-no-aaa", 9900, 3, 24, 2L));
+                .thenReturn(new GroupBuyValidateResultCO(1L, "team-no-aaa", 9900, 3, 24, "0f1e2d3c4b5a69788796a5b4c3d2e1f0"));
 
         mockMvc.perform(MockMvcRequestBuilders.post("/internal/group-buy/validate")
                         .contentType(MediaType.APPLICATION_JSON)

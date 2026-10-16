@@ -12,6 +12,7 @@ import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.trade.domain.enums.OrderStatusEnum;
 import org.icedamericanomall.trade.domain.model.order.Order;
 import org.icedamericanomall.trade.domain.model.order.OrderItem;
+import org.icedamericanomall.trade.domain.model.order.PageResult;
 import org.icedamericanomall.trade.domain.model.order.ShipPackageResult;
 import org.icedamericanomall.trade.domain.repository.OrderRepository;
 import org.springframework.stereotype.Repository;
@@ -112,13 +113,49 @@ public class OrderRepositoryImpl implements OrderRepository {
     }
 
     @Override
-    public IPage<Order> pageOrders(Long userId, Long sellerId, Integer status, int page, int size) {
+    public PageResult<Order> pageOrders(Long userId, Long sellerId, Integer status, String keyword,
+                                        LocalDateTime startTime, LocalDateTime endTime, int page, int size) {
         var wrapper = new LambdaQueryWrapper<OrderPO>();
         if (userId != null) wrapper.eq(OrderPO::getUserId, userId);
         if (sellerId != null) wrapper.eq(OrderPO::getSellerId, sellerId);
         if (status != null) wrapper.eq(OrderPO::getStatus, status);
+        applyKeywordFilter(wrapper, keyword);
+        if (startTime != null) wrapper.ge(OrderPO::getCreateTime, startTime);
+        if (endTime != null) wrapper.le(OrderPO::getCreateTime, endTime);
         wrapper.orderByDesc(OrderPO::getCreateTime);
-        return orderMapper.selectPage(new Page<>(page, size), wrapper).convert(OrderRepositoryImpl::toDomain);
+        // 框架分页信封（IPage）在持久化边界内消化：域层只收框架无关的 PageResult（ADR-038 守卫）
+        IPage<OrderPO> result = orderMapper.selectPage(new Page<>(page, size), wrapper);
+        return new PageResult<>(result.getRecords().stream().map(OrderRepositoryImpl::toDomain).toList(),
+                result.getTotal(), page, size);
+    }
+
+    /**
+     * 关键词筛选（A2 收口，AD12/T12 口径）：<b>订单号精确</b> / <b>收货人姓名·手机号模糊</b> /
+     * <b>明细 SPU 名模糊</b>，三选一命中即返回。
+     *
+     * <p><b>为何订单号用精确匹配</b>：订单号是业务键（{@code orders.order_no BINARY(16)}，
+     * 32-hex），模糊匹配在 {@code BINARY} 列上语义不可靠且无法走唯一索引；其密文/十六进制形态
+     * 也不适合「部分输入」。收货人与商品名是自然文本字段，模糊匹配符合运营检索习惯。
+     *
+     * <p><b>为何明细名走 EXISTS 子查询而非 JOIN</b>：JOIN 会让「一单多明细命中多行」放大结果集
+     * （分页 total 失真）；EXISTS 保持「一单一行的分页语义」，且命中即短路。
+     *
+     * <p>实现为「外层 AND + 内层 OR」（{@code and(w -> w.or(...).or(...))}），
+     * 避免 OR 把上述 userId/sellerId/status 过滤条件旁路掉（越权读数风险）。
+     */
+    private void applyKeywordFilter(LambdaQueryWrapper<OrderPO> wrapper, String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return;
+        }
+        String trimmed = keyword.trim();
+        String likePattern = "%" + trimmed + "%";
+        byte[] exactOrderNo = IdGenerator.toBytesOrNull(trimmed);
+        wrapper.and(w -> w
+                .eq(exactOrderNo != null, OrderPO::getOrderNo, exactOrderNo)
+                .or().like(OrderPO::getReceiverName, likePattern)
+                .or().like(OrderPO::getReceiverPhone, likePattern)
+                .or().exists("SELECT 1 FROM order_item oi WHERE oi.order_id = orders.id "
+                        + "AND oi.spu_name LIKE {0}", likePattern));
     }
 
     /**
@@ -178,7 +215,7 @@ public class OrderRepositoryImpl implements OrderRepository {
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public ShipPackageResult shipPackage(String orderNo, Long sellerId, List<Long> skuIds) {
+    public ShipPackageResult shipPackage(String orderNo, Long sellerId, List<String> skuIds) {
         Order order = findByOrderNo(orderNo);
         if (order == null) {
             throw new BizException(ErrorCode.ORDER_NOT_FOUND, "订单不存在");
@@ -222,7 +259,7 @@ public class OrderRepositoryImpl implements OrderRepository {
                             .set(OrderPO::getConsignTime, now));
         }
 
-        List<Long> shippedSkuIds = targets.stream().map(OrderItem::getSkuId).toList();
+        List<String> shippedSkuIds = targets.stream().map(OrderItem::getSkuId).toList();
         log.info("包裹发货: orderNo={}, packageNo={}, skuIds={}, allShipped={}",
                 orderNo, packageNo, shippedSkuIds, allShipped);
         return new ShipPackageResult(order.getId(), packageNo, shippedSkuIds, allShipped);
@@ -235,8 +272,8 @@ public class OrderRepositoryImpl implements OrderRepository {
      * @param skuIds 请求明细；空 = 全部未发货明细
      * @return 本包裹应标记的明细
      */
-    private List<OrderItem> resolvePackageItems(List<OrderItem> items, List<Long> skuIds) {
-        Map<Long, OrderItem> bySkuId = items.stream()
+    private List<OrderItem> resolvePackageItems(List<OrderItem> items, List<String> skuIds) {
+        Map<String, OrderItem> bySkuId = items.stream()
                 .collect(Collectors.toMap(OrderItem::getSkuId, Function.identity(), (a, b) -> a));
 
         if (skuIds == null || skuIds.isEmpty()) {
@@ -250,18 +287,18 @@ public class OrderRepositoryImpl implements OrderRepository {
             return unshipped;
         }
 
-        List<Long> distinctSkuIds = skuIds.stream().filter(Objects::nonNull).distinct().toList();
+        List<String> distinctSkuIds = skuIds.stream().filter(Objects::nonNull).distinct().toList();
         if (distinctSkuIds.isEmpty()) {
             throw new BizException(ErrorCode.ORDER_STATUS_INVALID, "发货明细为空");
         }
         // 第一遍：归属校验（含他单 sku → PARAM_ERROR，无任何状态变更）
-        for (Long skuId : distinctSkuIds) {
+        for (String skuId : distinctSkuIds) {
             if (!bySkuId.containsKey(skuId)) {
                 throw new BizException(ErrorCode.PARAM_ERROR, "明细不属于本订单: skuId=" + skuId);
             }
         }
         // 第二遍：一明细只发一次（重复发货同一 sku → ORDER_STATUS_INVALID）
-        for (Long skuId : distinctSkuIds) {
+        for (String skuId : distinctSkuIds) {
             OrderItem item = bySkuId.get(skuId);
             if (item.getPackageNo() != null) {
                 throw new BizException(ErrorCode.ORDER_STATUS_INVALID,
@@ -508,8 +545,10 @@ public class OrderRepositoryImpl implements OrderRepository {
         OrderItem item = new OrderItem();
         item.setId(po.getId());
         item.setOrderId(po.getOrderId());
-        item.setSkuId(po.getSkuId());
-        item.setProductName(po.getProductName());
+        // BINARY(16) → 32-hex 只在此处发生（仓储边界，ADR-050 编解码唯一出口）
+        item.setSkuId(IdGenerator.toHexString(po.getSkuId()));
+        item.setSpuId(IdGenerator.toHexString(po.getSpuId()));
+        item.setSpuName(po.getSpuName());
         item.setSkuSpec(po.getSkuSpec());
         item.setPrice(po.getPrice());
         item.setQuantity(po.getQuantity());
@@ -525,8 +564,10 @@ public class OrderRepositoryImpl implements OrderRepository {
         OrderItemPO po = new OrderItemPO();
         po.setId(item.getId());
         po.setOrderId(item.getOrderId());
-        po.setSkuId(item.getSkuId());
-        po.setProductName(item.getProductName());
+        // 32-hex → BINARY(16)：非法/缺省空值经 toBytesOrNull 归一（写路径非 NOT NULL 列语义）
+        po.setSkuId(IdGenerator.toBytesOrNull(item.getSkuId()));
+        po.setSpuId(IdGenerator.toBytesOrNull(item.getSpuId()));
+        po.setSpuName(item.getSpuName());
         po.setSkuSpec(item.getSkuSpec());
         po.setPrice(item.getPrice());
         po.setQuantity(item.getQuantity());

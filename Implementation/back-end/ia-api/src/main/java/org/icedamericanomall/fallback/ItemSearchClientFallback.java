@@ -45,7 +45,9 @@ public class ItemSearchClientFallback implements FallbackFactory<ItemSearchClien
             }
 
             @Override
-            public SpuSearchItemCO detail(Long id) {
+            public SpuSearchItemCO detail(String id) {
+                // fail-open：按技术键或业务键查不到条目 → 调用方按「商品不存在」处理
+                // （I47 摄取跳过、I48 相似检索返回空），不阻断主流程（ADR-061 §决策 2）
                 log.warn("商品条目查询降级：item-service 不可用，id={} 按缺失处理（fail-open）", id, cause);
                 return null;
             }

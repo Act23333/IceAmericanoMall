@@ -78,8 +78,8 @@ public class ItemServiceSpuSearchGateway implements SpuSearchGateway {
     }
 
     @Override
-    public Optional<double[]> findVectorById(Long spuId) {
-        // 非 ES 链无向量能力，恒视为无向量（fail-open）
+    public Optional<double[]> findVectorById(String spuId) {
+        // 非 ES 链无向量能力，恒视为无向量（fail-open）；入参为 SPU 业务键（ADR-061）
         return Optional.empty();
     }
 

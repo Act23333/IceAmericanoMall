@@ -1,5 +1,6 @@
 package org.icedamericanomall.trade.adapter.admin;
 
+import org.icedamericanomall.common.web.QueryModel;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.annotation.OperationLog;
@@ -59,7 +60,7 @@ public class AdminFinanceController {
      * 管理端视图保留明文账号（打款核验需要）+ 脱敏号。
      */
     @GetMapping("/withdrawal/page")
-    public Result<IPage<WithdrawalVO>> pageWithdrawal(WithdrawalPageReq req) {
+    public Result<IPage<WithdrawalVO>> pageWithdrawal(@QueryModel WithdrawalPageReq req) {
         return Result.ok(withdrawalManager.pageByStatus(req.getStatus(), req.getPage(), req.getSize()));
     }
 

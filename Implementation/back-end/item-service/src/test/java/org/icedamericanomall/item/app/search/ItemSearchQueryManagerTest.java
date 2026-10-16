@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -41,8 +42,13 @@ class ItemSearchQueryManagerTest {
     @InjectMocks
     private ItemSearchQueryManager manager;
 
+    /** 32-hex 业务键（{@code spu.spu_id} 线格式；长度必须为 32，ADR-050）。 */
+    private static String businessKey(long id) {
+        return String.format("aaaa0000aaaa0000aaaa0000%08x", id);
+    }
+
     private static SpuSearchCard card(long id) {
-        return new SpuSearchCard(id, "aaaa0000aaaa0000aaaa0000aaaa000" + id, 10L,
+        return new SpuSearchCard(id, businessKey(id), 10L,
                 "商品" + id, "描述", "SoundMax", "img", 1999, 3, 1_767_225_600_000L);
     }
 
@@ -59,7 +65,7 @@ class ItemSearchQueryManagerTest {
         assertEquals(7L, result.getTotal());
         assertEquals(2, result.getRecords().size());
         SpuSearchItemCO first = result.getRecords().get(0);
-        assertEquals("aaaa0000aaaa0000aaaa0000aaaa0001", first.getSpuId());
+        assertEquals(businessKey(1L), first.getSpuId());
         assertEquals(1999, first.getMinPrice());
         assertEquals(1_767_225_600_000L, first.getPublishTime());
     }
@@ -104,13 +110,30 @@ class ItemSearchQueryManagerTest {
     }
 
     @Test
-    @DisplayName("detail — 仓储缺失返回 null；命中映射为 CO")
+    @DisplayName("detail — 仓储缺失返回 null；命中映射为 CO（技术键入参）")
     void shouldReturnNull_whenDetailMissing() {
-        assertNull(manager.detail(null));
+        assertNull(manager.detail((String) null));
+        assertNull(manager.detail("  "));
         when(spuRepository.findSearchCardById(9L)).thenReturn(null);
-        assertNull(manager.detail(9L));
+        assertNull(manager.detail("9"));
 
         when(spuRepository.findSearchCardById(1L)).thenReturn(card(1L));
-        assertEquals("aaaa0000aaaa0000aaaa0000aaaa0001", manager.detail(1L).getSpuId());
+        assertEquals(businessKey(1L), manager.detail("1").getSpuId());
+        // 纯数字（≤19 位）一律走技术键分支，不得误入业务键分支
+        verify(spuRepository, never()).findSearchCardByBusinessId(anyString());
+    }
+
+    @Test
+    @DisplayName("detail — 32-hex 入参走业务键分支（ADR-061 §决策 2，I47 幂等键解析）")
+    void shouldResolveByBusinessKey_whenHexIdProvided() {
+        String key = businessKey(1L);
+        when(spuRepository.findSearchCardByBusinessId(key)).thenReturn(card(1L));
+
+        assertEquals(key, manager.detail(key).getSpuId());
+        // 业务键分支不得回落到技术键查询（否则 spu_id 无法解析）
+        verify(spuRepository, never()).findSearchCardById(anyLong());
+
+        when(spuRepository.findSearchCardByBusinessId("not-a-hex-key")).thenReturn(null);
+        assertNull(manager.detail("not-a-hex-key"));
     }
 }

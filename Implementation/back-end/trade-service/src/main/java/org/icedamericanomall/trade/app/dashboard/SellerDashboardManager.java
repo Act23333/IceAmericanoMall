@@ -67,7 +67,7 @@ public class SellerDashboardManager {
         List<Long> orderIds = orders.stream().map(Order::getId).toList();
         Map<String, int[]> agg = new LinkedHashMap<>();
         for (OrderItem item : orderRepository.findItemsByOrderIds(orderIds)) {
-            agg.merge(item.getProductName(),
+            agg.merge(item.getSpuName(),
                     new int[]{item.getQuantity(), item.getSubTotal()},
                     (a, b) -> new int[]{a[0] + b[0], a[1] + b[1]});
         }

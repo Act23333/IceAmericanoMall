@@ -43,7 +43,8 @@ public class CouponFaceQueryImpl implements CouponFaceQuery {
     private static final String SQL_SELECT_FACE =
             "SELECT c.id AS id, c.coupon_id AS coupon_id, c.name AS name, "
                     + "c.value AS value, c.min_amount AS min_amount, "
-                    + "c.discount_type AS discount_type "
+                    + "c.discount_type AS discount_type, "
+                    + "c.scope_type AS scope_type, c.scope_values AS scope_values "
                     + "FROM coupon c WHERE c.id IN (%s)";
 
     private final JdbcTemplate jdbcTemplate;
@@ -63,7 +64,9 @@ public class CouponFaceQueryImpl implements CouponFaceQuery {
                         rs.getString("name"),
                         rs.getObject("value", Integer.class),
                         rs.getObject("min_amount", Integer.class),
-                        rs.getObject("discount_type", Integer.class)),
+                        rs.getObject("discount_type", Integer.class),
+                        rs.getObject("scope_type", Integer.class),
+                        rs.getString("scope_values")),
                 ids.toArray());
         return rows.stream()
                 .filter(row -> row.id() != null)

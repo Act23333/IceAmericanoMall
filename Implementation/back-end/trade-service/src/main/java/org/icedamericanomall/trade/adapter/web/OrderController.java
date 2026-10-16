@@ -1,5 +1,6 @@
 package org.icedamericanomall.trade.adapter.web;
 
+import org.icedamericanomall.common.web.QueryModel;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -75,7 +76,7 @@ public class OrderController {
 
     /** 我的订单分页（query: status / page / size，属性绑定）。 */
     @GetMapping("/page")
-    public Result<IPage<OrderVO>> page(OrderPageReq req) {
+    public Result<IPage<OrderVO>> page(@QueryModel OrderPageReq req) {
         return Result.ok(orderQueryManager.pageOrders(
                 UserContext.getUserId(), null, req.getStatus(), req.getPage(), req.getSize()));
     }

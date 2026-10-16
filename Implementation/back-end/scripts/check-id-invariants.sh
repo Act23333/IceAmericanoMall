@@ -49,7 +49,28 @@ if [ -n "$hits3" ]; then
   fail=1
 fi
 
+
+# 检查 4：线格式标识字段的【类型】必须为 String（ADR-061 §守卫：闭合 ADR-059 只查命名未查类型的漏洞）
+# 命中面：adapter/response、adapter/request 与 ia-api dto/ 下的字段名 spuId/spuIds/skuId/skuIds
+# 断言：其 Java 类型必须是 String 或 List<String>；出现 Long/Integer/int/long 一律失败。
+# 依据：契约 §1.8「类型也是口径的一部分 —— 字段名对而类型为 Long 同样是违规」。
+FORMAT_DIRS="*/src/main/java/*/adapter/response */src/main/java/*/adapter/request ia-api/src/main/java/org/icedamericanomall/dto"
+hits4=""
+for d in $FORMAT_DIRS; do
+  [ -d "$d" ] || continue
+  matches=$(grep -rnE 'private[[:space:]]+[A-Za-z0-9_<>, ]+[[:space:]]+(spuId|spuIds|skuId|skuIds)[[:space:]]*;' --include='*.java' "$d" 2>/dev/null     | grep -vE 'private[[:space:]]+(String|List<String>)[[:space:]]+(spuId|spuIds|skuId|skuIds)[[:space:]]*;' || true)
+  if [ -n "$matches" ]; then
+    hits4="${hits4}${matches}
+"
+  fi
+done
+if [ -n "$hits4" ]; then
+  echo "[FAIL] ADR-061：以下线格式字段名对应 spu_id/sku_id，但类型不是 String（应 32-hex 业务键 String / List<String>）："
+  printf '%b' "$hits4"
+  fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
-  echo "[OK] ID 不变量门禁通过（ADR-050/051：生成唯一出口 / 查询参数 byte[] / SQL 字面量禁令）"
+  echo "[OK] ID 不变量门禁通过（ADR-050/051/061：生成唯一出口 / 查询参数 byte[] / SQL 字面量禁令 / 线格式标识类型）"
 fi
 exit "$fail"

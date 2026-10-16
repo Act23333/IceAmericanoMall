@@ -41,6 +41,10 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("OrderLifecycleManager 取消编排单元测试")
 class OrderLifecycleManagerTest {
+    /** SKU 业务键（32-hex，ADR-061 §决策 2：线格式与订单项标识一律业务键）。 */
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    private static final String SKU_BUSINESS_ID_2 = "112233445566778899aabbccddeeff00";
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
 
     @Mock private OrderRepository orderRepository;
     @Mock private SkuClient skuClient;
@@ -77,7 +81,7 @@ class OrderLifecycleManagerTest {
     private OrderItem item() {
         OrderItem i = new OrderItem();
         i.setOrderId(1L);
-        i.setSkuId(1000L);
+        i.setSkuId(SKU_BUSINESS_ID);
         i.setQuantity(2);
         return i;
     }
@@ -252,11 +256,11 @@ class OrderLifecycleManagerTest {
         shipped.setStatus(OrderStatusEnum.PENDING_RECEIPT.getCode());
         shipped.setReceiverName("张三");
         shipped.setReceiverPhone("13800138000");
-        when(orderRepository.shipPackage("ORD-1", 9L, List.of(1000L)))
-                .thenReturn(new ShipPackageResult(1L, 2, List.of(1000L), true));
+        when(orderRepository.shipPackage("ORD-1", 9L, List.of(SKU_BUSINESS_ID)))
+                .thenReturn(new ShipPackageResult(1L, 2, List.of(SKU_BUSINESS_ID), true));
         when(orderRepository.findByOrderNo("ORD-1")).thenReturn(shipped);
 
-        manager.shipOrder("ORD-1", 9L, "SF002", "顺丰", List.of(1000L));
+        manager.shipOrder("ORD-1", 9L, "SF002", "顺丰", List.of(SKU_BUSINESS_ID));
 
         ArgumentCaptor<org.icedamericanomall.dto.CreateLogisticsCO> captor =
                 ArgumentCaptor.forClass(org.icedamericanomall.dto.CreateLogisticsCO.class);
@@ -272,7 +276,7 @@ class OrderLifecycleManagerTest {
     void shouldNotFail_whenLogisticsCreationFails() {
         Order shipped = order();
         when(orderRepository.shipPackage("ORD-1", 9L, null))
-                .thenReturn(new ShipPackageResult(1L, 1, List.of(1000L), true));
+                .thenReturn(new ShipPackageResult(1L, 1, List.of(SKU_BUSINESS_ID), true));
         when(orderRepository.findByOrderNo("ORD-1")).thenReturn(shipped);
         doThrow(new RuntimeException("logistics service down"))
                 .when(logisticsClient).createLogistics(any());
@@ -289,11 +293,11 @@ class OrderLifecycleManagerTest {
         shipped.setStatus(OrderStatusEnum.PENDING_RECEIPT.getCode());
         shipped.setReceiverName("张三");
         shipped.setReceiverPhone("13800138000");
-        when(orderRepository.shipPackage("ORD-1", 9L, List.of(1000L)))
-                .thenReturn(new ShipPackageResult(1L, 2, List.of(1000L), true));
+        when(orderRepository.shipPackage("ORD-1", 9L, List.of(SKU_BUSINESS_ID)))
+                .thenReturn(new ShipPackageResult(1L, 2, List.of(SKU_BUSINESS_ID), true));
         when(orderRepository.findByOrderNo("ORD-1")).thenReturn(shipped);
 
-        manager.shipOrder("ORD-1", 9L, "SF002", "顺丰", List.of(1000L));
+        manager.shipOrder("ORD-1", 9L, "SF002", "顺丰", List.of(SKU_BUSINESS_ID));
 
         ArgumentCaptor<InAppMessageSendReqCO> captor = ArgumentCaptor.forClass(InAppMessageSendReqCO.class);
         verify(notificationClient).sendInAppMessage(captor.capture());
@@ -312,7 +316,7 @@ class OrderLifecycleManagerTest {
         Order shipped = order();
         shipped.setStatus(OrderStatusEnum.PENDING_RECEIPT.getCode());
         when(orderRepository.shipPackage("ORD-1", 9L, null))
-                .thenReturn(new ShipPackageResult(1L, 1, List.of(1000L), true));
+                .thenReturn(new ShipPackageResult(1L, 1, List.of(SKU_BUSINESS_ID), true));
         when(orderRepository.findByOrderNo("ORD-1")).thenReturn(shipped);
         doThrow(new RuntimeException("notification-service down"))
                 .when(notificationClient).sendInAppMessage(any(InAppMessageSendReqCO.class));

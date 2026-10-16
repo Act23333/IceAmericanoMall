@@ -81,6 +81,9 @@ class EsSpuSearchGatewayTest {
     private static final String INDEX = KnowledgeVectorClient.INDEX_PRODUCTS;
     private static final int DIMS = 768;
 
+    /** SPU <b>业务键</b>（32-hex，ADR-061 §决策 2：I47 幂等键 / ES 文档 spuId 列）。 */
+    private static final String SPU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+
     @Mock
     private ElasticsearchOperations esOps;
 
@@ -119,7 +122,9 @@ class EsSpuSearchGatewayTest {
     private SpuSearchItemCO item(long id) {
         SpuSearchItemCO co = new SpuSearchItemCO();
         co.setId(id);
-        co.setSpuId("bbbbbbbb0000700080000000000000" + String.format("%02d", (int) (id % 100)));
+        // 32-hex 业务键（技术键参与构值，保证「不同技术键 → 不同业务键」；
+        // 长度必须是 32 —— 少于/多于都不是合法 BINARY(16) 的 hex 形态，ADR-050）
+        co.setSpuId(String.format("%032x", 0xB0000000L + id));
         co.setName("无线蓝牙耳机" + id);
         co.setDescription("主动降噪 头戴式");
         co.setBrand("SoundMax");
@@ -241,7 +246,9 @@ class EsSpuSearchGatewayTest {
     void shouldCarryEmbedding_whenPresent() {
         Map<String, Object> doc = SpuEsDocuments.toDocMap(item(1L), new float[]{0.1f, 0.2f});
 
-        assertEquals("bbbbbbbb000070008000000000000001", doc.get("spuId"));
+        // spuId 是 item 域带出的 32-hex 业务键（非技术键；技术键在 id 列）
+        assertEquals(String.format("%032x", 0xB0000000L + 1L), doc.get("spuId"));
+        assertEquals(1L, doc.get("id"));
         assertEquals(100, doc.get("price"));
         assertEquals(List.of(0.1f, 0.2f), doc.get("embedding"));
     }
@@ -336,33 +343,58 @@ class EsSpuSearchGatewayTest {
     }
 
     @Test
-    @DisplayName("upsertVectorDoc — I47 覆盖写回填 publishTime（摄取契约无此字段，经 item 端点补齐，ADR-052）")
+    @DisplayName("upsertVectorDoc — I47 覆盖写按业务键解析技术键并回填 publishTime（同一次数据面往返）")
     void shouldEnrichPublishTime_whenUpsertVectorDoc() {
         SpuSearchItemCO co = item(1L);
         co.setPublishTime(1_767_225_600_000L);
-        when(itemSearchClient.detail(1L)).thenReturn(co);
+        // 入参是 SPU 业务键（ADR-061），技术键经 item 域检索出口解析
+        when(itemSearchClient.detail(SPU_BUSINESS_ID)).thenReturn(co);
 
         gateway.upsertVectorDoc(vectorDoc(1L));
 
         ArgumentCaptor<SpuDocument> captor = ArgumentCaptor.forClass(SpuDocument.class);
         verify(esOps).save(captor.capture());
-        assertEquals(1_767_225_600_000L, captor.getValue().getPublishTime());
+        SpuDocument saved = captor.getValue();
+        assertEquals(1_767_225_600_000L, saved.getPublishTime());
+        // 文档键：id 技术键 / spuId 业务键（两者刻意不同值，退回任一即失败）
+        assertEquals(1L, saved.getId());
+        assertEquals(SPU_BUSINESS_ID, saved.getSpuId());
     }
 
     @Test
-    @DisplayName("upsertVectorDoc — item 端点无该商品/无发布时间 → 不回填不报错（fail-open）")
-    void shouldSkipPublishTimeEnrichment_whenSpuMissing() {
-        when(itemSearchClient.detail(1L)).thenReturn(null);
+    @DisplayName("upsertVectorDoc — item 端点无该商品 → 跳过写入不报错（fail-open，不产出无主文档）")
+    void shouldSkipWrite_whenSpuMissing() {
+        when(itemSearchClient.detail(SPU_BUSINESS_ID)).thenReturn(null);
 
         gateway.upsertVectorDoc(vectorDoc(1L));
 
-        ArgumentCaptor<SpuDocument> captor = ArgumentCaptor.forClass(SpuDocument.class);
-        verify(esOps).save(captor.capture());
-        assertNull(captor.getValue().getPublishTime());
+        verify(esOps, never()).save(ArgumentMatchers.any(SpuDocument.class));
     }
 
-    private SpuVectorDoc vectorDoc(long spuId) {
-        return new SpuVectorDoc(spuId, "无线蓝牙耳机", "主动降噪", "SoundMax", 1L, "img",
+    @Test
+    @DisplayName("findVectorById — 业务键 → 技术键解析后按 _id 取自身向量")
+    void shouldFindVectorByBusinessKey() {
+        when(itemSearchClient.detail(SPU_BUSINESS_ID)).thenReturn(item(1L));
+        SpuDocument doc = new SpuDocument();
+        doc.setId(1L);
+        doc.setEmbedding(new double[]{0.1, 0.2});
+        when(esOps.get("1", SpuDocument.class)).thenReturn(doc);
+
+        assertEquals(2, gateway.findVectorById(SPU_BUSINESS_ID).orElseThrow().length);
+    }
+
+    @Test
+    @DisplayName("findVectorById — 商品不存在 → empty 且不读 ES（fail-open）")
+    void shouldReturnEmpty_whenSpuMissingOnFindVector() {
+        when(itemSearchClient.detail(SPU_BUSINESS_ID)).thenReturn(null);
+
+        assertTrue(gateway.findVectorById(SPU_BUSINESS_ID).isEmpty());
+        verify(esOps, never()).get(ArgumentMatchers.anyString(),
+                ArgumentMatchers.eq(SpuDocument.class));
+    }
+
+    private SpuVectorDoc vectorDoc(long ignoredTechnicalId) {
+        return new SpuVectorDoc(SPU_BUSINESS_ID, "无线蓝牙耳机", "主动降噪", "SoundMax", 1L, "img",
                 100, 3, new double[]{0.1, 0.2});
     }
 

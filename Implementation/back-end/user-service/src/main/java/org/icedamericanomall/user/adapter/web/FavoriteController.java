@@ -19,16 +19,16 @@ public class FavoriteController {
 
     private final FavoriteManager favoriteManager;
 
-    /** 收藏商品（幂等：重复收藏不重复插入）。 */
+    /** 收藏商品（幂等：重复收藏不重复插入）。{@code spu_id} 为 SPU <b>业务键</b> 32-hex（§1.8②）。 */
     @PostMapping
-    public Result<Void> add(@RequestParam(name = "spu_id") Long spuId) {
+    public Result<Void> add(@RequestParam(name = "spu_id") String spuId) {
         favoriteManager.add(UserContext.getUserId(), spuId);
         return Result.ok();
     }
 
-    /** 取消收藏。 */
+    /** 取消收藏（{@code spu_id} 同 U18：SPU 业务键 32-hex）。 */
     @DeleteMapping
-    public Result<Void> remove(@RequestParam(name = "spu_id") Long spuId) {
+    public Result<Void> remove(@RequestParam(name = "spu_id") String spuId) {
         favoriteManager.remove(UserContext.getUserId(), spuId);
         return Result.ok();
     }

@@ -27,6 +27,10 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("OrderRepositoryImpl H2 集成测试")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class OrderRepositoryImplH2Test {
+    /** SKU 业务键（32-hex，ADR-061 §决策 2：线格式与订单项标识一律业务键）。 */
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    private static final String SKU_BUSINESS_ID_2 = "112233445566778899aabbccddeeff00";
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
 
     private static OrderRepositoryImpl repository;
 
@@ -70,8 +74,9 @@ class OrderRepositoryImplH2Test {
                 CREATE TABLE order_item (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     order_id BIGINT NOT NULL,
-                    sku_id BIGINT NOT NULL,
-                    product_name VARCHAR(100),
+                    sku_id BINARY(16) NOT NULL,
+                    spu_id BINARY(16) NOT NULL,
+                    spu_name VARCHAR(100),
                     sku_spec VARCHAR(200),
                     price INT NOT NULL,
                     quantity INT NOT NULL,
@@ -145,7 +150,8 @@ class OrderRepositoryImplH2Test {
         order.setTotalAmount(50000); order.setStatus(OrderStatusEnum.PENDING_PAYMENT.getCode());
 
         OrderItem item = new OrderItem();
-        item.setSkuId(100L); item.setPrice(50000); item.setQuantity(1); item.setSubTotal(50000);
+        item.setSkuId(SKU_A); item.setSpuId(SPU_BUSINESS_ID); item.setSpuName("商品A");
+        item.setPrice(50000); item.setQuantity(1); item.setSubTotal(50000); item.setSkuSpec("规格");
 
         repository.saveWithItems(order, List.of(item));
 
@@ -313,11 +319,11 @@ class OrderRepositoryImplH2Test {
 
     // ==================== V5.6 拆单发货（F3 BDD 场景，H2 真实库往返） ====================
 
-    private static final long SKU_A = 7001L;
-    private static final long SKU_B = 7002L;
+    private static final String SKU_A = "aaaaaaaa00007001000000000000aaaa";
+    private static final String SKU_B = "bbbbbbbb00007002000000000000bbbb";
 
     /** 建「待发货 + 两条明细」订单，返回订单号。 */
-    private String savePendingShipmentOrderWithItems(String orderNo, long... skuIds) {
+    private String savePendingShipmentOrderWithItems(String orderNo, String... skuIds) {
         Order o = new Order();
         o.setOrderNo(orderNo); o.setUserId(810L); o.setSellerId(9L);
         o.setTotalAmount(2000); o.setPayAmount(2000); o.setPostFee(0);
@@ -325,9 +331,9 @@ class OrderRepositoryImplH2Test {
         o.setReceiverName("Test"); o.setReceiverPhone("13800138000");
         o.setReceiverAddress("广东省深圳市"); o.setVersion(0);
         List<OrderItem> items = new java.util.ArrayList<>();
-        for (long skuId : skuIds) {
+        for (String skuId : skuIds) {
             OrderItem item = new OrderItem();
-            item.setSkuId(skuId); item.setProductName("商品" + skuId); item.setSkuSpec("规格");
+            item.setSkuId(skuId); item.setSpuId(SPU_BUSINESS_ID); item.setSpuName("商品" + skuId); item.setSkuSpec("规格");
             item.setPrice(1000); item.setQuantity(1); item.setSubTotal(1000);
             items.add(item);
         }
@@ -335,10 +341,10 @@ class OrderRepositoryImplH2Test {
         return orderNo;
     }
 
-    private OrderItem itemOf(String orderNo, long skuId) {
+    private OrderItem itemOf(String orderNo, String skuId) {
         Order order = repository.findByOrderNo(orderNo);
         return repository.findItemsByOrderId(order.getId()).stream()
-                .filter(i -> i.getSkuId() == skuId)
+                .filter(i -> java.util.Objects.equals(i.getSkuId(), skuId))
                 .findFirst().orElseThrow();
     }
 
@@ -409,16 +415,16 @@ class OrderRepositoryImplH2Test {
     void shouldRejectShip_whenSkuNotBelongToOrder() {
         String orderNo = savePendingShipmentOrderWithItems("aaaaaaaa000070008000000000000018", SKU_A, SKU_B);
         // 另一订单的明细 sku
-        String otherOrderNo = savePendingShipmentOrderWithItems("aaaaaaaa000070008000000000000019", 8001L);
+        String otherOrderNo = savePendingShipmentOrderWithItems("aaaaaaaa000070008000000000000019", "cccccccc00008001000000000000cccc");
 
         BizException ex = assertThrows(BizException.class, () ->
-                repository.shipPackage(orderNo, 9L, List.of(SKU_A, 8001L)));
+                repository.shipPackage(orderNo, 9L, List.of(SKU_A, "cccccccc00008001000000000000cccc")));
 
         assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
         assertEquals(OrderStatusEnum.PENDING_SHIPMENT.getCode(),
                 repository.findByOrderNo(orderNo).getStatus());
         assertNull(itemOf(orderNo, SKU_A).getPackageNo(), "校验失败时不得标记任何明细");
-        assertNull(itemOf(otherOrderNo, 8001L).getPackageNo(), "他单明细不受影响");
+        assertNull(itemOf(otherOrderNo, "cccccccc00008001000000000000cccc").getPackageNo(), "他单明细不受影响");
     }
 
 }

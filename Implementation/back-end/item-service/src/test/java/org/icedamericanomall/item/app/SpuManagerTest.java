@@ -33,8 +33,10 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
@@ -72,8 +74,20 @@ class SpuManagerTest {
                 new org.icedamericanomall.item.adapter.assembler.SkuConverterImpl(),
                 freightTemplateManager, new SkuManager(skuRepository,
                 new org.icedamericanomall.item.adapter.assembler.SkuConverterImpl(),
-                // 商品展示字段回填端口：本测试不覆盖该链路（真实 SQL 语义见 SkuSpuDisplayQueryImplH2Test）
-                skuIds -> java.util.Map.of()),
+                // 商品展示字段/业务键回填端口：本测试不覆盖该链路（真实 SQL 语义见 SkuSpuDisplayQueryImplH2Test）
+                new org.icedamericanomall.item.app.port.SkuSpuDisplayQuery() {
+                    @Override
+                    public java.util.Map<Long, org.icedamericanomall.item.app.dto.SkuSpuDisplay> findBySkuIds(
+                            java.util.Collection<Long> skuIds) {
+                        return java.util.Map.of();
+                    }
+
+                    @Override
+                    public java.util.Map<String, org.icedamericanomall.item.app.dto.SkuSpuDisplay> findBySkuBusinessIds(
+                            java.util.Collection<String> skuBusinessIds) {
+                        return java.util.Map.of();
+                    }
+                }),
                 spuVectorClient, new SpuRecommendManager(spuVectorClient),
                 new SpuPromotionManager(promotionClient), kgEdgeIngestManager);
     }
@@ -89,11 +103,26 @@ class SpuManagerTest {
         return Spu.publish(sellerId, 10L, null, "手机", "img.jpg", "旗舰", "品牌A");
     }
 
+    /**
+     * 技术键 → SPU 业务键（32-hex，{@code spu.spu_id} 的线格式，ADR-061 §决策 2）。
+     * 测试夹具里技术键与业务键按此一一对应，保证「请求侧业务键 = 回执侧业务键」。
+     */
+    private static String businessKey(long spuTechnicalId) {
+        return String.format("%032x", spuTechnicalId);
+    }
+
     private Spu spuWithId(Long sellerId, Long id) {
         Spu p = spu(sellerId);
         p.setId(id);
+        p.setSpuId(businessKey(id));
         p.setSoldCount(0);
         return p;
+    }
+
+    /** 锚点解析桩：返回带业务键的检索卡片（I47/I48 的线格式入参口径）。 */
+    private static org.icedamericanomall.item.domain.model.spu.SpuSearchCard card(Long id) {
+        return new org.icedamericanomall.item.domain.model.spu.SpuSearchCard(
+                id, businessKey(id), 10L, "手机", "旗舰", "品牌A", "img.jpg", 800, 0, null);
     }
 
     private CreateSpuReq createReq() {
@@ -217,7 +246,9 @@ class SpuManagerTest {
         ArgumentCaptor<SpuVectorUpsertCO> captor = ArgumentCaptor.forClass(SpuVectorUpsertCO.class);
         verify(spuVectorClient).upsert(captor.capture());
         SpuVectorUpsertCO co = captor.getValue();
-        assertEquals(1L, co.getSpuId());
+        // ADR-061 §决策 2：I47 幂等键是 SPU 业务键（spu.spu_id 生成的 32-hex），不是技术键 1L
+        assertEquals(saved.getSpuId(), co.getSpuId());
+        assertNotEquals(saved.getId().toString(), co.getSpuId(), "摄取幂等键不得退回技术键");
         assertEquals("手机", co.getName());
         assertEquals("旗舰", co.getDescription());
         assertEquals("品牌A", co.getBrand());
@@ -318,7 +349,9 @@ class SpuManagerTest {
         ArgumentCaptor<SpuVectorUpsertCO> captor = ArgumentCaptor.forClass(SpuVectorUpsertCO.class);
         verify(spuVectorClient).upsert(captor.capture());
         SpuVectorUpsertCO co = captor.getValue();
-        assertEquals(1L, co.getSpuId());
+        // ADR-061 §决策 2：I47 幂等键是 SPU 业务键（spu.spu_id 生成的 32-hex），不是技术键 1L
+        assertEquals(after.getSpuId(), co.getSpuId());
+        assertNotEquals("1", co.getSpuId(), "摄取幂等键不得退回技术键");
         assertEquals("新款手机", co.getName());
         assertEquals("旗舰", co.getDescription());
         assertEquals("品牌A", co.getBrand());
@@ -387,10 +420,16 @@ class SpuManagerTest {
     void shouldAssembleInHitOrder_whenSimilarHits() {
         Spu p5 = spuWithId(200L, 5L);
         p5.setSoldCount(11);
-        when(spuVectorClient.similar(1L, 5)).thenReturn(List.of(
-                new org.icedamericanomall.dto.SpuVectorHitCO(5L, 0.92),
-                new org.icedamericanomall.dto.SpuVectorHitCO(3L, 0.71)));
-        when(spuRepository.findAllByIds(List.of(5L, 3L))).thenReturn(List.of(
+        // 锚点 1L：技术键 → 业务键解析（I48 入参口径）
+        when(spuRepository.findSearchCardById(1L)).thenReturn(card(1L));
+        when(spuVectorClient.similar(businessKey(1L), 5)).thenReturn(List.of(
+                new org.icedamericanomall.dto.SpuVectorHitCO(businessKey(5L), 0.92),
+                new org.icedamericanomall.dto.SpuVectorHitCO(businessKey(3L), 0.71)));
+        // I48 命中为业务键 → 同库批量解析技术键
+        when(spuRepository.idMapByBusinessIds(List.of(businessKey(5L), businessKey(3L))))
+                .thenReturn(Map.of(businessKey(5L), 5L, businessKey(3L), 3L));
+        // 批量取数入参顺序无关（最终顺序由命中序列恢复），故此桩用 anyList 匹配
+        when(spuRepository.findAllByIds(anyList())).thenReturn(List.of(
                 spuWithId(300L, 3L), p5));
         // 最低价批量查询与顺序无关（最终顺序由命中序列恢复），anyList 匹配
         when(skuRepository.findOnSaleBySpuIds(anyList())).thenReturn(List.of(
@@ -410,15 +449,20 @@ class SpuManagerTest {
     @Test
     @DisplayName("similarSpus — 恒过滤在售并剔除自身：非在售/自身命中不出卡")
     void shouldFilterNonOnSaleAndSelf_whenAssembling() {
-        when(spuVectorClient.similar(1L, 5)).thenReturn(List.of(
-                new org.icedamericanomall.dto.SpuVectorHitCO(1L, 0.99),
-                new org.icedamericanomall.dto.SpuVectorHitCO(2L, 0.9),
-                new org.icedamericanomall.dto.SpuVectorHitCO(3L, 0.8)));
+        when(spuRepository.findSearchCardById(1L)).thenReturn(card(1L));
+        when(spuVectorClient.similar(businessKey(1L), 5)).thenReturn(List.of(
+                new org.icedamericanomall.dto.SpuVectorHitCO(businessKey(1L), 0.99),
+                new org.icedamericanomall.dto.SpuVectorHitCO(businessKey(2L), 0.9),
+                new org.icedamericanomall.dto.SpuVectorHitCO(businessKey(3L), 0.8)));
+        when(spuRepository.idMapByBusinessIds(
+                List.of(businessKey(1L), businessKey(2L), businessKey(3L))))
+                .thenReturn(Map.of(businessKey(1L), 1L, businessKey(2L), 2L, businessKey(3L), 3L));
         Spu self = spuWithId(100L, 1L);
         Spu offShelf = spuWithId(200L, 2L);
         offShelf.setStatus(SpuStatusEnum.OFF_SHELF.getCode());
         Spu onShelf = spuWithId(300L, 3L);
-        when(spuRepository.findAllByIds(List.of(1L, 2L, 3L)))
+        // 批量取数入参顺序无关（业务键 → 技术键映射决定顺序），故此桩用 anyList 匹配
+        when(spuRepository.findAllByIds(anyList()))
                 .thenReturn(List.of(self, offShelf, onShelf));
         when(skuRepository.findOnSaleBySpuIds(List.of(3L))).thenReturn(List.of(
                 Sku.builder().id(31L).spuId(3L).price(300).status(1).build()));
@@ -430,9 +474,21 @@ class SpuManagerTest {
     }
 
     @Test
+    @DisplayName("similarSpus — 锚点商品不存在（无业务键）→ 空列表且不打远程调用")
+    void shouldReturnEmpty_whenAnchorMissing() {
+        when(spuRepository.findSearchCardById(1L)).thenReturn(null);
+
+        List<RecommendSpuVO> result = spuManager.similarSpus(1L, null);
+
+        assertTrue(result.isEmpty());
+        verify(spuVectorClient, never()).similar(anyString(), anyInt());
+    }
+
+    @Test
     @DisplayName("similarSpus — 命中为空 → 空列表不报错，不触发本地批量查询")
     void shouldReturnEmpty_whenClientReturnsEmpty() {
-        when(spuVectorClient.similar(1L, 5)).thenReturn(List.of());
+        when(spuRepository.findSearchCardById(1L)).thenReturn(card(1L));
+        when(spuVectorClient.similar(businessKey(1L), 5)).thenReturn(List.of());
 
         List<RecommendSpuVO> result = spuManager.similarSpus(1L, null);
 
@@ -443,7 +499,9 @@ class SpuManagerTest {
     @Test
     @DisplayName("similarSpus — client 抛异常（防御层）→ 空列表不报错")
     void shouldReturnEmpty_whenClientThrows() {
-        when(spuVectorClient.similar(1L, 5)).thenThrow(new RuntimeException("search-service 不可用"));
+        when(spuRepository.findSearchCardById(1L)).thenReturn(card(1L));
+        when(spuVectorClient.similar(businessKey(1L), 5))
+                .thenThrow(new RuntimeException("search-service 不可用"));
 
         List<RecommendSpuVO> result = spuManager.similarSpus(1L, null);
 
@@ -453,14 +511,16 @@ class SpuManagerTest {
     @Test
     @DisplayName("similarSpus — size 归一：缺省 5、上限 20（与服务端 I48 归一一致）")
     void shouldNormalizeSize_whenSimilar() {
-        when(spuVectorClient.similar(1L, 5)).thenReturn(List.of());
-        when(spuVectorClient.similar(2L, 20)).thenReturn(List.of());
+        when(spuRepository.findSearchCardById(1L)).thenReturn(card(1L));
+        when(spuRepository.findSearchCardById(2L)).thenReturn(card(2L));
+        when(spuVectorClient.similar(businessKey(1L), 5)).thenReturn(List.of());
+        when(spuVectorClient.similar(businessKey(2L), 20)).thenReturn(List.of());
 
         spuManager.similarSpus(1L, null);
         spuManager.similarSpus(2L, 50);
 
-        verify(spuVectorClient).similar(1L, 5);
-        verify(spuVectorClient).similar(2L, 20);
+        verify(spuVectorClient).similar(businessKey(1L), 5);
+        verify(spuVectorClient).similar(businessKey(2L), 20);
     }
 
     // ==================== 内部契约回填 ====================

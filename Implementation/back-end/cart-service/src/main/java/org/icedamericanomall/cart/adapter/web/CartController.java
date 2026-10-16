@@ -1,6 +1,7 @@
 package org.icedamericanomall.cart.adapter.web;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -49,15 +50,23 @@ public class CartController {
         return Result.ok();
     }
 
+    /**
+     * 移除购物车项（C4）。
+     *
+     * <p>路径变量 {@code skuId} 为 <b>SKU 业务键</b> 32-hex（契约 §1.8② 明确：C4/C5/C10 的路径
+     * 变量属业务键口径 —— 它们明确代表 SKU 实体，必须与 {@code CartItemVO.sku_id} 同型同义，
+     * 否则前端拿到列表后无法删自己的行）。服务端负责业务键 → 技术键解析。
+     */
     @DeleteMapping("/item/{skuId}")
-    public Result<Void> removeItem(@PathVariable @NotNull(message = "SKU ID不能为空") Long skuId) {
+    public Result<Void> removeItem(@PathVariable @NotBlank(message = "SKU ID不能为空") String skuId) {
         Long userId = UserContext.getUserId();
         cartManager.removeItem(userId, skuId);
         return Result.ok();
     }
 
+    /** 切换购物车项选中状态（C5；路径变量 {@code skuId} 同 C4：SKU 业务键 32-hex）。 */
     @PatchMapping("/item/{skuId}/selected")
-    public Result<Void> selectItem(@PathVariable Long skuId,
+    public Result<Void> selectItem(@PathVariable String skuId,
                                    @RequestParam @NotNull Boolean selected) {
         Long userId = UserContext.getUserId();
         cartManager.selectItem(userId, skuId, selected);

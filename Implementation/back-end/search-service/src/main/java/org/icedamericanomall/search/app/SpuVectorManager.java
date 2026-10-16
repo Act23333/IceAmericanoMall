@@ -75,11 +75,15 @@ public class SpuVectorManager {
     /**
      * 相似商品检索：自身向量 kNN，排除自身，按相似度降序（排序由 ES kNN 保证）。
      *
-     * @param spuId 商品 id（取自身向量）
+     * <p><b>入参/出参口径（ADR-061 §决策 2）</b>：{@code spuId}（锚点）与返回的
+     * {@code SpuVectorHitCO.spuId} 都是 SPU <b>业务键</b>（32-hex）——
+     * 与 I47 摄取幂等键、item 侧商品卡组装键同源；技术键解析下沉到网关（ES 文档读取）。
+     *
+     * @param spuId SPU 业务键（32-hex，取自身向量）
      * @param size      返回条数（≤0 归一 5，&gt;20 截 20）
-     * @return 命中列表（spuId + score）；自身无向量/无命中时为空列表
+     * @return 命中列表（SPU 业务键 + score）；自身无向量/无命中时为空列表
      */
-    public List<SpuVectorHitCO> similar(Long spuId, Integer size) {
+    public List<SpuVectorHitCO> similar(String spuId, Integer size) {
         int topK = normalizeSize(size);
         Optional<double[]> selfVector = spuSearchGateway.findVectorById(spuId);
         if (selfVector.isEmpty() || selfVector.get().length == 0) {
@@ -88,7 +92,7 @@ public class SpuVectorManager {
         // 多取 1 条兜底「命中含自身被过滤」，补回不足的条数
         List<SpuSearchHit> hits = spuSearchGateway.vectorSearch(selfVector.get(), topK + 1);
         return hits.stream()
-                .filter(hit -> hit.id() != null && !hit.id().equals(spuId))
+                .filter(hit -> hit.spuId() != null && !hit.spuId().equals(spuId))
                 .limit(topK)
                 .map(SpuVectorManager::toHitCO)
                 .toList();
@@ -111,9 +115,10 @@ public class SpuVectorManager {
                 co.getCategoryId(), co.getMainImage(), co.getPrice(), co.getSoldCount(), embedding);
     }
 
+    /** 领域命中 → 契约 CO：只出 <b>SPU 业务键</b> + 得分（ADR-061 §决策 2，非技术键）。 */
     private static SpuVectorHitCO toHitCO(SpuSearchHit hit) {
         SpuVectorHitCO co = new SpuVectorHitCO();
-        co.setSpuId(hit.id());
+        co.setSpuId(hit.spuId());
         co.setScore(hit.score() == null ? NO_SCORE : hit.score());
         return co;
     }

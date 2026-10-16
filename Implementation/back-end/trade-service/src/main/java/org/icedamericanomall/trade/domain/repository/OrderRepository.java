@@ -1,8 +1,8 @@
 package org.icedamericanomall.trade.domain.repository;
 
-import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.icedamericanomall.trade.domain.model.order.Order;
 import org.icedamericanomall.trade.domain.model.order.OrderItem;
+import org.icedamericanomall.trade.domain.model.order.PageResult;
 import org.icedamericanomall.trade.domain.model.order.ShipPackageResult;
 
 import java.time.LocalDateTime;
@@ -14,6 +14,9 @@ import java.util.List;
  * <p>所有状态迁移一律使用「条件更新」（UPDATE ... WHERE id=? AND status=期望值），
  * 受影响行数为 0 表示并发下状态已变更，实现方必须拒绝本次操作。
  * 跨服务编排（库存回滚、积分发放、物流创建）由 {@code app.order.*Manager} 承接。
+ *
+ * <p><b>框架无关</b>（ADR-038 分层守卫）：分页返回领域 {@link PageResult}，
+ * 不使用 MyBatis-Plus {@code IPage}。
  */
 public interface OrderRepository {
 
@@ -48,8 +51,21 @@ public interface OrderRepository {
     /** 批量查询订单项（消除按单循环查询的 N+1）。 */
     List<OrderItem> findItemsByOrderIds(List<Long> orderIds);
 
-    /** 通用订单分页：userId/sellerId 可同时传（互斥）；均为 null 时查所有。 */
-    IPage<Order> pageOrders(Long userId, Long sellerId, Integer status, int page, int size);
+    /**
+     * 通用订单分页 + 后端筛选（A2 收口：AD12/T10 的 keyword/start_date/end_date）。
+     *
+     * <p>返回<b>框架无关</b> {@link PageResult}（ADR-038 分层守卫：域端口不得以
+     * MyBatis-Plus {@code IPage} 作返回类型；适配层需要的分页信封由应用层转换）。
+     *
+     * @param userId     买家过滤（null = 不限）
+     * @param sellerId   商家过滤（null = 不限）
+     * @param status     状态过滤（null = 不限）
+     * @param keyword    关键词（null/空白 = 不限）：订单号精确 / 收货人姓名·手机号模糊 / 明细 SPU 名模糊
+     * @param startTime  下单时间下界（含；null = 不限）
+     * @param endTime    下单时间上界（含；null = 不限）
+     */
+    PageResult<Order> pageOrders(Long userId, Long sellerId, Integer status, String keyword,
+                                 LocalDateTime startTime, LocalDateTime endTime, int page, int size);
 
     /** 用户取消待付款订单（条件更新：仅待付款→已取消；库存回滚由编排层处理）。 */
     void cancelByUser(String orderNo, Long userId);
@@ -67,7 +83,7 @@ public interface OrderRepository {
      * @param skuIds   本包裹发货明细；空/缺省 = 全部剩余未发货明细（兼容单包裹语义）
      * @return 本包裹发货结果（包裹号 / 覆盖明细 / 是否已全部发货）
      */
-    ShipPackageResult shipPackage(String orderNo, Long sellerId, List<Long> skuIds);
+    ShipPackageResult shipPackage(String orderNo, Long sellerId, List<String> skuIds);
 
     /**
      * 支付结果回写（由 pay-service 内部接口调用）。

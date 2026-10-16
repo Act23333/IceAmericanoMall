@@ -136,11 +136,14 @@ public class InternalSearchController {
      * 相似商品检索（契约 I48）—— 自身向量 kNN，排除自身，只出 {@code spuId + score}
      * （商品卡组装归 item-service，MySQL 是展示真相源）。
      *
+     * <p><b>入参口径（ADR-061 §决策 2）</b>：{@code spu_id} 为 SPU <b>业务键</b>（32-hex），
+     * 与 I47 摄取幂等键、I48 命中 {@code spuId} 同源 —— 调用方（item-service）无需解析技术键。
+     *
      * @return 命中列表；ES 关闭/自身无向量 → 空列表
      */
     @GetMapping("/vector/product/similar")
     public List<SpuVectorHitCO> similarSpuVector(
-            @RequestParam(name = "spu_id") Long spuId,
+            @RequestParam(name = "spu_id") String spuId,
             @RequestParam(value = "size", defaultValue = "5") Integer size) {
         SpuVectorManager manager = spuVectorManager.getIfAvailable();
         if (manager == null) {

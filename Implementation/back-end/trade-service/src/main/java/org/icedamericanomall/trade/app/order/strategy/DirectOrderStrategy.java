@@ -47,11 +47,11 @@ public class DirectOrderStrategy implements OrderCreateStrategy {
         }
 
         OrderCreateContext.CartItemSnapshot snap = new OrderCreateContext.CartItemSnapshot();
-        snap.setSkuId(ctx.getSkuId());
-        snap.setSpuId(sku.getSpuId());        // V4.3: scope 校验
+        snap.setSkuId(sku.getSkuId());        // ADR-061：订单项 SKU 业务键快照
+        snap.setSpuId(sku.getSpuId());        // ADR-061：订单项 SPU 业务键 + V4.3 scope 校验
         snap.setCategoryId(sku.getCategoryId());      // V4.3: scope 校验
         snap.setSellerId(sku.getSellerId());
-        snap.setProductName(sku.getProductName());
+        snap.setSpuName(sku.getSpuName());
         snap.setSkuSpec(sku.getSpec());
         snap.setPrice(sku.getPrice());
         snap.setQuantity(ctx.getQuantity());

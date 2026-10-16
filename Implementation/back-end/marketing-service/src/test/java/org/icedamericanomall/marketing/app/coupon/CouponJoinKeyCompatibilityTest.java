@@ -87,9 +87,12 @@ class CouponJoinKeyCompatibilityTest {
         try (var conn = dataSource.getConnection(); var stmt = conn.createStatement()) {
             stmt.execute("CREATE TABLE coupon ("
                     + "id BIGINT PRIMARY KEY, coupon_id BINARY(16), "
-                    + "name VARCHAR(100), `value` INT, min_amount INT, discount_type INT)");
-            stmt.execute("INSERT INTO coupon (id, coupon_id, name, `value`, min_amount, discount_type) VALUES "
-                    + "(" + TEMPLATE_ID + ", X'" + COUPON_NO + "', '618满200减30', 3000, 20000, 1)");
+                    + "name VARCHAR(100), `value` INT, min_amount INT, discount_type INT, "
+                    + "scope_type INT, scope_values JSON)");
+            stmt.execute("INSERT INTO coupon (id, coupon_id, name, `value`, min_amount, discount_type, "
+                    + "scope_type, scope_values) VALUES "
+                    + "(" + TEMPLATE_ID + ", X'" + COUPON_NO + "', '618满200减30', 3000, 20000, 1, 3, "
+                    + "'[\"0f1e2d3c4b5a69788796a5b4c3d2e1f0\"]')");
         }
 
         // 券模板侧链路：真实仓储（BINARY(16) ↔ hex 转换）

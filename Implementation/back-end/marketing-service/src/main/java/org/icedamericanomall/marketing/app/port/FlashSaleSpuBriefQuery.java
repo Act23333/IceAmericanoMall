@@ -30,4 +30,18 @@ public interface FlashSaleSpuBriefQuery {
      * @return SKU ID → 摘要；SKU 或商品不存在时<b>不出现</b>在返回 Map 中
      */
     Map<Long, FlashSaleSpuBrief> findBySkuIds(Collection<Long> skuIds);
+
+    /**
+     * 按 SKU <b>业务键</b>批量查询（ADR-061 §决策 2：创建端入参收业务键，服务端解析）。
+     *
+     * <p>同期用做 {@code POST /api/admin/flash}（AD40）与拼团创建（AD54）的
+     * 「SPU/SKU 业务键 → 技术键」解析：{@code flash_sale.spu_id}/{@code group_buy_activity.spu_id}
+     * 等内部外键<b>保持技术键不动</b>（A 案），故解析是必要且唯一的一步。
+     * 走 {@code sku.sku_id} 唯一索引，性能与按技术键等价。
+     *
+     * @param skuBusinessIds SKU 业务键集合（32-hex；可空；实现需去重并忽略 {@code null}
+     *                       与格式非法元素 —— 非法入参落「未命中」，不放大成 500）
+     * @return SKU 业务键 → 摘要；SKU 或商品不存在时<b>不出现</b>在返回 Map 中
+     */
+    Map<String, FlashSaleSpuBrief> findBySkuBusinessIds(Collection<String> skuBusinessIds);
 }

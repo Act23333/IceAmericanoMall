@@ -62,14 +62,14 @@ public class GroupBuyOrderStrategy implements OrderCreateStrategy {
         SkuCO sku = loadSku(result.getSkuId());
         if (StockTypeEnum.requiresStockCheck(sku.getStockType()) && sku.getStock() < GROUP_BUY_QUANTITY) {
             throw new BizException(ErrorCode.STOCK_INSUFFICIENT,
-                    "商品 [" + sku.getProductName() + "] 库存不足");
+                    "商品 [" + sku.getSpuName() + "] 库存不足");
         }
         OrderCreateContext.CartItemSnapshot snap = new OrderCreateContext.CartItemSnapshot();
-        snap.setSkuId(sku.getId());
-        snap.setSpuId(sku.getSpuId());
+        snap.setSkuId(sku.getSkuId());        // ADR-061：订单项 SKU 业务键快照
+        snap.setSpuId(sku.getSpuId());        // ADR-061：订单项 SPU 业务键快照
         snap.setCategoryId(sku.getCategoryId());
         snap.setSellerId(sku.getSellerId());
-        snap.setProductName(sku.getProductName());
+        snap.setSpuName(sku.getSpuName());
         snap.setSkuSpec(sku.getSpec());
         snap.setPrice(ctx.getGroupPrice());          // ← 拼团价快照，非 SKU 原价
         snap.setQuantity(GROUP_BUY_QUANTITY);        // 恒 1（一人一单一件）
@@ -105,8 +105,12 @@ public class GroupBuyOrderStrategy implements OrderCreateStrategy {
         joinContextStore.save(order.getOrderNo(), ctx.getActivityId(), ctx.getTeamNo());
     }
 
-    /** 按 I52 下发的活动绑定 SKU 查询快照数据（fail-closed：查不到即拒绝下单）。 */
-    private SkuCO loadSku(Long skuId) {
+    /**
+     * 按 I52 下发的活动绑定 SKU 查询快照数据（fail-closed：查不到即拒绝下单）。
+     *
+     * <p>{@code skuId} 为 SKU <b>业务键</b> 32-hex（ADR-061 §决策 2：I52 回执与 I13 入参同口径）。
+     */
+    private SkuCO loadSku(String skuId) {
         List<SkuCO> skuList = skuClient.getSkuListByIds(List.of(skuId));
         if (skuList == null || skuList.isEmpty()) {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "SKU不存在");

@@ -41,6 +41,18 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("FlashSaleAdminManager — AD40-AD42 创建/编辑/删除单元测试")
 class FlashSaleAdminManagerTest {
+    /** 出线格式的 SPU/SKU 业务键（32-hex）；与活动绑定的技术键 SPU_PK/SKU_PK 刻意不同值。 */
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    private static final Long SPU_PK = 10L;
+    private static final Long SKU_PK = 1000L;
+
+    /** 读模型行：技术键（内部）与业务键（出线格式）刻意不同值。 */
+    private static org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief brief() {
+        return new org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief(
+                SKU_PK, SPU_PK, SKU_BUSINESS_ID, SPU_BUSINESS_ID, "手工陶瓷茶杯", "https://cdn/main.jpg", 12800);
+    }
+
 
     private static final Long FLASH_ID = 1L;
     private static final Long GENERATED_ID = 101L;
@@ -57,6 +69,11 @@ class FlashSaleAdminManagerTest {
 
     @BeforeEach
     void setUp() {
+        // 读模型端口：同一行按技术键（回填展示）与业务键（创建端解析）两种入参都可命中
+        lenient().when(flashSaleSpuBriefQuery.findBySkuIds(any()))
+                .thenReturn(java.util.Map.of(SKU_PK, brief()));
+        lenient().when(flashSaleSpuBriefQuery.findBySkuBusinessIds(any()))
+                .thenReturn(java.util.Map.of(SKU_BUSINESS_ID, brief()));
         flashSaleAdminManager = new FlashSaleAdminManager(flashSaleRepository, converter,
                 new FlashSaleViewManager(converter, flashSaleSpuBriefQuery));
         // 仓储 INSERT 主键回填（模拟 MyBatis-Plus 生成主键后写回聚合）
@@ -244,8 +261,8 @@ class FlashSaleAdminManagerTest {
 
     private FlashSaleCreateReq createReq(LocalDateTime start, LocalDateTime end) {
         FlashSaleCreateReq req = new FlashSaleCreateReq();
-        req.setSpuId(10L);
-        req.setSkuId(1000L);
+        req.setSpuId(SPU_BUSINESS_ID);
+        req.setSkuId(SKU_BUSINESS_ID);
         req.setFlashPrice(9900);
         req.setStock(100);
         req.setStartTime(start);

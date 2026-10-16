@@ -32,6 +32,10 @@ import static org.mockito.Mockito.*;
 @DisplayName("PricingService — 价格计算中心（促销+会员+券）")
 class PricingServiceTest {
 
+    /** SPU 业务键（32-hex，ADR-061 §决策 2）。 */
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
+
+
     @Mock private PromotionClient promotionClient;
     @Mock private MemberClient memberClient;
     @Mock private CouponClient couponClient;
@@ -50,7 +54,7 @@ class PricingServiceTest {
         c.setSellerId(9L);
         c.setTotalAmount(total);
         OrderCreateContext.CartItemSnapshot snap = new OrderCreateContext.CartItemSnapshot();
-        snap.setSpuId(11L);
+        snap.setSpuId(SPU_BUSINESS_ID);
         snap.setCategoryId(22L);
         c.setSnapshots(List.of(snap));
         return c;
@@ -152,7 +156,7 @@ class PricingServiceTest {
         when(promotionClient.queryActive(any(PromotionQueryCO.class))).thenReturn(List.of());
         when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("NORMAL", 10000, 100));
         when(couponClient.useCoupon(eq(100L), eq(55L), eq("ORD-1"), eq(10000), eq(1), eq(9L),
-                eq("11"), eq("22"))).thenReturn(3000);
+                eq(SPU_BUSINESS_ID), eq("22"))).thenReturn(3000);
 
         OrderCreateContext c = ctx(10000);
         c.setUserCouponId(55L);
@@ -160,7 +164,7 @@ class PricingServiceTest {
 
         assertEquals(3000, discount);
         verify(couponClient).useCoupon(eq(100L), eq(55L), eq("ORD-1"), eq(10000), eq(1), eq(9L),
-                eq("11"), eq("22"));
+                eq(SPU_BUSINESS_ID), eq("22"));
     }
 
     @Test

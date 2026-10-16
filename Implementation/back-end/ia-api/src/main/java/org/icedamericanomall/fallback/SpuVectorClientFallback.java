@@ -37,7 +37,7 @@ public class SpuVectorClientFallback implements FallbackFactory<SpuVectorClient>
             }
 
             @Override
-            public List<SpuVectorHitCO> similar(Long spuId, int size) {
+            public List<SpuVectorHitCO> similar(String spuId, int size) {
                 log.warn("相似商品检索降级：search-service 不可用，推荐位返回空 spuId={}", spuId, cause);
                 return List.of();
             }

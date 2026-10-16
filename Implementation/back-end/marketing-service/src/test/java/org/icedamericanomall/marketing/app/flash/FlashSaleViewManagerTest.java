@@ -36,6 +36,11 @@ import static org.mockito.Mockito.when;
 @DisplayName("秒杀视图装配 — FlashSaleVO 字段投影（契约 §4.10.2）")
 @ExtendWith(MockitoExtension.class)
 class FlashSaleViewManagerTest {
+    /** 与 flash_sale 行绑定的 SPU 技术键（内部口径）。 */
+    private static final Long SPU_PK = 9L;
+    /** 出线格式的 SPU/SKU 业务键（32-hex）。 */
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
 
     private static final Long FLASH_ID = 1L;
     private static final Long SKU_ID = 10L;
@@ -52,20 +57,22 @@ class FlashSaleViewManagerTest {
     }
 
     @Test
-    @DisplayName("toViewList — 商品摘要在 → product_name/product_image/original_price 被正确填充")
+    @DisplayName("toViewList — 商品摘要在 → spu_id/sku_id 出业务键 + spu_name/main_image/original_price 被填充")
     void shouldFillSpuFields_whenBriefAvailable() {
         when(flashSaleSpuBriefQuery.findBySkuIds(List.of(SKU_ID)))
-                .thenReturn(Map.of(SKU_ID, new FlashSaleSpuBrief(SKU_ID, "手工陶瓷茶杯",
-                        "https://cdn.icedmall.com/product/main_100.jpg", 12800)));
+                .thenReturn(Map.of(SKU_ID, new FlashSaleSpuBrief(SKU_ID, SPU_PK, SKU_BUSINESS_ID, SPU_BUSINESS_ID,
+                        "手工陶瓷茶杯", "https://cdn.icedmall.com/product/main_100.jpg", 12800)));
 
         List<FlashSaleVO> views = flashSaleViewManager.toViewList(List.of(flashSale(100, 35)));
 
         FlashSaleVO vo = views.get(0);
         assertEquals(FLASH_ID, vo.getId());
-        assertEquals(SKU_ID, vo.getSkuId());
-        assertEquals(SPU_ID, vo.getSpuId());
-        assertEquals("手工陶瓷茶杯", vo.getProductName());
-        assertEquals("https://cdn.icedmall.com/product/main_100.jpg", vo.getProductImage());
+        // ADR-061 §决策 2：出线格式是业务键（技术键 SKU_ID/SPU_ID 绝不能出现）
+        assertEquals(SKU_BUSINESS_ID, vo.getSkuId());
+        assertEquals(SPU_BUSINESS_ID, vo.getSpuId());
+        assertEquals("手工陶瓷茶杯", vo.getSpuName(), "ADR-061 §决策 5：product_name → spu_name");
+        assertEquals("https://cdn.icedmall.com/product/main_100.jpg", vo.getMainImage(),
+                "主图线上名统一 main_image（与 DB 列及其余 VO 同名）");
         assertEquals(12800, vo.getOriginalPrice());
         assertEquals(9900, vo.getFlashPrice());
     }
@@ -93,8 +100,10 @@ class FlashSaleViewManagerTest {
         List<FlashSaleVO> views = flashSaleViewManager.toViewList(List.of(flashSale(100, 35)));
 
         assertEquals(1, views.size());
-        assertNull(views.get(0).getProductName());
-        assertNull(views.get(0).getProductImage());
+        assertNull(views.get(0).getSkuId(), "摘要缺失 → 业务键亦为 null，不回落技术键（ADR-061 §决策 3）");
+        assertNull(views.get(0).getSpuId());
+        assertNull(views.get(0).getSpuName());
+        assertNull(views.get(0).getMainImage());
         assertNull(views.get(0).getOriginalPrice());
         assertEquals(9900, views.get(0).getFlashPrice(), "场次本体字段不受影响");
     }
@@ -108,7 +117,8 @@ class FlashSaleViewManagerTest {
         List<FlashSaleVO> views = flashSaleViewManager.toViewList(List.of(flashSale(100, 35)));
 
         assertEquals(1, views.size());
-        assertNull(views.get(0).getProductName());
+        assertNull(views.get(0).getSpuName());
+        assertNull(views.get(0).getSkuId());
     }
 
     @Test

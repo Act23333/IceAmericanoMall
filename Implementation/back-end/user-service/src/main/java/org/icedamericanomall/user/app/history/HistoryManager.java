@@ -18,9 +18,21 @@ public class HistoryManager {
 
     private final HistoryViewQuery historyViewQuery;
 
-    /** 记录浏览（同一商品重复浏览 → 更新 view_time）。 */
-    public void record(Long userId, Long spuId) {
-        historyViewQuery.record(userId, spuId);
+    /**
+     * 记录浏览（同一商品重复浏览 → 更新 view_time）。
+     *
+     * <p><b>入参收业务键（ADR-061 §决策 2）</b>：{@code spuId} 为 SPU <b>业务键</b> 32-hex，
+     * 经同库只读解析落 {@code spu_view_log.spu_id BIGINT}（A 案：内部外键保持技术键不动）。
+     * 商品不存在/业务键非法 → 记 WARN 后直接返回（足迹是<b>可选埋点</b>，不因埋点失败
+     * 影响浏览主流程——与收藏不同，此处刻意不抛异常）。
+     */
+    public void record(Long userId, String spuId) {
+        Long technicalId = historyViewQuery.resolveSpuTechnicalId(spuId);
+        if (technicalId == null) {
+            log.warn("足迹埋点跳过：SPU 业务键无对应商品或格式非法: userId={}, spuId={}", userId, spuId);
+            return;
+        }
+        historyViewQuery.record(userId, technicalId);
     }
 
     /** 分页查询足迹（商品详情 + 浏览时间，按时间排序）。 */

@@ -58,13 +58,14 @@ class CouponFaceQueryImplH2Test {
         try (var conn = dataSource.getConnection(); var stmt = conn.createStatement()) {
             stmt.execute("CREATE TABLE coupon ("
                     + "id BIGINT PRIMARY KEY, coupon_id BINARY(16), "
-                    + "name VARCHAR(100), `value` INT, min_amount INT, discount_type INT)");
+                    + "name VARCHAR(100), `value` INT, min_amount INT, discount_type INT, "
+                    + "scope_type INT, scope_values JSON)");
             // 1=满减 / 2=折扣（value 为百分比）/ 3=代金券 / 4=类型列缺失（历史数据）
-            stmt.execute("INSERT INTO coupon (id, coupon_id, name, `value`, min_amount, discount_type) VALUES "
-                    + "(1, X'" + COUPON_NO_HIT + "', '618满200减30', 3000, 20000, 1),"
-                    + "(2, X'" + COUPON_NO_FREE + "', '无门槛5元券', 500, 0, 3),"
-                    + "(3, X'" + COUPON_NO_PERCENT + "', '全场8.5折', 85, 0, 2),"
-                    + "(4, X'3c4d5e6f708192a3b4c5d6e7f8091a2b', '历史券', 100, 0, NULL)");
+            stmt.execute("INSERT INTO coupon (id, coupon_id, name, `value`, min_amount, discount_type, scope_type, scope_values) VALUES "
+                    + "(1, X'" + COUPON_NO_HIT + "', '618满200减30', 3000, 20000, 1, 3, '[\"0f1e2d3c4b5a69788796a5b4c3d2e1f0\"]'),"
+                    + "(2, X'" + COUPON_NO_FREE + "', '无门槛5元券', 500, 0, 3, 1, '[\"1001\"]'),"
+                    + "(3, X'" + COUPON_NO_PERCENT + "', '全场8.5折', 85, 0, 2, NULL, NULL),"
+                    + "(4, X'3c4d5e6f708192a3b4c5d6e7f8091a2b', '历史券', 100, 0, NULL, NULL, NULL)");
         }
         query = new CouponFaceQueryImpl(new JdbcTemplate(dataSource));
     }

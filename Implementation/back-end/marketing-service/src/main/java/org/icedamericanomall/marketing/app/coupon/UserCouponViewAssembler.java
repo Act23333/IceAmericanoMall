@@ -7,6 +7,7 @@ import org.icedamericanomall.marketing.adapter.response.UserCouponVO;
 import org.icedamericanomall.marketing.app.dto.CouponFace;
 import org.icedamericanomall.marketing.app.port.CouponFaceQuery;
 import org.icedamericanomall.marketing.domain.model.coupon.Coupon;
+import org.icedamericanomall.marketing.domain.service.CouponScope;
 import org.icedamericanomall.marketing.domain.model.coupon.UserCoupon;
 import org.springframework.stereotype.Component;
 
@@ -102,7 +103,8 @@ public class UserCouponViewAssembler {
      */
     private CouponFace toFace(Coupon coupon) {
         return new CouponFace(coupon.getId(), coupon.getCouponId(), coupon.getName(),
-                coupon.getValue(), coupon.getMinAmount(), coupon.getDiscountType());
+                coupon.getValue(), coupon.getMinAmount(), coupon.getDiscountType(),
+                coupon.getScopeType(), coupon.getScopeValues());
     }
 
     /**
@@ -143,5 +145,10 @@ public class UserCouponViewAssembler {
         vo.setValue(face == null ? null : face.value());
         vo.setMinAmount(face == null ? null : face.minAmount());
         vo.setDiscountType(face == null ? null : face.discountType());
+        // 适用范围（B1 遗留投影补齐，契约 §4.10.1）：对外 CSV（存储 JSON → CSV 归一）；
+        // scope_type 为 null（缺省=ALL）或 1(ALL) 时 scope_values 恒 null（ALL 是合法形态）
+        vo.setScopeType(face == null ? null : face.scopeType());
+        vo.setScopeValues(face == null ? null
+                : CouponScope.toCsv(face.scopeType(), face.scopeValues()));
     }
 }

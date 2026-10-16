@@ -3,6 +3,7 @@ package org.icedamericanomall.user.infrastructure.persistence.history;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.user.app.port.HistoryViewQuery;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -25,14 +26,26 @@ public class HistoryViewQueryImpl implements HistoryViewQuery {
     private final JdbcTemplate jdbcTemplate;
 
     @Override
-    public void record(Long userId, Long spuId) {
-        logMapper.recordView(userId, spuId);
+    public Long resolveSpuTechnicalId(String spuBusinessId) {
+        // BINARY(16) 列与 byte[] 参数比较（唯一索引 uk_spu_id），非法/空入参直接落「未命中」
+        byte[] key = IdGenerator.toBytesOrNull(spuBusinessId);
+        if (key == null) {
+            return null;
+        }
+        List<Long> ids = jdbcTemplate.queryForList(
+                "SELECT p.id FROM spu p WHERE p.spu_id = ? LIMIT 1", Long.class, key);
+        return ids.isEmpty() ? null : ids.get(0);
+    }
+
+    @Override
+    public void record(Long userId, Long spuTechnicalId) {
+        logMapper.recordView(userId, spuTechnicalId);
     }
 
     @Override
     public IPage<Map<String, Object>> page(Long userId, int pageNum, int size, String keyword, String sort) {
         StringBuilder sql = new StringBuilder(
-                "SELECT v.id, v.spu_id, v.view_time, p.name AS product_name, "
+                "SELECT v.id, p.spu_id AS spu_business_id, v.view_time, p.name AS product_name, "
                         + "p.main_image, p.brand, "
                         + "(SELECT MIN(s.price) FROM sku s WHERE s.spu_id=v.spu_id AND s.status=1) AS price "
                         + "FROM spu_view_log v JOIN spu p ON v.spu_id=p.id "

@@ -40,6 +40,7 @@ class FavoriteManagerTest {
 
     private static final Long USER_ID = 100L;
     private static final Long SPU_ID = 1001L;
+    private static final String SPU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
 
     @Mock
     private FavoriteRepository favoriteRepository;
@@ -56,7 +57,7 @@ class FavoriteManagerTest {
         when(favoriteRepository.countByUserId(USER_ID)).thenReturn(1L);
         when(favoriteRepository.findPageDescByUserId(USER_ID, 1, 20)).thenReturn(List.of(favorite(7L, SPU_ID)));
         when(favoriteSpuBriefQuery.findByIds(List.of(SPU_ID)))
-                .thenReturn(Map.of(SPU_ID, new SpuBriefView(SPU_ID, "手工陶瓷茶杯",
+                .thenReturn(Map.of(SPU_ID, new SpuBriefView(SPU_ID, SPU_BUSINESS_ID, "手工陶瓷茶杯",
                         "https://cdn.icedmall.com/product/main_1001.jpg", 12800, 1)));
 
         IPage<FavoriteVO> page = favoriteManager.pageByUser(USER_ID, 1, 20);
@@ -64,8 +65,9 @@ class FavoriteManagerTest {
         assertEquals(1, page.getRecords().size());
         FavoriteVO vo = page.getRecords().get(0);
         assertEquals(7L, vo.getId());
-        assertEquals(SPU_ID, vo.getSpuId());
-        assertEquals("手工陶瓷茶杯", vo.getProductName());
+        // ADR-061 §决策 2：spu_id 出业务键 32-hex（不再是技术键）
+        assertEquals(SPU_BUSINESS_ID, vo.getSpuId());
+        assertEquals("手工陶瓷茶杯", vo.getSpuName());
         assertEquals("https://cdn.icedmall.com/product/main_1001.jpg", vo.getMainImage());
         assertEquals(12800, vo.getPrice());
         assertEquals(1, vo.getStatus());
@@ -98,9 +100,10 @@ class FavoriteManagerTest {
         IPage<FavoriteVO> page = favoriteManager.pageByUser(USER_ID, 1, 20);
 
         FavoriteVO vo = page.getRecords().get(0);
-        assertEquals(SPU_ID, vo.getSpuId(), "收藏本体字段不受影响");
+        // 读模型缺失 → spu_id 亦为 null（ADR-061 §决策 3：不回落技术键）
+        assertNull(vo.getSpuId());
         assertEquals(LocalDateTime.of(2026, 7, 1, 10, 0), vo.getCreateTime());
-        assertNull(vo.getProductName());
+        assertNull(vo.getSpuName());
         assertNull(vo.getMainImage());
         assertNull(vo.getPrice());
         assertNull(vo.getStatus());
@@ -117,7 +120,7 @@ class FavoriteManagerTest {
         IPage<FavoriteVO> page = favoriteManager.pageByUser(USER_ID, 1, 20);
 
         assertEquals(1, page.getRecords().size(), "列表本身必须照常返回");
-        assertNull(page.getRecords().get(0).getProductName());
+        assertNull(page.getRecords().get(0).getSpuName());
     }
 
     @Test
@@ -142,7 +145,7 @@ class FavoriteManagerTest {
         IPage<FavoriteVO> page = favoriteManager.pageByUser(USER_ID, 1, 20);
 
         assertNotNull(page.getRecords().get(0));
-        assertNull(page.getRecords().get(0).getProductName());
+        assertNull(page.getRecords().get(0).getSpuName());
     }
 
     private Favorite favorite(Long id, Long spuId) {

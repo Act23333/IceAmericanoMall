@@ -54,13 +54,13 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
         }
         ctx.setCartItems(cartItems);
 
-        List<Long> skuIds = cartItems.stream().map(CartItemCO::getSkuId).collect(Collectors.toList());
+        List<String> skuIds = cartItems.stream().map(CartItemCO::getSkuId).collect(Collectors.toList());
         List<SkuCO> skuList = skuClient.getSkuListByIds(skuIds);
         if (skuList == null || skuList.size() != skuIds.size()) {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "商品信息异常，请刷新后重试");
         }
-        Map<Long, SkuCO> skuMap = skuList.stream()
-                .collect(Collectors.toMap(SkuCO::getId, s -> s, (a, b) -> a));
+        Map<String, SkuCO> skuMap = skuList.stream()
+                .collect(Collectors.toMap(SkuCO::getSkuId, s -> s, (a, b) -> a));
 
         List<OrderCreateContext.CartItemSnapshot> snapshots = new ArrayList<>();
         Long sellerId = null;
@@ -71,7 +71,7 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
             if (StockTypeEnum.requiresStockCheck(sku.getStockType())) {
                 if (sku.getStock() < cartItem.getQuantity()) {
                     throw new BizException(ErrorCode.STOCK_INSUFFICIENT,
-                            "商品 [" + sku.getProductName() + "] 库存不足");
+                            "商品 [" + sku.getSpuName() + "] 库存不足");
                 }
             }
             if (sellerId == null) sellerId = sku.getSellerId();
@@ -79,11 +79,11 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
                 throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "暂不支持跨店下单，请分别结算");
             }
             OrderCreateContext.CartItemSnapshot snap = new OrderCreateContext.CartItemSnapshot();
-            snap.setSkuId(cartItem.getSkuId());
-            snap.setSpuId(sku.getSpuId());        // V4.3: scope 校验
+            snap.setSkuId(sku.getSkuId());        // ADR-061：订单项 SKU 业务键快照
+            snap.setSpuId(sku.getSpuId());        // ADR-061：订单项 SPU 业务键 + V4.3 scope 校验
             snap.setCategoryId(sku.getCategoryId());      // V4.3: scope 校验
             snap.setSellerId(sku.getSellerId());
-            snap.setProductName(sku.getProductName());
+            snap.setSpuName(sku.getSpuName());
             snap.setSkuSpec(sku.getSpec());
             snap.setPrice(sku.getPrice());
             snap.setQuantity(cartItem.getQuantity());
@@ -202,7 +202,8 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
         for (var snap : ctx.getSnapshots()) {
             OrderItem item = new OrderItem();
             item.setSkuId(snap.getSkuId());
-            item.setProductName(snap.getProductName());
+            item.setSpuName(snap.getSpuName());
+            item.setSpuId(snap.getSpuId());
             item.setSkuSpec(snap.getSkuSpec());
             item.setPrice(snap.getPrice());
             item.setQuantity(snap.getQuantity());

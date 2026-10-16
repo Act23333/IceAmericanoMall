@@ -52,6 +52,15 @@ import static org.mockito.Mockito.*;
 @DisplayName("OrderCreationManager T27 拼团下单集成测试")
 class OrderCreationManagerGroupBuyTest {
 
+    /** 技术键 → SKU 业务键（32-hex；请求侧与 I13 返回侧必须同值）。 */
+    private static String businessKey(long skuTechnicalId) {
+        return String.format("%032x", skuTechnicalId);
+    }
+    /** SKU/SPU 业务键（32-hex，ADR-061 §决策 2：线格式与订单项标识一律业务键）。 */
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    private static final String SKU_BUSINESS_ID_2 = "112233445566778899aabbccddeeff00";
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
+
     private OrderRepository orderRepository;
     private GroupBuyClient groupBuyClient;
     private SkuClient skuClient;
@@ -85,8 +94,9 @@ class OrderCreationManagerGroupBuyTest {
                 )""");
             stmt.execute("""
                 CREATE TABLE order_item (
-                    id BIGINT AUTO_INCREMENT PRIMARY KEY, order_id BIGINT NOT NULL, sku_id BIGINT NOT NULL,
-                    product_name VARCHAR(100), sku_spec VARCHAR(200), price INT NOT NULL,
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY, order_id BIGINT NOT NULL,
+                    sku_id BINARY(16) NOT NULL, spu_id BINARY(16) NOT NULL,
+                    spu_name VARCHAR(100), sku_spec VARCHAR(200), price INT NOT NULL,
                     quantity INT NOT NULL, sub_total INT NOT NULL, image VARCHAR(255), package_no INT DEFAULT NULL,
                     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )""");
@@ -126,15 +136,21 @@ class OrderCreationManagerGroupBuyTest {
     }
 
     private GroupBuyValidateResultCO validateResult(String teamNo) {
-        return new GroupBuyValidateResultCO(1L, teamNo, 1000, 3, 24, 1000L);
+        return new GroupBuyValidateResultCO(1L, teamNo, 1000, 3, 24, SKU_BUSINESS_ID);
     }
 
+    /**
+     * I13 回执的 SKU 快照：{@code skuId} 必须是 <b>本行的业务键</b>（32-hex，由技术键派生），
+     * 与 I52 回执 {@code validateResult(...)} 下发的 {@code SKU_BUSINESS_ID} 逐位同值
+     * ——装配层按业务键 join，两侧不得各写各的。
+     */
     private SkuCO sku() {
         SkuCO s = new SkuCO();
         s.setId(1000L);
-        s.setSpuId(100L);
+        s.setSkuId(SKU_BUSINESS_ID);
+        s.setSpuId(SPU_BUSINESS_ID);
         s.setSellerId(9L);
-        s.setProductName("拼团商品");
+        s.setSpuName("拼团商品");
         s.setSpec("500ml");
         s.setPrice(5000);
         s.setStock(10);
@@ -168,7 +184,7 @@ class OrderCreationManagerGroupBuyTest {
 
     private void stubHappyPath(String teamNo) {
         when(groupBuyClient.validate(any(GroupBuyValidateCO.class))).thenReturn(validateResult(teamNo));
-        when(skuClient.getSkuListByIds(List.of(1000L))).thenReturn(List.of(sku()));
+        when(skuClient.getSkuListByIds(List.of(SKU_BUSINESS_ID))).thenReturn(List.of(sku()));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(freightPostageResolver.resolve(eq(9L), anyList(), eq(1000))).thenReturn(500);
     }
@@ -198,7 +214,7 @@ class OrderCreationManagerGroupBuyTest {
         ArgumentCaptor<List<StockOpCO>> stockCaptor = ArgumentCaptor.forClass(List.class);
         verify(skuClient).deductStock(stockCaptor.capture());
         assertEquals(1, stockCaptor.getValue().size());
-        assertEquals(1000L, stockCaptor.getValue().get(0).getSkuId());
+        assertEquals(SKU_BUSINESS_ID, stockCaptor.getValue().get(0).getSkuId());
         assertEquals(1, stockCaptor.getValue().get(0).getQuantity());
 
         // 参团上下文随单写入（orderNo → activityId/teamNo）
@@ -237,7 +253,7 @@ class OrderCreationManagerGroupBuyTest {
     @DisplayName("createGroupBuyOrder — 地址不存在：拒绝下单且不扣库存")
     void shouldReject_whenAddressMissing() {
         when(groupBuyClient.validate(any(GroupBuyValidateCO.class))).thenReturn(validateResult(null));
-        when(skuClient.getSkuListByIds(List.of(1000L))).thenReturn(List.of(sku()));
+        when(skuClient.getSkuListByIds(List.of(SKU_BUSINESS_ID))).thenReturn(List.of(sku()));
         when(addressClient.getAddress(1L)).thenReturn(null);
 
         assertThrows(BizException.class, () -> orderManager.createGroupBuyOrder(100L, req(1L, null)));

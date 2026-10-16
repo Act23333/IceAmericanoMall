@@ -57,6 +57,33 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("GroupBuyParticipationManager — I52/I53 参团联动与结团单元测试")
 class GroupBuyParticipationManagerTest {
+    /** 出线格式的业务键（32-hex）+ 内部技术键（刻意不同值）。 */
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
+    private static final Long SKU_PK = 2L;
+    private static final Long SPU_PK = 1L;
+
+    /** I52 回执与视图装配共用的读模型端口（两种入参口径都命中同一行）。 */
+    private final org.icedamericanomall.marketing.app.port.FlashSaleSpuBriefQuery briefQuery =
+            new org.icedamericanomall.marketing.app.port.FlashSaleSpuBriefQuery() {
+                @Override
+                public java.util.Map<Long, org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief> findBySkuIds(
+                        java.util.Collection<Long> skuIds) {
+                    return java.util.Map.of(SKU_PK, brief());
+                }
+
+                @Override
+                public java.util.Map<String, org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief>
+                        findBySkuBusinessIds(java.util.Collection<String> skuBusinessIds) {
+                    return java.util.Map.of(SKU_BUSINESS_ID, brief());
+                }
+            };
+
+    private static org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief brief() {
+        return new org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief(
+                SKU_PK, SPU_PK, SKU_BUSINESS_ID, SPU_BUSINESS_ID, "拼团商品", "https://cdn/main.jpg", 12800);
+    }
+
 
     private static final Long ACTIVITY_ID = 1L;
     private static final Long TEAM_ID = 10L;
@@ -86,7 +113,8 @@ class GroupBuyParticipationManagerTest {
     @BeforeEach
     void setUp() {
         manager = new GroupBuyParticipationManager(groupBuyActivityRepository, groupTeamRepository,
-                groupTeamMemberRepository, converter, groupBuyTeamClient);
+                groupTeamMemberRepository, converter, groupBuyTeamClient,
+                new org.icedamericanomall.marketing.app.groupbuy.GroupBuyViewManager(converter, briefQuery));
         // 仓储 INSERT 主键回填（模拟 MyBatis-Plus 生成主键后写回聚合）
         lenient().doAnswer(invocation -> {
             GroupTeam team = invocation.getArgument(0);
@@ -108,7 +136,8 @@ class GroupBuyParticipationManagerTest {
         assertEquals(9900, result.getGroupPrice());
         assertEquals(3, result.getRequiredMembers());
         assertEquals(24, result.getTimeLimitHours());
-        assertEquals(Long.valueOf(2L), result.getSkuId());
+        assertEquals(SKU_BUSINESS_ID, result.getSkuId(),
+                "ADR-061 §决策 2：I52 回执出 SKU 业务键（技术键 2 不得出现）");
         verify(groupTeamRepository, never()).findByTeamNo(anyString());
     }
 

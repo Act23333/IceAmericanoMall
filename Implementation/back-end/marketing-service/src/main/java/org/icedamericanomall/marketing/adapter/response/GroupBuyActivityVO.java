@@ -21,8 +21,10 @@ public class GroupBuyActivityVO implements Serializable {
     private Long id;
     private String name;
     private Long sellerId;
-    private Long spuId;
-    private Long skuId;
+    /** SPU 业务键（32-hex；读时回填，ADR-061 §决策 2）。 */
+    private String spuId;
+    /** SKU 业务键（32-hex；读时回填）。 */
+    private String skuId;
     /** 拼团价（分） */
     private Integer groupPrice;
     /** 成团人数 */

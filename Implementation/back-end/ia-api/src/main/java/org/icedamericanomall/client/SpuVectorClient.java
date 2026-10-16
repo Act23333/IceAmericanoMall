@@ -41,11 +41,15 @@ public interface SpuVectorClient {
     /**
      * 相似商品检索（自身向量 kNN，排除自身）。
      *
-     * @param spuId 商品 id
-     * @param size      返回条数（缺省 5，≤20）
-     * @return 命中 id + 相似度得分（按相似度降序）；降级/无向量时为空列表
+     * <p><b>入参口径（ADR-061 §决策 2）</b>：{@code spuId} 为 SPU <b>业务键</b>（32-hex），
+     * 与 {@link SpuVectorUpsertCO#getSpuId()}、{@link SpuVectorHitCO#getSpuId()} 同源；
+     * 技术键解析在 search-service 文档落库边界完成。
+     *
+     * @param spuId SPU 业务键（32-hex）
+     * @param size  返回条数（缺省 5，≤20）
+     * @return 命中 {@code spuId（业务键）}+ 相似度得分（按相似度降序）；降级/无向量时为空列表
      */
     @GetMapping("/similar")
-    List<SpuVectorHitCO> similar(@RequestParam(name = "spu_id") Long spuId,
+    List<SpuVectorHitCO> similar(@RequestParam(name = "spu_id") String spuId,
                                      @RequestParam(value = "size", defaultValue = "5") int size);
 }

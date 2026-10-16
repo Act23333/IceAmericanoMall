@@ -36,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 /**
  * MarketingManager 秒杀编排单元测试 —— 预扣 → Feign 落单 → MQ 统计。
@@ -51,6 +52,9 @@ class MarketingManagerTest {
     private static final Long FLASH_ID = 1L;
     private static final Long ADDRESS_ID = 33L;
     private static final Long SKU_ID = 1000L;
+    /** 出线格式的 SPU/SKU 业务键（32-hex；与技术键刻意不同值）。 */
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
     private static final Long SPU_ID = 100L;
     private static final int FLASH_PRICE = 9900;
     private static final String ORDER_NO = "ORD-FLASH-001";
@@ -67,6 +71,12 @@ class MarketingManagerTest {
         marketingManager = new MarketingManager(flashSaleManager,
                 new FlashSaleViewManager(new MarketingConverterImpl(), flashSaleSpuBriefQuery),
                 orderClient, publisher, new MarketingConverterImpl());
+        // 读模型端口：技术键（出参回填）与业务键（下单链路解析）两种口径都命中同一行（ADR-061）——
+        // 故秒杀下单链路才能把场次绑定的 SKU 技术键换成业务键后调 I14
+        lenient().when(flashSaleSpuBriefQuery.findBySkuIds(any()))
+                .thenReturn(java.util.Map.of(SKU_ID, brief()));
+        lenient().when(flashSaleSpuBriefQuery.findBySkuBusinessIds(any()))
+                .thenReturn(java.util.Map.of(SKU_BUSINESS_ID, brief()));
         UserContext.setUser(UserInfo.builder().userId(USER_ID).build());
     }
 
@@ -90,7 +100,8 @@ class MarketingManagerTest {
         verify(orderClient).createOrder(captor.capture());
         CreateOrderInternalReq req = captor.getValue();
         assertEquals(USER_ID, req.getUserId());
-        assertEquals(SKU_ID, req.getSkuId());
+        assertEquals(SKU_BUSINESS_ID, req.getSkuId(),
+                "ADR-061 §决策 2：I14 下单入参是 SKU 业务键（技术键 1000 不得出现）");
         assertEquals(0L, req.getSellerId().longValue(), "秒杀商品无店铺归属口径，sellerId 固定 0");
         assertEquals(1, req.getQuantity().intValue());
         assertEquals(FLASH_PRICE, req.getFlashPrice().intValue());
@@ -192,19 +203,24 @@ class MarketingManagerTest {
                 .soldCount(35)
                 .build();
         when(flashSaleManager.listActive()).thenReturn(List.of(flashSale));
-        when(flashSaleSpuBriefQuery.findBySkuIds(List.of(SKU_ID)))
-                .thenReturn(java.util.Map.of(SKU_ID, new FlashSaleSpuBrief(SKU_ID,
-                        "手工陶瓷茶杯", "https://cdn.icedmall.com/product/main_100.jpg", 12800)));
 
         List<FlashSaleVO> result = marketingManager.listActiveFlashSales();
 
         assertEquals(1, result.size());
         FlashSaleVO vo = result.getFirst();
         assertEquals(FLASH_ID, vo.getId());
-        assertEquals("手工陶瓷茶杯", vo.getProductName());
-        assertEquals("https://cdn.icedmall.com/product/main_100.jpg", vo.getProductImage());
+        assertEquals("手工陶瓷茶杯", vo.getSpuName(), "ADR-061 §决策 5：product_name → spu_name");
+        assertEquals("https://cdn.icedmall.com/product/main_100.jpg", vo.getMainImage(),
+                "主图线上名统一 main_image");
         assertEquals(12800, vo.getOriginalPrice());
         assertEquals(35, vo.getProgressPercent());
+    }
+
+    /** 读模型行：技术键（内部）与业务键（出线格式）刻意不同值。 */
+    private static org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief brief() {
+        return new org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief(
+                SKU_ID, SPU_ID, SKU_BUSINESS_ID, SPU_BUSINESS_ID,
+                "手工陶瓷茶杯", "https://cdn.icedmall.com/product/main_100.jpg", 12800);
     }
 
     private FlashBuyResult preDeducted() {
@@ -212,7 +228,6 @@ class MarketingManagerTest {
         result.setSuccess(true);
         result.setFlashId(FLASH_ID);
         result.setSkuId(SKU_ID);
-        result.setSpuId(SPU_ID);
         result.setFlashPrice(FLASH_PRICE);
         result.setRemainingStock(9L);
         return result;

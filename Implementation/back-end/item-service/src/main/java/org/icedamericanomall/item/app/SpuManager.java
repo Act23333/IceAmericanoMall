@@ -16,6 +16,7 @@ import org.icedamericanomall.item.adapter.response.RecommendSpuVO;
 import org.icedamericanomall.item.adapter.response.SkuVO;
 import org.icedamericanomall.item.domain.enums.SpuStatusEnum;
 import org.icedamericanomall.item.domain.model.spu.Spu;
+import org.icedamericanomall.item.domain.model.spu.SpuSearchCard;
 import org.icedamericanomall.item.domain.model.sku.Sku;
 import org.icedamericanomall.item.domain.repository.SpuRepository;
 import org.icedamericanomall.item.domain.repository.SkuRepository;
@@ -26,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -91,7 +93,10 @@ public class SpuManager {
         }
         SpuVO vo = spuConverter.toVO(spu);
         List<Sku> skus = skuRepository.findBySpuId(id);
-        vo.setSkus(skuConverter.toVOs(skus));
+        List<SkuVO> skuVos = skuConverter.toVOs(skus);
+        // ADR-061：SKU 视图带出 SPU/SKU 业务键（一次联表，fail-open），供前端回链与跨接口 join
+        skuManager.fillSpuBusinessKey(spu.getSpuId(), skuVos);
+        vo.setSkus(skuVos);
         vo.setMinPrice(minPriceOf(skus));
         vo.setPromotions(spuPromotionManager.tagsFor(spu.getSellerId()));
         return vo;
@@ -177,33 +182,59 @@ public class SpuManager {
 
     /** 商品在售 SKU 视图。 */
     public List<SkuVO> listSkus(Long spuId) {
-        return skuConverter.toVOs(skuRepository.findOnSaleBySpuId(spuId));
+        List<SkuVO> skuVos = skuConverter.toVOs(skuRepository.findOnSaleBySpuId(spuId));
+        Spu spu = spuRepository.findById(spuId);
+        skuManager.fillSpuBusinessKey(spu == null ? null : spu.getSpuId(), skuVos);
+        return skuVos;
     }
 
     // ==================== 相似商品推荐（P27，ADR-046，纯旁路 fail-open） ====================
 
     /**
-     * 相似商品推荐 —— 向量 kNN 命中 id 后批量查本地库，组装新鲜在售商品卡。
+     * 相似商品推荐 —— 向量 kNN 命中 <b>SPU 业务键</b>后批量查本地库，组装新鲜在售商品卡。
      *
      * <p>fail-open（纯旁路）：client 降级已兜底空列表，此处再防御性兜底任意未预期异常
      * （ReviewManager 触达先例口径）；命中商品<b>恒过滤在售</b>并剔除自身/已删除，
      * 按命中顺序（= 相似度降序）组装，不足 size 按实际数量返回——推荐位可空。
      *
-     * @param spuId 锚点商品 id
+     * <p><b>标识口径（ADR-061 §决策 2）</b>：I48 命中是 <b>SPU 业务键</b>（32-hex），
+     * 本方法内的比对与取数一律在业务键空间完成；出参 {@code RecommendSpuVO.spuId} 保持
+     * <b>技术主键</b>（P27 既有寻址口径，同商品详情路径变量，ADR-061 §后果 R1 已登记）。
+     * 业务键 ↔ 技术键解析在同库读模型内<b>一次批量</b>完成（A 案：表结构不动，无 N+1）。
+     *
+     * @param spuId 锚点商品<b>技术键</b>（路径变量口径）
      * @param size      期望条数（null/非正 → 缺省 5，&gt;20 归一为 20）
-     * @return 相似商品卡（相似度降序）；无命中/降级时为空列表，不报错
+     * @return 相似商品卡（相似度降序，{@code spuId} 为技术键）；无命中/降级时为空列表，不报错
      */
     public List<RecommendSpuVO> similarSpus(Long spuId, Integer size) {
-        List<SpuVectorHitCO> hits = similarSafely(spuId, normalizeSize(size));
+        // 锚点：技术键 → 业务键（I48 入参口径，ADR-061 §决策 2）。商品不存在即无「相似商品」可言，
+        // 直接返回空列表（fail-open：推荐位可空，不报错、不打远程调用）
+        SpuSearchCard anchor = spuId == null ? null : spuRepository.findSearchCardById(spuId);
+        if (anchor == null || anchor.spuId() == null) {
+            log.debug("相似商品推荐跳过：锚点商品不存在或缺业务键: spuId={}", spuId);
+            return List.of();
+        }
+        List<SpuVectorHitCO> hits = similarSafely(anchor.spuId(), normalizeSize(size));
         if (hits.isEmpty()) {
             return List.of();
         }
-        List<Long> hitIds = hits.stream().map(SpuVectorHitCO::getSpuId).toList();
-        Map<Long, Spu> cardById = onShelfCardsByIds(hitIds);
+        List<String> hitBusinessIds = hits.stream()
+                .map(SpuVectorHitCO::getSpuId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (hitBusinessIds.isEmpty()) {
+            return List.of();
+        }
+        // 业务键 → 技术键（一次批量 SQL，走 spu_id 唯一索引，无 N+1）
+        Map<String, Long> idByBusinessId = spuRepository.idMapByBusinessIds(hitBusinessIds);
+        Map<Long, Spu> cardById = onShelfCardsByIds(List.copyOf(idByBusinessId.values()));
         cardById.remove(spuId);
         Map<Long, Integer> minPriceMap = cardById.isEmpty() ? Map.of()
                 : skuManager.getMinPriceMapBySpuIds(List.copyOf(cardById.keySet()));
-        return hitIds.stream()
+        return hitBusinessIds.stream()
+                .map(idByBusinessId::get)
+                .filter(Objects::nonNull)
                 .filter(cardById::containsKey)
                 .map(id -> toRecommendVO(cardById.get(id), minPriceMap.get(id)))
                 .toList();
@@ -261,12 +292,12 @@ public class SpuManager {
     // ==================== 相似推荐私有装配 ====================
 
     /** 相似检索防御层：client 降级已兜底空列表，再兜任意未预期异常，推荐位返回空。 */
-    private List<SpuVectorHitCO> similarSafely(Long spuId, int size) {
+    private List<SpuVectorHitCO> similarSafely(String spuBusinessId, int size) {
         try {
-            return spuVectorClient.similar(spuId, size);
+            return spuVectorClient.similar(spuBusinessId, size);
         } catch (Exception e) {
             log.warn("相似商品检索失败，推荐位返回空: spuId={}, size={}, cause={}",
-                    spuId, size, e.getMessage());
+                    spuBusinessId, size, e.getMessage());
             return List.of();
         }
     }
@@ -290,7 +321,13 @@ public class SpuManager {
                 .collect(Collectors.toMap(Spu::getId, p -> p, (a, b) -> a));
     }
 
-    /** 命中商品 → 推荐卡（字段集对齐商品列表卡：展示价 = 在售 SKU 最低价）。 */
+    /**
+     * 命中商品 → 推荐卡（字段集对齐商品列表卡：展示价 = 在售 SKU 最低价）。
+     *
+     * <p>{@code spuId} 出 <b>技术主键</b>：P27 推荐卡的寻址语义与商品详情路径变量
+     * （{@code GET /api/item/product/{id}}，技术键口径）一致，本批不改其口径（ADR-061 §后果 R1
+     * 已登记「路径变量按 A 案保持技术键」）；I48 命中的业务键仅用于本方法内的比对与取数。
+     */
     private RecommendSpuVO toRecommendVO(Spu spu, Integer minPrice) {
         RecommendSpuVO vo = new RecommendSpuVO();
         vo.setSpuId(spu.getId());

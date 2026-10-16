@@ -1,5 +1,6 @@
 package org.icedamericanomall.trade.adapter.admin;
 
+import org.icedamericanomall.common.web.QueryModel;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.api.Result;
@@ -31,11 +32,17 @@ public class AdminOrderController {
         return Result.ok(adminManager.dashboard());
     }
 
-    /** 全部订单分页（不限用户/商家；query: status / page / size，属性绑定）。 */
+    /**
+     * 全部订单分页（AD12；{@code @QueryModel} 绑定，线上名 snake_case）。
+     *
+     * <p>{@code keyword}/{@code start_date}/{@code end_date} 由后端筛选（A2 收口）：
+     * 此前契约已声明、实现未接线 → 参数被静默忽略（运营筛选无效）。
+     */
     @GetMapping("/orders/page")
-    public Result<IPage<OrderVO>> pageAllOrders(OrderPageReq req) {
+    public Result<IPage<OrderVO>> pageAllOrders(@QueryModel OrderPageReq req) {
         return Result.ok(orderQueryManager.pageOrders(
-                null, null, req.getStatus(), req.getPage(), req.getSize()));
+                null, null, req.getStatus(), req.parseKeyword(),
+                req.parseStartDateTime(), req.parseEndDateTime(), req.getPage(), req.getSize()));
     }
 
     /** 近 N 天订单趋势（图表数据）。 */

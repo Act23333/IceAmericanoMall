@@ -1,5 +1,6 @@
 package org.icedamericanomall.marketing.adapter.request;
 
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import lombok.Data;
@@ -18,11 +19,13 @@ import java.time.LocalDateTime;
 public class FlashSaleCreateReq implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    @NotNull
-    private Long spuId;
+    /** SPU 业务键（32-hex；契约 §1.8② 入参按业务键消费，服务端解析为技术键）。 */
+    @NotBlank
+    private String spuId;
 
-    @NotNull
-    private Long skuId;
+    /** SKU 业务键（32-hex）。 */
+    @NotBlank
+    private String skuId;
 
     /** 秒杀价（分，&gt;0）。 */
     @NotNull

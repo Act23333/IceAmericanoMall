@@ -24,10 +24,23 @@ import java.util.Map;
 public interface FavoriteSpuBriefQuery {
 
     /**
-     * 按商品 ID 批量查询展示摘要。
+     * 按商品 <b>技术键</b>批量查询展示摘要。
      *
-     * @param spuIds 商品 ID 集合（可空；实现需去重并忽略 {@code null} 元素）
-     * @return 商品 ID → 摘要；不存在的商品（已删除等）<b>不出现</b>在返回 Map 中
+     * @param spuIds 商品技术键集合（可空；实现需去重并忽略 {@code null} 元素）
+     * @return 商品技术键 → 摘要；不存在的商品（已删除等）<b>不出现</b>在返回 Map 中
      */
     Map<Long, SpuBriefView> findByIds(Collection<Long> spuIds);
+
+    /**
+     * 按商品 <b>业务键</b>批量查询展示摘要（ADR-061 §决策 2：入参收业务键、同库内部解析）。
+     *
+     * <p>服务端负责「业务键 → 技术键」解析（走 {@code spu.spu_id} 唯一索引，性能与按技术键
+     * 等价；A 案下 {@code favorite.spu_id} 等内部外键保持技术键不动），调用方无需持有技术键。
+     * 顺带返回业务键本身（{@link SpuBriefView#spuBusinessId()}），供列表回填出线格式。
+     *
+     * @param spuBusinessIds 商品业务键集合（32-hex；可空；实现需去重并忽略 {@code null}
+     *                       与格式非法元素 —— 非法入参落「未命中」，不放大成 500）
+     * @return 商品业务键 → 摘要；不存在的商品<b>不出现</b>在返回 Map 中
+     */
+    Map<String, SpuBriefView> findByBusinessIds(Collection<String> spuBusinessIds);
 }

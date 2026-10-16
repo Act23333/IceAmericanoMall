@@ -23,9 +23,9 @@ public class HistoryController {
 
     private final HistoryManager historyManager;
 
-    /** 记录商品浏览（同一商品重复浏览仅刷新浏览时间）。 */
+    /** 记录商品浏览（同一商品重复浏览仅刷新浏览时间）。{@code spu_id} 为 SPU <b>业务键</b> 32-hex（§1.8②）。 */
     @PostMapping
-    public Result<Void> record(@RequestParam(name = "spu_id") Long spuId) {
+    public Result<Void> record(@RequestParam(name = "spu_id") String spuId) {
         historyManager.record(UserContext.getUserId(), spuId);
         return Result.ok();
     }

@@ -30,6 +30,7 @@ import org.icedamericanomall.marketing.domain.model.groupbuy.GroupBuyActivity;
 import org.icedamericanomall.marketing.domain.model.groupbuy.GroupTeam;
 import org.icedamericanomall.marketing.domain.model.points.PointsLog;
 import org.icedamericanomall.marketing.domain.model.promotion.Promotion;
+import org.icedamericanomall.marketing.domain.service.CouponScope;
 import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -56,11 +57,34 @@ public interface MarketingConverter {
     /** 创建请求 → 优惠券聚合（issuedQty 固定置 0，由创建编排负责）。 */
     Coupon toDomain(CouponCreateReq req);
 
-    /** 优惠券聚合 → 视图对象。 */
+    /**
+     * 优惠券聚合 → 视图对象。
+     *
+     * <p><b>{@code scopeValues} 形态归一出出口</b>：指定 {@link #couponScopeValues(Coupon)}，
+     * 把存储形态（DB {@code JSON} 数组串）归一为对外 <b>CSV</b>（契约 §4.10.1：
+     * 「对外 CSV 串 / 存储 JSON 数组」；{@code UserCouponVO} 同口径）。
+     * 原实现为领域对象原样透传 → 回吐 {@code ["1001","1002"]}，与 {@code UserCouponVO} 不同型。
+     */
+    @Mapping(target = "scopeValues", expression = "java(couponScopeValues(coupon))")
     CouponVO toVO(Coupon coupon);
 
-    /** 优惠券聚合列表 → 视图对象列表（列表方法按类型区分命名，避免泛型疑符冲突）。 */
-    List<CouponVO> toCouponVOList(List<Coupon> coupons);
+    /** 优惠券聚合列表 → 视图对象列表（与 {@link #toVO(Coupon)} 同一 CSV 归一出口）。 */
+    @Mapping(target = "scopeValues", expression = "java(couponScopeValues(coupon))")
+    CouponVO toCouponVO(Coupon coupon);
+
+    default List<CouponVO> toCouponVOList(List<Coupon> coupons) {
+        return coupons == null ? null : coupons.stream().map(this::toCouponVO).toList();
+    }
+
+    /**
+     * {@code scope_values} 对外形态归一（JSON 数组 → CSV）—— 两个 VO 共用唯一出口。
+     *
+     * <p>{@code scopeType} 为 {@code null}（缺省=ALL）或 ALL 时返回 {@code null}
+     * （契约 §4.10.1 样例的合法形态）。
+     */
+    default String couponScopeValues(Coupon coupon) {
+        return coupon == null ? null : CouponScope.toCsv(coupon.getScopeType(), coupon.getScopeValues());
+    }
 
     /**
      * 用户持券聚合 → 视图对象（仅本体字段）。
@@ -91,13 +115,35 @@ public interface MarketingConverter {
     /**
      * 秒杀聚合 → 视图对象（仅本体字段）。
      *
-     * <p>商品名/主图/原价需跨聚合回填、{@code progress_percent} 为派生值，二者由
+     * <p>商品字段与业务键需跨聚合回填、{@code progress_percent} 为派生值，二者由
      * {@code FlashSaleViewManager} 在装配后补齐；此前按列表批量映射的
      * {@code toFlashSaleVOList} 因回填改为逐元素装配已无调用方，随本批删除。
+     *
+     * <p><b>同名异义必须显式 ignore（ADR-058 §4）</b>：{@code FlashSale.spuId}/{@code skuId}
+     * 是 <b>技术键</b>（{@code flash_sale.spu_id}/{@code sku_id BIGINT}），而
+     * {@code FlashSaleVO.spuId}/{@code skuId} 是 <b>业务键</b> 32-hex —— MapStruct 会把
+     * {@code Long 5} 静默写成 {@code "5"}（看似有值、最难排查），故必须 ignore 并由
+     * {@code FlashSaleViewManager} 经读模型回填。
      */
+    @Mapping(target = "spuId", ignore = true)
+    @Mapping(target = "skuId", ignore = true)
+    @Mapping(target = "spuName", ignore = true)
+    @Mapping(target = "mainImage", ignore = true)
+    @Mapping(target = "originalPrice", ignore = true)
+    @Mapping(target = "progressPercent", ignore = true)
     FlashSaleVO toVO(FlashSale flashSale);
 
-    /** 秒杀创建请求 → 秒杀聚合（status/soldCount/version 由创建编排推导回填，AD40）。 */
+    /**
+     * 秒杀创建请求 → 秒杀聚合（status/soldCount/version 由创建编排推导回填，AD40）。
+     *
+     * <p><b>同名异义必须显式 ignore（ADR-058 §4）</b>：请求侧 {@code spuId}/{@code skuId}
+     * 是<b>业务键</b>（String），聚合侧同名字段是<b>技术键</b>（Long）—— 自动转换会把
+     * {@code "0f1e…"} 解析成数字（运行时 {@code NumberFormatException}）或把 {@code Long}
+     * 静默写成 {@code "5"}；故必须 ignore，并由 {@code FlashSaleAdminManager} 经读模型
+     * 解析后显式赋值。
+     */
+    @Mapping(target = "spuId", ignore = true)
+    @Mapping(target = "skuId", ignore = true)
     FlashSale toDomain(FlashSaleCreateReq req);
 
     /**
@@ -108,8 +154,13 @@ public interface MarketingConverter {
      *
      * @param req       编辑请求（字段全可选）
      * @param flashSale 已取出的场次聚合（被合并目标）
+     *
+     * <p>{@code spuId}/{@code skuId} 同名异义（请求 = 业务键，聚合 = 技术键）→ 显式 ignore，
+     * 由 {@code FlashSaleAdminManager} 解析后显式赋值（ADR-058 §4）。
      */
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    @Mapping(target = "spuId", ignore = true)
+    @Mapping(target = "skuId", ignore = true)
     void mergeFlashSaleUpdate(FlashSaleUpdateReq req, @MappingTarget FlashSale flashSale);
 
     /** 促销活动聚合 → 视图对象（AD48 创建回执口径）。 */
@@ -136,10 +187,27 @@ public interface MarketingConverter {
     /** 促销聚合列表 → 生效促销契约对象列表（I44）。 */
     List<PromotionCO> toPromotionCOList(List<Promotion> promotions);
 
-    /** 拼团创建请求 → 拼团活动聚合（status/version 由创建编排推导回填，AD54）。 */
+    /**
+     * 拼团创建请求 → 拼团活动聚合（status/version 由创建编排推导回填，AD54）。
+     *
+     * <p><b>同名异义必须显式 ignore（ADR-058 §4）</b>：请求侧 {@code spuId}/{@code skuId}
+     * 是<b>业务键</b>（String），聚合侧同名字段是<b>技术键</b>（Long）—— 自动转换会在运行时
+     * 解析 hex 失败（{@code NumberFormatException}）或静默写入错误值；故必须 ignore，
+     * 并由 {@code GroupBuyAdminManager} 经读模型解析后显式赋值。
+     */
+    @Mapping(target = "spuId", ignore = true)
+    @Mapping(target = "skuId", ignore = true)
     GroupBuyActivity toDomain(GroupBuyCreateReq req);
 
-    /** 拼团活动聚合 → 视图对象（AD54 创建回执 / M15 列表 / M16 详情口径）。 */
+    /**
+     * 拼团活动聚合 → 视图对象（AD54 创建回执 / M15 列表 / M16 详情口径）。
+     *
+     * <p>{@code spuId}/{@code skuId} 为业务键（ADR-061 §决策 2），技术键→业务键的换算由
+     * {@code GroupBuyViewManager} 经读模型完成（同一条 SQL 亦可带出 SPU 名），故此处 ignore。
+     */
+    @Mapping(target = "spuId", ignore = true)
+    @Mapping(target = "skuId", ignore = true)
+    @Mapping(target = "teams", ignore = true)
     GroupBuyActivityVO toVO(GroupBuyActivity activity);
 
     /**
@@ -150,8 +218,13 @@ public interface MarketingConverter {
      *
      * @param req      编辑请求（字段全可选）
      * @param activity 已取出的活动聚合（被合并目标）
+     *
+     * <p>{@code spuId}/{@code skuId} 同名异义（请求 = 业务键，聚合 = 技术键）→ 显式 ignore，
+     * 由 {@code GroupBuyAdminManager} 解析后显式赋值（ADR-058 §4）。
      */
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    @Mapping(target = "spuId", ignore = true)
+    @Mapping(target = "skuId", ignore = true)
     void mergeGroupBuyUpdate(GroupBuyUpdateReq req, @MappingTarget GroupBuyActivity activity);
 
     /** 拼团团聚合 → 团视图对象（M16 团列表 / M17 团进度；不出任何 userId）。 */
@@ -194,7 +267,13 @@ public interface MarketingConverter {
     /** 促销聚合列表 → 活动中心视图对象列表（M12；元素装配复用 {@link #toActivityVO}）。 */
     List<ActivityVO> toActivityVOList(List<Promotion> promotions);
 
-    /** 秒杀购买结果 → 视图对象。 */
+    /**
+     * 秒杀购买结果 → 视图对象。
+     *
+     * <p>源字段 {@code spuBusinessId}（业务键）与目标 {@code spuId} 名不同，需显式映射；
+     * 源侧 {@code skuId}（<b>技术键</b>，本域内部解析用）与目标无同名字段，故不会误入线格式。
+     */
+    @Mapping(target = "spuId", source = "spuBusinessId")
     FlashBuyVO toFlashBuyVO(FlashBuyResult result);
 
     /** 签到结果 DTO → 视图对象。 */

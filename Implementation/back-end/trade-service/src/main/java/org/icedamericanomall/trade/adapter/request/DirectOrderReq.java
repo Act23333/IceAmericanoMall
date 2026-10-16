@@ -1,6 +1,7 @@
 package org.icedamericanomall.trade.adapter.request;
 
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -22,8 +23,9 @@ public class DirectOrderReq implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    @NotNull(message = "SKU ID不能为空")
-    private Long skuId;
+    /** SKU 业务键（32-hex；契约 §1.8② 入参收业务键，服务端解析为技术键）。 */
+    @NotBlank(message = "SKU ID（业务键）不能为空")
+    private String skuId;
 
     @Min(value = 1, message = "数量至少为1")
     private Integer quantity = 1;

@@ -27,6 +27,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @DisplayName("秒杀商品摘要读模型 — H2 SQL 语义")
 class FlashSaleSpuBriefQueryImplH2Test {
+    /** 行 10 的 SKU 业务键（H2 BINARY(16) 小写 hex 形态）与所属 SPU 业务键。 */
+    private static final String SKU_BUSINESS_ID = "0000000000000000000000000000000a";
+    private static final String SPU_BUSINESS_ID = "00000000000000000000000000000064";
+
 
     private FlashSaleSpuBriefQueryImpl query;
 
@@ -38,16 +42,20 @@ class FlashSaleSpuBriefQueryImplH2Test {
                         + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
                 "sa", "");
         try (var conn = dataSource.getConnection(); var stmt = conn.createStatement()) {
+            // 业务键列按 Initialize.sql 形态建表（BINARY(16) + 唯一索引）——两种入参口径都被覆盖
             stmt.execute("CREATE TABLE spu ("
-                    + "id BIGINT PRIMARY KEY, name VARCHAR(128), main_image VARCHAR(255), status INT)");
+                    + "id BIGINT PRIMARY KEY, spu_id BINARY(16), name VARCHAR(128), "
+                    + "main_image VARCHAR(255), status INT, CONSTRAINT uk_spu_id UNIQUE (spu_id))");
             stmt.execute("CREATE TABLE sku ("
-                    + "id BIGINT PRIMARY KEY, spu_id BIGINT, price INT, original_price INT, status INT)");
+                    + "id BIGINT PRIMARY KEY, sku_id BINARY(16), spu_id BIGINT, price INT, "
+                    + "original_price INT, status INT, CONSTRAINT uk_sku_id UNIQUE (sku_id))");
             stmt.execute("INSERT INTO spu VALUES "
-                    + "(100, '手工陶瓷茶杯', 'https://cdn.icedmall.com/product/main_100.jpg', 1)");
+                    + "(100, X'00000000000000000000000000000064', '手工陶瓷茶杯', "
+                    + "'https://cdn.icedmall.com/product/main_100.jpg', 1)");
             stmt.execute("INSERT INTO sku VALUES "
-                    + "(10, 100, 9900, 12800, 1),"     // 正常：有划线价
-                    + "(11, 100, 9900, NULL, 1),"      // 未设划线价
-                    + "(12, 999, 5000, 6000, 1)");     // 商品已物理删除（孤儿 SKU）
+                    + "(10, X'0000000000000000000000000000000A', 100, 9900, 12800, 1),"  // 正常：有划线价
+                    + "(11, X'0000000000000000000000000000000B', 100, 9900, NULL, 1),"   // 未设划线价
+                    + "(12, X'0000000000000000000000000000000C', 999, 5000, 6000, 1)");  // 商品已物理删除（孤儿 SKU）
         }
         query = new FlashSaleSpuBriefQueryImpl(new JdbcTemplate(dataSource));
     }
@@ -58,8 +66,8 @@ class FlashSaleSpuBriefQueryImplH2Test {
         Map<Long, FlashSaleSpuBrief> briefs = query.findBySkuIds(List.of(10L));
 
         FlashSaleSpuBrief brief = briefs.get(10L);
-        assertEquals("手工陶瓷茶杯", brief.productName());
-        assertEquals("https://cdn.icedmall.com/product/main_100.jpg", brief.productImage());
+        assertEquals("手工陶瓷茶杯", brief.spuName());
+        assertEquals("https://cdn.icedmall.com/product/main_100.jpg", brief.mainImage());
         assertEquals(12800, brief.originalPrice());
     }
 
@@ -70,7 +78,7 @@ class FlashSaleSpuBriefQueryImplH2Test {
 
         assertTrue(briefs.containsKey(11L));
         assertNull(briefs.get(11L).originalPrice());
-        assertEquals("手工陶瓷茶杯", briefs.get(11L).productName());
+        assertEquals("手工陶瓷茶杯", briefs.get(11L).spuName());
     }
 
     @Test
@@ -88,5 +96,28 @@ class FlashSaleSpuBriefQueryImplH2Test {
         assertTrue(query.findBySkuIds(List.of()).isEmpty());
         assertTrue(query.findBySkuIds(null).isEmpty());
         assertTrue(query.findBySkuIds(Arrays.asList(null, null)).isEmpty());
+    }
+
+    @Test
+    @DisplayName("findBySkuBusinessIds — 业务键入参：键为业务键，并带出 SPU 业务键（ADR-061）")
+    void shouldResolveByBusinessKey_andCarrySpuBusinessId() {
+        Map<String, FlashSaleSpuBrief> briefs = query.findBySkuBusinessIds(List.of(SKU_BUSINESS_ID));
+
+        assertEquals(1, briefs.size());
+        FlashSaleSpuBrief brief = briefs.get(SKU_BUSINESS_ID);
+        assertEquals(10L, brief.skuId(), "技术键仍随行带出（写路径解析用）");
+        assertEquals(100L, brief.spuId(), "SPU 技术键（写路径解析用）");
+        assertEquals(SPU_BUSINESS_ID, brief.spuBusinessId(), "SPU 业务键 ← spu.spu_id（32-hex）");
+        assertEquals(SKU_BUSINESS_ID, brief.skuBusinessId());
+    }
+
+    @Test
+    @DisplayName("findBySkuBusinessIds — 非法/不存在业务键不出现（不抛异常、不放大成 500）")
+    void shouldOmitUnknownBusinessKey() {
+        Map<String, FlashSaleSpuBrief> briefs =
+                query.findBySkuBusinessIds(List.of(SKU_BUSINESS_ID, "prod-001"));
+
+        assertEquals(1, briefs.size());
+        assertTrue(briefs.containsKey(SKU_BUSINESS_ID));
     }
 }

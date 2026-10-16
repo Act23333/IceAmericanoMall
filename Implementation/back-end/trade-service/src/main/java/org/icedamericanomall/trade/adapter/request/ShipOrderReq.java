@@ -32,7 +32,12 @@ public class ShipOrderReq implements Serializable {
     private String logisticsCompany;
 
     /**
-     * 本包裹发货的明细 skuId 集合（V5.6，F3）；空/缺省 = 全部剩余未发货明细。
+     * 本包裹发货的明细 SKU 集合（V5.6，F3）；空/缺省 = 全部剩余未发货明细。
+     *
+     * <p><b>口径（契约 §1.8② + ADR-061 §决策 2）</b>：名含 {@code sku_id} 的入参一律按
+     * <b>SKU 业务键</b> 32-hex 消费 —— 与 {@code OrderItemVO.sku_id} 同型同义，
+     * 商家端从订单明细直接勾选即可（无需技术键）。订单项自 ADR-061 起即以业务键存储，
+     * 故本字段与 {@code order_item.sku_id} 直接可比。
      */
-    private List<Long> skuIds;
+    private List<String> skuIds;
 }

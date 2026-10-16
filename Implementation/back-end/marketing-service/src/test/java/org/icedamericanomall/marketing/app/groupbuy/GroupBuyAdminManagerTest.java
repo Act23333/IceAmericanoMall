@@ -42,6 +42,33 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("GroupBuyAdminManager — AD54-AD56 创建/编辑/删除单元测试")
 class GroupBuyAdminManagerTest {
+    /** 出线格式的业务键（32-hex）+ 内部技术键（刻意不同值，保证「技术键被误当业务键」必挂）。 */
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    private static final Long SPU_PK = 1L;
+    private static final Long SKU_PK = 2L;
+
+    /** 读模型端口：技术键（回填）与业务键（创建端解析）两种入参都命中同一行。 */
+    private final org.icedamericanomall.marketing.app.port.FlashSaleSpuBriefQuery briefQuery =
+            new org.icedamericanomall.marketing.app.port.FlashSaleSpuBriefQuery() {
+                @Override
+                public java.util.Map<Long, org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief> findBySkuIds(
+                        java.util.Collection<Long> skuIds) {
+                    return java.util.Map.of(SKU_PK, brief());
+                }
+
+                @Override
+                public java.util.Map<String, org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief>
+                        findBySkuBusinessIds(java.util.Collection<String> skuBusinessIds) {
+                    return java.util.Map.of(SKU_BUSINESS_ID, brief());
+                }
+            };
+
+    private static org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief brief() {
+        return new org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief(
+                SKU_PK, SPU_PK, SKU_BUSINESS_ID, SPU_BUSINESS_ID, "拼团商品", "https://cdn/main.jpg", 12800);
+    }
+
 
     private static final Long ACTIVITY_ID = 1L;
     private static final Long GENERATED_ID = 101L;
@@ -56,7 +83,8 @@ class GroupBuyAdminManagerTest {
 
     @BeforeEach
     void setUp() {
-        groupBuyAdminManager = new GroupBuyAdminManager(groupBuyActivityRepository, converter);
+        groupBuyAdminManager = new GroupBuyAdminManager(groupBuyActivityRepository, converter,
+                new org.icedamericanomall.marketing.app.groupbuy.GroupBuyViewManager(converter, briefQuery));
         // 仓储 INSERT 主键回填（模拟 MyBatis-Plus 生成主键后写回聚合）
         lenient().doAnswer(invocation -> {
             GroupBuyActivity activity = invocation.getArgument(0);
@@ -322,8 +350,8 @@ class GroupBuyAdminManagerTest {
         GroupBuyCreateReq req = new GroupBuyCreateReq();
         req.setName("iPhone 拼团");
         req.setSellerId(SELLER_ID);
-        req.setSpuId(1L);
-        req.setSkuId(2L);
+        req.setSpuId(SPU_BUSINESS_ID);
+        req.setSkuId(SKU_BUSINESS_ID);
         req.setGroupPrice(9900);
         req.setRequiredMembers(3);
         req.setTimeLimitHours(24);

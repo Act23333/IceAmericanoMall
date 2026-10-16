@@ -34,6 +34,10 @@ import java.time.LocalDateTime;
  *
  * <p><b>不投影 {@code coupon.type}</b>：该列自 V4.0 起 DEPRECATED，明确不纳入契约
  * （契约 §4.10.1；折扣类型唯一口径为 {@link #discountType}）。
+ *
+ * <p><b>适用范围投影（🆕 本批补齐，B1 遗留）</b>：{@link #scopeType}/{@link #scopeValues}
+ * 为契约 §4.10.1 已声明、实现缺失的两个字段（「文档有代码无」）；取值由同一条券面读模型
+ * SQL 顺带带出（零额外往返），{@code scope_values} 对外归一为 <b>CSV</b>。
  */
 @Data
 public class UserCouponVO implements Serializable {
@@ -70,4 +74,25 @@ public class UserCouponVO implements Serializable {
      * 取值链路上无任何回落（取不到即 {@code null}），与券面其余字段同口径。
      */
     private Integer discountType;
+
+    /**
+     * 适用范围类型（{@code coupon.scope_type}，契约 §4.10.1；B1 遗留投影，本批补齐）：
+     * {@code 1}=ALL 全场 / {@code 2}=CATEGORY 限定品类 / {@code 3}=PRODUCT 限定单品。
+     *
+     * <p><b>缺省语义</b>：{@code null} 按 {@code 1}（ALL）消费 —— 存量数据/读模型降级都可能是 null。
+     */
+    private Integer scopeType;
+
+    /**
+     * 适用范围取值（对外 <b>CSV 串</b>；与 {@code CouponVO.scopeValues} 同型同义）。
+     *
+     * <p>存储形态是 DB {@code JSON} 数组（唯一真相源），由服务端归一为逗号分隔串
+     * （值内不含分隔符，故无歧义）；{@code scope_type} 为 {@code null}/1（ALL）时恒为 {@code null}。
+     * {@code scope_type=3} 时为 <b>SPU 业务键</b> 32-hex（ADR-061：与线格式 {@code spu_id} 同型，
+     * 客户端预过滤因此可命中）。
+     *
+     * <p><b>fail-open</b>：券模板已删除 / 读模型降级 → 与 {@link #scopeType} <b>同为 null</b>
+     * （不回落为 1、不回落为空串）。<b>前端必须把 {@code scope_type=null} 按 ALL 消费</b>。
+     */
+    private String scopeValues;
 }

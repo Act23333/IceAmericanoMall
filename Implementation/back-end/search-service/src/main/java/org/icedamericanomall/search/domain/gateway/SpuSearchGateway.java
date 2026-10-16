@@ -51,8 +51,11 @@ public interface SpuSearchGateway {
      * 取商品自身向量（供 I48 以自身向量做 kNN 检索）。
      * DB 实现恒返回 empty；ES 实现在商品未摄取/读取失败时也返回 empty（fail-open）。
      *
-     * @param spuId 商品 id（幂等键，与 {@link #upsertVectorDoc(SpuVectorDoc)} 同源）
+     * <p><b>入参口径（ADR-061 §决策 2）</b>：{@code spuId} 为 SPU <b>业务键</b>（32-hex），
+     * 与 {@link #upsertVectorDoc(SpuVectorDoc)} 的幂等键同源；实现负责解析技术键后取文档。
+     *
+     * @param spuId SPU 业务键（32-hex）
      * @return 商品向量；不存在时 empty
      */
-    Optional<double[]> findVectorById(Long spuId);
+    Optional<double[]> findVectorById(String spuId);
 }

@@ -102,7 +102,7 @@ class ItemServiceSpuSearchGatewayTest {
         assertTrue(gateway.facets(new SearchQuery("耳机", null, 1, 10)).brands().isEmpty());
         assertTrue(gateway.vectorSearch(new double[]{0.1}, 5).isEmpty());
         assertEquals(false, gateway.reindex().get("esEnabled"));
-        assertTrue(gateway.findVectorById(1L).isEmpty());
+        assertTrue(gateway.findVectorById("0f1e2d3c4b5a69788796a5b4c3d2e1f0").isEmpty());
 
         gateway.upsertVectorDoc(null);
         verify(itemSearchClient, never()).searchPage(any());

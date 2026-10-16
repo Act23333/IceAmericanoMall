@@ -17,6 +17,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -56,12 +57,15 @@ class SpuRecommendManagerTest {
     @Test
     @DisplayName("ingestAfterCommit — 无活动事务（updateSpu 单语句路径）→ 直接发送，CO 字段正确")
     void shouldSendDirectly_whenNoActiveTransaction() {
-        manager.ingestAfterCommit(spu(), 800);
+        Spu spu = spu();
+        manager.ingestAfterCommit(spu, 800);
 
         ArgumentCaptor<SpuVectorUpsertCO> captor = ArgumentCaptor.forClass(SpuVectorUpsertCO.class);
         verify(spuVectorClient).upsert(captor.capture());
         SpuVectorUpsertCO co = captor.getValue();
-        assertEquals(1L, co.getSpuId());
+        // ADR-061 §决策 2：I47 幂等键是 SPU 业务键（spu.spu_id 生成的 32-hex），不是技术键
+        assertEquals(spu.getSpuId(), co.getSpuId());
+        assertNotEquals("1", co.getSpuId(), "摄取幂等键不得退回技术键");
         assertEquals("手机", co.getName());
         assertEquals("旗舰", co.getDescription());
         assertEquals("品牌A", co.getBrand());

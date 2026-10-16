@@ -91,6 +91,30 @@ public interface SpuMapper extends BaseMapper<SpuPO> {
             + "FROM spu p WHERE p.id = #{id}")
     SpuPO selectSearchCardById(@Param("id") Long id);
 
+    /**
+     * 单商品检索卡片 —— 按 <b>业务键</b>（{@code spu.spu_id} BINARY(16)）查询，供线格式
+     * 入参（I47 摄取幂等键 / I48 相似检索锚点）解析技术键（ADR-061 §决策 2：入参收业务键、
+     * 同库内部保持技术键）。参数传 {@code byte[]} 走 {@code spu_id} 唯一索引，与按技术键等价。
+     */
+    @Select("SELECT p.*, COALESCE((SELECT MIN(s.price) FROM sku s WHERE s.spu_id = p.id AND s.status = 1), 0) AS min_price "
+            + "FROM spu p WHERE p.spu_id = #{spuId}")
+    SpuPO selectSearchCardByBusinessId(@Param("spuId") byte[] spuId);
+
+    /**
+     * 业务键批量解析：{@code spu.spu_id}（BINARY(16)）→ 技术主键。
+     *
+     * <p>供相似推荐按 I48 命中的 <b>业务键</b>批量取技术键（单条 SQL 走 {@code spu_id}
+     * 唯一索引；不合法的业务键由应用层过滤，不入 SQL）。只映射两列，不取整行。
+     */
+    @Select("""
+            <script>
+            SELECT p.id AS id, p.spu_id AS spu_id FROM spu p
+            WHERE p.spu_id IN
+            <foreach collection="spuIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+            </script>
+            """)
+    List<SpuBusinessKeyRow> selectIdByBusinessIds(@Param("spuIds") List<byte[]> spuIds);
+
     /** 商品名前缀联想（在售，销量降序；去重由应用层完成，与原 search 直读口径一致）。 */
     @Select("SELECT name FROM spu WHERE status = 1 AND name LIKE CONCAT(#{prefix}, '%') "
             + "ORDER BY sold_count DESC LIMIT #{limit}")

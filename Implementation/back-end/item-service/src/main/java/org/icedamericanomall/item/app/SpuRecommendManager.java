@@ -35,13 +35,21 @@ public class SpuRecommendManager {
      * 商品向量摄取（契约 I47 幂等覆盖写，事务外旁路）。
      *
      * <p>未落库（id 为空）或已删除的商品静默跳过，不产生任何远程调用。
+     * 缺 <b>SPU 业务键</b>（{@code spuId}）同样跳过：摄取幂等键是业务键
+     * （ADR-061 §决策 2），技术键不能替代，宁可不摄取也不发语义错误的消息
+     * （向量可由后续编辑或 reindex 全量重建补齐）。
      *
-     * @param spu  刚落库的商品聚合（含技术主键；deleted 态跳过）
+     * @param spu  刚落库的商品聚合（含技术主键与 SPU 业务键；deleted 态跳过）
      * @param minPrice 在售 SKU 最低价（分，可为 null）
      */
     public void ingestAfterCommit(Spu spu, Integer minPrice) {
         if (spu == null || spu.getId() == null || spu.isDeleted()) {
             log.debug("商品向量摄取跳过：商品未落库或已删除");
+            return;
+        }
+        if (spu.getSpuId() == null || spu.getSpuId().isBlank()) {
+            log.warn("商品向量摄取跳过：缺少 SPU 业务键（spu.spu_id），技术键不能作幂等键: id={}",
+                    spu.getId());
             return;
         }
         SpuVectorUpsertCO co = buildUpsertCO(spu, minPrice);
@@ -59,10 +67,10 @@ public class SpuRecommendManager {
 
     // ==================== 私有方法 ====================
 
-    /** 聚合快照 → 摄取 CO（{@code spuId} 为幂等键，重写整份商品向量文档）。 */
+    /** 聚合快照 → 摄取 CO（{@code spuId} 为 <b>SPU 业务键</b> 幂等键，重写整份商品向量文档；ADR-061 §决策 2）。 */
     private SpuVectorUpsertCO buildUpsertCO(Spu spu, Integer minPrice) {
         SpuVectorUpsertCO co = new SpuVectorUpsertCO();
-        co.setSpuId(spu.getId());
+        co.setSpuId(spu.getSpuId());
         co.setName(spu.getName());
         co.setDescription(spu.getDescription());
         co.setBrand(spu.getBrand());

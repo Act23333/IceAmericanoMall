@@ -1,7 +1,6 @@
 package org.icedamericanomall.search.adapter.request;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
 import java.io.Serializable;
 
@@ -11,7 +10,10 @@ import java.io.Serializable;
  * <p>字段与 ia-api {@code SpuVectorUpsertCO} 一一对齐：只收商品原文与展示字段，
  * 分块/向量在 search-service 内完成（单向量不分块，ADR-046），调用方不传向量。
  *
- * @param spuId   商品 id（幂等键）
+ * <p><b>标识口径（ADR-061 §决策 2）</b>：{@code spuId} 是 SPU <b>业务键</b>（32-hex），
+ * 非技术主键；本服务在文档落库边界解析技术键（publishTime 回填取数用）。
+ *
+ * @param spuId   SPU 业务键（32-hex，幂等键）
  * @param name        商品名（向量化文本主来源）
  * @param description 商品描述（向量化文本）
  * @param brand       品牌（可选拼入向量化文本）
@@ -21,7 +23,7 @@ import java.io.Serializable;
  * @param soldCount   销量
  */
 public record SpuVectorUpsertReq(
-        @NotNull(message = "spuId 不能为空") Long spuId,
+        @NotBlank(message = "spuId 不能为空") String spuId,
         @NotBlank(message = "name 不能为空") String name,
         String description,
         String brand,

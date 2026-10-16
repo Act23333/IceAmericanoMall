@@ -48,7 +48,9 @@ class CartConverterContractTest {
 
         assertEquals(1L, co.getCartItemId(),
                 "cartItemId 恒 null（源 id 未显式映射）会让 trade 侧删不到已购购物车项");
-        assertEquals(1000L, co.getSkuId());
+        // ADR-061 §决策 2 + ADR-058 §4：skuId 同名异义（源=技术键，目标=业务键）必须 ignore，
+        // 由 CartManager 经读模型回填 —— 故此处恒为 null（绝不把技术键静默转成字符串）
+        assertNull(co.getSkuId(), "技术键不得自动落进业务键字段（Long 1000 → \"1000\" 是最难排查的错误形态）");
         assertEquals(3, co.getQuantity());
     }
 
@@ -62,7 +64,7 @@ class CartConverterContractTest {
         assertEquals(2, cos.size());
         assertEquals(1L, cos.get(0).getCartItemId());
         assertEquals(2L, cos.get(1).getCartItemId());
-        assertEquals(1001L, cos.get(1).getSkuId());
+        assertNull(cos.get(1).getSkuId(), "业务键由编排层回填，转换器不得写入技术键");
         assertTrue(cos.stream().allMatch(co -> co.getCartItemId() != null),
                 "I14 明细不允许出现无主键项");
     }
@@ -84,10 +86,10 @@ class CartConverterContractTest {
     void shouldLeaveDisplayFieldsNull_whenConvertingToVo() {
         CartItemVO vo = converter.itemToVO(cartItem(1L, 1000L, 3, true));
 
-        assertEquals(1000L, vo.getSkuId());
+        assertNull(vo.getSkuId(), "SKU 业务键由编排层经读模型回填（技术键不得自动转换）");
         assertEquals(3, vo.getQuantity());
         assertTrue(vo.getSelected());
-        assertNull(vo.getProductName(), "商品名/规格/图片/单价/小计均由编排层批量回填");
+        assertNull(vo.getSpuName(), "SPU 名/业务键/规格/图片/单价/小计均由编排层批量回填");
         assertNull(vo.getSpec());
         assertNull(vo.getImage());
         assertNull(vo.getPrice());

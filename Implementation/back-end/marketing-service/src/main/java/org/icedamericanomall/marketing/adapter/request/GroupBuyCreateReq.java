@@ -31,13 +31,13 @@ public class GroupBuyCreateReq implements Serializable {
     @NotNull
     private Long sellerId;
 
-    /** 商品 ID。 */
-    @NotNull
-    private Long spuId;
+    /** SPU 业务键（32-hex；契约 §1.8② 入参按业务键消费，服务端解析为技术键）。 */
+    @NotBlank
+    private String spuId;
 
-    /** SKU ID（拼团仅该 SKU 参与）。 */
-    @NotNull
-    private Long skuId;
+    /** SKU 业务键（32-hex；拼团仅该 SKU 参与）。 */
+    @NotBlank
+    private String skuId;
 
     /** 拼团价（分，&gt;0；快照进拼团单 subTotal）。 */
     @NotNull

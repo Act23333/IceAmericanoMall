@@ -204,6 +204,50 @@ public class SpuRepositoryImpl implements SpuRepository {
         return dataObject == null ? null : toCard(dataObject);
     }
 
+    @Override
+    public SpuSearchCard findSearchCardByBusinessId(String spuBusinessId) {
+        // 32-hex → BINARY(16)：非法/缺省入参经 toBytesOrNull 归一为 null → 直接「未命中」，
+        // 不放大成 500（与 SkuSpuDisplayQueryImpl 同一宽松解析口径，ADR-061）
+        byte[] businessId = IdGenerator.toBytesOrNull(spuBusinessId);
+        if (businessId == null) {
+            return null;
+        }
+        SpuPO dataObject = spuMapper.selectSearchCardByBusinessId(businessId);
+        return dataObject == null ? null : toCard(dataObject);
+    }
+
+    @Override
+    public Map<String, Long> idMapByBusinessIds(List<String> spuBusinessIds) {
+        // 32-hex → BINARY(16)：非法/缺省入参一律剔除（不放大成 500，与 SkuSpuDisplayQueryImpl 同口径）
+        List<byte[]> ids = normalizeBusinessIds(spuBusinessIds);
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Long> result = new HashMap<>(ids.size());
+        for (SpuBusinessKeyRow row : spuMapper.selectIdByBusinessIds(ids)) {
+            if (row.getId() == null || row.getSpuId() == null) {
+                continue;
+            }
+            result.putIfAbsent(IdGenerator.toHexString(row.getSpuId()), row.getId());
+        }
+        return result;
+    }
+
+    /** 业务键宽松归一：非法/重复入参剔除（唯一约束下不会出现同键两行）。 */
+    private static List<byte[]> normalizeBusinessIds(List<String> spuBusinessIds) {
+        if (spuBusinessIds == null || spuBusinessIds.isEmpty()) {
+            return List.of();
+        }
+        List<byte[]> ids = new java.util.ArrayList<>(spuBusinessIds.size());
+        for (String id : spuBusinessIds) {
+            byte[] parsed = IdGenerator.toBytesOrNull(id);
+            if (parsed != null && ids.stream().noneMatch(parsed::equals)) {
+                ids.add(parsed);
+            }
+        }
+        return ids;
+    }
+
     /** PO → 检索卡片（业务 ID 出持久化边界转 hex，ADR-050；publishTime 转 epoch millis）。 */
     static SpuSearchCard toCard(SpuPO dataObject) {
         return new SpuSearchCard(

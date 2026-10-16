@@ -26,7 +26,8 @@ public class OrderCreateContext {
     private List<CartItemCO> cartItems;
 
     // === 立即购买 / 秒杀 ===
-    private Long skuId;
+    /** 目标 SKU 业务键（32-hex）—— 线格式入参口径（ADR-061 §决策 2），不再是技术键。 */
+    private String skuId;
     private Integer quantity;
 
     // === 秒杀专有（由 marketing-service Feign 调用传入） ===
@@ -134,13 +135,27 @@ public class OrderCreateContext {
         this.address = address;
     }
 
+    /**
+     * 下单上下文中的商品快照（策略装配 → 订单项）+ 计价依据。
+     *
+     * <p><b>标识口径（ADR-061 §决策 1/2）</b>：{@link #skuId} / {@link #spuId} 均为
+     * <b>业务键</b> 32-hex {@code String}（来源 {@code SkuCO.skuId}/{@code SkuCO.spuId}）——
+     * 它们既写进 {@code order_item} 的标识列（跨域追溯/比价锚点），也是 I22 券范围
+     * {@code spu_ids} 的取值（客户端按 {@code scope_values} 与商品业务键预过滤才能命中）。
+     *
+     * <p>{@link #categoryId}/{@link #sellerId} 保持技术键：它们是同库内部外键，
+     * 券范围校验与运费计价都在服务端完成，不出线格式（A 案，ADR-061 §决策 4）。
+     */
     @Data
     public static class CartItemSnapshot {
-        private Long skuId;
-        private Long spuId;    // V4.3: 优惠券 scope 校验用
-        private Long categoryId;   // V4.3: 优惠券 scope 校验用
+        /** SKU 业务键（{@code sku.sku_id} 的 32-hex 形态）。 */
+        private String skuId;
+        /** SPU 业务键（{@code spu.spu_id} 的 32-hex 形态）—— 券 scope 校验/订单项快照锚点。 */
+        private String spuId;
+        private Long categoryId;   // V4.3: 优惠券 scope 校验用（同库技术键，不出线格式）
         private Long sellerId;
-        private String productName;
+        /** SPU 名（原 {@code productName}，ADR-061 §决策 5）。 */
+        private String spuName;
         private String skuSpec;
         private Integer price;
         private Integer quantity;

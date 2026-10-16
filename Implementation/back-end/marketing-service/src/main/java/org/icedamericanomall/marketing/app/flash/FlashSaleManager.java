@@ -75,7 +75,7 @@ public class FlashSaleManager {
         result.setSuccess(true);
         result.setFlashId(flashId);
         result.setFlashPrice(flashSale.getFlashPrice());
-        result.setSpuId(flashSale.getSpuId());
+        // 此处只回填技术键（本域内部口径）；业务键由 MarketingManager 经读模型解析（ADR-061 §决策 2）
         result.setSkuId(flashSale.getSkuId());
         result.setRemainingStock(remaining);
         return result;

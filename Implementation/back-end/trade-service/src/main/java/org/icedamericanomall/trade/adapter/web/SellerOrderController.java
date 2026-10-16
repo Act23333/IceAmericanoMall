@@ -1,5 +1,6 @@
 package org.icedamericanomall.trade.adapter.web;
 
+import org.icedamericanomall.common.web.QueryModel;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,11 +23,17 @@ public class SellerOrderController {
     private final OrderLifecycleManager orderLifecycleManager;
     private final OrderQueryManager orderQueryManager;
 
-    /** 本店订单分页（query: status / page / size，属性绑定）。 */
+    /**
+     * 本店订单分页（T10；{@code @QueryModel} 绑定，线上名 snake_case）。
+     *
+     * <p>筛选（{@code keyword}/{@code start_date}/{@code end_date}）与状态一律<b>后端</b>执行
+     * （A2 收口），控制器签名保持不变。
+     */
     @GetMapping("/page")
-    public Result<IPage<OrderVO>> page(OrderPageReq req) {
+    public Result<IPage<OrderVO>> page(@QueryModel OrderPageReq req) {
         return Result.ok(orderQueryManager.pageOrders(
-                null, UserContext.getUserId(), req.getStatus(), req.getPage(), req.getSize()));
+                null, UserContext.getUserId(), req.getStatus(), req.parseKeyword(),
+                req.parseStartDateTime(), req.parseEndDateTime(), req.getPage(), req.getSize()));
     }
 
     @GetMapping("/{orderNo}")

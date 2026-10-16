@@ -58,6 +58,30 @@ import static org.mockito.Mockito.*;
 @DisplayName("OrderCreationManager 下单编排集成测试")
 class OrderCreationManagerTest {
 
+    /** 购物车行携带的 SKU 业务键：必须与 {@code sku(...)} 构造的 I13 返回同值（同一物理行）。 */
+    private static String cartSkuBusinessId() {
+        return businessKey(1000L);
+    }
+
+    /** 第二件购物的 SKU 业务键。 */
+    private static String cartSkuBusinessIdFor(long skuTechnicalId) {
+        return businessKey(skuTechnicalId);
+    }
+
+    /** 第二件商品的 SKU 业务键（多商品场景）。 */
+    private static String cartSkuBusinessId2() {
+        return businessKey(1001L);
+    }
+
+    /** 技术键 → 该行在 I13 中的 SKU 业务键（32-hex 形态，保证「一 SKU 一键」且与请求侧一致）。 */
+    private static String businessKey(long skuTechnicalId) {
+        return String.format("%032x", skuTechnicalId);
+    }
+    /** SKU 业务键（32-hex，ADR-061 §决策 2：线格式与订单项标识一律业务键）。 */
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    private static final String SKU_BUSINESS_ID_2 = "112233445566778899aabbccddeeff00";
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
+
     private OrderRepository orderRepository;
     private CartClient cartClient;
     private AddressClient addressClient;
@@ -94,8 +118,9 @@ class OrderCreationManagerTest {
                 )""");
             stmt.execute("""
                 CREATE TABLE order_item (
-                    id BIGINT AUTO_INCREMENT PRIMARY KEY, order_id BIGINT NOT NULL, sku_id BIGINT NOT NULL,
-                    product_name VARCHAR(100), sku_spec VARCHAR(200), price INT NOT NULL,
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY, order_id BIGINT NOT NULL,
+                    sku_id BINARY(16) NOT NULL, spu_id BINARY(16) NOT NULL,
+                    spu_name VARCHAR(100), sku_spec VARCHAR(200), price INT NOT NULL,
                     quantity INT NOT NULL, sub_total INT NOT NULL, image VARCHAR(255), package_no INT DEFAULT NULL,
                     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )""");
@@ -153,7 +178,7 @@ class OrderCreationManagerTest {
                 couponConsumptionLedger);
     }
 
-    private CartItemCO cartItem(Long cartItemId, Long skuId, int qty) {
+    private CartItemCO cartItem(Long cartItemId, String skuId, int qty) {
         CartItemCO c = new CartItemCO();
         c.setCartItemId(cartItemId); c.setSkuId(skuId); c.setQuantity(qty);
         return c;
@@ -161,7 +186,9 @@ class OrderCreationManagerTest {
 
     private SkuCO sku(Long id, Long sellerId, int price, int stock) {
         SkuCO s = new SkuCO();
-        s.setId(id); s.setSellerId(sellerId); s.setProductName("商品" + id);
+        s.setId(id);
+        s.setSkuId(businessKey(id));
+        s.setSpuId(SPU_BUSINESS_ID); s.setSellerId(sellerId); s.setSpuName("商品" + id);
         s.setSpec("规格"); s.setPrice(price); s.setStock(stock); s.setImage("img.png");
         return s;
     }
@@ -188,7 +215,7 @@ class OrderCreationManagerTest {
     @DisplayName("createOrder(NORMAL) — 正常购物车下单：金额正确、地址快照、扣库存、删已购项")
     void shouldCreateOrder_whenValidCartAndAddress() {
         when(cartClient.getSelectedItems(100L)).thenReturn(
-                List.of(cartItem(1L, 1000L, 2), cartItem(2L, 1001L, 1)));
+                List.of(cartItem(1L, cartSkuBusinessId(), 2), cartItem(2L, cartSkuBusinessIdFor(1001L), 1)));
         when(skuClient.getSkuListByIds(anyList()))
                 .thenReturn(List.of(sku(1000L, 9L, 5000, 10), sku(1001L, 9L, 3000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
@@ -219,7 +246,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — 使用优惠券：抵扣后 payAmount = total - discount")
     void shouldApplyCouponDiscount_whenCouponProvided() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(couponClient.useCoupon(eq(100L), eq(55L), anyString(), eq(10000),
@@ -240,7 +267,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — V5.6 运费：postFee 单列快照且 payAmount = total − discount + postFee")
     void shouldIncludePostFeeInPayAmount_whenFreightTemplateApplied() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(couponClient.useCoupon(eq(100L), eq(55L), anyString(), eq(10000),
@@ -270,7 +297,7 @@ class OrderCreationManagerTest {
         when(addressClient.getAddress(1L)).thenReturn(address());
 
         OrderCreateContext c = ctx(OrderTypeEnum.FLASH_SALE);
-        c.setSkuId(1000L);
+        c.setSkuId(businessKey(1000L));
         c.setQuantity(1);
         c.setFlashId(99L);
         c.setFlashPrice(1000);
@@ -288,7 +315,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — V5.7 买家留言：随单快照落库且 VO 回显")
     void shouldPersistAndEchoRemark_whenCartOrderWithRemark() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
 
@@ -310,7 +337,7 @@ class OrderCreationManagerTest {
         when(addressClient.getAddress(1L)).thenReturn(address());
 
         OrderCreateContext c = ctx(OrderTypeEnum.DIRECT);
-        c.setSkuId(1000L);
+        c.setSkuId(businessKey(1000L));
         c.setQuantity(1);
         c.setRemark("放前台驿站即可");
         OrderVO vo = orderManager.createOrder(c);
@@ -323,7 +350,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — V5.7 未传买家留言：remark 落库为 null 不报错")
     void shouldPersistNullRemark_whenRemarkAbsent() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
 
@@ -339,7 +366,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — 库存不足：拒绝下单且不扣库存")
     void shouldReject_whenStockInsufficient() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 5)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 5)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 3)));
 
         assertThrows(BizException.class, () -> orderManager.createOrder(ctx(OrderTypeEnum.NORMAL)));
@@ -351,7 +378,7 @@ class OrderCreationManagerTest {
     void shouldRejectOrder_whenAddressNotOwnedByUser() {
         AddressCO othersAddress = address();
         othersAddress.setUserId(999L); // 他人地址（ctx.userId = 100L）
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(othersAddress);
 
@@ -370,7 +397,7 @@ class OrderCreationManagerTest {
     @DisplayName("createOrder(NORMAL) — 跨店铺：拒绝下单")
     void shouldReject_whenMultipleSellers() {
         when(cartClient.getSelectedItems(100L)).thenReturn(
-                List.of(cartItem(1L, 1000L, 1), cartItem(2L, 1001L, 1)));
+                List.of(cartItem(1L, cartSkuBusinessId(), 1), cartItem(2L, cartSkuBusinessIdFor(1001L), 1)));
         when(skuClient.getSkuListByIds(anyList()))
                 .thenReturn(List.of(sku(1000L, 9L, 5000, 10), sku(1001L, 8L, 3000, 10)));
         assertThrows(BizException.class, () -> orderManager.createOrder(ctx(OrderTypeEnum.NORMAL)));
@@ -390,7 +417,7 @@ class OrderCreationManagerTest {
         OrderCreateStrategyFactory factory = new OrderCreateStrategyFactory(List.of(normalStrategy));
         OrderCreationManager mgr = newManager(failingRepository, factory);
 
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
 
@@ -412,7 +439,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — 券核销后 I43 运费解析失败：回收券 + 原始异常原样上抛 + 不扣库存")
     void shouldRollbackConsumedCoupon_whenFreightResolveFailsAfterCouponUse() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         // Given 券核销成功（marketing 侧已提交，抵扣 3000）
@@ -458,7 +485,7 @@ class OrderCreationManagerTest {
                         "运费计算服务暂不可用"));
 
         OrderCreateContext c = ctx(OrderTypeEnum.DIRECT);
-        c.setSkuId(1000L);
+        c.setSkuId(businessKey(1000L));
         c.setQuantity(1);
         c.setUserCouponId(55L);
 
@@ -477,7 +504,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — 核销抵扣为 0（降级回调口径）后失败：仍回收券（不以金额判定补偿）")
     void shouldRollbackConsumedCoupon_whenAppliedDiscountIsZero() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(couponClient.useCoupon(anyLong(), anyLong(), anyString(), anyInt(), anyInt(), anyLong(),
@@ -499,7 +526,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — 券单：下单前落兜底对账标记，成交后清除")
     void shouldMarkAndClearReconcileLedger_whenCouponOrderSucceeds() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(couponClient.useCoupon(anyLong(), anyLong(), anyString(), anyInt(), anyInt(), anyLong(),
@@ -517,7 +544,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — 无券订单：不落兜底对账标记")
     void shouldNotMarkReconcileLedger_whenNoCouponRequested() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
 
@@ -531,7 +558,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — 券回收失败：保留兜底对账标记待重试，异常仍按原始语义上抛")
     void shouldKeepReconcileLedger_whenCouponRollbackFails() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(couponClient.useCoupon(anyLong(), anyLong(), anyString(), anyInt(), anyInt(), anyLong(),
@@ -553,7 +580,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder — 扣库存失败：抛 STOCK_INSUFFICIENT 且不落库、不补偿")
     void shouldRejectWithoutPersist_whenDeductStockFails() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         doThrow(new RuntimeException("sku service down")).when(skuClient).deductStock(anyList());
@@ -571,7 +598,7 @@ class OrderCreationManagerTest {
         when(addressClient.getAddress(1L)).thenReturn(address());
 
         OrderCreateContext c = ctx(OrderTypeEnum.DIRECT);
-        c.setSkuId(1000L);
+        c.setSkuId(businessKey(1000L));
         c.setQuantity(1);
         OrderVO vo = orderManager.createOrder(c);
 
@@ -588,7 +615,7 @@ class OrderCreationManagerTest {
         when(addressClient.getAddress(1L)).thenReturn(address());
 
         OrderCreateContext c = ctx(OrderTypeEnum.FLASH_SALE);
-        c.setSkuId(1000L);
+        c.setSkuId(businessKey(1000L));
         c.setQuantity(1);
         c.setFlashId(99L);
         c.setFlashPrice(1000); // 秒杀价 10元，远低于 SKU 原价 50元
@@ -612,7 +639,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — 带促销下单：I44 满减活动生效，discountAmount 命中且 payAmount 扣减")
     void shouldApplyPromotionDiscount_whenActivePromotionExists() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         // Given 店铺满 10000 减 2000 生效
@@ -631,7 +658,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — 促销+会员+券三源叠加封顶：合计超 total → discountAmount = total")
     void shouldCapDiscount_whenThreeSourcesExceedTotal() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(promotionClient.queryActive(any(PromotionQueryCO.class)))
@@ -653,7 +680,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — 无生效促销（空集合合法业务态）：仅券抵扣正常下单")
     void shouldOrderNormally_whenNoActivePromotions() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(promotionClient.queryActive(any(PromotionQueryCO.class))).thenReturn(List.of());
@@ -672,7 +699,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — I44 促销查询失败（fail-closed）：下单失败透传，券未核销、库存未扣")
     void shouldFailOrder_whenPromotionQueryFails() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(promotionClient.queryActive(any(PromotionQueryCO.class)))
@@ -695,7 +722,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — 无券订单遇 I43 运费失败：不调用券回滚（无副作用可回收）")
     void shouldNotRollbackCoupon_whenNoCouponConsumedOnFailure() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(freightPostageResolver.resolve(eq(9L), anyList(), anyInt()))
@@ -725,7 +752,7 @@ class OrderCreationManagerTest {
         OrderCreateStrategyFactory factory = new OrderCreateStrategyFactory(List.of(normalStrategy));
         OrderCreationManager mgr = newManager(failingRepository, factory);
 
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(couponClient.useCoupon(anyLong(), anyLong(), anyString(), anyInt(), anyInt(), anyLong(),
@@ -745,7 +772,7 @@ class OrderCreationManagerTest {
     @Test
     @DisplayName("createOrder(NORMAL) — I45 降级默认 NORMAL：会员不折扣，仅促销/券生效")
     void shouldNotApplyMemberDiscount_whenMemberLevelFallsBackToNormal() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, cartSkuBusinessId(), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
         when(promotionClient.queryActive(any(PromotionQueryCO.class)))
@@ -768,7 +795,7 @@ class OrderCreationManagerTest {
         when(addressClient.getAddress(1L)).thenReturn(address());
 
         OrderCreateContext c = ctx(OrderTypeEnum.FLASH_SALE);
-        c.setSkuId(1000L);
+        c.setSkuId(businessKey(1000L));
         c.setQuantity(1);
         c.setFlashId(99L);
         c.setFlashPrice(1000);

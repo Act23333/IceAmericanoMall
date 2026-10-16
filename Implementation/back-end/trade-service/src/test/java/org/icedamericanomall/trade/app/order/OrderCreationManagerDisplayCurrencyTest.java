@@ -69,6 +69,25 @@ import static org.mockito.Mockito.when;
 @DisplayName("OrderCreationManager F16 展示汇率快照（fail-open）")
 class OrderCreationManagerDisplayCurrencyTest {
 
+    /** 购物车行携带的 SKU 业务键：必须与 {@code sku(...)} 构造的 I13 返回同值（同一物理行）。 */
+    private static String cartSkuBusinessId() {
+        return businessKey(1000L);
+    }
+
+    /** 第二件商品的 SKU 业务键（多商品场景）。 */
+    private static String cartSkuBusinessId2() {
+        return businessKey(1001L);
+    }
+
+    /** 技术键 → 该行在 I13 中的 SKU 业务键（32-hex 形态）。 */
+    private static String businessKey(long skuTechnicalId) {
+        return String.format("%032x", skuTechnicalId);
+    }
+    /** SKU 业务键（32-hex，ADR-061 §决策 2：线格式与订单项标识一律业务键）。 */
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    private static final String SKU_BUSINESS_ID_2 = "112233445566778899aabbccddeeff00";
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
+
     private static final String USD = "USD";
     /** 测试用定点汇率：USD 0.140300 → 140300（×10⁶）。 */
     private static final long USD_RATE_SCALED = 140300L;
@@ -108,8 +127,9 @@ class OrderCreationManagerDisplayCurrencyTest {
                 )""");
             stmt.execute("""
                 CREATE TABLE order_item (
-                    id BIGINT AUTO_INCREMENT PRIMARY KEY, order_id BIGINT NOT NULL, sku_id BIGINT NOT NULL,
-                    product_name VARCHAR(100), sku_spec VARCHAR(200), price INT NOT NULL,
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY, order_id BIGINT NOT NULL,
+                    sku_id BINARY(16) NOT NULL, spu_id BINARY(16) NOT NULL,
+                    spu_name VARCHAR(100), sku_spec VARCHAR(200), price INT NOT NULL,
                     quantity INT NOT NULL, sub_total INT NOT NULL, image VARCHAR(255), package_no INT DEFAULT NULL,
                     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )""");
@@ -193,7 +213,7 @@ class OrderCreationManagerDisplayCurrencyTest {
         c.setUserId(100L);
         c.setOrderType(OrderTypeEnum.DIRECT);
         c.setAddressId(1L);
-        c.setSkuId(1000L);
+        c.setSkuId(businessKey(1000L));
         c.setQuantity(1);
         c.setDisplayCurrency(USD);
         OrderVO vo = orderManager.createOrder(c);
@@ -209,9 +229,11 @@ class OrderCreationManagerDisplayCurrencyTest {
     @DisplayName("createGroupBuyOrder(T27) — 带 displayCurrency=USD：拼团单两列快照 + VO 回显")
     void shouldSnapshotDisplayRate_whenGroupBuyOrderWithDisplayCurrency() {
         when(groupBuyClient.validate(any(GroupBuyValidateCO.class)))
-                .thenReturn(new GroupBuyValidateResultCO(1L, null, 1000, 3, 24, 1000L));
-        when(skuClient.getSkuListByIds(List.of(1000L))).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+                .thenReturn(new GroupBuyValidateResultCO(1L, null, 1000, 3, 24, SKU_BUSINESS_ID));
+        when(skuClient.getSkuListByIds(List.of(SKU_BUSINESS_ID))).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
+        // I43 入参口径：sellerId=9 / 明细快照（第二个形参是 List<CartItemSnapshot>，必须 anyList()）/
+        // totalAmount = 拼团价×1 = 1000 —— 三方逐位对齐，否则 mock 返回 null 在拆箱处 NPE
         when(freightPostageResolver.resolve(eq(9L), anyList(), eq(1000))).thenReturn(500);
         when(currencyClient.getCurrent(USD)).thenReturn(new CurrencyRateCO(USD, USD_RATE_SCALED, 2));
 
@@ -300,9 +322,10 @@ class OrderCreationManagerDisplayCurrencyTest {
     // ==================== 桩与构造辅助 ====================
 
     private void stubCartHappyPath() {
-        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, businessKey(1000L), 2)));
         when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
         when(addressClient.getAddress(1L)).thenReturn(address());
+        // I43 入参三方逐位对齐：sellerId=9 / 明细快照 / totalAmount = Σ(price×qty) = 5000×2
         when(freightPostageResolver.resolve(eq(9L), anyList(), eq(10000))).thenReturn(800);
     }
 
@@ -314,7 +337,7 @@ class OrderCreationManagerDisplayCurrencyTest {
         return c;
     }
 
-    private CartItemCO cartItem(Long cartItemId, Long skuId, int qty) {
+    private CartItemCO cartItem(Long cartItemId, String skuId, int qty) {
         CartItemCO c = new CartItemCO();
         c.setCartItemId(cartItemId);
         c.setSkuId(skuId);
@@ -322,11 +345,18 @@ class OrderCreationManagerDisplayCurrencyTest {
         return c;
     }
 
+    /**
+     * I13 回执的 SKU 快照：{@code skuId} 必须是 <b>本行的业务键</b>（32-hex，由技术键派生），
+     * 与请求侧（购物车行 {@code cartItem(...)} / 直购 {@code ctx.setSkuId(...)} /
+     * I52 回执 {@code GroupBuyValidateResultCO}) 逐位同值 —— 装配层按业务键 join，两侧不得各写各的。
+     */
     private SkuCO sku(Long id, Long sellerId, int price, int stock) {
         SkuCO s = new SkuCO();
         s.setId(id);
+        s.setSkuId(businessKey(id));
+        s.setSpuId(SPU_BUSINESS_ID);
         s.setSellerId(sellerId);
-        s.setProductName("商品" + id);
+        s.setSpuName("商品" + id);
         s.setSpec("规格");
         s.setPrice(price);
         s.setStock(stock);

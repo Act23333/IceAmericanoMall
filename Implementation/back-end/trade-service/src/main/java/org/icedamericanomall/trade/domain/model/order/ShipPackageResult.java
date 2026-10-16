@@ -14,5 +14,5 @@ import java.util.List;
  * @param shippedSkuIds  本次包裹覆盖的明细 skuId 集合
  * @param allShipped     发完本包裹后是否「全部明细已发货」（true = 订单已迁移为待收货）
  */
-public record ShipPackageResult(Long orderId, int packageNo, List<Long> shippedSkuIds, boolean allShipped) {
+public record ShipPackageResult(Long orderId, int packageNo, List<String> shippedSkuIds, boolean allShipped) {
 }

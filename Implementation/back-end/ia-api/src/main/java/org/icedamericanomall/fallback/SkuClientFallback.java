@@ -42,7 +42,7 @@ public class SkuClientFallback implements FallbackFactory<SkuClient> {
         return new SkuClient() {
 
             @Override
-            public List<SkuCO> getSkuListByIds(List<Long> skuIds) {
+            public List<SkuCO> getSkuListByIds(List<String> skuIds) {
                 log.error("SKU 服务降级：批量查询 SKU 失败（禁止降级为空列表，调用方会误判为「SKU 不存在」）"
                         + " skuIds={}", skuIds, cause);
                 throw new BizException(ErrorCode.SYSTEM_BUSY, "商品服务暂不可用，请稍后重试");

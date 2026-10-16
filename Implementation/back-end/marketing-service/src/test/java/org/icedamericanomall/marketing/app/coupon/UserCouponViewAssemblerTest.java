@@ -69,7 +69,7 @@ class UserCouponViewAssemblerTest {
         when(couponFaceQuery.findByCouponIds(List.of(TEMPLATE_ID)))
                 .thenReturn(Map.of(TEMPLATE_ID, new CouponFace(
                         TEMPLATE_ID, COUPON_NO, "618满200减30", 3000, 20000,
-                        DiscountTypeEnum.FIXED.getCode())));
+                        DiscountTypeEnum.FIXED.getCode(), null, null)));
 
         List<UserCouponVO> views = assembler.assembleList(List.of(userCoupon(5L, TEMPLATE_ID)));
 
@@ -89,7 +89,7 @@ class UserCouponViewAssemblerTest {
         when(couponFaceQuery.findByCouponIds(List.of(TEMPLATE_ID)))
                 .thenReturn(Map.of(TEMPLATE_ID, new CouponFace(
                         TEMPLATE_ID, COUPON_NO, "满200减30", 3000, 20000,
-                        DiscountTypeEnum.FIXED.getCode())));
+                        DiscountTypeEnum.FIXED.getCode(), null, null)));
 
         UserCouponVO vo = assembler.assembleList(List.of(userCoupon(5L, TEMPLATE_ID))).get(0);
 
@@ -104,7 +104,7 @@ class UserCouponViewAssemblerTest {
         when(couponFaceQuery.findByCouponIds(List.of(TEMPLATE_ID)))
                 .thenReturn(Map.of(TEMPLATE_ID, new CouponFace(
                         TEMPLATE_ID, COUPON_NO_PERCENT, "全场8.5折", 85, 0,
-                        DiscountTypeEnum.PERCENTAGE.getCode())));
+                        DiscountTypeEnum.PERCENTAGE.getCode(), null, null)));
 
         UserCouponVO vo = assembler.assembleList(List.of(userCoupon(5L, TEMPLATE_ID))).get(0);
 
@@ -119,7 +119,7 @@ class UserCouponViewAssemblerTest {
         when(couponFaceQuery.findByCouponIds(List.of(TEMPLATE_ID)))
                 .thenReturn(Map.of(TEMPLATE_ID, new CouponFace(
                         TEMPLATE_ID, COUPON_NO, "50元代金券", 5000, 0,
-                        DiscountTypeEnum.CASH_COUPON.getCode())));
+                        DiscountTypeEnum.CASH_COUPON.getCode(), null, null)));
 
         UserCouponVO vo = assembler.assembleList(List.of(userCoupon(5L, TEMPLATE_ID))).get(0);
 
@@ -133,9 +133,9 @@ class UserCouponViewAssemblerTest {
     void shouldExposePerRowDiscountType_whenMixedTypes() {
         when(couponFaceQuery.findByCouponIds(any())).thenReturn(Map.of(
                 TEMPLATE_ID, new CouponFace(TEMPLATE_ID, COUPON_NO, "满200减30", 3000, 20000,
-                        DiscountTypeEnum.FIXED.getCode()),
+                        DiscountTypeEnum.FIXED.getCode(), null, null),
                 2L, new CouponFace(2L, COUPON_NO_PERCENT, "全场8.5折", 85, 0,
-                        DiscountTypeEnum.PERCENTAGE.getCode())));
+                        DiscountTypeEnum.PERCENTAGE.getCode(), null, null)));
 
         List<UserCouponVO> views = assembler.assembleList(List.of(
                 userCoupon(5L, TEMPLATE_ID), userCoupon(6L, 2L)));
@@ -152,7 +152,7 @@ class UserCouponViewAssemblerTest {
     void shouldExposeCouponNoAs32Hex_notTechnicalKey() {
         when(couponFaceQuery.findByCouponIds(List.of(TEMPLATE_ID)))
                 .thenReturn(Map.of(TEMPLATE_ID, new CouponFace(
-                        TEMPLATE_ID, COUPON_NO, "券", 100, 0, DiscountTypeEnum.FIXED.getCode())));
+                        TEMPLATE_ID, COUPON_NO, "券", 100, 0, DiscountTypeEnum.FIXED.getCode(), null, null)));
 
         UserCouponVO vo = assembler.assembleList(List.of(userCoupon(5L, TEMPLATE_ID))).get(0);
 
@@ -288,5 +288,46 @@ class UserCouponViewAssemblerTest {
                 .status(UserCouponStatusEnum.UNUSED.getCode())
                 .createTime(LocalDateTime.of(2026, 6, 10, 10, 0))
                 .build();
+    }
+
+    @Test
+    @DisplayName("assembleList — 适用范围投影：scope_type 原样 + scope_values 由 DB JSON 归一为 CSV（B1 遗留补齐）")
+    void shouldProjectScopeAsCsv_whenScopeConfigured() {
+        when(couponFaceQuery.findByCouponIds(List.of(TEMPLATE_ID)))
+                .thenReturn(Map.of(TEMPLATE_ID, new CouponFace(
+                        TEMPLATE_ID, COUPON_NO, "限定单品券", 3000, 20000,
+                        DiscountTypeEnum.FIXED.getCode(), 3,
+                        "[\"0f1e2d3c4b5a69788796a5b4c3d2e1f0\",\"112233445566778899aabbccddeeff00\"]")));
+
+        UserCouponVO vo = assembler.assembleList(List.of(userCoupon(5L, TEMPLATE_ID))).get(0);
+
+        assertEquals(3, vo.getScopeType(), "scope_type 原样投影（3=PRODUCT 限定单品）");
+        assertEquals("0f1e2d3c4b5a69788796a5b4c3d2e1f0,112233445566778899aabbccddeeff00",
+                vo.getScopeValues(), "对外必须 CSV 串（非 DB JSON 原样），且取值是 SPU 业务键（ADR-061）");
+    }
+
+    @Test
+    @DisplayName("assembleList — scope_type=1(ALL)：scope_values 对外恒 null（合法形态）")
+    void shouldReturnNullScopeValues_whenScopeAll() {
+        when(couponFaceQuery.findByCouponIds(List.of(TEMPLATE_ID)))
+                .thenReturn(Map.of(TEMPLATE_ID, new CouponFace(
+                        TEMPLATE_ID, COUPON_NO, "全场券", 3000, 20000,
+                        DiscountTypeEnum.FIXED.getCode(), 1, "[\"1001\"]")));
+
+        UserCouponVO vo = assembler.assembleList(List.of(userCoupon(5L, TEMPLATE_ID))).get(0);
+
+        assertEquals(1, vo.getScopeType());
+        assertNull(vo.getScopeValues(), "ALL 时对外恒 null（前端按「不限」消费）");
+    }
+
+    @Test
+    @DisplayName("assembleList — 券面缺失（模板已删/降级）：scope_type 与 scope_values 同为 null（不回落 ALL）")
+    void shouldLeaveScopeNull_whenFaceMissing() {
+        when(couponFaceQuery.findByCouponIds(List.of(TEMPLATE_ID))).thenReturn(Map.of());
+
+        UserCouponVO vo = assembler.assembleList(List.of(userCoupon(5L, TEMPLATE_ID))).get(0);
+
+        assertNull(vo.getScopeType(), "不回落为 1：前端必须把 null 按 ALL 消费");
+        assertNull(vo.getScopeValues());
     }
 }

@@ -24,6 +24,10 @@ import static org.mockito.Mockito.verify;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("OrderRepositoryImpl 写入契约单元测试")
 class OrderRepositoryImplTest {
+    /** SKU 业务键（32-hex，ADR-061 §决策 2：线格式与订单项标识一律业务键）。 */
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    private static final String SKU_BUSINESS_ID_2 = "112233445566778899aabbccddeeff00";
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
 
     @Mock
     private OrderMapper mockOrderMapper;
@@ -46,12 +50,12 @@ class OrderRepositoryImplTest {
         order.setTotalAmount(129900);
 
         OrderItem item1 = new OrderItem();
-        item1.setSkuId(1L);
+        item1.setSkuId(SKU_BUSINESS_ID);
         item1.setPrice(89900);
         item1.setQuantity(1);
 
         OrderItem item2 = new OrderItem();
-        item2.setSkuId(2L);
+        item2.setSkuId(SKU_BUSINESS_ID);
         item2.setPrice(40000);
         item2.setQuantity(1);
 

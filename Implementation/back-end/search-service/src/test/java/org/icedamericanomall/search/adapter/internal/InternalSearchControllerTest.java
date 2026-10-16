@@ -52,7 +52,10 @@ class InternalSearchControllerTest {
     private static final String SIMILAR_URL = "/internal/search/vector/product/similar";
     private static final String NOTE_UPSERT_URL = "/internal/search/vector/note/upsert";
     private static final String NOTE_SIMILAR_URL = "/internal/search/vector/note/similar";
-    private static final Long SPU_ID = 9L;
+    /** 商品 <b>业务键</b>（32-hex，ADR-061 §决策 2：I47 幂等键 / I48 锚点与命中的线格式）。 */
+    private static final String SPU_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    /** 命中商品业务键（与锚点刻意不同值）。 */
+    private static final String HIT_SPU_ID = "112233445566778899aabbccddeeff00";
     private static final Long NOTE_ID = 9L;
 
     @Mock
@@ -145,17 +148,17 @@ class InternalSearchControllerTest {
     }
 
     @Test
-    @DisplayName("I48 相似检索 — Manager 可用 → 委托并返回命中 id + score")
+    @DisplayName("I48 相似检索 — Manager 可用 → 委托并返回命中 spuId（业务键）+ score")
     void shouldDelegateToManager_whenSimilarAndVectorEnabled() throws Exception {
         when(spuVectorProvider.getIfAvailable()).thenReturn(spuVectorManager);
         when(spuVectorManager.similar(SPU_ID, 5)).thenReturn(List.of(
-                hitCO(100L, 0.9), hitCO(200L, 0.8)));
+                hitCO(HIT_SPU_ID, 0.9), hitCO(HIT_SPU_ID, 0.8)));
 
-        mockMvc.perform(get(SIMILAR_URL).param("spu_id", String.valueOf(SPU_ID)).param("size", "5"))
+        mockMvc.perform(get(SIMILAR_URL).param("spu_id", SPU_ID).param("size", "5"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].spuId").value(100))
+                .andExpect(jsonPath("$[0].spuId").value(HIT_SPU_ID))
                 .andExpect(jsonPath("$[0].score").value(0.9))
-                .andExpect(jsonPath("$[1].spuId").value(200))
+                .andExpect(jsonPath("$[1].spuId").value(HIT_SPU_ID))
                 .andExpect(jsonPath("$[1].score").value(0.8))
                 .andExpect(jsonPath("$.length()").value(2));
     }
@@ -163,7 +166,7 @@ class InternalSearchControllerTest {
     @Test
     @DisplayName("I48 相似检索 — ES 关闭（Bean 不存在）→ 空列表且不触达 Manager")
     void shouldReturnEmptyList_whenSimilarAndVectorUnavailable() throws Exception {
-        mockMvc.perform(get(SIMILAR_URL).param("spu_id", String.valueOf(SPU_ID)))
+        mockMvc.perform(get(SIMILAR_URL).param("spu_id", SPU_ID))
                 .andExpect(status().isOk())
                 .andExpect(result -> assertEquals("[]",
                         result.getResponse().getContentAsString()));
@@ -262,7 +265,7 @@ class InternalSearchControllerTest {
         verifyNoInteractions(noteVectorManager);
     }
 
-    private static SpuVectorHitCO hitCO(Long spuId, double score) {
+    private static SpuVectorHitCO hitCO(String spuId, double score) {
         SpuVectorHitCO co = new SpuVectorHitCO();
         co.setSpuId(spuId);
         co.setScore(score);

@@ -175,10 +175,18 @@ public class PricingService {
         }
     }
 
-    /** 优惠券 scope 校验用商品 ID 串（逗号分隔，去空去重）。 */
+    /**
+     * 优惠券 scope 校验用商品 ID 串（逗号分隔，去空去重）。
+     *
+     * <p><b>取值口径（ADR-061 §决策 2 + R3 消解）</b>：{@code CartItemSnapshot.spuId} 自本批起为
+     * <b>SPU 业务键</b>（32-hex），故本串与线格式 {@code spu_id}、与客户端
+     * {@code scope_values} 预过滤<b>同型同义</b> —— 修复了「客户端预过滤永不命中」的功能失效
+     * （原实现取技术键 {@code spu.id}）。服务端 {@code CouponScope.accepts} 做同型字符串比较，
+     * 校验语义不变。
+     */
     private String buildSpuIds(OrderCreateContext ctx) {
         return ctx.getSnapshots().stream()
-                .map(s -> s.getSpuId() != null ? String.valueOf(s.getSpuId()) : "")
+                .map(s -> s.getSpuId() != null ? s.getSpuId() : "")
                 .filter(s -> !s.isEmpty())
                 .distinct().collect(Collectors.joining(","));
     }

@@ -21,12 +21,16 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @DisplayName("DirectOrderReq.remark 长度校验")
 class DirectOrderReqTest {
+    /** SKU 业务键（32-hex，ADR-061 §决策 2：线格式与订单项标识一律业务键）。 */
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    private static final String SKU_BUSINESS_ID_2 = "112233445566778899aabbccddeeff00";
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
 
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
     private DirectOrderReq req(String remark) {
         DirectOrderReq r = new DirectOrderReq();
-        r.setSkuId(1000L);
+        r.setSkuId(SKU_BUSINESS_ID);
         r.setQuantity(1);
         r.setAddressId(1L);
         r.setRemark(remark);
@@ -60,7 +64,7 @@ class DirectOrderReqTest {
 
     private DirectOrderReq reqWithCurrency(String displayCurrency) {
         DirectOrderReq r = new DirectOrderReq();
-        r.setSkuId(1000L);
+        r.setSkuId(SKU_BUSINESS_ID);
         r.setQuantity(1);
         r.setAddressId(1L);
         r.setDisplayCurrency(displayCurrency);

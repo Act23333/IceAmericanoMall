@@ -82,7 +82,7 @@ public class AdminManager {
         return orderRepository.findByStatus(completedCode)
                 .stream()
                 .flatMap(o -> orderRepository.findItemsByOrderId(o.getId()).stream()
-                        .map(i -> new Object[]{i.getProductName(), i.getQuantity(), i.getSubTotal()}))
+                        .map(i -> new Object[]{i.getSpuName(), i.getQuantity(), i.getSubTotal()}))
                 .collect(java.util.stream.Collectors.groupingBy(
                         a -> (String) a[0],
                         java.util.stream.Collectors.reducing(

@@ -157,23 +157,63 @@ public class EsSpuSearchGateway implements SpuSearchGateway {
         }
     }
 
+    /**
+     * I47 商品向量幂等覆盖写。
+     *
+     * <p><b>标识口径（ADR-061 §决策 2）</b>：入参 {@code spuId} 为 SPU <b>业务键</b>（32-hex），
+     * ES 文档键仍为商品<b>技术键</b>（与 reindex / I28 命中 id 同源）——故写前经 item 域检索出口
+     * 解析技术键，并<b>顺带</b>取回 {@code publishTime}（同一次往返，覆盖写不再丢该列，SE1 newest
+     * 排序口径不变）。商品不存在（已删除/错误幂等键）→ 跳过写入并记 WARN，<b>不抛异常</b>：
+     * 纯旁路失败不应反噬商品主流程（ADR-046 fail-open）。
+     */
     @Override
     public void upsertVectorDoc(SpuVectorDoc doc) {
+        SpuSearchItemCO item = resolveByBusinessKey(doc.spuId());
+        if (item == null || item.getId() == null) {
+            log.warn("商品向量摄取跳过（商品不存在或检索出口不可用）: spuId={}", doc.spuId());
+            return;
+        }
         ensureVectorIndex();
-        SpuDocument document = SpuEsDocuments.toDocument(doc);
-        applyPublishTimeQuietly(document);
+        SpuDocument document = SpuEsDocuments.toDocument(doc, item.getId());
+        if (item.getPublishTime() != null) {
+            document.setPublishTime(item.getPublishTime());
+        }
         esOps.save(document);
     }
 
     @Override
-    public Optional<double[]> findVectorById(Long spuId) {
+    public Optional<double[]> findVectorById(String spuId) {
+        // 入参是业务键（ADR-061）：先解析技术键再按 _id 取文档；产物恒为「无向量」或向量，不抛异常
+        SpuSearchItemCO item = resolveByBusinessKey(spuId);
+        if (item == null || item.getId() == null) {
+            return Optional.empty();
+        }
         try {
-            SpuDocument doc = esOps.get(String.valueOf(spuId), SpuDocument.class);
+            SpuDocument doc = esOps.get(String.valueOf(item.getId()), SpuDocument.class);
             return Optional.ofNullable(doc).map(SpuDocument::getEmbedding);
         } catch (Exception e) {
             // 索引不存在/读取失败等同「无向量」（fail-open），仅影响相似检索的空结果
             log.warn("商品向量读取失败（按无向量处理）: spuId={}, 原因: {}", spuId, e.getMessage());
             return Optional.empty();
+        }
+    }
+
+    /**
+     * SPU 业务键 → 商品检索条目（含技术键与 publishTime）。
+     *
+     * <p>{@code spuId} 为 32-hex 业务键，非技术键（ADR-061 §决策 2），故走 item 域检索出口的
+     * 既有 {@code /detail/{id}} 路由（该路由同时接受技术键与业务键，<b>不新增端点</b>）；
+     * 缺失/不可达返回 {@code null}（fail-open，调用方按「商品不存在」处理）。
+     */
+    private SpuSearchItemCO resolveByBusinessKey(String spuId) {
+        if (spuId == null || spuId.isBlank()) {
+            return null;
+        }
+        try {
+            return itemSearchClient.detail(spuId);
+        } catch (Exception e) {
+            log.warn("商品业务键解析失败（按不存在处理）: spuId={}, 原因: {}", spuId, e.getMessage());
+            return null;
         }
     }
 
@@ -196,23 +236,6 @@ public class EsSpuSearchGateway implements SpuSearchGateway {
             page++;
         }
         return all;
-    }
-
-    /**
-     * I47 覆盖写补齐 publishTime（SE1 newest 排序）—— 摄取契约（{@code SpuVectorUpsertCO}）
-     * 无此字段，整文档覆盖写会丢列，故经 item 内部端点回填（ADR-052）；
-     * 缺失/读取失败按无值处理（fail-open，仅影响 newest 排序，不阻断摄取主流程）。
-     */
-    private void applyPublishTimeQuietly(SpuDocument document) {
-        try {
-            SpuSearchItemCO item = itemSearchClient.detail(Long.valueOf(document.getId()));
-            if (item != null && item.getPublishTime() != null) {
-                document.setPublishTime(item.getPublishTime());
-            }
-        } catch (Exception e) {
-            log.warn("商品 publishTime 回填失败（按缺失处理）: spuId={}, 原因: {}",
-                    document.getId(), e.getMessage());
-        }
     }
 
     /** 确保 spus 索引存在（不存在按 kNN mapping 创建，并发被抢先静默通过；已有索引不变更）。 */

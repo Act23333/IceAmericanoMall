@@ -27,9 +27,11 @@ public class GroupBuyUpdateReq implements Serializable {
 
     private Long sellerId;
 
-    private Long spuId;
+    /** SPU 业务键（32-hex，可选；null 字段不更新）。 */
+    private String spuId;
 
-    private Long skuId;
+    /** SKU 业务键（32-hex，可选；null 字段不更新）。 */
+    private String skuId;
 
     /** 拼团价（分，&gt;0，可选）。 */
     @Positive

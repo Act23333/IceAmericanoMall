@@ -185,7 +185,7 @@ public class OrderLifecycleManager {
      * @param skuIds           本包裹发货明细；空 = 全部剩余明细（单包裹语义兼容）
      */
     public void shipOrder(String orderNo, Long sellerId, String logisticsNumber, String logisticsCompany,
-                          List<Long> skuIds) {
+                          List<String> skuIds) {
         ShipPackageResult result = orderRepository.shipPackage(orderNo, sellerId, skuIds);
         Order order = orderRepository.findByOrderNo(orderNo);
         if (order == null) {

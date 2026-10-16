@@ -30,6 +30,10 @@ package org.icedamericanomall.marketing.app.dto;
  *                  {@code 2}=PERCENTAGE 折扣 / {@code 3}=CASH_COUPON 代金券。
  *                  折扣券的 {@code value} 为百分比，前端必须据此区分面额渲染。
  *                  <b>刻意不投影 DEPRECATED 的 {@code coupon.type}</b>（契约 §4.10.1 不纳入）
+ * @param scopeType 适用范围类型（{@code coupon.scope_type}）：1=ALL 全场 / 2=CATEGORY 品类 /
+ *                  3=PRODUCT 单品（对齐 {@code ScopeTypeEnum}）
+ * @param scopeValues 适用范围取值：<b>DB 原样 JSON 数组串</b>（唯一存储真相源）；
+ *                  对外 CSV 归一见 {@code CouponScope#toCsv}（调用方负责归一，本记录只承载库值）
  */
 public record CouponFace(
         Long id,
@@ -37,5 +41,7 @@ public record CouponFace(
         String name,
         Integer value,
         Integer minAmount,
-        Integer discountType) {
+        Integer discountType,
+        Integer scopeType,
+        String scopeValues) {
 }

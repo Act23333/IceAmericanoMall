@@ -34,6 +34,10 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("GroupBuyOrderStrategy 拼团下单策略单元测试")
 class GroupBuyOrderStrategyTest {
+    /** SKU/SPU 业务键（32-hex，ADR-061 §决策 2：线格式与订单项标识一律业务键）。 */
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    private static final String SKU_BUSINESS_ID_2 = "112233445566778899aabbccddeeff00";
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
 
     @Mock private GroupBuyClient groupBuyClient;
     @Mock private SkuClient skuClient;
@@ -51,16 +55,17 @@ class GroupBuyOrderStrategyTest {
 
     private GroupBuyValidateResultCO validateResult(String teamNo) {
         // 构造器顺序：activityId, teamNo, groupPrice, requiredMembers, timeLimitHours, skuId
-        return new GroupBuyValidateResultCO(1L, teamNo, 1000, 3, 24, 1000L);
+        return new GroupBuyValidateResultCO(1L, teamNo, 1000, 3, 24, SKU_BUSINESS_ID);
     }
 
     private SkuCO sku() {
         SkuCO s = new SkuCO();
         s.setId(1000L);
-        s.setSpuId(100L);
+        s.setSkuId(SKU_BUSINESS_ID);
+        s.setSpuId(SPU_BUSINESS_ID);
         s.setCategoryId(10L);
         s.setSellerId(9L);
-        s.setProductName("拼团商品");
+        s.setSpuName("拼团商品");
         s.setSpec("500ml");
         s.setPrice(5000);
         s.setStock(10);
@@ -97,7 +102,7 @@ class GroupBuyOrderStrategyTest {
     @DisplayName("validate — I52 下发拼团价与绑定 SKU：快照价=拼团价、quantity 恒 1、卖家透传")
     void shouldSnapshotGroupPrice_whenValidateWithI52Result() {
         when(groupBuyClient.validate(any(GroupBuyValidateCO.class))).thenReturn(validateResult("T-9"));
-        when(skuClient.getSkuListByIds(List.of(1000L))).thenReturn(List.of(sku()));
+        when(skuClient.getSkuListByIds(List.of(SKU_BUSINESS_ID))).thenReturn(List.of(sku()));
         when(addressClient.getAddress(1L)).thenReturn(address());
 
         OrderCreateContext c = ctx("T-9");
@@ -113,7 +118,7 @@ class GroupBuyOrderStrategyTest {
         assertEquals(1000, c.getGroupPrice());
         assertEquals(1, c.getSnapshots().size());
         var snap = c.getSnapshots().get(0);
-        assertEquals(1000L, snap.getSkuId());
+        assertEquals(SKU_BUSINESS_ID, snap.getSkuId());
         assertEquals(1000, snap.getPrice(), "快照价必须是拼团价而非 SKU 原价");
         assertEquals(1, snap.getQuantity(), "一人一单一件，quantity 恒 1");
         assertEquals(9L, snap.getSellerId());
@@ -147,7 +152,7 @@ class GroupBuyOrderStrategyTest {
     @DisplayName("validate — SKU 不存在：拒绝下单")
     void shouldReject_whenSkuMissing() {
         when(groupBuyClient.validate(any(GroupBuyValidateCO.class))).thenReturn(validateResult(null));
-        when(skuClient.getSkuListByIds(List.of(1000L))).thenReturn(List.of());
+        when(skuClient.getSkuListByIds(List.of(SKU_BUSINESS_ID))).thenReturn(List.of());
 
         assertThrows(BizException.class, () -> strategy.validate(ctx(null)));
         verify(addressClient, never()).getAddress(anyLong());
@@ -159,7 +164,7 @@ class GroupBuyOrderStrategyTest {
         when(groupBuyClient.validate(any(GroupBuyValidateCO.class))).thenReturn(validateResult(null));
         SkuCO outOfStock = sku();
         outOfStock.setStock(0);
-        when(skuClient.getSkuListByIds(List.of(1000L))).thenReturn(List.of(outOfStock));
+        when(skuClient.getSkuListByIds(List.of(SKU_BUSINESS_ID))).thenReturn(List.of(outOfStock));
 
         BizException ex = assertThrows(BizException.class, () -> strategy.validate(ctx(null)));
         assertEquals(ErrorCode.STOCK_INSUFFICIENT, ex.getErrorCode());
@@ -172,7 +177,7 @@ class GroupBuyOrderStrategyTest {
         SkuCO unlimited = sku();
         unlimited.setStockType(2);
         unlimited.setStock(0);
-        when(skuClient.getSkuListByIds(List.of(1000L))).thenReturn(List.of(unlimited));
+        when(skuClient.getSkuListByIds(List.of(SKU_BUSINESS_ID))).thenReturn(List.of(unlimited));
         when(addressClient.getAddress(1L)).thenReturn(address());
 
         assertDoesNotThrow(() -> strategy.validate(ctx(null)));
@@ -182,7 +187,7 @@ class GroupBuyOrderStrategyTest {
     @DisplayName("buildOrder — discountAmount=0 不进定价中心；payAmount = 拼团价 − 0 + 常规运费")
     void shouldChargeRegularPostage_whenBuildOrder() {
         when(groupBuyClient.validate(any(GroupBuyValidateCO.class))).thenReturn(validateResult(null));
-        when(skuClient.getSkuListByIds(List.of(1000L))).thenReturn(List.of(sku()));
+        when(skuClient.getSkuListByIds(List.of(SKU_BUSINESS_ID))).thenReturn(List.of(sku()));
         when(addressClient.getAddress(1L)).thenReturn(address());
 
         OrderCreateContext c = ctx(null);

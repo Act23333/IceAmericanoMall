@@ -93,6 +93,29 @@ public final class CouponScope {
     }
 
     /**
+     * {@code scope_values} 存储形态（DB JSON 数组）→ 对外形态（CSV 串）—— ADR-058 §2 同型同义。
+     *
+     * <p><b>为何归一渲染</b>：{@code coupon.scope_values} 是 {@code JSON} 列，原样回吐会让
+     * 客户端拿到 {@code ["1001","1002"]}；契约 §4.10.1 与 {@code UserCouponVO} 均声明
+     * 「对外 CSV 串 / 存储 JSON 数组」，两个 VO 必须同型同义。
+     *
+     * <p><b>ALL 特例</b>：{@code scopeType} 为 {@code null}（缺省语义 = ALL）或
+     * {@link ScopeTypeEnum#ALL} 时对外恒为 {@code null}（契约样例的合法形态），
+     * 避免前端把「全场券」误当有限定范围。
+     *
+     * @param scopeType   适用范围类型；{@code null} = 按 ALL 处理
+     * @param scopeValues DB JSON 数组字符串（可空）
+     * @return CSV 串（保持库内顺序、去重）；ALL 或无数值时返回 {@code null}
+     */
+    public static String toCsv(Integer scopeType, String scopeValues) {
+        if (scopeType == null || scopeType == ScopeTypeEnum.ALL.getCode()) {
+            return null;
+        }
+        Set<String> ids = parseIds(scopeValues);
+        return ids.isEmpty() ? null : String.join(",", ids);
+    }
+
+    /**
      * 逗号分隔 ID 串 → ID 集合。
      *
      * @param csv 逗号分隔串，允许 {@code null}

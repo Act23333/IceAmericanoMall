@@ -37,6 +37,10 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("GroupBuyParticipationService 参团/结团退款闭环单元测试")
 class GroupBuyParticipationServiceTest {
+    /** SKU 业务键（32-hex，ADR-061 §决策 2：线格式与订单项标识一律业务键）。 */
+    private static final String SKU_BUSINESS_ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+    private static final String SKU_BUSINESS_ID_2 = "112233445566778899aabbccddeeff00";
+    private static final String SPU_BUSINESS_ID = "aabbccddeeff00112233445566778899";
 
     private static final String ORDER_NO = "GB-ORD-1";
 
@@ -67,7 +71,7 @@ class GroupBuyParticipationServiceTest {
     private OrderItem item() {
         OrderItem i = new OrderItem();
         i.setOrderId(1L);
-        i.setSkuId(1000L);
+        i.setSkuId(SKU_BUSINESS_ID);
         i.setQuantity(1);
         return i;
     }
@@ -142,7 +146,7 @@ class GroupBuyParticipationServiceTest {
         verify(orderRepository).cancelPaidBySystem(ORDER_NO);
         ArgumentCaptor<List<StockOpCO>> stockCaptor = ArgumentCaptor.forClass(List.class);
         verify(skuClient).restoreStock(stockCaptor.capture());
-        assertEquals(1000L, stockCaptor.getValue().get(0).getSkuId());
+        assertEquals(SKU_BUSINESS_ID, stockCaptor.getValue().get(0).getSkuId());
         ArgumentCaptor<OrderRefundCO> refundCaptor = ArgumentCaptor.forClass(OrderRefundCO.class);
         verify(orderRefundClient).refundByOrder(refundCaptor.capture());
         assertEquals(ORDER_NO, refundCaptor.getValue().getOrderNo());

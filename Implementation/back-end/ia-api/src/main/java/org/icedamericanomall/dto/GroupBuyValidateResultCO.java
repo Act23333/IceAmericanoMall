@@ -34,5 +34,6 @@ public class GroupBuyValidateResultCO implements Serializable {
     private Integer timeLimitHours;
 
     /** 活动绑定 SKU ID（服务端权威绑定：trade 据此查 item-service 做订单快照与扣库存，不信任客户端传入，V5.14.1） */
-    private Long skuId;
+    /** SKU 业务键（32-hex）—— I52 回执与 I13 入参同口径（ADR-061 §决策 2）。 */
+    private String skuId;
 }

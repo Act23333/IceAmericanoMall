@@ -12,6 +12,7 @@ import org.icedamericanomall.marketing.adapter.assembler.MarketingConverter;
 import org.icedamericanomall.marketing.adapter.response.FlashBuyVO;
 import org.icedamericanomall.marketing.adapter.response.FlashSaleVO;
 import org.icedamericanomall.marketing.app.dto.FlashBuyResult;
+import org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief;
 import org.icedamericanomall.marketing.app.flash.FlashSaleManager;
 import org.icedamericanomall.marketing.app.flash.FlashSaleViewManager;
 import org.icedamericanomall.marketing.domain.dto.FlashSaleOrderMessage;
@@ -71,6 +72,15 @@ public class MarketingManager {
         // 1. 领域操作：Redis Lua 原子预扣 + 限购校验
         FlashBuyResult preResult = flashSaleManager.buy(flashId, addressId);
 
+        // 1b. 读模型：把场次绑定的 SKU 技术键解析为业务键（ADR-061 §决策 2）—— 下单入参与
+        //     线格式一概用业务键；解析不到即视为活动配置异常（fail-closed，不落「无 SKU 的订单」）
+        FlashSaleSpuBrief brief = flashSaleViewManager.findBySkuTechnicalId(preResult.getSkuId());
+        if (brief == null || brief.skuBusinessId() == null) {
+            throw new BizException(ErrorCode.FLASH_SALE_FAILED);
+        }
+        preResult.setSkuBusinessId(brief.skuBusinessId());
+        preResult.setSpuBusinessId(brief.spuBusinessId());
+
         // 2. 应用层编排：Feign 委托 trade-service 创建真实订单
         Long userId = UserContext.getUserId();
         OrderSummaryCO order = createOrder(preResult, flashId, addressId, userId);
@@ -85,7 +95,7 @@ public class MarketingManager {
     private OrderSummaryCO createOrder(FlashBuyResult preResult, Long flashId, Long addressId, Long userId) {
         CreateOrderInternalReq req = new CreateOrderInternalReq();
         req.setUserId(userId);
-        req.setSkuId(preResult.getSkuId());
+        req.setSkuId(preResult.getSkuBusinessId());
         req.setSellerId(FLASH_SALE_NO_SELLER_ID);
         req.setQuantity(FLASH_PURCHASE_QUANTITY);
         req.setFlashPrice(preResult.getFlashPrice());

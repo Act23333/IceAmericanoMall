@@ -79,4 +79,26 @@ public interface SpuRepository {
 
     /** 单商品检索卡片（ES 摄取 publishTime 回填用）；不存在返回 null。 */
     SpuSearchCard findSearchCardById(Long id);
+
+    /**
+     * 单商品检索卡片 —— 按 <b>SPU 业务键</b>（32-hex，{@code spu.spu_id}）查询（ADR-061 §决策 2）。
+     *
+     * <p>供商品向量摄取（I47）与相似检索（I48）把线格式的业务键入参解析为本域技术键；
+     * 非法/不存在的业务键一律返回 {@code null}（调用方按「商品不存在」处理，不放大成 500）。
+     *
+     * @param spuBusinessId SPU 业务键（32-hex）；{@code null}/格式非法 → null
+     */
+    SpuSearchCard findSearchCardByBusinessId(String spuBusinessId);
+
+    /**
+     * SPU 业务键 → 技术键（ADR-061 §决策 2：入参收业务键、同库内部保持技术键）。
+     *
+     * <p>供相似推荐组装把 I48 命中的业务键批量解析为本域技术键（单条 SQL 走
+     * {@code spu_id} 唯一索引，无 N+1）；非法/不存在的业务键<b>不进入映射</b>，
+     * 调用方按「未命中」剔除。
+     *
+     * @param spuBusinessIds SPU 业务键集合（32-hex；可空）
+     * @return 业务键 → 技术键（只含命中项）
+     */
+    Map<String, Long> idMapByBusinessIds(List<String> spuBusinessIds);
 }

@@ -352,8 +352,9 @@ CREATE TABLE `orders` (
 CREATE TABLE `order_item` (
                               `id` BIGINT AUTO_INCREMENT COMMENT '技术主键',
                               `order_id` BIGINT NOT NULL COMMENT '所属订单ID',
-                              `sku_id` BIGINT NOT NULL COMMENT 'SKU ID',
-                              `product_name` VARCHAR(200) NOT NULL COMMENT '商品名快照',
+                              `sku_id` BINARY(16) NOT NULL COMMENT 'SKU 业务键（ADR-061：订单项自持业务键，可跨域追溯）',
+                              `spu_id` BINARY(16) NOT NULL COMMENT 'SPU 业务键（ADR-061：商品源头回链/比价锚点）',
+                              `spu_name` VARCHAR(200) NOT NULL COMMENT 'SPU 名快照（原 product_name，ADR-061 §决策 5）',
                               `sku_spec` VARCHAR(200) NOT NULL COMMENT '规格快照',
                               `price` INT NOT NULL COMMENT '单价快照（分）',
                               `quantity` INT NOT NULL COMMENT '购买数量',
@@ -365,9 +366,9 @@ CREATE TABLE `order_item` (
                               PRIMARY KEY (`id`),
                               KEY `idx_order_id` (`order_id`),
                               KEY `idx_sku_id` (`sku_id`),
+                              KEY `idx_spu_id` (`spu_id`),
                               KEY `idx_order_package` (`order_id`, `package_no`),
-                              CONSTRAINT `fk_orderitem_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-                              CONSTRAINT `fk_orderitem_sku` FOREIGN KEY (`sku_id`) REFERENCES `sku` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+                              CONSTRAINT `fk_orderitem_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单项表';
 
 -- ---------------------------------------------------------------
@@ -838,7 +839,7 @@ CREATE TABLE `merchant_reply_template`
     `id`          BIGINT AUTO_INCREMENT PRIMARY KEY,
     `seller_id`   BIGINT       NOT NULL COMMENT '商家ID',
     `title`       VARCHAR(200) NOT NULL COMMENT '模板标题',
-    `content`     TEXT         NOT NULL COMMENT '模板内容(变量: {buyer_name},{product_name},{order_no})',
+    `content`     TEXT         NOT NULL COMMENT '模板内容(变量: {buyer_name},{spu_name},{order_no})',
     `category`    VARCHAR(30)  NOT NULL COMMENT 'GREETING/FAQ/OFFLINE/ORDER',
     `sort_order`  INT          DEFAULT 0 COMMENT '排序',
     `status`      TINYINT      DEFAULT 1 COMMENT '1=启用, 0=禁用',

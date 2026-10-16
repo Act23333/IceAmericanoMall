@@ -190,4 +190,41 @@ class SpuSearchMapperH2Test {
     void shouldReturnNullCard_whenIdMissing() {
         assertEquals(null, spuMapper.selectSearchCardById(999L));
     }
+
+    // ==================== 业务键口径（ADR-061 §决策 2） ====================
+
+    @Test
+    @DisplayName("detail/key — 按 32-hex 业务键命中（spu_id 唯一索引，同库内部技术键不变）")
+    void shouldLoadSearchCardByBusinessId() {
+        SpuPO card = spuMapper.selectSearchCardByBusinessId(
+                org.icedamericanomall.common.utils.IdGenerator.toBytes("00000000000000000000000000000001"));
+
+        assertEquals(1L, card.getId());
+        assertEquals(599900, card.getMinPrice());
+        assertEquals("Apple", card.getBrand());
+    }
+
+    @Test
+    @DisplayName("detail/key — 未知业务键返回 null（不放大成异常）")
+    void shouldReturnNullCard_whenBusinessIdMissing() {
+        assertEquals(null, spuMapper.selectSearchCardByBusinessId(
+                org.icedamericanomall.common.utils.IdGenerator.toBytes("00000000000000000000000000000009")));
+    }
+
+    @Test
+    @DisplayName("批量解析 — 业务键 → 技术键只含命中项，且结果键为 32-hex")
+    void shouldMapIdByBusinessIds() {
+        List<SpuBusinessKeyRow> rows = spuMapper.selectIdByBusinessIds(List.of(
+                org.icedamericanomall.common.utils.IdGenerator.toBytes("00000000000000000000000000000001"),
+                org.icedamericanomall.common.utils.IdGenerator.toBytes("00000000000000000000000000000003"),
+                org.icedamericanomall.common.utils.IdGenerator.toBytes("00000000000000000000000000000009")));
+
+        assertEquals(2, rows.size());
+        assertEquals("00000000000000000000000000000001",
+                org.icedamericanomall.common.utils.IdGenerator.toHexString(rows.get(0).getSpuId()));
+        assertEquals(1L, rows.get(0).getId());
+        assertEquals("00000000000000000000000000000003",
+                org.icedamericanomall.common.utils.IdGenerator.toHexString(rows.get(1).getSpuId()));
+        assertEquals(3L, rows.get(1).getId());
+    }
 }

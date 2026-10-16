@@ -31,6 +31,7 @@ public class GroupBuyAdminManager {
 
     private final GroupBuyActivityRepository groupBuyActivityRepository;
     private final MarketingConverter marketingConverter;
+    private final GroupBuyViewManager groupBuyViewManager;
 
     /**
      * AD54：创建拼团活动（时间窗推导状态落库）。
@@ -46,13 +47,15 @@ public class GroupBuyAdminManager {
     @Transactional(rollbackFor = Exception.class)
     public GroupBuyActivityVO createActivity(GroupBuyCreateReq req) {
         GroupBuyActivity activity = marketingConverter.toDomain(req);
+        applyResolvedKeys(activity, req.getSpuId(), req.getSkuId());
         activity.ensureTimeWindowOrdered();
         activity.ensureFieldsLegal();
         LocalDateTime now = LocalDateTime.now();
         ensureNotEnded(activity, now, "拼团活动时间窗已整体过期，不可创建");
         activity.setStatus(activity.deriveStatus(now));
         groupBuyActivityRepository.save(activity);
-        return marketingConverter.toVO(activity);
+        // 回执与 C 端列表同一装配口径（业务键 + SPU 名；fail-open）
+        return groupBuyViewManager.toView(activity);
     }
 
     /**
@@ -73,6 +76,10 @@ public class GroupBuyAdminManager {
             req.setName(null);
         }
         marketingConverter.mergeGroupBuyUpdate(req, activity);
+        // 仅当请求真的传了键才覆盖（null = 不更新）；同名异义由转换器 ignore + 此处显式赋值
+        if (req.getSkuId() != null || req.getSpuId() != null) {
+            applyResolvedKeys(activity, req.getSpuId(), req.getSkuId());
+        }
         activity.ensureTimeWindowOrdered();
         activity.ensureFieldsLegal();
         activity.setStatus(activity.deriveStatus(LocalDateTime.now()));
@@ -96,6 +103,28 @@ public class GroupBuyAdminManager {
     }
 
     // ==================== 内部方法 ====================
+
+    /**
+     * SPU/SKU <b>业务键</b> → 技术键并写入聚合（ADR-061 §决策 2 + A 案）。
+     *
+     * <p>解析走 {@code sku.sku_id} 唯一索引（本地只读，无 Feign，事务安全）；解析不到即
+     * {@code PARAM_ERROR} —— 写路径 fail-fast，不落「指向不存在 SKU」的活动。
+     * {@code spuId} 以 <b>SKU 行所属 SPU</b> 为准（入参 SPU 仅作一致性校验）。
+     *
+     * @throws BizException 业务键格式非法 / SKU 不存在 / SPU 与 SKU 不匹配
+     */
+    private void applyResolvedKeys(GroupBuyActivity activity, String spuBusinessId, String skuBusinessId) {
+        var brief = groupBuyViewManager.findBySkuBusinessId(skuBusinessId);
+        if (brief == null || brief.skuId() == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "SKU 不存在（sku_id 业务键无效）");
+        }
+        if (spuBusinessId != null && brief.spuBusinessId() != null
+                && !spuBusinessId.equals(brief.spuBusinessId())) {
+            throw new BizException(ErrorCode.PARAM_ERROR, "SPU 与 SKU 不匹配");
+        }
+        activity.setSkuId(brief.skuId());
+        activity.setSpuId(brief.spuId());
+    }
 
     /** 按主键取活动，不存在抛 NO_RESOURCE_FOUND（AD55/AD56 契约错误口径 1103）。 */
     private GroupBuyActivity requireActivity(Long id) {
