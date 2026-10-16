@@ -6,7 +6,7 @@ ADR-011 已完成 15/15 `@FeignClient` 的 `fallbackFactory` 全覆盖，并明�
 
 该状态留下两处缺口：
 
-1. **降级永不生效**：`fallbackFactory` 只在服务打开 `circuitbreaker.enabled` 后才生效。marketing-service（用 `OrderClient` 落秒杀订单）与 ai-service（用 `OrderClient`/`ProductDetailClient`/`SearchClient`/`UserProfileClient` 支撑 Agent 工具链）都声明了降级实现，但从未开启熔断——下游不可用时调用只能一路阻塞到网络超时，秒杀链路把「长时间挂起」暴露给用户，AI 工具链把「挂起」放大会话延迟。
+1. **降级永不生效**：`fallbackFactory` 只在服务打开 `circuitbreaker.enabled` 后才生效。marketing-service（用 `OrderClient` 落秒杀订单）与 ai-service（用 `OrderClient`/`ProductDetailClient`（**现名 `SpuDetailClient`**，ADR-059）/`SearchClient`/`UserProfileClient` 支撑 Agent 工具链）都声明了降级实现，但从未开启熔断——下游不可用时调用只能一路阻塞到网络超时，秒杀链路把「长时间挂起」暴露给用户，AI 工具链把「挂起」放大会话延迟。
 2. **直接开启会误伤（关键陷阱）**：Spring Cloud 的 `CircuitBreaker` 集成会把 Feign 调用包进 resilience4j 的 TimeLimiter，**缺省超时仅 1 秒**。按 ADR-011 的三分法，写命令与判别型查询的降级是 fail-closed（抛 `BizException`），这意味着任何超过 1 秒的正常慢调用都会被判失败并降级——对 marketing 而言是「订单已落库但秒杀接口报失败」的假故障，对 AI 而言是工具链被强行截断返回空数据。因此「开启」必须与「放宽超时并显式给出熔断阈值」同时发生。
 
 前提条件已满足（无需改动）：两个服务的 `@SpringBootApplication(scanBasePackages=...)` 均包含 `org.icedamericanomall.fallback`（ADR-009/011 的启动期前提）。

@@ -63,3 +63,4 @@
 | [057](./057-display-field-read-model-ports.md) | 契约声明的展示字段回填 —— 应用层读模型端口 + 按 ID 批量 + fail-open；事务型 Manager 只能调本地只读 |
 | [058](./058-vo-identifier-semantics.md) | VO 标识字段的语义唯一性 —— 技术主键/外键禁出 VO；读模型须带出业务标识；MapStruct 跨层同名异义必须显式 ignore |
 | [059](./059-spu-sku-vocabulary-disambiguation.md) | SPU/SKU 词汇消歧 —— `product` 实为 SPU，线格式统一 `spu_id`/`sku_id`；技术键与技术外键仅留 PO/领域层 |
+| [060](./060-coupon-consumption-recovery.md) | 券核销「三网」—— 事实标记驱动 Saga 补偿（解耦推导金额）+ 定时兜底对账（`coupon:consumed:pending`）+ 判定方向纪律（仅查不到订单才回滚）；登记标记写入 fail-open 与降级空操作两项残余风险 | 2026-10-16 |

@@ -20,14 +20,14 @@ P2 收尾两项中的「内容社区」（得物式种草笔记）需要落位�
 
 ### 3. 数据模型与关键口径
 
-- `note`（`idx_status_time` 流查询）/ `note_product`（`uk_note_product`，≤5）/ `note_like`（`uk_note_user` 点赞幂等）——按 ADR-045 口径直接入 Initialize.sql 快照。
+- `note`（`idx_status_time` 流查询）/ `note_product`（**现名 `note_spu`**，`uk_note_product` 现名 `uk_note_spu`，≤5）/ `note_like`（`uk_note_user` 点赞幂等）——按 ADR-045 口径直接入 Initialize.sql 快照。
 - **点赞计数**：`like_count` 冗余列原子维护——点赞=插入 like 成功后条件 +1，取消=删除成功后 `GREATEST(0, like_count-1)`；uk 保证重复点赞空操作。
 - **删除语义**：作者软删（status=2），流与详情不可见；物理删除需评审（硬约束），留待数据治理统一处理。
 
 ### 4. F11 店铺装修 Phase 1 取舍（随本 ADR 登记）
 
 - `shop_decoration` 与 shop 1:1（merchant 域）：公告 + 轮播 ≤5 + 推荐商品位 ≤8，JSON 以字符串列存储（领域层校验条数/格式，不引入 TypeHandler）。
-- **`hot_product_ids` Phase 1 不校验商品归属**（商家端选品时的跨服务校验留 Phase 2）——展示端（店铺页商品卡）按需过滤失效/非在售 id；装修数据 60s 内可见性无承诺（直读无缓存）。
+- **`hot_product_ids`（**现名 `hot_spu_ids`**，ADR-059）Phase 1 不校验商品归属**（商家端选品时的跨服务校验留 Phase 2）——展示端（店铺页商品卡）按需过滤失效/非在售 id；装修数据 60s 内可见性无承诺（直读无缓存）。
 
 ## 备选方案
 
@@ -37,7 +37,7 @@ P2 收尾两项中的「内容社区」（得物式种草笔记）需要落位�
 | 笔记落 item（采纳） | 商品卡零跨服务、与 review 同构、包边界预留拆分 | item 域持续变胖（UGX 与交易商品域混布）——拆分边界已预留 |
 | Phase 1 做富文本/视频 | 体验对齐得物 | 存储与安全（XSS/视频转码）成本大增，Phase 1 纯文本+图集够验证 PMF |
 | Phase 1 做「已鉴定」静态标签 | 差异化卖点立现 | 无鉴定流程的鉴定标签=虚假承诺，资信风险 |
-| hotProductIds 保存时校验商品归属 | 数据严谨 | merchant→item 跨服务校验（装修低频写，收益低）；展示端过滤已兜底 |
+| hotProductIds（**现名 `hotSpuIds`**）保存时校验商品归属 | 数据严谨 | merchant→item 跨服务校验（装修低频写，收益低）；展示端过滤已兜底 |
 | **落位 item + Phase 1 最小闭环（采纳）** | 增量最小、同库装配、边界预留 | item 域变胖；鉴定/富文本/评论全部 Phase 2 |
 
 ## 后果
@@ -52,7 +52,7 @@ P2 收尾两项中的「内容社区」（得物式种草笔记）需要落位�
 
 - item 域职责加重（交易商品 + UGC）——按包边界监控，膨胀即触发拆分评估；
 - 鉴定缺位期间社区内容无得物式核心差异化（PRD 已明示 Phase 2 立项）；
-- `hot_product_ids` 引用的商品下架后店铺页推荐位出现空洞（展示端过滤，无自动补位）；
+- `hot_product_ids`（**现名 `hot_spu_ids`**，ADR-059）引用的商品下架后店铺页推荐位出现空洞（展示端过滤，无自动补位）；
 - 笔记点赞计数为最终一致（原子 UPDATE 无分布式锁，并发下计数精确性依赖单行原子性——MySQL 单行 UPDATE 即精确）。
 
 ## 日期

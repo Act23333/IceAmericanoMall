@@ -2,11 +2,11 @@
 
 ## 背景
 
-`coupon` 表的四列 —— `scope_type`（1=ALL/2=CATEGORY/3=PRODUCT）、`scope_values`（JSON：categoryIds 或 productIds）、`stack_rule`（1=MUTUAL_EXCLUSIVE/2=STACKABLE）、`stack_group`（VARCHAR(32)）—— 自 V4.3 起就存在于 `Initialize.sql`，`CouponCreateReq`/`CouponVO` 也已有对应字段，但**从未映射进 `CouponPO` / `Coupon` 聚合**，由此产生三个真实缺陷（2026-10-15 逐条实测）：
+`coupon` 表的四列 —— `scope_type`（1=ALL/2=CATEGORY/3=PRODUCT —— 此处 `PRODUCT` 是**券适用范围种类**的枚举名（后端 `ScopeTypeEnum` 常量，**未随 ADR-059 改名**），与 SPU 实体词汇无关；`Initialize.sql` 列注释现写作「3=PRODUCT单品」，而 `scope_values` 装的是 **spu id**）、`scope_values`（JSON：categoryIds 或 spuIds —— **列注释 2026-10-16 随 ADR-059 由 `productIds` 同步为 `spuIds`**）、`stack_rule`（1=MUTUAL_EXCLUSIVE/2=STACKABLE）、`stack_group`（VARCHAR(32)）—— 自 V4.3 起就存在于 `Initialize.sql`，`CouponCreateReq`/`CouponVO` 也已有对应字段，但**从未映射进 `CouponPO` / `Coupon` 聚合**，由此产生三个真实缺陷（2026-10-15 逐条实测）：
 
 1. **建券维度静默丢失**：管理端/商家端建券时 `scopeType`/`scopeValues`/`stackRule`/`stackGroup` 被静默丢弃，落 DB 默认值（`scope_type=1`、`stack_rule=1`）——用户以为自己配了「限定品类可叠加券」，实际拿到的是「全场互斥券」。
 2. **叠加校验从未执行**：`ADR-038` 的「后果」段曾推论「下单侧 stack 校验走 marketing 的 `batchGet` 内部接口返回的 PO 字段，不受影响」——**该推论错误**。`InternalCouponController` 没有 `/batch` 端点，`CouponClient.batchGet` 调用 404 后被 `CouponClientFallback.batchGet` 吞成空列表，`PricingService.validateStackRules` 首行 `if (infos == null || infos.isEmpty()) return;` 即返回。即「互斥券不可叠」「不同叠加组不可同用」两条规则**自 V4.3 起在线上从未生效**。
-3. **适用范围校验同样缺失**：`ia-api` 的 `CouponClient.useCoupon` 声明了 8 个参数（含 `productIds`/`categoryIds`），而 `InternalCouponController.use` 只接 6 个 —— Spring 直接忽略多出的 2 个 → 范围限制型券可用于任意商品（`PricingService` 侧一直在认真组装这两个参数，只是对端不接）。
+3. **适用范围校验同样缺失**：`ia-api` 的 `CouponClient.useCoupon` 声明了 8 个参数（含 `productIds`/`categoryIds`，**现已改名 `spuIds`/`categoryIds`**，ADR-059），而 `InternalCouponController.use` 只接 6 个 —— Spring 直接忽略多出的 2 个 → 范围限制型券可用于任意商品（`PricingService` 侧一直在认真组装这两个参数，只是对端不接）。
 
 三条都属「契约已声明、实现缺位」，静默降级而非报错，因此长期未被发现。
 
@@ -22,9 +22,9 @@
    - 为避免 N+1，`UserCouponRepository` 增 `findByIds(List<Long>)`（`MyBatis-Plus BaseMapper.selectByIds`），持券一次查出、模板逐个 `findById`。
 4. **适用范围校验**：新增纯领域服务 `CouponScope`（零框架依赖），`CouponUsageManager.useCoupon` 在既有品类/店铺校验之后调用：
    - `scopeType=1 ALL` / `null` / `scopeValues` 为空 → 放行（存量数据向后兼容 + 防御 null）；
-   - `2 CATEGORY` → 订单品类与 `scopeValues` 需有交集；`3 PRODUCT` → 订单商品与 `scopeValues` 需有交集；
+   - `2 CATEGORY` → 订单品类与 `scopeValues` 需有交集；`3 PRODUCT`（券适用范围种类，**非 SPU 实体词汇**；匹配的是订单的 **spu id** 串）→ 订单 spu 与 `scopeValues` 需有交集；
    - 无交集 → `BizException(BUSINESS_EXECUTION_EXCEPTION, "该优惠券不适用于当前订单商品")`；
-   - **订单侧未传 `productIds`/`categoryIds` 时，若券有限定范围则拒绝**（`intersects` 对空集恒返回 false）——「漏传」不能被解释为「不限」，否则下游任何一次少传参数都会把范围券变成全场券，正是本次要修的缺陷本身。
+   - **订单侧未传 `productIds`/`categoryIds`（现名 `spuIds`/`categoryIds`，ADR-059）时，若券有限定范围则拒绝**（`intersects` 对空集恒返回 false）——「漏传」不能被解释为「不限」，否则下游任何一次少传参数都会把范围券变成全场券，正是本次要修的缺陷本身。
    - `scopeValues` 解析**手写不做 JSON 库依赖**（域层零框架 + 只需「数字 ID 集合」一种最简形态）：容忍 `["1","2"]`（字符串元素）与 `[1,2]`（数字元素），另容忍外层多一层引号的「数组被当作 JSON 标量存储」形态。
 
 ## 备选方案
@@ -49,7 +49,7 @@
 
 - **行为收紧**：此前「范围券 = 全场券」「叠加规则不校验」的宽松行为被纠正。存量多券订单若依赖旧宽松语义，将在下单时被拒 —— 因四列从未映射，存量数据 `scope_type=1`/`stack_rule=1`（互斥），故**存量券默认互斥**：多券同时使用会被新生效的叠加校验拦截。这是把 ADR-043 的设计意图真正落地，但属可感知的行为变化，需在 PRD/契约侧确认「多券同时使用」当前是否为线上路径。
 - `scopeValues` 手写解析不做完整 JSON 校验：形如 `[1,2` 的残缺输入会被尽力解析而非报错。取向是「解析失败即空集合 → 视为不限」，与存量默认值行为一致，不引入新的下单阻断点。
-- `InternalCouponController.use` 的 `productIds`/`categoryIds` 为 `required = false`：调用方漏传时不会 400，而是转由应用层按「有限定范围则拒绝」处理。这是刻意的 —— 让「漏传」与「不适用」在业务层有统一出口，而不是把契约完整性交给参数绑定。
+- `InternalCouponController.use` 的 `productIds`/`categoryIds`（**现名 `spuIds`/`categoryIds`**，ADR-059）为 `required = false`：调用方漏传时不会 400，而是转由应用层按「有限定范围则拒绝」处理。这是刻意的 —— 让「漏传」与「不适用」在业务层有统一出口，而不是把契约完整性交给参数绑定。
 - **缺口已关闭**（原登记为「已知未修」，2026-10-15 补齐）：`GET /internal/coupon/batch` 缺少 `ids` 参数时，原本抛 `MissingServletRequestParameterException` 并**兜底成 HTTP 500**（`{"code":5000,...}`）而非 400 —— 根因是 `ia-common` `GlobalExceptionHandler` 缺该异常的处理器。修复落在**共享内核**（故对全部 15 个服务一并生效），并顺带补齐同类两个出口：
   - `MissingServletRequestParameterException`（必填 `@RequestParam` 未传）→ **500 改为 400 `PARAM_ERROR(1101)`**
   - `MethodArgumentTypeMismatchException`（参数类型不符，如 `?page=abc`）→ **500 改为 400 `PARAM_ERROR(1101)`**

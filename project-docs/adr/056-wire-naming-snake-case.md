@@ -22,7 +22,7 @@
 | 层次 | 命名 | 示例 |
 | --- | --- | --- |
 | JSON 请求体 / 响应体字段 | **snake_case** | `order_no`、`pay_amount`、`create_time`、`rate_scaled` |
-| 查询参数（`@RequestParam`） | **snake_case**（由 `@RequestParam(name = "snake_name")` 显式钉死，**Java 形参名保持 camelCase**） | `user_id`、`page_num`、`product_ids` |
+| 查询参数（`@RequestParam`） | **snake_case**（由 `@RequestParam(name = "snake_name")` 显式钉死，**Java 形参名保持 camelCase**） | `user_id`、`page_num`、`product_ids`（**该例现为 `spu_ids`**，ADR-059） |
 | DTO / VO / CO 的 Java 字段名 | camelCase（Java 惯例） | `private Integer payAmount;` |
 | TS/JS 变量、函数、props、state、`queryKey` | camelCase（TS 生态惯例） | `const cartItems = ...` |
 | 前端本地域模型（非报文） | camelCase | `cart-store.CartItem.skuId` |
@@ -37,7 +37,7 @@ Jackson 配置**只覆盖其中第一类**，因此落地时必须三类分别�
 | --- | --- | --- | --- |
 | 1 | JSON 请求体 / 响应体 | Jackson | ✅ 是 |
 | 2 | `@RequestParam` 查询参数 | 注解 `name`（缺省取 Java 形参名） | ❌ 否 —— 必须显式 `name = "..."` |
-| 3 | **POJO 查询绑定**（`@ModelAttribute`，如 `ProductPageReq`） | **Java 字段名** | ❌ 否 —— 两者皆不管，需改字段名或加显式别名 |
+| 3 | **POJO 查询绑定**（`@ModelAttribute`，如 `ProductPageReq`/**现名 `SpuPageReq`**，ADR-059） | **Java 字段名** | ❌ 否 —— 两者皆不管，需改字段名或加显式别名 |
 
 ## 理由（大厂依据）
 
@@ -75,7 +75,7 @@ Jackson 配置**只覆盖其中第一类**，因此落地时必须三类分别�
 **负面 / 风险**
 - **破坏性变更**：约 287 个端点的报文格式改变，无向后兼容期（库无存量数据、前端同期重构，故可接受）；
 - 契约改动面大（约 1,100 处 / 约 600 行，跨 JSON 示例、字段列表、`Query:` 段落），已用脚本两轮完成并复核；
-- **POJO 查询绑定（第三类载体）仍留分叉**：`categoryId`（`ProductPageReq`/`SearchPageReq`）与 `hasMedia`（`ReviewFilterReq`）在代码中仍是 camelCase，而契约写 `category_id?`/`has_media?` —— 需决定改契约还是改代码（见下）。
+- **POJO 查询绑定（第三类载体）一度留分叉（现已闭合，2026-10-16 更正）**：原状为 `categoryId`（`ProductPageReq`/**现名 `SpuPageReq`**（ADR-059）/`SearchPageReq`）与 `hasMedia`（`ReviewFilterReq`）在代码中是 camelCase，而契约写 `category_id?`/`has_media?`。**后续批次已按 §实现选型 A1（`@QueryModel` + Jackson）收口** —— 三处控制器（`SpuController` P1 / `ReviewController` P14 / `SearchController` SE1）的实际形态见下条 §未覆盖项 1；该分叉**不再是未决项**。
 
 ## 守卫（防复发）
 
@@ -102,7 +102,10 @@ Jackson 配置**只覆盖其中第一类**，因此落地时必须三类分别�
 
 ## 未覆盖项 / 后续
 
-1. **POJO 查询绑定（第三类载体）—— 已按显式钉名落地**：这三处控制器（`P1`/`P14`/`SE1`）不再使用裸 POJO 形参，改为**显式 `@RequestParam(name = "snake_name")`**（与全平台另外 80 个参数同一手法），涉及 6 个多词字段：`categoryId→category_id`、`sellerId→seller_id`、`hasMedia→has_media`、`SearchPageReq` 的 `categoryId/minPrice/maxPrice`。单字段（`keyword`/`sort`/`order`/`page`/`size`）蛇形与驼形同形，无需处理。
+1. **POJO 查询绑定（第三类载体）—— 已收口（形态经两次演进，当前以实现为准）**：
+   - **第一次演进（原记录）**：三处控制器（`P1`/`P14`/`SE1`）改为**显式 `@RequestParam(name = "snake_name")`**，涉及 6 个多词字段：`categoryId→category_id`、`sellerId→seller_id`、`hasMedia→has_media`、`SearchPageReq` 的 `categoryId/minPrice/maxPrice`。
+   - **第二次演进（2026-10-16 实测的现行形态）**：这三处已改为 **`@QueryModel` + Jackson 绑定**（`ia-common` `QueryModel` + `JacksonQueryModelArgumentResolver`，即 §实现选型 A1 本身）：`item` 的 `SpuController.page(@QueryModel SpuPageReq)`（P1）、`item` 的 `ReviewController`（P14，`ReviewFilterReq.hasMedia`）、`search` 的 `SearchController.search/facets(@QueryModel SearchPageReq)`（SE1）。**Java 字段名保持 camelCase，线上键由既有的 `property-naming-strategy: SNAKE_CASE` 唯一决定；`@QueryModel` 只认 snake，camelCase 写法被忽略（不迎合双写法）。** 单字段（`keyword`/`sort`/`order`/`page`/`size`）蛇形与驼形同形，无需处理。
+   - **剩余边界**：本次实测 `@QueryModel` 仅覆盖上述 3 个类（+ 绑定测试 `QueryModelBindingTest`）；其余服务若仍有裸 POJO 查询形参，仍暴露于「静默绑定失败」风险，新增时须走 `@QueryModel`。
    > **曾被否决的方案（技术债）**：一度在共享内核加 `SnakeCaseAliasRequestWrapper` + `SnakeCaseAliasFilter`（servlet 层为蛇形参数追加驼峰别名）。已**移除**，理由：① 它让 `category_id` 与 `categoryId` **两种写法都能用**，等于默认容忍两种线上写法、使契约失去权威性；② 一处全局过滤器改全部 15 个服务的参数语义，而问题只涉及 3 个类 6 个字段，属隐式魔法；③ 它掩盖契约-代码分歧而非收口。**结论：报告文体走 Jackson，查询参数走显式钉名，不引入第三套机制。**
 2. **前端构建产物**：`apps/miniprogram/dist/**` 为陈旧产物且仍含已修复的死路径 —— 但**当前交付范围仅 Web 端**（用户 2026-10-15 明确），小程序/其它端不在范围内，故不作为收口条件；待该端立项时重新构建。
 3. 前端字段改名的**排期归属**：已并入 ADR-054 多平台重构，不与其并行改同一批文件。

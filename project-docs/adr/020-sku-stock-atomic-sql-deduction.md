@@ -31,7 +31,7 @@ if (!updated) throw ...;
 2. **失败语义收敛到行数**：`deductStock` 行数为 0 → `BizException(STOCK_INSUFFICIENT, 3012)`（涵盖库存不足 / 已停售 / 记录消失）；`restoreStock` 行数为 0 → 记 `warn` 后幂等返回（订单取消/超时重试链路不得因库存回滚失败而抛错）。
 3. **枚举取代魔法值**：`StockTypeEnum.UNLIMITED` 判定不限量，`SkuStatusEnum.ON_SALE` 用于在售过滤；删除 `SkuEntity` 中重复常量与全部无调用行为方法，`SkuEntity` 回归纯持久化对象，Javadoc 如实描述"不变量由服务层 + 原子 SQL 保证"。
 4. **version 列语义降级为"每次库存变更自增的审计计数"**，不再作为并发控制手段（item-service 不注册乐观锁拦截器）；并发安全由 SQL 的 `stock >= #{qty}` 谓词保证。`orders` 表的 version 乐观锁不受影响。
-5. **列表页最低价**：`ProductVO` 增加 `minPrice`，列表项不再挂完整 SKU 列表；最低价用一次批量查询 + 内存聚合（`SkuService.getMinPriceMapByProductIds`），`sort=price` 由数据库按在售 SKU 最低价排序（`ProductMapper.selectPageOrderByMinPrice` 的 LEFT JOIN 聚合子查询，排序方向为 Java 侧白名单后的 `ASC`/`DESC`）。
+5. **列表页最低价**：`ProductVO`（**现名 `SpuVO`**，ADR-059）增加 `minPrice`，列表项不再挂完整 SKU 列表；最低价用一次批量查询 + 内存聚合（`SkuService.getMinPriceMapByProductIds`，**现名 `SkuManager.getMinPriceMapBySpuIds`**），`sort=price` 由数据库按在售 SKU 最低价排序（`ProductMapper.selectPageOrderByMinPrice`，**`ProductMapper` 现名 `SpuMapper`** 的 LEFT JOIN 聚合子查询，排序方向为 Java 侧白名单后的 `ASC`/`DESC`）。
 
 ## 备选方案
 
@@ -55,7 +55,7 @@ if (!updated) throw ...;
 
 - `AGENTS.md` 中"Optimistic locking：`orders` 和 `sku` 表使用 `version` 列 + `@Version`"的表述对 `sku` 已不再成立（`orders` 不变），需由 doc-engineer 同步（本 ADR 记录该偏差）。
 - 停售 SKU 的扣减失败文案为"库存不足"（3012）而非"商品已停售"，若前端需要区分文案，需新增错误码。
-- `ProductMapper.selectPageOrderByMinPrice` 使用 `ORDER BY s.min_price ${orderDirection}`，方向值必须在 Java 侧白名单为 `ASC`/`DESC` 后才可拼接；新增调用方须遵守同一约束。
+- `ProductMapper.selectPageOrderByMinPrice`（**`ProductMapper` 现名 `SpuMapper`**，ADR-059）使用 `ORDER BY s.min_price ${orderDirection}`，方向值必须在 Java 侧白名单为 `ASC`/`DESC` 后才可拼接；新增调用方须遵守同一约束。
 - 列表页不再返回 `skus`（改为 `minPrice`），依赖旧字段的前端需改用 `GET /api/item/product/{id}` 取完整 SKU。
 
 ## 日期
@@ -64,6 +64,6 @@ if (!updated) throw ...;
 
 ## 参考
 
-- `Implementation/back-end/item-service/src/main/java/org/icedamericanomall/item/mapper/SkuMapper.java`、`service/impl/SkuServiceImpl.java`、`mapper/ProductMapper.java`
-- `Implementation/back-end/trade-service/src/main/java/org/icedamericanomall/trade/manager/OrderCreationManager.java`（唯一的扣减调用方）
+- `Implementation/back-end/item-service/src/main/java/org/icedamericanomall/item/mapper/SkuMapper.java`、`service/impl/SkuServiceImpl.java`、`mapper/ProductMapper.java`（**ADR-059 后**：实际路径为 `infrastructure/persistence/SkuMapper.java` / `app/SkuManager.java` / `infrastructure/persistence/SpuMapper.java` —— 本条写于四层重构前，路径与类名为历史形态）
+- `Implementation/back-end/trade-service/src/main/java/org/icedamericanomall/trade/manager/OrderCreationManager.java`（唯一的扣减调用方；**ADR-038 后**：`app/order/OrderCreationManager.java`）
 - `AGENTS.md`（Key Domain Invariants：Stock non-negative / Optimistic locking）

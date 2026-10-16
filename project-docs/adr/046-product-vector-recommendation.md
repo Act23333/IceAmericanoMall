@@ -2,7 +2,7 @@
 
 ## 背景
 
-P2 首选功能「商品推荐」的性价比判断：T14 已打通 `chunk → embed → ES 索引 → kNN 检索` 全链路（知识库 `knowledge_vectors`），且商品侧 `ProductDocument` 早就带有 `embedding` 字段、I28 `index=products` 就是现成的商品 kNN 检索——**管道齐全，唯独商品向量从未被摄取**（商品进 ES 只靠 reindex 手动全量重建，日常创建/编辑不触发），推荐无数据可查。本 ADR 以最小增量补齐摄取与 C 端出口。
+P2 首选功能「商品推荐」的性价比判断：T14 已打通 `chunk → embed → ES 索引 → kNN 检索` 全链路（知识库 `knowledge_vectors`），且商品侧 `ProductDocument`（**现名 `SpuDocument`**，ADR-059，下同）早就带有 `embedding` 字段、I28 `index=products`（**ES 索引名 `products` 为刻意保留项**，不随改名变动）就是现成的商品 kNN 检索——**管道齐全，唯独商品向量从未被摄取**（商品进 ES 只靠 reindex 手动全量重建，日常创建/编辑不触发），推荐无数据可查。本 ADR 以最小增量补齐摄取与 C 端出口。
 
 ## 决策（2026-10-05）
 
@@ -12,9 +12,9 @@ P2 首选功能「商品推荐」的性价比判断：T14 已打通 `chunk → e
 
 ### 2. 单向量不分块（与知识库路线刻意不同）
 
-商品文本（`name + description`，可选拼接 brand）是短文本，单条 embedding 语义已足够；知识库的 `DocumentChunker` 多块路线服务于长文档召回，不引入。I47 幂等覆盖写：同 productId 重写**整个** `ProductDocument`（含 name/description/brand/categoryId/mainImage/price/soldCount + embedding）——顺带补齐「日常增量进 ES」的缺口（此前只有 reindex 全量兜底），与 reindex 共存（reindex 为全量重建兜底，I47 为增量主路径）。
+商品文本（`name + description`，可选拼接 brand）是短文本，单条 embedding 语义已足够；知识库的 `DocumentChunker` 多块路线服务于长文档召回，不引入。I47 幂等覆盖写：同 productId（**现名 `spuId`**，ADR-059）重写**整个** `ProductDocument`（**现名 `SpuDocument`**；含 name/description/brand/categoryId/mainImage/price/soldCount + embedding）——顺带补齐「日常增量进 ES」的缺口（此前只有 reindex 全量兜底），与 reindex 共存（reindex 为全量重建兜底，I47 为增量主路径）。
 
-### 3. 查询 I48 只出 `productId + score`，C 端组装归 item
+### 3. 查询 I48 只出 `productId + score`（**现名 `spu_id + score`**，ADR-059），C 端组装归 item
 
 ES 文档可能滞后于 MySQL（编辑与摄取之间有窗口），**展示真相源是 MySQL**：P27（item C 端）拿到命中 id 后批量查本地库组装新鲜商品卡，并**恒过滤在售、排除自身、按相似度降序**。search-service 不直接面对 C 端推荐。
 
@@ -61,7 +61,7 @@ ES 文档可能滞后于 MySQL（编辑与摄取之间有窗口），**展示真
 
 ## 参考
 
-- `Implementation/back-end/search-service/src/main/java/org/icedamericanomall/search/`（`ProductVectorManager`、I47/I48、`ProductSearchGateway` 向量写入扩展）
+- `Implementation/back-end/search-service/src/main/java/org/icedamericanomall/search/`（`ProductVectorManager`/**现名 `SpuVectorManager`**、I47/I48、`ProductSearchGateway`/**现名 `SpuSearchGateway`** 向量写入扩展 — ADR-059）
 - `Implementation/back-end/item-service/src/main/java/org/icedamericanomall/item/`（P27 + 摄取钩子）
-- `Implementation/back-end/ia-api/`（`ProductVectorClient` fail-open / `ProductVectorUpsertCO` / `ProductVectorHitCO`）
+- `Implementation/back-end/ia-api/`（`ProductVectorClient`/**现名 `SpuVectorClient`** fail-open / `ProductVectorUpsertCO`/**现名 `SpuVectorUpsertCO`** / `ProductVectorHitCO`/**现名 `SpuVectorHitCO`** — ADR-059）
 - ADR-038（四层）、ADR-011（降级三分法——旁路 fail-open 定类）、ADR-042（旁路 fail-open 先例）、T14 知识库向量链路（05 §4.14.10）

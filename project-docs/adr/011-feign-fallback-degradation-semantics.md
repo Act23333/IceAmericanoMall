@@ -4,7 +4,7 @@
 
 ADR-007 为 verification-service 定下了「安全优先 fail-closed」的降级原则，但该原则未推广到其余 Client。V5.2 审计发现两类问题：
 
-1. **覆盖缺口**：15 个 `@FeignClient` 中只有 9 个声明了 `fallbackFactory`。其中 `CartClient` / `OrderClient` 的降级类**已存在但未挂载**（死代码，永不生效），`SkuClient` / `ProductDetailClient` / `SearchClient` / `UserProfileClient` 则完全缺失降级实现。
+1. **覆盖缺口**：15 个 `@FeignClient` 中只有 9 个声明了 `fallbackFactory`。其中 `CartClient` / `OrderClient` 的降级类**已存在但未挂载**（死代码，永不生效），`SkuClient` / `ProductDetailClient`（**现名 `SpuDetailClient`**，ADR-059）/ `SearchClient` / `UserProfileClient` 则完全缺失降级实现。
 2. **语义错配**：既有降级实现里存在「静默成功」，后果落在数据一致性上：
    - `SkuClient.deductStock` 若静默返回，订单会正常落库但库存从未扣减 → **超卖**；
    - `OrderClient.updateOrderStatus` 若静默返回，用户已付款而订单停在「待付款」，超时任务会按未支付取消 → **钱货两空**；
@@ -14,7 +14,7 @@ ADR-007 为 verification-service 定下了「安全优先 fail-closed」的降�
 
 - `CartClient.getSelectedItems` 返回空列表 → 调用方报「购物车为空，无法下单」（用户明明有货）；
 - `SkuClient.getSkuListByIds` 返回空列表 → 三个下单策略齐报「SKU 不存在」；
-- `ProductDetailClient.getProductDetail` 返回 `data=null` → AI 助手答「未找到该商品」。
+- `ProductDetailClient.getProductDetail`（**现名 `SpuDetailClient.getSpuDetail`**，ADR-059）返回 `data=null` → AI 助手答「未找到该商品」。
 
 ## 决策
 

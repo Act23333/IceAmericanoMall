@@ -1073,6 +1073,12 @@ Feature: 运费模型（F2）
 ```
 
 > **`package_no`（✅ V5.6 已实现增量）**：明细归属包裹号（对应物流记录 `package_no`，§4.8.1）；`null`=尚未发货（一明细只发一次）。
+> **`spu_id`（✅ 契约既有 / ⚠ 实现待补——见 §十二 12.2）**：**SPU 业务标识**，供前端由订单项回链商品页（P1 `GET /api/item/product/{productId}` 用 `SpuVO.spu_id` 定位）；与 `sku_id` 并列，二者是**标识**，不是快照。
+> **订单项不变式（订单项 = 标识 + 快照）**：`OrderItemVO` 由两部分组成，不得混用——
+> - **标识（可回链实时表）**：`id`（明细技术主键，仅作渲染 key）/ `sku_id` / `spu_id`；
+> - **快照（下单冻结，绝不回查实时表）**：`product_name` / `sku_spec` / `image` / `price` / `sub_total` / `quantity` —— 下单时从 `sku`/`spu` 复制进 `order_item`（04-Data-Model §3.x 快照模式）。
+>
+> 快照字段**不得**在读取路径上回查 `spu`/`sku` 活表补齐或刷新（活表改名、改价、下架后，历史订单必须仍显示下单时点的事实）。`spu_id` 的引入只为「跳商品页」这一交互服务，**不构成**把活表数据引入订单项的理由——商品页展示什么由商品页自己决定（已下架则展示下架态，不回写订单项）。
 
 #### 4.6.2 Order Lifecycle (🆕 V5.0 计划)
 
@@ -1435,6 +1441,11 @@ Feature: 买家退款资金流（F1）
 > **`status` 枚举（2026-10-15 补注，消除前端错位实现）**：`1`=未使用 / `2`=已使用 / `3`=已过期（`UserCouponStatusEnum`，与 `user_coupon.status` 同口径）。**契约曾只给样例 `status:1` 而无枚举表，前端因此整表错位一格按 `0/1/2` 实现**，导致结算页可用券被全部滤光。
 > **`coupon_id` 可空（2026-10-15 补注）**：券模板已删除或券面读模型降级时，`coupon_id` / `name` / `value` / `min_amount` / `discount_type` **均为 `null`**（fail-open：不回落为 0、**不回落为技术主键**），券列表照常返回、不缩行。
 > **`discount_type`（2026-10-15 新增投影）**：`1`=FIXED 满减（`value` 为**分**）/ `2`=PERCENTAGE 折扣（`value` 为**百分比**，`85`=8.5 折）/ `3`=CASH_COUPON 代金券。**前端必须据此区分面额渲染**（折扣券按 `-¥value` 渲染是错的）。`coupon.type` 自 V4.0 起 **DEPRECATED**，**不纳入契约**。
+> **`scope_type` / `scope_values`（🆕 2026-10-16 新增投影，券适用范围）**：与 `CouponVO` **同型同义**。取值：`scope_type` `1`=ALL 全场 / `2`=CATEGORY 限定品类 / `3`=PRODUCT 限定单品（对齐后端 `ScopeTypeEnum`）。**注意 `PRODUCT` 此处是「券适用范围种类」的枚举名，与商品实体词汇无关**——商品实体自 V5.16 起统一为 **SPU**（[ADR-059](../adr/059-spu-sku-vocabulary-disambiguation.md)），线格式字段一律 `spu_id`；`scope_type=3` 的 `scope_values` 装的就是 **spu 业务标识**。
+> - **`scope_type` 缺省语义**：为 `null` 时按 `1`（ALL）处理（存量数据/历史调用方向后兼容）。
+> - **`scope_values` 形态**：`String`，**逗号分隔的 ID 串**——`scope_type=2` 时为 category id、`scope_type=3` 时为 spu id；**`scope_type=1` 时为 `null`**。（DB 列 `coupon.scope_values` 是 `JSON` 数组；本 VO 对外统一回吐为 CSV 串，由服务端归一，前端**不要**按 JSON 解析。）
+> - **这些字段的用途 = 客户端预过滤依据，不是安全边界**：前端可用它把"明显不适用的券"提前从结算页滤掉（体验优化）。**服务端在核销时仍强制做权威校验**（marketing 侧 `CouponScope.accepts`，经 I22 `/internal/coupon/use` 的 `spu_ids`/`category_ids` 入参路径）——**客户端过滤放行 ≠ 服务端会放行**；同理客户端过滤拦截也不能替代服务端校验。任何"我在前端已过滤"的假定都不构成跳过服务端校验的理由。
+> - **fail-open 口径与券面其余字段一致**：券模板已删除 / 读模型降级时 `scope_type` 与 `scope_values` **同为 `null`**（不回落为 `1`、不回落为空串）。**⚠ 前端必须把「`scope_type=null`」按 `ALL` 消费**，否则降级态下会把本可用券错滤掉。
 > 示例值中的 32-hex 为规范形态；可读编码（如 `CPN-001`）在创建端即被 fail-fast 拒绝。
 
 ```json
@@ -1445,6 +1456,8 @@ Feature: 买家退款资金流（F1）
     "value": 3000,
     "min_amount": 20000,
     "discount_type": 1,
+    "scope_type": 2,
+    "scope_values": "1001,1002",
   "status": 1,
   "used_order_no": null,
   "use_time": null,
@@ -1573,12 +1586,25 @@ Feature: 买家退款资金流（F1）
 ```json
 {
   "reply": "为您找到3款适合夏天穿的透气跑鞋：1. Nike ZoomX ¥499...",
-  "conversation_id": "3f2a9c81e0b74d5a9f6c2d1e8b0a4c73",
-  "spus": [
-    { "spu_id": 1, "name": "Nike ZoomX", "price": 49900, "image": "https://...", "reason": "透气网面，适合夏季跑步" }
-  ]
+  "conversation_id": "3f2a9c81e0b74d5a9f6c2d1e8b0a4c73"
 }
 ```
+
+> **⚠ 2026-10-16 按实现修正（本 VO 曾与实现三重不符）**：此前样例带 `spus[]`，且其中元素含 `image` / `reason` 两个**实现不存在**的字段、`spu_id` 写成 `Long`。实测：
+> - 线上响应体的 `AiChatResponse` 是 Java Record `AiChatResponse(String reply, String conversationId)` —— **只有 `reply` + `conversation_id` 两个键，没有 `spus`**。商品命中不做结构化出参：`SpuHit` 是 ai-service **服务内部**的领域 DTO（`domain/model/spu/SpuHit`），只经 `SearchTool` 渲染成**纯文本**追加进 LLM 上下文，最终由 LLM 把商品信息写进 `reply` 自然语言里（见 `SearchTool#searchSpus` 的 `- 名称 (ID:…) ¥价格 销量:…` 行格式）。**故 `spus` 已从样例删除并按"不保留无排期承诺"记入 §十二 12.2**，前端不应解析该键。
+> - 内部 `SpuHit` 的实际字段是 `spuId / name / description / priceCents / soldCount`（无 `image`、无 `reason`）。`spuId` 是 **SPU 业务标识的 32-hex 字符串形态**（`SpuVO.spu_id` / `SearchVO.spu_id` 同型，ADR-059），**不是 Long**。
+>
+> **⚪ 计划（若后续把商品命中结构化出参）**——形态以 `SpuHit` 为准（键名转 snake_case，ADR-056）：
+>
+> ```json
+> // ⚪ 计划字段，当前报文不含；启动前必须更新 PRD/规格
+> "spus": [
+>   { "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name": "Nike ZoomX",
+>     "description": "透气网面跑鞋", "price_cents": 49900, "sold_count": 1280 }
+> ]
+> ```
+>
+> 计划字段**只列 `SpuHit` 实有字段**；`image` / `reason` **不保留**（实现无该数据来源，留成样例即等于虚构契约）。
 
 #### 4.11.2 CustomerServiceController — `/api/ai/cs`
 
@@ -2612,7 +2638,7 @@ data: [DONE]
 // OrderVO (V5.4 删除 id/payment_type；详情含 items，列表 items=null；✅ V5.6 增量 post_fee——金额不变式 pay_amount=total_amount−discount_amount+post_fee，见 §4.6.1)
 { "order_no":"ord-...", "user_id":1001, "seller_id":5, "total_amount":25600, "pay_amount":24400, "discount_amount":2000, "post_fee":800, "status":1, "order_type":1, "receiver_name":"张三", "receiver_phone":"138...", "receiver_address":"...", "create_time":"...", "pay_time":null, "consign_time":null, "end_time":null, "items":[...] }
 
-// OrderItemVO (✅ V5.6 增量 package_no——明细归属包裹，null=未发货，对应 §8.7 LogisticsVO.package_no)
+// OrderItemVO (✅ V5.6 增量 package_no——明细归属包裹，null=未发货，对应 §8.7 LogisticsVO.package_no；⚠ spu_id 为契约既有但**实现待补**字段，见 §十二 12.2；不变式「订单项 = 标识(sku_id/spu_id) + 快照(product_name/sku_spec/image/price/sub_total)」，快照绝不回查实时表，见 §4.6.1)
 { "id":1, "sku_id":10, "spu_id":1, "product_name":"手工陶瓷茶杯", "sku_spec":"天青/标准", "price":12800, "quantity":2, "sub_total":25600, "image":"https://...", "package_no":null }
 
 // WithdrawalVO (V5.5 收款账号分端口径：商家端仅脱敏、管理端明文+脱敏，见 §4.6.5)
@@ -2661,8 +2687,8 @@ data: [DONE]
 // CouponVO (模板；V5.4 字段名对齐实现：min_amount/total_qty/issued_qty)；`type` 自 V4.0 DEPRECATED，**契约不载**，后端 `CouponVO` 仍投影该字段，属「代码有文档无」待清理项）
 { "coupon_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name":"618满200减30", "value":3000, "min_amount":20000, "seller_id":null, "total_qty":10000, "issued_qty":6523, "start_time":"...", "end_time":"...", "status":1, "discount_type":1, "coupon_category":1, "grant_type":1, "stock_type":1, "grab_type":1, "price_in_cents":3000, "scope_type":1, "scope_values":null, "stack_rule":1, "stack_group":null }
 
-// UserCouponVO (已领取；V5.4 字段名对齐实现：id/create_time；2026-10-15 补券面 name/value/min_amount/discount_type)
-{ "id":5, "coupon_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name":"618满200减30", "value":3000, "min_amount":20000, "discount_type":1, "status":1, "used_order_no":null, "use_time":null, "create_time":"..." }
+// UserCouponVO (已领取；V5.4 字段名对齐实现：id/create_time；2026-10-15 补券面 name/value/min_amount/discount_type；🆕 2026-10-16 补 scope_type/scope_values——scope_type 1=ALL/2=CATEGORY/3=PRODUCT(套用商品种类,非实体词汇)、scope_values 为逗号分隔 ID 串(scope_type=2→category id / =3→spu id / =1→null)；**仅供客户端预过滤，服务端核销仍强制校验 CouponScope.accepts**)
+{ "id":5, "coupon_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name":"618满200减30", "value":3000, "min_amount":20000, "discount_type":1, "scope_type":2, "scope_values":"1001,1002", "status":1, "used_order_no":null, "use_time":null, "create_time":"..." }
 
 // FlashSaleVO
 { "id":1, "sku_id":10, "spu_id":3, "product_name":"手工陶瓷茶杯", "product_image":"https://...", "flash_price":9900, "original_price":12800, "stock":100, "sold_count":35, "start_time":"...", "end_time":"...", "status":1, "progress_percent":35 }
@@ -2677,8 +2703,8 @@ data: [DONE]
 // AiChatRequest (V5.5 新增可空 seller_id；仅 AI3/AI4 客服会话消费，AI1/AI2 忽略)
 { "message":"500以内适合夏天穿的透气跑鞋", "conversation_id":"conv-uuid-xxx", "seller_id":null }
 
-// AiChatResponse
-{ "reply":"为您找到3款...", "conversation_id":"conv-uuid-xxx", "spus":[...] }
+// AiChatResponse (⚠ 2026-10-16 按实现修正：仅 reply + conversation_id 两键；原 spus[] 为计划字段，已移出正文，见 §4.11.1 与 §十二 12.2)
+{ "reply":"为您找到3款...", "conversation_id":"conv-uuid-xxx" }
 ```
 
 ### 8.11 消息
@@ -2817,6 +2843,8 @@ data: [DONE]
 | 事项 | 说明 |
 | ---- | ---- |
 | 售后凭证图 `evidenceImages` | `AfterSaleApplyReq` 不接受该字段；凭证图上传与存储方案待排期 |
+| **`AiChatResponse.spus[]`（🆕 2026-10-16 记入待规划）** | 实现只有 `reply` + `conversation_id`（Record 两字段）；商品命中是 ai-service 内部 `SpuHit`，经 `SearchTool` 渲染成文本进 LLM 上下文，**不做结构化出参**。原样例（含 `image`/`reason`/`spu_id:1`）与实现三重不符，已按实现修正并移出正文（§4.11.1）。**重开需先更新 PRD/规格**；计划形态以 `SpuHit` 实有字段为准（`spu_id` 32-hex / `name` / `description` / `price_cents` / `sold_count`），**不含** `image`/`reason` |
+| **`OrderItemVO.spu_id`（🆕 2026-10-16 记入待补）** | 契约 §4.6.1 既有字段（样例一直带 `spu_id`），**后端 `OrderItemVO` 实体当前缺该字段**（实现待补：`order_item` 无 `spu_id` 快照列，须先补列再补投影，口径见 §4.6.1「订单项不变式」）。在补齐前，订单项报文**不含** `spu_id`，前端不得依赖该键做回链；此为「文档有代码无」的**代码缺失**项（非删契约） |
 | 多券叠加 `user_coupon_ids` | 已从下单请求体删除（V5.5）；策略层多券逻辑保留，接线需先出《多券金额分摊规则》PRD（§十一 11.2 O1） |
 | 微信回调 `out_trade_no` 断链修复 | **已完成**（ADR-033 落地：验签+AES-GCM 解密+字段提取收口 ia-integration 通道适配层，V5.5）；PAY2 对外契约不变（§4.7.1） |
 | 知识图谱（RAG+KG 混合检索） | ✅ **Phase 1 已定稿并落地（V5.16）**：I57-I59（§4.14.10b）/ P35（§4.4.x）/ AD61-64（§4.13.8f）；完整 PRD 见 `../product/01-PRD.md` §十六；P2 政策问答/可视化随 §16.9 触发器另案 |

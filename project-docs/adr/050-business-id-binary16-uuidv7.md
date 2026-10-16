@@ -19,7 +19,7 @@ ADR-002 确立双主键策略：`id BIGINT AUTO_INCREMENT` 技术主键 + `xxx_i
 | 表.列 | 原类型 | 说明 |
 |---|---|---|
 | `user.user_id` | VARCHAR(32) | 生成列 |
-| `product.product_id` / `sku.sku_id` | VARCHAR(32) | 生成列（search-service 自有 PO 同步改造） |
+| `product.product_id` / `sku.sku_id`（**现名 `spu.spu_id` / `sku.sku_id`**，ADR-059） | VARCHAR(32) | 生成列（search-service 自有 PO 同步改造） |
 | `freight_template.template_no` | CHAR(36) | 生成列（统一 32-hex） |
 | `orders.order_no` | VARCHAR(32) | 生成列 |
 | `pay_order.pay_order_no` / `biz_order_no` | VARCHAR(32) | 生成列 / order_no 复制 |
@@ -35,7 +35,7 @@ ADR-002 确立双主键策略：`id BIGINT AUTO_INCREMENT` 技术主键 + `xxx_i
 | `member_growth_log.order_no` / `group_team.team_no` / `group_team_member.order_no` | VARCHAR(32) | 复制 / 生成 / 复制 |
 | `invoice.invoice_no` / `order_no` | CHAR(36)/VARCHAR(32) | 生成列（统一 32-hex）/ 复制 |
 
-**保留清单（含理由）**：`coupon.stack_group`（管理端输入，无格式约束）、`chat_message.conversation_id`（复合格式 `buyer_{x}_seller_{y}_product_{z}`，内嵌技术 id，不可二进制化）、`notification.type` / `user_auth.identity_type`（枚举编码）、`task_def.code` / `task_record.task_code`（语义编码）、`refund_order.biz_ref`（复合格式 `AS:{id}`/`GB:{orderNo}`）、`wallet_transaction.biz_no`（多格式混合引用）、`channel_refund_no` / `channel_txn_id`（渠道外部值）、`embedding_id`（`es:{id}` 格式）。
+**保留清单（含理由）**：`coupon.stack_group`（管理端输入，无格式约束）、`chat_message.conversation_id`（复合格式 `buyer_{x}_seller_{y}_product_{z}`，内嵌技术 id，不可二进制化；**`product_` 为客户端自造字面量，属 ADR-059「刻意保留」项，不随 SPU 改名变动**）、`notification.type` / `user_auth.identity_type`（枚举编码）、`task_def.code` / `task_record.task_code`（语义编码）、`refund_order.biz_ref`（复合格式 `AS:{id}`/`GB:{orderNo}`）、`wallet_transaction.biz_no`（多格式混合引用）、`channel_refund_no` / `channel_txn_id`（渠道外部值）、`embedding_id`（`es:{id}` 格式）。
 
 > **修订注记（2026-10-14）**：`wallet_transaction.transaction_no` 原作为「Feign 幂等键契约值」保留 VARCHAR；复核确认**写入方唯一**（pay 退款链路 `transactionNo = refundNo` 复制）且实证全 UUID，遂转入转换清单（22→23 列，保留 10→9 列），原「双表示禁直连」的该示例随转换消失（比较口径恢复一致）。
 
