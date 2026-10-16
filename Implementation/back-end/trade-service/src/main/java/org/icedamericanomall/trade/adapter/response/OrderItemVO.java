@@ -2,6 +2,7 @@ package org.icedamericanomall.trade.adapter.response;
 
 import lombok.Data;
 
+import java.io.Serial;
 import java.io.Serializable;
 
 /**
@@ -14,6 +15,7 @@ import java.io.Serializable;
 @Data
 public class OrderItemVO implements Serializable {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     /** 订单项 ID（渲染 key）。 */
