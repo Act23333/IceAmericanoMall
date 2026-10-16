@@ -9,20 +9,30 @@ import { Zap, Clock, ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
 
 /**
- * 秒杀频道 — V5.0（2026-10-15 契约补齐后消费增量字段）
+ * 秒杀频道 — V5.0（2026-10-17 B3：字段按 ADR-061 收口）
  *
  * 京东标准秒杀页:
  *   - 进行中的秒杀场次
  *   - 毫秒级倒计时
  *   - 已售进度（**后端 `progress_percent`**，分母 = 秒杀总库存 `stock`）
- *   - 真实商品（`product_name` / `product_image` / `original_price`，后端读时回填 fail-open）
+ *   - 真实商品（`spu_name` / `main_image` / `original_price`，后端读时回填 fail-open）
  *   - 立即抢购 (需要地址)
+ *
+ * ⚠️ 字段改名（B3）：`product_id` → **`spu_id`**（SPU 业务键 32-hex）、
+ *   `product_name` → **`spu_name`**、`product_image` → **`main_image`**
+ *   （主图名 B2 裁决统一为 `main_image`，`spu_image` / `product_image` 均已废弃）。
+ *
+ * ⚠️ 秒杀卡**不做商品页深链**：`FlashSaleVO` 只带 SPU **业务键**，而
+ *   `GET /api/item/product/{id}` 的路径变量仍是**技术键 `Long`**（契约 §十二 12.2 R1 未收口），
+ *   业务键无法寻址 ⇒ 旧 `href={`/product/${fs.product_id}`}` 实为 `/product/undefined`。
+ *   本页保留真正可用的动作（`POST /api/flash/buy?flash_id=&address_id=`，按 `flash_id` 寻址）。
  */
 export default function FlashSalePage() {
   const router = useRouter();
   const { data: flashSales, isLoading } = useFlashSales();
   const flashBuy = useFlashBuy();
   const [now, setNow] = useState(Date.now());
+  const [buyError, setBuyError] = useState<string | null>(null);
 
   // 每秒更新倒计时
   useEffect(() => {
@@ -32,16 +42,18 @@ export default function FlashSalePage() {
 
   const handleBuy = useCallback(
     async (flashId: number) => {
+      setBuyError(null);
       const addressId = prompt('请输入收货地址ID (演示: 输入数字ID)');
       if (!addressId) return;
       try {
-        // 响应 `FlashBuyVO` = { success, order_no, flash_id, flash_price, product_id, remaining_stock }
+        // 响应 `FlashBuyVO` = { success, order_no, flash_id, flash_price, spu_id, remaining_stock }
+        // （B3：`product_id` → `spu_id`）
         const result = await flashBuy.mutateAsync({ flashId, addressId: Number(addressId) });
         if (result?.order_no) {
           router.push(`/shop/pay/${result.order_no}`);
         }
-      } catch (e: any) {
-        alert(e?.message ?? '抢购失败');
+      } catch (e: unknown) {
+        setBuyError(e instanceof Error ? e.message : '抢购失败');
       }
     },
     [flashBuy, router]
@@ -76,7 +88,7 @@ export default function FlashSalePage() {
   return (
     <div className="mx-auto max-w-4xl px-4 pt-24 pb-20">
       {/* 头部 */}
-      <div className="flex items-center gap-3 mb-8">
+      <div className="flex items-center gap-3 mb-4">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber/10">
           <Zap className="h-5 w-5 text-amber" />
         </div>
@@ -85,6 +97,13 @@ export default function FlashSalePage() {
           <p className="text-xs text-text-secondary mt-0.5">手慢无，立即抢购</p>
         </div>
       </div>
+
+      {/* 抢购失败态（不吞错误） */}
+      {buyError && (
+        <p role="alert" className="mb-4 rounded-lg bg-danger/5 px-3 py-2 text-xs text-danger">
+          抢购失败：{buyError}
+        </p>
+      )}
 
       {/* 秒杀商品列表 */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -121,15 +140,12 @@ export default function FlashSalePage() {
 
               {/* 商品信息 */}
               <div className="flex gap-4 p-4">
-                <Link
-                  href={`/product/${fs.product_id}`}
-                  className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-warm-gray-100"
-                >
-                  {fs.product_image ? (
+                <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-warm-gray-100">
+                  {fs.main_image ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={fs.product_image}
-                      alt={fs.product_name ?? ''}
+                      src={fs.main_image}
+                      alt={fs.spu_name ?? ''}
                       className="h-full w-full object-cover"
                       loading="lazy"
                       decoding="async"
@@ -137,14 +153,12 @@ export default function FlashSalePage() {
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-3xl select-none">⚡</div>
                   )}
-                </Link>
+                </div>
                 <div className="flex-1 min-w-0">
-                  <Link href={`/product/${fs.product_id}`}>
-                    {/* product_name 由后端读时回填；缺失（SKU 已删除/降级）时才回落占位 */}
-                    <h3 className="text-sm font-medium text-ink-black line-clamp-2 hover:text-amber transition-colors">
-                      {fs.product_name ?? `秒杀商品 #${fs.product_id}`}
-                    </h3>
-                  </Link>
+                  {/* `spu_name` 由后端读时回填；缺失（SKU 已删除/降级）时回落中性文案 —— 不显示任何 id */}
+                  <h3 className="text-sm font-medium text-ink-black line-clamp-2">
+                    {fs.spu_name ?? '秒杀商品'}
+                  </h3>
                   <div className="mt-1.5 flex items-baseline gap-2">
                     <span className="text-lg font-bold text-amber price">
                       ¥{formatPrice(fs.flash_price ?? 0)}

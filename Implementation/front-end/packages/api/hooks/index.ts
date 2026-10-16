@@ -23,6 +23,11 @@ export {
   useClaimCoupon,
   useGrabCoupon,
   useCheckoutCoupons,
+  passesCouponScope,
+  parseScopeValues,
+  COUPON_SCOPE_ALL,
+  COUPON_SCOPE_CATEGORY,
+  COUPON_SCOPE_PRODUCT,
 } from './use-coupons';
 export type { CheckoutCoupon } from './use-coupons';
 export { useProductReviews, useCreateReview } from './use-reviews';

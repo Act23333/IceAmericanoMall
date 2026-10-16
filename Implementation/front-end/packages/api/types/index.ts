@@ -19,8 +19,12 @@
  *
  *    ① `@RequestParam(name = "snake_name")` —— 线上名 = 注解里的名字。平台决策：**线上字段与
  *       查询参数一律 snake_case**（Stripe/GitHub 风格），后端已统一显式钉名。
- *       前端发出的查询串 key：`coupon_id` / `product_id` / `flash_id` / `address_id` /
- *       `page_num` / `page_size` / `refresh_token` …
+ *       前端发出的查询串 key：`coupon_id` / **`spu_id`** / `flash_id` / `address_id` /
+ *       `page` / `size` / `refresh_token` …
+ *       ⚠️ **没有 `product_id`**：线格式禁止 `product_id`（ADR-059 §2，歧义源）。凡是
+ *       「代表 SPU 实体」的标识，线上名一律 `spu_id` 且为 **32-hex `String`**（契约 §1.8）。
+ *       曾用 `product_id` 发送 → 后端 `@RequestParam(name = "spu_id")` 为必填 ⇒ **400**
+ *       （不是静默忽略，是硬失败）；响应侧读到 `product_id` 则恒 `undefined`（静默失效）。
  *
  *    ② `@QueryModel XxxReq` —— 形参交给 Jackson（全局 `property-naming-strategy: SNAKE_CASE`）
  *       反序列化，线上名 = **snake_case(Java 字段名)**，未知属性静默忽略。即同样是 snake_case：
@@ -195,17 +199,22 @@ export interface AddressReq {
 /**
  * U20 `GET /api/user/favorite` 响应 `FavoriteVO`（契约 §4.2.6 / §8）。
  *
- * 2026-10-15 后端补齐商品展示摘要：`product_name` / `main_image` / `price` / `status`
+ * 2026-10-15 后端补齐商品展示摘要：`spu_name` / `main_image` / `price` / `status`
  * 由应用层读模型按 ID 批量回填（ADR-057，fail-open）——收藏表不存商品快照。
  * 回填缺失（商品已删除 / 数据源降级）时四个字段为 `null`，收藏行照常返回，**不缩行**。
+ *
+ * ⚠️ **BREAKING（B3，ADR-061）**：字段名 `product_id` / `product_name` → `spu_id` / `spu_name`，
+ * 且 `spu_id` 由 `number` 改 **32-hex `String`**（后端 `FavoriteVO.spuId: String`）。
+ * 旧名在报文里**不存在** ⇒ 读到的恒 `undefined`（静默失效，无报错）。
  */
 export interface FavoriteVO {
   id: number;
   user_id: number;
-  product_id: number;
-  /** 商品名称（读时回填；缺失为 null）。 */
-  product_name: string | null;
-  /** 商品主图（读时回填；缺失为 null）。 */
+  /** SPU 业务键（32-hex）。与 `POST|DELETE /api/user/favorite?spu_id=` 入参**同型同义**。 */
+  spu_id: string;
+  /** SPU 名称（读时回填；缺失为 null）。 */
+  spu_name: string | null;
+  /** SPU 主图（读时回填；缺失为 null）。 */
   main_image: string | null;
   /** 商品价格（分；在售 SKU 最低价，缺失为 null）。 */
   price: number | null;
@@ -214,12 +223,23 @@ export interface FavoriteVO {
   create_time: string;
 }
 
-/** U22 `GET /api/user/history` 响应 `HistoryVO`（多词键名由显式 `@JsonProperty` 固定）。 */
+/**
+ * U22 `GET /api/user/history` 响应 `HistoryVO`（多词键名由后端显式 `@JsonProperty` 固定）。
+ *
+ * ⚠️ **本 VO 是 `spu_name` 收口的唯一例外**（务必不要「顺手改对」）：
+ * 后端 `HistoryVO.productName` 的 `@JsonProperty` **仍是 `product_name`**
+ * （B1 批次的 14 处 `spu_name` 清单**不含**足迹端点，B2 未获授权改键名，
+ * 见 `user-service/adapter/response/HistoryVO.java` javadoc 与契约 §十二 12.2【① 命名收口】）。
+ * 因此本端点的线上键就是 `product_name` —— 改成 `spu_name` 会让足迹商品名整体变 `undefined`。
+ */
 export interface HistoryVO {
   id: number;
-  product_id: number;
+  /** SPU 业务键（32-hex）。与 `POST /api/user/history?spu_id=` 入参**同型同义**。 */
+  spu_id: string;
   view_time: string;
+  /** SPU 名称。线上键**仍为 `product_name`**（后端未随 B2 改名，见上方说明）。 */
   product_name: string;
+  /** SPU 主图。 */
   main_image: string;
   brand: string;
   /** 商品最低价（分；无在售 SKU 时为 null）。 */
@@ -228,7 +248,12 @@ export interface HistoryVO {
 
 // ===== 商品 (item-service) =====
 
-/** `GET /api/item/category/tree` 响应 `CategoryTreeVO`。 */
+/**
+ * `GET /api/item/category/tree` 响应 —— 后端实际类型是 **`CategoryTreeVO`**
+ * （注意**不是** `CategoryVO`：后者是 admin 创建/更新的出参，字段为 `id/name/parent_id/level/sort_order`，
+ * **没有** `children`；两者同名不同义，本仓的 TS 名沿用了旧称）。
+ * 线上键与后端 `CategoryTreeVO` 逐字一致：`id` / `name` / `sort_order` / `children`（B3 已核对）。
+ */
 export interface CategoryVO {
   id: number;
   name: string;
@@ -236,10 +261,19 @@ export interface CategoryVO {
   children: CategoryVO[];
 }
 
-/** `GET /api/item/product/*` 响应 `ProductVO`。列表页仅含 `min_price`，详情页才装配 `skus`。 */
+/**
+ * `GET /api/item/product/*` 响应 `SpuVO`（契约 §P1/P2；标识口径 §1.8）。
+ *
+ * ⚠️ **BREAKING（B3，ADR-061）**：`product_id` → **`spu_id`**（32-hex `String`）。
+ * 旧名在报文里不存在 ⇒ 恒 `undefined`（静默失效）。
+ * `id` 是**资源行主键**（§1.8 明确登记的例外），仅供路由/渲染 key，
+ * 也是 `GET /api/item/product/{id}` 路径变量与 P27 相似商品卡的取值口径。
+ */
 export interface ProductVO {
+  /** 资源行主键（技术键）。§1.8 例外条款 —— 路由 `/product/{id}` 与详情端点路径变量取此值。 */
   id: number;
-  product_id: string;
+  /** SPU 业务键（32-hex）。 */
+  spu_id: string;
   seller_id: number;
   category_id: number;
   name: string;
@@ -257,11 +291,21 @@ export interface ProductVO {
   skus?: SkuVO[] | null;
 }
 
-/** `SkuVO`。 */
+/**
+ * `SkuVO`（契约 §1.8；ADR-061 已把 `sku_id` / `spu_id` 双双收口为业务键）。
+ *
+ * ⚠️ **BREAKING（B3）**：`product_id` → `spu_id`（32-hex `String`，**不是**数字）。
+ * `spu_name` 为 B2 新增的 SPU 名回填（原 `productName`）。
+ */
 export interface SkuVO {
+  /** 资源行主键（技术键，§1.8 例外）。 */
   id: number;
+  /** SKU 业务键（32-hex）。与 `/api/cart/item` 系列入参、`CartItemVO.sku_id` 同型同义。 */
   sku_id: string;
-  product_id: number;
+  /** SPU 业务键（32-hex）。 */
+  spu_id: string;
+  /** SPU 名（回填）。 */
+  spu_name?: string | null;
   spec: string;
   /** 现价（分）。 */
   price: number;
@@ -277,10 +321,15 @@ export interface SkuVO {
   sales_tags?: string | null;
 }
 
-/** `GET /api/search/product` 响应 `ProductSearchVO`（注意 `price` = 最低 SKU 价，分）。 */
+/**
+ * `GET /api/search/product` 响应 `SpuSearchVO`（注意 `price` = 最低 SKU 价，分）。
+ * ⚠️ 后端**无** `ProductSearchVO` 类名，实现为 `SpuSearchVO`；线上键为 `spu_id`。
+ */
 export interface ProductSearchVO {
+  /** 资源行主键（技术键，§1.8 例外）。 */
   id: number;
-  product_id: string;
+  /** SPU 业务键（32-hex）。 */
+  spu_id: string;
   category_id: number;
   name: string;
   description: string;
@@ -290,16 +339,27 @@ export interface ProductSearchVO {
   sold_count: number;
 }
 
-/** `GET /api/item/review/product/{id}(/filter)` 响应 `ReviewVO`。 */
+/**
+ * `GET /api/item/review/product/{spuId}(/filter)` 响应 `ReviewVO`。
+ *
+ * ⚠️ **BREAKING（B3）**：`product_id` → **`spu_id`**；`spu_id` / `sku_id` 由 `number` 改
+ * **32-hex `String`**（B2.5 收口，ADR-061 §8.2 处置 #1–#2）。
+ * `spu_id` 为**业务键回填**（整页批量，fail-open）→ 解析未命中时为 `null`（**不回落到技术键**）。
+ *
+ * ⚠️ 路径变量口径：`/api/item/review/product/{spuId}` 的 `{spuId}` **仍是技术键 `Long`**
+ * （契约 §十二 12.2 R1 待裁决）—— 与 `ReviewVO.spu_id`（业务键）**不是**同一形态，不得互相寻址。
+ */
 export interface ReviewVO {
   id: number;
   user_id: number;
   username?: string | null;
   avatar?: string | null;
-  product_id: number;
+  /** SPU 业务键（32-hex）；回填未命中为 null。 */
+  spu_id: string | null;
   /** 关联订单号（32 位 hex）。 */
   order_no: string;
-  sku_id?: number | null;
+  /** SKU 业务键（32-hex）；回填未命中为 null。 */
+  sku_id?: string | null;
   rating: number;
   content: string;
   /** 逗号分隔的图片 URL 串。 */
@@ -316,11 +376,19 @@ export interface ReviewVO {
   create_time: string;
 }
 
-/** `POST /api/item/review` 请求体 `ReviewCreateReq`（字段名与契约 §4.4 一致）。 */
+/**
+ * `POST /api/item/review` 请求体 `ReviewCreateReq`（字段名与契约 §P12 一致）。
+ *
+ * ⚠️ **BREAKING（B3）**：请求体键为 **`spu_id`**（不是 `product_id`）；
+ * `spu_id` / `sku_id` 均为 **32-hex `String`**。后端解析不到业务键 → `PARAM_ERROR` fail-fast
+ * （不静默落指向不存在商品的评价）。
+ */
 export interface ReviewCreateReq {
-  product_id: number;
+  /** SPU 业务键（32-hex）。 */
+  spu_id: string;
   order_no: string;
-  sku_id?: number;
+  /** SKU 业务键（32-hex）。 */
+  sku_id?: string;
   rating: number;
   content: string;
   images?: string;
@@ -333,8 +401,11 @@ export interface HomeConfigVO {
   slot: string;
   type: number;
   title: string;
-  /** 关联商品 ID（快照串）。 */
-  product_ids?: string | null;
+  /**
+   * 关联商品**业务键**列表（快照串）。
+   * ⚠️ 键名为 **`spu_ids`**（后端 `HomeConfigVO.spuIds`）—— 旧名 `product_ids` 在报文里不存在。
+   */
+  spu_ids?: string | null;
   image?: string | null;
   link_url?: string | null;
   sort_order: number;
@@ -354,17 +425,33 @@ export interface CartVO {
   all_selected: boolean;
 }
 
-/** `CartVO.items[]` 元素 `CartItemVO`。 */
+/**
+ * `CartVO.items[]` 元素 `CartItemVO`（契约 §4.5.1；标识口径 §1.8）。
+ *
+ * ⚠️ **BREAKING（B3，ADR-061）**：
+ *   1. `sku_id` 由 `number` 改 **SKU 业务键 32-hex `String`** —— 必须与
+ *      `DELETE /api/cart/item/{skuId}`、`PATCH /api/cart/item/{skuId}/selected`
+ *      的**路径变量同型同义**（C4/C5/C10 已随 B2 按业务键收口），否则「从列表操作自己的行」
+ *      在类型层不成立；
+ *   2. `product_name` → **`spu_name`**（B2 已落码为 `spuName`）；
+ *   3. 新增 `spu_id`（SPU 业务键，B2 新增字段，`CartItemVO.spuId`）。
+ *
+ * ⚠️ 本 VO **没有** `category_id` —— 故结算页的「券品类范围预过滤」无法在本端求值
+ * （见 `useCheckoutCoupons` 的 fail-open 口径）。
+ */
 export interface CartItemVO {
-  sku_id: number;
+  /** SKU 业务键（32-hex）。 */
+  sku_id: string;
+  /** SPU 业务键（32-hex）；SKU 已删除/回填降级时为 null。 */
+  spu_id: string | null;
   /**
-   * 商品名称。2026-10-15 后端修正 `SkuCO` 四字段恒 null 的缺陷（productName/sellerId/
+   * SPU 名称。2026-10-15 后端修正 `SkuCO` 四字段恒 null 的缺陷（spuName/sellerId/
    * categoryId/freightTemplateId 现均有值）→ 本字段**现在真的有值**，渲染时勿再用
    * 「商品名恒空」的兜底把真值盖掉。
    * 残留边界：SKU 已删除/回填为空时后端 `CartManager.enrich` 早退，字段仍可能为 null
    * （与展示字段 fail-open 同口径）。
    */
-  product_name: string;
+  spu_name: string | null;
   spec: string;
   image: string;
   price: number;
@@ -374,15 +461,15 @@ export interface CartItemVO {
   sub_total: number;
 }
 
-/** `POST /api/cart/item` 请求体 `CartAddReq`。 */
+/** `POST /api/cart/item` 请求体 `CartAddReq`（`sku_id` 为 **SKU 业务键 32-hex**）。 */
 export interface CartAddReq {
-  sku_id: number;
+  sku_id: string;
   quantity?: number;
 }
 
 /** `PUT /api/cart/item` 请求体 `CartUpdateReq`（quantity ≤ 0 时删除该购物车项）。 */
 export interface CartUpdateReq {
-  sku_id: number;
+  sku_id: string;
   quantity: number;
 }
 
@@ -415,15 +502,40 @@ export interface OrderVO {
   items?: OrderItemVO[] | null;
 }
 
-/** `OrderVO.items[]` 元素 `OrderItemVO`。 */
+/**
+ * `OrderVO.items[]` 元素 `OrderItemVO` —— **业务键标识 + 下单时点快照**（ADR-061 §决策 1）。
+ *
+ * ⚠️ **BREAKING（B3，ADR-061）**：
+ *   - `product_name` → **`spu_name`**（快照列已改名，`Initialize.sql` L357）；
+ *   - `sku_id` 由 `number` 改 **SKU 业务键 32-hex `String`**；
+ *   - **新增 `spu_id`**（SPU 业务键 32-hex）—— 订单项自持商品源头标识，即使 SKU 行已删除也可落到 SPU 粒度。
+ *
+ * ── 比价 / 失效提示：**本批不消费任何比价字段**（契约 §十二 12.2） ──
+ * 后端**未**把比价结果出线格式（`OrderCurrentStateEnricher` 的产出现无对外消费点，
+ * ADR-061 §决策 3「B2 落地形态」第 5 条）；建议形态 `current_price` / `compare_state` 等
+ * **未定稿**且「前端不得对接」。故本接口**刻意不声明**任何比价字段。
+ *
+ * 前端据此按**降级态**实现渲染准备（`OrderItemRow`）：报文无任何比价键时，
+ * 必须与「**无法比对**」同款渲染 —— 只显快照，**不报错、不缩行、不骨架屏卡死、
+ * 不回落显示技术 id**，且**不得**把「缺字段」推断为「已下架」（ADR-061 §决策 3 比对语义首行）。
+ */
 export interface OrderItemVO {
+  /** 订单项行主键（技术键，§1.8 例外；仅作渲染 key）。 */
   id: number;
-  sku_id: number;
-  product_name: string;
+  /** SKU 业务键（32-hex）。 */
+  sku_id: string;
+  /** SPU 业务键（32-hex）—— 商品源头回链/比价的锚点。 */
+  spu_id: string;
+  /** SPU 名**快照**（下单时点事实，绝不回查实时表）。 */
+  spu_name: string;
+  /** 规格快照。 */
   sku_spec: string;
+  /** 单价快照（分）。 */
   price: number;
   quantity: number;
+  /** 小计快照（分）。 */
   sub_total: number;
+  /** 图片快照。 */
   image: string;
   package_no?: number | null;
 }
@@ -431,9 +543,11 @@ export interface OrderItemVO {
 /**
  * `POST /api/trade/order` 请求体 `CreateOrderReq`。
  *
- * ⚠️ 后端**不接受** `cart_item_ids` —— 下单从服务端购物车（`/api/cart`）取件，
- * 本端只传地址 / 券 / 备注 / 展示币种。本地 Zustand 购物车与 `/api/cart` 的同步
- * 是独立缺口，见【变更交接摘要】「发现但未改」。
+ * ⚠️ 后端**不接受** `cart_item_ids`（V5.4 删除并保持废弃，V5.5 复核确认 —— 传了会被忽略）
+ * —— 下单商品**恒取服务端购物车（`/api/cart`）的已勾选项**（契约 §4.6.1 T1）。
+ *
+ * ⇒ 前端**必须**把加购/改量/勾选落到 `/api/cart/**`（见 `apps/web/app/stores/cart-model.ts`），
+ *   本地购物车在已登录时只是视图；未登录时的本地购物车在登录后上行合并。
  * 多券叠加契约尚未支持（后端 `user_coupon_id` 为单券标量）。
  */
 export interface CreateOrderReq {
@@ -555,24 +669,47 @@ export interface UserCouponVO {
    * ⚠️ `coupon.type` 自 V4.0 起 DEPRECATED（后端不投影）→ 折扣类型唯一口径是本字段。
    */
   discount_type: number | null;
+  /**
+   * 券适用范围类型（B2 已补齐投影，契约 §4.10.1 / §十二 12.2【④ 券范围投影】）：
+   * `1`=ALL 全场 / `2`=CATEGORY 指定品类 / `3`=PRODUCT 指定商品。
+   *
+   * ⚠️ **`null` 必须按 `1`（ALL）放行** —— 后端 fail-open 口径：券模板已删除 / 读模型降级时
+   * `scope_type` 与 `scope_values` **同为 `null`**（不回落为 1、不回落为空串）。
+   * 把 `null` 当「不适用」滤掉 = 在最需要容错时错滤可用券。
+   */
+  scope_type: number | null;
+  /**
+   * 券适用范围值（B2 已归一为 **CSV 串**，两 VO 同型同义）：
+   * `scope_type=2` → 品类 id CSV；`scope_type=3` → **SPU 业务键 32-hex** CSV；`=1` → `null`。
+   *
+   * ⚠️ 本字段**只是体验优化**（本地预过滤），**不是安全边界** ——
+   * 核销时服务端 `CouponScope.accepts` 仍做权威校验，前端预过滤错/漏都不改变能否使用。
+   */
+  scope_values: string | null;
 }
 
 /**
  * `GET /api/flash` 响应 `FlashSaleVO`（契约 §4.10.2 / §8.9）。
  *
- * 2026-10-15 后端补齐商品展示字段：`product_name` / `product_image` / `original_price`
- * 由应用层读模型按 SKU ID 批量回填（ADR-057，fail-open → null）；`progress_percent`
+ * 2026-10-15 后端补齐商品展示字段，**2026-10-17 B2 改名收口**：商品名字段为 `spu_name`、
+ * 主图为 **`main_image`**（`spu_image` / `product_image` 两种旧方言均已废弃 ——
+ * 理由见 ADR-061 §决策 5「为何是 `main_image`」表）；`progress_percent`
  * 由场次聚合推导，**分母是秒杀总库存 `stock`**（不是 `stock + sold_count`）。
+ *
+ * ⚠️ **BREAKING（B3）**：`product_id` → `spu_id`（32-hex `String`）、
+ * `sku_id` 由 `number` 改 32-hex `String`、`product_name` → `spu_name`、
+ * `product_image` → `main_image`。
  */
 export interface FlashSaleVO {
   id: number;
-  /** 商品 ID（DB `flash_sale.product_id` NOT NULL；详情跳转依赖）。 */
-  product_id: number;
-  sku_id?: number | null;
-  /** 商品名称（读时回填；缺失为 null）。 */
-  product_name: string | null;
-  /** 商品主图（读时回填；缺失为 null）。 */
-  product_image: string | null;
+  /** SPU 业务键（32-hex）。**不是**可寻址商品详情的 `id`（路径变量仍收技术键，§十二 12.2 R1）。 */
+  spu_id: string;
+  /** SKU 业务键（32-hex）。 */
+  sku_id?: string | null;
+  /** SPU 名称（读时回填；缺失为 null）。 */
+  spu_name: string | null;
+  /** SPU 主图（读时回填；缺失为 null）。 */
+  main_image: string | null;
   /** 秒杀价（分）。 */
   flash_price?: number | null;
   /** 划线原价（分；读时回填，缺失为 null）。 */
@@ -591,13 +728,14 @@ export interface FlashSaleVO {
   progress_percent: number | null;
 }
 
-/** `POST /api/flash/buy?flash_id=&address_id=` 响应 `FlashBuyVO`。 */
+/** `POST /api/flash/buy?flash_id=&address_id=` 响应 `FlashBuyVO`（⚠️ `product_id` → `spu_id`）。 */
 export interface FlashBuyVO {
   success: boolean;
   order_no?: string | null;
   flash_id?: number | null;
   flash_price?: number | null;
-  product_id?: number | null;
+  /** SPU 业务键（32-hex）。 */
+  spu_id?: string | null;
   remaining_stock?: number | null;
 }
 
@@ -647,8 +785,11 @@ export interface InAppMessageVO {
   /** 0-未读 1-已读。 */
   is_read: number;
   create_time: string;
-  /** 派生字段（派生自 is_read）。 */
-  unread?: boolean;
+  // ⚠️ 曾在此声明 `unread?: boolean`（注释称「派生自 is_read」）—— **报文里没有这个键**
+  //（后端 `InAppMessageVO` 仅到 `createTime`，见 `check-*` 三方交叉与 B3 全量审计）。
+  // 派生字段属**视图模型**，不应挂在报文 DTO 上（会诱使调用方读到一个恒 `undefined` 的键）。
+  // 未读**计数**请用 `UnreadCountVO`（`GET /api/notifications/unread-count` → `{"unread": n}`）。
+  // 已按 item-4「同类静默失效」口径删除该字段（B3）。
 }
 
 /** `GET /api/notifications/unread-count` 响应 `Map<String,Integer>` → `{"unread": n}`。 */

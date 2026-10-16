@@ -17,12 +17,17 @@ const SORTS = [
   { label: '最早', value: 'oldest' },
 ];
 
-export function ReviewsSection({ productId }: { productId: number }) {
+/**
+ * `spuTechnicalId` —— 后端 `GET /api/item/review/product/{spuId}` 的路径变量是**技术键 `Long`**
+ * （契约 §十二 12.2 R1 未收口），与 `ReviewVO.spu_id`（32-hex 业务键）**不同型**。
+ * 故形参刻意不叫 `spuId`，避免有人把业务键传进来。
+ */
+export function ReviewsSection({ spuTechnicalId }: { spuTechnicalId: number }) {
   const [rating, setRating] = useState<number | undefined>();
   const [hasMedia, setHasMedia] = useState(false);
   const [sort, setSort] = useState('newest');
 
-  const { data, isLoading } = useProductReviews(productId, { rating, hasMedia: hasMedia || undefined, sort });
+  const { data, isLoading } = useProductReviews(spuTechnicalId, { rating, hasMedia: hasMedia || undefined, sort });
 
   const handleLike = async (reviewId: number) => {
     try {

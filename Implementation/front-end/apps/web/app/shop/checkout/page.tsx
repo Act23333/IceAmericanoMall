@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useCartStore } from '@/app/stores/cart-store';
+import { useCartModel } from '@/app/stores/cart-model';
 import { useAddresses, useCreateOrder, useCheckoutCoupons } from '@icedmall/api';
 import { Button, GlassCard, PriceDisplay } from '@icedmall/ui';
 import { formatPrice, formatCouponFace, estimateCouponDiscountCents } from '@icedmall/utils';
@@ -10,11 +10,12 @@ import { Ticket, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import Link from 'next/link';
 
 /**
- * 结算页 — V5.0 增强版
+ * 结算页 — V5.0 增强版（2026-10-17 B3：数据源改为服务端购物车）
  *
  * 功能:
  *   1. 收货地址选择 (inline, 不跳转)
- *   2. 商品清单
+ *   2. 商品清单 —— 取自 `useCartModel()`：已登录 = `GET /api/cart` 的**已勾选项**（服务端为准），
+ *      未登录 = 本地；离线降级时禁止提交（本地购物车无法被下单端点读取）
  *   3. 优惠券选择（★ 后端 `CreateOrderReq.user_coupon_id` 为**单券标量**，
  *      多券叠加契约尚未支持 → 本页改为单选，见 §4.6 CreateOrderReq）
  *   4. 订单备注
@@ -24,28 +25,40 @@ import Link from 'next/link';
  *   现口径 = **单请求** `GET /api/coupon/available`（券面 name/value/min_amount/discount_type
  *   已随 `UserCouponVO` 一并返回，见 useCheckoutCoupons）—— 不再二次请求 /coupon/template 本地 join。
  *
+ * ★ 券适用范围预过滤（`scope_type` / `scope_values`，B2 投影已落码）：
+ *   `scope_type=3`（指定商品）与购物车 SPU 业务键求交；`null` = 降级 → **按 ALL 放行**。
+ *   ⚠️ **这只是体验优化**：核销时服务端 `CouponScope.accepts` 仍做权威校验，
+ *      本端预过滤**不是安全边界**（多滤/漏滤都不改变该券能否真正使用）。
+ *
  * ★ 券面渲染口径：`value` 的单位随 `discount_type` 变化（1/3=分，2=百分比），
  *   本页**统一经** `formatCouponFace()`（`@icedmall/utils`）渲染 ——
  *   折扣券渲染为 `8.5折`，未知类型渲染为「优惠券」，**不再按 -¥value 满减口径兜底**。
  */
 export default function CheckoutPage() {
   const router = useRouter();
-  const { items } = useCartStore();
-  const selected = items.filter((i) => i.selected);
+  const { selectedLines, selectedTotalCents, selectedCount, source, degraded, isLoading } = useCartModel();
   const { data: addresses } = useAddresses();
   const createOrder = useCreateOrder();
 
   const [addressId, setAddressId] = useState<number | null>(null);
   const [remark, setRemark] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [showCoupons, setShowCoupons] = useState(false);
   const [selectedCouponId, setSelectedCouponId] = useState<number | null>(null);
 
-  const totalCents = selected.reduce((s, i) => s + i.price * i.quantity, 0);
+  const totalCents = selectedTotalCents;
   const defaultAddr = addresses?.find((a) => a.defaulted) ?? addresses?.[0];
 
+  // 购物车涉及的商品 SPU 业务键 → 供 `scope_type=3` 的券范围预过滤求交
+  // （本地行在未登录时通常没有 spuId，此时数组为空 ⇒ 预过滤自动放行，不会错滤）
+  const cartSpuIds = useMemo(
+    () => Array.from(new Set(selectedLines.map((l) => l.spuId).filter((v): v is string => !!v))),
+    [selectedLines],
+  );
+
   // 可用券预过滤（单请求 GET /api/coupon/available —— 券面已随 UserCouponVO 返回）
-  const { data: couponOptions, isLoading: couponsLoading } = useCheckoutCoupons(totalCents);
+  const { data: couponOptions, isLoading: couponsLoading } = useCheckoutCoupons(totalCents, cartSpuIds);
 
   const selectedCoupon = couponOptions.find((c) => c.userCouponId === selectedCouponId);
   // 已选券的面额文案（按 discount_type 解释 value 单位；未知类型 → 「优惠券」降级）
@@ -74,38 +87,55 @@ export default function CheckoutPage() {
   };
 
   const handleSubmit = async () => {
-    if (selected.length === 0) return;
+    if (selectedLines.length === 0) return;
+    if (degraded) {
+      setSubmitError('服务端购物车不可用（离线降级）。请刷新页面恢复后再提交订单。');
+      return;
+    }
     if (!addressId && !defaultAddr) {
-      alert('请先添加收货地址');
+      setSubmitError('请先添加收货地址');
       return;
     }
     setSubmitting(true);
+    setSubmitError(null);
     try {
       // 请求体 `CreateOrderReq` = { address_id, user_coupon_id?, remark?, display_currency? }
-      // ⚠️ 后端**不接受** `cart_item_ids` —— 下单件数取自服务端购物车（/api/cart）。
-      //    本地 Zustand 购物车与 /api/cart 的同步是独立缺口（见交接摘要「发现但未改」）。
+      // ⚠️ 后端**不接受** `cart_item_ids` —— 下单商品恒取服务端购物车（/api/cart）的**已勾选项**。
+      //    本页勾选状态已由 `useCartModel()` 落到 `/api/cart/item/{skuId}/selected`。
       const order = await createOrder.mutateAsync({
         address_id: addressId ?? defaultAddr!.id,
         user_coupon_id: selectedCouponId ?? undefined,
         remark: remark || undefined,
       });
       router.push(`/shop/pay/${order.order_no}`);
-    } catch (e: any) {
-      alert(e?.message ?? '下单失败');
+    } catch (e: unknown) {
+      setSubmitError(e instanceof Error ? e.message : '下单失败');
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (selected.length === 0) {
+  // ── 空态：已选 0 件（含加载中） ──
+  if (selectedLines.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-4 pt-24 pb-20 text-center">
         <div className="text-6xl select-none">📦</div>
-        <h2 className="mt-4 text-lg font-medium text-ink-black">没有可结算的商品</h2>
-        <p className="mt-2 text-sm text-text-secondary">请先在购物车中选择商品</p>
-        <Link href="/shop/cart" className="mt-6 inline-block text-sm text-accent hover:underline">
-          返回购物车 →
-        </Link>
+        {isLoading ? (
+          <>
+            <h2 className="mt-4 text-lg font-medium text-ink-black">正在加载购物车…</h2>
+            <p className="mt-2 text-sm text-text-secondary">请稍候</p>
+          </>
+        ) : (
+          <>
+            <h2 className="mt-4 text-lg font-medium text-ink-black">没有可结算的商品</h2>
+            <p className="mt-2 text-sm text-text-secondary">
+              下单只结算服务端购物车中<strong>已勾选</strong>的商品，请先在购物车中勾选
+            </p>
+            <Link href="/shop/cart" className="mt-6 inline-block text-sm text-accent hover:underline">
+              返回购物车 →
+            </Link>
+          </>
+        )}
       </div>
     );
   }
@@ -182,20 +212,21 @@ export default function CheckoutPage() {
       <section className="mb-6">
         <h2 className="text-sm font-medium text-text-secondary mb-3">商品清单</h2>
         <div className="space-y-2">
-          {selected.map((item) => (
+          {selectedLines.map((item) => (
             <GlassCard key={item.skuId} className="flex gap-3 p-3" blur="sm">
               <div className="h-16 w-16 shrink-0 rounded-lg bg-warm-gray-100 overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={item.image}
-                  alt={item.productName}
+                  alt={item.spuName}
                   className="h-full w-full object-cover"
                   loading="lazy"
                   decoding="async"
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-ink-black truncate">{item.productName}</p>
+                {/* `spu_name` 回填 fail-open → null：回落中性文案，不显示任何 id */}
+                <p className="text-sm text-ink-black truncate">{item.spuName || '商品信息加载中'}</p>
                 {item.spec && <p className="text-xs text-text-tertiary">{item.spec}</p>}
                 <PriceDisplay cents={item.price} size="sm" />
               </div>
@@ -302,22 +333,31 @@ export default function CheckoutPage() {
         </div>
         <div className="border-t border-warm-gray-200 pt-3 flex items-center justify-between">
           <span className="text-sm text-text-secondary">
-            共 {selected.length} 件
+            共 {selectedCount} 件
           </span>
           <div className="flex items-baseline gap-2">
             <span className="text-xs text-text-secondary">实付</span>
             <PriceDisplay cents={payCents} size="lg" />
           </div>
         </div>
+        {submitError && (
+          <p role="alert" className="text-xs text-danger">{submitError}</p>
+        )}
         <Button
           onClick={handleSubmit}
           variant="gold"
           size="lg"
           className="w-full"
           loading={submitting}
+          disabled={degraded}
         >
           提交订单
         </Button>
+        {source === 'server' && (
+          <p className="text-xs text-text-tertiary text-center">
+            商品清单与勾选状态以服务端购物车为准
+          </p>
+        )}
       </GlassCard>
     </div>
   );

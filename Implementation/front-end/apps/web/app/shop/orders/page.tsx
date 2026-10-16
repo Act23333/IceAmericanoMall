@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useOrders, useCancelOrder, useConfirmOrder } from '@icedmall/api';
 import { GlassCard, PriceDisplay, Button } from '@icedmall/ui';
-import { formatPrice } from '@icedmall/utils';
 import { ORDER_STATUS_TEXT } from '@icedmall/utils';
+import { OrderItemRow } from '@/app/components/order-item-row';
 import Link from 'next/link';
 
 const TABS = [
@@ -64,16 +64,9 @@ export default function OrdersPage() {
               </div>
               <div className="space-y-2">
                 {order.items?.slice(0, 3).map((item) => (
-                  <div key={item.id} className="flex items-center gap-3">
-                    <div className="h-14 w-14 shrink-0 rounded-lg bg-warm-100 overflow-hidden">
-                      <img src={item.image} alt={item.product_name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-ink-black truncate">{item.product_name}</p>
-                      <p className="text-xs text-warm-400">{item.sku_spec} x{item.quantity}</p>
-                    </div>
-                    <p className="text-sm text-ink-soft">¥{formatPrice(item.price)}</p>
-                  </div>
+                  // 订单项明细（含比价/失效的**降级态**渲染）：与订单详情页共用同一渲染路径，
+                  // 保证「无比价字段 → 只显快照，不报错、不缩行、不骨架屏、不回退技术 id」
+                  <OrderItemRow key={item.id} item={item} variant="list" />
                 ))}
                 {order.items && order.items.length > 3 && (
                   <p className="text-xs text-warm-400">...共 {order.items.length} 件</p>

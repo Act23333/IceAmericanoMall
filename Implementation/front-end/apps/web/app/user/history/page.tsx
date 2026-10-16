@@ -8,7 +8,20 @@ import { formatPrice } from '@icedmall/utils';
 import { Search, Trash2, Clock } from 'lucide-react';
 import Link from 'next/link';
 
-/** 浏览足迹 —— 直接使用契约类型 `HistoryVO`（多词键名由后端 `@JsonProperty` 固定为 snake_case）。 */
+/**
+ * 浏览足迹 —— 直接使用契约类型 `HistoryVO`（多词键名由后端 `@JsonProperty` 固定为 snake_case）。
+ *
+ * ⚠️ 本端点是 `spu_name` 收口的**唯一例外**（2026-10-17 B3 实测）：
+ *   - `spu_id` —— 已收口（`product_id` → `spu_id`，**SPU 业务键 32-hex `String`**）；
+ *   - `product_name` —— **线上键仍是 `product_name`**！后端 `HistoryVO.productName` 的
+ *     `@JsonProperty("product_name")` 未随 B2 改名（B1 的 14 处 `spu_name` 清单不含足迹端点）。
+ *     **不要**把它改成 `spu_name` —— 改了商品名会整体变 `undefined`。
+ *
+ * ⚠️ 回链商品详情的限制同收藏页：`HistoryVO` 只带 SPU **业务键**，而
+ * `GET /api/item/product/{id}` 路径变量仍是**技术键 `Long`**（契约 §十二 12.2 R1 未收口）
+ * ⇒ 旧代码 `href={`/product/${item.product_id}`}` 实为 `/product/undefined`。
+ * 本页不再伪造深链（不显示任何 id）。
+ */
 type FootprintItem = HistoryVO;
 type PageData = PageResult<HistoryVO>;
 
@@ -129,13 +142,14 @@ export default function HistoryPage() {
           <div className="space-y-2">
             {group.items.map((item) => (
               <GlassCard key={item.id} className="flex items-center gap-3 p-3 group" blur="sm">
-                <Link href={`/product/${item.product_id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
                   {item.main_image ? (
                     <img src={item.main_image} alt="" className="h-14 w-14 rounded-lg object-cover bg-warm-gray-100 shrink-0" />
                   ) : (
                     <div className="h-14 w-14 rounded-lg bg-warm-gray-100 shrink-0 flex items-center justify-center text-xl">📦</div>
                   )}
                   <div className="flex-1 min-w-0">
+                    {/* 线上键 `product_name`（本端点的唯一保留项，见文件头说明） */}
                     <p className="text-sm text-ink-black truncate">{item.product_name}</p>
                     <div className="flex items-center gap-3 mt-1">
                       <span className="text-sm font-medium text-ink-black">¥{formatPrice(item.price ?? 0)}</span>
@@ -145,12 +159,12 @@ export default function HistoryPage() {
                       </span>
                     </div>
                   </div>
-                  <span className="text-text-tertiary text-sm shrink-0">›</span>
-                </Link>
+                </div>
                 <button
                   onClick={() => deleteMutation.mutate(item.id)}
                   className="p-2 text-text-tertiary hover:text-danger transition-colors shrink-0 opacity-0 group-hover:opacity-100"
                   title="删除"
+                  aria-label="删除该条足迹"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>

@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation';
 import { useOrder, useCancelOrder, useConfirmOrder } from '@icedmall/api';
 import { Button, GlassCard, PriceDisplay } from '@icedmall/ui';
 import { formatPrice, ORDER_STATUS_TEXT } from '@icedmall/utils';
+import { OrderItemRow } from '@/app/components/order-item-row';
 import Link from 'next/link';
 
 export default function OrderDetailPage() {
@@ -50,19 +51,11 @@ export default function OrderDetailPage() {
       <GlassCard className="p-4 mb-4" blur="sm">
         <h3 className="text-sm font-medium text-ink-black mb-3">商品清单</h3>
         {order.items?.map((item) => (
-          <div key={item.id} className="flex items-center gap-3 py-2 border-b border-warm-100 last:border-0">
-            <div className="h-14 w-14 shrink-0 rounded-lg bg-warm-100 overflow-hidden">
-              <img src={item.image} alt={item.product_name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-ink-black truncate">{item.product_name}</p>
-              <p className="text-xs text-warm-400">{item.sku_spec}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-sm text-ink-black">¥{formatPrice(item.price)}</p>
-              <p className="text-xs text-warm-400">x{item.quantity}</p>
-            </div>
-          </div>
+          // 订单项 = 业务键标识 + 快照；比价/失效为读时增强、fail-open。
+          // 后端**未**出线格式比价字段（契约 §十二 12.2）⇒ 本批不消费任何比价字段，
+          // 但渲染走与「无法比对」**同款**路径（`OrderItemRow` → `orderItemCompareHint`）：
+          // 只显快照，不报错、不缩行、不骨架屏卡死、不回退显示技术 id，也不把缺失当「已下架」。
+          <OrderItemRow key={item.id} item={item} variant="detail" />
         ))}
       </GlassCard>
 

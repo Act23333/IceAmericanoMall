@@ -88,23 +88,98 @@ export interface CheckoutCoupon {
   value: number | null;
   /** 使用门槛（分）；券面缺失时回落 0（= 无门槛，仅用于本地预过滤）。 */
   minAmount: number;
+  /** 适用范围类型（`null` = 降级，按 ALL 处理）。仅用于展示与诊断，不参与安全判定。 */
+  scopeType: number | null;
+  /** 适用范围值（CSV 串）。仅用于展示与诊断。 */
+  scopeValues: string | null;
+}
+
+/* ================================================================
+   券适用范围 · 本地预过滤（契约 §4.10.1 / §十二 12.2【④ 券范围投影】）
+
+   ⚠️ **这只是体验优化，不是安全边界。**
+      核销时服务端 `CouponScope.accepts` 仍做**权威校验**（R3 已随 B2 收口为业务键同型同义），
+      本端预过滤多滤/漏滤都**不改变**该券能否真正使用 —— 结算页提交后以服务端结果为准。
+      故本函数一律**宁可放行、不可错滤**（fail-open）。
+
+   ⚠️ `scope_type` 为 `null` → **按 ALL 放行**（硬规则）。
+      后端 fail-open 口径：券模板已删除 / 读模型降级 → `scope_type` 与 `scope_values` **同为 null**
+      （不回落为 1、不回落为空串）。降级态恰恰是最需要容错的时候，把 `null` 当「不适用」滤掉
+      会把可用券藏起来。用 `== null` 判定可同时覆盖 `null` 与旧报文缺失键（`undefined`）。
+   ================================================================ */
+
+/** `scope_type=1`：全场通用。 */
+export const COUPON_SCOPE_ALL = 1;
+/** `scope_type=2`：指定品类。 */
+export const COUPON_SCOPE_CATEGORY = 2;
+/** `scope_type=3`：指定商品（`scope_values` 为 **SPU 业务键 32-hex** CSV）。 */
+export const COUPON_SCOPE_PRODUCT = 3;
+
+/** CSV 串 → 去空去重的值数组（`scope_values` 对外口径为 CSV）。 */
+export function parseScopeValues(scopeValues: string | null | undefined): string[] {
+  if (!scopeValues) return [];
+  return scopeValues
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v) => v !== '');
+}
+
+/**
+ * 券是否**可能**适用于本单（本地预过滤，fail-open）。
+ *
+ * @param scopeType   报文 `scope_type`（`null` = 降级 → 视为 ALL）
+ * @param scopeValues 报文 `scope_values`（CSV）
+ * @param cartSpuIds  当前购物车涉及的商品 **SPU 业务键**（32-hex）
+ */
+export function passesCouponScope(
+  scopeType: number | null | undefined,
+  scopeValues: string | null | undefined,
+  cartSpuIds: string[],
+): boolean {
+  // ① 降级态 → 按 ALL 放行（不得错滤）
+  if (scopeType == null) return true;
+  // ② 全场通用
+  if (scopeType === COUPON_SCOPE_ALL) return true;
+
+  const values = parseScopeValues(scopeValues);
+  // ③ 范围值缺失/为空 → 无法判定 → 放行（服务端仍会权威校验）
+  if (values.length === 0) return true;
+
+  // ④ 指定商品：与购物车 SPU 业务键求交（R3 已收口 ⇒ 两侧同型同义，可命中）
+  if (scopeType === COUPON_SCOPE_PRODUCT) {
+    if (cartSpuIds.length === 0) return true; // 拿不到购物车商品键 → 不预滤
+    return cartSpuIds.some((id) => values.includes(id));
+  }
+
+  // ⑤ 指定品类：`CartItemVO` **不含** `category_id`（B2 未投影），本端**无法求值**
+  //    → 一律放行（fail-open）。要真正预过滤需后端在购物车读模型里补 `category_id`。
+  if (scopeType === COUPON_SCOPE_CATEGORY) return true;
+
+  // ⑥ 未知取值 → 放行
+  return true;
 }
 
 /**
  * 结算页可用券预过滤（仅 `GET /api/coupon/available`，无第二次请求、无本地 join）。
  *
  * @param totalAmount 当前结算商品总额（分）
+ * @param cartSpuIds  当前购物车商品的 **SPU 业务键**（用于 `scope_type=3` 预过滤；缺省不预滤）
  */
-export function useCheckoutCoupons(totalAmount: number) {
+export function useCheckoutCoupons(totalAmount: number, cartSpuIds: string[] = []) {
   const available = useAvailableCoupons();
+  // 数组字面量每渲染都变 → 用内容签名字符串做 memo 依赖，避免无谓重算
+  const spuKey = cartSpuIds.join(',');
 
   const data = useMemo<CheckoutCoupon[]>(() => {
     const couponRows = available.data ?? [];
     if (couponRows.length === 0) return [];
+    const spuIds = spuKey ? spuKey.split(',') : [];
 
     return couponRows
       // 后端 `UserCouponStatusEnum`：1=未使用 2=已使用 3=已过期（`/available` 只返未使用，此处仍显式守卫）
       .filter((uc) => uc.status === 1)
+      // 券适用范围预过滤（体验优化，fail-open；服务端核销仍权威校验）
+      .filter((uc) => passesCouponScope(uc.scope_type, uc.scope_values, spuIds))
       .map((uc) => {
         // 券面缺失（模板已删除 / 回填降级）时为 null → 名称为空串、面额原样透传 null，
         // 由消费端（结算页）经 `formatCouponFace()` 渲染「优惠券」降级文案 ——
@@ -117,10 +192,12 @@ export function useCheckoutCoupons(totalAmount: number) {
           discountType: uc.discount_type,
           value: uc.value,
           minAmount: uc.min_amount ?? 0,
+          scopeType: uc.scope_type ?? null,
+          scopeValues: uc.scope_values ?? null,
         };
       })
       .filter((c) => c.minAmount <= totalAmount);
-  }, [available.data, totalAmount]);
+  }, [available.data, totalAmount, spuKey]);
 
   return {
     data,

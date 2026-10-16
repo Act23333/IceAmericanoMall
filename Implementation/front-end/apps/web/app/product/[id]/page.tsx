@@ -76,7 +76,11 @@ export default async function ProductDetailPage({ params }: Props) {
       sort: 'sales',
       order: 'desc',
     });
-    relatedProducts = related?.records?.filter((p) => p.product_id !== id) ?? [];
+    // 排除自身：**必须用技术键 `id` 比**（路由参数 `[id]` 即 `SpuVO.id`，见 `generateStaticParams`）。
+    // ⚠️ 旧代码写 `p.product_id !== id`：`product_id` 在报文里不存在（B2 已改名 `spu_id`）
+    // ⇒ 恒 `undefined` ⇒ 恒不等于 `id` ⇒ **自我排除从未生效**（多推一排「你自己」）。
+    // 也**不能**改用 `p.spu_id !== id` —— 那是业务键 vs 技术键，仍然恒成立（不同型）。
+    relatedProducts = related?.records?.filter((p) => String(p.id) !== id) ?? [];
   } catch {
     relatedProducts = [];
   }
@@ -120,7 +124,8 @@ export default async function ProductDetailPage({ params }: Props) {
       </div>
 
       {/* ── 商品评价 ── */}
-      <ReviewsSection productId={Number(id)} />
+      {/* 路径变量仍是技术键（R1）：路由参数 `[id]` = `SpuVO.id`，与评价端点 `{spuId}` 同口径 */}
+      <ReviewsSection spuTechnicalId={Number(id)} />
 
       {/* ── 相关推荐 ── */}
       {relatedProducts.length > 0 && (

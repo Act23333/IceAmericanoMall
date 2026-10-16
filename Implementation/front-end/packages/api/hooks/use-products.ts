@@ -45,6 +45,10 @@ export function useProducts(filters: ProductFilters = {}) {
 /**
  * 单个商品详情
  *
+ * ⚠️ 形参是 `GET /api/item/product/{id}` 的**路径变量** —— 契约 §十二 12.2 R1 未收口，
+ * 它仍是**技术键 `Long`**（路由 `/product/{id}` 取 `SpuVO.id`），**不是** `SpuVO.spu_id`
+ * 的 32-hex 业务键。二者不同型、不可互传，故形参名保持 `productId`（技术键语义）而不叫 `spuId`。
+ *
  * staleTime: 2分钟
  */
 export function useProduct(productId: string) {
