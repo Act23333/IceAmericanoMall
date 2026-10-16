@@ -154,7 +154,8 @@ class OrderCreationManagerDisplayCurrencyTest {
 
         this.orderManager = new OrderCreationManager(orderRepository, new OrderConverterImpl(),
                 skuClient, couponClient, mock(OrderTimeoutPublisher.class), factory,
-                mock(DomainEventProducer.class), new OrderDisplaySnapshotService(currencyClient));
+                mock(DomainEventProducer.class), new OrderDisplaySnapshotService(currencyClient),
+                mock(CouponConsumptionLedger.class));
     }
 
     // ==================== T1/T6/T27 三入口：快照成功 + VO 回显 ====================

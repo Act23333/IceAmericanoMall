@@ -37,8 +37,13 @@ import java.util.stream.Collectors;
  *       默认 NORMAL（不折扣），方向是用户少得优惠（体验损失、可补偿），下单可用性优先。</li>
  * </ul>
  *
- * <p><b>调用时序保证</b>：促销/会员解析先于券核销——I44 查询失败时用户券尚未核销，
- * 无需补偿（券核销即资金侧副作用，失败后回滚依赖 Saga，时序上前置解析可少一次补偿）。
+ * <p><b>调用时序与补偿前提（V5.19 修正）</b>：促销（I44 fail-closed）与会员（I45 fail-open）
+ * 解析先于券核销 —— 这两步失败时用户券尚未核销，无需补偿。但该保证<b>只覆盖核销之前的步骤</b>：
+ * 核销是 marketing 侧独立事务（调用返回即已提交），因此核销之后的<b>任何</b>失败
+ * （如同为 fail-closed 的 I43 运费解析）都必须由编排层回收券。核销事实由
+ * {@link OrderCreateContext#markCouponConsumed(String)} 在核销返回的那一刻显式置位，
+ * 补偿侧据此判定 —— <b>不得</b>用 {@code discountAmount > 0} 之类的派生金额推导
+ * （金额可能为 0，也可能尚未回填）。
  */
 @Slf4j
 @Component
@@ -122,6 +127,11 @@ public class PricingService {
             Integer applied = couponClient.useCoupon(
                     ctx.getUserId(), userCouponId, order.getOrderNo(), total - totalDiscount,
                     ctx.getOrderType().getCode(), ctx.getSellerId(), productIds, categoryIds);
+            // ★ 核销成功即置位「副作用已发生」的事实标记（本修复核心）：
+            //   useCoupon 正常返回 = marketing 侧独立事务已提交，券此刻已被占用。
+            //   与金额无关（降级回调可返回 0、推导金额可能尚未回填）——补偿侧一律依据该标记
+            //   决定是否 rollbackByOrderNo。未正常返回（抛异常）时券未提交，故不置位。
+            ctx.markCouponConsumed(order.getOrderNo() != null ? order.getOrderNo() : ctx.getOrderNo());
             totalDiscount += (applied != null ? applied : 0);
             if (totalDiscount >= total) {
                 totalDiscount = total;

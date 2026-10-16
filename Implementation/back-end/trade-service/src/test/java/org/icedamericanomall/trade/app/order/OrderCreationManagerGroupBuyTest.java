@@ -121,7 +121,8 @@ class OrderCreationManagerGroupBuyTest {
         this.orderManager = new OrderCreationManager(orderRepository, new OrderConverterImpl(),
                 skuClient, mock(CouponClient.class),
                 mock(OrderTimeoutPublisher.class), factory, mock(DomainEventProducer.class),
-                new OrderDisplaySnapshotService(mock(CurrencyClient.class)));
+                new OrderDisplaySnapshotService(mock(CurrencyClient.class)),
+                mock(CouponConsumptionLedger.class));
     }
 
     private GroupBuyValidateResultCO validateResult(String teamNo) {

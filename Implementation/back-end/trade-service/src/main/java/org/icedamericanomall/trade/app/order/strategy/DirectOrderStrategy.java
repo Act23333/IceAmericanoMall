@@ -71,14 +71,18 @@ public class DirectOrderStrategy implements OrderCreateStrategy {
         int total = ctx.getTotalAmount();
 
         // F5 价格计算中心（ADR-043）：促销(I44)+会员(I45)+券 统一计价，收编原 applyCoupons
+        // ⚠ 券核销（远程副作用，marketing 侧独立事务）发生在本次调用内部：其成功事实由
+        //   PricingService 置入 ctx.couponConsumed（与金额无关）。因此本行之后的任何一步失败
+        //   （如 I43 运费 fail-closed）都必须由编排层回收券 —— 绝不能依赖 ctx.discountAmount 判定。
         int discount = pricingService.calculate(ctx, order);
+        // 派生金额一旦算出立即回填（补偿判定不依赖它，见 couponConsumed 事实标记）
+        ctx.setDiscountAmount(discount);
         // V5.6（F2 运费模型）：运费单列快照；金额不变式 payAmount = total − discount + postFee
         int postFee = freightPostageResolver.resolve(ctx.getSellerId(), ctx.getSnapshots(), total);
 
         order.setDiscountAmount(discount);
         order.setPostFee(postFee);
         order.setPayAmount(total - discount + postFee);
-        ctx.setDiscountAmount(discount);
         NormalCartOrderStrategy.fillAddress(ctx, order);
         return order;
     }

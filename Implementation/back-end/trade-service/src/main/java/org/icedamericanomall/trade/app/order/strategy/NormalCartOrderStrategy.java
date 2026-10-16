@@ -105,14 +105,19 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
 
         int total = ctx.getTotalAmount();
         // F5 价格计算中心（ADR-043）：促销(I44)+会员(I45)+券 统一计价，收编原 applyCoupons
+        // ⚠ 券核销（远程副作用，marketing 侧独立事务）发生在本次调用内部：其成功事实由
+        //   PricingService 置入 ctx.couponConsumed（与金额无关）。因此本行之后的任何一步失败
+        //   （如 I43 运费 fail-closed）都必须由编排层回收券 —— 绝不能依赖 ctx.discountAmount 判定。
         int discount = pricingService.calculate(ctx, order);
+        // 派生金额一旦算出立即回填：补偿判定不依赖它，但它是后续步骤/日志所需的事实，
+        // 不应晚于「券核销之后仍会失败的步骤」才可用（原时序缺陷即由此暴露）。
+        ctx.setDiscountAmount(discount);
         // V5.6（F2 运费模型）：运费单列快照；金额不变式 payAmount = total − discount + postFee
         int postFee = freightPostageResolver.resolve(ctx.getSellerId(), ctx.getSnapshots(), total);
         order.setTotalAmount(total);
         order.setDiscountAmount(discount);
         order.setPostFee(postFee);
         order.setPayAmount(total - discount + postFee);
-        ctx.setDiscountAmount(discount);
 
         fillAddress(ctx, order);
         return order;
@@ -121,23 +126,52 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
     @Override
     public void afterCreate(OrderCreateContext ctx, Order order) {
         List<CartItemCO> cartItems = ctx.getCartItems();
-        if (cartItems != null && !cartItems.isEmpty()) {
-            try {
-                List<Long> orderedIds = cartItems.stream()
-                        .map(CartItemCO::getCartItemId).filter(id -> id != null).toList();
-                if (!orderedIds.isEmpty()) cartClient.deleteByIds(ctx.getUserId(), orderedIds);
-            } catch (Exception e) {
-                log.error("删除已购购物车项失败（非致命）: userId={}, orderNo={}", ctx.getUserId(),
-                        order.getOrderNo(), e);
-            }
+        if (cartItems == null || cartItems.isEmpty()) {
+            return;
         }
+        try {
+            List<Long> orderedIds = toOrderedCartItemIds(cartItems, order);
+            if (!orderedIds.isEmpty()) cartClient.deleteByIds(ctx.getUserId(), orderedIds);
+        } catch (Exception e) {
+            log.error("删除已购购物车项失败（非致命）: userId={}, orderNo={}", ctx.getUserId(),
+                    order.getOrderNo(), e);
+        }
+    }
+
+    /**
+     * 已购购物车项主键抽取（I14 回执）。
+     *
+     * <p><b>缺陷修复（勿改回 filter 静默丢弃）</b>：{@code cartItemId} 由 cart-service
+     * {@code CartConverter.itemToCO} 映射（源字段名 {@code id} ≠ 目标名 {@code cartItemId}，
+     * 曾因未显式映射而恒 null）。取不到 id 时此前用 {@code .filter(id -> id != null)} 静默吞掉，
+     * 线上表现为「下单成功后已购项永不清除」且无任何日志线索；此处改为 <b>可观测</b>：WARN 记明
+     * 缺口并跳过该项，仍不阻断下单主流程（清车是后置非关键步骤，失败也只是留下待清理项）。
+     */
+    private List<Long> toOrderedCartItemIds(List<CartItemCO> cartItems, Order order) {
+        List<Long> orderedIds = new ArrayList<>(cartItems.size());
+        for (CartItemCO cartItem : cartItems) {
+            if (cartItem.getCartItemId() == null) {
+                log.warn("已购购物车项缺少 cartItemId，跳过该项删除（cart-service 转换映射缺口，"
+                                + "请检查 CartConverter.itemToCO）: userId={}, orderNo={}, skuId={}",
+                        order.getUserId(), order.getOrderNo(), cartItem.getSkuId());
+                continue;
+            }
+            orderedIds.add(cartItem.getCartItemId());
+        }
+        return orderedIds;
     }
 
     // === Shared helpers used by all strategies ===
 
     static Order buildBaseOrder(OrderCreateContext ctx) {
         Order order = new Order();
-        order.setOrderNo(IdGenerator.nextId());
+        // V5.19：订单号由编排层在任何远程副作用（券核销）之前确定并放入 ctx，策略原样采用 ——
+        // 它既是券核销的幂等锚点，也是补偿/兜底对账在订单对象丢失时定位该单的依据。
+        // 兜底分支只为保持本静态工厂可独立使用（无编排层上下文时）。
+        if (ctx.getOrderNo() == null) {
+            ctx.setOrderNo(IdGenerator.nextId());
+        }
+        order.setOrderNo(ctx.getOrderNo());
         order.setUserId(ctx.getUserId());
         order.setSellerId(ctx.getSellerId());
         order.setStatus(OrderStatusEnum.PENDING_PAYMENT.getCode());

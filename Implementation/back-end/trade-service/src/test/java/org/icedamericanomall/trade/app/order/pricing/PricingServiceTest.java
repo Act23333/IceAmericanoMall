@@ -201,6 +201,89 @@ class PricingServiceTest {
                 anyInt(), anyInt(), anyLong(), any(), any());
     }
 
+    // ==================== V5.19 券核销「事实标记」（补偿判据的唯一来源） ====================
+    //
+    // 补偿侧（OrderCreationManager#compensateOnFailure）只认这个标记，不认 discountAmount：
+    // 金额是派生值（可能为 0、可能尚未回填），标记记录的是「远程副作用已提交」这一事实。
+
+    @Test
+    @DisplayName("券核销事实 — useCoupon 正常返回即置位 couponConsumed 并记录订单号")
+    void shouldMarkCouponConsumed_whenUseCouponReturns() {
+        when(promotionClient.queryActive(any(PromotionQueryCO.class))).thenReturn(List.of());
+        when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("NORMAL", 10000, 100));
+        when(couponClient.useCoupon(anyLong(), anyLong(), anyString(), anyInt(), anyInt(),
+                anyLong(), any(), any())).thenReturn(3000);
+
+        OrderCreateContext c = ctx(10000);
+        c.setUserCouponId(55L);
+        pricingService.calculate(c, order());
+
+        assertTrue(c.isCouponConsumed(), "核销返回即认定副作用已发生");
+        assertEquals(List.of("ORD-1"), c.getCouponConsumedOrderNos());
+    }
+
+    @Test
+    @DisplayName("券核销事实 — 抵扣为 0（I22 降级回调口径）同样置位：事实与金额无关")
+    void shouldMarkCouponConsumed_whenAppliedDiscountIsZero() {
+        when(promotionClient.queryActive(any(PromotionQueryCO.class))).thenReturn(List.of());
+        when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("NORMAL", 10000, 100));
+        when(couponClient.useCoupon(anyLong(), anyLong(), anyString(), anyInt(), anyInt(),
+                anyLong(), any(), any())).thenReturn(0);
+
+        OrderCreateContext c = ctx(10000);
+        c.setUserCouponId(55L);
+        int discount = pricingService.calculate(c, order());
+
+        assertEquals(0, discount);
+        assertTrue(c.isCouponConsumed(), "金额为 0 也必须认定「券已被占用」");
+    }
+
+    @Test
+    @DisplayName("券核销事实 — 多券复用同一订单号：记录去重（回滚一次即可）")
+    void shouldRecordOrderNoOnce_whenMultipleCoupons() {
+        when(promotionClient.queryActive(any(PromotionQueryCO.class))).thenReturn(List.of());
+        when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("NORMAL", 10000, 100));
+        when(couponClient.batchGet(anyList())).thenReturn(List.of());
+        when(couponClient.useCoupon(anyLong(), anyLong(), anyString(), anyInt(), anyInt(),
+                anyLong(), any(), any())).thenReturn(1000);
+
+        OrderCreateContext c = ctx(10000);
+        c.setUserCouponIds(List.of(1L, 2L));
+        pricingService.calculate(c, order());
+
+        assertTrue(c.isCouponConsumed());
+        assertEquals(List.of("ORD-1"), c.getCouponConsumedOrderNos(), "同一订单号只记一次");
+    }
+
+    @Test
+    @DisplayName("券核销事实 — I44 促销查询失败（核销之前失败）→ 不置位（补偿侧据此不误滚）")
+    void shouldNotMarkCouponConsumed_whenPromotionQueryFails() {
+        when(promotionClient.queryActive(any(PromotionQueryCO.class)))
+                .thenThrow(new BizException(org.icedamericanomall.common.enums.ErrorCode.SYSTEM_BUSY,
+                        "促销计价服务暂不可用"));
+
+        OrderCreateContext c = ctx(10000);
+        c.setUserCouponId(55L);
+
+        assertThrows(BizException.class, () -> pricingService.calculate(c, order()));
+
+        assertFalse(c.isCouponConsumed());
+        assertTrue(c.getCouponConsumedOrderNos().isEmpty());
+    }
+
+    @Test
+    @DisplayName("券核销事实 — 无券下单：不置位")
+    void shouldNotMarkCouponConsumed_whenNoCouponRequested() {
+        when(promotionClient.queryActive(any(PromotionQueryCO.class))).thenReturn(List.of());
+        when(memberClient.getLevel(100L)).thenReturn(new MemberLevelCO("NORMAL", 10000, 100));
+
+        OrderCreateContext c = ctx(10000);
+        pricingService.calculate(c, order());
+
+        assertFalse(c.isCouponConsumed());
+        assertFalse(c.hasCouponRequested());
+    }
+
     // ==================== 三源叠加 + 守卫 ====================
 
     @Test

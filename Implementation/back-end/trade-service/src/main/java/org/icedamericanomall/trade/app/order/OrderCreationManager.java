@@ -22,6 +22,7 @@ import org.icedamericanomall.trade.app.order.strategy.OrderCreateStrategyFactory
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.event.OrderCreatedEvent;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -32,7 +33,8 @@ import java.util.List;
 /**
  * V4.1: 统一订单创建编排 Manager（京东/淘宝统一订单中心标准）。
  * 所有订单类型（NORMAL/DIRECT/FLASH_SALE/GROUP_BUY/PRESALE）通过策略模式路由到对应处理器。
- * 共享管道: validate → displaySnapshot(F16 fail-open) → buildOrder → deductStock → persist → afterCreate。
+ * 共享管道: 订单号生成 → validate → displaySnapshot(F16 fail-open) → buildOrder
+ *           → deductStock → persist → afterCreate。
  *
  * <pre>
  * Scenario: 购物车下单 (orderType=NORMAL)
@@ -40,7 +42,21 @@ import java.util.List;
  * Scenario: 秒杀订单 (orderType=FLASH_SALE, 由 marketing-service Feign 调用)
  * Scenario: 拼团订单 (orderType=GROUP_BUY, T27 两段式参团第一步，ADR-049)
  * Scenario: 订单创建失败 → Saga 补偿回滚库存 + 已用优惠券
+ * Scenario: 券核销后建单失败（如 I43 运费 fail-closed）→ 全量回收券；进程崩溃 → 兜底对账回收
  * </pre>
+ *
+ * <p><b>V5.19 资损修复（券核销补偿）</b>：券核销是 buildOrder 内部的远程副作用
+ * （marketing 侧 {@code CouponUsageManager#useCoupon} 自带 {@code @Transactional}，调用返回即已提交），
+ * 而建单阶段其后仍有 fail-closed 步骤（I43 运费解析）。因此：
+ * <ol>
+ *   <li>buildOrder 与 deductStock 一并纳入补偿作用域（原先 buildOrder 在 try 之外，异常直接穿出）；</li>
+ *   <li>补偿判据改为「券核销已发生」的<b>事实标记</b> {@code ctx.couponConsumed}
+ *       （核销返回那一刻置位），不再用 {@code ctx.discountAmount > 0} 推导
+ *       —— 金额可能为 0、且可能尚未回填（原缺陷的第二道失效）；</li>
+ *   <li>库存回滚以「本次是否真的扣减成功」判定，避免把未扣减的库存加回去；</li>
+ *   <li>下单进入核销阶段前落 {@link CouponConsumptionLedger} 兜底标记，进程异常退出时由
+ *       {@link CouponReconcileManager} 定时对账回收。</li>
+ * </ol>
  */
 @Slf4j
 @Component
@@ -57,13 +73,15 @@ public class OrderCreationManager {
     private final OrderCreateStrategyFactory strategyFactory;
     private final DomainEventProducer eventProducer;
     private final OrderDisplaySnapshotService displaySnapshotService;
+    private final CouponConsumptionLedger couponConsumptionLedger;
 
     public OrderCreationManager(OrderRepository orderRepository, OrderConverter orderConverter,
                                  SkuClient skuClient, CouponClient couponClient,
                                  OrderTimeoutPublisher timeoutPublisher,
                                  OrderCreateStrategyFactory strategyFactory,
                                  DomainEventProducer eventProducer,
-                                 OrderDisplaySnapshotService displaySnapshotService) {
+                                 OrderDisplaySnapshotService displaySnapshotService,
+                                 CouponConsumptionLedger couponConsumptionLedger) {
         this.orderRepository = orderRepository;
         this.orderConverter = orderConverter;
         this.skuClient = skuClient;
@@ -72,6 +90,7 @@ public class OrderCreationManager {
         this.strategyFactory = strategyFactory;
         this.eventProducer = eventProducer;
         this.displaySnapshotService = displaySnapshotService;
+        this.couponConsumptionLedger = couponConsumptionLedger;
     }
 
     /**
@@ -105,6 +124,11 @@ public class OrderCreationManager {
     public OrderVO createOrder(OrderCreateContext ctx) {
         OrderCreateStrategy strategy = strategyFactory.getStrategy(ctx.getOrderType());
 
+        // 0. 统一订单号：在任何远程副作用（券核销）之前确定 —— 核销幂等锚点 + 补偿/兜底对账定位依据
+        if (ctx.getOrderNo() == null) {
+            ctx.setOrderNo(IdGenerator.nextId());
+        }
+
         // 1. 策略校验（Feign 读取，事务外）
         strategy.validate(ctx);
 
@@ -112,28 +136,43 @@ public class OrderCreationManager {
         //    快照结果回填 ctx，随后 buildBaseOrder 随单落 orders.display_* 两列
         displaySnapshotService.snapshotIfNeeded(ctx);
 
-        // 3. 策略构建订单（含优惠券核销 Feign，事务外）
-        Order order = strategy.buildOrder(ctx);
+        // 3. 兜底标记：本次将进入「可能核销券」的阶段（进程异常退出时由对账任务回收券）
+        markCouponPending(ctx);
 
-        // 4. 扣减库存（Feign，事务外）
-        List<StockOpCO> stockOps = buildStockOps(ctx);
-        deductStock(stockOps);
+        // 4. 建单（含券核销 Feign）+ 扣库存（事务外）——
+        //    buildOrder 内的核销是已提交的远程副作用，其后的任一失败都必须回收券
+        Order order;
+        List<StockOpCO> stockOps;
+        try {
+            order = strategy.buildOrder(ctx);
+            stockOps = buildStockOps(ctx);
+            deductStock(stockOps);
+        } catch (RuntimeException e) {
+            // 建单/扣库存阶段失败：库存必未扣减成功，券可能已核销 → 只回收券；
+            // 原始异常原样上抛（保持既有错误码语义：I43/I44 降级码、STOCK_INSUFFICIENT 等不包装）
+            compensateOnFailure(false, List.of(), null, ctx, e);
+            throw e;
+        }
 
         // 5. 持久化 + 策略后置处理：任一步失败都必须补偿已扣库存/券
-        List<OrderItem> items = NormalCartOrderStrategy.buildItems(order, ctx);
+        List<OrderItem> items;
         try {
+            items = NormalCartOrderStrategy.buildItems(order, ctx);
             orderRepository.saveWithItems(order, items);
             publishTimeoutAfterCommit(order.getOrderNo());
             strategy.afterCreate(ctx, order);
         } catch (Exception e) {
-            compensateOnFailure(stockOps, order, ctx, e);
+            compensateOnFailure(true, stockOps, order, ctx, e);
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "订单创建失败");
         }
 
-        // 6. RocketMQ 领域事件: order.created (非关键路径，事务外)
+        // 6. 订单已落库 → 券核销成为合法占用，兜底标记可清（清除失败不影响下单，对账侧会复核）
+        clearCouponPending(ctx);
+
+        // 7. RocketMQ 领域事件: order.created (非关键路径，事务外)
         publishOrderCreatedEvent(order);
 
-        // 7. 返回 VO
+        // 8. 返回 VO
         OrderVO vo = orderConverter.toVO(order);
         vo.setItems(orderConverter.toItemVOs(items));
         return vo;
@@ -198,21 +237,106 @@ public class OrderCreationManager {
         }
     }
 
-    /** Saga 补偿：回滚已扣库存 + 已核销优惠券（补偿失败记日志并需人工处理，不覆盖原始异常）。 */
-    private void compensateOnFailure(List<StockOpCO> stockOps, Order order,
-                                     OrderCreateContext ctx, Exception cause) {
-        log.error("订单创建失败，回滚库存: orderNo={}", order.getOrderNo(), cause);
-        try {
-            skuClient.restoreStock(stockOps);
-        } catch (Exception re) {
-            log.error("库存回滚失败！需人工处理: stockOps={}", stockOps, re);
-        }
-        if (ctx.getDiscountAmount() > 0) {
+    /**
+     * Saga 补偿：回滚已扣库存 + 回收已核销优惠券（补偿失败记日志并需人工处理，不覆盖原始异常）。
+     *
+     * <p><b>补偿判据（V5.19）</b>：
+     * <ul>
+     *   <li>库存 —— 以「本次是否真的扣减成功」为据（未扣减就回滚 = 凭空加库存）；</li>
+     *   <li>券 —— 以「核销副作用是否已发生」的<b>事实标记</b> {@code ctx.couponConsumed} 为据，
+     *       与 {@code ctx.discountAmount} 无关（金额可能为 0，也可能尚未回填）。</li>
+     * </ul>
+     * 券侧结清后清除兜底对账标记；若回收失败则<b>保留</b>标记，交由
+     * {@link CouponReconcileManager} 定时重试。
+     *
+     * @param stockDeducted 库存是否已实际扣减成功
+     * @param stockOps      本次扣减的库存操作（未扣减时忽略）
+     * @param order         订单对象（建单阶段失败时为 {@code null}）
+     * @param ctx           下单上下文（券核销事实标记来源）
+     * @param cause         触发补偿的原始异常（仅用于日志）
+     */
+    private void compensateOnFailure(boolean stockDeducted, List<StockOpCO> stockOps,
+                                     Order order, OrderCreateContext ctx, Exception cause) {
+        String orderNo = order != null && order.getOrderNo() != null ? order.getOrderNo() : ctx.getOrderNo();
+        log.error("订单创建失败，触发 Saga 补偿: orderNo={}, stockDeducted={}, couponConsumed={}",
+                orderNo, stockDeducted, ctx.isCouponConsumed(), cause);
+
+        if (stockDeducted) {
             try {
-                couponClient.rollbackByOrderNo(order.getOrderNo());
-            } catch (Exception ce) {
-                log.error("优惠券回滚失败！需人工处理: orderNo={}", order.getOrderNo(), ce);
+                skuClient.restoreStock(stockOps);
+            } catch (Exception re) {
+                log.error("库存回滚失败！需人工处理: stockOps={}", stockOps, re);
             }
+        } else {
+            log.info("库存尚未扣减，跳过库存回滚: orderNo={}", orderNo);
+        }
+
+        if (reclaimConsumedCoupons(ctx, orderNo)) {
+            clearCouponPending(ctx);
+        }
+    }
+
+    /**
+     * 回收已核销优惠券（依据「副作用已发生」的事实标记，与抵扣金额无关）。
+     *
+     * @return true = 券侧已结清（本次无券核销、或全部回收成功）→ 兜底标记可清；
+     *         false = 回收失败 → 保留兜底标记，由对账任务重试
+     */
+    private boolean reclaimConsumedCoupons(OrderCreateContext ctx, String fallbackOrderNo) {
+        if (!ctx.isCouponConsumed()) {
+            return true;
+        }
+        List<String> orderNos = couponRollbackOrderNos(ctx, fallbackOrderNo);
+        if (orderNos.isEmpty()) {
+            log.error("券核销事实已置位但无可用订单号，无法回收！需人工处理: userId={}", ctx.getUserId());
+            return false;
+        }
+        boolean reclaimed = true;
+        for (String orderNo : orderNos) {
+            try {
+                couponClient.rollbackByOrderNo(orderNo);
+                log.warn("订单创建失败，已回收核销优惠券: orderNo={}", orderNo);
+            } catch (Exception ce) {
+                reclaimed = false;
+                log.error("优惠券回滚失败！保留兜底对账标记待重试: orderNo={}", orderNo, ce);
+            }
+        }
+        return reclaimed;
+    }
+
+    /** 待回收的订单号：核销时记录的实际订单号优先，缺失时回落到订单对象/上下文的订单号。 */
+    private List<String> couponRollbackOrderNos(OrderCreateContext ctx, String fallbackOrderNo) {
+        List<String> consumed = ctx.getCouponConsumedOrderNos();
+        if (consumed != null && !consumed.isEmpty()) {
+            return consumed;
+        }
+        return fallbackOrderNo == null ? List.of() : List.of(fallbackOrderNo);
+    }
+
+    /**
+     * 写入兜底对账标记（仅券单）—— 兜底网写入失败<b>不阻断下单</b>：
+     * 主流程内的 Saga 补偿仍然生效，标记只覆盖「进程异常退出」这一补偿到不了的情形。
+     */
+    private void markCouponPending(OrderCreateContext ctx) {
+        if (!ctx.hasCouponRequested()) {
+            return;
+        }
+        try {
+            couponConsumptionLedger.markPending(ctx.getOrderNo());
+        } catch (Exception e) {
+            log.warn("券核销兜底标记写入失败（不阻断下单，主流程补偿仍生效）: orderNo={}", ctx.getOrderNo(), e);
+        }
+    }
+
+    /** 清除兜底对账标记（订单已成交或券已结清）；清除失败仅记日志，对账侧会复核订单存在性。 */
+    private void clearCouponPending(OrderCreateContext ctx) {
+        if (!ctx.hasCouponRequested()) {
+            return;
+        }
+        try {
+            couponConsumptionLedger.clear(ctx.getOrderNo());
+        } catch (Exception e) {
+            log.warn("券核销兜底标记清除失败（不影响下单）: orderNo={}", ctx.getOrderNo(), e);
         }
     }
 

@@ -7,6 +7,7 @@ import org.icedamericanomall.dto.AddressCO;
 import org.icedamericanomall.dto.CartItemCO;
 import org.icedamericanomall.trade.domain.enums.OrderTypeEnum;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -63,6 +64,51 @@ public class OrderCreateContext {
     private Long sellerId;
     private int totalAmount;
     private int discountAmount;
+
+    // === 幂等锚点与补偿事实（V5.19 券核销资损修复） ===
+
+    /**
+     * 本次下单的统一订单号 —— 由编排层 {@code OrderCreationManager} 在<b>任何远程副作用之前</b>
+     * 生成（策略 {@code buildBaseOrder} 原样采用），是券核销的幂等锚点，也是补偿与兜底对账
+     * 在「订单对象已随异常丢失」时定位该单的唯一依据。
+     */
+    private String orderNo;
+
+    /**
+     * 「本次下单是否已发生券核销」的<b>事实标记</b> —— 由 {@code PricingService} 在
+     * {@code couponClient.useCoupon(...)} <b>正常返回的那一刻</b>置位（不是"算出的金额"）。
+     *
+     * <p><b>为什么必须用副作用事实而非金额</b>：券核销是 marketing 侧独立事务
+     * （{@code CouponUsageManager#useCoupon} 自带 {@code @Transactional}，调用返回即已提交），
+     * 其抵扣额可能为 0（降级回调口径），也完全可能发生在
+     * {@link #discountAmount} 回填<b>之前</b>——运费解析（I43，fail-closed）失败即落在该窗口。
+     * 若补偿侧以 {@code discountAmount > 0} 判定，会漏判 → 用户券被静默吞掉（资损）。
+     */
+    private boolean couponConsumed;
+
+    /**
+     * 发生券核销的订单号（去重、按发生顺序）—— 与 {@link #couponConsumed} 同时置位，
+     * 供补偿侧 {@code rollbackByOrderNo} 精确定位；多券下单复用同一订单号，故恒为单元素。
+     */
+    private List<String> couponConsumedOrderNos = new ArrayList<>();
+
+    /**
+     * 记录一次「券核销已发生」的事实（核销 Feign 正常返回的那一刻调用，幂等）。
+     *
+     * @param consumedOrderNo 该次核销使用的订单号（可空 —— 空即依赖 {@link #orderNo} 兜底）
+     */
+    public void markCouponConsumed(String consumedOrderNo) {
+        this.couponConsumed = true;
+        if (consumedOrderNo != null && !consumedOrderNo.isBlank()
+                && !this.couponConsumedOrderNos.contains(consumedOrderNo)) {
+            this.couponConsumedOrderNos.add(consumedOrderNo);
+        }
+    }
+
+    /** 本次下单是否请求使用优惠券（单券兼容字段或多券列表任一非空）—— 兜底对账标记的写入判据。 */
+    public boolean hasCouponRequested() {
+        return (userCouponIds != null && !userCouponIds.isEmpty()) || userCouponId != null;
+    }
 
     /**
      * 绑定收货地址快照，并**校验归属**（越权防护唯一出口）。

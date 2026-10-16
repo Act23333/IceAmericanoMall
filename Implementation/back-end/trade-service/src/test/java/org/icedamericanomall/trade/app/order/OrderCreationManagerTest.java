@@ -47,6 +47,7 @@ import javax.sql.DataSource;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -66,6 +67,7 @@ class OrderCreationManagerTest {
     private MemberClient memberClient;
     private OrderCreationManager orderManager;
     private FreightPostageResolver freightPostageResolver;
+    private CouponConsumptionLedger couponConsumptionLedger;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -126,6 +128,8 @@ class OrderCreationManagerTest {
         PricingService pricingService = new PricingService(promotionClient, memberClient, couponClient);
         // V5.6（F2 运费模型）：默认桩使运费=0，聚焦既有下单管道断言
         this.freightPostageResolver = mock(FreightPostageResolver.class);
+        // V5.19：兜底对账标记（Redis）默认无副作用；断言其读写时显式 verify
+        this.couponConsumptionLedger = mock(CouponConsumptionLedger.class);
 
         // V4.1: 构造真实策略实例 + 策略工厂（Spring 注入模拟）
         NormalCartOrderStrategy normalStrategy = new NormalCartOrderStrategy(
@@ -145,7 +149,8 @@ class OrderCreationManagerTest {
                 mock(OrderTimeoutPublisher.class),
                 factory,
                 mock(DomainEventProducer.class),
-                new OrderDisplaySnapshotService(mock(CurrencyClient.class)));
+                new OrderDisplaySnapshotService(mock(CurrencyClient.class)),
+                couponConsumptionLedger);
     }
 
     private CartItemCO cartItem(Long cartItemId, Long skuId, int qty) {
@@ -394,60 +399,155 @@ class OrderCreationManagerTest {
         verify(skuClient).restoreStock(anyList());
     }
 
+    // ==================== V5.19 券核销补偿（资损修复回归：必须能区分「修好」与「没修」） ====================
+    //
+    // 失效时序（修复前）：buildOrder 内 couponClient.useCoupon(...) 已提交（远程副作用）
+    //      → buildOrder 内的 freightPostageResolver.resolve(...) 抛异常（I43 fail-closed）
+    //      → buildOrder 位于 try 之外 → 异常直接穿出，compensateOnFailure 不被调用
+    //      → 且 ctx.discountAmount 此刻仍为 0（回填在运费之后）→ 即便进了补偿也会跳过券回滚
+    //      ⇒ 券被核销、订单未创建、无补偿无告警 → 用户资产静默损失。
+    // 下列用例断言「券被回收」，修复前必然失败（且断言不依赖任何手工填入的待验证状态）。
+
+    /** NORMAL 策略：I43 运费 fail-closed 失败发生在券核销之后 → 必须回收券。 */
     @Test
-    @DisplayName("createOrder — 后置处理(afterCreate)失败：补偿覆盖持久化之后的步骤，回滚库存+优惠券")
-    void shouldCompensateStockAndCoupon_whenAfterCreateFails() {
-        OrderCreateStrategy failingAfterCreate = new OrderCreateStrategy() {
-            @Override
-            public OrderTypeEnum supportedType() {
-                return OrderTypeEnum.NORMAL;
-            }
+    @DisplayName("createOrder(NORMAL) — 券核销后 I43 运费解析失败：回收券 + 原始异常原样上抛 + 不扣库存")
+    void shouldRollbackConsumedCoupon_whenFreightResolveFailsAfterCouponUse() {
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+        // Given 券核销成功（marketing 侧已提交，抵扣 3000）
+        when(couponClient.useCoupon(eq(100L), eq(55L), anyString(), eq(10000), anyInt(), anyLong(),
+                nullable(String.class), nullable(String.class))).thenReturn(3000);
+        // And 运费模板降级（I43 fail-closed）：buildOrder 内、券核销之后抛异常
+        when(freightPostageResolver.resolve(eq(9L), anyList(), anyInt()))
+                .thenThrow(new BizException(org.icedamericanomall.common.enums.ErrorCode.SYSTEM_BUSY,
+                        "运费计算服务暂不可用"));
 
-            @Override
-            public void validate(OrderCreateContext ctx) {
-                OrderCreateContext.CartItemSnapshot snap = new OrderCreateContext.CartItemSnapshot();
-                snap.setSkuId(1000L);
-                snap.setSellerId(9L);
-                snap.setProductName("商品1000");
-                snap.setPrice(5000);
-                snap.setQuantity(2);
-                ctx.setSnapshots(List.of(snap));
-                ctx.setSellerId(9L);
-                ctx.setAddress(address());
-            }
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        c.setUserCouponId(55L);
 
-            @Override
-            public Order buildOrder(OrderCreateContext ctx) {
-                int total = 10000;
-                Order o = new Order();
-                o.setOrderNo(cn.hutool.core.util.IdUtil.fastSimpleUUID());
-                o.setUserId(ctx.getUserId());
-                o.setSellerId(9L);
-                o.setStatus(OrderStatusEnum.PENDING_PAYMENT.getCode());
-                o.setOrderType(OrderTypeEnum.NORMAL.getCode());
-                o.setTotalAmount(total);
-                o.setDiscountAmount(1000);
-                o.setPayAmount(total - 1000);
-                o.setReceiverName("张三");
-                o.setReceiverPhone("13800138000");
-                o.setReceiverAddress("广东省深圳市南山区科技路1号");
-                ctx.setTotalAmount(total);
-                ctx.setDiscountAmount(1000);
-                return o;
-            }
+        // When / Then 下单失败，且失败原因是原始的 SYSTEM_BUSY（不被包装、不被吞掉）
+        BizException ex = assertThrows(BizException.class, () -> orderManager.createOrder(c));
+        assertEquals(org.icedamericanomall.common.enums.ErrorCode.SYSTEM_BUSY, ex.getErrorCode());
 
-            @Override
-            public void afterCreate(OrderCreateContext ctx, Order order) {
-                throw new IllegalStateException("cart cleanup boom");
-            }
-        };
-        OrderCreateStrategyFactory factory = new OrderCreateStrategyFactory(List.of(failingAfterCreate));
-        OrderCreationManager mgr = newManager(orderRepository, factory);
+        // Then ★核心断言：券被回收，且回滚用的订单号 = 核销时使用的订单号（同一幂等锚点）
+        ArgumentCaptor<String> consumedOrderNo = ArgumentCaptor.forClass(String.class);
+        verify(couponClient).useCoupon(eq(100L), eq(55L), consumedOrderNo.capture(), eq(10000),
+                anyInt(), anyLong(), nullable(String.class), nullable(String.class));
+        ArgumentCaptor<String> rollbackOrderNo = ArgumentCaptor.forClass(String.class);
+        verify(couponClient).rollbackByOrderNo(rollbackOrderNo.capture());
+        assertEquals(consumedOrderNo.getValue(), rollbackOrderNo.getValue(),
+                "回滚必须命中核销时使用的同一订单号");
 
-        assertThrows(BizException.class, () -> mgr.createOrder(ctx(OrderTypeEnum.NORMAL)));
-        verify(skuClient).deductStock(anyList());
-        verify(skuClient).restoreStock(anyList());
+        // And 库存从未扣减 → 不得凭空回加库存；订单未落库
+        verify(skuClient, never()).deductStock(anyList());
+        verify(skuClient, never()).restoreStock(anyList());
+        assertNull(orderRepository.findByOrderNo(consumedOrderNo.getValue()), "订单不应被创建");
+    }
+
+    /** DIRECT 策略：与 NORMAL 同构的时序，命令侧修复必须同样覆盖。 */
+    @Test
+    @DisplayName("createOrder(DIRECT) — 券核销后 I43 运费解析失败：同样回收券（两条策略同构）")
+    void shouldRollbackConsumedCoupon_whenFreightResolveFailsAfterCouponUse_directOrder() {
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+        when(couponClient.useCoupon(eq(100L), eq(55L), anyString(), eq(5000), anyInt(), anyLong(),
+                nullable(String.class), nullable(String.class))).thenReturn(1000);
+        when(freightPostageResolver.resolve(eq(9L), anyList(), anyInt()))
+                .thenThrow(new BizException(org.icedamericanomall.common.enums.ErrorCode.SYSTEM_BUSY,
+                        "运费计算服务暂不可用"));
+
+        OrderCreateContext c = ctx(OrderTypeEnum.DIRECT);
+        c.setSkuId(1000L);
+        c.setQuantity(1);
+        c.setUserCouponId(55L);
+
+        BizException ex = assertThrows(BizException.class, () -> orderManager.createOrder(c));
+        assertEquals(org.icedamericanomall.common.enums.ErrorCode.SYSTEM_BUSY, ex.getErrorCode());
+
         verify(couponClient).rollbackByOrderNo(anyString());
+        verify(skuClient, never()).deductStock(anyList());
+        verify(skuClient, never()).restoreStock(anyList());
+    }
+
+    /**
+     * 补偿判据必须来自「副作用已发生」的事实，而非推导出的金额：
+     * 核销回调返回 0（I22 降级回调口径）时 {@code discountAmount == 0}，但券已被占用 → 仍须回收。
+     */
+    @Test
+    @DisplayName("createOrder(NORMAL) — 核销抵扣为 0（降级回调口径）后失败：仍回收券（不以金额判定补偿）")
+    void shouldRollbackConsumedCoupon_whenAppliedDiscountIsZero() {
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+        when(couponClient.useCoupon(anyLong(), anyLong(), anyString(), anyInt(), anyInt(), anyLong(),
+                nullable(String.class), nullable(String.class))).thenReturn(0);
+        when(freightPostageResolver.resolve(eq(9L), anyList(), anyInt()))
+                .thenThrow(new BizException(org.icedamericanomall.common.enums.ErrorCode.SYSTEM_BUSY,
+                        "运费计算服务暂不可用"));
+
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        c.setUserCouponId(55L);
+
+        assertThrows(BizException.class, () -> orderManager.createOrder(c));
+
+        assertEquals(0, c.getDiscountAmount(), "本用例前提：推导出的金额为 0");
+        verify(couponClient).rollbackByOrderNo(anyString());
+    }
+
+    /** 兜底对账标记：券单下单开始即落标记，成交后清除（进程崩溃时由对账任务回收券的依据）。 */
+    @Test
+    @DisplayName("createOrder(NORMAL) — 券单：下单前落兜底对账标记，成交后清除")
+    void shouldMarkAndClearReconcileLedger_whenCouponOrderSucceeds() {
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+        when(couponClient.useCoupon(anyLong(), anyLong(), anyString(), anyInt(), anyInt(), anyLong(),
+                nullable(String.class), nullable(String.class))).thenReturn(3000);
+
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        c.setUserCouponId(55L);
+        OrderVO vo = orderManager.createOrder(c);
+
+        verify(couponConsumptionLedger).markPending(vo.getOrderNo());
+        verify(couponConsumptionLedger).clear(vo.getOrderNo());
+    }
+
+    /** 无券订单不下标记（避免给对账任务制造无意义的扫描对象）。 */
+    @Test
+    @DisplayName("createOrder(NORMAL) — 无券订单：不落兜底对账标记")
+    void shouldNotMarkReconcileLedger_whenNoCouponRequested() {
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+
+        orderManager.createOrder(ctx(OrderTypeEnum.NORMAL));
+
+        verify(couponConsumptionLedger, never()).markPending(anyString());
+        verify(couponConsumptionLedger, never()).clear(anyString());
+    }
+
+    /** 券回收失败（Feign 不可用）→ 保留兜底标记，交给对账任务重试（不能当作已结清清除）。 */
+    @Test
+    @DisplayName("createOrder(NORMAL) — 券回收失败：保留兜底对账标记待重试，异常仍按原始语义上抛")
+    void shouldKeepReconcileLedger_whenCouponRollbackFails() {
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+        when(couponClient.useCoupon(anyLong(), anyLong(), anyString(), anyInt(), anyInt(), anyLong(),
+                nullable(String.class), nullable(String.class))).thenReturn(3000);
+        when(freightPostageResolver.resolve(eq(9L), anyList(), anyInt()))
+                .thenThrow(new BizException(org.icedamericanomall.common.enums.ErrorCode.SYSTEM_BUSY,
+                        "运费计算服务暂不可用"));
+        doThrow(new RuntimeException("marketing down")).when(couponClient).rollbackByOrderNo(anyString());
+
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        c.setUserCouponId(55L);
+
+        assertThrows(BizException.class, () -> orderManager.createOrder(c));
+
+        verify(couponClient).rollbackByOrderNo(anyString());
+        verify(couponConsumptionLedger, never()).clear(anyString());
     }
 
     @Test
@@ -579,11 +679,67 @@ class OrderCreationManagerTest {
                 .thenThrow(new BizException(org.icedamericanomall.common.enums.ErrorCode.SYSTEM_BUSY,
                         "促销计价服务暂不可用"));
 
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        c.setUserCouponId(55L); // 请求用券，但失败点在核销之前
+
+        assertThrows(BizException.class, () -> orderManager.createOrder(c));
+
+        verify(couponClient, never()).useCoupon(anyLong(), anyLong(), anyString(),
+                anyInt(), anyInt(), anyLong(), any(), any());
+        // ★边界：券核销之前失败 → 不得回滚（否则会误动一张从未被占用的券）
+        verify(couponClient, never()).rollbackByOrderNo(anyString());
+        verify(skuClient, never()).deductStock(anyList());
+    }
+
+    /** ★边界：无券订单失败 → 不存在「已核销的券」，绝不调用回滚。 */
+    @Test
+    @DisplayName("createOrder(NORMAL) — 无券订单遇 I43 运费失败：不调用券回滚（无副作用可回收）")
+    void shouldNotRollbackCoupon_whenNoCouponConsumedOnFailure() {
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+        when(freightPostageResolver.resolve(eq(9L), anyList(), anyInt()))
+                .thenThrow(new BizException(org.icedamericanomall.common.enums.ErrorCode.SYSTEM_BUSY,
+                        "运费计算服务暂不可用"));
+
+        // 未设置 userCouponId / userCouponIds
         assertThrows(BizException.class, () -> orderManager.createOrder(ctx(OrderTypeEnum.NORMAL)));
 
         verify(couponClient, never()).useCoupon(anyLong(), anyLong(), anyString(),
                 anyInt(), anyInt(), anyLong(), any(), any());
-        verify(skuClient, never()).deductStock(anyList());
+        verify(couponClient, never()).rollbackByOrderNo(anyString());
+        verify(couponConsumptionLedger, never()).markPending(anyString());
+    }
+
+    /** 持久化之后的失败同样落在补偿范围内：库存回滚 + 券回收（真实策略 + 真实核销路径）。 */
+    @Test
+    @DisplayName("createOrder(NORMAL) — 券单持久化失败：回滚库存 + 回收券 + 清除兜底标记")
+    void shouldCompensateStockAndCoupon_whenPersistFails() {
+        OrderRepository failingRepository = mock(OrderRepository.class);
+        doThrow(new RuntimeException("DB down")).when(failingRepository)
+                .saveWithItems(any(), anyList());
+
+        NormalCartOrderStrategy normalStrategy = new NormalCartOrderStrategy(
+                cartClient, skuClient, addressClient,
+                new PricingService(promotionClient, memberClient, couponClient), freightPostageResolver);
+        OrderCreateStrategyFactory factory = new OrderCreateStrategyFactory(List.of(normalStrategy));
+        OrderCreationManager mgr = newManager(failingRepository, factory);
+
+        when(cartClient.getSelectedItems(100L)).thenReturn(List.of(cartItem(1L, 1000L, 2)));
+        when(skuClient.getSkuListByIds(anyList())).thenReturn(List.of(sku(1000L, 9L, 5000, 10)));
+        when(addressClient.getAddress(1L)).thenReturn(address());
+        when(couponClient.useCoupon(anyLong(), anyLong(), anyString(), anyInt(), anyInt(), anyLong(),
+                nullable(String.class), nullable(String.class))).thenReturn(3000);
+
+        OrderCreateContext c = ctx(OrderTypeEnum.NORMAL);
+        c.setUserCouponId(55L);
+
+        assertThrows(BizException.class, () -> mgr.createOrder(c));
+
+        verify(skuClient).deductStock(anyList());
+        verify(skuClient).restoreStock(anyList());
+        verify(couponClient).rollbackByOrderNo(anyString());
+        verify(couponConsumptionLedger).clear(anyString());
     }
 
     @Test
