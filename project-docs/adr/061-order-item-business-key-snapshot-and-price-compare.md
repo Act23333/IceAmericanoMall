@@ -2,9 +2,15 @@
 
 ## 状态
 
-已决定（2026-10-16，批次 B1.5）。**契约与决策先行，代码由 B2/B3 实施**：本 ADR 落定后，`order_item` 两列与线格式类型收口、比价读模型端口均**尚未落码**（当前代码仍为 `order_item.sku_id BIGINT` 技术外键、`SkuVO.spuId: Long`、`OrderItemVO` 无 `spuId`）；落码完成后本行改为「已实施」。
+**已实施（2026-10-17，提交 `2325031d`）** —— 决策日期 2026-10-16（批次 B1.5，契约与决策先行），实施日期 2026-10-17（批次 B2）。
 
-**本 ADR 一并收口 ADR-059 §2 的既有违规**：`SkuVO.spuId` 至今仍是 `Long` 技术外键（ADR-059 §背景已自认「守卫只查命名、未查类型，故漏放」），本 ADR 补上类型维度。
+**实施范围与证据**：`order_item` 三处 DB 改动、线格式标识类型收口、比价读模型端口与装配、ES 文档标识口径、券 scope 业务键化**均已落码并通过全量验证**（1913 tests / 0 failures / 0 errors / 1 skipped；端点对账 287/0/43；ID 门禁 `[OK]`）。逐项实施事实见本 ADR §决策 1/2/3/5 与 §后果 R1-R4 的「**实施**」标注，以及交付记录 `Implementation/back-end/docs/b2-delivery-status.md`。
+
+> ⚠ **两项本文档据此更正的既有表述**：
+> 1. **§决策 2 的「增业务键字段」建议未采纳**：B2 实际选择**直接改型**（`SkuCO.spuId`、`SpuVector*` 全链由 `Long` → `String`），未走 ADR-058 §3 的「先增字段」过渡路径 —— 依据是库无存量数据（ADR-045）且该批已是一次性 BREAKING 批次，双字段会重新引入 ADR-058 记录的「同名异型异义」。
+> 2. **§决策 5 的主图线上名结论被推翻**：`spu_image` **未采用**，线上名最终统一为 `main_image`（见本 ADR §决策 5 的「B2 落定」段与 §后果 R6）。
+
+**本 ADR 一并收口 ADR-059 §2 的既有违规**：`SkuVO.spuId` 在 B1.5 决策时仍是 `Long` 技术外键（ADR-059 §背景已自认「守卫只查命名、未查类型，故漏放」），本 ADR 补上类型维度。**B2 已落码为 `String`**（`item-service` `SkuVO.spuId` / `skuId`）。
 
 ## 背景
 
@@ -113,18 +119,22 @@ SPU 实体化（ADR-059）后，其名字列/线上名仍叫 `product_name`，�
 - 只读（`SELECT`），**不得**改写被读域数据；
 - 定位为**展示读模型**：输出**仅用于展示**，**禁止**作为下单/退款/售后等**业务判定**依据（业务判断仍必须走 Feign 或本域数据——ADR-057 §「边界对照」不变）。
 
-**端口签名建议**（trade-service，B2 落地以代码为准）：
+**端口签名（B2 已落码，与建议一致，仅类型归属按分层修正）**：
 
 ```java
-// app/port/OrderItemCurrentStateQuery.java
+// trade-service/app/port/OrderItemCurrentStateQuery.java
 Map<String, SkuCurrentState> findSkuStates(Collection<String> skuBusinessIds);   // key = sku 业务键
 Map<String, SpuCurrentState> findSpuStates(Collection<String> spuBusinessIds);   // key = spu 业务键
 
+// trade-service/domain/model/order/SkuCurrentState.java（值对象归位，见 §决策 7）
 record SkuCurrentState(String skuId, String spuId, Integer price, Integer stock,
                        Integer stockType, Integer status) {}   // 行不存在 = 该键不出现
 
+// trade-service/domain/model/order/SpuCurrentState.java
 record SpuCurrentState(String spuId, Integer status, Integer minPrice) {}  // minPrice = 在售 SKU 最低价
 ```
+
+> **与建议的唯一差异**：两个 record **未**留在 `app/port/` 作嵌套类型，而是上移为领域层值对象（§决策 7）。
 
 **比对语义**（纯函数，落 `domain/service/` 或同层，便于单测）：
 
@@ -149,6 +159,13 @@ record SpuCurrentState(String spuId, Integer status, Integer minPrice) {}  // mi
 
 「不缩行」是本决策的验收条件：**读时增强的失败不得让订单列表/详情少一条**（与 ADR-057 §决策 的 fail-open 同口径）。
 
+> **B2 落地形态（2026-10-17 实测，与本节口径逐条对齐）**：
+> 1. **端口**：`trade.app.port.OrderItemCurrentStateQuery` —— `findSkuStates(Collection<String>)` / `findSpuStates(Collection<String>)`，**按业务键批量**（实现 `OrderItemCurrentStateQueryImpl` 每条 SQL 一次 `IN (...)`，**无 N+1**）；非法业务键经 `IdGenerator.toBytesOrNull` 落「未命中」（不放大成 500）；返回 `LinkedHashMap`，**行不存在时该键不出现**。
+> 2. **fail-open 的落点与建议不同**：端口接口**不吞异常**（真实故障须在调用侧可见），fail-open 由应用层 `trade.app.order.OrderCurrentStateEnricher` 统一兜住（`catch` → 空 `Map` + `WARN`），**不缩行**由此保证。SPU 侧降级**不整体放弃** SKU 侧结果（价格/缺货提示仍可给出），故两侧各自 try/catch。
+> 3. **比对纯函数**：`trade.domain.service.OrderItemPriceComparator#compare(snapshotPrice, snapshotSpuId, currentSku, currentSpu)` —— 判定**短路顺序**为 `UNCOMPARABLE`（SKU 键查不到行）→ `OFF_SHELF`（SPU status 2/3）→ `DISCONTINUED`（SKU status 0）→ `OUT_OF_STOCK`（库存 0 且需校验库存类型）→ `PRICE_CHANGED` → `IN_SYNC`；`CompareState` 是**服务端内部枚举**（⛔ **不随订单报文出栈**）。
+> 4. **`StockAvailabilityPolicy` 为独立类**：缺货提示口径（`LIMITED`/`PRESALE` 需校验，`null` 按 `LIMITED`）与下单校验口径 `StockTypeEnum.requiresStockCheck`（`null`/`LIMITED` 才看库存上限）**两口径并存为有意选择** —— 目的是**不影响既有下单语义**（改它会影响下单成败）。两处各自有单测与变异验证锁定。
+> 5. **线格式未加比价字段（有意）**：`OrderItemVO` **无任何比价字段**，`OrderCurrentStateEnricher.compare` 的产出现**无对外消费点** —— 按契约 §十二 12.2「形态未定、前端不得对接」处理；能力已就绪，**契约定稿后接线即用**（避免无排期承诺）。
+
 ### 4. DB 变更范围限定：只改 `order_item`
 
 | 表 | 处理 |
@@ -156,15 +173,61 @@ record SpuCurrentState(String spuId, Integer status, Integer minPrice) {}  // mi
 | `order_item` | **改**：`sku_id` 改型 `BINARY(16)`、新增 `spu_id BINARY(16)`、`product_name` → `spu_name` |
 | 其余全部表（`sku.spu_id`、`review.spu_id`、`favorite.spu_id`、`spu_view_log.spu_id`、`note_spu.spu_id`、`flash_sale.spu_id`、`group_buy_activity.spu_id`、`shop_decoration.hot_spu_ids` 等） | **不动**，内部外键保持技术键 `BIGINT` |
 
+> **B2 实施事实（2026-10-17 落码，实测 `Initialize.sql` L352-372）**：`order_item` 的 `sku_id` 已为 `BINARY(16) NOT NULL`、`spu_id BINARY(16) NOT NULL` 已新增、`spu_name` 已改名、`fk_orderitem_sku` 已移除、`idx_spu_id` 已建；**保留 `fk_orderitem_order`**（`order_id` → `orders.id`，订单内部技术外键，`ON DELETE CASCADE`）。索引实况 = `idx_order_id` / `idx_sku_id` / `idx_spu_id` / `idx_order_package(order_id, package_no)`。**其余表的内部 FK 一律未动**（A 案：`sku.spu_id`、`review.spu_id`、`favorite.spu_id`、`spu_view_log.spu_id`、`note_spu.spu_id`、`flash_sale.spu_id`、`group_buy_activity.spu_id`、`shop_decoration.hot_spu_ids` 等保持技术键 `BIGINT`）。
+
 理由：**库内 join 用技术键是行业标准**（同库同分片下性能最优、外键完整性可保），而**这些内部外键不出线格式**（ADR-058 §1）；订单项之所以例外，是因为它承载「三个诉求」且**必须自持商品源头的业务键**（历史订单不能依赖 `sku` 行仍然存在）。
 
-### 5. 命名收口：`product_name` → `spu_name`、`product_image` → `spu_image`
+### 5. 命名收口：`product_name` → `spu_name`；主图线上名统一为 `main_image`
 
-SPU 实体化后其名字列/线上名统一为 `spu_name`（列名与 JSON 键名同改）；SPU 主图线上名统一为 `spu_image`。
+SPU 实体化后其名字列/线上名统一为 `spu_name`（列名与 JSON 键名同改）；SPU 主图线上名统一为 **`main_image`**（**B2 落定，非 B1.5 提案的 `spu_image`**）。
+
+**为何是 `main_image` 而不是 `spu_image`**（决策记录，避免后人回改）：
+
+| 理由 | 说明 |
+| --- | --- |
+| **与 DB 列一致** | DB 列即 `spu.main_image`；`main_image` 与列名同名，`spu_image` 需新造一个与列名不一致的线上方言 |
+| **与多数既有 VO 一致** | `SpuVO` / `FavoriteVO` / `HistoryVO` / `SpuSearchVO` / `RecommendSpuVO` / `NoteDetailVO.spus[]` / `SpuVectorUpsertCO` 早已用 `main_image` —— 采用 `main_image` **只需回退本 VO（`FlashSaleVO`）一处**；采用 `spu_image` 则须改 6+ 处线上名并演进 DB 列名 |
+| **「主图」是区分性命名** | 行业形态中**主图 / 图集 / 详情图 / SKU 图并存**，`main_image` 表达的是「哪一张」这一**区分信息**；`spu_image` 只表达归属（SPU 的图），与 SKU 图/图集相比**区分力更弱** |
+
+- **实测口径（2026-10-17）**：后端主代码**零处** `spuImage` / `productImage`；`FlashSaleVO` 已回退为 `mainImage`（`marketing-service` `adapter/response/FlashSaleVO.java`），`FlashSaleSpuBrief.mainImage` 注释同步改记「线上名统一 `main_image`」。
 
 - DB：`order_item.product_name` → `order_item.spu_name`（唯一列定义，`merchant_reply_template.content` 的模板占位符 `{product_name}` 见 §后果 R4）。
-- 线格式：契约 14 处 `product_name` 与 2 处 `product_image` 全量改为 `spu_name` / `spu_image`（**逐处核对语义均为 SPU 名称/主图**，无一处是 SKU 名或订单项自身名）。
+- 线格式：契约 14 处 `product_name` 全量改为 `spu_name`（**逐处核对语义均为 SPU 名称**，无一处是 SKU 名或订单项自身名）；2 处主图字段**最终回退为 `main_image`**（B1.5 曾改为 `spu_image`，B2 按上表理由回退 —— 契约内 `spu_image` 现为 **0 处**）。
 - 保留项：`sku_spec`（规格）、`image`（订单项图片快照）不动。
+
+### 6. 业务键 ↔ 技术键的解析面：**扩展既有入参口径，不新增端点**
+
+**上下文**：I47（商品向量摄取）的幂等键、I48（相似检索）的锚点均收口为业务键后，search-service 侧仍需把业务键解析为 `spu.id` 技术键（ES 文档 `_id` 与 publishTime 回填取数用）。最初的实现方案是**新增一条解析端点** `GET /internal/item/search/detail/key/{spuId}`。
+
+**决策**：**不新增路由**，改为让既有 `GET /internal/item/search/detail/{id}` 的**入参口径同时接受两种形态**：
+
+| 入参形态 | 解析口径 | 消费方 |
+| --- | --- | --- |
+| 纯数字（如 `1001`） | 技术键 → `spu.id` | search-service 的 publishTime 回填（既有行为，**不变**） |
+| 32-hex（如 `0f1e2d3c4b5a69788796a5b4c3d2e1f0`） | 业务键 → `spu.spu_id`（走 `uk_spu_id` 唯一索引） | 商品向量摄取/相似检索的锚点解析（本批新增） |
+
+**为何值得记录**：该「新增端点」方案被**端点对账门禁当场拦下** —— `node Implementation/back-end/scripts/extract-endpoints.mjs` 报 `codeOnly: 1`（287/1/43），即出现未登记契约的新端点，违反「不改路径、不新增端点」的批次硬约束；回退为扩展入参口径后回到 `codeOnly: 0`（287/0/43）。这是**门禁真实拦下一次违规**的实例，也是把「新增端点」改写为「扩展入参口径」的决策依据。
+
+**代价与边界**：
+
+- 路径变量类型由 `Long` 放宽为 `String` —— 代价是**丢失框架层的数字校验**：非法串不再 400，而是落到「查不到 → 返回 null 体」（与既有「不存在返回 null 体」语义一致，故不放大成 500）。消费方（search-service）已按 fail-open 处理。
+- 该端点仍是**内部端点**，形态变宽不改变对外契约（`codeOnly` / `docOnly` 均不受影响）。
+- **不推广**：本决策只针对「同一实体、同一语义、两种形态入参」的内部解析场景。对外路径变量（R1）是否收口为业务键是**独立议题**，不因本决策自动成立。
+
+### 7. 领域读模型值对象归位：`SkuCurrentState` / `SpuCurrentState` 上移领域层
+
+**上下文**：B2 首轮把上述两个 record 定义在 `app/port/OrderItemCurrentStateQuery` 内作**嵌套类型**（端口自持入参/出参形状，看似内聚）。
+
+**问题**：比对规则 `domain/service/OrderItemPriceComparator`（领域服务）以这两个类型为入参，于是 `domain → app` 形成**反向依赖**，触发 architecture-tests 分层守卫 `domainDependsOnNothingOutward` —— 实测 **20 次违规**（同一守卫多计）。
+
+**决策**：
+
+1. 两个 record **上移为领域层值对象** `trade.domain.model.order.SkuCurrentState` / `SpuCurrentState`；`app.port.OrderItemCurrentStateQuery` 只**引用**领域类型，依赖方向回归 `app/infra → domain`（合法）。依据：**比对规则是领域职责，其入参类型必须由领域层拥有**，否则领域服务无法独立于应用层编译与测试。
+2. `OrderRepository.pageOrders` 的返回类型由 MyBatis-Plus `IPage<Order>` 改为**框架无关**的 `trade.domain.model.order.PageResult<Order>`（**新增**，与 item 域 `PageResult` 同形）。持久化实现内部完成 `IPage → PageResult` 转换，应用层 `OrderQueryManager` 再转回适配层既有的 `IPage<OrderVO>` 信封 —— **Controller 签名与 HTTP 报文零变化**。
+
+**基线影响（已核对）**：`architecture-tests/archunit_store/` 冻结条目 **25 → 24**，且**只减不增、未新增任何冻结项**。机制 = 已冻结的旧签名字段失配：`Method <…OrderRepository.pageOrders(java.lang.Long, java.lang.Long, java.lang.Integer, int, int)> has return type <com.baomidou.mybatisplus.core.metadata.IPage>` —— B1 改签名（加 `keyword` / `startDate` / `endDate`）后该条目已与实现不符，B2 消除该违规后从基线文件删除（**有意治理动作，非静默冻结**）。净效果 = 21 次新增违规全部按实现修正归零，基线净删 1 条。
+
+> 核对方式：`wc -l Implementation/back-end/architecture-tests/archunit_store/33c4c196-5fdf-4aab-920e-05e5c6c112b0` → **24**；`git show 2325031d -- Implementation/back-end/architecture-tests/archunit_store/` → **1 file changed, 1 deletion(-)**，diff 中删除的正是 `OrderRepository.pageOrders` 那一条。
 
 ## 备选方案
 
@@ -182,7 +245,8 @@ SPU 实体化后其名字列/线上名统一为 `spu_name`（列名与 JSON 键�
 
 - 三个诉求同时成立：业务键可回链源头、报文无技术 id、业务键可批量比价；
 - 订单项自持 `spu_id`/`sku_id` 业务键 ⇒ **即使 SKU 行已删除也能落到 SPU 粒度做「同款现价」比对**；
-- 线格式标识首次**同型同义**（全部 32-hex `String`），跨接口本地 join 在类型层可成立；
+- 线格式标识首次**同型同义**（**本轮收口面**为 32-hex `String`），跨接口本地 join 在类型层可成立；
+  > ⚠ 限定：本项指**本轮实际收口的字段面**（订单项、购物车、收藏/足迹、秒杀/拼团、`SkuCO`、`SpuVector*` 全链等）。**并非全平台标识字段均已收口** —— 未收口清单与原因见 §后果 **R7 / R8**（`ReviewVO`、`ReviewCreateReq`、`NoteDetailVO.spus[]`、`NotePublishReq.spuIds`、`RecommendSpuVO.spuId`、对外路径变量）。
 - 命名与实体对齐（`product_name` → `spu_name`），消除 SPU 实体化后的词汇遗留；
 - 比价是纯旁路（读时增强 + fail-open），**零资损面**：不写入订单、不改变金额与状态机。
 
@@ -199,18 +263,20 @@ SPU 实体化后其名字列/线上名统一为 `spu_name`（列名与 JSON 键�
 
 | # | 残余风险 | 触发条件 | 后果 | 收敛方向 |
 | --- | --- | --- | --- | --- |
-| R1 | **路径变量未收口** | 路径变量 `{id}`/`{spuId}`/`{skuId}`/`{productId}` 仍为技术键（`GET /api/item/product/{id}`、`DELETE /api/cart/item/{skuId}`、`GET /api/item/review/product/{spuId}` 等） | 「同一实体在路径与报文中两种形态」—— 客户端拿到 `CartItemVO.sku_id`（业务键）后**无法**用它调 `DELETE /api/cart/item/{skuId}`（该路径收技术键）；`SkuVO.spu_id` 同理无法直接用于 `GET /api/item/product/{id}` | ADR-058 §1 的**字面范围**只约束 VO/DTO 字段，未含路径变量，故本 ADR 不单方面扩大；**已登记 §十二 12.2 待裁决**：建议后续批次把「标识 SPU/SKU 实体」的路径/查询变量一并收口为业务键（影响面须先测算并随 BREAKING 批次发布） |
-| R2 | **`/internal/**` 内部契约的收口未定** | `SkuCO.spuId`（`Long` 技术外键）、`SpuVectorHitCO.spuId`（`Long`）、`KgEdgeUpsertCO.srcId`（`Long`）、I13/I14/I15 的 `sku_ids`/`sku_id` 入参仍为技术键 | 内部 DTO 亦属 ADR-058 §1「任何 VO/DTO」的字面范围；不一致会在「trade 传给 I22 的 `spu_ids`」处显形（见 R3） | 已登记 §十二 12.2 待裁决（附 B2 建议：按 ADR-058 §3 先「**增**业务键字段」，改型与否由 java-architect 裁决） |
-| R3 | **券适用范围取值语义与 ADR-058 冲突** | 契约 §4.10.1 记 `scope_type=3` 的 `scope_values` 装「spu 业务标识」；实测 `PricingService.buildSpuIds` 取 `SkuCO.spuId`（`Long` 技术键）拼接后经 I22 传入，`coupon.scope_values` 存的实为 `spu.id` 技术键字符串 | 客户端按 `scope_values` 与商品业务键做预过滤**永不命中**（与 ADR-058 记录的 join 缺陷同型）；服务端 `CouponScope.accepts` 两侧同为技术键，**校验本身仍正确**（故非资损，属功能失效） | 随 R2 收口一并统一为业务键后自动消解；在收敛前**不得**声称该字段可用于客户端预过滤（契约已改记实测口径 + 待裁决标注） |
-| R4 | `merchant_reply_template.content` 的 `{product_name}` 占位符 | 该功能端点（CH6-CH8 `/api/seller/templates`）**未实现** | 模板变量名残留旧词 | 不为未实现功能预先定名；随该功能实现时一并改名 `{spu_name}`（B2 可顺手改，属 `Initialize.sql` 注释） |
+| R1 | **路径变量未收口**（🔄 **B2 后仍遗留，且新增一条并存口径**） | 路径变量 `{id}`/`{spuId}`/`{skuId}`/`{productId}` 仍为技术键（`GET /api/item/product/{id}`、`DELETE /api/cart/item/{skuId}`、`GET /api/item/review/product/{spuId}` 等） | 「同一实体在路径与报文中两种形态」—— 客户端拿到 `CartItemVO.sku_id`（业务键）后**无法**用它调 `DELETE /api/cart/item/{skuId}`（该路径收技术键）；`SkuVO.spu_id` 同理无法直接用于 `GET /api/item/product/{id}` | ADR-058 §1 的**字面范围**只约束 VO/DTO 字段，未含路径变量，故本 ADR 不单方面扩大；**已登记 §十二 12.2 待裁决**：建议后续批次把「标识 SPU/SKU 实体」的路径/查询变量一并收口为业务键（影响面须先测算并随 BREAKING 批次发布）。<br>**B2 实施补注**：① C4/C5/C10（`/api/cart/item/{skuId}` 系列）**已随本批按业务键收口**（与 `CartItemVO.sku_id` 必须同型同义）；② **`RecommendSpuVO.spuId` 明确保持技术键**（`Long`）—— 其寻址口径与商品详情路径变量 `GET /api/item/product/{id}` **一致**（P27 相似商品卡回链走同一路径），故**不随本批收口**，属**有意的口径并存**而非遗漏；③ 其余路径变量（`{id}` / `{productId}`）与 `ReviewVO` / `ReviewCreateReq` / `NoteDetailVO.spus[]` / `NotePublishReq.spuIds` 的标识类型**仍未收口**（见 R7 / R8）。 |
+| R2 | **`/internal/**` 内部契约收口**（✅ **B2 已收口**） | 已收口：`SpuVectorHitCO.spuId` / `SpuVectorUpsertCO.spuId` **由 `Long` 改型为 `String` 业务键**（32-hex）；同批一并收口 `SpuVectorClient.similar(spu_id)`、`SpuVectorUpsertReq.spuId`、`SpuVectorDoc.spuId`、`SpuSearchGateway.findVectorById`、`InternalSearchController` 的 `spu_id` 查询参数，以及 `SkuCO.spuId`（→ `String`）与 `ItemSearchClient.detail(id)`（`Long` → `String`）。**唯一保留技术键的是 ES 文档 `_id` / `id`** —— 与 reindex、I28 商品命中 `id` **同源**（`spuId` 列另写业务键） | 内部 DTO 亦属 ADR-058 §1「任何 VO/DTO」的字面范围；不一致会在「trade 传给 I22 的 `spu_ids`」处显形（见 R3） | **已消解**（本 ADR §决策 2 落码）。**未采纳** B1.5 的「先增字段」过渡建议 —— 改为直接改型（库无存量数据 ADR-045，且该批已是一次性 BREAKING）。**顺带修出两处实现错**：① `SpuRecommendManager` 曾以**技术键**作 I47 幂等键（业务键收口后即跨服务语义错），现改 `spu.getSpuId()`，并加「缺业务键 → 跳过摄取 + WARN」守卫；② search-service 测试夹具的业务键常量只有 31 位 hex（非法线格式），已改严格 32 位。**仍遗留**：`KgEdgeUpsertCO.srcId`（`Long`，不在本批门禁命中面）、I13/I14/I15 入参形态（见 R8） |
+| R3 | **券适用范围取值语义与 ADR-058 冲突**（✅ **B2 已修复**） | 契约 §4.10.1 记 `scope_type=3` 的 `scope_values` 装「spu 业务标识」；实测 `PricingService.buildSpuIds` 取 `SkuCO.spuId`（`Long` 技术键）拼接后经 I22 传入，`coupon.scope_values` 存的实为 `spu.id` 技术键字符串 | 客户端按 `scope_values` 与商品业务键做预过滤**永不命中**（与 ADR-058 记录的 join 缺陷同型）；服务端 `CouponScope.accepts` 两侧同为技术键，**校验本身仍正确**（故非资损，属功能失效） | **已随 R2 收口统一为业务键而消解**。**B2 实施事实**：`PricingService.buildSpuIds` 现取 `CartItemSnapshot.spuId`（**业务键 32-hex**，原取 `SkuCO.spuId` 技术键）拼接 CSV，与线格式 `spu_id`、与客户端 `scope_values` 预过滤**同型同义** —— **客户端券范围预过滤恢复可用**（原为技术键串，**永不命中**）。服务端 `CouponScope.accepts` 仍做同型字符串比较，**校验语义不变**（故该缺陷自始非资损）。 |
+| R4 | `merchant_reply_template.content` 的 `{product_name}` 占位符 | ✅ **B2 已顺手改**（该功能端点 CH6-CH8 `/api/seller/templates` **仍未实现**） | 模板变量名残留旧词 | **已落地**：`Initialize.sql` 注释改为 `变量: {buyer_name},{spu_name},{order_no}`（属 SQL 注释，端点未实现故**不构成线上契约变更**） |
 | R5 | 前端消费点尚未同步 | B3 未执行前 | 前端按旧键名/旧类型消费 → 渲染空白或字符串拼接异常 | B3 实施清单已随本批次交付（含空态/降级态要求） |
-| R6 | **SPU 主图线上名出现两种方言** | 本 ADR §决策 5 把 `product_image` 收口为 `spu_image`，而其余 VO（`SpuVO`/`FavoriteVO`/`HistoryVO`/`SpuSearchVO`/`RecommendSpuVO`/`NoteDetailVO.spus[]`）早已用 `main_image`（与 DB 列 `spu.main_image` 同名） | 同一概念两种线上名 —— 与 ADR-058 §2「同型同义」精神不符 | 已登记 §十二 12.2 待裁决 R4：**建议统一为 `main_image`**（与 DB 列对齐，仅需回退本 VO 一处）；若统一为 `spu_image` 则须连同 DB 列名一起演进 |
+| R6 | **SPU 主图线上名出现两种方言** | ✅ **B2 已落定：统一为 `main_image`**（契约与后端主代码零 `spu_image`、零 `product_image` 线上名） | 同一概念两种线上名 —— 与 ADR-058 §2「同型同义」精神不符 | **已消解**，依据见 §决策 5「为何是 `main_image`」表；本批实际改动仅 `FlashSaleVO` 一处（回退），其余 VO 本已一致 |
+| R7 | **ADR-061 类型守卫存在实现缺陷 —— 扫描路径 glob 不匹配，实际未生效**（🆕 2026-10-17 B2.5 实测发现，**非 B2 引入**） | ① `Implementation/back-end/scripts/check-id-invariants.sh` 检查 4 的命中面写为 `*/src/main/java/*/adapter/response` 等 glob，而实际目录深度为 `<service>/src/main/java/org/icedamericanomall/<svc>/adapter/response`（多一层包路径）；bash glob 的 `*` **不跨 `/`** 且脚本未开 `globstar` → 该 glob **零匹配**，检查 4 对 adapter 面**从未真正扫描**。② 理论命中面内确实仍有 **9 处**标识类型违规未被捕获（修正案正则实测，2026-10-17）：`ReviewVO.spuId` / `ReviewVO.skuId`（`Long`）、`ReviewCreateReq.spuId` / `ReviewCreateReq.skuId`（`Long`）、`NoteDetailVO.spus[].spuId`（`Long`）、`RecommendSpuVO.spuId`（`Long`，见 R1）、`NotePublishReq.spuIds`（`List<Long>`）、**`ShopDecorationVO.hotSpuIds` / `ShopDecorationReq.hotSpuIds`（`List<Long>`，`merchant-service`）**。`ia-api/src/main/java/org/icedamericanomall/dto` 这一项 glob **正好命中**，故 B2 的变异验证（`SpuVectorHitCO.spuId` 改回 `Long` → 红）**成立**，但那是**唯一**实际生效的扫描面 | 门禁给**假绿**：`[OK]` 只证明 `ia-api` dto 面合规，**不能**推广为「全量线格式标识类型已收口」；据此宣称「已收口」即为**失实** | 建议由 java-architect 在后续批次修 glob（改 `*/src/main/java/**/adapter/{response,request}` 或显式 `find` 遍历）并决定上表 9 处的收口批次。**本 ADR 不据此宣布类型收口已完成** |
+| R8 | **I13/I14/I15 等内部入参形态与部分 adapter 标识类型仍未收口**（🔄 遗留） | `KgEdgeUpsertCO.srcId`（`Long`，不在本批门禁命中面）；`ReviewVO` / `ReviewCreateReq` / `NoteDetailVO.spus[]` / `NotePublishReq` / `ShopDecorationVO`·`ShopDecorationReq.hotSpuIds` 的标识类型（见 R7）；对外路径变量（见 R1）；**契约-实现漂移**（🆕 2026-10-17 实测）：契约 P35 记「卡内 `spu_id` 为 SPU 业务键 32-hex」且卡类型写作 `SpuCardVO`，而**代码中不存在 `SpuCardVO`** —— `PairingCardVO.items` 的实际类型是 `RecommendSpuVO`，故 P35 卡内 `spu_id` **实测仍为技术键 `Long`**（与 P27 同因，见 R1），**契约该句失实** | 调用方在「业务键已得、仍需技术键入参」处口径不一致；P35 前端若按契约把 `spu_id` 当 32-hex 消费则**回链失败** | 随 R7 的 glob 修复与 R1 的路径变量裁决一并排批；**未收口前不得声称已全量收口**；P35 契约表述须由契约 Owner 订正（本 ADR 只登记，不改契约域正文） |
 
 ## 守卫（防复发）
 
 | 守卫 | 断言 |
 | --- | --- |
-| **线格式标识类型断言（本 ADR 新增，闭合 ADR-059 漏洞）** | 扫描 `*/src/main/java/**/adapter/response/**`、`*/adapter/request/**` 与 `ia-api/src/main/java/**/dto/**`：**字段名**对应 `spu_id`/`sku_id`（`spuId`/`skuId`/`spuIds`/`skuIds`…）者，其 Java 类型**必须**是 `String`（`List<String>`）；出现 `Long`/`Integer`/基本类型即失败 —— **命名之外的第二个维度**，正是本条收口的既有违规（`SkuVO.spuId: Long`）的拦截点。建议落为 `check-id-invariants.sh` 的「检查 4」（CI 既有调用点 `.github/workflows/ci.yml` → `ID Invariants Gate`） |
+| **线格式标识类型断言（本 ADR 新增，闭合 ADR-059 漏洞）** ⚠ **实现有缺陷，见 R7** | 扫描 `*/src/main/java/**/adapter/response/**`、`*/adapter/request/**` 与 `ia-api/src/main/java/**/dto/**`：**字段名**对应 `spu_id`/`sku_id`（`spuId`/`skuId`/`spuIds`/`skuIds`…）者，其 Java 类型**必须**是 `String`（`List<String>`）；出现 `Long`/`Integer`/基本类型即失败 —— **命名之外的第二个维度**，正是本条收口的既有违规（`SkuVO.spuId: Long`）的拦截点。已落为 `check-id-invariants.sh` 的「检查 4」（CI 既有调用点 `.github/workflows/ci.yml` → `ID Invariants Gate`）。⚠ **但命中面 glob 不匹配实际目录深度，adapter 面零匹配（见 R7）** —— 修复前本守卫**仅对 `ia-api/src/main/java/org/icedamericanomall/dto` 有效**，`[OK]` 不得外推为全量收口 |
 | 业务键编解码唯一出口 | 业务标识编解码不得绕开 `ia-common` `IdGenerator`（`check-id-invariants.sh` 检查 1/2/3 已覆盖：禁散落 UUID、禁对 BINARY(16) 列传字符串字面量） |
 | **订单项快照不回查实时表** | 订单读取路径（`OrderManager` 详情/列表装配）**不得**调用任何实时商品查询来「补齐/刷新」快照列；比价读模型只允许**额外**产出比对态，禁止改写快照字段 |
 | 比价 fail-open | 端口实现异常 → 空 `Map`（不得抛）；装配后明细条数**必须**与无读模型时逐条相等（「不缩行」断言）。建议以 H2 语义测试 + 端口异常注入各一条用例锁定 |
@@ -224,9 +290,14 @@ SPU 实体化后其名字列/线上名统一为 `spu_name`（列名与 JSON 键�
 ## 参考
 
 - 代码与 DDL（实测依据）：
-  - `Implementation/back-end/database/Initialize.sql` L247-279（`spu`）、L285-308（`sku`）、L352-371（`order_item`）、L841（`merchant_reply_template`）
-  - `trade-service/.../adapter/response/OrderItemVO.java`（无 `spuId`）、`item-service/.../adapter/response/SkuVO.java`（`spuId: Long`）
-  - `ia-api/.../dto/SkuCO.java`（`spuId: Long` + `productName` 展示字段）、`trade-service/.../app/order/pricing/PricingService.java#buildSpuIds`（技术键拼接）
+  - **决策时点（2026-10-16，已过期，保留以存证）**：`Initialize.sql` L247-279（`spu`）、L285-308（`sku`）、L352-371（`order_item`）、L841（`merchant_reply_template`）；`OrderItemVO`（无 `spuId`）、`SkuVO.spuId: Long`、`SkuCO.spuId: Long` + `productName`、`PricingService#buildSpuIds`（技术键拼接）
+  - **实施后实测（2026-10-17）**：`Initialize.sql` L352-372（`order_item` 已是 `sku_id`/`spu_id BINARY(16)` + `spu_name`）、L842（模板占位符已改 `{spu_name}`）；`OrderItemVO.skuId/spuId/spuName` 均为 `String`；`SkuVO.spuId/skuId: String`；`SkuCO.spuId: String` + `spuName`；`PricingService#buildSpuIds` 取业务键
   - `item-service/.../app/SkuManager.java#enrichSpuDisplay`（ADR-057 读模型落地先例）
 - ADR-002（双主键 + 订单快照模式）、ADR-020（SKU 库存原子 SQL）、ADR-045（库无存量数据、`Initialize.sql` 唯一结构真相源）、ADR-050（业务标识 `BINARY(16)`+UUIDv7 + `IdGenerator` 唯一出口）、**ADR-057**（展示字段的应用层读模型端口 + 批量 + fail-open）、**ADR-058**（VO 标识字段语义唯一性；§3 读模型须带出业务标识）、**ADR-059**（SPU/SKU 词汇消歧；§2 线格式一律业务标识 —— 本 ADR 补其缺失的类型维度）
-- 契约：`contract/05-API-Specification.md` §1.8（标识口径）、§4.6.1（订单项不变式）、§4.10.1（券适用范围）、§十二 12.2（挂账）
+- 契约：`contract/05-API-Specification.md` §1.8（标识口径）、§4.6.1（订单项不变式）、§4.10.1（券适用范围）、§4.14.10（I47/I48）、§十二 12.2（挂账）
+- 实施证据（B2，2026-10-17，提交 `2325031d`）：
+  - `Implementation/back-end/docs/b2-delivery-status.md`（批次自证材料：全量 1913/0/0/1、端点对账 287/0/43、ID 门禁、变异验证）
+  - `Implementation/back-end/database/Initialize.sql` L352-372（`order_item` 落码后形状）、L842（模板占位符已改 `{spu_name}`）
+  - `trade-service` `domain/model/order/{SkuCurrentState,SpuCurrentState,PageResult}.java`、`app/port/OrderItemCurrentStateQuery.java`、`app/order/OrderCurrentStateEnricher.java`、`domain/service/{OrderItemPriceComparator,StockAvailabilityPolicy}.java`、`infrastructure/persistence/order/OrderItemCurrentStateQueryImpl.java`
+  - `item-service` `adapter/internal/InternalItemSearchController.java#detail`（双形态入参，路由不变）
+  - `architecture-tests/archunit_store/33c4c196-5fdf-4aab-920e-05e5c6c112b0`（24 条；`git show 2325031d` 删 1 条）
