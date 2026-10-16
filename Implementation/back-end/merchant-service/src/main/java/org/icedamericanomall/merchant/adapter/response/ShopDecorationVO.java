@@ -25,15 +25,15 @@ public class ShopDecorationVO implements Serializable {
     /** 轮播图 URL（≤5） */
     private List<String> banners;
 
-    /** 推荐商品位（product.id，≤8，去重保序；展示端过滤失效 / 非在售 id） */
-    private List<Long> hotProductIds;
+    /** 推荐商品位（spu.id，≤8，去重保序；展示端过滤失效 / 非在售 id） */
+    private List<Long> hotSpuIds;
 
     /** 领域模型 → 视图对象。 */
     public static ShopDecorationVO from(ShopDecoration decoration) {
         ShopDecorationVO vo = new ShopDecorationVO();
         vo.setAnnouncement(decoration.getAnnouncement());
         vo.setBanners(copyOf(decoration.getBanners()));
-        vo.setHotProductIds(copyOf(decoration.getHotProductIds()));
+        vo.setHotSpuIds(copyOf(decoration.getHotSpuIds()));
         return vo;
     }
 
@@ -41,7 +41,7 @@ public class ShopDecorationVO implements Serializable {
     public static ShopDecorationVO empty() {
         ShopDecorationVO vo = new ShopDecorationVO();
         vo.setBanners(List.of());
-        vo.setHotProductIds(List.of());
+        vo.setHotSpuIds(List.of());
         return vo;
     }
 

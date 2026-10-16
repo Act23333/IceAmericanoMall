@@ -33,7 +33,7 @@ public class GroupBuyCreateReq implements Serializable {
 
     /** 商品 ID。 */
     @NotNull
-    private Long productId;
+    private Long spuId;
 
     /** SKU ID（拼团仅该 SKU 参与）。 */
     @NotNull

@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.*;
 /**
  * 浏览足迹 Controller — V5.0 京东标准
  *
- * POST   /api/user/history?product_id=        记录浏览
+ * POST   /api/user/history?spu_id=        记录浏览
  * GET    /api/user/history?page=&size=&keyword=&sort=  分页查询(含商品详情+浏览时间)
  * DELETE /api/user/history/{id}              删除单条
  * DELETE /api/user/history                   清空全部
@@ -25,8 +25,8 @@ public class HistoryController {
 
     /** 记录商品浏览（同一商品重复浏览仅刷新浏览时间）。 */
     @PostMapping
-    public Result<Void> record(@RequestParam(name = "product_id") Long productId) {
-        historyManager.record(UserContext.getUserId(), productId);
+    public Result<Void> record(@RequestParam(name = "spu_id") Long spuId) {
+        historyManager.record(UserContext.getUserId(), spuId);
         return Result.ok();
     }
 

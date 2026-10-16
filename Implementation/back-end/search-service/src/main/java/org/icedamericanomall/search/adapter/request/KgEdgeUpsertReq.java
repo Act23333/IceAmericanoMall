@@ -13,7 +13,7 @@ import java.util.List;
  * <p>字段与 ia-api {@code KgEdgeUpsertCO} 一一对应（Controller 负责 Req→CO 搬运）；
  * 幂等口径：按 {@code srcType+srcId} 先删后写。
  *
- * @param srcType 源节点类型（product | category）
+ * @param srcType 源节点类型（spu | category）
  * @param srcId   源节点 id
  * @param edges   本次写入的边集合（空集合 = 清空该 src 全部旧边）
  */

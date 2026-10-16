@@ -322,7 +322,7 @@ class GroupBuyAdminManagerTest {
         GroupBuyCreateReq req = new GroupBuyCreateReq();
         req.setName("iPhone 拼团");
         req.setSellerId(SELLER_ID);
-        req.setProductId(1L);
+        req.setSpuId(1L);
         req.setSkuId(2L);
         req.setGroupPrice(9900);
         req.setRequiredMembers(3);
@@ -337,7 +337,7 @@ class GroupBuyAdminManagerTest {
                 .id(ACTIVITY_ID)
                 .name("进行中拼团活动")
                 .sellerId(SELLER_ID)
-                .productId(1L)
+                .spuId(1L)
                 .skuId(2L)
                 .groupPrice(9900)
                 .requiredMembers(3)

@@ -9,7 +9,7 @@ import java.util.List;
  * 种草笔记仓储（领域端口）—— 实现方：{@code infrastructure.persistence.content.NoteRepositoryImpl}。
  *
  * <p>分页返回 MyBatis-Plus {@code IPage} 信封：笔记流是既有 HTTP 契约（有界务实豁免，
- * 对齐 Review/Product 仓储先例）。
+ * 对齐 Review/Spu 仓储先例）。
  */
 public interface NoteRepository {
 

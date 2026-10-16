@@ -23,7 +23,7 @@ import java.time.LocalDateTime;
 public class FlashSale {
 
     private Long id;
-    private Long productId;
+    private Long spuId;
     private Long skuId;
     private Integer flashPrice;
     private Integer stock;

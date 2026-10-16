@@ -21,15 +21,15 @@ public class FavoriteController {
 
     /** 收藏商品（幂等：重复收藏不重复插入）。 */
     @PostMapping
-    public Result<Void> add(@RequestParam(name = "product_id") Long productId) {
-        favoriteManager.add(UserContext.getUserId(), productId);
+    public Result<Void> add(@RequestParam(name = "spu_id") Long spuId) {
+        favoriteManager.add(UserContext.getUserId(), spuId);
         return Result.ok();
     }
 
     /** 取消收藏。 */
     @DeleteMapping
-    public Result<Void> remove(@RequestParam(name = "product_id") Long productId) {
-        favoriteManager.remove(UserContext.getUserId(), productId);
+    public Result<Void> remove(@RequestParam(name = "spu_id") Long spuId) {
+        favoriteManager.remove(UserContext.getUserId(), spuId);
         return Result.ok();
     }
 

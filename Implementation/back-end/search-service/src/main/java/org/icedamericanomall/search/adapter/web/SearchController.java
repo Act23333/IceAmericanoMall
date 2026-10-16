@@ -3,9 +3,9 @@ package org.icedamericanomall.search.adapter.web;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.common.security.UserContext;
-import org.icedamericanomall.search.adapter.assembler.ProductSearchConverter;
+import org.icedamericanomall.search.adapter.assembler.SpuSearchConverter;
 import org.icedamericanomall.search.adapter.request.SearchPageReq;
-import org.icedamericanomall.search.adapter.response.ProductSearchVO;
+import org.icedamericanomall.search.adapter.response.SpuSearchVO;
 import org.icedamericanomall.search.adapter.response.SearchPageVO;
 import org.icedamericanomall.search.adapter.response.SearchFacetsVO;
 import org.icedamericanomall.search.app.SearchManager;
@@ -28,14 +28,14 @@ import java.util.List;
 public class SearchController {
 
     private final SearchManager searchManager;
-    private final ProductSearchConverter converter;
+    private final SpuSearchConverter converter;
 
     /**
      * 关键词搜索（SE1）— query 参数由 {@link SearchPageReq} 属性绑定（参数名不变；
      * V5.10 补齐 {@code brand}/{@code minPrice}/{@code maxPrice}/{@code sort} 过滤透传）。
      */
     @GetMapping("/product")
-    public Result<SearchPageVO<ProductSearchVO>> search(@QueryModel SearchPageReq req) {
+    public Result<SearchPageVO<SpuSearchVO>> search(@QueryModel SearchPageReq req) {
         return Result.ok(converter.toPage(searchManager.search(req.getKeyword(), req.getCategoryId(),
                 req.getBrand(), req.getMinPrice(), req.getMaxPrice(), req.getSort(),
                 req.getPage(), req.getSize())));

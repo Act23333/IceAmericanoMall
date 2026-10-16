@@ -25,7 +25,7 @@ import java.util.Optional;
 
 /**
  * {@code notes} 索引向量网关 —— 笔记向量 I50/I51 的 ES 读写实现
- * （ADR-046 管道第二次复用，结构镜像 {@link EsProductSearchGateway} 的向量部分）。
+ * （ADR-046 管道第二次复用，结构镜像 {@link EsSpuSearchGateway} 的向量部分）。
  *
  * <p>幂等口径：整文档覆盖写（_id = noteId，重复摄取即覆盖）；软删/取消发布走
  * {@link #deleteById(Long)}。仅 {@code search.elasticsearch.enabled=true} 时装配。

@@ -56,7 +56,7 @@ class AdminGroupBuyControllerTest {
         mockMvc.perform(MockMvcRequestBuilders.post("/api/admin/group-buy")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"iPhone 拼团","sellerId":500,"productId":1,"skuId":2,
+                                {"name":"iPhone 拼团","sellerId":500,"spuId":1,"skuId":2,
                                  "groupPrice":9900,"requiredMembers":3,"timeLimitHours":24,
                                  "startTime":"2026-10-05T10:00:00","endTime":"2026-10-06T10:00:00"}
                                 """))
@@ -71,7 +71,7 @@ class AdminGroupBuyControllerTest {
         mockMvc.perform(MockMvcRequestBuilders.post("/api/admin/group-buy")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"iPhone 拼团","sellerId":500,"productId":1,"skuId":2,
+                                {"name":"iPhone 拼团","sellerId":500,"spuId":1,"skuId":2,
                                  "groupPrice":0,"requiredMembers":3,"timeLimitHours":24,
                                  "startTime":"2026-10-05T10:00:00","endTime":"2026-10-06T10:00:00"}
                                 """))
@@ -86,7 +86,7 @@ class AdminGroupBuyControllerTest {
         mockMvc.perform(MockMvcRequestBuilders.post("/api/admin/group-buy")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"iPhone 拼团","sellerId":500,"productId":1,"skuId":2,
+                                {"name":"iPhone 拼团","sellerId":500,"spuId":1,"skuId":2,
                                  "groupPrice":9900,"requiredMembers":1,"timeLimitHours":24,
                                  "startTime":"2026-10-05T10:00:00","endTime":"2026-10-06T10:00:00"}
                                 """))

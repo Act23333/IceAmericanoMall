@@ -85,7 +85,7 @@ class CouponScopeTest {
 
     @Test
     @DisplayName("accepts — PRODUCT 命中 → 放行；未命中 → 拒绝")
-    void shouldJudgeByProduct_whenScopeTypeProduct() {
+    void shouldJudgeBySpu_whenScopeTypeSpu() {
         assertTrue(CouponScope.accepts(ScopeTypeEnum.PRODUCT.getCode(), "[\"1001\"]", "1001,1002", null));
         assertFalse(CouponScope.accepts(ScopeTypeEnum.PRODUCT.getCode(), "[\"1001\"]", "2001", null));
     }

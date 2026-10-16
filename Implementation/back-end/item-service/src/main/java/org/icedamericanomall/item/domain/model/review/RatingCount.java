@@ -3,7 +3,7 @@ package org.icedamericanomall.item.domain.model.review;
 /**
  * 评价星级分布投影（领域读模型，框架无关）。
  *
- * <p>来源：{@code SELECT rating, COUNT(*) FROM review WHERE product_id = ? GROUP BY rating}。
+ * <p>来源：{@code SELECT rating, COUNT(*) FROM review WHERE spu_id = ? GROUP BY rating}。
  * 由基础设施层映射器产出（外部投影类型见 {@code persistence.review.RatingCountPO}），
  * 再由 {@code ReviewSummaryCalculator} 聚合成 {@link ReviewSummary}。
  *

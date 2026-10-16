@@ -1,7 +1,7 @@
 package org.icedamericanomall.user.adapter.response;
 
 import lombok.Data;
-import org.icedamericanomall.user.app.dto.ProductBriefView;
+import org.icedamericanomall.user.app.dto.SpuBriefView;
 import org.icedamericanomall.user.domain.model.favorite.Favorite;
 
 import java.io.Serializable;
@@ -12,9 +12,9 @@ import java.time.LocalDateTime;
  *
  * <p><b>字段来源分两段</b>：
  * <ol>
- *   <li>收藏本体（{@code id} / {@code product_id} / {@code create_time}）来自 {@link Favorite} 聚合；</li>
+ *   <li>收藏本体（{@code id} / {@code spu_id} / {@code create_time}）来自 {@link Favorite} 聚合；</li>
  *   <li>商品展示摘要（{@code product_name} / {@code main_image} / {@code price} / {@code status}）
- *       由应用层读模型按 ID 批量回填（{@link ProductBriefView}）——收藏表不存商品快照。</li>
+ *       由应用层读模型按 ID 批量回填（{@link SpuBriefView}）——收藏表不存商品快照。</li>
  * </ol>
  *
  * <p><b>回填缺失（商品已删除 / 数据源降级）时四个商品字段保持 {@code null}</b>：契约保留
@@ -31,7 +31,7 @@ public class FavoriteVO implements Serializable {
     private Long userId;
 
     /** 收藏的商品 ID */
-    private Long productId;
+    private Long spuId;
 
     /** 商品名称（读时回填；缺失为 null） */
     private String productName;
@@ -56,11 +56,11 @@ public class FavoriteVO implements Serializable {
      *                 此时四个商品字段置空（fail-open，收藏列表照常返回）
      * @return 收藏视图对象
      */
-    public static FavoriteVO from(Favorite favorite, ProductBriefView brief) {
+    public static FavoriteVO from(Favorite favorite, SpuBriefView brief) {
         FavoriteVO vo = new FavoriteVO();
         vo.setId(favorite.getId());
         vo.setUserId(favorite.getUserId());
-        vo.setProductId(favorite.getProductId());
+        vo.setSpuId(favorite.getSpuId());
         vo.setCreateTime(favorite.getCreateTime());
         if (brief != null) {
             vo.setProductName(brief.productName());

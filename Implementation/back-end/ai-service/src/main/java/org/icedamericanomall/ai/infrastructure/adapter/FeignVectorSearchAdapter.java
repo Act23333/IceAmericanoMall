@@ -3,7 +3,7 @@ package org.icedamericanomall.ai.infrastructure.adapter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.ai.domain.model.knowledge.KnowledgeHit;
-import org.icedamericanomall.ai.domain.model.product.ProductHit;
+import org.icedamericanomall.ai.domain.model.spu.SpuHit;
 import org.icedamericanomall.ai.domain.port.VectorSearchPort;
 import org.icedamericanomall.client.KnowledgeVectorClient;
 import org.icedamericanomall.dto.KnowledgeVectorSearchCO;
@@ -32,14 +32,14 @@ public class FeignVectorSearchAdapter implements VectorSearchPort {
     private final KnowledgeVectorClient knowledgeVectorClient;
 
     @Override
-    public List<ProductHit> vectorSearch(double[] embedding, int size, Long sellerId) {
+    public List<SpuHit> vectorSearch(double[] embedding, int size, Long sellerId) {
         List<Map<String, Object>> raw = doSearch(embedding, size, sellerId, KnowledgeVectorClient.INDEX_PRODUCTS);
         if (raw.isEmpty()) {
             return List.of();
         }
-        List<ProductHit> hits = new ArrayList<>(raw.size());
+        List<SpuHit> hits = new ArrayList<>(raw.size());
         for (Map<String, Object> item : raw) {
-            hits.add(ProductHitAssembler.fromMap(item));
+            hits.add(SpuHitAssembler.fromMap(item));
         }
         return hits;
     }

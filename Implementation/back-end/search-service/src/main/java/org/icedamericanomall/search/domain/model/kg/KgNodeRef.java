@@ -6,7 +6,7 @@ package org.icedamericanomall.search.domain.model.kg;
  * <p>一跳查询以单个节点为起点；两跳查询以第一跳命中的全部目标节点为起点
  * （经 ID 引用遍历，不持有对象引用）。
  *
- * @param type 节点类型（product | category）
+ * @param type 节点类型（spu | category）
  * @param id   节点 id
  */
 public record KgNodeRef(String type, Long id) {

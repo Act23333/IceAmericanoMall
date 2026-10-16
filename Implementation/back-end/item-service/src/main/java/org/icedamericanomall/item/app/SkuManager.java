@@ -6,8 +6,8 @@ import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.item.adapter.assembler.SkuConverter;
 import org.icedamericanomall.item.adapter.response.SkuVO;
-import org.icedamericanomall.item.app.dto.SkuProductDisplay;
-import org.icedamericanomall.item.app.port.SkuProductDisplayQuery;
+import org.icedamericanomall.item.app.dto.SkuSpuDisplay;
+import org.icedamericanomall.item.app.port.SkuSpuDisplayQuery;
 import org.icedamericanomall.item.domain.model.sku.Sku;
 import org.icedamericanomall.item.domain.repository.SkuRepository;
 import org.icedamericanomall.dto.SkuCO;
@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
  *
  * <p><b>I13 商品展示字段（ADR-057）</b>：{@code sku} 表无商品名列，{@code SkuCO} 的
  * {@code product_name/sellerId/categoryId/freightTemplateId} 由
- * {@link SkuProductDisplayQuery} 联表 {@code product} <b>整批一次</b>回填（无 N+1）；
+ * {@link SkuSpuDisplayQuery} 联表 {@code spu} <b>整批一次</b>回填（无 N+1）；
  * 回填失败或商品缺失 → 四字段留空（fail-open），SKU 本体照常返回。
  */
 @Slf4j
@@ -37,7 +37,7 @@ public class SkuManager {
 
     private final SkuRepository skuRepository;
     private final SkuConverter skuConverter;
-    private final SkuProductDisplayQuery skuProductDisplayQuery;
+    private final SkuSpuDisplayQuery skuSpuDisplayQuery;
 
     /** 批量查 SKU 视图（adapter 内部契约）。 */
     public List<SkuVO> getViewsByIds(List<Long> skuIds) {
@@ -48,23 +48,23 @@ public class SkuManager {
      * 批量查 SKU 内部 CO（I13）—— 购物车回填与 trade 下单取数共用。
      *
      * <p>商品展示四字段（{@code product_name}/{@code seller_id}/{@code category_id}/
-     * {@code freight_template_id}）来自 {@code product} 表，由 {@link #enrichProductDisplay}
+     * {@code freight_template_id}）来自 {@code spu} 表，由 {@link #enrichSpuDisplay}
      * 整批回填（单条联表查询）；回填不成功时四字段为 null，SKU 本体照常返回。
      */
     public List<SkuCO> getCosByIds(List<Long> skuIds) {
         List<SkuCO> cos = skuConverter.toCOs(skuRepository.findByIds(skuIds));
-        enrichProductDisplay(cos);
+        enrichSpuDisplay(cos);
         return cos;
     }
 
     /** 商品在售 SKU 视图（商品详情）。 */
-    public List<SkuVO> listOnSaleByProduct(Long productId) {
-        return skuConverter.toVOs(skuRepository.findOnSaleByProductId(productId));
+    public List<SkuVO> listOnSaleBySpu(Long spuId) {
+        return skuConverter.toVOs(skuRepository.findOnSaleBySpuId(spuId));
     }
 
     /** 商品全部 SKU 视图（详情页含下架）。 */
-    public List<SkuVO> listByProduct(Long productId) {
-        return skuConverter.toVOs(skuRepository.findByProductId(productId));
+    public List<SkuVO> listBySpu(Long spuId) {
+        return skuConverter.toVOs(skuRepository.findBySpuId(spuId));
     }
 
     /**
@@ -105,11 +105,11 @@ public class SkuManager {
     }
 
     /** 批量在售 SKU 最低价映射（商品列表回填，禁止 N+1）。 */
-    public Map<Long, Integer> getMinPriceMapByProductIds(List<Long> productIds) {
-        return skuRepository.findOnSaleByProductIds(productIds).stream()
+    public Map<Long, Integer> getMinPriceMapBySpuIds(List<Long> spuIds) {
+        return skuRepository.findOnSaleBySpuIds(spuIds).stream()
                 .filter(sku -> sku.getPrice() != null)
                 .collect(Collectors.toMap(
-                        Sku::getProductId,
+                        Sku::getSpuId,
                         Sku::getPrice,
                         Math::min));
     }
@@ -123,7 +123,7 @@ public class SkuManager {
      * （脏数据/物理删除）→ 该 SKU 的四字段保持 null。两种情况都<b>不</b>抛异常，
      * 也不影响 SKU 本体字段 —— 购物车与下单取数不因展示字段缺失而变脆。
      */
-    private void enrichProductDisplay(List<SkuCO> cos) {
+    private void enrichSpuDisplay(List<SkuCO> cos) {
         if (cos == null || cos.isEmpty()) {
             return;
         }
@@ -135,9 +135,9 @@ public class SkuManager {
         if (skuIds.isEmpty()) {
             return;
         }
-        Map<Long, SkuProductDisplay> displays;
+        Map<Long, SkuSpuDisplay> displays;
         try {
-            displays = skuProductDisplayQuery.findBySkuIds(skuIds);
+            displays = skuSpuDisplayQuery.findBySkuIds(skuIds);
         } catch (Exception e) {
             log.warn("SKU 商品展示字段回填失败，四字段置空（fail-open）: skuIds={}, cause={}",
                     skuIds, e.getMessage());
@@ -147,7 +147,7 @@ public class SkuManager {
             return;
         }
         for (SkuCO co : cos) {
-            SkuProductDisplay display = displays.get(co.getId());
+            SkuSpuDisplay display = displays.get(co.getId());
             if (display == null) {
                 continue;
             }

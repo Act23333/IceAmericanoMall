@@ -81,11 +81,11 @@ class ShopManagerDecorationTest {
         when(shopRepository.findById(shopId)).thenReturn(Optional.of(shop(shopId, ownerMerchantId, ShopStatusEnum.NORMAL)));
     }
 
-    private ShopDecorationReq req(String announcement, List<String> banners, List<Long> hotProductIds) {
+    private ShopDecorationReq req(String announcement, List<String> banners, List<Long> hotSpuIds) {
         ShopDecorationReq req = new ShopDecorationReq();
         req.setAnnouncement(announcement);
         req.setBanners(banners);
-        req.setHotProductIds(hotProductIds);
+        req.setHotSpuIds(hotSpuIds);
         return req;
     }
 
@@ -102,7 +102,7 @@ class ShopManagerDecorationTest {
         assertEquals(5L, captor.getValue().getShopId());
         assertEquals("欢迎光临", captor.getValue().getAnnouncement());
         assertEquals(List.of("https://a.png"), captor.getValue().getBanners());
-        assertEquals(List.of(3L, 1L), captor.getValue().getHotProductIds());
+        assertEquals(List.of(3L, 1L), captor.getValue().getHotSpuIds());
     }
 
     @Test
@@ -156,7 +156,7 @@ class ShopManagerDecorationTest {
 
         assertNull(vo.getAnnouncement());
         assertTrue(vo.getBanners().isEmpty());
-        assertTrue(vo.getHotProductIds().isEmpty());
+        assertTrue(vo.getHotSpuIds().isEmpty());
     }
 
     @Test
@@ -170,7 +170,7 @@ class ShopManagerDecorationTest {
 
         assertEquals("欢迎光临", vo.getAnnouncement());
         assertEquals(List.of("https://a.png"), vo.getBanners());
-        assertEquals(List.of(11L), vo.getHotProductIds());
+        assertEquals(List.of(11L), vo.getHotSpuIds());
     }
 
     @Test
@@ -196,7 +196,7 @@ class ShopManagerDecorationTest {
 
         assertEquals("欢迎光临", vo.getDecoration().getAnnouncement());
         assertEquals(List.of("https://a.png"), vo.getDecoration().getBanners());
-        assertEquals(List.of(11L), vo.getDecoration().getHotProductIds());
+        assertEquals(List.of(11L), vo.getDecoration().getHotSpuIds());
     }
 
     @Test

@@ -13,8 +13,8 @@ import java.util.List;
 /**
  * 商品收藏仓储实现（基础设施层）。
  *
- * <p>业务键 = {@code userId + productId}：新增先按该键计数、为 0 才插入（去重语义，
- * 与 {@code (user_id, product_id)} 唯一键形成双层保障）；取消/查询均携带 userId。
+ * <p>业务键 = {@code userId + spuId}：新增先按该键计数、为 0 才插入（去重语义，
+ * 与 {@code (user_id, spu_id)} 唯一键形成双层保障）；取消/查询均携带 userId。
  */
 @Repository
 @RequiredArgsConstructor
@@ -26,17 +26,17 @@ public class FavoriteRepositoryImpl implements FavoriteRepository {
     public void addIfAbsent(Favorite favorite) {
         long count = favoriteMapper.selectCount(new LambdaQueryWrapper<FavoritePO>()
                 .eq(FavoritePO::getUserId, favorite.getUserId())
-                .eq(FavoritePO::getProductId, favorite.getProductId()));
+                .eq(FavoritePO::getSpuId, favorite.getSpuId()));
         if (count == 0) {
             favoriteMapper.insert(FavoriteConverter.toDataObject(favorite));
         }
     }
 
     @Override
-    public int removeByUserIdAndProductId(Long userId, Long productId) {
+    public int removeByUserIdAndSpuId(Long userId, Long spuId) {
         return favoriteMapper.delete(new LambdaQueryWrapper<FavoritePO>()
                 .eq(FavoritePO::getUserId, userId)
-                .eq(FavoritePO::getProductId, productId));
+                .eq(FavoritePO::getSpuId, spuId));
     }
 
     @Override

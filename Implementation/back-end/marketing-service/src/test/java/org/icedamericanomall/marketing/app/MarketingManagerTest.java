@@ -11,10 +11,10 @@ import org.icedamericanomall.marketing.adapter.assembler.MarketingConverterImpl;
 import org.icedamericanomall.marketing.adapter.response.FlashBuyVO;
 import org.icedamericanomall.marketing.adapter.response.FlashSaleVO;
 import org.icedamericanomall.marketing.app.dto.FlashBuyResult;
-import org.icedamericanomall.marketing.app.dto.FlashSaleProductBrief;
+import org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief;
 import org.icedamericanomall.marketing.app.flash.FlashSaleManager;
 import org.icedamericanomall.marketing.app.flash.FlashSaleViewManager;
-import org.icedamericanomall.marketing.app.port.FlashSaleProductBriefQuery;
+import org.icedamericanomall.marketing.app.port.FlashSaleSpuBriefQuery;
 import org.icedamericanomall.marketing.domain.dto.FlashSaleOrderMessage;
 import org.icedamericanomall.marketing.domain.model.flash.FlashSale;
 import org.icedamericanomall.marketing.infrastructure.messaging.FlashSaleOrderPublisher;
@@ -51,12 +51,12 @@ class MarketingManagerTest {
     private static final Long FLASH_ID = 1L;
     private static final Long ADDRESS_ID = 33L;
     private static final Long SKU_ID = 1000L;
-    private static final Long PRODUCT_ID = 100L;
+    private static final Long SPU_ID = 100L;
     private static final int FLASH_PRICE = 9900;
     private static final String ORDER_NO = "ORD-FLASH-001";
 
     @Mock FlashSaleManager flashSaleManager;
-    @Mock FlashSaleProductBriefQuery flashSaleProductBriefQuery;
+    @Mock FlashSaleSpuBriefQuery flashSaleSpuBriefQuery;
     @Mock OrderClient orderClient;
     @Mock FlashSaleOrderPublisher publisher;
 
@@ -65,7 +65,7 @@ class MarketingManagerTest {
     @BeforeEach
     void setUp() {
         marketingManager = new MarketingManager(flashSaleManager,
-                new FlashSaleViewManager(new MarketingConverterImpl(), flashSaleProductBriefQuery),
+                new FlashSaleViewManager(new MarketingConverterImpl(), flashSaleSpuBriefQuery),
                 orderClient, publisher, new MarketingConverterImpl());
         UserContext.setUser(UserInfo.builder().userId(USER_ID).build());
     }
@@ -185,15 +185,15 @@ class MarketingManagerTest {
     void shouldPassThroughActiveFlashSales_whenList() {
         FlashSale flashSale = FlashSale.builder()
                 .id(FLASH_ID)
-                .productId(PRODUCT_ID)
+                .spuId(SPU_ID)
                 .skuId(SKU_ID)
                 .flashPrice(FLASH_PRICE)
                 .stock(100)
                 .soldCount(35)
                 .build();
         when(flashSaleManager.listActive()).thenReturn(List.of(flashSale));
-        when(flashSaleProductBriefQuery.findBySkuIds(List.of(SKU_ID)))
-                .thenReturn(java.util.Map.of(SKU_ID, new FlashSaleProductBrief(SKU_ID,
+        when(flashSaleSpuBriefQuery.findBySkuIds(List.of(SKU_ID)))
+                .thenReturn(java.util.Map.of(SKU_ID, new FlashSaleSpuBrief(SKU_ID,
                         "手工陶瓷茶杯", "https://cdn.icedmall.com/product/main_100.jpg", 12800)));
 
         List<FlashSaleVO> result = marketingManager.listActiveFlashSales();
@@ -212,7 +212,7 @@ class MarketingManagerTest {
         result.setSuccess(true);
         result.setFlashId(FLASH_ID);
         result.setSkuId(SKU_ID);
-        result.setProductId(PRODUCT_ID);
+        result.setSpuId(SPU_ID);
         result.setFlashPrice(FLASH_PRICE);
         result.setRemainingStock(9L);
         return result;

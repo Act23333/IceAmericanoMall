@@ -11,7 +11,7 @@ import java.util.List;
  * （仅按商品索引检索），V5.4 起新增两个可选维度：
  * <ul>
  *   <li>{@code sellerId} —— 商家过滤（null = 全站）；</li>
- *   <li>{@code index} —— 目标索引（{@code products} 缺省 / {@code knowledge_vectors}）。</li>
+ *   <li>{@code index} —— 目标索引（{@code spus} 缺省 / {@code knowledge_vectors}）。</li>
  * </ul>
  * 旧调用方（不传新字段）行为完全不变。
  *

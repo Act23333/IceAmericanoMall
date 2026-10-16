@@ -28,7 +28,7 @@ public class HomeConfigReq implements Serializable {
     private String title;
 
     @Size(max = 500, message = "商品ID列表长度不能超过500")
-    private String productIds;
+    private String spuIds;
 
     private String image;
 

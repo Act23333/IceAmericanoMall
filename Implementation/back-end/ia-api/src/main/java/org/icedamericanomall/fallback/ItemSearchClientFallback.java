@@ -2,9 +2,9 @@ package org.icedamericanomall.fallback;
 
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.ItemSearchClient;
-import org.icedamericanomall.dto.ProductSearchItemCO;
-import org.icedamericanomall.dto.ProductSearchPageCO;
-import org.icedamericanomall.dto.ProductSearchQueryCO;
+import org.icedamericanomall.dto.SpuSearchItemCO;
+import org.icedamericanomall.dto.SpuSearchPageCO;
+import org.icedamericanomall.dto.SpuSearchQueryCO;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;
 
@@ -26,10 +26,10 @@ public class ItemSearchClientFallback implements FallbackFactory<ItemSearchClien
         return new ItemSearchClient() {
 
             @Override
-            public ProductSearchPageCO searchPage(ProductSearchQueryCO query) {
+            public SpuSearchPageCO searchPage(SpuSearchQueryCO query) {
                 log.warn("商品检索降级：item-service 不可用，本次按空结果处理 keyword={}",
                         query == null ? null : query.getKeyword(), cause);
-                return ProductSearchPageCO.empty();
+                return SpuSearchPageCO.empty();
             }
 
             @Override
@@ -39,13 +39,13 @@ public class ItemSearchClientFallback implements FallbackFactory<ItemSearchClien
             }
 
             @Override
-            public ProductSearchPageCO exportPage(int page, int size) {
+            public SpuSearchPageCO exportPage(int page, int size) {
                 log.warn("商品导出降级：item-service 不可用，page={} 按空页处理（本次重建无数据）", page, cause);
-                return ProductSearchPageCO.empty();
+                return SpuSearchPageCO.empty();
             }
 
             @Override
-            public ProductSearchItemCO detail(Long id) {
+            public SpuSearchItemCO detail(Long id) {
                 log.warn("商品条目查询降级：item-service 不可用，id={} 按缺失处理（fail-open）", id, cause);
                 return null;
             }

@@ -57,7 +57,7 @@ class GroupBuyOrderStrategyTest {
     private SkuCO sku() {
         SkuCO s = new SkuCO();
         s.setId(1000L);
-        s.setProductId(100L);
+        s.setSpuId(100L);
         s.setCategoryId(10L);
         s.setSellerId(9L);
         s.setProductName("拼团商品");

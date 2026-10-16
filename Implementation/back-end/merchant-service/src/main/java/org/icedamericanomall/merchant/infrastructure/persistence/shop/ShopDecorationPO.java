@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
  * {@code shop_decoration} 表映射对象（PO）—— 仅存在于基础设施持久化层，不外泄。
  *
  * <p>唯一索引 {@code uk_shop(shop_id)}（装修与 shop 1:1）；
- * {@code banners} / {@code hot_product_ids} 为 JSON 数组字符串列（不引入 TypeHandler），
+ * {@code banners} / {@code hot_spu_ids} 为 JSON 数组字符串列（不引入 TypeHandler），
  * 序列化在 {@link ShopDecorationRepositoryImpl} 收口。
  */
 @Data
@@ -35,8 +35,8 @@ public class ShopDecorationPO implements Serializable {
     /** 轮播图 JSON 数组字符串（≤5 个 http(s) URL） */
     private String banners;
 
-    /** 推荐商品位 JSON 数组字符串（≤8 个 product.id，去重） */
-    private String hotProductIds;
+    /** 推荐商品位 JSON 数组字符串（≤8 个 spu.id，去重） */
+    private String hotSpuIds;
 
     private LocalDateTime createTime;
 

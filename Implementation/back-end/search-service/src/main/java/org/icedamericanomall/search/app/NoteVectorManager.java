@@ -26,7 +26,7 @@ import java.util.Optional;
  * <p><b>相似检索链路（I51）</b>：取自身向量 → 以自身向量 kNN（Top-K = size + 1）→ 过滤自身
  * → 只出 {@code noteId + score}（笔记卡组装与发布态过滤归 item-service：MySQL 是展示真相源）。
  *
- * <p><b>渐进启用 / 全链路 fail-open（推荐是纯旁路）</b>：与商品向量（{@link ProductVectorManager}）同口径——
+ * <p><b>渐进启用 / 全链路 fail-open（推荐是纯旁路）</b>：与商品向量（{@link SpuVectorManager}）同口径——
  * Embedding 未配置 → 摄取返回 0 并记 WARN，<b>不报错</b>；Embedding/写入失败 → 抛业务异常（fail-loud），
  * 由调用方（item-service）经 Feign 降级为哨兵；自身无向量（冷启动存量笔记）→ 相似检索返回空列表。
  *

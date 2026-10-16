@@ -6,7 +6,7 @@ import org.icedamericanomall.marketing.adapter.assembler.MarketingConverter;
 import org.icedamericanomall.marketing.adapter.request.FlashSaleCreateReq;
 import org.icedamericanomall.marketing.adapter.request.FlashSaleUpdateReq;
 import org.icedamericanomall.marketing.adapter.response.FlashSaleVO;
-import org.icedamericanomall.marketing.app.port.FlashSaleProductBriefQuery;
+import org.icedamericanomall.marketing.app.port.FlashSaleSpuBriefQuery;
 import org.icedamericanomall.marketing.domain.enums.FlashSaleStatusEnum;
 import org.icedamericanomall.marketing.domain.model.flash.FlashSale;
 import org.icedamericanomall.marketing.domain.repository.FlashSaleRepository;
@@ -49,7 +49,7 @@ class FlashSaleAdminManagerTest {
     private FlashSaleRepository flashSaleRepository;
 
     @Mock
-    private FlashSaleProductBriefQuery flashSaleProductBriefQuery;
+    private FlashSaleSpuBriefQuery flashSaleSpuBriefQuery;
 
     private final MarketingConverter converter = Mappers.getMapper(MarketingConverter.class);
 
@@ -58,7 +58,7 @@ class FlashSaleAdminManagerTest {
     @BeforeEach
     void setUp() {
         flashSaleAdminManager = new FlashSaleAdminManager(flashSaleRepository, converter,
-                new FlashSaleViewManager(converter, flashSaleProductBriefQuery));
+                new FlashSaleViewManager(converter, flashSaleSpuBriefQuery));
         // 仓储 INSERT 主键回填（模拟 MyBatis-Plus 生成主键后写回聚合）
         lenient().doAnswer(invocation -> {
             FlashSale sale = invocation.getArgument(0);
@@ -244,7 +244,7 @@ class FlashSaleAdminManagerTest {
 
     private FlashSaleCreateReq createReq(LocalDateTime start, LocalDateTime end) {
         FlashSaleCreateReq req = new FlashSaleCreateReq();
-        req.setProductId(10L);
+        req.setSpuId(10L);
         req.setSkuId(1000L);
         req.setFlashPrice(9900);
         req.setStock(100);
@@ -256,7 +256,7 @@ class FlashSaleAdminManagerTest {
     private FlashSale sale(LocalDateTime start, LocalDateTime end, int stock, int soldCount) {
         return FlashSale.builder()
                 .id(FLASH_ID)
-                .productId(10L)
+                .spuId(10L)
                 .skuId(1000L)
                 .flashPrice(9900)
                 .stock(stock)

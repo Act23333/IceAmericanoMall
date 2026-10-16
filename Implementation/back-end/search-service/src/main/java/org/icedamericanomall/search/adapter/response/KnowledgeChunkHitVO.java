@@ -10,7 +10,7 @@ import java.io.Serializable;
  * 知识 chunk 检索命中视图对象（内部端点 {@code POST /internal/search/vector} 的
  * {@code index=knowledge_vectors} 分支返回形状）。
  *
- * <p>与商品分支的 {@link ProductSearchVO} 互斥：同一端点按 {@code index} 返回不同形状，
+ * <p>与商品分支的 {@link SpuSearchVO} 互斥：同一端点按 {@code index} 返回不同形状，
  * 调用方（ai-service）按 index 装配。字段名即 JSON 契约，不暴露 {@code vector}。
  */
 @Data

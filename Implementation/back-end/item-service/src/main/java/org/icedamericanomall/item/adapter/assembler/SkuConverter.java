@@ -26,9 +26,9 @@ public interface SkuConverter {
      * 聚合 → I13 内部 CO。
      *
      * <p>四个展示/计价字段（{@code seller_id} / {@code product_name} / {@code category_id} /
-     * {@code freight_template_id}）在 {@code sku} 表<b>没有列</b>，只能来自 {@code product} 表：
-     * 由 {@code SkuManager} 经 ADR-057 读模型端口 {@code SkuProductDisplayQuery}
-     * （{@code sku LEFT JOIN product}）批量回填，商品行缺失即保持 {@code null}（fail-open，
+     * {@code freight_template_id}）在 {@code sku} 表<b>没有列</b>，只能来自 {@code spu} 表：
+     * 由 {@code SkuManager} 经 ADR-057 读模型端口 {@code SkuSpuDisplayQuery}
+     * （{@code sku LEFT JOIN spu}）批量回填，商品行缺失即保持 {@code null}（fail-open，
      * 不得把展示字段缺失放大成「SKU 不存在」）。故此处显式 ignore 而非在别处再映射。
      */
     @Mapping(target = "sellerId", ignore = true)

@@ -13,7 +13,7 @@ import java.util.List;
  * {@code POST /internal/item/freight-template/query}：
  * {@code { sellerId(Long, 必填), templateIds(List<Long>, 必填, 可空数组=仅按 sellerId 查) }}。
  *
- * <p><b>{@code sellerId} 口径</b>：商家 {@code user_id}（与 {@code product.seller_id} 同口径，
+ * <p><b>{@code sellerId} 口径</b>：商家 {@code user_id}（与 {@code spu.seller_id} 同口径，
  * ADR-019 Phase A），不是 {@code seller.id}。
  *
  * <p><b>{@code templateIds} 语义</b>：订单内商品绑定的模板 ID 集合；允许为空数组（或 null，

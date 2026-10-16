@@ -29,7 +29,7 @@ public class SellerDashboardController {
 
     /** V2.5 商品维度销量/金额统计（最近 N 天）。 */
     @GetMapping("/product-stats")
-    public Result<List<Map<String, Object>>> productStats(@RequestParam(defaultValue = "30") int days) {
-        return Result.ok(sellerDashboardManager.productStats(UserContext.getUserId(), days));
+    public Result<List<Map<String, Object>>> spuStats(@RequestParam(defaultValue = "30") int days) {
+        return Result.ok(sellerDashboardManager.spuStats(UserContext.getUserId(), days));
     }
 }

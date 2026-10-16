@@ -1,7 +1,7 @@
 package org.icedamericanomall.ai.domain.port;
 
 import org.icedamericanomall.ai.domain.model.knowledge.KnowledgeHit;
-import org.icedamericanomall.ai.domain.model.product.ProductHit;
+import org.icedamericanomall.ai.domain.model.spu.SpuHit;
 
 import java.util.List;
 
@@ -23,7 +23,7 @@ public interface VectorSearchPort {
      * @param sellerId  商家ID（非空时按商家过滤，null 表示全站）
      * @return 命中商品列表（无结果为空列表，不返回 null）
      */
-    List<ProductHit> vectorSearch(double[] embedding, int size, Long sellerId);
+    List<SpuHit> vectorSearch(double[] embedding, int size, Long sellerId);
 
     /**
      * 向量 kNN 检索商家知识库 chunk（RAG 知识召回）。

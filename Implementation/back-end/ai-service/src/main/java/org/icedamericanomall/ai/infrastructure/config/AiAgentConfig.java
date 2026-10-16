@@ -9,7 +9,7 @@ import org.icedamericanomall.ai.infrastructure.agent.ShoppingAssistant;
 import org.icedamericanomall.ai.infrastructure.agent.StreamingCustomerServiceAssistant;
 import org.icedamericanomall.ai.infrastructure.agent.StreamingShoppingAssistant;
 import org.icedamericanomall.ai.infrastructure.adapter.tool.OrderLookupTool;
-import org.icedamericanomall.ai.infrastructure.adapter.tool.ProductDetailTool;
+import org.icedamericanomall.ai.infrastructure.adapter.tool.SpuDetailTool;
 import org.icedamericanomall.ai.infrastructure.adapter.tool.RAGSearchTool;
 import org.icedamericanomall.ai.infrastructure.adapter.tool.SearchTool;
 import org.icedamericanomall.ai.infrastructure.adapter.tool.UserProfileTool;
@@ -60,7 +60,7 @@ public class AiAgentConfig {
     public ShoppingAssistant shoppingAssistant(
             OpenAiChatModel langchain4jChatModel,
             SearchTool searchTool,
-            ProductDetailTool productDetailTool,
+            SpuDetailTool spuDetailTool,
             UserProfileTool userProfileTool,
             RedisChatMemoryStore memoryStore) {
         return AiServices.builder(ShoppingAssistant.class)
@@ -70,7 +70,7 @@ public class AiAgentConfig {
                         .maxMessages(SHOPPING_MAX_MESSAGES)
                         .chatMemoryStore(memoryStore)
                         .build())
-                .tools(searchTool, productDetailTool, userProfileTool)
+                .tools(searchTool, spuDetailTool, userProfileTool)
                 .build();
     }
 
@@ -107,7 +107,7 @@ public class AiAgentConfig {
     public StreamingShoppingAssistant streamingShoppingAssistant(
             OpenAiStreamingChatModel streamingChatModel,
             SearchTool searchTool,
-            ProductDetailTool productDetailTool,
+            SpuDetailTool spuDetailTool,
             UserProfileTool userProfileTool,
             RedisChatMemoryStore memoryStore) {
         return AiServices.builder(StreamingShoppingAssistant.class)
@@ -117,7 +117,7 @@ public class AiAgentConfig {
                         .maxMessages(SHOPPING_MAX_MESSAGES)
                         .chatMemoryStore(memoryStore)
                         .build())
-                .tools(searchTool, productDetailTool, userProfileTool)
+                .tools(searchTool, spuDetailTool, userProfileTool)
                 .build();
     }
 
@@ -161,14 +161,14 @@ public class AiAgentConfig {
     @ConditionalOnProperty(name = "ai.enabled", havingValue = "true")
     public ShoppingAssistant qwenShoppingAssistant(
             @Qualifier("qwenChatModel") OpenAiChatModel qwenModel,
-            SearchTool searchTool, ProductDetailTool productDetailTool,
+            SearchTool searchTool, SpuDetailTool spuDetailTool,
             UserProfileTool userProfileTool, RedisChatMemoryStore memoryStore) {
         return AiServices.builder(ShoppingAssistant.class)
                 .chatModel(qwenModel)
                 .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder()
                         .id(memoryId).maxMessages(SHOPPING_MAX_MESSAGES)
                         .chatMemoryStore(memoryStore).build())
-                .tools(searchTool, productDetailTool, userProfileTool)
+                .tools(searchTool, spuDetailTool, userProfileTool)
                 .build();
     }
 }

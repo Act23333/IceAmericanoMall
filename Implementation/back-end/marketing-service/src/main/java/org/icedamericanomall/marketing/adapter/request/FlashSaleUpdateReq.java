@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
 public class FlashSaleUpdateReq implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    private Long productId;
+    private Long spuId;
 
     private Long skuId;
 

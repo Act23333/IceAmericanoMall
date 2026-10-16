@@ -19,7 +19,7 @@ public class CartItemCO implements Serializable {
 
     private Long skuId;
 
-    private Long productId;
+    private Long spuId;
 
     private String productName;
 

@@ -38,11 +38,11 @@ public final class CouponScope {
      *
      * @param scopeType   券的适用范围类型（{@code null} = ALL）
      * @param scopeValues 券的适用范围 ID 列表（JSON 字符串；{@code null}/空 = 不限）
-     * @param productIds  订单商品 ID 串（逗号分隔；未传 = 未知）
+     * @param spuIds  订单商品 ID 串（逗号分隔；未传 = 未知）
      * @param categoryIds 订单品类 ID 串（逗号分隔；未传 = 未知）
      * @return {@code true} 表示放行；有限定范围但订单侧无交集（含订单侧未传）时返回 {@code false}
      */
-    public static boolean accepts(Integer scopeType, String scopeValues, String productIds, String categoryIds) {
+    public static boolean accepts(Integer scopeType, String scopeValues, String spuIds, String categoryIds) {
         if (scopeType == null) {
             return true;
         }
@@ -59,7 +59,7 @@ public final class CouponScope {
             return intersects(limits, splitIds(categoryIds));
         }
         if (type == ScopeTypeEnum.PRODUCT.getCode()) {
-            return intersects(limits, splitIds(productIds));
+            return intersects(limits, splitIds(spuIds));
         }
         // 未知 scopeType（脏数据）→ 视为全场，避免把用户券误判为不可用
         return true;

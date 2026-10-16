@@ -326,7 +326,7 @@
                           unmappedTargetPolicy = WARN/IGNORE 局部放宽（那会成为下一个盲区）。
                           已确认属设计例外（由编排层读时回填 / 跨域补齐）的字段，在对应 mapper 用
                           @Mapping(target = "...", ignore = true) 逐字段显式声明意图（见 CartConverter / SkuConverter /
-                          ProductConverter / ReviewConverter）。
+                          SpuConverter / ReviewConverter）。
                         -->
                         <compilerArgs>
                             <arg>-Amapstruct.unmappedTargetPolicy=ERROR</arg>

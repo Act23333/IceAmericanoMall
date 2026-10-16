@@ -2,8 +2,8 @@ package org.icedamericanomall.search.app;
 
 import org.icedamericanomall.search.domain.enums.SearchSortEnum;
 import org.icedamericanomall.search.domain.gateway.KeywordTracker;
-import org.icedamericanomall.search.domain.gateway.ProductSearchGateway;
-import org.icedamericanomall.search.domain.gateway.ProductSuggestGateway;
+import org.icedamericanomall.search.domain.gateway.SpuSearchGateway;
+import org.icedamericanomall.search.domain.gateway.SpuSuggestGateway;
 import org.icedamericanomall.search.domain.model.search.SearchQuery;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,16 +36,16 @@ import static org.mockito.Mockito.when;
 class SearchManagerTest {
 
     @Mock
-    private ProductSearchGateway productSearchGateway;
+    private SpuSearchGateway spuSearchGateway;
 
     @Mock
     private KeywordTracker keywordTracker;
 
     @Mock
-    private ProductSuggestGateway productSuggestGateway;
+    private SpuSuggestGateway spuSuggestGateway;
 
     private SearchManager manager() {
-        return new SearchManager(productSearchGateway, keywordTracker, productSuggestGateway);
+        return new SearchManager(spuSearchGateway, keywordTracker, spuSuggestGateway);
     }
 
     @Test
@@ -54,7 +54,7 @@ class SearchManagerTest {
         manager().search("手机", 10L, "SoundMax", 100, 200, "price", 2, 10);
 
         ArgumentCaptor<SearchQuery> captor = ArgumentCaptor.forClass(SearchQuery.class);
-        verify(productSearchGateway).search(captor.capture());
+        verify(spuSearchGateway).search(captor.capture());
         SearchQuery query = captor.getValue();
         assertEquals("手机", query.keyword());
         assertEquals(10L, query.categoryId());
@@ -88,7 +88,7 @@ class SearchManagerTest {
         manager().getFacets("手机", 10L);
 
         ArgumentCaptor<SearchQuery> captor = ArgumentCaptor.forClass(SearchQuery.class);
-        verify(productSearchGateway).facets(captor.capture());
+        verify(spuSearchGateway).facets(captor.capture());
         SearchQuery query = captor.getValue();
         assertEquals("手机", query.keyword());
         assertEquals(10L, query.categoryId());
@@ -104,7 +104,7 @@ class SearchManagerTest {
         manager().search("手机", null, null, null, null, "bogus", 1, 10);
 
         ArgumentCaptor<SearchQuery> captor = ArgumentCaptor.forClass(SearchQuery.class);
-        verify(productSearchGateway).search(captor.capture());
+        verify(spuSearchGateway).search(captor.capture());
         assertEquals(SearchSortEnum.RELEVANCE, captor.getValue().sortOrDefault());
     }
 
@@ -112,20 +112,20 @@ class SearchManagerTest {
     @DisplayName("suggest — 热搜词前缀在前 + 商品名在后，去空格后委托双源")
     void shouldMergeHotWordsFirstThenProductNames_whenSuggest() {
         when(keywordTracker.getHotKeywordsByPrefix("手机", 10)).thenReturn(List.of("手机"));
-        when(productSuggestGateway.suggestNames("手机", 10)).thenReturn(List.of("手机壳", "蓝牙耳机"));
+        when(spuSuggestGateway.suggestNames("手机", 10)).thenReturn(List.of("手机壳", "蓝牙耳机"));
 
         List<String> suggestions = manager().suggest(" 手机 ");
 
         assertEquals(List.of("手机", "手机壳", "蓝牙耳机"), suggestions);
         verify(keywordTracker).getHotKeywordsByPrefix("手机", 10);
-        verify(productSuggestGateway).suggestNames("手机", 10);
+        verify(spuSuggestGateway).suggestNames("手机", 10);
     }
 
     @Test
     @DisplayName("suggest — 双源重复词只保留一次（精确去重）")
     void shouldDeduplicateAcrossSources_whenOverlap() {
         when(keywordTracker.getHotKeywordsByPrefix("手机", 10)).thenReturn(List.of("手机"));
-        when(productSuggestGateway.suggestNames("手机", 10)).thenReturn(List.of("手机", "手机壳"));
+        when(spuSuggestGateway.suggestNames("手机", 10)).thenReturn(List.of("手机", "手机壳"));
 
         assertEquals(List.of("手机", "手机壳"), manager().suggest("手机"));
     }
@@ -135,7 +135,7 @@ class SearchManagerTest {
     void shouldLimitToTen_whenMergedOverflow() {
         when(keywordTracker.getHotKeywordsByPrefix("机", 10))
                 .thenReturn(List.of("热搜1", "热搜2", "热搜3", "热搜4", "热搜5", "热搜6"));
-        when(productSuggestGateway.suggestNames("机", 10))
+        when(spuSuggestGateway.suggestNames("机", 10))
                 .thenReturn(List.of("商品1", "商品2", "商品3", "商品4", "商品5", "商品6"));
 
         List<String> suggestions = manager().suggest("机");
@@ -153,7 +153,7 @@ class SearchManagerTest {
         assertTrue(manager().suggest(null).isEmpty());
         assertTrue(manager().suggest("   ").isEmpty());
 
-        verifyNoInteractions(keywordTracker, productSuggestGateway);
+        verifyNoInteractions(keywordTracker, spuSuggestGateway);
     }
 
     @Test
@@ -162,18 +162,18 @@ class SearchManagerTest {
         String longKeyword = "机".repeat(60);
         String expectedPrefix = "机".repeat(50);
         when(keywordTracker.getHotKeywordsByPrefix(expectedPrefix, 10)).thenReturn(List.of());
-        when(productSuggestGateway.suggestNames(expectedPrefix, 10)).thenReturn(List.of("手机"));
+        when(spuSuggestGateway.suggestNames(expectedPrefix, 10)).thenReturn(List.of("手机"));
 
         assertEquals(List.of("手机"), manager().suggest(longKeyword));
         verify(keywordTracker).getHotKeywordsByPrefix(expectedPrefix, 10);
-        verify(productSuggestGateway).suggestNames(expectedPrefix, 10);
+        verify(spuSuggestGateway).suggestNames(expectedPrefix, 10);
     }
 
     @Test
     @DisplayName("suggest — 联想不记录热搜（浏览行为非检索行为，不污染热搜榜）")
     void shouldNotRecordHotKeyword_whenSuggest() {
         when(keywordTracker.getHotKeywordsByPrefix(any(), anyInt())).thenReturn(List.of());
-        when(productSuggestGateway.suggestNames(any(), anyInt())).thenReturn(List.of());
+        when(spuSuggestGateway.suggestNames(any(), anyInt())).thenReturn(List.of());
 
         manager().suggest("手机");
 

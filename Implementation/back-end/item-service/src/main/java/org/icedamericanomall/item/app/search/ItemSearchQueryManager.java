@@ -1,13 +1,13 @@
 package org.icedamericanomall.item.app.search;
 
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.dto.ProductSearchItemCO;
-import org.icedamericanomall.dto.ProductSearchPageCO;
-import org.icedamericanomall.dto.ProductSearchQueryCO;
+import org.icedamericanomall.dto.SpuSearchItemCO;
+import org.icedamericanomall.dto.SpuSearchPageCO;
+import org.icedamericanomall.dto.SpuSearchQueryCO;
 import org.icedamericanomall.item.domain.model.PageResult;
-import org.icedamericanomall.item.domain.model.product.ProductSearchCard;
-import org.icedamericanomall.item.domain.model.product.ProductSearchCriteria;
-import org.icedamericanomall.item.domain.repository.ProductRepository;
+import org.icedamericanomall.item.domain.model.spu.SpuSearchCard;
+import org.icedamericanomall.item.domain.model.spu.SpuSearchCriteria;
+import org.icedamericanomall.item.domain.repository.SpuRepository;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -30,18 +30,18 @@ public class ItemSearchQueryManager {
     /** 联想词条数上限。 */
     private static final int MAX_SUGGEST_LIMIT = 50;
 
-    private final ProductRepository productRepository;
+    private final SpuRepository spuRepository;
 
     /** 商品检索分页（LIKE 降级链路数据源）。 */
-    public ProductSearchPageCO searchPage(ProductSearchQueryCO query) {
-        ProductSearchCriteria criteria = toCriteria(query == null ? new ProductSearchQueryCO() : query);
-        PageResult<ProductSearchCard> result = productRepository.searchPage(criteria);
+    public SpuSearchPageCO searchPage(SpuSearchQueryCO query) {
+        SpuSearchCriteria criteria = toCriteria(query == null ? new SpuSearchQueryCO() : query);
+        PageResult<SpuSearchCard> result = spuRepository.searchPage(criteria);
         return toPageCO(result);
     }
 
     /** 在售商品全量导出分页（ES 重建数据源，按 id 升序稳定遍历）。 */
-    public ProductSearchPageCO exportPage(int page, int size) {
-        PageResult<ProductSearchCard> result = productRepository.exportPage(
+    public SpuSearchPageCO exportPage(int page, int size) {
+        PageResult<SpuSearchCard> result = spuRepository.exportPage(
                 Math.max(1, page), clamp(size, 1, MAX_PAGE_SIZE));
         return toPageCO(result);
     }
@@ -51,36 +51,36 @@ public class ItemSearchQueryManager {
         if (prefix == null || prefix.isBlank() || limit <= 0) {
             return List.of();
         }
-        return productRepository.suggestNames(prefix.trim(), clamp(limit, 1, MAX_SUGGEST_LIMIT));
+        return spuRepository.suggestNames(prefix.trim(), clamp(limit, 1, MAX_SUGGEST_LIMIT));
     }
 
     /** 单商品检索卡片（ES 摄取 publishTime 回填用）；不存在返回 null。 */
-    public ProductSearchItemCO detail(Long id) {
+    public SpuSearchItemCO detail(Long id) {
         if (id == null) {
             return null;
         }
-        ProductSearchCard card = productRepository.findSearchCardById(id);
+        SpuSearchCard card = spuRepository.findSearchCardById(id);
         return card == null ? null : toItemCO(card);
     }
 
-    private static ProductSearchCriteria toCriteria(ProductSearchQueryCO query) {
-        return new ProductSearchCriteria(
+    private static SpuSearchCriteria toCriteria(SpuSearchQueryCO query) {
+        return new SpuSearchCriteria(
                 query.getKeyword(), query.getCategoryId(), query.getBrand(),
                 query.getMinPrice(), query.getMaxPrice(), query.getSort(),
                 Math.max(1, query.getPage()), clamp(query.getSize(), 1, MAX_PAGE_SIZE));
     }
 
-    private static ProductSearchPageCO toPageCO(PageResult<ProductSearchCard> result) {
-        ProductSearchPageCO co = new ProductSearchPageCO();
+    private static SpuSearchPageCO toPageCO(PageResult<SpuSearchCard> result) {
+        SpuSearchPageCO co = new SpuSearchPageCO();
         co.setTotal(result.total());
         co.setRecords(result.records().stream().map(ItemSearchQueryManager::toItemCO).toList());
         return co;
     }
 
-    private static ProductSearchItemCO toItemCO(ProductSearchCard card) {
-        ProductSearchItemCO co = new ProductSearchItemCO();
+    private static SpuSearchItemCO toItemCO(SpuSearchCard card) {
+        SpuSearchItemCO co = new SpuSearchItemCO();
         co.setId(card.id());
-        co.setProductId(card.productId());
+        co.setSpuId(card.spuId());
         co.setCategoryId(card.categoryId());
         co.setName(card.name());
         co.setDescription(card.description());

@@ -11,10 +11,10 @@ import org.icedamericanomall.item.adapter.response.PairingRuleVO;
 import org.icedamericanomall.item.domain.model.category.Category;
 import org.icedamericanomall.item.domain.model.kg.KgSchema;
 import org.icedamericanomall.item.domain.model.kg.PairingRule;
-import org.icedamericanomall.item.domain.model.product.Product;
+import org.icedamericanomall.item.domain.model.spu.Spu;
 import org.icedamericanomall.item.domain.repository.CategoryRepository;
 import org.icedamericanomall.item.domain.repository.PairingRuleRepository;
-import org.icedamericanomall.item.domain.repository.ProductRepository;
+import org.icedamericanomall.item.domain.repository.SpuRepository;
 import org.icedamericanomall.client.KgClient;
 import org.icedamericanomall.dto.KgEdgeItemCO;
 import org.icedamericanomall.dto.KgEdgeUpsertCO;
@@ -57,7 +57,7 @@ public class KgAdminManager {
 
     private final PairingRuleRepository pairingRuleRepository;
     private final CategoryRepository categoryRepository;
-    private final ProductRepository productRepository;
+    private final SpuRepository spuRepository;
     private final KgEdgeIngestManager kgEdgeIngestManager;
     private final KgClient kgClient;
 
@@ -134,7 +134,7 @@ public class KgAdminManager {
      * @return 成功写入边数（降级/失败部分不计入，可重跑补齐）
      */
     public int rebuild() {
-        int written = rebuildProductEdges() + rebuildCategoryParentEdges() + rebuildPairingRuleEdges();
+        int written = rebuildSpuEdges() + rebuildCategoryParentEdges() + rebuildPairingRuleEdges();
         log.info("[KG_REBUILD] [重建边投影] [written={}] [fail-open 逐 src 继续]", written);
         return written;
     }
@@ -216,16 +216,16 @@ public class KgAdminManager {
     }
 
     /** 重建①②：商品真相源逐批扫描——在售 upsert 直建边，下架/删除清边。 */
-    private int rebuildProductEdges() {
+    private int rebuildSpuEdges() {
         int written = 0;
         int pageNum = 1;
         while (true) {
-            IPage<Product> batch = productRepository.pageAll(pageNum, REBUILD_PAGE_SIZE);
+            IPage<Spu> batch = spuRepository.pageAll(pageNum, REBUILD_PAGE_SIZE);
             if (batch.getRecords().isEmpty()) {
                 break;
             }
-            for (Product product : batch.getRecords()) {
-                written += kgEdgeIngestManager.writeProductEdges(product);
+            for (Spu spu : batch.getRecords()) {
+                written += kgEdgeIngestManager.writeSpuEdges(spu);
             }
             if (pageNum >= batch.getPages()) {
                 break;

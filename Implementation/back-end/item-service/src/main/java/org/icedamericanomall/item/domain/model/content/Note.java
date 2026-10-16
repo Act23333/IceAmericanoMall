@@ -14,16 +14,16 @@ import java.util.regex.Pattern;
  * 种草笔记聚合根（纯 POJO，零框架依赖）—— F12 内容社区 Phase 1（ADR-048）。
  *
  * <p><b>聚合边界</b>：{@code note} 行为本聚合根；点赞关联 {@code note_like}（笔记 × 用户）
- * 与关联商品 {@code note_product}（笔记 × 商品，≤{@value #MAX_PRODUCTS} 条）是<b>聚合内部
- * 关联</b>，分别只允许经 {@code NoteLikeRepository} / {@code NoteProductRepository} 端口访问，
- * 外部不得直接操作这两张表。笔记与商品通过 {@code productId} <b>按 ID 引用</b>，不持有
- * {@code Product} 对象引用；发布时的商品存在性/在售校验属跨聚合协作，上移应用层编排。
+ * 与关联商品 {@code note_spu}（笔记 × 商品，≤{@value #MAX_SPUS} 条）是<b>聚合内部
+ * 关联</b>，分别只允许经 {@code NoteLikeRepository} / {@code NoteSpuRepository} 端口访问，
+ * 外部不得直接操作这两张表。笔记与商品通过 {@code spuId} <b>按 ID 引用</b>，不持有
+ * {@code Spu} 对象引用；发布时的商品存在性/在售校验属跨聚合协作，上移应用层编排。
  *
  * <p><b>包边界即未来拆分边界</b>（ADR-025/048）：内容生态膨胀（评论/话题/关注流）时
  * {@code domain/model/content/} 整包拆出 community-service，本次落位 item 域与 review 同构。
  *
  * <p><b>Phase 1 能力边界</b>（ADR-048）：纯文本正文 + 图集 ≤{@value #MAX_IMAGES}（不做富文本/视频）、
- * 关联商品 ≤{@value #MAX_PRODUCTS}（发布即校验存在且在售）、点赞（uk 幂等 + 原子计数）、
+ * 关联商品 ≤{@value #MAX_SPUS}（发布即校验存在且在售）、点赞（uk 幂等 + 原子计数）、
  * 作者软删；不做笔记评论、关注流、推荐分发、草稿箱——status 恒 {@value #STATUS_PUBLISHED}
  * （发布即上架，无草稿态）。
  */
@@ -41,7 +41,7 @@ public class Note {
     public static final int MAX_IMAGES = 9;
 
     /** 关联商品上限（发布时逐个校验存在且在售）。 */
-    public static final int MAX_PRODUCTS = 5;
+    public static final int MAX_SPUS = 5;
 
     /** 标题最大长度。 */
     public static final int TITLE_MAX_LEN = 50;
@@ -140,7 +140,7 @@ public class Note {
         }
     }
 
-    /** 作者软删（status → 已删除；关联 note_product / note_like 保留，软删后不可达不清理）。 */
+    /** 作者软删（status → 已删除；关联 note_spu / note_like 保留，软删后不可达不清理）。 */
     public void softDelete() {
         this.status = STATUS_DELETED;
     }

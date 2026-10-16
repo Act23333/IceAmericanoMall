@@ -58,7 +58,7 @@ public class SellerDashboardManager {
     }
 
     /** V2.5 商品维度销量/金额统计（最近 N 天，按金额倒序）。 */
-    public List<Map<String, Object>> productStats(Long sellerId, int days) {
+    public List<Map<String, Object>> spuStats(Long sellerId, int days) {
         LocalDateTime since = LocalDate.now().minusDays(days).atStartOfDay();
         List<Order> orders = orderRepository.findBySellerAndCreateTimeAfter(sellerId, since);
         if (orders.isEmpty()) {

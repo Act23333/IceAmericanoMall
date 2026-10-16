@@ -36,7 +36,7 @@ public class HomeConfigManager {
     @Transactional(rollbackFor = Exception.class)
     public HomeConfigVO createConfig(HomeConfigReq req) {
         HomeConfig saved = homeConfigRepository.save(HomeConfig.newConfig(
-                req.getSlot(), req.getType(), req.getTitle(), req.getProductIds(),
+                req.getSlot(), req.getType(), req.getTitle(), req.getSpuIds(),
                 req.getImage(), req.getLinkUrl(), req.getSortOrder(), req.getStatus()));
         return homeConfigConverter.toVO(saved);
     }
@@ -47,7 +47,7 @@ public class HomeConfigManager {
             throw new BizException(ErrorCode.HOME_CONFIG_NOT_FOUND);
         }
         HomeConfig revised = HomeConfig.forRevise(id, req.getSlot(), req.getType(), req.getTitle(),
-                req.getProductIds(), req.getImage(), req.getLinkUrl(), req.getSortOrder(), req.getStatus());
+                req.getSpuIds(), req.getImage(), req.getLinkUrl(), req.getSortOrder(), req.getStatus());
         homeConfigRepository.update(revised);
         return homeConfigConverter.toVO(revised);
     }

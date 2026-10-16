@@ -24,7 +24,7 @@ public class KgEdgeItemCO implements Serializable {
     @NotBlank
     private String relType;
 
-    /** 目标节点类型：product | category | brand | seller */
+    /** 目标节点类型：spu | category | brand | seller */
     @NotBlank
     private String dstType;
 

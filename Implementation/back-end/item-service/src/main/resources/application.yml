@@ -49,7 +49,7 @@ management:
       application: ${spring.application.name}
 
 # ── 商品分享小程序码（P37，契约 §4.4.x V5.18）──
-# 生成结果按 productId 缓存于 MinIO（wxa-code/product/{id}.png），二次请求直返 URL
+# 生成结果按 spuId 缓存于 MinIO（wxa-code/product/{id}.png），二次请求直返 URL
 item:
   share:
     # 小程序码落地页（微信 getwxacodeunlimit page 参数，需真实存在于小程序发布版本）

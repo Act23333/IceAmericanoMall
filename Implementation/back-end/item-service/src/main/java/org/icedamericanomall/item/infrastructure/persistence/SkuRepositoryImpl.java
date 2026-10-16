@@ -40,27 +40,27 @@ public class SkuRepositoryImpl implements SkuRepository {
     }
 
     @Override
-    public List<Sku> findByProductId(Long productId) {
+    public List<Sku> findBySpuId(Long spuId) {
         return skuMapper.selectList(new LambdaQueryWrapper<SkuPO>()
-                        .eq(SkuPO::getProductId, productId))
+                        .eq(SkuPO::getSpuId, spuId))
                 .stream().map(SkuRepositoryImpl::toDomain).toList();
     }
 
     @Override
-    public List<Sku> findOnSaleByProductId(Long productId) {
+    public List<Sku> findOnSaleBySpuId(Long spuId) {
         return skuMapper.selectList(new LambdaQueryWrapper<SkuPO>()
-                        .eq(SkuPO::getProductId, productId)
+                        .eq(SkuPO::getSpuId, spuId)
                         .eq(SkuPO::getStatus, SkuStatusEnum.ON_SALE.getCode()))
                 .stream().map(SkuRepositoryImpl::toDomain).toList();
     }
 
     @Override
-    public List<Sku> findOnSaleByProductIds(List<Long> productIds) {
-        if (productIds == null || productIds.isEmpty()) {
+    public List<Sku> findOnSaleBySpuIds(List<Long> spuIds) {
+        if (spuIds == null || spuIds.isEmpty()) {
             return List.of();
         }
         return skuMapper.selectList(new LambdaQueryWrapper<SkuPO>()
-                        .in(SkuPO::getProductId, productIds)
+                        .in(SkuPO::getSpuId, spuIds)
                         .eq(SkuPO::getStatus, SkuStatusEnum.ON_SALE.getCode()))
                 .stream().map(SkuRepositoryImpl::toDomain).toList();
     }
@@ -97,7 +97,7 @@ public class SkuRepositoryImpl implements SkuRepository {
         SkuPO po = new SkuPO();
         po.setId(sku.getId());
         po.setSkuId(IdGenerator.toBytes(sku.getSkuId()));
-        po.setProductId(sku.getProductId());
+        po.setSpuId(sku.getSpuId());
         po.setSpec(sku.getSpec());
         po.setPrice(sku.getPrice());
         po.setOriginalPrice(sku.getOriginalPrice());
@@ -115,7 +115,7 @@ public class SkuRepositoryImpl implements SkuRepository {
 
     static Sku toDomain(SkuPO po) {
         return Sku.builder()
-                .id(po.getId()).skuId(IdGenerator.toHexString(po.getSkuId())).productId(po.getProductId())
+                .id(po.getId()).skuId(IdGenerator.toHexString(po.getSkuId())).spuId(po.getSpuId())
                 .spec(po.getSpec()).price(po.getPrice()).originalPrice(po.getOriginalPrice())
                 .stock(po.getStock()).image(po.getImage()).soldCount(po.getSoldCount())
                 .stockType(po.getStockType()).isHot(po.getIsHot()).hotReason(po.getHotReason())

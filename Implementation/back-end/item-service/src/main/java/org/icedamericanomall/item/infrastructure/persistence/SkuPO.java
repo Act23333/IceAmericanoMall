@@ -30,7 +30,7 @@ public class SkuPO implements Serializable {
     private Long id;
     /** 业务SKU编码（BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
     private byte[] skuId;
-    private Long productId;
+    private Long spuId;
     private String spec;
     private Integer price;
     private Integer originalPrice;
@@ -56,7 +56,7 @@ public class SkuPO implements Serializable {
 
     public void setId(Long v) { this.id = v; }
     public void setSkuId(byte[] v) { this.skuId = v; }
-    public void setProductId(Long v) { this.productId = v; }
+    public void setSpuId(Long v) { this.spuId = v; }
     public void setSpec(String v) { this.spec = v; }
     public void setPrice(Integer v) { this.price = v; }
     public void setOriginalPrice(Integer v) { this.originalPrice = v; }

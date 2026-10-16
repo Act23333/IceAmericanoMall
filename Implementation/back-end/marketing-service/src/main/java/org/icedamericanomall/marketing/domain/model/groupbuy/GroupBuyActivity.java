@@ -34,7 +34,7 @@ public class GroupBuyActivity {
     private Long id;
     private String name;
     private Long sellerId;
-    private Long productId;
+    private Long spuId;
     private Long skuId;
     /** 拼团价（分，>0；快照进拼团单 subTotal） */
     private Integer groupPrice;

@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 import org.icedamericanomall.common.utils.IdGenerator;
 
 /**
- * SKU 实体（纯 POJO，零框架依赖）—— 归属 {@code Product} 聚合（商品下的一行规格）。
+ * SKU 实体（纯 POJO，零框架依赖）—— 归属 {@code Spu} 聚合（商品下的一行规格）。
  *
  * <p><b>不变量</b>（由领域方法 + 仓储原子 SQL 共同保证）：
  * <ol>
@@ -35,8 +35,8 @@ public class Sku {
     /** 业务唯一键（UUID，32 位）。 */
     private String skuId;
 
-    /** 所属商品技术主键（引用聚合根 {@code Product.id}）。 */
-    private Long productId;
+    /** 所属商品技术主键（引用聚合根 {@code Spu.id}）。 */
+    private Long spuId;
 
     /** 规格描述（如 "天青/标准"）。 */
     private String spec;
@@ -86,13 +86,13 @@ public class Sku {
      *
      * @param hotReason  原始热销原因编码（可能非法）
      * @param salesTags  热销标签（仅在热销时落库）
-     * @return 新 SKU（未落库，{@code productId} = 聚合根技术主键）
+     * @return 新 SKU（未落库，{@code spuId} = 聚合根技术主键）
      */
-    public static Sku create(Long productId, String spec, Integer price, Integer stock, String image,
+    public static Sku create(Long spuId, String spec, Integer price, Integer stock, String image,
                              Integer stockType, Boolean isHot, String hotReason, String salesTags) {
         SkuBuilder builder = Sku.builder()
                 .skuId(IdGenerator.nextId())
-                .productId(productId)
+                .spuId(spuId)
                 .spec(spec)
                 .price(price)
                 .stock(stock)

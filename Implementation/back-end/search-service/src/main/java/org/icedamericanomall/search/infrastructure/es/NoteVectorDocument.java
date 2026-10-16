@@ -9,7 +9,7 @@ import java.io.Serializable;
 /**
  * 笔记 ES 索引文档（基础设施层）——映射 {@code notes} 索引（契约 I50/I51，V5.13）。
  *
- * <p>与商品 {@link ProductDocument} 同构：原文（title/content）+ 稠密向量，
+ * <p>与商品 {@link SpuDocument} 同构：原文（title/content）+ 稠密向量，
  * _id = noteId（幂等覆盖键）。索引名常量供网关建索引与 mapping 共用（单一事实源）。
  */
 @Data

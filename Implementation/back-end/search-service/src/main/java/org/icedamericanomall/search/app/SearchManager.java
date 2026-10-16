@@ -2,9 +2,9 @@ package org.icedamericanomall.search.app;
 
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.search.domain.gateway.KeywordTracker;
-import org.icedamericanomall.search.domain.gateway.ProductSearchGateway;
-import org.icedamericanomall.search.domain.gateway.ProductSuggestGateway;
-import org.icedamericanomall.search.domain.model.search.ProductSearchHit;
+import org.icedamericanomall.search.domain.gateway.SpuSearchGateway;
+import org.icedamericanomall.search.domain.gateway.SpuSuggestGateway;
+import org.icedamericanomall.search.domain.model.search.SpuSearchHit;
 import org.icedamericanomall.search.domain.model.search.SearchFacets;
 import org.icedamericanomall.search.domain.model.search.SearchPage;
 import org.icedamericanomall.search.domain.model.search.SearchQuery;
@@ -18,7 +18,7 @@ import java.util.stream.Stream;
  * 搜索编排（应用层）—— 关键词记录规则 + 委托检索网关 + SE5 联想双源合并。
  *
  * <p>职责：非空关键词才记录热搜（规则内聚于此，DB/ES 两条实现链不再各自为政）；
- * 组装 {@link SearchQuery} 委托 {@link ProductSearchGateway}（DB LIKE / ES 条件装配）；
+ * 组装 {@link SearchQuery} 委托 {@link SpuSearchGateway}（DB LIKE / ES 条件装配）；
  * SE5 联想合并热搜前缀与商品名前缀两源（排序/去重/截断口径内聚于此）。
  */
 @Component
@@ -34,9 +34,9 @@ public class SearchManager {
      */
     private static final int MAX_SUGGEST_PREFIX_LENGTH = 50;
 
-    private final ProductSearchGateway productSearchGateway;
+    private final SpuSearchGateway spuSearchGateway;
     private final KeywordTracker keywordTracker;
-    private final ProductSuggestGateway productSuggestGateway;
+    private final SpuSuggestGateway spuSuggestGateway;
 
     /**
      * 关键词/分类/品牌/价格/排序检索（SE1，非空关键词记录热搜）。
@@ -50,13 +50,13 @@ public class SearchManager {
      * @param page      页码（1 起）
      * @param size      每页条数
      */
-    public SearchPage<ProductSearchHit> search(String keyword, Long categoryId, String brand,
+    public SearchPage<SpuSearchHit> search(String keyword, Long categoryId, String brand,
                                                Integer minPrice, Integer maxPrice, String sort,
                                                int page, int size) {
         if (keyword != null && !keyword.isBlank()) {
             keywordTracker.recordKeyword(keyword.trim());
         }
-        return productSearchGateway.search(
+        return spuSearchGateway.search(
                 new SearchQuery(keyword, categoryId, page, size, brand, minPrice, maxPrice, sort));
     }
 
@@ -65,12 +65,12 @@ public class SearchManager {
      * 只透传 keyword/categoryId（facet 反映过滤前分布，不含 brand/price 过滤）。
      */
     public SearchFacets getFacets(String keyword, Long categoryId) {
-        return productSearchGateway.facets(new SearchQuery(keyword, categoryId, 1, 1));
+        return spuSearchGateway.facets(new SearchQuery(keyword, categoryId, 1, 1));
     }
 
     /** 向量语义检索（DB 实现恒返回空页，ES 走 kNN）。 */
-    public List<ProductSearchHit> vectorSearch(double[] embedding, int size) {
-        return productSearchGateway.vectorSearch(embedding, size);
+    public List<SpuSearchHit> vectorSearch(double[] embedding, int size) {
+        return spuSearchGateway.vectorSearch(embedding, size);
     }
 
     /** 热门搜索词 Top-N。 */
@@ -82,7 +82,7 @@ public class SearchManager {
      * 搜索联想（契约 SE5）：热搜词前缀命中在前 + 商品名前缀在后，精确去重，截 10。
      *
      * <p>双源口径：热搜源走 {@link KeywordTracker#getHotKeywordsByPrefix(String, int)}
-     * （Redis，实现方保证异常降级空列表）；商品名源恒走 DB LIKE（{@link ProductSuggestGateway}，
+     * （Redis，实现方保证异常降级空列表）；商品名源恒走 DB LIKE（{@link SpuSuggestGateway}，
      * ES 关闭可用）。两源各自 ≤10，合并后按源顺序去重（热搜命中优先展示，同名商品不重复出现）。
      *
      * <p>宽松入参口径：keyword 缺失/空白返回空列表（联想是输入辅助，不构成参数错误）；
@@ -98,7 +98,7 @@ public class SearchManager {
         }
         String prefix = truncate(keyword.trim());
         List<String> hotWords = keywordTracker.getHotKeywordsByPrefix(prefix, SUGGEST_LIMIT);
-        List<String> productNames = productSuggestGateway.suggestNames(prefix, SUGGEST_LIMIT);
+        List<String> productNames = spuSuggestGateway.suggestNames(prefix, SUGGEST_LIMIT);
         return Stream.concat(hotWords.stream(), productNames.stream())
                 .distinct()
                 .limit(SUGGEST_LIMIT)
@@ -118,6 +118,6 @@ public class SearchManager {
 
     /** ES 全量重建索引（DB 实现返回未启用标记）。 */
     public Map<String, Object> reindex() {
-        return productSearchGateway.reindex();
+        return spuSearchGateway.reindex();
     }
 }

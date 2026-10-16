@@ -5,13 +5,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.KgClient;
 import org.icedamericanomall.dto.KgNeighborCO;
 import org.icedamericanomall.item.adapter.response.PairingCardVO;
-import org.icedamericanomall.item.adapter.response.RecommendProductVO;
-import org.icedamericanomall.item.app.ProductManager;
+import org.icedamericanomall.item.adapter.response.RecommendSpuVO;
+import org.icedamericanomall.item.app.SpuManager;
 import org.icedamericanomall.item.app.SkuManager;
-import org.icedamericanomall.item.domain.enums.ProductStatusEnum;
+import org.icedamericanomall.item.domain.enums.SpuStatusEnum;
 import org.icedamericanomall.item.domain.model.kg.KgSchema;
-import org.icedamericanomall.item.domain.model.product.Product;
-import org.icedamericanomall.item.domain.repository.ProductRepository;
+import org.icedamericanomall.item.domain.model.spu.Spu;
+import org.icedamericanomall.item.domain.repository.SpuRepository;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -30,7 +30,7 @@ import java.util.Map;
  * （source=FALLBACK，复用其排除自身/恒过滤在售/降级空列表语义）；仍无 → source=NONE。
  *
  * <p><b>fail-open（PRD §16.8.1 最高优先级）</b>：client 降级已兜底空列表，本类再防御性
- * 兜底任意未预期异常（{@code ProductManager#similarProducts} 同款口径）——任何环节失效
+ * 兜底任意未预期异常（{@code SpuManager#similarSpus} 同款口径）——任何环节失效
  * 返回空态卡，详情页主流程零感知。
  */
 @Slf4j
@@ -48,23 +48,23 @@ public class KgPairingManager {
     private static final int NEIGHBOR_DEPTH = 1;
 
     private final KgClient kgClient;
-    private final ProductRepository productRepository;
+    private final SpuRepository spuRepository;
     private final SkuManager skuManager;
-    private final ProductManager productManager;
+    private final SpuManager spuManager;
 
     /**
      * 搭配推荐卡（P35，全链路 fail-open，恒不抛错）。
      *
-     * @param productId 锚点商品 id
+     * @param spuId 锚点商品 id
      * @param limit     期望条数（null/非正 → 缺省 6，&gt;10 归一为 10）
      * @return 搭配卡（KG / FALLBACK / NONE 三态，items 恒非 null）
      */
-    public PairingCardVO pairing(Long productId, Integer limit) {
+    public PairingCardVO pairing(Long spuId, Integer limit) {
         try {
-            return assemblePairing(productId, normalizeSize(limit));
+            return assemblePairing(spuId, normalizeSize(limit));
         } catch (Exception e) {
-            log.warn("搭配卡组装失败，返回空态（fail-open，US-KG-9）: productId={}, limit={}",
-                    productId, limit, e);
+            log.warn("搭配卡组装失败，返回空态（fail-open，US-KG-9）: spuId={}, limit={}",
+                    spuId, limit, e);
             return PairingCardVO.none();
         }
     }
@@ -72,16 +72,16 @@ public class KgPairingManager {
     // ==================== 内部方法 ====================
 
     /** 组装主流水线：在售校验 → 图召回 → 向量兜底 → 空态。 */
-    private PairingCardVO assemblePairing(Long productId, int size) {
-        Product product = productRepository.findById(productId);
-        if (product == null || !isOnShelf(product)) {
+    private PairingCardVO assemblePairing(Long spuId, int size) {
+        Spu spu = spuRepository.findById(spuId);
+        if (spu == null || !isOnShelf(spu)) {
             return PairingCardVO.none();
         }
-        List<RecommendProductVO> items = itemsFromGraph(productId, product.getCategoryId(), size);
+        List<RecommendSpuVO> items = itemsFromGraph(spuId, spu.getCategoryId(), size);
         if (!items.isEmpty()) {
             return PairingCardVO.kg(items);
         }
-        List<RecommendProductVO> fallback = productManager.similarProducts(productId, size);
+        List<RecommendSpuVO> fallback = spuManager.similarSpus(spuId, size);
         return fallback.isEmpty() ? PairingCardVO.none() : PairingCardVO.fallback(fallback);
     }
 
@@ -89,7 +89,7 @@ public class KgPairingManager {
      * 图召回组装：I58 邻居（status 传 null = 缺省仅启用边——规则启停即时生效的查询侧落点）→
      * 逐邻居类目取在售候选 → 全局排序截断 → 批量回填在售最低价（一次聚合，无 N+1）。
      */
-    private List<RecommendProductVO> itemsFromGraph(Long productId, Long categoryId, int size) {
+    private List<RecommendSpuVO> itemsFromGraph(Long spuId, Long categoryId, int size) {
         if (categoryId == null) {
             return List.of();
         }
@@ -98,16 +98,16 @@ public class KgPairingManager {
         if (neighbors == null || neighbors.isEmpty()) {
             return List.of();
         }
-        List<Candidate> candidates = collectCandidates(productId, neighbors, size);
+        List<Candidate> candidates = collectCandidates(spuId, neighbors, size);
         candidates.sort(KgPairingManager::byWeightThenSales);
-        List<Product> selected = candidates.stream()
+        List<Spu> selected = candidates.stream()
                 .limit(size)
-                .map(Candidate::product)
+                .map(Candidate::spu)
                 .toList();
-        Map<Long, Integer> minPriceMap = skuManager.getMinPriceMapByProductIds(
-                selected.stream().map(Product::getId).toList());
+        Map<Long, Integer> minPriceMap = skuManager.getMinPriceMapBySpuIds(
+                selected.stream().map(Spu::getId).toList());
         return selected.stream()
-                .map(product -> toCard(product, minPriceMap.get(product.getId())))
+                .map(spu -> toCard(spu, minPriceMap.get(spu.getId())))
                 .toList();
     }
 
@@ -115,7 +115,7 @@ public class KgPairingManager {
      * 逐邻居类目收集在售候选（排除锚点自身；类目内取销量 top-{@code size}——
      * 同权重下未进自家 top-size 的商品必不入全局 top-size，截断无损）。
      */
-    private List<Candidate> collectCandidates(Long productId, List<KgNeighborCO> neighbors, int size) {
+    private List<Candidate> collectCandidates(Long spuId, List<KgNeighborCO> neighbors, int size) {
         Map<Long, Candidate> unique = new LinkedHashMap<>();
         for (KgNeighborCO neighbor : neighbors) {
             if (neighbor == null || neighbor.getDstId() == null
@@ -123,13 +123,13 @@ public class KgPairingManager {
                 continue;
             }
             int weight = neighbor.getWeight() == null ? 0 : neighbor.getWeight();
-            for (Product product : productRepository.pageOnSale(null, neighbor.getDstId(),
+            for (Spu spu : spuRepository.pageOnSale(null, neighbor.getDstId(),
                     null, "sales", 1, size).getRecords()) {
-                if (product.getId().equals(productId) || !isOnShelf(product)) {
+                if (spu.getId().equals(spuId) || !isOnShelf(spu)) {
                     // 排除自身 + 恒过滤在售（下架/删除剔除，P27 同款防御口径）
                     continue;
                 }
-                unique.putIfAbsent(product.getId(), new Candidate(product, weight));
+                unique.putIfAbsent(spu.getId(), new Candidate(spu, weight));
             }
         }
         return new ArrayList<>(unique.values());
@@ -141,25 +141,25 @@ public class KgPairingManager {
         if (byWeight != 0) {
             return byWeight;
         }
-        int bySales = Integer.compare(salesOf(b.product()), salesOf(a.product()));
+        int bySales = Integer.compare(salesOf(b.spu()), salesOf(a.spu()));
         if (bySales != 0) {
             return bySales;
         }
-        return Long.compare(a.product().getId(), b.product().getId());
+        return Long.compare(a.spu().getId(), b.spu().getId());
     }
 
-    private static int salesOf(Product product) {
-        return product.getSoldCount() == null ? 0 : product.getSoldCount();
+    private static int salesOf(Spu spu) {
+        return spu.getSoldCount() == null ? 0 : spu.getSoldCount();
     }
 
     /** 命中商品 → 搭配卡（字段集对齐 P27 相似卡：展示价 = 在售 SKU 最低价，分）。 */
-    private RecommendProductVO toCard(Product product, Integer minPrice) {
-        RecommendProductVO vo = new RecommendProductVO();
-        vo.setProductId(product.getId());
-        vo.setName(product.getName());
-        vo.setMainImage(product.getMainImage());
+    private RecommendSpuVO toCard(Spu spu, Integer minPrice) {
+        RecommendSpuVO vo = new RecommendSpuVO();
+        vo.setSpuId(spu.getId());
+        vo.setName(spu.getName());
+        vo.setMainImage(spu.getMainImage());
         vo.setPrice(minPrice);
-        vo.setSoldCount(product.getSoldCount());
+        vo.setSoldCount(spu.getSoldCount());
         return vo;
     }
 
@@ -171,17 +171,17 @@ public class KgPairingManager {
         return Math.min(size, MAX_CARD_SIZE);
     }
 
-    private boolean isOnShelf(Product product) {
-        return product.getStatus() != null
-                && product.getStatus() == ProductStatusEnum.ON_SHELF.getCode();
+    private boolean isOnShelf(Spu spu) {
+        return spu.getStatus() != null
+                && spu.getStatus() == SpuStatusEnum.ON_SHELF.getCode();
     }
 
     /**
      * 搭配候选（类目内销量序取数 + 全局权重/销量重排的中间形态）。
      *
-     * @param product 在售商品聚合
+     * @param spu 在售商品聚合
      * @param weight  所经 PAIR_WITH 规则权重
      */
-    private record Candidate(Product product, int weight) {
+    private record Candidate(Spu spu, int weight) {
     }
 }

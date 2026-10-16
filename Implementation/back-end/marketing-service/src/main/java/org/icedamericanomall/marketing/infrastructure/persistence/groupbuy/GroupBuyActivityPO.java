@@ -29,7 +29,7 @@ public class GroupBuyActivityPO implements Serializable {
     private String name;
     /** 商家 user_id（店铺级活动） */
     private Long sellerId;
-    private Long productId;
+    private Long spuId;
     /** SKU ID（拼团仅该 SKU 参与） */
     private Long skuId;
     /** 拼团价（分，>0） */

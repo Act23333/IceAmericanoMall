@@ -6,17 +6,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.KnowledgeVectorClient;
 import org.icedamericanomall.dto.NoteVectorHitCO;
 import org.icedamericanomall.dto.NoteVectorUpsertCO;
-import org.icedamericanomall.dto.ProductVectorHitCO;
-import org.icedamericanomall.dto.ProductVectorUpsertCO;
-import org.icedamericanomall.search.adapter.assembler.ProductSearchConverter;
+import org.icedamericanomall.dto.SpuVectorHitCO;
+import org.icedamericanomall.dto.SpuVectorUpsertCO;
+import org.icedamericanomall.search.adapter.assembler.SpuSearchConverter;
 import org.icedamericanomall.search.adapter.request.KnowledgeVectorUpsertReq;
 import org.icedamericanomall.search.adapter.request.NoteVectorUpsertReq;
-import org.icedamericanomall.search.adapter.request.ProductVectorUpsertReq;
+import org.icedamericanomall.search.adapter.request.SpuVectorUpsertReq;
 import org.icedamericanomall.search.adapter.request.VectorSearchReq;
 import org.icedamericanomall.search.adapter.response.KnowledgeChunkHitVO;
 import org.icedamericanomall.search.app.KnowledgeVectorManager;
 import org.icedamericanomall.search.app.NoteVectorManager;
-import org.icedamericanomall.search.app.ProductVectorManager;
+import org.icedamericanomall.search.app.SpuVectorManager;
 import org.icedamericanomall.search.app.SearchManager;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,15 +34,15 @@ import java.util.Map;
  *
  * <p>内部接口（{@code /internal/**}）按约定不包装 {@code Result}，异常原样透出。
  * Controller 仅做参数解析 + 委托 app 层（{@link SearchManager} / {@link KnowledgeVectorManager}
- * / {@link ProductVectorManager} / {@link NoteVectorManager}）。
+ * / {@link SpuVectorManager} / {@link NoteVectorManager}）。
  *
  * <p><b>向量索引归属</b>：{@code knowledge_vectors} 索引（含分块与 Embedding 调用）归本服务所有；
  * ai-service 通过 {@link KnowledgeVectorClient} 提交<b>原文</b>并取回 chunk 文本，不感知维度与切片策略。
- * {@code products} 索引同理归本服务（I47/I48 商品向量推荐，ADR-046）；
+ * {@code spus} 索引同理归本服务（I47/I48 商品向量推荐，ADR-046）；
  * {@code notes} 索引亦然（I50/I51 笔记向量推荐，V5.13，ADR-046 管道第二次复用）。
  *
  * <p><b>渐进启用 / 降级</b>：ES 关闭（{@code search.elasticsearch.enabled=false}）时
- * {@link KnowledgeVectorManager} / {@link ProductVectorManager} / {@link NoteVectorManager} 不存在，
+ * {@link KnowledgeVectorManager} / {@link SpuVectorManager} / {@link NoteVectorManager} 不存在，
  * 知识库与商品/笔记向量端点按「未启用」处理（摄取返回 0、删除返回 false、检索返回空），<b>不抛异常</b>，
  * 从而不阻断 ai-service / item-service 的主流程（推荐为纯旁路，fail-open）。
  */
@@ -53,13 +53,13 @@ import java.util.Map;
 public class InternalSearchController {
 
     private final SearchManager searchManager;
-    private final ProductSearchConverter converter;
+    private final SpuSearchConverter converter;
 
     /** ES 关闭时无此 Bean，故用 ObjectProvider 软依赖（不阻断启动，按未启用处理）。 */
     private final ObjectProvider<KnowledgeVectorManager> knowledgeVectorManager;
 
     /** ES 关闭时无此 Bean，故用 ObjectProvider 软依赖（不阻断启动，按未启用处理）。 */
-    private final ObjectProvider<ProductVectorManager> productVectorManager;
+    private final ObjectProvider<SpuVectorManager> spuVectorManager;
 
     /** ES 关闭时无此 Bean，故用 ObjectProvider 软依赖（不阻断启动，按未启用处理）。 */
     private final ObjectProvider<NoteVectorManager> noteVectorManager;
@@ -70,7 +70,7 @@ public class InternalSearchController {
     }
 
     /**
-     * 向量 kNN 检索：{@code index=products}（缺省，历史行为）走商品索引；
+     * 向量 kNN 检索：{@code index=spus}（缺省，历史行为）走商品索引；
      * {@code index=knowledge_vectors} 走知识库 chunk 索引（支持 sellerId 过滤）。
      */
     @PostMapping("/vector")
@@ -118,36 +118,36 @@ public class InternalSearchController {
     }
 
     /**
-     * 商品向量摄取（契约 I47）—— 单向量幂等覆盖写（productId 幂等键，ADR-046）。
+     * 商品向量摄取（契约 I47）—— 单向量幂等覆盖写（spuId 幂等键，ADR-046）。
      *
      * @return 1=已写入向量；0=ES/Embedding 未启用（静默跳过，不报错）
      */
     @PostMapping("/vector/product/upsert")
-    public int upsertProductVector(@RequestBody @Valid ProductVectorUpsertReq req) {
-        ProductVectorManager manager = productVectorManager.getIfAvailable();
+    public int upsertSpuVector(@RequestBody @Valid SpuVectorUpsertReq req) {
+        SpuVectorManager manager = spuVectorManager.getIfAvailable();
         if (manager == null) {
-            log.warn("商品向量摄取未启用（ES 关闭），跳过: productId={}", req.productId());
+            log.warn("商品向量摄取未启用（ES 关闭），跳过: spuId={}", req.spuId());
             return 0;
         }
         return manager.upsert(toCO(req));
     }
 
     /**
-     * 相似商品检索（契约 I48）—— 自身向量 kNN，排除自身，只出 {@code productId + score}
+     * 相似商品检索（契约 I48）—— 自身向量 kNN，排除自身，只出 {@code spuId + score}
      * （商品卡组装归 item-service，MySQL 是展示真相源）。
      *
      * @return 命中列表；ES 关闭/自身无向量 → 空列表
      */
     @GetMapping("/vector/product/similar")
-    public List<ProductVectorHitCO> similarProductVector(
-            @RequestParam(name = "product_id") Long productId,
+    public List<SpuVectorHitCO> similarSpuVector(
+            @RequestParam(name = "spu_id") Long spuId,
             @RequestParam(value = "size", defaultValue = "5") Integer size) {
-        ProductVectorManager manager = productVectorManager.getIfAvailable();
+        SpuVectorManager manager = spuVectorManager.getIfAvailable();
         if (manager == null) {
-            log.warn("商品向量检索未启用（ES 关闭），按无命中处理: productId={}", productId);
+            log.warn("商品向量检索未启用（ES 关闭），按无命中处理: spuId={}", spuId);
             return List.of();
         }
-        return manager.similar(productId, size);
+        return manager.similar(spuId, size);
     }
 
     private List<KnowledgeChunkHitVO> searchKnowledgeChunks(VectorSearchReq req) {
@@ -206,9 +206,9 @@ public class InternalSearchController {
     }
 
     /** 适配层入参 → 契约 CO（字段一一对应，纯搬运）。 */
-    private static ProductVectorUpsertCO toCO(ProductVectorUpsertReq req) {
-        ProductVectorUpsertCO co = new ProductVectorUpsertCO();
-        co.setProductId(req.productId());
+    private static SpuVectorUpsertCO toCO(SpuVectorUpsertReq req) {
+        SpuVectorUpsertCO co = new SpuVectorUpsertCO();
+        co.setSpuId(req.spuId());
         co.setName(req.name());
         co.setDescription(req.description());
         co.setBrand(req.brand());

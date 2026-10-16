@@ -8,7 +8,7 @@ import java.util.Optional;
 
 /**
  * 笔记向量索引网关（领域端口）—— {@code notes} 索引的写/删/取向量/kNN 检索抽象
- * （契约 I50/I51，V5.13；与商品向量 {@link ProductSearchGateway} 同构，ADR-046 管道第二次复用）。
+ * （契约 I50/I51，V5.13；与商品向量 {@link SpuSearchGateway} 同构，ADR-046 管道第二次复用）。
  *
  * <p>实现方：{@code infrastructure.es.EsNoteVectorIndexGateway}（{@code search.elasticsearch.enabled=true}）
  * 与 {@code infrastructure.persistence.DbNoteVectorIndexGateway}（DB 链空实现，向量是 ES 能力），

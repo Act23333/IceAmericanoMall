@@ -46,8 +46,8 @@ class CouponUsageScopeTest {
     private static final String ORDER_NO = "ORD-0001";
     private static final int ORDER_AMOUNT = 10000;
 
-    /** 订单商品快照（PricingService.buildProductIds/buildCategoryIds 的产物口径）。 */
-    private static final String ORDER_PRODUCT_IDS = "1001,1002";
+    /** 订单商品快照（PricingService.buildSpuIds/buildCategoryIds 的产物口径）。 */
+    private static final String ORDER_SPU_IDS = "1001,1002";
     private static final String ORDER_CATEGORY_IDS = "7,8";
 
     @Mock
@@ -72,7 +72,7 @@ class CouponUsageScopeTest {
     @Test
     @DisplayName("useCoupon — scopeType=1 ALL 全场 → 放行并核销")
     void shouldApply_whenScopeTypeAll() {
-        int discount = useCoupon(coupon(ScopeTypeEnum.ALL.getCode(), "[\"7\",\"8\"]"), ORDER_PRODUCT_IDS, ORDER_CATEGORY_IDS);
+        int discount = useCoupon(coupon(ScopeTypeEnum.ALL.getCode(), "[\"7\",\"8\"]"), ORDER_SPU_IDS, ORDER_CATEGORY_IDS);
 
         assertEquals(1000, discount);
         verify(userCouponRepository).update(org.mockito.ArgumentMatchers.any(UserCoupon.class));
@@ -81,7 +81,7 @@ class CouponUsageScopeTest {
     @Test
     @DisplayName("useCoupon — scopeType=null（存量/兼容）→ 视为 ALL 放行")
     void shouldApply_whenScopeTypeNull() {
-        int discount = useCoupon(coupon(null, "[\"7\"]"), ORDER_PRODUCT_IDS, ORDER_CATEGORY_IDS);
+        int discount = useCoupon(coupon(null, "[\"7\"]"), ORDER_SPU_IDS, ORDER_CATEGORY_IDS);
 
         assertEquals(1000, discount);
     }
@@ -98,7 +98,7 @@ class CouponUsageScopeTest {
     @DisplayName("useCoupon — scopeType=2 CATEGORY 且订单品类命中 → 放行")
     void shouldApply_whenCategoryScopeMatched() {
         int discount = useCoupon(coupon(ScopeTypeEnum.CATEGORY.getCode(), "[\"7\",\"9\"]"),
-                ORDER_PRODUCT_IDS, ORDER_CATEGORY_IDS);
+                ORDER_SPU_IDS, ORDER_CATEGORY_IDS);
 
         assertEquals(1000, discount);
     }
@@ -107,16 +107,16 @@ class CouponUsageScopeTest {
     @DisplayName("useCoupon — scopeType=2 CATEGORY 数字形态 JSON [7,8] 同样命中 → 放行")
     void shouldApply_whenCategoryScopeMatchedWithNumericJson() {
         int discount = useCoupon(coupon(ScopeTypeEnum.CATEGORY.getCode(), "[7,8]"),
-                ORDER_PRODUCT_IDS, ORDER_CATEGORY_IDS);
+                ORDER_SPU_IDS, ORDER_CATEGORY_IDS);
 
         assertEquals(1000, discount);
     }
 
     @Test
     @DisplayName("useCoupon — scopeType=3 PRODUCT 且订单商品命中 → 放行")
-    void shouldApply_whenProductScopeMatched() {
+    void shouldApply_whenSpuScopeMatched() {
         int discount = useCoupon(coupon(ScopeTypeEnum.PRODUCT.getCode(), "[\"1002\"]"),
-                ORDER_PRODUCT_IDS, ORDER_CATEGORY_IDS);
+                ORDER_SPU_IDS, ORDER_CATEGORY_IDS);
 
         assertEquals(1000, discount);
     }
@@ -130,7 +130,7 @@ class CouponUsageScopeTest {
 
         BizException ex = assertThrows(BizException.class,
                 () -> couponUsageManager.useCoupon(USER_ID, USER_COUPON_ID, ORDER_NO, ORDER_AMOUNT,
-                        1, null, ORDER_PRODUCT_IDS, ORDER_CATEGORY_IDS));
+                        1, null, ORDER_SPU_IDS, ORDER_CATEGORY_IDS));
 
         assertEquals(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, ex.getErrorCode());
         assertEquals("该优惠券不适用于当前订单商品", ex.getMessage());
@@ -139,12 +139,12 @@ class CouponUsageScopeTest {
 
     @Test
     @DisplayName("useCoupon — scopeType=3 PRODUCT 但订单商品无交集 → BizException 且不核销")
-    void shouldReject_whenProductScopeNotMatched() {
+    void shouldReject_whenSpuScopeNotMatched() {
         stubCoupon(coupon(ScopeTypeEnum.PRODUCT.getCode(), "[\"9999\"]"));
 
         BizException ex = assertThrows(BizException.class,
                 () -> couponUsageManager.useCoupon(USER_ID, USER_COUPON_ID, ORDER_NO, ORDER_AMOUNT,
-                        1, null, ORDER_PRODUCT_IDS, ORDER_CATEGORY_IDS));
+                        1, null, ORDER_SPU_IDS, ORDER_CATEGORY_IDS));
 
         assertEquals(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, ex.getErrorCode());
         assertEquals("该优惠券不适用于当前订单商品", ex.getMessage());
@@ -158,14 +158,14 @@ class CouponUsageScopeTest {
 
         BizException ex = assertThrows(BizException.class,
                 () -> couponUsageManager.useCoupon(USER_ID, USER_COUPON_ID, ORDER_NO, ORDER_AMOUNT,
-                        1, null, ORDER_PRODUCT_IDS, null));
+                        1, null, ORDER_SPU_IDS, null));
 
         assertEquals("该优惠券不适用于当前订单商品", ex.getMessage());
     }
 
     @Test
-    @DisplayName("useCoupon — 限定单品但调用方未传 productIds → 拒绝（漏传不等于不限）")
-    void shouldReject_whenProductScopeLimitedButProductIdsMissing() {
+    @DisplayName("useCoupon — 限定单品但调用方未传 spuIds → 拒绝（漏传不等于不限）")
+    void shouldReject_whenSpuScopeLimitedButSpuIdsMissing() {
         stubCoupon(coupon(ScopeTypeEnum.PRODUCT.getCode(), "[\"1001\"]"));
 
         BizException ex = assertThrows(BizException.class,
@@ -178,10 +178,10 @@ class CouponUsageScopeTest {
     // ==================== 夹具 ====================
 
     /** 以指定适用范围执行核销（券类别固定 PLATFORM、门槛已满足）。 */
-    private int useCoupon(Coupon coupon, String productIds, String categoryIds) {
+    private int useCoupon(Coupon coupon, String spuIds, String categoryIds) {
         stubCoupon(coupon);
         return couponUsageManager.useCoupon(USER_ID, USER_COUPON_ID, ORDER_NO, ORDER_AMOUNT,
-                1, null, productIds, categoryIds);
+                1, null, spuIds, categoryIds);
     }
 
     /** 持有可用券 + 指定券模板。 */

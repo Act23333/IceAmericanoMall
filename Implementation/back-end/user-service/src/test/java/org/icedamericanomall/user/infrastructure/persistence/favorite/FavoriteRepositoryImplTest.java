@@ -44,7 +44,7 @@ class FavoriteRepositoryImplTest {
         ArgumentCaptor<FavoritePO> captor = ArgumentCaptor.forClass(FavoritePO.class);
         verify(favoriteMapper).insert(captor.capture());
         assertEquals(100L, captor.getValue().getUserId());
-        assertEquals(200L, captor.getValue().getProductId());
+        assertEquals(200L, captor.getValue().getSpuId());
     }
 
     @Test
@@ -58,11 +58,11 @@ class FavoriteRepositoryImplTest {
     }
 
     @Test
-    @DisplayName("removeByUserIdAndProductId — 按业务键删除并返回影响行数")
+    @DisplayName("removeByUserIdAndSpuId — 按业务键删除并返回影响行数")
     void shouldDelete_byBusinessKey() {
         when(favoriteMapper.delete(any())).thenReturn(1);
 
-        assertEquals(1, repository.removeByUserIdAndProductId(100L, 200L));
+        assertEquals(1, repository.removeByUserIdAndSpuId(100L, 200L));
         verify(favoriteMapper).delete(any());
     }
 
@@ -72,7 +72,7 @@ class FavoriteRepositoryImplTest {
         FavoritePO po = new FavoritePO();
         po.setId(7L);
         po.setUserId(100L);
-        po.setProductId(200L);
+        po.setSpuId(200L);
         po.setCreateTime(LocalDateTime.of(2026, 10, 1, 12, 0));
         Page<FavoritePO> page = new Page<>(1, 20);
         page.setRecords(List.of(po));
@@ -83,7 +83,7 @@ class FavoriteRepositoryImplTest {
         assertEquals(1, records.size());
         assertEquals(7L, records.get(0).getId());
         assertEquals(100L, records.get(0).getUserId());
-        assertEquals(200L, records.get(0).getProductId());
+        assertEquals(200L, records.get(0).getSpuId());
         assertEquals(LocalDateTime.of(2026, 10, 1, 12, 0), records.get(0).getCreateTime());
     }
 }

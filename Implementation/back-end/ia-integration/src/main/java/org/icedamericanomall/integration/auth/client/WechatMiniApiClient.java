@@ -97,7 +97,7 @@ public class WechatMiniApiClient {
     /**
      * 获取商品分享小程序码（{@code wxacode.getUnlimited}）。
      *
-     * <p>scene 由调用方构造（本服务口径 {@code p={productId}}，形如 {@code p=123}，
+     * <p>scene 由调用方构造（本服务口径 {@code p={spuId}}，形如 {@code p=123}，
      * 远小于 32 字符上限）；page 为小程序落地页路径，由调用方配置注入。
      *
      * @param scene 打开小程序后透传的场景参数（≤{@value #SCENE_MAX_LENGTH} 字符）

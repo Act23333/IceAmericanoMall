@@ -28,10 +28,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * InternalCouponController 适配层接线测试（I69 {@code /batch} + {@code /use} 范围参数透传）。
  *
  * <p>控制器只做参数绑定与委托：{@code ids} 按逗号切分为 {@code user_coupon.id} 列表（与
- * {@code /use} 的 {@code user_coupon_id} 同口径），{@code product_ids}/{@code category_ids} 原样透传给
+ * {@code /use} 的 {@code user_coupon_id} 同口径），{@code spu_ids}/{@code category_ids} 原样透传给
  * 应用层；{@code /internal/**} 不包 {@code Result}（ADR-004）。{@code /use} 的线上查询参数名
  * 一律 snake_case（{@code user_id}/{@code user_coupon_id}/{@code order_no}/{@code order_amount}/
- * {@code order_type}/{@code seller_id}/{@code product_ids}/{@code category_ids}），由
+ * {@code order_type}/{@code seller_id}/{@code spu_ids}/{@code category_ids}），由
  * {@code @RequestParam(name = ...)} 显式钉死。
  */
 @ExtendWith(MockitoExtension.class)
@@ -94,7 +94,7 @@ class InternalCouponControllerTest {
     }
 
     @Test
-    @DisplayName("use — snake 名绑定生效：product_ids/category_ids 缺省 → 透传 null（应用层据此判定限定券拒绝）")
+    @DisplayName("use — snake 名绑定生效：spu_ids/category_ids 缺省 → 透传 null（应用层据此判定限定券拒绝）")
     void shouldDelegateUseWithNullScopeParams_whenAbsent() throws Exception {
         when(couponUsageManager.useCoupon(100L, 55L, "ORD-1", 10000, 1, 9L, null, null))
                 .thenReturn(1000);
@@ -106,7 +106,7 @@ class InternalCouponControllerTest {
     }
 
     @Test
-    @DisplayName("use — snake 名绑定生效：product_ids/category_ids 原样透传（逗号分隔串不拆分）")
+    @DisplayName("use — snake 名绑定生效：spu_ids/category_ids 原样透传（逗号分隔串不拆分）")
     void shouldDelegateUseWithScopeParams_whenPresent() throws Exception {
         when(couponUsageManager.useCoupon(eq(100L), eq(55L), eq("ORD-1"), eq(10000), eq(1), eq(9L),
                 eq("1001,1002"), eq("7,8"))).thenReturn(0);
@@ -114,7 +114,7 @@ class InternalCouponControllerTest {
         mockMvc.perform(MockMvcRequestBuilders.post("/internal/coupon/use")
                         .param("user_id", "100").param("user_coupon_id", "55").param("order_no", "ORD-1")
                         .param("order_amount", "10000").param("order_type", "1").param("seller_id", "9")
-                        .param("product_ids", "1001,1002").param("category_ids", "7,8"))
+                        .param("spu_ids", "1001,1002").param("category_ids", "7,8"))
                 .andExpect(status().isOk());
 
         verify(couponUsageManager).useCoupon(eq(100L), eq(55L), eq("ORD-1"), eq(10000), eq(1), eq(9L),

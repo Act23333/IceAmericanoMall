@@ -3,7 +3,7 @@ package org.icedamericanomall.ai.infrastructure.adapter.tool;
 import dev.langchain4j.agent.tool.Tool;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.icedamericanomall.ai.domain.model.product.ProductHit;
+import org.icedamericanomall.ai.domain.model.spu.SpuHit;
 import org.icedamericanomall.ai.domain.port.SearchPort;
 import org.springframework.stereotype.Component;
 
@@ -31,16 +31,16 @@ public class SearchTool {
      * @return 商品摘要文本；无结果或搜索服务不可用返回友好提示
      */
     @Tool("搜索冰美城商城的商品，返回名称、价格、销量")
-    public String searchProducts(String keyword) {
+    public String searchSpus(String keyword) {
         try {
-            List<ProductHit> hits = searchPort.searchProducts(keyword, SEARCH_SIZE);
+            List<SpuHit> hits = searchPort.searchSpus(keyword, SEARCH_SIZE);
             if (hits.isEmpty()) {
                 return "未找到与「" + keyword + "」相关的商品，试试换个关键词？";
             }
             StringBuilder sb = new StringBuilder();
-            for (ProductHit hit : hits) {
+            for (SpuHit hit : hits) {
                 sb.append(String.format("- %s (ID:%s) ¥%.2f 销量:%s%n",
-                        hit.name(), hit.productId(), centsToYuan(hit.priceCents()), hit.soldCount()));
+                        hit.name(), hit.spuId(), centsToYuan(hit.priceCents()), hit.soldCount()));
             }
             return sb.toString();
         } catch (Exception e) {

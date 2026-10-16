@@ -26,7 +26,7 @@ spring:
       password: redis
       client-name: search-service
 # ElasticSearch 连接参数的唯一来源（SearchProperties + ElasticSearchConfig）：
-#   enabled=false（本地/无 ES 环境）走 ItemServiceProductSearchGateway（item 域检索端点，ADR-052）；
+#   enabled=false（本地/无 ES 环境）走 ItemServiceSpuSearchGateway（item 域检索端点，ADR-052）；
 #   enabled=true 激活 EsSearchServiceImpl，host/port 由本段配置。
 # 注意：不要在此处添加 spring.elasticsearch.uris —— 本服务自建 ElasticsearchClient/RestClient，
 #       Spring Boot 的 ES 自动配置会被既有 Bean 抑制，重复配置只会造成双份连接参数漂移。

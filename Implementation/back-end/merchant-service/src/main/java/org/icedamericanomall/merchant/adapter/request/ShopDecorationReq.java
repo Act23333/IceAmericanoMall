@@ -28,7 +28,7 @@ public class ShopDecorationReq implements Serializable {
     @Size(max = 5, message = "轮播图最多 5 张")
     private List<String> banners;
 
-    /** 推荐商品位（product.id，≤8 个，去重） */
+    /** 推荐商品位（spu.id，≤8 个，去重） */
     @Size(max = 8, message = "推荐商品位最多 8 个")
-    private List<Long> hotProductIds;
+    private List<Long> hotSpuIds;
 }

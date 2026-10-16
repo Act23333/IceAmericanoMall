@@ -21,7 +21,7 @@ import java.time.LocalDateTime;
  * <p><b>回填缺失（SKU 已删除 / 数据源降级）时三个商品字段保持 {@code null}</b>：
  * 秒杀列表照常返回，不因补展示字段而变脆（fail-open）。
  *
- * <p><b>契约漂移记录</b>：{@code product_id} 为实现已投影、契约样例暂未收录的字段
+ * <p><b>契约漂移记录</b>：{@code spu_id} 为实现已投影、契约样例暂未收录的字段
  * （前端订单跳转依赖它），已在交付报告中作为「契约待补字段」登记。
  */
 @Data
@@ -31,7 +31,7 @@ public class FlashSaleVO implements Serializable {
     private Long id;
 
     /** 商品 ID（契约样例暂缺，实现投影；前端详情跳转依赖） */
-    private Long productId;
+    private Long spuId;
 
     private Long skuId;
 

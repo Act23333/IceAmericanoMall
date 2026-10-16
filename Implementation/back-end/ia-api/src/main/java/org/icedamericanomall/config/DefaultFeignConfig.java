@@ -16,7 +16,7 @@ import org.icedamericanomall.fallback.LogisticsClientFallback;
 import org.icedamericanomall.fallback.NotificationClientFallback;
 import org.icedamericanomall.fallback.OrderClientFallback;
 import org.icedamericanomall.fallback.PointsClientFallback;
-import org.icedamericanomall.fallback.ProductDetailClientFallback;
+import org.icedamericanomall.fallback.SpuDetailClientFallback;
 import org.icedamericanomall.fallback.RefundClientFallback;
 import org.icedamericanomall.fallback.SearchClientFallback;
 import org.icedamericanomall.fallback.SkuClientFallback;
@@ -170,8 +170,8 @@ public class DefaultFeignConfig {
     }
 
     @Bean
-    public ProductDetailClientFallback productDetailClientFallback() {
-        return new ProductDetailClientFallback();
+    public SpuDetailClientFallback spuDetailClientFallback() {
+        return new SpuDetailClientFallback();
     }
 
     @Bean

@@ -65,7 +65,7 @@ public class GroupBuyActivityRepositoryImpl implements GroupBuyActivityRepositor
                 .id(po.getId())
                 .name(po.getName())
                 .sellerId(po.getSellerId())
-                .productId(po.getProductId())
+                .spuId(po.getSpuId())
                 .skuId(po.getSkuId())
                 .groupPrice(po.getGroupPrice())
                 .requiredMembers(po.getRequiredMembers())
@@ -83,7 +83,7 @@ public class GroupBuyActivityRepositoryImpl implements GroupBuyActivityRepositor
         po.setId(activity.getId());
         po.setName(activity.getName());
         po.setSellerId(activity.getSellerId());
-        po.setProductId(activity.getProductId());
+        po.setSpuId(activity.getSpuId());
         po.setSkuId(activity.getSkuId());
         po.setGroupPrice(activity.getGroupPrice());
         po.setRequiredMembers(activity.getRequiredMembers());

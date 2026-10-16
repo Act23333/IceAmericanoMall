@@ -9,7 +9,7 @@ import java.util.Map;
 /**
  * 浏览足迹视图对象（商品详情 + 浏览时间）。
  *
- * <p>字段取自 {@code product_view_log} 联表商品读模型的查询列
+ * <p>字段取自 {@code spu_view_log} 联表商品读模型的查询列
  * （见 {@code HistoryViewQueryImpl}）：商品名 / 主图 / 品牌 / 最低价 / 浏览时间。
  * JSON 键名沿用历史的 snake_case（迁移前为 {@code Map<String,Object>} 直出），
  * 故以 {@link JsonProperty} 显式固定，避免改动前端报文契约。
@@ -17,12 +17,12 @@ import java.util.Map;
 @Data
 public class HistoryVO {
 
-    /** 足迹记录 ID（product_view_log.id） */
+    /** 足迹记录 ID（spu_view_log.id） */
     private Long id;
 
     /** 商品 ID */
-    @JsonProperty("product_id")
-    private Long productId;
+    @JsonProperty("spu_id")
+    private Long spuId;
 
     /** 浏览时间 */
     @JsonProperty("view_time")
@@ -46,7 +46,7 @@ public class HistoryVO {
     public static HistoryVO from(Map<String, Object> row) {
         HistoryVO vo = new HistoryVO();
         vo.setId(toLong(row.get("id")));
-        vo.setProductId(toLong(row.get("product_id")));
+        vo.setSpuId(toLong(row.get("spu_id")));
         vo.setViewTime(toLocalDateTime(row.get("view_time")));
         vo.setProductName((String) row.get("product_name"));
         vo.setMainImage((String) row.get("main_image"));

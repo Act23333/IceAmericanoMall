@@ -28,7 +28,7 @@ class ShopDecorationTest {
 
         assertEquals("欢迎光临", decoration.getAnnouncement());
         assertEquals(List.of("https://a.png", "https://b.png"), decoration.getBanners());
-        assertEquals(List.of(3L, 1L, 2L), decoration.getHotProductIds(), "去重且保持首次出现顺序");
+        assertEquals(List.of(3L, 1L, 2L), decoration.getHotSpuIds(), "去重且保持首次出现顺序");
         assertEquals(5L, decoration.getShopId());
     }
 
@@ -39,7 +39,7 @@ class ShopDecorationTest {
 
         assertNull(decoration.getAnnouncement());
         assertTrue(decoration.getBanners().isEmpty());
-        assertTrue(decoration.getHotProductIds().isEmpty());
+        assertTrue(decoration.getHotSpuIds().isEmpty());
     }
 
     @Test
@@ -68,7 +68,7 @@ class ShopDecorationTest {
 
     @Test
     @DisplayName("创建装修 — 推荐位去重后超 8 个 → PARAM_ERROR（推荐商品位最多 8 个）")
-    void shouldThrowParamError_whenHotProductsExceedEight() {
+    void shouldThrowParamError_whenHotSpusExceedEight() {
         List<Long> nineIds = List.of(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L);
 
         BizException ex = assertThrows(BizException.class,
@@ -114,6 +114,6 @@ class ShopDecorationTest {
 
         assertNull(blank.getAnnouncement());
         assertTrue(blank.getBanners().isEmpty());
-        assertTrue(blank.getHotProductIds().isEmpty());
+        assertTrue(blank.getHotSpuIds().isEmpty());
     }
 }

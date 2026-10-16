@@ -63,7 +63,7 @@
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
         </dependency>
         <!-- Feign 熔断降级：开启 spring.cloud.openfeign.circuitbreaker.enabled 后，
-             4 个 ia-api 客户端（Order/ProductDetail/Search/UserProfile）的 fallbackFactory
+             4 个 ia-api 客户端（Order/SpuDetail/Search/UserProfile）的 fallbackFactory
              才会真正生效；版本由 Spring Cloud 2025.0.1 BOM 管理 -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>

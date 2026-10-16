@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.dto.SkuCO;
 import org.icedamericanomall.item.adapter.request.StockOpReq;
-import org.icedamericanomall.item.app.ProductManager;
+import org.icedamericanomall.item.app.SpuManager;
 import org.icedamericanomall.item.app.SkuManager;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,7 +18,7 @@ import java.util.List;
 public class InternalSkuController {
 
     private final SkuManager skuManager;
-    private final ProductManager productManager;
+    private final SpuManager spuManager;
 
     /** 批量查 SKU（线格式查询参数 `sku_ids`，逗号分隔；Feign 侧 `SkuClient` 同名）。 */
     @GetMapping("/list/batch")

@@ -1,7 +1,7 @@
 package org.icedamericanomall.ai.infrastructure.adapter;
 
 import lombok.RequiredArgsConstructor;
-import org.icedamericanomall.ai.domain.model.product.ProductHit;
+import org.icedamericanomall.ai.domain.model.spu.SpuHit;
 import org.icedamericanomall.ai.domain.port.SearchPort;
 import org.icedamericanomall.client.SearchClient;
 import org.icedamericanomall.common.api.Result;
@@ -23,8 +23,8 @@ public class FeignSearchAdapter implements SearchPort {
     private final SearchClient searchClient;
 
     @Override
-    public List<ProductHit> searchProducts(String keyword, int size) {
-        Result<Map<String, Object>> result = searchClient.searchProducts(keyword, size);
+    public List<SpuHit> searchSpus(String keyword, int size) {
+        Result<Map<String, Object>> result = searchClient.searchSpus(keyword, size);
         if (result == null || result.getData() == null) {
             // SearchClient 降级为 fail-soft（data 为 null）→ 视为搜索服务不可用
             throw new BizException(ErrorCode.AI_SERVICE_UNAVAILABLE, "搜索服务暂不可用");
@@ -33,10 +33,10 @@ public class FeignSearchAdapter implements SearchPort {
         if (!(rawRecords instanceof List<?> records) || records.isEmpty()) {
             return List.of();
         }
-        List<ProductHit> hits = new ArrayList<>(records.size());
+        List<SpuHit> hits = new ArrayList<>(records.size());
         for (Object item : records) {
             if (item instanceof Map<?, ?> map) {
-                hits.add(ProductHitAssembler.fromMap(map));
+                hits.add(SpuHitAssembler.fromMap(map));
             }
         }
         return hits;

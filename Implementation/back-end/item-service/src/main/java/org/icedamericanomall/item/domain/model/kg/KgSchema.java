@@ -13,30 +13,30 @@ public final class KgSchema {
 
     // ==================== 节点类型（srcType / dstType 取值） ====================
 
-    /** 商品节点（真相源：{@code product} 表，节点标识 = 技术主键 id）。 */
+    /** 商品节点（真相源：{@code spu} 表，节点标识 = 技术主键 id）。 */
     public static final String NODE_PRODUCT = "product";
 
     /** 类目节点（真相源：{@code category} 表，节点标识 = 技术主键 id）。 */
     public static final String NODE_CATEGORY = "category";
 
-    /** 品牌值节点（真相源：{@code product.brand} 规范化字符串，无物理表，O4 裁决）。 */
+    /** 品牌值节点（真相源：{@code spu.brand} 规范化字符串，无物理表，O4 裁决）。 */
     public static final String NODE_BRAND = "brand";
 
-    /** 店铺/商家节点（真相源：{@code product.seller_id}，节点标识 = sellerId）。 */
+    /** 店铺/商家节点（真相源：{@code spu.seller_id}，节点标识 = sellerId）。 */
     public static final String NODE_SELLER = "seller";
 
     // ==================== 边类型（relType 取值） ====================
 
-    /** 属于类目：product → category（直建自 {@code product.category_id}）。 */
+    /** 属于类目：spu → category（直建自 {@code spu.category_id}）。 */
     public static final String REL_BELONGS_TO = "BELONGS_TO";
 
     /** 类目层级：category → category（直建自 {@code category.parent_id}，Phase 1 由 AD64 重建覆盖）。 */
     public static final String REL_PARENT_OF = "PARENT_OF";
 
-    /** 品牌：product → brand（直建自 {@code product.brand} 规范化值节点）。 */
+    /** 品牌：spu → brand（直建自 {@code spu.brand} 规范化值节点）。 */
     public static final String REL_BRAND_OF = "BRAND_OF";
 
-    /** 销售：product → seller（直建自 {@code product.seller_id}）。 */
+    /** 销售：spu → seller（直建自 {@code spu.seller_id}）。 */
     public static final String REL_SOLD_BY = "SOLD_BY";
 
     /** 搭配：category ↔ category（真相源 {@code pairing_rule}，运营人工配置）。 */

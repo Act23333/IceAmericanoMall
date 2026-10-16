@@ -77,8 +77,8 @@
  *   <tr><td>createOrder</td><td>③ 命令</td><td>抛 BizException</td></tr>
  *   <tr><td>SkuClient</td><td>getSkuListByIds</td><td>② 判别型</td><td>抛 BizException</td></tr>
  *   <tr><td>SkuClient</td><td>deductStock / restoreStock</td><td>③ 命令</td><td>抛 BizException</td></tr>
- *   <tr><td>ProductDetailClient</td><td>getProductDetail</td><td>② 判别型</td><td>抛 BizException</td></tr>
- *   <tr><td>SearchClient</td><td>searchProducts</td><td>① 展示型</td><td>非成功 Result（data=null）</td></tr>
+ *   <tr><td>SpuDetailClient</td><td>getSpuDetail</td><td>② 判别型</td><td>抛 BizException</td></tr>
+ *   <tr><td>SearchClient</td><td>searchSpus</td><td>① 展示型</td><td>非成功 Result（data=null）</td></tr>
  *   <tr><td>UserProfileClient</td><td>getBrowseHistory / getFavorites</td><td>① 展示型</td><td>Result.ok(空列表)</td></tr>
  *   <tr><td>NotificationClient</td><td>sendSms / sendEmail / sendInAppMessage</td><td>③ 命令</td><td>抛 BizException</td></tr>
  *   <tr><td>VerificationClient</td><td>issueCode / verifyCode / verifyCaptcha</td><td>② 判别型（安全优先）</td><td>结构化 success=false</td></tr>

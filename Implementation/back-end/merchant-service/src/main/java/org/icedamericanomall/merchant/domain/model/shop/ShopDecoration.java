@@ -11,11 +11,11 @@ import java.util.Objects;
 /**
  * 店铺装修（与 shop 1:1 的聚合，ADR-048）—— 公告 + 轮播图（≤5）+ 推荐商品位（≤8）。
  *
- * <p>存储形态：banners / hotProductIds 以 JSON 字符串列持久化（不引入 TypeHandler），
+ * <p>存储形态：banners / hotSpuIds 以 JSON 字符串列持久化（不引入 TypeHandler），
  * JSON ↔ List 互转收口在仓储实现；领域层只认 List，并在本类集中校验
  * 条数 / URL 格式 / 去重（创建即校验 + 归一化）。
  *
- * <p>Phase 1 取舍（ADR-048）：{@code hotProductIds} 不校验商品归属（跨服务校验留 Phase 2），
+ * <p>Phase 1 取舍（ADR-048）：{@code hotSpuIds} 不校验商品归属（跨服务校验留 Phase 2），
  * 展示端（店铺页商品卡）按需过滤失效 / 非在售 id。
  */
 @Data
@@ -26,7 +26,7 @@ public class ShopDecoration {
     public static final int MAX_BANNERS = 5;
 
     /** 推荐商品位上限 */
-    public static final int MAX_HOT_PRODUCT_IDS = 8;
+    public static final int MAX_HOT_SPU_IDS = 8;
 
     /** 公告长度上限（库表 VARCHAR(200)） */
     public static final int MAX_ANNOUNCEMENT_LENGTH = 200;
@@ -43,8 +43,8 @@ public class ShopDecoration {
     /** 轮播图 URL（≤5，每条须为 http(s) 链接） */
     private List<String> banners;
 
-    /** 推荐商品位（product.id，≤8，去重保序） */
-    private List<Long> hotProductIds;
+    /** 推荐商品位（spu.id，≤8，去重保序） */
+    private List<Long> hotSpuIds;
 
     // ==================== 工厂 ====================
 
@@ -57,7 +57,7 @@ public class ShopDecoration {
      *                      去重后推荐位超 8 个（PARAM_ERROR）
      */
     public static ShopDecoration of(Long shopId, String announcement,
-                                    List<String> banners, List<Long> hotProductIds) {
+                                    List<String> banners, List<Long> hotSpuIds) {
         if (shopId == null) {
             throw new BizException(ErrorCode.PARAM_ERROR, "店铺 ID 不能为空");
         }
@@ -65,7 +65,7 @@ public class ShopDecoration {
                 .shopId(shopId)
                 .announcement(normalizeAnnouncement(announcement))
                 .banners(normalizeBanners(banners))
-                .hotProductIds(normalizeHotProductIds(hotProductIds))
+                .hotSpuIds(normalizeHotSpuIds(hotSpuIds))
                 .build();
     }
 
@@ -73,7 +73,7 @@ public class ShopDecoration {
     public static ShopDecoration blank() {
         return ShopDecoration.builder()
                 .banners(List.of())
-                .hotProductIds(List.of())
+                .hotSpuIds(List.of())
                 .build();
     }
 
@@ -110,17 +110,17 @@ public class ShopDecoration {
         }
     }
 
-    private static List<Long> normalizeHotProductIds(List<Long> hotProductIds) {
-        if (hotProductIds == null || hotProductIds.isEmpty()) {
+    private static List<Long> normalizeHotSpuIds(List<Long> hotSpuIds) {
+        if (hotSpuIds == null || hotSpuIds.isEmpty()) {
             return List.of();
         }
-        List<Long> distinct = hotProductIds.stream()
+        List<Long> distinct = hotSpuIds.stream()
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        if (distinct.size() > MAX_HOT_PRODUCT_IDS) {
+        if (distinct.size() > MAX_HOT_SPU_IDS) {
             throw new BizException(ErrorCode.PARAM_ERROR,
-                    "推荐商品位最多 " + MAX_HOT_PRODUCT_IDS + " 个");
+                    "推荐商品位最多 " + MAX_HOT_SPU_IDS + " 个");
         }
         return distinct;
     }

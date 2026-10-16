@@ -75,7 +75,7 @@ public class FlashSaleManager {
         result.setSuccess(true);
         result.setFlashId(flashId);
         result.setFlashPrice(flashSale.getFlashPrice());
-        result.setProductId(flashSale.getProductId());
+        result.setSpuId(flashSale.getSpuId());
         result.setSkuId(flashSale.getSkuId());
         result.setRemainingStock(remaining);
         return result;

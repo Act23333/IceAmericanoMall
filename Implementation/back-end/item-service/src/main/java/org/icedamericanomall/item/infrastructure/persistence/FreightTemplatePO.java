@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
  *   3. 停用（status=0）模板不参与下单计价。
  * </pre>
  *
- * <p><b>seller_id 口径</b>：商家 {@code user_id}（与 {@code product.seller_id} 同口径，
+ * <p><b>seller_id 口径</b>：商家 {@code user_id}（与 {@code spu.seller_id} 同口径，
  * ADR-019 Phase A），不是 {@code seller.id}。
  */
 @Data

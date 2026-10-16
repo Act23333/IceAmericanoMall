@@ -20,10 +20,10 @@ public interface ReviewRepository {
     void save(Review review);
 
     /** 商品评价分页（创建时间倒序）。 */
-    IPage<Review> pageByProduct(Long productId, int page, int size);
+    IPage<Review> pageBySpu(Long spuId, int page, int size);
 
     /** 商品评价分页（星级/有图过滤 + 排序归一）。 */
-    IPage<Review> pageFiltered(Long productId, Integer rating, Boolean hasMedia,
+    IPage<Review> pageFiltered(Long spuId, Integer rating, Boolean hasMedia,
                                String sort, int page, int size);
 
     /** 按 ID 载入（可为 null）。 */
@@ -50,5 +50,5 @@ public interface ReviewRepository {
     int addAppend(Long reviewId, Long userId, String content, String mediaUrls);
 
     /** 星级分组计数（GROUP BY rating；脏数据由应用层忽略）。 */
-    List<org.icedamericanomall.item.domain.model.review.RatingCount> countByRating(Long productId);
+    List<org.icedamericanomall.item.domain.model.review.RatingCount> countByRating(Long spuId);
 }

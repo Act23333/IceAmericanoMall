@@ -18,7 +18,7 @@
 -- 【设计说明】（大厂规范约定，代码/文档需与此保持一致）
 --   1) 软删除策略：当前**未启用** MyBatis-Plus `@TableLogic`，也没有统一的
 --      `deleted` 标志列。可恢复数据由**状态列**承担软删除语义：
---        user.status(0 禁用) / product.status(3 删除) / seller.status /
+--        user.status(0 禁用) / spu.status(3 删除) / seller.status /
 --        shop.status / coupon.status / user_auth.status(0 已解绑)
 --      明确的**物理删除**场景（删除即不可恢复，属用户主动意愿）：
 --        cart（购物车条目）、favorite（取消收藏）、address（用户主动删除）。
@@ -56,7 +56,7 @@ SET NAMES utf8mb4;
 DROP TABLE IF EXISTS `review_like`;
 DROP TABLE IF EXISTS `review`;
 DROP TABLE IF EXISTS `favorite`;
-DROP TABLE IF EXISTS `product_view_log`;
+DROP TABLE IF EXISTS `spu_view_log`;
 DROP TABLE IF EXISTS `order_logistics`;
 DROP TABLE IF EXISTS `pay_order`;
 DROP TABLE IF EXISTS `reconciliation_detail`;
@@ -66,7 +66,7 @@ DROP TABLE IF EXISTS `cart`;
 DROP TABLE IF EXISTS `order_item`;
 DROP TABLE IF EXISTS `orders`;
 DROP TABLE IF EXISTS `sku`;
-DROP TABLE IF EXISTS `product`;
+DROP TABLE IF EXISTS `spu`;
 DROP TABLE IF EXISTS `freight_template`;
 DROP TABLE IF EXISTS `category`;
 DROP TABLE IF EXISTS `merchant_reply_template`;
@@ -242,11 +242,11 @@ CREATE TABLE `freight_template` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='运费模板（item-service 商品域）';
 
 -- ---------------------------------------------------------------
--- product（商品表 / SPU）— 终态含 V3.5 详情页字段；sales_tags 为 JSON（V4.0）
+-- spu（商品表 / SPU）— 终态含 V3.5 详情页字段；sales_tags 为 JSON（V4.0）
 -- ---------------------------------------------------------------
-CREATE TABLE `product` (
+CREATE TABLE `spu` (
                            `id` BIGINT AUTO_INCREMENT COMMENT '技术主键',
-                           `product_id` BINARY(16) NOT NULL COMMENT '业务商品编号（UUIDv7 原始字节，ADR-050）',
+                           `spu_id` BINARY(16) NOT NULL COMMENT '业务商品编号（UUIDv7 原始字节，ADR-050）',
                            `seller_id` BIGINT NOT NULL COMMENT '所属商家ID',
                            `category_id` BIGINT NOT NULL COMMENT '所属类目ID',
                            `freight_template_id` BIGINT DEFAULT NULL COMMENT '绑定运费模板ID（V5.6，NULL=回落商家默认模板；模板删除经 ON DELETE SET NULL 回落）',
@@ -268,14 +268,14 @@ CREATE TABLE `product` (
                            `create_time` DATETIME NOT NULL COMMENT '创建时间',
                            `update_time` DATETIME NOT NULL COMMENT '更新时间',
                            PRIMARY KEY (`id`),
-                           UNIQUE KEY `uk_product_id` (`product_id`),
+                           UNIQUE KEY `uk_spu_id` (`spu_id`),
                            KEY `idx_seller_id` (`seller_id`),
                            KEY `idx_category_id` (`category_id`),
                            KEY `idx_status` (`status`),
                            KEY `idx_seller_status` (`seller_id`, `status`),
-                           CONSTRAINT `fk_product_seller` FOREIGN KEY (`seller_id`) REFERENCES `seller` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-                           CONSTRAINT `fk_product_category` FOREIGN KEY (`category_id`) REFERENCES `category` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-                           CONSTRAINT `fk_product_freight_template` FOREIGN KEY (`freight_template_id`) REFERENCES `freight_template` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+                           CONSTRAINT `fk_spu_seller` FOREIGN KEY (`seller_id`) REFERENCES `seller` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+                           CONSTRAINT `fk_spu_category` FOREIGN KEY (`category_id`) REFERENCES `category` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+                           CONSTRAINT `fk_spu_freight_template` FOREIGN KEY (`freight_template_id`) REFERENCES `freight_template` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品表（SPU）';
 
 -- ---------------------------------------------------------------
@@ -285,7 +285,7 @@ CREATE TABLE `product` (
 CREATE TABLE `sku` (
                        `id` BIGINT AUTO_INCREMENT COMMENT '技术主键',
                        `sku_id` BINARY(16) NOT NULL COMMENT '业务SKU编码（UUIDv7 原始字节，ADR-050）',
-                       `product_id` BIGINT NOT NULL COMMENT '所属商品ID',
+                       `spu_id` BIGINT NOT NULL COMMENT '所属商品ID',
                        `spec` VARCHAR(200) NOT NULL COMMENT '规格描述（如“黑色 128G”）',
                        `price` INT NOT NULL COMMENT '价格（单位：分）',
                        `original_price` INT DEFAULT NULL COMMENT '原价（分），划线价（V3.5）',
@@ -302,9 +302,9 @@ CREATE TABLE `sku` (
                        `update_time` DATETIME NOT NULL COMMENT '更新时间',
                        PRIMARY KEY (`id`),
                        UNIQUE KEY `uk_sku_id` (`sku_id`),
-                       KEY `idx_product_id` (`product_id`),
+                       KEY `idx_spu_id` (`spu_id`),
                        KEY `idx_status` (`status`),
-                       CONSTRAINT `fk_sku_product` FOREIGN KEY (`product_id`) REFERENCES `product` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+                       CONSTRAINT `fk_sku_spu` FOREIGN KEY (`spu_id`) REFERENCES `spu` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='规格表（SKU）';
 
 -- ---------------------------------------------------------------
@@ -539,7 +539,7 @@ CREATE TABLE `coupon` (
     `grab_type` TINYINT NOT NULL DEFAULT 1 COMMENT '领取方式: 1=NORMAL普通, 2=NEED_GRAB需抢, 3=PLATFORM_EXCLUSIVE平台独占（V4.0）',
     `price_in_cents` INT DEFAULT NULL COMMENT '付费券价格(分), grantType=PAID_PURCHASE时必填（V4.0）',
     `scope_type` TINYINT NOT NULL DEFAULT 1 COMMENT '适用范围: 1=ALL全场, 2=CATEGORY品类, 3=PRODUCT单品（V4.3）',
-    `scope_values` JSON DEFAULT NULL COMMENT '适用范围的ID列表: categoryIds 或 productIds（V4.3）',
+    `scope_values` JSON DEFAULT NULL COMMENT '适用范围的ID列表: categoryIds 或 spuIds（V4.3）',
     `stack_rule` TINYINT NOT NULL DEFAULT 1 COMMENT '叠加规则: 1=MUTUAL_EXCLUSIVE互斥, 2=STACKABLE可叠加（V4.3）',
     `stack_group` VARCHAR(32) DEFAULT NULL COMMENT '叠加分组ID，同组券可叠加使用（V4.3）',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -575,7 +575,7 @@ CREATE TABLE `points_log` (
 -- flash_sale（秒杀活动）
 CREATE TABLE `flash_sale` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `product_id` BIGINT NOT NULL COMMENT '商品ID',
+    `spu_id` BIGINT NOT NULL COMMENT '商品ID',
     `sku_id` BIGINT NOT NULL COMMENT 'SKU ID',
     `flash_price` INT NOT NULL COMMENT '秒杀价（分）',
     `stock` INT NOT NULL COMMENT '秒杀库存',
@@ -586,7 +586,7 @@ CREATE TABLE `flash_sale` (
     `version` INT NOT NULL DEFAULT 0 COMMENT '乐观锁',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY `idx_time` (`start_time`, `end_time`),
-    KEY `idx_product` (`product_id`)
+    KEY `idx_spu` (`spu_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='秒杀活动';
 
 -- flash_order_log（秒杀订单事务日志，幂等+兜底）
@@ -610,7 +610,7 @@ CREATE TABLE `home_config` (
     `slot` VARCHAR(30) NOT NULL COMMENT '位置标识(banner/hot/new/sale)',
     `type` TINYINT NOT NULL COMMENT '1=商品组, 2=广告图, 3=活动链接',
     `title` VARCHAR(100) COMMENT '标题',
-    `product_ids` VARCHAR(500) COMMENT '商品ID列表，逗号分隔',
+    `spu_ids` VARCHAR(500) COMMENT '商品ID列表，逗号分隔',
     `image` VARCHAR(255) COMMENT '图片URL',
     `link_url` VARCHAR(255) COMMENT '跳转链接',
     `sort_order` INT NOT NULL DEFAULT 0 COMMENT '排序',
@@ -628,7 +628,7 @@ CREATE TABLE `home_config` (
 CREATE TABLE `review` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
     `user_id` BIGINT NOT NULL COMMENT '评价用户ID',
-    `product_id` BIGINT NOT NULL COMMENT '商品ID',
+    `spu_id` BIGINT NOT NULL COMMENT '商品ID',
     `order_no` BINARY(16) NOT NULL COMMENT '关联订单号（orders.order_no，无外键；去重锚点，ADR-050 三批收敛）',
     `sku_id` BIGINT DEFAULT NULL COMMENT 'SKU ID',
     `rating` TINYINT NOT NULL COMMENT '评分 1-5',
@@ -642,7 +642,7 @@ CREATE TABLE `review` (
     `like_count` INT NOT NULL DEFAULT 0 COMMENT '点赞数（V5.0）',
     `tags` VARCHAR(500) COMMENT '评价标签，JSON数组 ["质量好","物流快"]（V5.0）',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    KEY `idx_product_id` (`product_id`),
+    KEY `idx_spu_id` (`spu_id`),
     KEY `idx_user_id` (`user_id`),
     UNIQUE KEY `uk_order_user` (`order_no`, `user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品评价';
@@ -664,22 +664,22 @@ CREATE TABLE `review_like` (
 CREATE TABLE `favorite` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
     `user_id` BIGINT NOT NULL COMMENT '用户ID',
-    `product_id` BIGINT NOT NULL COMMENT '商品ID',
+    `spu_id` BIGINT NOT NULL COMMENT '商品ID',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY `uk_user_product` (`user_id`, `product_id`),
+    UNIQUE KEY `uk_user_spu` (`user_id`, `spu_id`),
     KEY `idx_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品收藏';
 
--- product_view_log（商品浏览足迹）
-CREATE TABLE `product_view_log` (
+-- spu_view_log（商品浏览足迹）
+CREATE TABLE `spu_view_log` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
     `user_id` BIGINT NOT NULL COMMENT '用户ID',
-    `product_id` BIGINT NOT NULL COMMENT '商品ID(技术主键)',
+    `spu_id` BIGINT NOT NULL COMMENT '商品ID(技术主键)',
     `view_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '最近浏览时间',
-    UNIQUE KEY `uk_user_product` (`user_id`, `product_id`),
+    UNIQUE KEY `uk_user_spu` (`user_id`, `spu_id`),
     INDEX `idx_user_time` (`user_id`, `view_time`),
     CONSTRAINT `fk_view_log_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_view_log_product` FOREIGN KEY (`product_id`) REFERENCES `product` (`id`) ON DELETE CASCADE
+    CONSTRAINT `fk_view_log_spu` FOREIGN KEY (`spu_id`) REFERENCES `spu` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品浏览足迹';
 
 -- =====================================================================
@@ -1159,7 +1159,7 @@ CREATE TABLE `task_record` (
 -- V5.12 店铺装修（F11）+ 内容社区笔记（F12，ADR-048；按 2026-10-05 口径直接修改本快照）
 -- ---------------------------------------------------------------------
 -- shop_decoration：店铺装修（merchant 域，与 shop 1:1；JSON 以字符串列存储，领域层校验）
--- note / note_product / note_like：种草笔记（item 域，与 review 同属商品 UGC）
+-- note / note_spu / note_like：种草笔记（item 域，与 review 同属商品 UGC）
 -- ---------------------------------------------------------------------
 
 CREATE TABLE `shop_decoration` (
@@ -1167,7 +1167,7 @@ CREATE TABLE `shop_decoration` (
     `shop_id`         BIGINT       NOT NULL COMMENT '店铺 id（shop.id，1:1）',
     `announcement`    VARCHAR(200) DEFAULT NULL COMMENT '店铺公告',
     `banners`         VARCHAR(2000) DEFAULT NULL COMMENT '轮播图 JSON 数组（≤5 个 URL）',
-    `hot_product_ids` VARCHAR(1000) DEFAULT NULL COMMENT '推荐商品位 JSON 数组（≤8 个 product.id，展示端过滤非在售）',
+    `hot_spu_ids` VARCHAR(1000) DEFAULT NULL COMMENT '推荐商品位 JSON 数组（≤8 个 spu.id，展示端过滤非在售）',
     `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY `uk_shop` (`shop_id`)
@@ -1188,14 +1188,14 @@ CREATE TABLE `note` (
     KEY `idx_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='种草笔记';
 
-CREATE TABLE `note_product` (
+CREATE TABLE `note_spu` (
     `id`         BIGINT AUTO_INCREMENT PRIMARY KEY,
     `note_id`    BIGINT NOT NULL COMMENT '笔记 id',
-    `product_id` BIGINT NOT NULL COMMENT '关联商品 id（≤5，发布时校验存在且在售）',
+    `spu_id` BIGINT NOT NULL COMMENT '关联商品 id（≤5，发布时校验存在且在售）',
     `sort`       INT    NOT NULL DEFAULT 0 COMMENT '展示顺序',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY `uk_note_product` (`note_id`, `product_id`),
-    KEY `idx_product` (`product_id`)
+    UNIQUE KEY `uk_note_spu` (`note_id`, `spu_id`),
+    KEY `idx_spu` (`spu_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='笔记关联商品';
 
 CREATE TABLE `note_like` (
@@ -1218,7 +1218,7 @@ CREATE TABLE `group_buy_activity` (
     `id`               BIGINT AUTO_INCREMENT PRIMARY KEY,
     `name`             VARCHAR(50) NOT NULL COMMENT '活动名称',
     `seller_id`        BIGINT      NOT NULL COMMENT '商家 user_id（店铺级活动）',
-    `product_id`       BIGINT      NOT NULL COMMENT '商品ID',
+    `spu_id`       BIGINT      NOT NULL COMMENT '商品ID',
     `sku_id`           BIGINT      NOT NULL COMMENT 'SKU ID（拼团仅该 SKU 参与）',
     `group_price`      INT         NOT NULL COMMENT '拼团价（分，>0）',
     `required_members` TINYINT     NOT NULL COMMENT '成团人数（≥2）',

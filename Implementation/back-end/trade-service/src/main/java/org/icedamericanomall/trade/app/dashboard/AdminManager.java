@@ -77,7 +77,7 @@ public class AdminManager {
     }
 
     /** 销量 Top N（V2.5 详细统计）。 */
-    public List<Map<String, Object>> topProducts(int limit) {
+    public List<Map<String, Object>> topSpus(int limit) {
         int completedCode = OrderStatusEnum.COMPLETED.getCode();
         return orderRepository.findByStatus(completedCode)
                 .stream()

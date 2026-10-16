@@ -9,7 +9,7 @@ import org.mapstruct.Mapping;
 
 /**
  * 种草笔记装配器（MapStruct）—— 领域聚合 → 视图对象；
- * {@code userId → authorId} 语义换名在此收口，{@code liked}/{@code products} 为
+ * {@code userId → authorId} 语义换名在此收口，{@code liked}/{@code spus} 为
  * 登录视角/跨聚合装配字段，由 {@code NoteManager} 装配后填入。
  */
 @Mapper(componentModel = "spring")
@@ -22,9 +22,9 @@ public interface NoteConverter {
     @Mapping(target = "authorId", source = "userId")
     NoteCardVO toCardVO(Note note);
 
-    /** 详情（P30）：liked/products 由应用层装配（登录视角 + 在售过滤）。 */
+    /** 详情（P30）：liked/spus 由应用层装配（登录视角 + 在售过滤）。 */
     @Mapping(target = "authorId", source = "userId")
     @Mapping(target = "liked", ignore = true)
-    @Mapping(target = "products", ignore = true)
+    @Mapping(target = "spus", ignore = true)
     NoteDetailVO toDetailVO(Note note);
 }

@@ -40,18 +40,18 @@ public class ReviewRepositoryImpl implements ReviewRepository {
     }
 
     @Override
-    public IPage<Review> pageByProduct(Long productId, int page, int size) {
+    public IPage<Review> pageBySpu(Long spuId, int page, int size) {
         return reviewMapper.selectPage(new Page<>(page, size), new LambdaQueryWrapper<ReviewPO>()
-                        .eq(ReviewPO::getProductId, productId)
+                        .eq(ReviewPO::getSpuId, spuId)
                         .orderByDesc(ReviewPO::getCreateTime))
                 .convert(ReviewRepositoryImpl::toDomain);
     }
 
     @Override
-    public IPage<Review> pageFiltered(Long productId, Integer rating, Boolean hasMedia,
+    public IPage<Review> pageFiltered(Long spuId, Integer rating, Boolean hasMedia,
                                       String sort, int page, int size) {
         LambdaQueryWrapper<ReviewPO> wrapper = new LambdaQueryWrapper<ReviewPO>()
-                .eq(ReviewPO::getProductId, productId);
+                .eq(ReviewPO::getSpuId, spuId);
         if (rating != null) {
             wrapper.eq(ReviewPO::getRating, rating);
         }
@@ -112,8 +112,8 @@ public class ReviewRepositoryImpl implements ReviewRepository {
     }
 
     @Override
-    public List<RatingCount> countByRating(Long productId) {
-        return reviewMapper.countByRating(productId).stream()
+    public List<RatingCount> countByRating(Long spuId) {
+        return reviewMapper.countByRating(spuId).stream()
                 .map(row -> new RatingCount(row.getRating(), row.getCount()))
                 .toList();
     }
@@ -122,7 +122,7 @@ public class ReviewRepositoryImpl implements ReviewRepository {
         ReviewPO po = new ReviewPO();
         po.setId(review.getId());
         po.setUserId(review.getUserId());
-        po.setProductId(review.getProductId());
+        po.setSpuId(review.getSpuId());
         po.setOrderNo(IdGenerator.toBytes(review.getOrderNo()));
         po.setSkuId(review.getSkuId());
         po.setRating(review.getRating());
@@ -138,7 +138,7 @@ public class ReviewRepositoryImpl implements ReviewRepository {
 
     static Review toDomain(ReviewPO po) {
         return Review.builder()
-                .id(po.getId()).userId(po.getUserId()).productId(po.getProductId())
+                .id(po.getId()).userId(po.getUserId()).spuId(po.getSpuId())
                 .orderNo(IdGenerator.toHexString(po.getOrderNo())).skuId(po.getSkuId()).rating(po.getRating())
                 .content(po.getContent()).images(po.getImages()).reply(po.getReply())
                 .replyTime(po.getReplyTime()).appendContent(po.getAppendContent())

@@ -36,16 +36,16 @@ public class NoteDetailVO implements Serializable {
     private LocalDateTime createTime;
 
     /** 关联商品摘要卡（sort 序，非在售已过滤；可空列表）。 */
-    private List<ProductSummaryVO> products;
+    private List<SpuSummaryVO> spus;
 
     /**
      * 关联商品摘要卡（内嵌）—— 商品名称/主图/在售 SKU 最低价（分，口径对齐商品列表卡）。
      */
     @Data
-    public static class ProductSummaryVO implements Serializable {
+    public static class SpuSummaryVO implements Serializable {
         private static final long serialVersionUID = 1L;
 
-        private Long productId;
+        private Long spuId;
 
         private String name;
 

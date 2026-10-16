@@ -27,7 +27,7 @@ public class GroupBuyUpdateReq implements Serializable {
 
     private Long sellerId;
 
-    private Long productId;
+    private Long spuId;
 
     private Long skuId;
 

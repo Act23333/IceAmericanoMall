@@ -12,7 +12,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
  *
  * <p><b>Feign 调用（ADR-052 直读退出）</b>：商品数据面归 item-service 所有——
  * LIKE 降级检索 / 联想词 / ES 重建数据源 / publishTime 回填经 ia-api {@code ItemSearchClient}
- * 在线获取，原直读 {@code product}/{@code sku} 镜像表的实现已退出；
+ * 在线获取，原直读 {@code spu}/{@code sku} 镜像表的实现已退出；
  * 降级工厂（fail-closed 空结果）经 ia-api {@code DefaultFeignConfig} 登记。
  */
 @SpringBootApplication(scanBasePackages = "org.icedamericanomall.search")

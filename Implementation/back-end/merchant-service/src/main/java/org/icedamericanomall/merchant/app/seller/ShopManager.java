@@ -188,7 +188,7 @@ public class ShopManager {
      * <p>PUT 全量替换语义：未传字段按空保存（发送空列表即清空对应装修项）；
      * 落库为 uk_shop 单语句 UPSERT；内容校验（公告 ≤200 / 轮播 ≤5 且 http(s)、
      * 推荐位 ≤8 去重）收口在领域 {@link ShopDecoration}；
-     * hotProductIds Phase 1 不校验商品归属（展示端过滤，ADR-048）。
+     * hotSpuIds Phase 1 不校验商品归属（展示端过滤，ADR-048）。
      *
      * <pre>
      * Scenario: 商家保存店铺装修
@@ -204,7 +204,7 @@ public class ShopManager {
     public void saveDecoration(Long userId, Long shopId, ShopDecorationReq req) {
         loadOwnedShop(userId, shopId);
         shopDecorationRepository.save(ShopDecoration.of(
-                shopId, req.getAnnouncement(), req.getBanners(), req.getHotProductIds()));
+                shopId, req.getAnnouncement(), req.getBanners(), req.getHotSpuIds()));
     }
 
     // ==================== 内部方法 ====================

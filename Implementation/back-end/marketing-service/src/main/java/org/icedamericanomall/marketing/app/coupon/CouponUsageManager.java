@@ -96,13 +96,13 @@ public class CouponUsageManager {
      *       未传 ids 不放行：调用方漏传不能被解释为「用户想要的范围被满足」。</li>
      * </ul>
      *
-     * @param productIds  订单商品 ID（逗号分隔；调用方来自下单商品快照，未传=未知）
+     * @param spuIds  订单商品 ID（逗号分隔；调用方来自下单商品快照，未传=未知）
      * @param categoryIds 订单品类 ID（逗号分隔；同上）
      * @return 实际抵扣金额（分）
      */
     @Transactional(rollbackFor = Exception.class)
     public int useCoupon(Long userId, Long userCouponId, String orderNo, int orderAmount,
-                         Integer orderType, Long sellerId, String productIds, String categoryIds) {
+                         Integer orderType, Long sellerId, String spuIds, String categoryIds) {
         UserCoupon uc = userCouponRepository.findById(userCouponId);
         if (uc == null || !uc.isOwnedBy(userId)) {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "优惠券不存在");
@@ -119,7 +119,7 @@ public class CouponUsageManager {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "未达到最低消费金额");
         }
         assertCategoryUsable(coupon, orderType, sellerId);
-        if (!CouponScope.accepts(coupon.getScopeType(), coupon.getScopeValues(), productIds, categoryIds)) {
+        if (!CouponScope.accepts(coupon.getScopeType(), coupon.getScopeValues(), spuIds, categoryIds)) {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "该优惠券不适用于当前订单商品");
         }
 

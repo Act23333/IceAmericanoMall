@@ -47,7 +47,7 @@ class FlashSaleManagerH2Test {
             stmt.execute("""
                 CREATE TABLE flash_sale (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                    product_id BIGINT,
+                    spu_id BIGINT,
                     sku_id BIGINT,
                     flash_price INT,
                     stock INT NOT NULL,
@@ -59,7 +59,7 @@ class FlashSaleManagerH2Test {
                     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )""");
             stmt.execute("""
-                INSERT INTO flash_sale (id, product_id, sku_id, flash_price, stock, sold_count, status)
+                INSERT INTO flash_sale (id, spu_id, sku_id, flash_price, stock, sold_count, status)
                 VALUES (1, 100, 1000, 9900, 50, 0, %d)"""
                     .formatted(FlashSaleStatusEnum.ACTIVE.getCode()));
         }

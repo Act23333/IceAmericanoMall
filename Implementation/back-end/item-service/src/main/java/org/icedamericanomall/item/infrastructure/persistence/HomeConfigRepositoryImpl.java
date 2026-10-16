@@ -67,7 +67,7 @@ public class HomeConfigRepositoryImpl implements HomeConfigRepository {
                 .slot(po.getSlot())
                 .type(po.getType())
                 .title(po.getTitle())
-                .productIds(po.getProductIds())
+                .spuIds(po.getSpuIds())
                 .image(po.getImage())
                 .linkUrl(po.getLinkUrl())
                 .sortOrder(po.getSortOrder())
@@ -83,7 +83,7 @@ public class HomeConfigRepositoryImpl implements HomeConfigRepository {
         po.setSlot(config.getSlot());
         po.setType(config.getType());
         po.setTitle(config.getTitle());
-        po.setProductIds(config.getProductIds());
+        po.setSpuIds(config.getSpuIds());
         po.setImage(config.getImage());
         po.setLinkUrl(config.getLinkUrl());
         po.setSortOrder(config.getSortOrder());

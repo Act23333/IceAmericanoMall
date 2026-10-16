@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 /**
  * 首页装修配置聚合根（纯 POJO，零框架依赖）。
  *
- * <p>管理后台维护、前台只读启用项；{@code productIds} 是<b>商品 ID 列表快照串</b>
+ * <p>管理后台维护、前台只读启用项；{@code spuIds} 是<b>商品 ID 列表快照串</b>
  * （JSON/逗号分隔，历史口径），不经聚合间对象引用。
  */
 @Data
@@ -26,7 +26,7 @@ public class HomeConfig {
     private String title;
 
     /** 关联商品 ID 列表（快照串，历史口径）。 */
-    private String productIds;
+    private String spuIds;
 
     private String image;
 
@@ -48,13 +48,13 @@ public class HomeConfig {
      *
      * @param status 原始状态码（null 或非法 → 启用）
      */
-    public static HomeConfig newConfig(String slot, Integer type, String title, String productIds,
+    public static HomeConfig newConfig(String slot, Integer type, String title, String spuIds,
                                        String image, String linkUrl, Integer sortOrder, Integer status) {
         return HomeConfig.builder()
                 .slot(slot)
                 .type(type)
                 .title(title)
-                .productIds(productIds)
+                .spuIds(spuIds)
                 .image(image)
                 .linkUrl(linkUrl)
                 .sortOrder(sortOrder)
@@ -69,14 +69,14 @@ public class HomeConfig {
      * {@code update-strategy=not_null} 不落库 = 保持原值），响应回显请求值。
      * 存在性校验由应用层在调用前完成（历史实现同样先查存在）。
      */
-    public static HomeConfig forRevise(Long id, String slot, Integer type, String title, String productIds,
+    public static HomeConfig forRevise(Long id, String slot, Integer type, String title, String spuIds,
                                        String image, String linkUrl, Integer sortOrder, Integer status) {
         return HomeConfig.builder()
                 .id(id)
                 .slot(slot)
                 .type(type)
                 .title(title)
-                .productIds(productIds)
+                .spuIds(spuIds)
                 .image(image)
                 .linkUrl(linkUrl)
                 .sortOrder(sortOrder)

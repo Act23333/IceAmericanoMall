@@ -3,12 +3,12 @@ package org.icedamericanomall.search.adapter.internal;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.icedamericanomall.dto.NoteVectorHitCO;
 import org.icedamericanomall.dto.NoteVectorUpsertCO;
-import org.icedamericanomall.dto.ProductVectorHitCO;
-import org.icedamericanomall.dto.ProductVectorUpsertCO;
-import org.icedamericanomall.search.adapter.assembler.ProductSearchConverter;
+import org.icedamericanomall.dto.SpuVectorHitCO;
+import org.icedamericanomall.dto.SpuVectorUpsertCO;
+import org.icedamericanomall.search.adapter.assembler.SpuSearchConverter;
 import org.icedamericanomall.search.app.KnowledgeVectorManager;
 import org.icedamericanomall.search.app.NoteVectorManager;
-import org.icedamericanomall.search.app.ProductVectorManager;
+import org.icedamericanomall.search.app.SpuVectorManager;
 import org.icedamericanomall.search.app.SearchManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -52,20 +52,20 @@ class InternalSearchControllerTest {
     private static final String SIMILAR_URL = "/internal/search/vector/product/similar";
     private static final String NOTE_UPSERT_URL = "/internal/search/vector/note/upsert";
     private static final String NOTE_SIMILAR_URL = "/internal/search/vector/note/similar";
-    private static final Long PRODUCT_ID = 9L;
+    private static final Long SPU_ID = 9L;
     private static final Long NOTE_ID = 9L;
 
     @Mock
     private SearchManager searchManager;
 
     @Mock
-    private ProductSearchConverter converter;
+    private SpuSearchConverter converter;
 
     @Mock
     private KnowledgeVectorManager knowledgeVectorManager;
 
     @Mock
-    private ProductVectorManager productVectorManager;
+    private SpuVectorManager spuVectorManager;
 
     @Mock
     private NoteVectorManager noteVectorManager;
@@ -74,7 +74,7 @@ class InternalSearchControllerTest {
     private ObjectProvider<KnowledgeVectorManager> knowledgeVectorProvider;
 
     @Mock
-    private ObjectProvider<ProductVectorManager> productVectorProvider;
+    private ObjectProvider<SpuVectorManager> spuVectorProvider;
 
     @Mock
     private ObjectProvider<NoteVectorManager> noteVectorProvider;
@@ -86,17 +86,17 @@ class InternalSearchControllerTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(new InternalSearchController(
-                searchManager, converter, knowledgeVectorProvider, productVectorProvider,
+                searchManager, converter, knowledgeVectorProvider, spuVectorProvider,
                 noteVectorProvider)).build();
     }
 
     @Test
     @DisplayName("I47 摄取 — Manager 可用 → 委托并返回 1（Req→CO 字段对齐）")
     void shouldDelegateToManager_whenUpsertAndVectorEnabled() throws Exception {
-        when(productVectorProvider.getIfAvailable()).thenReturn(productVectorManager);
+        when(spuVectorProvider.getIfAvailable()).thenReturn(spuVectorManager);
 
         Map<String, Object> body = new HashMap<>();
-        body.put("productId", PRODUCT_ID);
+        body.put("spuId", SPU_ID);
         body.put("name", "无线蓝牙耳机");
         body.put("description", "主动降噪");
         body.put("price", 12900);
@@ -104,9 +104,9 @@ class InternalSearchControllerTest {
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk());
 
-        ArgumentCaptor<ProductVectorUpsertCO> captor = ArgumentCaptor.forClass(ProductVectorUpsertCO.class);
-        verify(productVectorManager).upsert(captor.capture());
-        assertEquals(PRODUCT_ID, captor.getValue().getProductId());
+        ArgumentCaptor<SpuVectorUpsertCO> captor = ArgumentCaptor.forClass(SpuVectorUpsertCO.class);
+        verify(spuVectorManager).upsert(captor.capture());
+        assertEquals(SPU_ID, captor.getValue().getSpuId());
         assertEquals("无线蓝牙耳机", captor.getValue().getName());
         assertEquals("主动降噪", captor.getValue().getDescription());
         assertEquals(12900, captor.getValue().getPrice());
@@ -116,46 +116,46 @@ class InternalSearchControllerTest {
     @DisplayName("I47 摄取 — ES 关闭（Bean 不存在）→ 返回 0 且不触达 Manager")
     void shouldReturnZero_whenUpsertAndVectorUnavailable() throws Exception {
         Map<String, Object> body = new HashMap<>();
-        body.put("productId", PRODUCT_ID);
+        body.put("spuId", SPU_ID);
         body.put("name", "无线蓝牙耳机");
 
         mockMvc.perform(post(UPSERT_URL).contentType("application/json")
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk());
 
-        verifyNoInteractions(productVectorManager);
+        verifyNoInteractions(spuVectorManager);
     }
 
     @Test
-    @DisplayName("I47 摄取 — 缺 productId → 400")
-    void shouldReturn400_whenUpsertMissingProductId() throws Exception {
+    @DisplayName("I47 摄取 — 缺 spuId → 400")
+    void shouldReturn400_whenUpsertMissingSpuId() throws Exception {
         mockMvc.perform(post(UPSERT_URL).contentType("application/json")
                         .content("{\"name\":\"无线蓝牙耳机\"}"))
                 .andExpect(status().isBadRequest());
-        verifyNoInteractions(productVectorManager);
+        verifyNoInteractions(spuVectorManager);
     }
 
     @Test
     @DisplayName("I47 摄取 — 缺 name → 400")
     void shouldReturn400_whenUpsertMissingName() throws Exception {
         mockMvc.perform(post(UPSERT_URL).contentType("application/json")
-                        .content("{\"productId\":9}"))
+                        .content("{\"spuId\":9}"))
                 .andExpect(status().isBadRequest());
-        verifyNoInteractions(productVectorManager);
+        verifyNoInteractions(spuVectorManager);
     }
 
     @Test
     @DisplayName("I48 相似检索 — Manager 可用 → 委托并返回命中 id + score")
     void shouldDelegateToManager_whenSimilarAndVectorEnabled() throws Exception {
-        when(productVectorProvider.getIfAvailable()).thenReturn(productVectorManager);
-        when(productVectorManager.similar(PRODUCT_ID, 5)).thenReturn(List.of(
+        when(spuVectorProvider.getIfAvailable()).thenReturn(spuVectorManager);
+        when(spuVectorManager.similar(SPU_ID, 5)).thenReturn(List.of(
                 hitCO(100L, 0.9), hitCO(200L, 0.8)));
 
-        mockMvc.perform(get(SIMILAR_URL).param("product_id", String.valueOf(PRODUCT_ID)).param("size", "5"))
+        mockMvc.perform(get(SIMILAR_URL).param("spu_id", String.valueOf(SPU_ID)).param("size", "5"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].productId").value(100))
+                .andExpect(jsonPath("$[0].spuId").value(100))
                 .andExpect(jsonPath("$[0].score").value(0.9))
-                .andExpect(jsonPath("$[1].productId").value(200))
+                .andExpect(jsonPath("$[1].spuId").value(200))
                 .andExpect(jsonPath("$[1].score").value(0.8))
                 .andExpect(jsonPath("$.length()").value(2));
     }
@@ -163,11 +163,11 @@ class InternalSearchControllerTest {
     @Test
     @DisplayName("I48 相似检索 — ES 关闭（Bean 不存在）→ 空列表且不触达 Manager")
     void shouldReturnEmptyList_whenSimilarAndVectorUnavailable() throws Exception {
-        mockMvc.perform(get(SIMILAR_URL).param("product_id", String.valueOf(PRODUCT_ID)))
+        mockMvc.perform(get(SIMILAR_URL).param("spu_id", String.valueOf(SPU_ID)))
                 .andExpect(status().isOk())
                 .andExpect(result -> assertEquals("[]",
                         result.getResponse().getContentAsString()));
-        verifyNoInteractions(productVectorManager);
+        verifyNoInteractions(spuVectorManager);
     }
 
     @Test
@@ -262,9 +262,9 @@ class InternalSearchControllerTest {
         verifyNoInteractions(noteVectorManager);
     }
 
-    private static ProductVectorHitCO hitCO(Long productId, double score) {
-        ProductVectorHitCO co = new ProductVectorHitCO();
-        co.setProductId(productId);
+    private static SpuVectorHitCO hitCO(Long spuId, double score) {
+        SpuVectorHitCO co = new SpuVectorHitCO();
+        co.setSpuId(spuId);
         co.setScore(score);
         return co;
     }

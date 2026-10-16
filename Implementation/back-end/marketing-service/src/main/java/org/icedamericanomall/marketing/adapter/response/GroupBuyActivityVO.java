@@ -21,7 +21,7 @@ public class GroupBuyActivityVO implements Serializable {
     private Long id;
     private String name;
     private Long sellerId;
-    private Long productId;
+    private Long spuId;
     private Long skuId;
     /** 拼团价（分） */
     private Integer groupPrice;

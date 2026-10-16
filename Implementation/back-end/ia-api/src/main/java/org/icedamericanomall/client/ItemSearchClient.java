@@ -1,9 +1,9 @@
 package org.icedamericanomall.client;
 
 import org.icedamericanomall.config.DefaultFeignConfig;
-import org.icedamericanomall.dto.ProductSearchItemCO;
-import org.icedamericanomall.dto.ProductSearchPageCO;
-import org.icedamericanomall.dto.ProductSearchQueryCO;
+import org.icedamericanomall.dto.SpuSearchItemCO;
+import org.icedamericanomall.dto.SpuSearchPageCO;
+import org.icedamericanomall.dto.SpuSearchQueryCO;
 import org.icedamericanomall.fallback.ItemSearchClientFallback;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,9 +15,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import java.util.List;
 
 /**
- * Feign client for item-service internal product-search endpoints（ADR-052 数据面归属）。
+ * Feign client for item-service internal spu-search endpoints（ADR-052 数据面归属）。
  *
- * <p><b>职责边界</b>：{@code product}/{@code sku} 表的唯一所有者是 item-service——
+ * <p><b>职责边界</b>：{@code spu}/{@code sku} 表的唯一所有者是 item-service——
  * search-service 的 LIKE 降级检索、联想词、ES 重建数据源、publishTime 回填，
  * 一律经此出口获取，禁止任何形式的直读建库（ADR-052 受控豁免已随本 client 落地退出）。
  *
@@ -46,7 +46,7 @@ public interface ItemSearchClient {
      * 在售商品 + 关键词 LIKE（name/description）+ 分类/品牌过滤 + 在售 SKU 最低价区间 + 白名单排序。
      */
     @PostMapping("/page")
-    ProductSearchPageCO searchPage(@RequestBody ProductSearchQueryCO query);
+    SpuSearchPageCO searchPage(@RequestBody SpuSearchQueryCO query);
 
     /** 商品名前缀联想（SE5 源 2）：在售商品名称前缀命中，销量降序，同名去重后截断。 */
     @GetMapping("/suggest")
@@ -54,9 +54,9 @@ public interface ItemSearchClient {
 
     /** ES 重建数据源：在售商品全量导出（按 id 升序分页，页长由调用方控制）。 */
     @GetMapping("/export")
-    ProductSearchPageCO exportPage(@RequestParam("page") int page, @RequestParam("size") int size);
+    SpuSearchPageCO exportPage(@RequestParam("page") int page, @RequestParam("size") int size);
 
     /** 单商品检索条目（ES 摄取 publishTime 回填用）；不存在返回 {@code null}。 */
     @GetMapping("/detail/{id}")
-    ProductSearchItemCO detail(@PathVariable("id") Long id);
+    SpuSearchItemCO detail(@PathVariable("id") Long id);
 }

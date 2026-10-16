@@ -23,7 +23,7 @@ public class InternalCouponController {
     /**
      * V4.2: 使用优惠券，返回实际抵扣金额（分）。orderType+sellerId 用于类别/店铺校验。
      *
-     * <p>V4.3 起 {@code productIds}/{@code categoryIds}（均逗号分隔、均可缺省）用于
+     * <p>V4.3 起 {@code spuIds}/{@code categoryIds}（均逗号分隔、均可缺省）用于
      * {@code scope_type/scope_values} 适用范围校验；缺省时若该券限定了品类/单品则拒绝核销
      * （详见 {@code CouponUsageManager.useCoupon}）。
      */
@@ -31,10 +31,10 @@ public class InternalCouponController {
     public int use(@RequestParam(name = "user_id") Long userId, @RequestParam(name = "user_coupon_id") Long userCouponId,
                    @RequestParam(name = "order_no") String orderNo, @RequestParam(name = "order_amount") Integer orderAmount,
                    @RequestParam(name = "order_type") Integer orderType, @RequestParam(name = "seller_id") Long sellerId,
-                   @RequestParam(name = "product_ids", required = false) String productIds,
+                   @RequestParam(name = "spu_ids", required = false) String spuIds,
                    @RequestParam(name = "category_ids", required = false) String categoryIds) {
         return couponUsageManager.useCoupon(userId, userCouponId, orderNo, orderAmount,
-                orderType, sellerId, productIds, categoryIds);
+                orderType, sellerId, spuIds, categoryIds);
     }
 
     /** 按订单号回滚优惠券。 */

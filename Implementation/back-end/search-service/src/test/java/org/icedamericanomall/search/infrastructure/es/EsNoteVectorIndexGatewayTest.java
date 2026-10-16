@@ -50,7 +50,7 @@ import static org.mockito.Mockito.when;
  * <p>锁死不变量：①upsert 覆盖写 _id=noteId 且索引缺失时按 kNN mapping 建 notes 索引
  * （knn 开关 + dense_vector，dims 同源配置）；②findVectorById 未摄取/ES 异常 → empty（fail-open）；
  * ③deleteById 软删语义；④kNN 检索请求与命中映射（noteId + score）。
- * matcher 显式类型化消除 Request / Function 重载歧义（同 {@code EsProductSearchGatewayTest}）。
+ * matcher 显式类型化消除 Request / Function 重载歧义（同 {@code EsSpuSearchGatewayTest}）。
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)

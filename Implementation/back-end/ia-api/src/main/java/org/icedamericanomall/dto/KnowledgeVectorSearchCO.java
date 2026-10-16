@@ -12,7 +12,7 @@ import java.util.List;
  * <p>对应内部端点 {@code POST /internal/search/vector}。该端点自 V5.4 起支持
  * {@code index} 与 {@code sellerId} 两个可选维度：
  * <ul>
- *   <li>{@code index} 缺省（或 {@code products}）→ 商品 kNN 检索（历史行为，报文形状不变）；</li>
+ *   <li>{@code index} 缺省（或 {@code spus}）→ 商品 kNN 检索（历史行为，报文形状不变）；</li>
  *   <li>{@code index = knowledge_vectors} → 商家知识库 chunk 检索（按 {@code sellerId} 过滤）。</li>
  * </ul>
  * 请求体字段数组是<b>向后兼容的超集</b>：旧调用方只发 {@code embedding/size}，服务端按缺省语义处理。

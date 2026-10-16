@@ -71,7 +71,7 @@ public class FlashSaleRepositoryImpl implements FlashSaleRepository {
         }
         return FlashSale.builder()
                 .id(po.getId())
-                .productId(po.getProductId())
+                .spuId(po.getSpuId())
                 .skuId(po.getSkuId())
                 .flashPrice(po.getFlashPrice())
                 .stock(po.getStock())
@@ -87,7 +87,7 @@ public class FlashSaleRepositoryImpl implements FlashSaleRepository {
     static FlashSalePO toPO(FlashSale flashSale) {
         FlashSalePO po = new FlashSalePO();
         po.setId(flashSale.getId());
-        po.setProductId(flashSale.getProductId());
+        po.setSpuId(flashSale.getSpuId());
         po.setSkuId(flashSale.getSkuId());
         po.setFlashPrice(flashSale.getFlashPrice());
         po.setStock(flashSale.getStock());

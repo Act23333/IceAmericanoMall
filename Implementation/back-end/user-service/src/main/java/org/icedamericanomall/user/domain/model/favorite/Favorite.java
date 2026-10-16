@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 /**
  * 商品收藏（聚合根，纯 POJO）。
  *
- * <p>业务键 = {@code userId + productId}，<b>去重语义</b>：同一用户对同一商品至多一条收藏记录
+ * <p>业务键 = {@code userId + spuId}，<b>去重语义</b>：同一用户对同一商品至多一条收藏记录
  * （新增由仓储的「存在即跳过」写入保证，取消按该业务键删除），聚合间不持有对象引用、
  * 只以商品 ID 引用商品聚合。
  */
@@ -16,29 +16,29 @@ import java.time.LocalDateTime;
 @Builder
 public class Favorite {
 
-    /** 技术主键（收藏业务键 = userId + productId，范围操作均在 WHERE 中带 userId 兜底） */
+    /** 技术主键（收藏业务键 = userId + spuId，范围操作均在 WHERE 中带 userId 兜底） */
     private Long id;
 
     /** 所属用户 ID（跨服务 user_id 语义，技术主键） */
     private Long userId;
 
     /** 收藏的商品 ID（跨聚合仅以 ID 引用，不持有商品对象） */
-    private Long productId;
+    private Long spuId;
 
     /** 收藏时间 */
     private LocalDateTime createTime;
 
     /**
-     * 新建一条收藏（业务键 {userId, productId}）。
+     * 新建一条收藏（业务键 {userId, spuId}）。
      *
      * @param userId    所属用户
-     * @param productId 商品 ID
+     * @param spuId 商品 ID
      * @return 待持久化的收藏聚合
      */
-    public static Favorite of(Long userId, Long productId) {
+    public static Favorite of(Long userId, Long spuId) {
         return Favorite.builder()
                 .userId(userId)
-                .productId(productId)
+                .spuId(spuId)
                 .build();
     }
 }

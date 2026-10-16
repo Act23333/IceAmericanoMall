@@ -1,9 +1,9 @@
 package org.icedamericanomall.search.adapter.web;
 
 import org.icedamericanomall.common.api.Result;
-import org.icedamericanomall.search.adapter.assembler.ProductSearchConverter;
+import org.icedamericanomall.search.adapter.assembler.SpuSearchConverter;
 import org.icedamericanomall.search.adapter.request.SearchPageReq;
-import org.icedamericanomall.search.adapter.response.ProductSearchVO;
+import org.icedamericanomall.search.adapter.response.SpuSearchVO;
 import org.icedamericanomall.search.adapter.response.SearchFacetsVO;
 import org.icedamericanomall.search.adapter.response.SearchPageVO;
 import org.icedamericanomall.search.app.SearchManager;
@@ -37,7 +37,7 @@ class SearchControllerTest {
     private SearchManager searchManager;
 
     @Mock
-    private ProductSearchConverter converter;
+    private SpuSearchConverter converter;
 
     private SearchController controller() {
         return new SearchController(searchManager, converter);
@@ -56,12 +56,12 @@ class SearchControllerTest {
         req.setPage(2);
         req.setSize(5);
 
-        SearchPageVO<ProductSearchVO> voPage = SearchPageVO.of(List.of(), 0L, 2, 5);
+        SearchPageVO<SpuSearchVO> voPage = SearchPageVO.of(List.of(), 0L, 2, 5);
         when(searchManager.search("手机", 10L, "Apple", 100, 200, "newest", 2, 5))
                 .thenReturn(SearchPage.empty(2, 5));
         when(converter.toPage(any())).thenReturn(voPage);
 
-        Result<SearchPageVO<ProductSearchVO>> result = controller().search(req);
+        Result<SearchPageVO<SpuSearchVO>> result = controller().search(req);
 
         verify(searchManager).search("手机", 10L, "Apple", 100, 200, "newest", 2, 5);
         assertSame(voPage, result.getData());

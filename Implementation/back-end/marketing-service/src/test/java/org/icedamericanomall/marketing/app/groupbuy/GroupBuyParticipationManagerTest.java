@@ -413,7 +413,7 @@ class GroupBuyParticipationManagerTest {
                 .id(ACTIVITY_ID)
                 .name("iPhone 拼团")
                 .sellerId(500L)
-                .productId(1L)
+                .spuId(1L)
                 .skuId(2L)
                 .groupPrice(9900)
                 .requiredMembers(3)

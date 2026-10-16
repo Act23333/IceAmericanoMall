@@ -34,6 +34,6 @@ public class NotePublishReq implements Serializable {
     private List<String> images;
 
     /** 关联商品 id（≤5，服务端去重；可空）。 */
-    @Size(max = Note.MAX_PRODUCTS, message = "关联商品数量不能超过5")
-    private List<Long> productIds;
+    @Size(max = Note.MAX_SPUS, message = "关联商品数量不能超过5")
+    private List<Long> spuIds;
 }

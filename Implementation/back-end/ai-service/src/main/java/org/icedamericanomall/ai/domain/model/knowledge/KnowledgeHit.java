@@ -3,7 +3,7 @@ package org.icedamericanomall.ai.domain.model.knowledge;
 /**
  * 知识库检索命中项（领域 DTO）—— 商家 FAQ/政策/手册的 chunk。
  *
- * <p>与 {@link org.icedamericanomall.ai.domain.model.product.ProductHit} 区分：知识命中携带的是<b>可读文本片段</b>（送入 LLM 的上下文），
+ * <p>与 {@link org.icedamericanomall.ai.domain.model.spu.SpuHit} 区分：知识命中携带的是<b>可读文本片段</b>（送入 LLM 的上下文），
  * 而不是商品价格/销量等结构化字段。
  *
  * @param knowledgeId 知识条目业务ID

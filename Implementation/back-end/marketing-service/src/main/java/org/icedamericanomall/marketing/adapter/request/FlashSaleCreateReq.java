@@ -19,7 +19,7 @@ public class FlashSaleCreateReq implements Serializable {
     private static final long serialVersionUID = 1L;
 
     @NotNull
-    private Long productId;
+    private Long spuId;
 
     @NotNull
     private Long skuId;

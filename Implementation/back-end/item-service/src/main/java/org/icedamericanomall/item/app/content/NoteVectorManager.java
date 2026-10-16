@@ -12,7 +12,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 /**
  * 笔记向量推荐协作器（契约 §4.14.10 I50-I51，V5.13；ADR-046 管道第二次复用）——
- * 笔记向量摄取/删除旁路的唯一收口（镜像 {@code ProductRecommendManager} 模式）。
+ * 笔记向量摄取/删除旁路的唯一收口（镜像 {@code SpuRecommendManager} 模式）。
  *
  * <p><b>事务纪律（硬约束：Feign 绝不入事务）</b>：摄取/删除发生在笔记落库成功<b>之后</b>——
  * <ul>
@@ -22,7 +22,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  *   <li>无活动事务 → 直接发送。</li>
  * </ul>
  * 发送为 fail-open：降级哨兵 {@code -1} / 任何异常只记日志，笔记主流程零感知
- * （对齐 {@code ProductRecommendManager} 先例；向量可由 reindex 全量重建补齐）。
+ * （对齐 {@code SpuRecommendManager} 先例；向量可由 reindex 全量重建补齐）。
  */
 @Slf4j
 @Component

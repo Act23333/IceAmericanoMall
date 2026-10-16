@@ -34,24 +34,24 @@ public class ReviewController {
     }
 
     /** 评价列表 */
-    @GetMapping("/product/{productId}")
-    public Result<IPage<ReviewVO>> listByProduct(@PathVariable Long productId,
+    @GetMapping("/product/{spuId}")
+    public Result<IPage<ReviewVO>> listBySpu(@PathVariable Long spuId,
                                                   @RequestParam(defaultValue = "1") int page,
                                                   @RequestParam(defaultValue = "10") int size) {
-        return Result.ok(reviewManager.pageByProduct(productId, page, size));
+        return Result.ok(reviewManager.pageBySpu(spuId, page, size));
     }
 
     /** V5.0: 评价筛选 (按星级/有无图片/排序) — query 参数由 {@link ReviewFilterReq} 属性绑定 */
-    @GetMapping("/product/{productId}/filter")
-    public Result<IPage<ReviewVO>> filter(@PathVariable Long productId, @QueryModel ReviewFilterReq req) {
-        return Result.ok(reviewManager.pageByProductFiltered(productId, req.getRating(), req.getHasMedia(),
+    @GetMapping("/product/{spuId}/filter")
+    public Result<IPage<ReviewVO>> filter(@PathVariable Long spuId, @QueryModel ReviewFilterReq req) {
+        return Result.ok(reviewManager.pageBySpuFiltered(spuId, req.getRating(), req.getHasMedia(),
                 req.getSort(), req.getPage(), req.getSize()));
     }
 
     /** V5.0: 评价摘要 (均分+星级分布) */
-    @GetMapping("/product/{productId}/summary")
-    public Result<ReviewSummaryVO> summary(@PathVariable Long productId) {
-        return Result.ok(reviewManager.reviewSummary(productId));
+    @GetMapping("/product/{spuId}/summary")
+    public Result<ReviewSummaryVO> summary(@PathVariable Long spuId) {
+        return Result.ok(reviewManager.reviewSummary(spuId));
     }
 
     /** V5.0: 商家回复评价 — 通知评价作者 */

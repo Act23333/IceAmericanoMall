@@ -23,7 +23,7 @@ public class KgEdgeUpsertCO implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
-    /** 源节点类型：product | category */
+    /** 源节点类型：spu | category */
     @NotBlank
     private String srcType;
 

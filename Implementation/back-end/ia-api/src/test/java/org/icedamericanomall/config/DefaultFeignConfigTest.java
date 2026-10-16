@@ -14,7 +14,7 @@ import org.icedamericanomall.fallback.LogisticsClientFallback;
 import org.icedamericanomall.fallback.NotificationClientFallback;
 import org.icedamericanomall.fallback.OrderClientFallback;
 import org.icedamericanomall.fallback.PointsClientFallback;
-import org.icedamericanomall.fallback.ProductDetailClientFallback;
+import org.icedamericanomall.fallback.SpuDetailClientFallback;
 import org.icedamericanomall.fallback.RefundClientFallback;
 import org.icedamericanomall.fallback.SearchClientFallback;
 import org.icedamericanomall.fallback.SkuClientFallback;
@@ -64,7 +64,7 @@ class DefaultFeignConfigTest {
             assertThat(context).hasSingleBean(NotificationClientFallback.class);
             assertThat(context).hasSingleBean(OrderClientFallback.class);
             assertThat(context).hasSingleBean(PointsClientFallback.class);
-            assertThat(context).hasSingleBean(ProductDetailClientFallback.class);
+            assertThat(context).hasSingleBean(SpuDetailClientFallback.class);
             assertThat(context).hasSingleBean(RefundClientFallback.class);
             assertThat(context).hasSingleBean(SearchClientFallback.class);
             assertThat(context).hasSingleBean(SkuClientFallback.class);

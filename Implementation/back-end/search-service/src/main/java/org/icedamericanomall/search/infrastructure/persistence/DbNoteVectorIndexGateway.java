@@ -14,7 +14,7 @@ import java.util.Optional;
 /**
  * 笔记向量索引 DB 实现 —— ES 未启用时的缺省实现（向量是 ES 能力，全部为空实现）。
  *
- * <p>与 {@code DbProductSearchGateway} 的向量方法同口径：{@code upsertVectorDoc}/{@code deleteById}
+ * <p>与 {@code DbSpuSearchGateway} 的向量方法同口径：{@code upsertVectorDoc}/{@code deleteById}
  * 为空操作、{@code findVectorById} 恒 empty、{@code similar} 恒返回空列表 ——
  * I50 摄取按「未启用」跳过（调用方零感知），I51 相似检索按无命中返回（推荐位可空）。
  */

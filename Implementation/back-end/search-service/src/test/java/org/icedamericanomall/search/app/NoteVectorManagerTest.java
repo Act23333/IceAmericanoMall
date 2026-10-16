@@ -35,7 +35,7 @@ import static org.mockito.Mockito.when;
  * NoteVectorManager 单元测试 —— 摄取（软删语义/文本拼接/幂等覆盖写）、相似检索（排除自身/归一）与降级。
  *
  * <p>Mock ES 笔记网关（{@link NoteVectorIndexGateway}）与 Embedding 网关（{@link EmbeddingGateway}），
- * 不起真 ES。镜像 {@code ProductVectorManagerTest}（ADR-046 管道第二次复用），
+ * 不起真 ES。镜像 {@code SpuVectorManagerTest}（ADR-046 管道第二次复用），
  * fail-open 降级语义与「deleted 优先于 Embedding 配置」的检查顺序在此锁死。
  */
 @ExtendWith(MockitoExtension.class)

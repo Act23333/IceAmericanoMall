@@ -59,7 +59,7 @@ public class ShopDecorationRepositoryImpl implements ShopDecorationRepository {
         dataObject.setShopId(decoration.getShopId());
         dataObject.setAnnouncement(decoration.getAnnouncement());
         dataObject.setBanners(toJson(decoration.getBanners()));
-        dataObject.setHotProductIds(toJson(decoration.getHotProductIds()));
+        dataObject.setHotSpuIds(toJson(decoration.getHotSpuIds()));
         return dataObject;
     }
 
@@ -69,7 +69,7 @@ public class ShopDecorationRepositoryImpl implements ShopDecorationRepository {
         }
         return ShopDecoration.of(dataObject.getShopId(), dataObject.getAnnouncement(),
                 parse(dataObject.getBanners(), STRING_LIST, "轮播图数据解析失败"),
-                parse(dataObject.getHotProductIds(), LONG_LIST, "推荐商品位数据解析失败"));
+                parse(dataObject.getHotSpuIds(), LONG_LIST, "推荐商品位数据解析失败"));
     }
 
     // ==================== JSON 字符串列互转（收口） ====================

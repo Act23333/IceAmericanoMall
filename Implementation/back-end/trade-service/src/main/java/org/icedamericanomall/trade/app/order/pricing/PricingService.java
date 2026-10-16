@@ -119,14 +119,14 @@ public class PricingService {
             validateStackRules(couponIds);
         }
 
-        String productIds = buildProductIds(ctx);
+        String spuIds = buildSpuIds(ctx);
         String categoryIds = buildCategoryIds(ctx);
 
         int totalDiscount = 0;
         for (Long userCouponId : couponIds) {
             Integer applied = couponClient.useCoupon(
                     ctx.getUserId(), userCouponId, order.getOrderNo(), total - totalDiscount,
-                    ctx.getOrderType().getCode(), ctx.getSellerId(), productIds, categoryIds);
+                    ctx.getOrderType().getCode(), ctx.getSellerId(), spuIds, categoryIds);
             // ★ 核销成功即置位「副作用已发生」的事实标记（本修复核心）：
             //   useCoupon 正常返回 = marketing 侧独立事务已提交，券此刻已被占用。
             //   与金额无关（降级回调可返回 0、推导金额可能尚未回填）——补偿侧一律依据该标记
@@ -176,9 +176,9 @@ public class PricingService {
     }
 
     /** 优惠券 scope 校验用商品 ID 串（逗号分隔，去空去重）。 */
-    private String buildProductIds(OrderCreateContext ctx) {
+    private String buildSpuIds(OrderCreateContext ctx) {
         return ctx.getSnapshots().stream()
-                .map(s -> s.getProductId() != null ? String.valueOf(s.getProductId()) : "")
+                .map(s -> s.getSpuId() != null ? String.valueOf(s.getSpuId()) : "")
                 .filter(s -> !s.isEmpty())
                 .distinct().collect(Collectors.joining(","));
     }

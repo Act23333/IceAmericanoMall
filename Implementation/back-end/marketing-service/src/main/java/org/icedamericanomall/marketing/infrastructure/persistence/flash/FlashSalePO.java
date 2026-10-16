@@ -24,7 +24,7 @@ public class FlashSalePO implements Serializable {
     private static final long serialVersionUID = 1L;
     @TableId(type = IdType.AUTO)
     private Long id;
-    private Long productId;
+    private Long spuId;
     private Long skuId;
     private Integer flashPrice;
     private Integer stock;

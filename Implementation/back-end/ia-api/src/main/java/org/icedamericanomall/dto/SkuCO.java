@@ -12,7 +12,7 @@ public class SkuCO implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private Long id;          // 技术主键 (sku.id)
-    private Long productId;
+    private Long spuId;
     private Long sellerId;
     private String productName;
     private String spec;
@@ -31,7 +31,7 @@ public class SkuCO implements Serializable {
     private Long categoryId;
 
     /**
-     * V5.6（F2 运费模型）：商品绑定的运费模板 ID（从 product 表关联，可为 null）。
+     * V5.6（F2 运费模型）：商品绑定的运费模板 ID（从 spu 表关联，可为 null）。
      * <p>null = 未绑定 → 下单计价回落商家默认模板（最早创建的启用模板）；模板被删除时
      * 经 {@code ON DELETE SET NULL} 自动回落（见 04-Data-Model §十二 12.2）。
      */

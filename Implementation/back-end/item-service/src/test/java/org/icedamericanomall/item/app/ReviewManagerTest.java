@@ -6,9 +6,9 @@ import org.icedamericanomall.item.adapter.assembler.ReviewConverter;
 import org.icedamericanomall.item.adapter.request.ReviewCreateReq;
 import org.icedamericanomall.item.adapter.response.ReviewSummaryVO;
 import org.icedamericanomall.item.adapter.response.ReviewVO;
-import org.icedamericanomall.item.domain.model.product.Product;
+import org.icedamericanomall.item.domain.model.spu.Spu;
 import org.icedamericanomall.item.domain.model.review.Review;
-import org.icedamericanomall.item.domain.repository.ProductRepository;
+import org.icedamericanomall.item.domain.repository.SpuRepository;
 import org.icedamericanomall.item.domain.repository.ReviewRepository;
 import org.icedamericanomall.client.NotificationClient;
 import org.icedamericanomall.client.TaskClient;
@@ -45,7 +45,7 @@ class ReviewManagerTest {
     private ReviewRepository reviewRepository;
 
     @Mock
-    private ProductRepository productRepository;
+    private SpuRepository spuRepository;
 
     @Mock
     private ReviewConverter reviewConverter;
@@ -60,12 +60,12 @@ class ReviewManagerTest {
 
     @BeforeEach
     void setUp() {
-        reviewManager = new ReviewManager(reviewRepository, productRepository,
+        reviewManager = new ReviewManager(reviewRepository, spuRepository,
                 reviewConverter, notificationClient, taskClient);
     }
 
-    private Review review(Long userId, Long productId) {
-        return Review.post(userId, productId, ORDER_NO, 2L, 5, "很好", "img.jpg");
+    private Review review(Long userId, Long spuId) {
+        return Review.post(userId, spuId, ORDER_NO, 2L, 5, "很好", "img.jpg");
     }
 
     private ReviewVO vo(Long id) {
@@ -77,7 +77,7 @@ class ReviewManagerTest {
     private ReviewCreateReq reviewReq() {
         ReviewCreateReq req = new ReviewCreateReq();
         req.setOrderNo(ORDER_NO);
-        req.setProductId(10L);
+        req.setSpuId(10L);
         req.setSkuId(2L);
         req.setRating(5);
         req.setContent("很好");
@@ -92,7 +92,7 @@ class ReviewManagerTest {
     void shouldReject_whenAlreadyReviewed() {
         ReviewCreateReq req = new ReviewCreateReq();
         req.setOrderNo(ORDER_NO);
-        req.setProductId(10L);
+        req.setSpuId(10L);
         when(reviewRepository.countByOrderNoAndUserId(ORDER_NO, 1L)).thenReturn(1L);
 
         BizException ex = assertThrows(BizException.class,
@@ -105,7 +105,7 @@ class ReviewManagerTest {
     void shouldSaveAndIncrementCommentCount() {
         ReviewCreateReq req = new ReviewCreateReq();
         req.setOrderNo(ORDER_NO);
-        req.setProductId(10L);
+        req.setSpuId(10L);
         req.setSkuId(2L);
         req.setRating(5);
         req.setContent("很好");
@@ -116,7 +116,7 @@ class ReviewManagerTest {
         reviewManager.createReview(1L, req);
 
         verify(reviewRepository).save(any(Review.class));
-        verify(productRepository).incrementCommentCount(10L);
+        verify(spuRepository).incrementCommentCount(10L);
     }
 
     @Test
@@ -167,7 +167,7 @@ class ReviewManagerTest {
         assertDoesNotThrow(() -> reviewManager.createReview(1L, reviewReq()));
 
         verify(reviewRepository).save(any(Review.class));
-        verify(productRepository).incrementCommentCount(10L);
+        verify(spuRepository).incrementCommentCount(10L);
     }
 
     // ==================== reviewSummary ====================
@@ -219,10 +219,10 @@ class ReviewManagerTest {
 
     @Test
     @DisplayName("replyToReview — 非本人店铺商品 → FORBIDDEN")
-    void shouldThrowForbidden_whenReplyingOthersProduct() {
+    void shouldThrowForbidden_whenReplyingOthersSpu() {
         Review r = review(1L, 10L);
         when(reviewRepository.findById(5L)).thenReturn(r);
-        when(productRepository.findById(10L)).thenReturn(Product.publish(999L, 1L, null, "p", null, null, null));
+        when(spuRepository.findById(10L)).thenReturn(Spu.publish(999L, 1L, null, "p", null, null, null));
 
         BizException ex = assertThrows(BizException.class,
                 () -> reviewManager.replyToReview(100L, 5L, "回复"));
@@ -234,7 +234,7 @@ class ReviewManagerTest {
     void shouldReject_whenAlreadyReplied() {
         Review r = review(1L, 10L);
         when(reviewRepository.findById(5L)).thenReturn(r);
-        when(productRepository.findById(10L)).thenReturn(Product.publish(100L, 1L, null, "p", null, null, null));
+        when(spuRepository.findById(10L)).thenReturn(Spu.publish(100L, 1L, null, "p", null, null, null));
         when(reviewRepository.addReply(5L, "回复")).thenReturn(0);
 
         assertThrows(BizException.class, () -> reviewManager.replyToReview(100L, 5L, "回复"));

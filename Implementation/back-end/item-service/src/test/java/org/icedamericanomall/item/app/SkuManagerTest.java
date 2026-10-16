@@ -4,8 +4,8 @@ import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.SkuCO;
 import org.icedamericanomall.item.adapter.request.StockOpReq;
-import org.icedamericanomall.item.app.dto.SkuProductDisplay;
-import org.icedamericanomall.item.app.port.SkuProductDisplayQuery;
+import org.icedamericanomall.item.app.dto.SkuSpuDisplay;
+import org.icedamericanomall.item.app.port.SkuSpuDisplayQuery;
 import org.icedamericanomall.item.domain.enums.StockTypeEnum;
 import org.icedamericanomall.item.domain.model.sku.Sku;
 import org.icedamericanomall.item.domain.repository.SkuRepository;
@@ -38,7 +38,7 @@ class SkuManagerTest {
     private SkuRepository skuRepository;
 
     @Mock
-    private SkuProductDisplayQuery skuProductDisplayQuery;
+    private SkuSpuDisplayQuery skuSpuDisplayQuery;
 
     private SkuManager skuManager;
 
@@ -46,11 +46,11 @@ class SkuManagerTest {
     void setUp() {
         skuManager = new SkuManager(skuRepository,
                 new org.icedamericanomall.item.adapter.assembler.SkuConverterImpl(),
-                skuProductDisplayQuery);
+                skuSpuDisplayQuery);
     }
 
     private Sku sku(int stockType) {
-        return Sku.builder().id(1L).skuId("SKU-1").productId(10L)
+        return Sku.builder().id(1L).skuId("SKU-1").spuId(10L)
                 .price(1000).stock(50).stockType(stockType).status(1).build();
     }
 
@@ -151,34 +151,34 @@ class SkuManagerTest {
     // ==================== 最低价聚合 ====================
 
     @Test
-    @DisplayName("getMinPriceMapByProductIds — 同商品取在售最低价")
-    void shouldTakeMinPricePerProduct() {
-        when(skuRepository.findOnSaleByProductIds(List.of(10L))).thenReturn(List.of(
-                Sku.builder().id(1L).productId(10L).price(699900).status(1).build(),
-                Sku.builder().id(2L).productId(10L).price(599900).status(1).build()));
+    @DisplayName("getMinPriceMapBySpuIds — 同商品取在售最低价")
+    void shouldTakeMinPricePerSpu() {
+        when(skuRepository.findOnSaleBySpuIds(List.of(10L))).thenReturn(List.of(
+                Sku.builder().id(1L).spuId(10L).price(699900).status(1).build(),
+                Sku.builder().id(2L).spuId(10L).price(599900).status(1).build()));
 
-        Map<Long, Integer> map = skuManager.getMinPriceMapByProductIds(List.of(10L));
+        Map<Long, Integer> map = skuManager.getMinPriceMapBySpuIds(List.of(10L));
 
         assertEquals(599900, map.get(10L));
     }
 
     @Test
-    @DisplayName("getMinPriceMapByProductIds — 入参为空返回空映射")
-    void shouldReturnEmpty_whenProductIdsEmpty() {
-        assertTrue(skuManager.getMinPriceMapByProductIds(List.of()).isEmpty());
+    @DisplayName("getMinPriceMapBySpuIds — 入参为空返回空映射")
+    void shouldReturnEmpty_whenSpuIdsEmpty() {
+        assertTrue(skuManager.getMinPriceMapBySpuIds(List.of()).isEmpty());
     }
 
     // ==================== I13 商品展示字段回填 ====================
 
     @Test
     @DisplayName("getCosByIds — 整批一次回填商品四字段（无 N+1）")
-    void shouldEnrichProductFieldsInOneBatch_whenCosRequested() {
+    void shouldEnrichSpuFieldsInOneBatch_whenCosRequested() {
         when(skuRepository.findByIds(List.of(1L, 2L))).thenReturn(List.of(
-                Sku.builder().id(1L).productId(10L).price(1000).status(1).build(),
-                Sku.builder().id(2L).productId(11L).price(2000).status(1).build()));
-        when(skuProductDisplayQuery.findBySkuIds(anyCollection())).thenReturn(Map.of(
-                1L, new SkuProductDisplay(1L, "手工陶瓷茶杯", 5L, 10L, 77L),
-                2L, new SkuProductDisplay(2L, "青花瓷碗", 6L, 20L, null)));
+                Sku.builder().id(1L).spuId(10L).price(1000).status(1).build(),
+                Sku.builder().id(2L).spuId(11L).price(2000).status(1).build()));
+        when(skuSpuDisplayQuery.findBySkuIds(anyCollection())).thenReturn(Map.of(
+                1L, new SkuSpuDisplay(1L, "手工陶瓷茶杯", 5L, 10L, 77L),
+                2L, new SkuSpuDisplay(2L, "青花瓷碗", 6L, 20L, null)));
 
         List<SkuCO> cos = skuManager.getCosByIds(List.of(1L, 2L));
 
@@ -188,16 +188,16 @@ class SkuManagerTest {
         assertEquals(77L, cos.get(0).getFreightTemplateId());
         assertEquals("青花瓷碗", cos.get(1).getProductName());
         assertNull(cos.get(1).getFreightTemplateId(), "未绑定运费模板 → null（不回落）");
-        verify(skuProductDisplayQuery, times(1)).findBySkuIds(anyCollection());
+        verify(skuSpuDisplayQuery, times(1)).findBySkuIds(anyCollection());
     }
 
     @Test
     @DisplayName("getCosByIds — 展示查询抛异常：四字段 null，SKU 本体照常返回（fail-open）")
     void shouldKeepSkuCos_whenDisplayQueryFails() {
         when(skuRepository.findByIds(List.of(1L))).thenReturn(List.of(
-                Sku.builder().id(1L).productId(10L).price(1000).stock(9).status(1).build()));
-        when(skuProductDisplayQuery.findBySkuIds(anyCollection()))
-                .thenThrow(new IllegalStateException("product 表不可用"));
+                Sku.builder().id(1L).spuId(10L).price(1000).stock(9).status(1).build()));
+        when(skuSpuDisplayQuery.findBySkuIds(anyCollection()))
+                .thenThrow(new IllegalStateException("spu 表不可用"));
 
         List<SkuCO> cos = assertDoesNotThrow(() -> skuManager.getCosByIds(List.of(1L)));
 

@@ -12,13 +12,13 @@ import org.icedamericanomall.item.adapter.response.NoteCardVO;
 import org.icedamericanomall.item.adapter.response.NoteDetailVO;
 import org.icedamericanomall.item.adapter.response.NoteVO;
 import org.icedamericanomall.item.app.SkuManager;
-import org.icedamericanomall.item.domain.enums.ProductStatusEnum;
+import org.icedamericanomall.item.domain.enums.SpuStatusEnum;
 import org.icedamericanomall.item.domain.model.content.Note;
-import org.icedamericanomall.item.domain.model.product.Product;
+import org.icedamericanomall.item.domain.model.spu.Spu;
 import org.icedamericanomall.item.domain.repository.NoteLikeRepository;
-import org.icedamericanomall.item.domain.repository.NoteProductRepository;
+import org.icedamericanomall.item.domain.repository.NoteSpuRepository;
 import org.icedamericanomall.item.domain.repository.NoteRepository;
-import org.icedamericanomall.item.domain.repository.ProductRepository;
+import org.icedamericanomall.item.domain.repository.SpuRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,10 +56,10 @@ class NoteManagerTest {
     private NoteLikeRepository noteLikeRepository;
 
     @Mock
-    private NoteProductRepository noteProductRepository;
+    private NoteSpuRepository noteSpuRepository;
 
     @Mock
-    private ProductRepository productRepository;
+    private SpuRepository spuRepository;
 
     @Mock
     private SkuManager skuManager;
@@ -78,19 +78,19 @@ class NoteManagerTest {
     @BeforeEach
     void setUp() {
         noteManager = new NoteManager(noteRepository, noteLikeRepository,
-                noteProductRepository, productRepository, skuManager, noteConverter,
+                noteSpuRepository, spuRepository, skuManager, noteConverter,
                 noteVectorManager, noteVectorClient);
     }
 
     // ==================== 测试夹具 ====================
 
-    private NotePublishReq req(List<String> images, List<Long> productIds) {
+    private NotePublishReq req(List<String> images, List<Long> spuIds) {
         NotePublishReq req = new NotePublishReq();
         req.setTitle("秋冬通勤穿搭分享");
         req.setContent("这件大衣真的绝了，链接放下面。");
         req.setCoverImage("https://cdn.example.com/cover.jpg");
         req.setImages(images);
-        req.setProductIds(productIds);
+        req.setSpuIds(spuIds);
         return req;
     }
 
@@ -130,8 +130,8 @@ class NoteManagerTest {
         return vo;
     }
 
-    private Product product(Long id, ProductStatusEnum status) {
-        return Product.builder()
+    private Spu spu(Long id, SpuStatusEnum status) {
+        return Spu.builder()
                 .id(id)
                 .name("商品" + id)
                 .mainImage("https://cdn.example.com/p" + id + ".jpg")
@@ -150,12 +150,12 @@ class NoteManagerTest {
     // ==================== P28 发布 ====================
 
     @Test
-    @DisplayName("publish — 关联商品校验通过：status=1、productIds 去重保序落 note_product、返回回填 id")
-    void shouldSaveAndLinkProducts_whenPublishValid() {
+    @DisplayName("publish — 关联商品校验通过：status=1、spuIds 去重保序落 note_spu、返回回填 id")
+    void shouldSaveAndLinkSpus_whenPublishValid() {
         stubSaveBackfillsId();
-        when(productRepository.findAllByIds(List.of(10L, 20L)))
-                .thenReturn(List.of(product(10L, ProductStatusEnum.ON_SHELF),
-                        product(20L, ProductStatusEnum.ON_SHELF)));
+        when(spuRepository.findAllByIds(List.of(10L, 20L)))
+                .thenReturn(List.of(spu(10L, SpuStatusEnum.ON_SHELF),
+                        spu(20L, SpuStatusEnum.ON_SHELF)));
         when(noteConverter.toVO(any())).thenAnswer(inv -> voOf(inv.getArgument(0)));
         NotePublishReq req = req(null, List.of(10L, 20L, 10L));
 
@@ -169,28 +169,28 @@ class NoteManagerTest {
         assertEquals(0, saved.getLikeCount());
         assertEquals(AUTHOR_ID, saved.getUserId());
         assertTrue(saved.getImages().isEmpty());
-        verify(noteProductRepository).saveAll(88L, List.of(10L, 20L));
+        verify(noteSpuRepository).saveAll(88L, List.of(10L, 20L));
         // V5.13 向量钩子：发布落库成功后委托协作器（afterCommit 语义归 NoteVectorManager）
         verify(noteVectorManager).ingestAfterCommit(saved);
     }
 
     @Test
-    @DisplayName("publish — 关联商品含非在售/不存在 → PARAM_ERROR 且消息指明 productId，不落库")
-    void shouldReject_whenProductOffShelfOrMissing() {
-        when(productRepository.findAllByIds(List.of(10L, 20L)))
-                .thenReturn(List.of(product(10L, ProductStatusEnum.ON_SHELF)));
+    @DisplayName("publish — 关联商品含非在售/不存在 → PARAM_ERROR 且消息指明 spuId，不落库")
+    void shouldReject_whenSpuOffShelfOrMissing() {
+        when(spuRepository.findAllByIds(List.of(10L, 20L)))
+                .thenReturn(List.of(spu(10L, SpuStatusEnum.ON_SHELF)));
 
         BizException ex = assertThrows(BizException.class,
                 () -> noteManager.publish(AUTHOR_ID, req(null, List.of(10L, 20L))));
         assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
-        assertTrue(ex.getMessage().contains("productId=20"));
+        assertTrue(ex.getMessage().contains("spuId=20"));
         verify(noteRepository, never()).save(any());
 
-        when(productRepository.findAllByIds(List.of(30L))).thenReturn(List.of());
+        when(spuRepository.findAllByIds(List.of(30L))).thenReturn(List.of());
         BizException missing = assertThrows(BizException.class,
                 () -> noteManager.publish(AUTHOR_ID, req(null, List.of(30L))));
         assertEquals(ErrorCode.PARAM_ERROR, missing.getErrorCode());
-        assertTrue(missing.getMessage().contains("productId=30"));
+        assertTrue(missing.getMessage().contains("spuId=30"));
         verify(noteRepository, never()).save(any());
     }
 
@@ -205,7 +205,7 @@ class NoteManagerTest {
                 () -> noteManager.publish(AUTHOR_ID, req(images, null)));
 
         assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
-        verifyNoInteractions(noteRepository, noteProductRepository);
+        verifyNoInteractions(noteRepository, noteSpuRepository);
     }
 
     @Test
@@ -248,7 +248,7 @@ class NoteManagerTest {
     void shouldFillLikedTrue_whenViewerLikedDetail() {
         when(noteRepository.findById(NOTE_ID)).thenReturn(publishedNote());
         when(noteLikeRepository.existsByNoteAndUser(NOTE_ID, VIEWER_ID)).thenReturn(true);
-        when(noteProductRepository.findProductIdsByNoteId(NOTE_ID)).thenReturn(List.of());
+        when(noteSpuRepository.findSpuIdsByNoteId(NOTE_ID)).thenReturn(List.of());
         when(noteConverter.toDetailVO(any())).thenAnswer(inv -> detailOf(inv.getArgument(0)));
 
         NoteDetailVO vo = noteManager.noteDetail(NOTE_ID, VIEWER_ID);
@@ -256,14 +256,14 @@ class NoteManagerTest {
         assertTrue(vo.getLiked());
         assertEquals(AUTHOR_ID, vo.getAuthorId());
         assertEquals(3, vo.getLikeCount());
-        assertTrue(vo.getProducts().isEmpty());
+        assertTrue(vo.getSpus().isEmpty());
     }
 
     @Test
     @DisplayName("noteDetail — 匿名视角：liked=false 且不查询点赞表")
     void shouldFillLikedFalse_whenAnonymousDetail() {
         when(noteRepository.findById(NOTE_ID)).thenReturn(publishedNote());
-        when(noteProductRepository.findProductIdsByNoteId(NOTE_ID)).thenReturn(List.of());
+        when(noteSpuRepository.findSpuIdsByNoteId(NOTE_ID)).thenReturn(List.of());
         when(noteConverter.toDetailVO(any())).thenAnswer(inv -> detailOf(inv.getArgument(0)));
 
         NoteDetailVO vo = noteManager.noteDetail(NOTE_ID, null);
@@ -274,24 +274,24 @@ class NoteManagerTest {
 
     @Test
     @DisplayName("noteDetail — 非在售/缺失商品被过滤，保 sort 序并批量回填最低价")
-    void shouldFilterOffShelfProducts_whenDetailAssembled() {
+    void shouldFilterOffShelfSpus_whenDetailAssembled() {
         when(noteRepository.findById(NOTE_ID)).thenReturn(publishedNote());
         when(noteLikeRepository.existsByNoteAndUser(NOTE_ID, VIEWER_ID)).thenReturn(false);
-        when(noteProductRepository.findProductIdsByNoteId(NOTE_ID)).thenReturn(List.of(10L, 20L, 30L));
-        when(productRepository.findAllByIds(List.of(10L, 20L, 30L)))
-                .thenReturn(List.of(product(10L, ProductStatusEnum.ON_SHELF),
-                        product(20L, ProductStatusEnum.OFF_SHELF)));
-        when(skuManager.getMinPriceMapByProductIds(List.of(10L))).thenReturn(Map.of(10L, 1250));
+        when(noteSpuRepository.findSpuIdsByNoteId(NOTE_ID)).thenReturn(List.of(10L, 20L, 30L));
+        when(spuRepository.findAllByIds(List.of(10L, 20L, 30L)))
+                .thenReturn(List.of(spu(10L, SpuStatusEnum.ON_SHELF),
+                        spu(20L, SpuStatusEnum.OFF_SHELF)));
+        when(skuManager.getMinPriceMapBySpuIds(List.of(10L))).thenReturn(Map.of(10L, 1250));
         when(noteConverter.toDetailVO(any())).thenAnswer(inv -> detailOf(inv.getArgument(0)));
 
         NoteDetailVO vo = noteManager.noteDetail(NOTE_ID, VIEWER_ID);
 
-        assertEquals(1, vo.getProducts().size());
-        NoteDetailVO.ProductSummaryVO summary = vo.getProducts().get(0);
-        assertEquals(10L, summary.getProductId());
+        assertEquals(1, vo.getSpus().size());
+        NoteDetailVO.SpuSummaryVO summary = vo.getSpus().get(0);
+        assertEquals(10L, summary.getSpuId());
         assertEquals("商品10", summary.getName());
         assertEquals(1250, summary.getMinPrice());
-        verify(skuManager).getMinPriceMapByProductIds(List.of(10L));
+        verify(skuManager).getMinPriceMapBySpuIds(List.of(10L));
     }
 
     // ==================== P31/P32 点赞 ====================

@@ -13,7 +13,7 @@ import java.util.Map;
 public interface HistoryViewQuery {
 
     /** 记录浏览（同一商品重复浏览 → 更新 view_time）。 */
-    void record(Long userId, Long productId);
+    void record(Long userId, Long spuId);
 
     /**
      * 分页查询足迹（商品名搜索、时间排序）。

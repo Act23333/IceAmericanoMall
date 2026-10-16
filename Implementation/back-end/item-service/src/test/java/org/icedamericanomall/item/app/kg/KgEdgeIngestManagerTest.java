@@ -4,11 +4,11 @@ import org.icedamericanomall.client.KgClient;
 import org.icedamericanomall.dto.KgEdgeItemCO;
 import org.icedamericanomall.dto.KgEdgeUpsertCO;
 import org.icedamericanomall.fallback.KgClientFallback;
-import org.icedamericanomall.item.domain.enums.ProductStatusEnum;
+import org.icedamericanomall.item.domain.enums.SpuStatusEnum;
 import org.icedamericanomall.item.domain.model.kg.BrandKeys;
 import org.icedamericanomall.item.domain.model.kg.KgSchema;
 import org.icedamericanomall.item.domain.model.kg.PairingRule;
-import org.icedamericanomall.item.domain.model.product.Product;
+import org.icedamericanomall.item.domain.model.spu.Spu;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -55,11 +55,11 @@ class KgEdgeIngestManagerTest {
         }
     }
 
-    private Product onShelfProduct() {
-        Product product = Product.publish(100L, 10L, null, "手机", "img.jpg", "旗舰", "冰美 Brand");
-        product.setId(1L);
-        product.setStatus(ProductStatusEnum.ON_SHELF.getCode());
-        return product;
+    private Spu onShelfSpu() {
+        Spu spu = Spu.publish(100L, 10L, null, "手机", "img.jpg", "旗舰", "冰美 Brand");
+        spu.setId(1L);
+        spu.setStatus(SpuStatusEnum.ON_SHELF.getCode());
+        return spu;
     }
 
     /** 模拟事务提交：触发已注册同步器的 afterCommit。 */
@@ -76,7 +76,7 @@ class KgEdgeIngestManagerTest {
     void shouldUpsertThreeDirectEdges_whenNoTransaction() {
         when(kgClient.edgeUpsert(any(KgEdgeUpsertCO.class))).thenReturn(3);
 
-        kgEdgeIngestManager.ingestProductAfterCommit(onShelfProduct());
+        kgEdgeIngestManager.ingestSpuAfterCommit(onShelfSpu());
 
         ArgumentCaptor<KgEdgeUpsertCO> captor = ArgumentCaptor.forClass(KgEdgeUpsertCO.class);
         verify(kgClient).edgeUpsert(captor.capture());
@@ -110,7 +110,7 @@ class KgEdgeIngestManagerTest {
         TransactionSynchronizationManager.initSynchronization();
         when(kgClient.edgeUpsert(any(KgEdgeUpsertCO.class))).thenReturn(3);
 
-        kgEdgeIngestManager.ingestProductAfterCommit(onShelfProduct());
+        kgEdgeIngestManager.ingestSpuAfterCommit(onShelfSpu());
         verify(kgClient, never()).edgeUpsert(any(KgEdgeUpsertCO.class));
 
         commitTransaction();
@@ -122,7 +122,7 @@ class KgEdgeIngestManagerTest {
     void shouldNotIngest_whenTransactionRolledBack() {
         TransactionSynchronizationManager.initSynchronization();
 
-        kgEdgeIngestManager.ingestProductAfterCommit(onShelfProduct());
+        kgEdgeIngestManager.ingestSpuAfterCommit(onShelfSpu());
         TransactionSynchronizationManager.clearSynchronization();
 
         verify(kgClient, never()).edgeUpsert(any(KgEdgeUpsertCO.class));
@@ -131,11 +131,11 @@ class KgEdgeIngestManagerTest {
     @Test
     @DisplayName("商品摄取 — brand 为空 → 仅 BELONGS_TO/SOLD_BY 两类边，不产悬空 brand 节点")
     void shouldSkipBrandEdge_whenBrandBlank() {
-        Product product = onShelfProduct();
-        product.setBrand("  ");
+        Spu spu = onShelfSpu();
+        spu.setBrand("  ");
         when(kgClient.edgeUpsert(any(KgEdgeUpsertCO.class))).thenReturn(2);
 
-        kgEdgeIngestManager.ingestProductAfterCommit(product);
+        kgEdgeIngestManager.ingestSpuAfterCommit(spu);
 
         ArgumentCaptor<KgEdgeUpsertCO> captor = ArgumentCaptor.forClass(KgEdgeUpsertCO.class);
         verify(kgClient).edgeUpsert(captor.capture());
@@ -144,12 +144,12 @@ class KgEdgeIngestManagerTest {
 
     @Test
     @DisplayName("商品摄取 — 下架/删除商品 → 清边（I59）而非写入；未落库 → 静默跳过")
-    void shouldDeleteEdges_whenProductNotOnShelf() {
-        Product offShelf = onShelfProduct();
-        offShelf.setStatus(ProductStatusEnum.OFF_SHELF.getCode());
+    void shouldDeleteEdges_whenSpuNotOnShelf() {
+        Spu offShelf = onShelfSpu();
+        offShelf.setStatus(SpuStatusEnum.OFF_SHELF.getCode());
 
-        kgEdgeIngestManager.ingestProductAfterCommit(offShelf);
-        kgEdgeIngestManager.ingestProductAfterCommit(null);
+        kgEdgeIngestManager.ingestSpuAfterCommit(offShelf);
+        kgEdgeIngestManager.ingestSpuAfterCommit(null);
 
         verify(kgClient).deleteEdges(KgSchema.NODE_PRODUCT, 1L);
         verify(kgClient, never()).edgeUpsert(any(KgEdgeUpsertCO.class));
@@ -162,9 +162,9 @@ class KgEdgeIngestManagerTest {
                 .thenReturn(KgClientFallback.UPSERT_FALLBACK_SENTINEL)
                 .thenThrow(new RuntimeException("boom"));
 
-        Product product = onShelfProduct();
-        assertDoesNotThrow(() -> kgEdgeIngestManager.writeProductEdges(product));
-        assertEquals(0, kgEdgeIngestManager.writeProductEdges(product));
+        Spu spu = onShelfSpu();
+        assertDoesNotThrow(() -> kgEdgeIngestManager.writeSpuEdges(spu));
+        assertEquals(0, kgEdgeIngestManager.writeSpuEdges(spu));
 
         org.mockito.Mockito.doThrow(new RuntimeException("boom"))
                 .when(kgClient).deleteEdges(any(), any());
@@ -173,14 +173,14 @@ class KgEdgeIngestManagerTest {
 
     @Test
     @DisplayName("同步写入（重建路径）— 在售返回写入边数，下架清边计 0")
-    void shouldReturnWrittenCount_whenWriteProductEdges() {
+    void shouldReturnWrittenCount_whenWriteSpuEdges() {
         when(kgClient.edgeUpsert(any(KgEdgeUpsertCO.class))).thenReturn(3);
 
-        assertEquals(3, kgEdgeIngestManager.writeProductEdges(onShelfProduct()));
+        assertEquals(3, kgEdgeIngestManager.writeSpuEdges(onShelfSpu()));
 
-        Product offShelf = onShelfProduct();
-        offShelf.setStatus(ProductStatusEnum.DELETED.getCode());
-        assertEquals(0, kgEdgeIngestManager.writeProductEdges(offShelf));
+        Spu offShelf = onShelfSpu();
+        offShelf.setStatus(SpuStatusEnum.DELETED.getCode());
+        assertEquals(0, kgEdgeIngestManager.writeSpuEdges(offShelf));
         verify(kgClient).deleteEdges(KgSchema.NODE_PRODUCT, 1L);
     }
 

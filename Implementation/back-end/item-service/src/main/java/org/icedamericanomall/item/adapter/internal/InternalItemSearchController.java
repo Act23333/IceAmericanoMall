@@ -2,9 +2,9 @@ package org.icedamericanomall.item.adapter.internal;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.icedamericanomall.dto.ProductSearchItemCO;
-import org.icedamericanomall.dto.ProductSearchPageCO;
-import org.icedamericanomall.dto.ProductSearchQueryCO;
+import org.icedamericanomall.dto.SpuSearchItemCO;
+import org.icedamericanomall.dto.SpuSearchPageCO;
+import org.icedamericanomall.dto.SpuSearchQueryCO;
 import org.icedamericanomall.item.app.search.ItemSearchQueryManager;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,7 +32,7 @@ public class InternalItemSearchController {
 
     /** 商品检索分页（LIKE 降级链路数据源）。 */
     @PostMapping("/page")
-    public ProductSearchPageCO searchPage(@RequestBody ProductSearchQueryCO query) {
+    public SpuSearchPageCO searchPage(@RequestBody SpuSearchQueryCO query) {
         return itemSearchQueryManager.searchPage(query);
     }
 
@@ -44,13 +44,13 @@ public class InternalItemSearchController {
 
     /** 在售商品全量导出分页（ES 重建数据源）。 */
     @GetMapping("/export")
-    public ProductSearchPageCO exportPage(@RequestParam("page") int page, @RequestParam("size") int size) {
+    public SpuSearchPageCO exportPage(@RequestParam("page") int page, @RequestParam("size") int size) {
         return itemSearchQueryManager.exportPage(page, size);
     }
 
     /** 单商品检索卡片（publishTime 回填用）；不存在返回 null 体。 */
     @GetMapping("/detail/{id}")
-    public ProductSearchItemCO detail(@PathVariable("id") Long id) {
+    public SpuSearchItemCO detail(@PathVariable("id") Long id) {
         return itemSearchQueryManager.detail(id);
     }
 }

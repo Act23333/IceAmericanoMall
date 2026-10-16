@@ -27,7 +27,7 @@ import java.util.List;
  *
  * <p>⚠️ 注意与契约 §4.14.17 正文的偏差：契约草拟的降级口径是「取不到模板按商家无启用模板处理
  * → postFee=0，不阻断下单」，与本类实现的 fail-closed 相反；实现方按 ADR-011 判别型查询口径收敛为
- * fail-closed（契约待 product-manager 同步）。
+ * fail-closed（契约待 spu-manager 同步）。
  */
 @FeignClient(name = "item-service", path = "/internal/item/freight-template",
         contextId = "freightTemplate", fallbackFactory = FreightTemplateClientFallback.class)

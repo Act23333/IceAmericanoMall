@@ -23,7 +23,7 @@ public class ReviewPO implements Serializable {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long userId;
-    private Long productId;
+    private Long spuId;
     /** 关联订单号（BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050 三批）。 */
     private byte[] orderNo;
     private Long skuId;
@@ -86,7 +86,7 @@ public class ReviewPO implements Serializable {
 
     public void setId(Long v) { this.id = v; }
     public void setUserId(Long v) { this.userId = v; }
-    public void setProductId(Long v) { this.productId = v; }
+    public void setSpuId(Long v) { this.spuId = v; }
     public void setOrderNo(byte[] v) { this.orderNo = v; }
     public void setSkuId(Long v) { this.skuId = v; }
     public void setRating(Integer v) { this.rating = v; }

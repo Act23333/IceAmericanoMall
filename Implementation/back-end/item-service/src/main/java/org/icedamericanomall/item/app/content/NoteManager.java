@@ -13,13 +13,13 @@ import org.icedamericanomall.item.adapter.response.NoteCardVO;
 import org.icedamericanomall.item.adapter.response.NoteDetailVO;
 import org.icedamericanomall.item.adapter.response.NoteVO;
 import org.icedamericanomall.item.app.SkuManager;
-import org.icedamericanomall.item.domain.enums.ProductStatusEnum;
+import org.icedamericanomall.item.domain.enums.SpuStatusEnum;
 import org.icedamericanomall.item.domain.model.content.Note;
-import org.icedamericanomall.item.domain.model.product.Product;
+import org.icedamericanomall.item.domain.model.spu.Spu;
 import org.icedamericanomall.item.domain.repository.NoteLikeRepository;
-import org.icedamericanomall.item.domain.repository.NoteProductRepository;
+import org.icedamericanomall.item.domain.repository.NoteSpuRepository;
 import org.icedamericanomall.item.domain.repository.NoteRepository;
-import org.icedamericanomall.item.domain.repository.ProductRepository;
+import org.icedamericanomall.item.domain.repository.SpuRepository;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,8 +54,8 @@ public class NoteManager {
 
     private final NoteRepository noteRepository;
     private final NoteLikeRepository noteLikeRepository;
-    private final NoteProductRepository noteProductRepository;
-    private final ProductRepository productRepository;
+    private final NoteSpuRepository noteSpuRepository;
+    private final SpuRepository spuRepository;
     private final SkuManager skuManager;
     private final NoteConverter noteConverter;
     private final NoteVectorManager noteVectorManager;
@@ -63,7 +63,7 @@ public class NoteManager {
 
     /**
      * 发布种草笔记（P28）—— 聚合工厂校验文本/图集不变式，关联商品逐个校验
-     * 存在且在售（任一不过 → 400，消息指明 productId），发布即上架（status 恒 1）。
+     * 存在且在售（任一不过 → 400，消息指明 spuId），发布即上架（status 恒 1）。
      *
      * @param userId 作者 user_id（登录态注入）
      * @param req    发布请求
@@ -73,16 +73,16 @@ public class NoteManager {
     public NoteVO publish(Long userId, NotePublishReq req) {
         Note note = Note.publish(userId, req.getTitle(), req.getContent(),
                 req.getCoverImage(), req.getImages());
-        List<Long> productIds = distinctProductIds(req.getProductIds());
-        assertProductsPublishable(productIds);
+        List<Long> spuIds = distinctSpuIds(req.getSpuIds());
+        assertSpusPublishable(spuIds);
         noteRepository.save(note);
-        if (!productIds.isEmpty()) {
-            noteProductRepository.saveAll(note.getId(), productIds);
+        if (!spuIds.isEmpty()) {
+            noteSpuRepository.saveAll(note.getId(), spuIds);
         }
         // 向量摄取钩子（V5.13，ADR-046 第二次复用）：CO 取自本次落库聚合，事务提交后才旁路发送——回滚即不摄取
         noteVectorManager.ingestAfterCommit(note);
-        log.info("[Note] [publish] [ok] userId={}, noteId={}, productCount={}",
-                userId, note.getId(), productIds.size());
+        log.info("[Note] [publish] [ok] userId={}, noteId={}, spuCount={}",
+                userId, note.getId(), spuIds.size());
         return noteConverter.toVO(note);
     }
 
@@ -104,7 +104,7 @@ public class NoteManager {
         Note note = requirePublished(noteId);
         NoteDetailVO vo = noteConverter.toDetailVO(note);
         vo.setLiked(viewerId != null && noteLikeRepository.existsByNoteAndUser(noteId, viewerId));
-        vo.setProducts(assembleProducts(noteProductRepository.findProductIdsByNoteId(noteId)));
+        vo.setSpus(assembleSpus(noteSpuRepository.findSpuIdsByNoteId(noteId)));
         return vo;
     }
 
@@ -136,7 +136,7 @@ public class NoteManager {
 
     /**
      * 删除笔记（P33）—— 仅作者本人（非本人 → 403）；软删 status=2 后流与详情不可见，
-     * 关联 note_product / note_like 保留不清理（软删后不可达）。
+     * 关联 note_spu / note_like 保留不清理（软删后不可达）。
      *
      * <p>软删落库成功后旁路发删向量指令（V5.13，deleted=true，事务提交后生效）。
      *
@@ -221,65 +221,65 @@ public class NoteManager {
     }
 
     /** 关联商品去重保序 + 条数守卫（≤5，魔法值口径统一取聚合常量）。 */
-    private List<Long> distinctProductIds(List<Long> productIds) {
-        if (productIds == null || productIds.isEmpty()) {
+    private List<Long> distinctSpuIds(List<Long> spuIds) {
+        if (spuIds == null || spuIds.isEmpty()) {
             return List.of();
         }
-        List<Long> distinct = productIds.stream().distinct().toList();
-        if (distinct.size() > Note.MAX_PRODUCTS) {
+        List<Long> distinct = spuIds.stream().distinct().toList();
+        if (distinct.size() > Note.MAX_SPUS) {
             throw new BizException(ErrorCode.PARAM_ERROR,
-                    "关联商品数量不能超过" + Note.MAX_PRODUCTS);
+                    "关联商品数量不能超过" + Note.MAX_SPUS);
         }
         return distinct;
     }
 
-    /** 逐个校验关联商品存在且在售（跨聚合协作，批量查本地零 N+1；不过 → 400 并指明 productId）。 */
-    private void assertProductsPublishable(List<Long> productIds) {
-        if (productIds.isEmpty()) {
+    /** 逐个校验关联商品存在且在售（跨聚合协作，批量查本地零 N+1；不过 → 400 并指明 spuId）。 */
+    private void assertSpusPublishable(List<Long> spuIds) {
+        if (spuIds.isEmpty()) {
             return;
         }
-        Map<Long, Product> byId = productRepository.findAllByIds(productIds).stream()
-                .collect(Collectors.toMap(Product::getId, p -> p, (a, b) -> a));
-        for (Long productId : productIds) {
-            Product product = byId.get(productId);
-            if (product == null || !onShelf(product)) {
+        Map<Long, Spu> byId = spuRepository.findAllByIds(spuIds).stream()
+                .collect(Collectors.toMap(Spu::getId, p -> p, (a, b) -> a));
+        for (Long spuId : spuIds) {
+            Spu spu = byId.get(spuId);
+            if (spu == null || !onShelf(spu)) {
                 throw new BizException(ErrorCode.PARAM_ERROR,
-                        "商品不存在或已下架: productId=" + productId);
+                        "商品不存在或已下架: spuId=" + spuId);
             }
         }
     }
 
     /**
      * 装配关联商品摘要卡：按 sort 序、过滤非在售（下架/删除一并剔除）、批量回填
-     * 在售 SKU 最低价（{@code SkuManager.getMinPriceMapByProductIds}，对齐商品列表卡口径，无 N+1）。
+     * 在售 SKU 最低价（{@code SkuManager.getMinPriceMapBySpuIds}，对齐商品列表卡口径，无 N+1）。
      */
-    private List<NoteDetailVO.ProductSummaryVO> assembleProducts(List<Long> productIds) {
-        if (productIds == null || productIds.isEmpty()) {
+    private List<NoteDetailVO.SpuSummaryVO> assembleSpus(List<Long> spuIds) {
+        if (spuIds == null || spuIds.isEmpty()) {
             return List.of();
         }
-        Map<Long, Product> onShelfById = productRepository.findAllByIds(productIds).stream()
+        Map<Long, Spu> onShelfById = spuRepository.findAllByIds(spuIds).stream()
                 .filter(NoteManager::onShelf)
-                .collect(Collectors.toMap(Product::getId, p -> p, (a, b) -> a));
-        List<Long> visibleIds = productIds.stream().filter(onShelfById::containsKey).toList();
+                .collect(Collectors.toMap(Spu::getId, p -> p, (a, b) -> a));
+        List<Long> visibleIds = spuIds.stream().filter(onShelfById::containsKey).toList();
         if (visibleIds.isEmpty()) {
             return List.of();
         }
-        Map<Long, Integer> minPriceMap = skuManager.getMinPriceMapByProductIds(visibleIds);
+        Map<Long, Integer> minPriceMap = skuManager.getMinPriceMapBySpuIds(visibleIds);
         return visibleIds.stream()
                 .map(id -> toSummary(onShelfById.get(id), minPriceMap.get(id)))
                 .toList();
     }
 
-    private static boolean onShelf(Product product) {
-        return product.getStatus() != null
-                && product.getStatus() == ProductStatusEnum.ON_SHELF.getCode();
+    private static boolean onShelf(Spu spu) {
+        return spu.getStatus() != null
+                && spu.getStatus() == SpuStatusEnum.ON_SHELF.getCode();
     }
 
-    private static NoteDetailVO.ProductSummaryVO toSummary(Product product, Integer minPrice) {
-        NoteDetailVO.ProductSummaryVO vo = new NoteDetailVO.ProductSummaryVO();
-        vo.setProductId(product.getId());
-        vo.setName(product.getName());
-        vo.setMainImage(product.getMainImage());
+    private static NoteDetailVO.SpuSummaryVO toSummary(Spu spu, Integer minPrice) {
+        NoteDetailVO.SpuSummaryVO vo = new NoteDetailVO.SpuSummaryVO();
+        vo.setSpuId(spu.getId());
+        vo.setName(spu.getName());
+        vo.setMainImage(spu.getMainImage());
         vo.setMinPrice(minPrice);
         return vo;
     }

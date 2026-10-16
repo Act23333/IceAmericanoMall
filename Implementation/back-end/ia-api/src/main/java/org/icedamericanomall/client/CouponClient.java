@@ -17,12 +17,12 @@ import java.util.List;
         fallbackFactory = CouponClientFallback.class)
 public interface CouponClient {
 
-    /** V4.3: 使用优惠券，返回实际抵扣金额（分）。productIds+categoryIds 用于 scope 校验 */
+    /** V4.3: 使用优惠券，返回实际抵扣金额（分）。spuIds+categoryIds 用于 scope 校验 */
     @PostMapping("/use")
     Integer useCoupon(@RequestParam(name = "user_id") Long userId, @RequestParam(name = "user_coupon_id") Long userCouponId,
                       @RequestParam(name = "order_no") String orderNo, @RequestParam(name = "order_amount") Integer orderAmount,
                       @RequestParam(name = "order_type") Integer orderType, @RequestParam(name = "seller_id") Long sellerId,
-                      @RequestParam(name = "product_ids", required = false) String productIds,
+                      @RequestParam(name = "spu_ids", required = false) String spuIds,
                       @RequestParam(name = "category_ids", required = false) String categoryIds);
 
     /** 按订单号回滚优惠券（取消/超时/下单失败补偿）。 */

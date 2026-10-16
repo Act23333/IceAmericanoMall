@@ -22,7 +22,7 @@ import org.icedamericanomall.common.utils.IdGenerator;
  *   4. 归属校验：模板不存在与"属于他人"统一拒绝为 3041（不区分，避免探知他人模板是否存在）。
  * </pre>
  *
- * <p><b>seller_id 口径</b>：商家 {@code user_id}（与 {@code product.seller_id} 同口径，ADR-019 Phase A），
+ * <p><b>seller_id 口径</b>：商家 {@code user_id}（与 {@code spu.seller_id} 同口径，ADR-019 Phase A），
  * 不是 {@code seller.id}。
  */
 @Data

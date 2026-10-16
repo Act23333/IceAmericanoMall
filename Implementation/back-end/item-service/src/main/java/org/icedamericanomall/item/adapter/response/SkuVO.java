@@ -11,7 +11,7 @@ public class SkuVO implements Serializable {
 
     private Long id;
     private String skuId;
-    private Long productId;
+    private Long spuId;
     private String spec;
     private Integer price;
     /** 原价（分），划线价 */

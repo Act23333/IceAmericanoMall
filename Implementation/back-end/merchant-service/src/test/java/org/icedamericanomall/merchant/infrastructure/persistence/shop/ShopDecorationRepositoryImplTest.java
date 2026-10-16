@@ -51,7 +51,7 @@ class ShopDecorationRepositoryImplTest {
         assertEquals(5L, saved.getShopId());
         assertEquals("欢迎光临", saved.getAnnouncement());
         assertEquals("[\"https://a.png\",\"https://b.png\"]", saved.getBanners());
-        assertEquals("[11,22]", saved.getHotProductIds(), "领域层已去重，序列化不再重复");
+        assertEquals("[11,22]", saved.getHotSpuIds(), "领域层已去重，序列化不再重复");
     }
 
     @Test
@@ -66,7 +66,7 @@ class ShopDecorationRepositoryImplTest {
         ShopDecorationPO second = captor.getAllValues().get(1);
         assertEquals("第二版", second.getAnnouncement());
         assertEquals("[\"https://new1.png\",\"https://new2.png\"]", second.getBanners());
-        assertEquals("[9]", second.getHotProductIds());
+        assertEquals("[9]", second.getHotSpuIds());
     }
 
     @Test
@@ -77,7 +77,7 @@ class ShopDecorationRepositoryImplTest {
         ArgumentCaptor<ShopDecorationPO> captor = ArgumentCaptor.forClass(ShopDecorationPO.class);
         verify(shopDecorationMapper).upsert(captor.capture());
         assertNull(captor.getValue().getBanners());
-        assertNull(captor.getValue().getHotProductIds());
+        assertNull(captor.getValue().getHotSpuIds());
     }
 
     @Test
@@ -87,7 +87,7 @@ class ShopDecorationRepositoryImplTest {
         dataObject.setShopId(5L);
         dataObject.setAnnouncement("欢迎光临");
         dataObject.setBanners("[\"https://a.png\",\"https://b.png\"]");
-        dataObject.setHotProductIds("[11,22]");
+        dataObject.setHotSpuIds("[11,22]");
         when(shopDecorationMapper.selectOne(any())).thenReturn(dataObject);
 
         Optional<ShopDecoration> found = shopDecorationRepository.findByShopId(5L);
@@ -95,7 +95,7 @@ class ShopDecorationRepositoryImplTest {
         assertTrue(found.isPresent());
         assertEquals("欢迎光临", found.get().getAnnouncement());
         assertEquals(List.of("https://a.png", "https://b.png"), found.get().getBanners());
-        assertEquals(List.of(11L, 22L), found.get().getHotProductIds());
+        assertEquals(List.of(11L, 22L), found.get().getHotSpuIds());
     }
 
     @Test

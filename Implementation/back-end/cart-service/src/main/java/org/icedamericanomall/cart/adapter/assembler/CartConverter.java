@@ -43,11 +43,11 @@ public interface CartConverter {
      * <p>{@code cartItemId} 必须显式映射：源字段名为 {@code id}、目标名为 {@code cartItemId}，
      * 名字不同无法自动映射 —— 缺失时恒 null，下单后「删除已购购物车项」会静默跳过，购物车永不清除。
      *
-     * <p>商品快照字段（productId/productName/spec/image/price）由调用方 trade-service
+     * <p>商品快照字段（spuId/productName/spec/image/price）由调用方 trade-service
      * 从 I13 的 {@code SkuCO} 补齐（下单快照以商品域为准，避免购物车侧快照腐化），此处恒空。
      */
     @Mapping(target = "cartItemId", source = "id")
-    @Mapping(target = "productId", ignore = true)
+    @Mapping(target = "spuId", ignore = true)
     @Mapping(target = "productName", ignore = true)
     @Mapping(target = "spec", ignore = true)
     @Mapping(target = "image", ignore = true)

@@ -30,7 +30,7 @@ import java.util.Map;
  * （见 {@link KnowledgeVectorClientFallback}）。
  *
  * <p><b>契约形状</b>：查询返回 {@code List<Map>} 是<b>双形状弱类型契约</b>——
- * 同一端点按 {@code index} 返回商品命中（{@code productId/name/description/price/soldCount}）
+ * 同一端点按 {@code index} 返回商品命中（{@code spuId/name/description/price/soldCount}）
  * 或知识 chunk 命中（{@code knowledgeId/chunkIndex/sellerId/title/text}）。
  * 这与 {@link SearchClient} 的既有口径一致，调用方必须做 null/缺键防御。
  *

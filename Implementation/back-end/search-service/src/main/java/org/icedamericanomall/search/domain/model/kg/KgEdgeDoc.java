@@ -6,10 +6,10 @@ package org.icedamericanomall.search.domain.model.kg;
  * <p>不可变值对象：权重/状态在摄取时定死；{@code updateTime} 与 {@code edgeId}
  * 是持久化细节（写时间戳 / 幂等 _id），由基础设施层在落 ES 时派生，不进领域模型。
  *
- * @param srcType 源节点类型（product | category）
+ * @param srcType 源节点类型（spu | category）
  * @param srcId   源节点 id
  * @param relType 关系类型（BELONGS_TO / PARENT_OF / BRAND_OF / SOLD_BY / PAIR_WITH）
- * @param dstType 目标节点类型（product | category | brand | seller）
+ * @param dstType 目标节点类型（spu | category | brand | seller）
  * @param dstId   目标节点 id
  * @param weight  排序权重（PAIR_WITH 生效；直建边 0）
  * @param source  边来源（DIRECT 直建 / RULE 规则配置）

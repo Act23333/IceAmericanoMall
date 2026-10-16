@@ -25,13 +25,13 @@ public interface SkuRepository {
     List<Sku> findByIds(List<Long> skuIds);
 
     /** 商品全部 SKU（详情页，不分状态）。 */
-    List<Sku> findByProductId(Long productId);
+    List<Sku> findBySpuId(Long spuId);
 
     /** 商品在售 SKU（列表/详情最低价）。 */
-    List<Sku> findOnSaleByProductId(Long productId);
+    List<Sku> findOnSaleBySpuId(Long spuId);
 
     /** 批量在售 SKU（最低价聚合源）。 */
-    List<Sku> findOnSaleByProductIds(List<Long> productIds);
+    List<Sku> findOnSaleBySpuIds(List<Long> spuIds);
 
     /** 新增（返回回填技术主键后的聚合）。 */
     Sku save(Sku sku);

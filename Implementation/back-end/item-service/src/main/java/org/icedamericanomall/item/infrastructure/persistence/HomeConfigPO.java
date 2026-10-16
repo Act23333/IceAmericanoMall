@@ -17,7 +17,7 @@ public class HomeConfigPO implements Serializable {
     private String slot;
     private Integer type;
     private String title;
-    private String productIds;
+    private String spuIds;
     private String image;
     private String linkUrl;
     private Integer sortOrder;

@@ -19,8 +19,8 @@ public class HistoryManager {
     private final HistoryViewQuery historyViewQuery;
 
     /** 记录浏览（同一商品重复浏览 → 更新 view_time）。 */
-    public void record(Long userId, Long productId) {
-        historyViewQuery.record(userId, productId);
+    public void record(Long userId, Long spuId) {
+        historyViewQuery.record(userId, spuId);
     }
 
     /** 分页查询足迹（商品详情 + 浏览时间，按时间排序）。 */

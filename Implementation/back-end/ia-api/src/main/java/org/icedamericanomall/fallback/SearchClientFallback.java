@@ -37,7 +37,7 @@ public class SearchClientFallback implements FallbackFactory<SearchClient> {
         return new SearchClient() {
 
             @Override
-            public Result<Map<String, Object>> searchProducts(String keyword, int size) {
+            public Result<Map<String, Object>> searchSpus(String keyword, int size) {
                 log.warn("搜索服务降级：关键词检索失败，本次降级为空结果 keyword={}, size={}",
                         keyword, size, cause);
                 return Result.error(ErrorCode.SYSTEM_BUSY.getCode(), "搜索服务暂不可用");

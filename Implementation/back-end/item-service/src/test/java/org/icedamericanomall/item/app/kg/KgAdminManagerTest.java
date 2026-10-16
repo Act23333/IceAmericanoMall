@@ -9,13 +9,13 @@ import org.icedamericanomall.dto.KgNeighborCO;
 import org.icedamericanomall.item.adapter.request.PairingRuleReq;
 import org.icedamericanomall.item.adapter.request.PairingRuleUpdateReq;
 import org.icedamericanomall.item.adapter.response.PairingRuleVO;
-import org.icedamericanomall.item.domain.enums.ProductStatusEnum;
+import org.icedamericanomall.item.domain.enums.SpuStatusEnum;
 import org.icedamericanomall.item.domain.model.category.Category;
 import org.icedamericanomall.item.domain.model.kg.PairingRule;
-import org.icedamericanomall.item.domain.model.product.Product;
+import org.icedamericanomall.item.domain.model.spu.Spu;
 import org.icedamericanomall.item.domain.repository.CategoryRepository;
 import org.icedamericanomall.item.domain.repository.PairingRuleRepository;
-import org.icedamericanomall.item.domain.repository.ProductRepository;
+import org.icedamericanomall.item.domain.repository.SpuRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -58,7 +58,7 @@ class KgAdminManagerTest {
     private CategoryRepository categoryRepository;
 
     @Mock
-    private ProductRepository productRepository;
+    private SpuRepository spuRepository;
 
     @Mock
     private KgEdgeIngestManager kgEdgeIngestManager;
@@ -71,7 +71,7 @@ class KgAdminManagerTest {
     @BeforeEach
     void setUp() {
         kgAdminManager = new KgAdminManager(pairingRuleRepository, categoryRepository,
-                productRepository, kgEdgeIngestManager, kgClient);
+                spuRepository, kgEdgeIngestManager, kgClient);
     }
 
     private PairingRuleReq createReq() {
@@ -83,11 +83,11 @@ class KgAdminManagerTest {
         return req;
     }
 
-    private Product productWithStatus(Long id, ProductStatusEnum status) {
-        Product product = Product.publish(100L, 10L, null, "手机", "img.jpg", "旗舰", "冰美");
-        product.setId(id);
-        product.setStatus(status.getCode());
-        return product;
+    private Spu spuWithStatus(Long id, SpuStatusEnum status) {
+        Spu spu = Spu.publish(100L, 10L, null, "手机", "img.jpg", "旗舰", "冰美");
+        spu.setId(id);
+        spu.setStatus(status.getCode());
+        return spu;
     }
 
     // ==================== AD62 create ====================
@@ -216,22 +216,22 @@ class KgAdminManagerTest {
     @Test
     @DisplayName("AD64 rebuild — 在售 upsert / 下架删除清边 / PARENT_OF / PAIR_WITH 四路编排，返回重建边数")
     void shouldRebuildAllEdges_andReturnWrittenCount() {
-        IPage<Product> page1 = new Page<>(1, 500);
+        IPage<Spu> page1 = new Page<>(1, 500);
         page1.setRecords(List.of(
-                productWithStatus(1L, ProductStatusEnum.ON_SHELF),
-                productWithStatus(2L, ProductStatusEnum.OFF_SHELF)));
+                spuWithStatus(1L, SpuStatusEnum.ON_SHELF),
+                spuWithStatus(2L, SpuStatusEnum.OFF_SHELF)));
         page1.setTotal(1000);
-        IPage<Product> page2 = new Page<>(2, 500);
-        page2.setRecords(List.of(productWithStatus(3L, ProductStatusEnum.ON_SHELF)));
+        IPage<Spu> page2 = new Page<>(2, 500);
+        page2.setRecords(List.of(spuWithStatus(3L, SpuStatusEnum.ON_SHELF)));
         page2.setTotal(1000);
-        when(productRepository.pageAll(anyInt(), anyInt())).thenReturn(page1, page2);
+        when(spuRepository.pageAll(anyInt(), anyInt())).thenReturn(page1, page2);
         when(categoryRepository.findAllOrderBySort()).thenReturn(List.of(
                 Category.builder().id(10L).parentId(null).build(),
                 Category.builder().id(20L).parentId(10L).build(),
                 Category.builder().id(30L).parentId(10L).build()));
         PairingRule rule = PairingRule.create(10L, 20L, 8, null);
         when(pairingRuleRepository.findAll()).thenReturn(List.of(rule));
-        when(kgEdgeIngestManager.writeProductEdges(any(Product.class))).thenReturn(3, 0, 3);
+        when(kgEdgeIngestManager.writeSpuEdges(any(Spu.class))).thenReturn(3, 0, 3);
         when(kgEdgeIngestManager.upsertSafely(any())).thenReturn(2);
         when(kgEdgeIngestManager.writePairingEdges(anyLong(), any())).thenReturn(1);
 
@@ -239,9 +239,9 @@ class KgAdminManagerTest {
 
         // 3（在售P1）+ 0（下架P2 清边）+ 3（在售P3）+ 2（父类目10 PARENT_OF 两条）+ 1（PAIR_WITH）
         assertEquals(9, written);
-        verify(kgEdgeIngestManager).writeProductEdges(page1.getRecords().get(0));
-        verify(kgEdgeIngestManager).writeProductEdges(page1.getRecords().get(1));
-        verify(kgEdgeIngestManager).writeProductEdges(page2.getRecords().get(0));
+        verify(kgEdgeIngestManager).writeSpuEdges(page1.getRecords().get(0));
+        verify(kgEdgeIngestManager).writeSpuEdges(page1.getRecords().get(1));
+        verify(kgEdgeIngestManager).writeSpuEdges(page2.getRecords().get(0));
         verify(kgEdgeIngestManager).upsertSafely(any());
         verify(kgEdgeIngestManager).writePairingEdges(10L, List.of(rule));
     }
@@ -249,17 +249,17 @@ class KgAdminManagerTest {
     @Test
     @DisplayName("AD64 rebuild — 幂等可重试：重复执行走同一逐 src 路径（先删后写幂等由 I57 保证）")
     void shouldBeRetryable_whenRebuildRunsTwice() {
-        IPage<Product> page = new Page<>(1, 500);
-        page.setRecords(List.of(productWithStatus(1L, ProductStatusEnum.ON_SHELF)));
-        when(productRepository.pageAll(anyInt(), anyInt())).thenReturn(page);
+        IPage<Spu> page = new Page<>(1, 500);
+        page.setRecords(List.of(spuWithStatus(1L, SpuStatusEnum.ON_SHELF)));
+        when(spuRepository.pageAll(anyInt(), anyInt())).thenReturn(page);
         when(categoryRepository.findAllOrderBySort()).thenReturn(List.of());
         when(pairingRuleRepository.findAll()).thenReturn(List.of());
-        when(kgEdgeIngestManager.writeProductEdges(any(Product.class))).thenReturn(3);
+        when(kgEdgeIngestManager.writeSpuEdges(any(Spu.class))).thenReturn(3);
 
         kgAdminManager.rebuild();
         kgAdminManager.rebuild();
 
-        verify(kgEdgeIngestManager, org.mockito.Mockito.times(2)).writeProductEdges(any(Product.class));
+        verify(kgEdgeIngestManager, org.mockito.Mockito.times(2)).writeSpuEdges(any(Spu.class));
     }
 
     // ==================== AD61 page ====================

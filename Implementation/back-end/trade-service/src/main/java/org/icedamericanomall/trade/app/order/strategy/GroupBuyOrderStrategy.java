@@ -66,7 +66,7 @@ public class GroupBuyOrderStrategy implements OrderCreateStrategy {
         }
         OrderCreateContext.CartItemSnapshot snap = new OrderCreateContext.CartItemSnapshot();
         snap.setSkuId(sku.getId());
-        snap.setProductId(sku.getProductId());
+        snap.setSpuId(sku.getSpuId());
         snap.setCategoryId(sku.getCategoryId());
         snap.setSellerId(sku.getSellerId());
         snap.setProductName(sku.getProductName());

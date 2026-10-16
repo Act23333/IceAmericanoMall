@@ -4,8 +4,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.marketing.adapter.assembler.MarketingConverter;
 import org.icedamericanomall.marketing.adapter.response.FlashSaleVO;
-import org.icedamericanomall.marketing.app.dto.FlashSaleProductBrief;
-import org.icedamericanomall.marketing.app.port.FlashSaleProductBriefQuery;
+import org.icedamericanomall.marketing.app.dto.FlashSaleSpuBrief;
+import org.icedamericanomall.marketing.app.port.FlashSaleSpuBriefQuery;
 import org.icedamericanomall.marketing.domain.model.flash.FlashSale;
 import org.springframework.stereotype.Component;
 
@@ -27,7 +27,7 @@ import java.util.Objects;
  *
  * <p><b>fail-open（附加展示字段的既有取向）</b>：数据源缺失/异常 → 三个商品字段为 null，
  * 秒杀列表与创建回执照常返回；绝不因补展示字段让主接口变脆
- * （先例：{@code ProductPromotionManager} 促销标签 fail-open）。
+ * （先例：{@code SpuPromotionManager} 促销标签 fail-open）。
  *
  * <p>本类<b>不</b>做 Feign 调用（读模型为本地只读查询）——因此 {@code @Transactional} 的
  * 调用方（AD40 创建）可安全复用，不触碰 09-constraints「事务内禁止 Feign」红线。
@@ -38,7 +38,7 @@ import java.util.Objects;
 public class FlashSaleViewManager {
 
     private final MarketingConverter marketingConverter;
-    private final FlashSaleProductBriefQuery flashSaleProductBriefQuery;
+    private final FlashSaleSpuBriefQuery flashSaleSpuBriefQuery;
 
     /**
      * 单个场次 → 视图对象（含商品字段回填与进度百分比）。
@@ -63,7 +63,7 @@ public class FlashSaleViewManager {
         if (flashSales == null || flashSales.isEmpty()) {
             return List.of();
         }
-        Map<Long, FlashSaleProductBrief> briefs = loadBriefs(flashSales);
+        Map<Long, FlashSaleSpuBrief> briefs = loadBriefs(flashSales);
         return flashSales.stream()
                 .map(flashSale -> assemble(flashSale, briefs.get(flashSale.getSkuId())))
                 .toList();
@@ -72,7 +72,7 @@ public class FlashSaleViewManager {
     // ==================== 内部方法 ====================
 
     /** 聚合 + 商品摘要 → 视图对象：进度百分比恒有值，商品三字段随摘要有无。 */
-    private FlashSaleVO assemble(FlashSale flashSale, FlashSaleProductBrief brief) {
+    private FlashSaleVO assemble(FlashSale flashSale, FlashSaleSpuBrief brief) {
         FlashSaleVO vo = marketingConverter.toVO(flashSale);
         vo.setProgressPercent(flashSale.progressPercent());
         if (brief != null) {
@@ -88,7 +88,7 @@ public class FlashSaleViewManager {
      *
      * <p>fail-open：异常返回空 Map（三个商品字段为 null），不向调用方抛。
      */
-    private Map<Long, FlashSaleProductBrief> loadBriefs(List<FlashSale> flashSales) {
+    private Map<Long, FlashSaleSpuBrief> loadBriefs(List<FlashSale> flashSales) {
         List<Long> skuIds = flashSales.stream()
                 .map(FlashSale::getSkuId)
                 .filter(Objects::nonNull)
@@ -98,7 +98,7 @@ public class FlashSaleViewManager {
             return Map.of();
         }
         try {
-            Map<Long, FlashSaleProductBrief> briefs = flashSaleProductBriefQuery.findBySkuIds(skuIds);
+            Map<Long, FlashSaleSpuBrief> briefs = flashSaleSpuBriefQuery.findBySkuIds(skuIds);
             return briefs == null ? Map.of() : briefs;
         } catch (Exception e) {
             log.warn("秒杀商品摘要回填失败，商品字段置空（fail-open）: skuIds={}, cause={}",

@@ -48,12 +48,12 @@
  * 幂等策略（可重复执行，结果确定）
  * ---------------------------------------------------------------------
  *   单连接 + 单事务包裹：
- *     Phase 1  DELETE  —— 按固定业务键（user_id / product_id / sku_id …）
+ *     Phase 1  DELETE  —— 按固定业务键（user_id / spu_id / sku_id …）
  *                          以「子表 → 父表」顺序删除本脚本自有数据（不含无关数据）。
  *                          依赖链守卫：先删 orders/order_item（RESTRICT 指向
  *                          user/seller/sku），否则旧订单会阻塞商家/商品删除。
  *     Phase 2  INSERT  —— 重建；user 自增主键回收后 seller.id 显式取 seller.user_id
- *                          同一值（见"主键口径"注释），保证 product.seller_id 口径。
+ *                          同一值（见"主键口径"注释），保证 spu.seller_id 口径。
  *   参考数据（category / sys_role / sys_permission / sys_role_permission）不删，
  *     走 INSERT ... ON DUPLICATE KEY UPDATE（与 Initialize.sql §九 同风格），
  *     避免因他人数据引用而触发 RESTRICT。
@@ -61,10 +61,10 @@
  * ---------------------------------------------------------------------
  * 主键口径（V5.4 Phase A 的关键约束）
  * ---------------------------------------------------------------------
- *   下游表（product / orders / coupon / settlement / knowledge_base）的
+ *   下游表（spu / orders / coupon / settlement / knowledge_base）的
  *   seller_id 在 Phase B 前维持「商家 user_id」口径（见 03-Domain-Model §3.3.1、
  *   04-Data-Model §3.3）：item-service 建品时 seller_id = UserContext.getUserId()。
- *   但 product.seller_id 上的外键 `fk_product_seller` 要求该值同时存在于 seller.id。
+ *   但 spu.seller_id 上的外键 `fk_spu_seller` 要求该值同时存在于 seller.id。
  *   故本脚本 INSERT seller 时 **显式指定 id = 该商家的 user.id**，使
  *   seller.id === seller.user_id —— 同时满足外键与 user_id 口径，且
  *   `GET /api/shop/{sellerId}`（sellerId = user_id）→ 默认店铺解析成立。
@@ -263,10 +263,10 @@ const ADDRESSES = [
  * 商品 + SKU：每商家 3 款在售商品（status=1），价格单位为分，库存非负。
  * sellerRef 指向 MERCHANTS[].merchantUserId。
  */
-const PRODUCTS = [
+const SPUS = [
   // ---- 商家 1（冰美精选家居）----
   {
-    productId: 'prod_seed_001', sellerRef: 'u_seller_001', categoryId: 1,
+    spuId: 'prod_seed_001', sellerRef: 'u_seller_001', categoryId: 1,
     name: '手工陶瓷茶杯 — 天青釉', brand: '冰美精选', soldCount: 1280, commentCount: 86,
     description: '景德镇匠人手工拉坯，1280°C 高温烧制。杯壁轻薄如纸，釉色温润如玉。',
     skus: [
@@ -276,7 +276,7 @@ const PRODUCTS = [
     ],
   },
   {
-    productId: 'prod_seed_002', sellerRef: 'u_seller_001', categoryId: 1,
+    spuId: 'prod_seed_002', sellerRef: 'u_seller_001', categoryId: 1,
     name: '原木台灯 — 黑胡桃木', brand: '冰美精选', soldCount: 860, commentCount: 52,
     description: '北美黑胡桃木底座，暖白 LED 光源，触摸三档调光。',
     skus: [
@@ -284,7 +284,7 @@ const PRODUCTS = [
     ],
   },
   {
-    productId: 'prod_seed_003', sellerRef: 'u_seller_001', categoryId: 4,
+    spuId: 'prod_seed_003', sellerRef: 'u_seller_001', categoryId: 4,
     name: '手冲咖啡豆 — 耶加雪菲 G1', brand: '冰美咖啡', soldCount: 780, commentCount: 92,
     description: '埃塞俄比亚耶加雪菲 G1，水洗处理。柑橘与茉莉花香。',
     skus: [
@@ -294,7 +294,7 @@ const PRODUCTS = [
   },
   // ---- 商家 2（数码生活馆）----
   {
-    productId: 'prod_seed_004', sellerRef: 'u_seller_002', categoryId: 3,
+    spuId: 'prod_seed_004', sellerRef: 'u_seller_002', categoryId: 3,
     name: '真无线降噪耳机 — 40dB ANC', brand: '冰美声学', soldCount: 3200, commentCount: 256,
     description: '混合主动降噪 40dB，LDAC 高清传输，40h 续航。',
     skus: [
@@ -303,7 +303,7 @@ const PRODUCTS = [
     ],
   },
   {
-    productId: 'prod_seed_005', sellerRef: 'u_seller_002', categoryId: 2,
+    spuId: 'prod_seed_005', sellerRef: 'u_seller_002', categoryId: 2,
     name: '棉麻围巾 — 手工植物染', brand: '冰美精选', soldCount: 2100, commentCount: 145,
     description: '新疆长绒棉 + 亚麻混纺，天然靛蓝植物染色。',
     skus: [
@@ -312,7 +312,7 @@ const PRODUCTS = [
     ],
   },
   {
-    productId: 'prod_seed_006', sellerRef: 'u_seller_002', categoryId: 6,
+    spuId: 'prod_seed_006', sellerRef: 'u_seller_002', categoryId: 6,
     name: '钛合金运动水壶 — 500ml', brand: '冰美户外', soldCount: 1500, commentCount: 120,
     description: '纯钛材质 120g，双层真空保冷 12h。',
     skus: [
@@ -323,8 +323,8 @@ const PRODUCTS = [
 ];
 
 const SEED_USER_IDS = USERS.map((u) => u.userId);
-const SEED_PRODUCT_IDS = PRODUCTS.map((p) => p.productId);
-const SEED_SKU_IDS = PRODUCTS.flatMap((p) => p.skus.map((s) => s.skuId));
+const SEED_SPU_IDS = SPUS.map((p) => p.spuId);
+const SEED_SKU_IDS = SPUS.flatMap((p) => p.skus.map((s) => s.skuId));
 const SEED_SHOP_NAMES = MERCHANTS.map((m) => m.shop.shopName);
 
 /* =====================================================================
@@ -351,9 +351,9 @@ async function seed(conn) {
     const sellerIds = userIds.length
       ? await selectIds(conn, 'SELECT id FROM `seller` WHERE user_id IN (?)', [userIds])
       : [];
-    const productIds = await selectIds(conn, 'SELECT id FROM `product` WHERE product_id IN (?)', [SEED_PRODUCT_IDS]);
-    const skuIds = productIds.length
-      ? await selectIds(conn, 'SELECT id FROM `sku` WHERE product_id IN (?)', [productIds])
+    const spuIds = await selectIds(conn, 'SELECT id FROM `spu` WHERE spu_id IN (?)', [SEED_SPU_IDS]);
+    const skuIds = spuIds.length
+      ? await selectIds(conn, 'SELECT id FROM `sku` WHERE spu_id IN (?)', [spuIds])
       : [];
     const orderIds = (userIds.length || sellerIds.length)
       ? await selectIds(conn,
@@ -368,7 +368,7 @@ async function seed(conn) {
     await deleteIn(conn, 'DELETE FROM `orders` WHERE id IN', orderIds);
     await deleteIn(conn, 'DELETE FROM `cart` WHERE user_id IN', userIds);
     await deleteIn(conn, 'DELETE FROM `sku` WHERE id IN', skuIds);
-    await deleteIn(conn, 'DELETE FROM `product` WHERE id IN', productIds);
+    await deleteIn(conn, 'DELETE FROM `spu` WHERE id IN', spuIds);
     await deleteIn(conn, 'DELETE FROM `shop` WHERE merchant_id IN', sellerIds);
     await deleteIn(conn, 'DELETE FROM `seller` WHERE id IN', sellerIds);
     await deleteIn(conn, 'DELETE FROM `address` WHERE user_id IN', userIds);
@@ -453,7 +453,7 @@ async function seed(conn) {
     const sellerIdByUser = {}; // merchantUserId -> seller.id
     for (const m of MERCHANTS) {
       const uid = userIdMap[m.merchantUserId];
-      // 显式 id = user.id：满足 fk_product_seller 与 user_id 口径（见文件头"主键口径"）
+      // 显式 id = user.id：满足 fk_spu_seller 与 user_id 口径（见文件头"主键口径"）
       await conn.query(
         `INSERT INTO \`seller\` (id, user_id, status, create_time, update_time) VALUES (?, ?, 1, ?, ?)`,
         [uid, uid, now, now]);
@@ -471,28 +471,28 @@ async function seed(conn) {
 
     // ========== Phase 2f：商品 + SKU ==========
     let skuTotal = 0;
-    for (const p of PRODUCTS) {
+    for (const p of SPUS) {
       const sellerId = sellerIdByUser[p.sellerRef];
       const [result] = await conn.query(
-        `INSERT INTO \`product\`
-           (product_id, seller_id, category_id, name, main_image, images, description, brand,
+        `INSERT INTO \`spu\`
+           (spu_id, seller_id, category_id, name, main_image, images, description, brand,
             sold_count, comment_count, is_ad, status, publish_time, create_time, update_time)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?)`,
-        [p.productId, sellerId, p.categoryId, p.name, mainImg(p.productId), gallery(p.productId),
+        [p.spuId, sellerId, p.categoryId, p.name, mainImg(p.spuId), gallery(p.spuId),
           p.description, p.brand, p.soldCount, p.commentCount, now, now, now]);
-      const productPk = result.insertId;
+      const spuPk = result.insertId;
 
       for (const s of p.skus) {
         await conn.query(
           `INSERT INTO \`sku\`
-             (sku_id, product_id, spec, price, original_price, stock, image, sold_count, status, version,
+             (sku_id, spu_id, spec, price, original_price, stock, image, sold_count, status, version,
               create_time, update_time)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`,
-          [s.skuId, productPk, s.spec, s.price, s.originalPrice, s.stock, skuImg(s.skuId), s.soldCount, now, now]);
+          [s.skuId, spuPk, s.spec, s.price, s.originalPrice, s.stock, skuImg(s.skuId), s.soldCount, now, now]);
         skuTotal++;
       }
     }
-    console.log(`  product: ${PRODUCTS.length}, sku: ${skuTotal}（status=1 在售）`);
+    console.log(`  spu: ${SPUS.length}, sku: ${skuTotal}（status=1 在售）`);
 
     // ========== Phase 2g：地址 ==========
     for (const a of ADDRESSES) {
@@ -557,12 +557,12 @@ module.exports = {
   maskIdentifier,
   USERS,
   MERCHANTS,
-  PRODUCTS,
+  SPUS,
   CATEGORIES,
   ADDRESSES,
   WALLET,
   SEED_USER_IDS,
-  SEED_PRODUCT_IDS,
+  SEED_SPU_IDS,
   SEED_SKU_IDS,
   SEED_SHOP_NAMES,
   DEV_AES_KEY_B64,

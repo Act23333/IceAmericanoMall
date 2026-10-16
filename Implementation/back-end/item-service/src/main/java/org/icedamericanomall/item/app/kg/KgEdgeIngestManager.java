@@ -6,11 +6,11 @@ import org.icedamericanomall.client.KgClient;
 import org.icedamericanomall.dto.KgEdgeItemCO;
 import org.icedamericanomall.dto.KgEdgeUpsertCO;
 import org.icedamericanomall.fallback.KgClientFallback;
-import org.icedamericanomall.item.domain.enums.ProductStatusEnum;
+import org.icedamericanomall.item.domain.enums.SpuStatusEnum;
 import org.icedamericanomall.item.domain.model.kg.BrandKeys;
 import org.icedamericanomall.item.domain.model.kg.KgSchema;
 import org.icedamericanomall.item.domain.model.kg.PairingRule;
-import org.icedamericanomall.item.domain.model.product.Product;
+import org.icedamericanomall.item.domain.model.spu.Spu;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -20,7 +20,7 @@ import java.util.List;
 
 /**
  * 知识图谱边摄取协作器（F15 Phase 1）—— item-service 侧 KG 边投影写入的<b>唯一收口</b>
- * （镜像 {@code ProductRecommendManager} 向量摄取先例，ADR-046/047/048 同款纪律）。
+ * （镜像 {@code SpuRecommendManager} 向量摄取先例，ADR-046/047/048 同款纪律）。
  *
  * <p><b>事务纪律（硬约束：Feign 绝不入事务）</b>：摄取发生在真相落库成功<b>之后</b>——
  * <ul>
@@ -52,19 +52,19 @@ public class KgEdgeIngestManager {
      *
      * <p>未落库（id 为空）静默跳过，不产生任何远程调用。
      *
-     * @param product 刚落库/变更后的商品聚合快照
+     * @param spu 刚落库/变更后的商品聚合快照
      */
-    public void ingestProductAfterCommit(Product product) {
-        if (product == null || product.getId() == null) {
+    public void ingestSpuAfterCommit(Spu spu) {
+        if (spu == null || spu.getId() == null) {
             log.debug("KG 商品直建边摄取跳过：商品未落库");
             return;
         }
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            writeProductEdges(product);
+            writeSpuEdges(spu);
             return;
         }
-        if (isOnShelf(product)) {
-            KgEdgeUpsertCO co = buildProductDirectEdges(product);
+        if (isOnShelf(spu)) {
+            KgEdgeUpsertCO co = buildSpuDirectEdges(spu);
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
@@ -72,11 +72,11 @@ public class KgEdgeIngestManager {
                 }
             });
         } else {
-            Long productId = product.getId();
+            Long spuId = spu.getId();
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    deleteEdgesSafely(KgSchema.NODE_PRODUCT, productId);
+                    deleteEdgesSafely(KgSchema.NODE_PRODUCT, spuId);
                 }
             });
         }
@@ -85,18 +85,18 @@ public class KgEdgeIngestManager {
     /**
      * 商品直建边同步写入（AD64 重建路径用）：在售 → 幂等覆盖写；下架/删除 → 清边。
      *
-     * @param product 商品聚合
+     * @param spu 商品聚合
      * @return 成功写入边数（清边/降级/失败为 0，fail-open 不抛）
      */
-    public int writeProductEdges(Product product) {
-        if (product == null || product.getId() == null) {
+    public int writeSpuEdges(Spu spu) {
+        if (spu == null || spu.getId() == null) {
             return 0;
         }
-        if (!isOnShelf(product)) {
-            deleteEdgesSafely(KgSchema.NODE_PRODUCT, product.getId());
+        if (!isOnShelf(spu)) {
+            deleteEdgesSafely(KgSchema.NODE_PRODUCT, spu.getId());
             return 0;
         }
-        return upsertSafely(buildProductDirectEdges(product));
+        return upsertSafely(buildSpuDirectEdges(spu));
     }
 
     // ==================== 规则边（PAIR_WITH 投影同步，治理写面） ====================
@@ -143,7 +143,7 @@ public class KgEdgeIngestManager {
 
     /**
      * 边批量摄取（fail-open）：降级哨兵 {@code -1} / 任何异常只记 WARN 并按 0 边计，
-     * 绝不向调用方抛出（重建逐 src 继续，对齐 ProductRecommendManager 防御口径）。
+     * 绝不向调用方抛出（重建逐 src 继续，对齐 SpuRecommendManager 防御口径）。
      *
      * @param upsert 摄取载荷
      * @return 成功写入边数
@@ -193,21 +193,21 @@ public class KgEdgeIngestManager {
      * <p>brand 为规范化字符串值节点（O4）：brandKey 规则与 CRC-32 节点 id 口径见
      * {@link BrandKeys}；brand/category/seller 缺失的字段跳过对应边，不产悬空端点。
      */
-    private KgEdgeUpsertCO buildProductDirectEdges(Product product) {
+    private KgEdgeUpsertCO buildSpuDirectEdges(Spu spu) {
         List<KgEdgeItemCO> edges = new ArrayList<>(3);
-        if (product.getCategoryId() != null) {
+        if (spu.getCategoryId() != null) {
             edges.add(new KgEdgeItemCO(KgSchema.REL_BELONGS_TO, KgSchema.NODE_CATEGORY,
-                    product.getCategoryId(), 0, KgSchema.SOURCE_DIRECT, KgSchema.EDGE_ENABLED));
+                    spu.getCategoryId(), 0, KgSchema.SOURCE_DIRECT, KgSchema.EDGE_ENABLED));
         }
-        if (BrandKeys.brandKey(product.getBrand()) != null) {
+        if (BrandKeys.brandKey(spu.getBrand()) != null) {
             edges.add(new KgEdgeItemCO(KgSchema.REL_BRAND_OF, KgSchema.NODE_BRAND,
-                    BrandKeys.nodeId(product.getBrand()), 0, KgSchema.SOURCE_DIRECT, KgSchema.EDGE_ENABLED));
+                    BrandKeys.nodeId(spu.getBrand()), 0, KgSchema.SOURCE_DIRECT, KgSchema.EDGE_ENABLED));
         }
-        if (product.getSellerId() != null) {
+        if (spu.getSellerId() != null) {
             edges.add(new KgEdgeItemCO(KgSchema.REL_SOLD_BY, KgSchema.NODE_SELLER,
-                    product.getSellerId(), 0, KgSchema.SOURCE_DIRECT, KgSchema.EDGE_ENABLED));
+                    spu.getSellerId(), 0, KgSchema.SOURCE_DIRECT, KgSchema.EDGE_ENABLED));
         }
-        return new KgEdgeUpsertCO(KgSchema.NODE_PRODUCT, product.getId(), edges);
+        return new KgEdgeUpsertCO(KgSchema.NODE_PRODUCT, spu.getId(), edges);
     }
 
     /**
@@ -225,8 +225,8 @@ public class KgEdgeIngestManager {
     }
 
     /** 商品是否在售（在售才持有直建边；下架/删除清边，与 P35 组装过滤口径一致）。 */
-    private boolean isOnShelf(Product product) {
-        return product.getStatus() != null
-                && product.getStatus() == ProductStatusEnum.ON_SHELF.getCode();
+    private boolean isOnShelf(Spu spu) {
+        return spu.getStatus() != null
+                && spu.getStatus() == SpuStatusEnum.ON_SHELF.getCode();
     }
 }

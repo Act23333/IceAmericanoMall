@@ -16,7 +16,7 @@ spring:
   cloud:
     nacos:
       server-addr: ${ia.nacos.host:192.168.10.128}:8848
-    # Feign 熔断降级：开启后 ia-api 各客户端（Order/ProductDetail/Search/UserProfile）
+    # Feign 熔断降级：开启后 ia-api 各客户端（Order/SpuDetail/Search/UserProfile）
     # 的 fallbackFactory 真实生效（依赖 resilience4j starter）
     openfeign:
       circuitbreaker:

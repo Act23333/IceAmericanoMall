@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 /**
  * 分类聚合根（纯 POJO，零框架依赖）。
  *
- * <p><b>聚合边界</b>：分类是独立聚合；{@code Product} 通过 {@code categoryId} 按 ID 引用，
+ * <p><b>聚合边界</b>：分类是独立聚合；{@code Spu} 通过 {@code categoryId} 按 ID 引用，
  * 不持有对象引用（跨聚合一致性由应用层编排 + 唯一索引兜底）。
  *
  * <p>分类树装配（{@code parentId} 递归）属<b>读模型装配</b>，落在应用层

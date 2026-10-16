@@ -3,7 +3,7 @@ package org.icedamericanomall.ai.infrastructure.rag;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.ai.infrastructure.config.AiProperties;
 import org.icedamericanomall.ai.domain.model.knowledge.KnowledgeHit;
-import org.icedamericanomall.ai.domain.model.product.ProductHit;
+import org.icedamericanomall.ai.domain.model.spu.SpuHit;
 import org.icedamericanomall.ai.domain.port.SearchPort;
 import org.icedamericanomall.ai.domain.port.VectorSearchPort;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -100,9 +100,9 @@ public class RAGRetriever {
      */
     public String retrieve(String query) {
         try {
-            List<ProductHit> knnResults = vectorRecall(query);
-            List<ProductHit> keywordResults = keywordRecall(query);
-            List<ProductHit> fused = rrfFusion(knnResults, keywordResults);
+            List<SpuHit> knnResults = vectorRecall(query);
+            List<SpuHit> keywordResults = keywordRecall(query);
+            List<SpuHit> fused = rrfFusion(knnResults, keywordResults);
             return assembleContext(rerank(query, fused, topK()));
         } catch (Exception e) {
             log.warn("RAG retrieval failed: {}", e.getMessage());
@@ -111,7 +111,7 @@ public class RAGRetriever {
     }
 
     /** 向量语义召回（商品索引）。 */
-    private List<ProductHit> vectorRecall(String query) {
+    private List<SpuHit> vectorRecall(String query) {
         try {
             double[] embedding = embeddingService.embed(query);
             if (embedding.length == 0) {
@@ -125,9 +125,9 @@ public class RAGRetriever {
     }
 
     /** 关键词召回。 */
-    private List<ProductHit> keywordRecall(String query) {
+    private List<SpuHit> keywordRecall(String query) {
         try {
-            return searchPort.searchProducts(query, BM25_CANDIDATES);
+            return searchPort.searchSpus(query, BM25_CANDIDATES);
         } catch (Exception e) {
             log.warn("Keyword recall failed: {}", e.getMessage());
             return List.of();
@@ -138,9 +138,9 @@ public class RAGRetriever {
      * Reciprocal Rank Fusion (RRF) — 融合多个召回源的结果。
      * score(d) = Σ 1/(k + rank_i(d)), k=60
      */
-    private List<ProductHit> rrfFusion(List<ProductHit> listA, List<ProductHit> listB) {
+    private List<SpuHit> rrfFusion(List<SpuHit> listA, List<SpuHit> listB) {
         Map<String, Double> scores = new LinkedHashMap<>();
-        Map<String, ProductHit> docMap = new LinkedHashMap<>();
+        Map<String, SpuHit> docMap = new LinkedHashMap<>();
         addRRFScores(listA, scores, docMap);
         addRRFScores(listB, scores, docMap);
         return scores.entrySet().stream()
@@ -150,20 +150,20 @@ public class RAGRetriever {
                 .toList();
     }
 
-    private void addRRFScores(List<ProductHit> docs, Map<String, Double> scores,
-                              Map<String, ProductHit> docMap) {
+    private void addRRFScores(List<SpuHit> docs, Map<String, Double> scores,
+                              Map<String, SpuHit> docMap) {
         for (int i = 0; i < docs.size(); i++) {
-            ProductHit doc = docs.get(i);
-            if (doc.productId() == null) {
+            SpuHit doc = docs.get(i);
+            if (doc.spuId() == null) {
                 continue;
             }
-            scores.merge(doc.productId(), 1.0 / (RRF_K + i + 1), Double::sum);
-            docMap.putIfAbsent(doc.productId(), doc);
+            scores.merge(doc.spuId(), 1.0 / (RRF_K + i + 1), Double::sum);
+            docMap.putIfAbsent(doc.spuId(), doc);
         }
     }
 
     /** 重排序 — 使用 BGE-reranker（不可用时降级为启发式排序）。 */
-    private List<ProductHit> rerank(String query, List<ProductHit> docs, int topK) {
+    private List<SpuHit> rerank(String query, List<SpuHit> docs, int topK) {
         if (docs.size() <= topK) {
             return docs;
         }
@@ -174,20 +174,20 @@ public class RAGRetriever {
                 .toList();
     }
 
-    private static String formatDocForReranking(ProductHit doc) {
+    private static String formatDocForReranking(SpuHit doc) {
         return String.format("%s %s", doc.name(), doc.description());
     }
 
     /** 组装商品上下文（无结果返回占位文案）。 */
-    private String assembleContext(List<ProductHit> results) {
+    private String assembleContext(List<SpuHit> results) {
         if (results.isEmpty()) {
             return "（暂无相关上下文）";
         }
         StringBuilder sb = new StringBuilder("以下是与用户问题相关的信息：\n");
         for (int i = 0; i < results.size(); i++) {
-            ProductHit item = results.get(i);
+            SpuHit item = results.get(i);
             sb.append(String.format("%d. %s (ID:%s) — ¥%.2f 销量:%s\n",
-                    i + 1, item.name(), item.productId(),
+                    i + 1, item.name(), item.spuId(),
                     item.priceCents() == null ? 0 : item.priceCents() / 100.0,
                     item.soldCount()));
         }

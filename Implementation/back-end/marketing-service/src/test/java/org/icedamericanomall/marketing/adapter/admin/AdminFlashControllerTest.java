@@ -56,7 +56,7 @@ class AdminFlashControllerTest {
         mockMvc.perform(MockMvcRequestBuilders.post("/api/admin/flash")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"productId":10,"skuId":1000,"flashPrice":9900,"stock":100,
+                                {"spuId":10,"skuId":1000,"flashPrice":9900,"stock":100,
                                  "startTime":"2026-10-05T10:00:00","endTime":"2026-10-06T10:00:00"}
                                 """))
                 .andExpect(status().isOk());
@@ -70,7 +70,7 @@ class AdminFlashControllerTest {
         mockMvc.perform(MockMvcRequestBuilders.post("/api/admin/flash")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"productId":10,"skuId":1000,"flashPrice":0,"stock":100,
+                                {"spuId":10,"skuId":1000,"flashPrice":0,"stock":100,
                                  "startTime":"2026-10-05T10:00:00","endTime":"2026-10-06T10:00:00"}
                                 """))
                 .andExpect(status().isBadRequest());

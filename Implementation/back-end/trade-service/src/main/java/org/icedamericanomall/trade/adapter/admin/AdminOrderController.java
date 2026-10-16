@@ -46,8 +46,8 @@ public class AdminOrderController {
 
     /** 销量 Top N 商品（V2.5 详细统计）。 */
     @GetMapping("/stats/top-products")
-    public Result<List<Map<String, Object>>> topProducts(@RequestParam(defaultValue = "10") int limit) {
-        return Result.ok(adminManager.topProducts(limit));
+    public Result<List<Map<String, Object>>> topSpus(@RequestParam(defaultValue = "10") int limit) {
+        return Result.ok(adminManager.topSpus(limit));
     }
 
     /** 指定日期区间分日销售额（V2.5 详细统计）。 */

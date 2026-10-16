@@ -36,7 +36,7 @@ public class Review {
     /** 评价作者（用户技术主键）。 */
     private Long userId;
 
-    private Long productId;
+    private Long spuId;
 
     /** 关联订单号（32 位 hex 业务标识，ADR-050 三批：由技术 id 收敛为业务键）。 */
     private String orderNo;
@@ -79,11 +79,11 @@ public class Review {
     /**
      * 发表评价（未落库）—— 点赞计数从 0 起算（与历史实现一致）。
      */
-    public static Review post(Long userId, Long productId, String orderNo, Long skuId,
+    public static Review post(Long userId, Long spuId, String orderNo, Long skuId,
                               Integer rating, String content, String images) {
         return Review.builder()
                 .userId(userId)
-                .productId(productId)
+                .spuId(spuId)
                 .orderNo(orderNo)
                 .skuId(skuId)
                 .rating(rating)

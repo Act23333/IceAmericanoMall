@@ -13,7 +13,7 @@ public class FavoritePO implements Serializable {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long userId;
-    private Long productId;
+    private Long spuId;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 }

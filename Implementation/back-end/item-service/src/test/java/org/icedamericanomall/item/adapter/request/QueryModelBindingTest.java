@@ -35,7 +35,7 @@ class QueryModelBindingTest {
     static class ProbeController {
 
         @GetMapping("/probe/page")
-        String page(@QueryModel ProductPageReq req) {
+        String page(@QueryModel SpuPageReq req) {
             return req.getCategoryId() + "|" + req.getSellerId() + "|" + req.getPage();
         }
     }
@@ -51,7 +51,7 @@ class QueryModelBindingTest {
             .build();
 
     @Test
-    @DisplayName("P1 — ?category_id=&seller_id= 绑定到 ProductPageReq 的 categoryId/sellerId")
+    @DisplayName("P1 — ?category_id=&seller_id= 绑定到 SpuPageReq 的 categoryId/sellerId")
     void shouldBindSnakeQueryParams_whenQueryModel() throws Exception {
         mockMvc.perform(get("/probe/page?category_id=5&seller_id=9"))
                 .andExpect(status().isOk())

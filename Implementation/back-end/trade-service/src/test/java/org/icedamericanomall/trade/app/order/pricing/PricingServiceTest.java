@@ -50,7 +50,7 @@ class PricingServiceTest {
         c.setSellerId(9L);
         c.setTotalAmount(total);
         OrderCreateContext.CartItemSnapshot snap = new OrderCreateContext.CartItemSnapshot();
-        snap.setProductId(11L);
+        snap.setSpuId(11L);
         snap.setCategoryId(22L);
         c.setSnapshots(List.of(snap));
         return c;

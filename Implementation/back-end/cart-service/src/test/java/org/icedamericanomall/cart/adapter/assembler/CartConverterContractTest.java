@@ -76,7 +76,7 @@ class CartConverterContractTest {
         assertNull(co.getSpec());
         assertNull(co.getImage());
         assertNull(co.getPrice());
-        assertNull(co.getProductId());
+        assertNull(co.getSpuId());
     }
 
     @Test

@@ -42,7 +42,7 @@ public class UserProfileTool {
             UserProfileInfo profile = userProfilePort.loadProfile(HISTORY_SIZE, FAVORITE_SIZE);
             StringBuilder sb = new StringBuilder("用户画像:\n");
             appendSection(sb, "最近浏览: ", profile.browseHistory());
-            appendSection(sb, "收藏商品: ", profile.favoriteProductIds());
+            appendSection(sb, "收藏商品: ", profile.favoriteSpuIds());
             return sb.toString();
         } catch (Exception e) {
             log.warn("UserProfileTool error: {}", e.getMessage());

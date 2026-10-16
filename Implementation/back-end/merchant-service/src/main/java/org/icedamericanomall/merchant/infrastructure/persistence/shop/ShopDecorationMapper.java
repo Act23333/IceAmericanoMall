@@ -23,13 +23,13 @@ public interface ShopDecorationMapper extends BaseMapper<ShopDecorationPO> {
      */
     @Update("""
             INSERT INTO shop_decoration
-                (shop_id, announcement, banners, hot_product_ids, create_time, update_time)
+                (shop_id, announcement, banners, hot_spu_ids, create_time, update_time)
             VALUES
-                (#{shopId}, #{announcement}, #{banners}, #{hotProductIds}, NOW(), NOW())
+                (#{shopId}, #{announcement}, #{banners}, #{hotSpuIds}, NOW(), NOW())
             ON DUPLICATE KEY UPDATE
                 announcement    = VALUES(announcement),
                 banners         = VALUES(banners),
-                hot_product_ids = VALUES(hot_product_ids),
+                hot_spu_ids = VALUES(hot_spu_ids),
                 update_time     = NOW()
             """)
     int upsert(ShopDecorationPO dataObject);

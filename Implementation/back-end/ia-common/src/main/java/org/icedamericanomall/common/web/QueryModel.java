@@ -20,7 +20,7 @@ import java.lang.annotation.Target;
  *
  * <p><b>用法</b>（控制器签名保持 POJO，不摊开成参数列表）：
  * <pre>{@code
- * public Result<IPage<ProductVO>> page(@QueryModel ProductPageReq req) { ... }
+ * public Result<IPage<SpuVO>> page(@QueryModel SpuPageReq req) { ... }
  * }</pre>
  *
  * <p><b>只认 snake</b>：camelCase 写法会被 Jackson 视为未知属性而忽略（不迎合双写法）。

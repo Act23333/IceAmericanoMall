@@ -18,7 +18,7 @@ public final class FavoriteConverter {
         return Favorite.builder()
                 .id(dataObject.getId())
                 .userId(dataObject.getUserId())
-                .productId(dataObject.getProductId())
+                .spuId(dataObject.getSpuId())
                 .createTime(dataObject.getCreateTime())
                 .build();
     }
@@ -31,7 +31,7 @@ public final class FavoriteConverter {
         FavoritePO dataObject = new FavoritePO();
         dataObject.setId(favorite.getId());
         dataObject.setUserId(favorite.getUserId());
-        dataObject.setProductId(favorite.getProductId());
+        dataObject.setSpuId(favorite.getSpuId());
         dataObject.setCreateTime(favorite.getCreateTime());
         return dataObject;
     }

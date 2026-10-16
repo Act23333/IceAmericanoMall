@@ -39,7 +39,7 @@ fi
 
 # 检查 3：显式 SQL 中 BINARY(16) 业务 ID 列禁止裸字符串字面量等值比较
 # （应 #{param} + byte[] 参数化，或与种子/运维场景显式 UNHEX('...')）
-ID_COLS='order_no|pay_order_no|refund_no|invoice_no|settlement_no|withdrawal_no|team_no|message_id|product_id|sku_id|user_id|used_order_no|biz_order_no|template_no|transaction_no|coupon_id|conversation_id'
+ID_COLS='order_no|pay_order_no|refund_no|invoice_no|settlement_no|withdrawal_no|team_no|message_id|spu_id|sku_id|user_id|used_order_no|biz_order_no|template_no|transaction_no|coupon_id|conversation_id'
 hits3=$(grep -rnE "(${ID_COLS})[[:space:]]*=[[:space:]]*'" --include='*.java' */src/main/java 2>/dev/null \
   | grep -vE 'UNHEX|BIN_TO_UUID|HEX\(' \
   | grep -vE ':[0-9]+:[[:space:]]*(\*|//|/\*)' || true)

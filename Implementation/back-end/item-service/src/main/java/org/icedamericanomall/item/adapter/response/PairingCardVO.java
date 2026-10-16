@@ -13,7 +13,7 @@ import java.util.List;
  * 空态（图与向量皆无命中，或商品不在售/降级）。全链路 fail-open：任何环节失效返回
  * {@code NONE} 空列表，绝不报错（对齐 ADR-046 纯旁路定类）。
  *
- * <p>卡片字段集与 P27 相似卡（{@link RecommendProductVO}）完全同构，前端可复用同一
+ * <p>卡片字段集与 P27 相似卡（{@link RecommendSpuVO}）完全同构，前端可复用同一
  * 卡片组件渲染（O6 裁决：与 P27 同页共存，位次随前端设计）。
  */
 @Data
@@ -34,15 +34,15 @@ public class PairingCardVO implements Serializable {
     private String source;
 
     /** 搭配商品卡列表（空态为空列表，恒非 null）。 */
-    private List<RecommendProductVO> items = List.of();
+    private List<RecommendSpuVO> items = List.of();
 
     /** 图关系命中卡（source=KG）。 */
-    public static PairingCardVO kg(List<RecommendProductVO> items) {
+    public static PairingCardVO kg(List<RecommendSpuVO> items) {
         return of(SOURCE_KG, items);
     }
 
     /** 向量兜底卡（source=FALLBACK）。 */
-    public static PairingCardVO fallback(List<RecommendProductVO> items) {
+    public static PairingCardVO fallback(List<RecommendSpuVO> items) {
         return of(SOURCE_FALLBACK, items);
     }
 
@@ -51,7 +51,7 @@ public class PairingCardVO implements Serializable {
         return of(SOURCE_NONE, List.of());
     }
 
-    private static PairingCardVO of(String source, List<RecommendProductVO> items) {
+    private static PairingCardVO of(String source, List<RecommendSpuVO> items) {
         PairingCardVO vo = new PairingCardVO();
         vo.setSource(source);
         vo.setItems(items == null ? List.of() : List.copyOf(items));

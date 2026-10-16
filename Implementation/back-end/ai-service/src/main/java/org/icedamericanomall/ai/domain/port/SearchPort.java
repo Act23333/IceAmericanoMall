@@ -1,6 +1,6 @@
 package org.icedamericanomall.ai.domain.port;
 
-import org.icedamericanomall.ai.domain.model.product.ProductHit;
+import org.icedamericanomall.ai.domain.model.spu.SpuHit;
 
 import java.util.List;
 
@@ -20,5 +20,5 @@ public interface SearchPort {
      * @return 命中商品列表（无结果为空列表，不返回 null）
      * @throws org.icedamericanomall.common.exception.BizException 搜索服务不可用（fail-soft 降级）
      */
-    List<ProductHit> searchProducts(String keyword, int size);
+    List<SpuHit> searchSpus(String keyword, int size);
 }

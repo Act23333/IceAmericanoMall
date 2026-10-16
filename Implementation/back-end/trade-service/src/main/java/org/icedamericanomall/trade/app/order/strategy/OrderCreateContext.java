@@ -137,7 +137,7 @@ public class OrderCreateContext {
     @Data
     public static class CartItemSnapshot {
         private Long skuId;
-        private Long productId;    // V4.3: 优惠券 scope 校验用
+        private Long spuId;    // V4.3: 优惠券 scope 校验用
         private Long categoryId;   // V4.3: 优惠券 scope 校验用
         private Long sellerId;
         private String productName;

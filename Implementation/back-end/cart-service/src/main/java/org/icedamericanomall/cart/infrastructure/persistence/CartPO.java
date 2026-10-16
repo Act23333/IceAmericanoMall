@@ -31,7 +31,7 @@ public class CartPO implements Serializable {
 
     /** Enriched at read time from item-service — not persisted in cart table. */
     @TableField(exist = false)
-    private Long productId;
+    private Long spuId;
 
     /** Enriched at read time from item-service — not persisted in cart table. */
     @TableField(exist = false)

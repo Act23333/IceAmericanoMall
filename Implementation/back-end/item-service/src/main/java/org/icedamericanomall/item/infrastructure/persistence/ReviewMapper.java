@@ -12,8 +12,8 @@ import java.util.List;
 public interface ReviewMapper extends BaseMapper<ReviewPO> {
 
     /** V5.0: 评价摘要 — 星级分布聚合（替代全量分页内存统计） */
-    @Select("SELECT rating, COUNT(*) AS `count` FROM review WHERE product_id = #{productId} GROUP BY rating")
-    List<RatingCountPO> countByRating(@Param("productId") Long productId);
+    @Select("SELECT rating, COUNT(*) AS `count` FROM review WHERE spu_id = #{spuId} GROUP BY rating")
+    List<RatingCountPO> countByRating(@Param("spuId") Long spuId);
 
     /** V5.0: 点赞 — 原子递增 like_count + 插入 review_like */
     @Update("UPDATE review SET like_count = like_count + 1 WHERE id = #{reviewId}")

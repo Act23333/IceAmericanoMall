@@ -7,7 +7,7 @@ import java.util.List;
  * 笔记向量化文本拼接（领域服务，纯函数）—— I50 单向量摄取的单一事实源。
  *
  * <p>拼接口径（契约 I50 / ADR-046 管道第二次复用）：{@code title + content}，
- * 与商品侧 {@code ProductVectorTextBuilder} 同风格——各段 trim、非空白才拼接、
+ * 与商品侧 {@code SpuVectorTextBuilder} 同风格——各段 trim、非空白才拼接、
  * 分隔符为单个空格；笔记短文本单向量语义已足够，不分块。
  */
 public final class NoteVectorTextBuilder {

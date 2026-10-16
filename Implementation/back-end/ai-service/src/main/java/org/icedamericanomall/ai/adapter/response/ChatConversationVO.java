@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
  * 现改为强类型 VO：JSON 字段名与形状保持不变（{@code conversationId} / {@code lastMessage} /
  * {@code lastTime} / {@code unreadCount}）。
  *
- * <p>说明：05-API-Specification 的 {@code ChatConversationVO} 草案含 targetUser / product 等更丰富字段
+ * <p>说明：05-API-Specification 的 {@code ChatConversationVO} 草案含 targetUser / spu 等更丰富字段
  * （🆕 V5.0 未实现）；按「HTTP 契约保持」纪律，本次仅做弱类型→强类型归位，不新增或改名任何字段。
  */
 @Data

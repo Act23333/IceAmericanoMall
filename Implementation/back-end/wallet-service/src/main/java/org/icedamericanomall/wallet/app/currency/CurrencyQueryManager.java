@@ -18,7 +18,7 @@ import java.util.List;
 /**
  * 币种查询用例编排（应用层）—— P36 币种列表 + I61 当前汇率（F16 多币种 Phase 1）。
  *
- * <p><b>短 TTL 本地缓存（ADR-041 先例，{@code ProductPromotionManager.tagsFor} 同款 Caffeine）</b>：
+ * <p><b>短 TTL 本地缓存（ADR-041 先例，{@code SpuPromotionManager.tagsFor} 同款 Caffeine）</b>：
  * P36 是高频公开读端点，本地表直读 + 60s 写后过期缓存；写操作（AD67/AD68）后由
  * {@code CurrencyAdminManager} 主动 {@link #evictEnabledListCache()}（写后删缓存，不更新缓存），
  * 缓存失效至多延迟一个 TTL 可见——展示场景可接受。

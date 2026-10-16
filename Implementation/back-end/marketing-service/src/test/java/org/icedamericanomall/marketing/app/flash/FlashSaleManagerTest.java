@@ -142,7 +142,7 @@ class FlashSaleManagerTest {
     private FlashSale flashSale(int status, int stock, int soldCount) {
         return FlashSale.builder()
                 .id(FLASH_ID)
-                .productId(100L)
+                .spuId(100L)
                 .skuId(1000L)
                 .flashPrice(9900)
                 .stock(stock)

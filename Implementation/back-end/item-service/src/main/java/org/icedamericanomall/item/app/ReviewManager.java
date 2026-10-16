@@ -15,9 +15,9 @@ import org.icedamericanomall.item.adapter.assembler.ReviewConverter;
 import org.icedamericanomall.item.adapter.request.ReviewCreateReq;
 import org.icedamericanomall.item.adapter.response.ReviewSummaryVO;
 import org.icedamericanomall.item.adapter.response.ReviewVO;
-import org.icedamericanomall.item.domain.model.product.Product;
+import org.icedamericanomall.item.domain.model.spu.Spu;
 import org.icedamericanomall.item.domain.model.review.Review;
-import org.icedamericanomall.item.domain.repository.ProductRepository;
+import org.icedamericanomall.item.domain.repository.SpuRepository;
 import org.icedamericanomall.item.domain.repository.ReviewRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,7 +50,7 @@ public class ReviewManager {
     private static final String TASK_CODE_DAILY_REVIEW = "DAILY_REVIEW";
 
     private final ReviewRepository reviewRepository;
-    private final ProductRepository productRepository;
+    private final SpuRepository spuRepository;
     private final ReviewConverter reviewConverter;
     private final NotificationClient notificationClient;
     private final TaskClient taskClient;
@@ -62,10 +62,10 @@ public class ReviewManager {
         if (reviewRepository.countByOrderNoAndUserId(orderNo, userId) > 0) {
             throw new BizException(ErrorCode.REVIEW_ALREADY_EXISTS);
         }
-        Review review = Review.post(userId, req.getProductId(), orderNo, req.getSkuId(),
+        Review review = Review.post(userId, req.getSpuId(), orderNo, req.getSkuId(),
                 req.getRating(), req.getContent(), req.getImages());
         reviewRepository.save(review);
-        productRepository.incrementCommentCount(req.getProductId());
+        spuRepository.incrementCommentCount(req.getSpuId());
         triggerDailyReviewTask(userId);
         return reviewConverter.toVO(review);
     }
@@ -85,15 +85,15 @@ public class ReviewManager {
     }
 
     /** 商品评价分页（创建时间倒序，带 likedByMe 回填）。 */
-    public IPage<ReviewVO> pageByProduct(Long productId, int page, int size) {
-        return reviewRepository.pageByProduct(productId, page, size)
+    public IPage<ReviewVO> pageBySpu(Long spuId, int page, int size) {
+        return reviewRepository.pageBySpu(spuId, page, size)
                 .convert(r -> enrichVO(reviewConverter.toVO(r)));
     }
 
     /** 商品评价分页（星级/有图过滤 + 排序归一）。 */
-    public IPage<ReviewVO> pageByProductFiltered(Long productId, Integer rating, Boolean hasMedia,
+    public IPage<ReviewVO> pageBySpuFiltered(Long spuId, Integer rating, Boolean hasMedia,
                                                  String sort, int page, int size) {
-        return reviewRepository.pageFiltered(productId, rating, hasMedia, sort, page, size)
+        return reviewRepository.pageFiltered(spuId, rating, hasMedia, sort, page, size)
                 .convert(r -> enrichVO(reviewConverter.toVO(r)));
     }
 
@@ -101,7 +101,7 @@ public class ReviewManager {
      * 评价汇总 —— 一次 GROUP BY 聚合得到星级分布；rating 为 null 或超出 1~5 的
      * 历史脏数据被忽略，不参与均分。
      */
-    public ReviewSummaryVO reviewSummary(Long productId) {
+    public ReviewSummaryVO reviewSummary(Long spuId) {
         long total = 0L;
         long weightedSum = 0L;
         Map<Integer, Long> distribution = new LinkedHashMap<>();
@@ -109,7 +109,7 @@ public class ReviewManager {
             distribution.put(star, 0L);
         }
         List<org.icedamericanomall.item.domain.model.review.RatingCount> rows =
-                reviewRepository.countByRating(productId);
+                reviewRepository.countByRating(spuId);
         if (rows != null) {
             for (org.icedamericanomall.item.domain.model.review.RatingCount row : rows) {
                 Integer rating = row.rating();
@@ -154,9 +154,9 @@ public class ReviewManager {
             Review review = reviewRepository.findById(reviewId);
             if (review != null) {
                 Long recipientId = review.getUserId();
-                Long productId = review.getProductId();
+                Long spuId = review.getSpuId();
                 runAfterCommit(() -> notifyReviewAuthor(recipientId, userId, NOTIFY_TYPE_LIKE,
-                        NOTIFY_TITLE_LIKE, null, productId));
+                        NOTIFY_TITLE_LIKE, null, spuId));
             }
         }
         return result;
@@ -174,8 +174,8 @@ public class ReviewManager {
         if (review == null) {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "评价不存在");
         }
-        Product product = productRepository.findById(review.getProductId());
-        if (product == null || !product.getSellerId().equals(sellerId)) {
+        Spu spu = spuRepository.findById(review.getSpuId());
+        if (spu == null || !spu.getSellerId().equals(sellerId)) {
             throw new BizException(ErrorCode.FORBIDDEN, "只能回复自己店铺商品的评价");
         }
         if (reviewRepository.addReply(reviewId, content) == 0) {
@@ -183,9 +183,9 @@ public class ReviewManager {
         }
         log.info("商家回复评价: reviewId={}, sellerId={}", reviewId, sellerId);
         Long recipientId = review.getUserId();
-        Long productId = review.getProductId();
+        Long spuId = review.getSpuId();
         runAfterCommit(() -> notifyReviewAuthor(recipientId, sellerId, NOTIFY_TYPE_REPLY,
-                NOTIFY_TITLE_REPLY, content, productId));
+                NOTIFY_TITLE_REPLY, content, spuId));
     }
 
     /** 用户追评（非本人/已追评由仓储守卫拒绝）。 */
@@ -214,7 +214,7 @@ public class ReviewManager {
      * 发送站内信（经 notification-service 落库）；失败只记日志，不影响评价主流程。
      */
     private void notifyReviewAuthor(Long recipientId, Long senderId, String type,
-                                    String title, String content, Long productId) {
+                                    String title, String content, Long spuId) {
         try {
             InAppMessageSendReqCO message = new InAppMessageSendReqCO();
             message.setRecipientId(recipientId);
@@ -225,7 +225,7 @@ public class ReviewManager {
             message.setType(type);
             message.setTitle(title);
             message.setContent(content != null ? content : "");
-            message.setLinkUrl(productId != null ? PRODUCT_LINK_PREFIX + productId : "");
+            message.setLinkUrl(spuId != null ? PRODUCT_LINK_PREFIX + spuId : "");
             notificationClient.sendInAppMessage(message);
         } catch (Exception e) {
             log.warn("发送评价通知失败(type={}, recipient={}): {}", type, recipientId, e.getMessage());
@@ -236,7 +236,7 @@ public class ReviewManager {
      * 每日评价任务旁路触发（F9 DAILY_REVIEW，ADR-047）—— 评价落库成功后触发。
      *
      * <p><b>事务纪律（硬约束：Feign 严禁进事务）</b>：调用点处于 {@code createReview} 的
-     * 写事务内，故对齐 {@link ProductRecommendManager} 摄取先例 —— 走 {@link #runAfterCommit}，
+     * 写事务内，故对齐 {@link SpuRecommendManager} 摄取先例 —— 走 {@link #runAfterCommit}，
      * 有活动事务时注册 {@code afterCommit} 回调（回滚即不触发，提交后才远程调用）。
      */
     private void triggerDailyReviewTask(Long userId) {
