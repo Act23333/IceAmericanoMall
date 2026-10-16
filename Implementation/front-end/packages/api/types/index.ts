@@ -15,16 +15,24 @@
  *   ✅ 前端内部标识符（变量名 / 函数名 / 组件 props 名 / 本地 state / queryKey）→ camelCase
  *   ❌ 不做全局自动 snake→camel 转换层：字段名漂移会静默变 `undefined`，掩盖真实缺陷
  *
- * ⚠️ **query 参数不受 Jackson 策略影响** —— 由各 Controller 的
- *    `@RequestParam(name = "…")` 显式命名决定。平台决策：**线上字段与查询参数一律
- *    snake_case**（Stripe/GitHub 风格），后端已将 `@RequestParam` 统一为
- *    `@RequestParam(name = "snake_name")`（Java 形参名仍保持 camelCase）。
- *    故前端发出的查询串 key 一律 snake_case：`coupon_id` / `product_id` / `flash_id` /
- *    `address_id` / `page_num` / `page_size` / `refresh_token` …
+ * ⚠️ **query 参数的线上名取决于后端「怎么绑定」，分两类**（不能只看 `@RequestParam`）：
  *
- *    **例外**（不走 `@RequestParam`，而是 POJO 属性绑定，不属于本决策的收敛范围）：
- *    `ProductPageReq` / `SearchPageReq` 的 `categoryId`、`ReviewFilterReq` 的 `hasMedia`。
- *    这两处前端暂按现名发送，待契约与后端一并定夺（见交接摘要「待确认项」）。
+ *    ① `@RequestParam(name = "snake_name")` —— 线上名 = 注解里的名字。平台决策：**线上字段与
+ *       查询参数一律 snake_case**（Stripe/GitHub 风格），后端已统一显式钉名。
+ *       前端发出的查询串 key：`coupon_id` / `product_id` / `flash_id` / `address_id` /
+ *       `page_num` / `page_size` / `refresh_token` …
+ *
+ *    ② `@QueryModel XxxReq` —— 形参交给 Jackson（全局 `property-naming-strategy: SNAKE_CASE`）
+ *       反序列化，线上名 = **snake_case(Java 字段名)**，未知属性静默忽略。即同样是 snake_case：
+ *       `category_id`（`SpuPageReq.categoryId`）/ `has_media`（`ReviewFilterReq.hasMedia`）…
+ *       **`@QueryModel` 不存在 camelCase 兼容写法**，发 camelCase 会被静默忽略、字段恒 null。
+ *
+ *    （反例，勿模仿：裸 POJO 形参 `XxxPageReq req` 走 Spring `WebDataBinder`，线上名 = Java
+ *      属性名即 camelCase，Jackson 策略覆盖不到 —— 故「POJO 绑定」必须区分这两个注解。）
+ *
+ *    判据以**后端实际绑定方式**为准；机器校验见
+ *    `Implementation/front-end/scripts/check-query-param-naming.mjs`（前端发送名 × 后端线上名 ×
+ *    契约 Query 列三方交叉断言）。
  *
  * ⚠️ **边界显式转换**：唯一允许「后端字段 → 前端 camelCase 域模型」的映射点是
  *    `apps/web/app/product/[id]/add-to-cart.tsx`（SkuVO → 本地 cart-store.CartItem）。

@@ -100,9 +100,11 @@ export default function SearchPage() {
     setPage(pg);
     setLoading(true);
 
+    // 后端 `SearchPageReq` 经 `@QueryModel` 绑定（Jackson + 全局 SNAKE_CASE）→ 线上名 `category_id`
+    // （契约 §SE1）；camelCase `categoryId` 会被静默忽略 → 搜索结果页的品类筛选整体失效。
     const sp = new URLSearchParams({ page: String(pg), size: '20' });
     if (kw) sp.set('keyword', kw);
-    if (catId) sp.set('categoryId', String(catId));
+    if (catId) sp.set('category_id', String(catId));
 
     // 保存搜索历史
     if (kw) saveHistory(kw);
@@ -116,7 +118,7 @@ export default function SearchPage() {
       .catch(() => setData({ records: [], total: 0, size: 20, current: 1, pages: 0 }))
       .finally(() => setLoading(false));
 
-    // URL 同步
+    // URL 同步 —— 本页路由自身的 query（应用内标识符，保持 camelCase；非后端线上名，勿混为一谈）
     const usp = new URLSearchParams();
     if (kw) usp.set('keyword', kw);
     if (catId) usp.set('categoryId', String(catId));

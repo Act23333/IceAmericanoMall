@@ -24,10 +24,12 @@ export function useProducts(filters: ProductFilters = {}) {
     queryKey: queryKeys.products.list(filters as Record<string, unknown>),
     queryFn: async () => {
       const params = new URLSearchParams();
-      // 注意：`categoryId` 不在此次「@RequestParam 统一 snake_case」范围内 —— 后端
-      // `/api/item/product/page` 以 `ProductPageReq` **POJO 属性绑定**取值（非 @RequestParam），
-      // 契约 §P1 写作 `category_id?`。保留现名以免与后端失配，见交接摘要「待确认项」。
-      if (filters.categoryId) params.set('categoryId', String(filters.categoryId));
+      // 后端 `/api/item/product/page` 以 `SpuPageReq` 经 **`@QueryModel`** 绑定 —— 该形参走
+      // Jackson（全局 `property-naming-strategy: SNAKE_CASE`），**线上名一律 snake_case**
+      // （契约 §P1：`category_id?` / `seller_id?`）。曾误判为「裸 POJO 属性绑定、不受命名策略
+      // 管辖」而发送 camelCase `categoryId` → 后端按未知属性静默忽略、`categoryId` 恒 null，
+      // 品类筛选整体失效且不报错（2026-10-15 修复）。本组参数一律 snake_case。
+      if (filters.categoryId) params.set('category_id', String(filters.categoryId));
       if (filters.keyword) params.set('keyword', filters.keyword);
       if (filters.sort) params.set('sort', filters.sort);
       if (filters.order) params.set('order', filters.order);

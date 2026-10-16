@@ -38,7 +38,9 @@ export function MarketplaceInfinite({ categoryId, sort, initialProducts, initial
     setLoading(true);
     try {
       const sp = new URLSearchParams({ page: String(nextPage), size: String(PAGE_SIZE), sort, order: 'desc' });
-      if (categoryId) sp.set('categoryId', String(categoryId));
+      // 后端 `SpuPageReq` 经 `@QueryModel` 绑定（Jackson + 全局 SNAKE_CASE）→ 线上名 `category_id`
+      // （契约 §P1）；camelCase `categoryId` 被静默忽略 → 无限滚动翻页会丢失品类筛选。
+      if (categoryId) sp.set('category_id', String(categoryId));
       const result = await apiClient<PageResult<ProductVO>>(`/api/item/product/page?${sp.toString()}`);
       setProducts((prev) => [...prev, ...result.records]);
       setPage(nextPage);

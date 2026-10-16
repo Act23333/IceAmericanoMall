@@ -73,9 +73,9 @@ export async function getProducts(params: {
   size?: number;
 }): Promise<PageResult<ProductVO>> {
   const sp = new URLSearchParams();
-  // `categoryId` 走 `ProductPageReq` POJO 属性绑定（非 @RequestParam），不属本次 snake 收敛范围
-  // （契约 §P1 写作 `category_id?`）——保留现名，见交接摘要「待确认项」。
-  if (params.categoryId) sp.set('categoryId', String(params.categoryId));
+  // 后端 `SpuPageReq` 经 **`@QueryModel`** 绑定（Jackson + 全局 SNAKE_CASE）→ 线上名 snake_case
+  // （契约 §P1：`category_id?` / `seller_id?`）。camelCase `categoryId` 会被静默忽略（2026-10-15 修复）。
+  if (params.categoryId) sp.set('category_id', String(params.categoryId));
   if (params.keyword) sp.set('keyword', params.keyword);
   if (params.sort) sp.set('sort', params.sort);
   if (params.order) sp.set('order', params.order);

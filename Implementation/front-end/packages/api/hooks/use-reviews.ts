@@ -6,10 +6,11 @@ import { apiClient, type PageResult, type ReviewVO, type ReviewCreateReq } from 
 /**
  * 评价筛选项。
  *
- * ⚠️ 本组 query 参数由后端 `ReviewFilterReq` **POJO 属性绑定**（`@GetMapping` 形参不是
- * `@RequestParam`），因此**不属**「`@RequestParam(name=…)` 统一为 snake_case」的收敛范围：
- * `hasMedia` 目前仍是 camelCase（契约 §P14 写作 `has_media?`）。
- * 保留现名以免与后端失配，已在交接摘要「待确认项」报出。
+ * ⚠️ 本组 query 参数由后端 `ReviewFilterReq` 经 **`@QueryModel`** 绑定 —— 即走 Jackson
+ * 反序列化（全局 `property-naming-strategy: SNAKE_CASE`），**线上名一律 snake_case**：
+ * `rating` / `has_media` / `sort` / `page` / `size`（契约 §P14）。
+ * 曾误判为「裸 POJO 属性绑定、不受命名策略管辖」而发送 camelCase `hasMedia` →
+ * 后端按未知属性静默忽略、「只看带图」筛选永不生效且不报错（2026-10-15 修复）。
  */
 export interface ReviewFilter {
   rating?: number;
@@ -21,7 +22,7 @@ export interface ReviewFilter {
 export function useProductReviews(productId: number, filter: ReviewFilter = {}, page = 1, size = 10) {
   const params = new URLSearchParams({ page: String(page), size: String(size) });
   if (filter.rating) params.set('rating', String(filter.rating));
-  if (filter.hasMedia) params.set('hasMedia', 'true');
+  if (filter.hasMedia) params.set('has_media', 'true');
   if (filter.sort) params.set('sort', filter.sort);
 
   return useQuery<PageResult<ReviewVO>>({

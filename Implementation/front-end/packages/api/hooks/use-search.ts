@@ -7,9 +7,10 @@ import { queryKeys } from '../queries';
 export function useSearch(keyword: string, categoryId?: number, page = 1, size = 20) {
   const params = new URLSearchParams({ page: String(page), size: String(size) });
   if (keyword) params.set('keyword', keyword);
-  // `categoryId` 走 `SearchPageReq` POJO 属性绑定（非 @RequestParam），不属本次 snake 收敛范围
-  // （契约 §SE1 写作 `category_id?`）——保留现名，见交接摘要「待确认项」。
-  if (categoryId) params.set('categoryId', String(categoryId));
+  // `SearchPageReq` 经 **`@QueryModel`** 绑定 → Jackson（全局 SNAKE_CASE）→ 线上名 snake_case
+  // （契约 §SE1：`category_id?`；同 `brand?` / `min_price?` / `max_price?`）。
+  // 曾发送 camelCase `categoryId` → 被后端静默忽略、品类筛选失效（2026-10-15 修复）。
+  if (categoryId) params.set('category_id', String(categoryId));
 
   return useQuery<PageResult<ProductSearchVO>>({
     queryKey: [...queryKeys.products.lists(), 'search', keyword, categoryId, page],
