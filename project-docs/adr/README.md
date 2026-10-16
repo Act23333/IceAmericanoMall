@@ -62,3 +62,4 @@
 | [056](./056-wire-naming-snake-case.md) | 线上字段与查询参数命名统一为 snake_case —— 三类载体（Jackson / `@RequestParam` / POJO 绑定）、例外清单与大厂依据 |
 | [057](./057-display-field-read-model-ports.md) | 契约声明的展示字段回填 —— 应用层读模型端口 + 按 ID 批量 + fail-open；事务型 Manager 只能调本地只读 |
 | [058](./058-vo-identifier-semantics.md) | VO 标识字段的语义唯一性 —— 技术主键/外键禁出 VO；读模型须带出业务标识；MapStruct 跨层同名异义必须显式 ignore |
+| [059](./059-spu-sku-vocabulary-disambiguation.md) | SPU/SKU 词汇消歧 —— `product` 实为 SPU，线格式统一 `spu_id`/`sku_id`；技术键与技术外键仅留 PO/领域层 |
