@@ -24,6 +24,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -73,7 +74,10 @@ public class NoteManager {
     public NoteVO publish(Long userId, NotePublishReq req) {
         Note note = Note.publish(userId, req.getTitle(), req.getContent(),
                 req.getCoverImage(), req.getImages());
-        List<Long> spuIds = distinctSpuIds(req.getSpuIds());
+        List<String> requestedSpuKeys = distinctKeys(req.getSpuIds());
+        Map<String, Long> resolvedSpus = resolveSpuTechnicalIds(requestedSpuKeys);
+        assertSpusResolvable(requestedSpuKeys, resolvedSpus);
+        List<Long> spuIds = distinctSpuIds(List.copyOf(resolvedSpus.values()));
         assertSpusPublishable(spuIds);
         noteRepository.save(note);
         if (!spuIds.isEmpty()) {
@@ -252,6 +256,10 @@ public class NoteManager {
     /**
      * 装配关联商品摘要卡：按 sort 序、过滤非在售（下架/删除一并剔除）、批量回填
      * 在售 SKU 最低价（{@code SkuManager.getMinPriceMapBySpuIds}，对齐商品列表卡口径，无 N+1）。
+     *
+     * <p><b>标识口径（ADR-061 §决策 2）</b>：卡内 {@code spuId} 出线格式前经
+     * {@code spuRepository.businessIdMapByTechnicalIds} <b>同批一次</b>还原为 32-hex 业务键
+     * （{@code spu} 主键 IN，零额外往返）；未命中（脏数据/物理删除）留 {@code null}，不抛异常。
      */
     private List<NoteDetailVO.SpuSummaryVO> assembleSpus(List<Long> spuIds) {
         if (spuIds == null || spuIds.isEmpty()) {
@@ -265,8 +273,10 @@ public class NoteManager {
             return List.of();
         }
         Map<Long, Integer> minPriceMap = skuManager.getMinPriceMapBySpuIds(visibleIds);
+        Map<Long, String> businessKeyById = spuRepository.businessIdMapByTechnicalIds(visibleIds);
         return visibleIds.stream()
-                .map(id -> toSummary(onShelfById.get(id), minPriceMap.get(id)))
+                .map(id -> toSummary(onShelfById.get(id), minPriceMap.get(id),
+                        businessKeyById == null ? null : businessKeyById.get(id)))
                 .toList();
     }
 
@@ -275,12 +285,67 @@ public class NoteManager {
                 && spu.getStatus() == SpuStatusEnum.ON_SHELF.getCode();
     }
 
-    private static NoteDetailVO.SpuSummaryVO toSummary(Spu spu, Integer minPrice) {
+    private static NoteDetailVO.SpuSummaryVO toSummary(Spu spu, Integer minPrice, String spuBusinessId) {
         NoteDetailVO.SpuSummaryVO vo = new NoteDetailVO.SpuSummaryVO();
-        vo.setSpuId(spu.getId());
+        vo.setSpuId(spuBusinessId);
         vo.setName(spu.getName());
         vo.setMainImage(spu.getMainImage());
         vo.setMinPrice(minPrice);
         return vo;
+    }
+
+    /**
+     * 线格式入参（SPU 业务键 32-hex 列表）→ 本域技术键列表（{@code spu.id}）。
+     *
+     * <p>同库只读解析（{@code spu.spu_id} 唯一索引，A 案：表结构不动），<b>整批一次</b>；
+     * 解析不到的键<b>不进入结果</b>，由 {@link #assertSpusResolvable} 先报「业务键非法/商品不存在」，
+     * 再由 {@link #assertSpusPublishable} 报「已下架」—— 两者均为 {@code PARAM_ERROR}（P28 契约）。
+     */
+    private Map<String, Long> resolveSpuTechnicalIds(List<String> spuBusinessIds) {
+        List<String> keys = distinctKeys(spuBusinessIds);
+        if (keys.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Long> resolved = spuRepository.idMapByBusinessIds(keys);
+        if (resolved == null || resolved.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Long> ordered = new LinkedHashMap<>(resolved.size());
+        for (String key : keys) {
+            Long technicalId = resolved.get(key);
+            if (technicalId != null) {
+                ordered.put(key, technicalId);
+            }
+        }
+        return ordered;
+    }
+
+    /** 入参业务键归一：去 {@code null}/空白、去重保序（条数守卫仍由聚合常量口径判定）。 */
+    private static List<String> distinctKeys(List<String> spuBusinessIds) {
+        if (spuBusinessIds == null || spuBusinessIds.isEmpty()) {
+            return List.of();
+        }
+        return spuBusinessIds.stream()
+                .filter(Objects::nonNull)
+                .map(String::strip)
+                .filter(key -> !key.isEmpty())
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * 业务键解析完备性守卫：入参每个键都必须解析出技术键，否则 400（消息与既有口径逐字一致）。
+     *
+     * <p>不把「解析不到」静默丢弃 —— 否则会落一条「笔记无商品关联」而调用方以为关联成功。
+     */
+    private static void assertSpusResolvable(List<String> requestedKeys, Map<String, Long> resolved) {
+        if (requestedKeys.isEmpty() || requestedKeys.size() == resolved.size()) {
+            return;
+        }
+        String missing = requestedKeys.stream()
+                .filter(key -> !resolved.containsKey(key))
+                .findFirst()
+                .orElse(requestedKeys.get(0));
+        throw new BizException(ErrorCode.PARAM_ERROR, "商品不存在或已下架: spuId=" + missing);
     }
 }

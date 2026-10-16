@@ -233,6 +233,26 @@ public class SpuRepositoryImpl implements SpuRepository {
         return result;
     }
 
+    @Override
+    public Map<Long, String> businessIdMapByTechnicalIds(List<Long> spuIds) {
+        // 技术键宽松归一：null/重复入参剔除（主键 IN，无命中项即不入映射）
+        if (spuIds == null || spuIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> ids = spuIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> result = new HashMap<>(ids.size());
+        for (SpuBusinessKeyRow row : spuMapper.selectBusinessIdsByIds(ids)) {
+            if (row.getId() == null || row.getSpuId() == null) {
+                continue;
+            }
+            result.putIfAbsent(row.getId(), IdGenerator.toHexString(row.getSpuId()));
+        }
+        return result;
+    }
+
     /** 业务键宽松归一：非法/重复入参剔除（唯一约束下不会出现同键两行）。 */
     private static List<byte[]> normalizeBusinessIds(List<String> spuBusinessIds) {
         if (spuBusinessIds == null || spuBusinessIds.isEmpty()) {

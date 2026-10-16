@@ -101,4 +101,17 @@ public interface SpuRepository {
      * @return 业务键 → 技术键（只含命中项）
      */
     Map<String, Long> idMapByBusinessIds(List<String> spuBusinessIds);
+
+    /**
+     * SPU 技术键 → 业务键（{@link #idMapByBusinessIds} 的<b>反向</b>解析）。
+     *
+     * <p>供线格式出口把本域持有的 {@code spu.id}（技术外键）批量还原为 32-hex 业务键 ——
+     * 评价列表（{@code ReviewVO.spuId}）与笔记详情关联商品卡（{@code NoteDetailVO.spus[].spuId}）
+     * 复用同一批量只读出口（单条 SQL 走主键 IN，无 N+1；ADR-058 §3 / ADR-061 §决策 2）。
+     * 不存在的技术键<b>不进入映射</b>，调用方按「未命中」留空（fail-open）。
+     *
+     * @param spuIds SPU 技术键集合（{@code spu.id}；可空）
+     * @return 技术键 → 业务键（只含命中项）
+     */
+    Map<Long, String> businessIdMapByTechnicalIds(List<Long> spuIds);
 }

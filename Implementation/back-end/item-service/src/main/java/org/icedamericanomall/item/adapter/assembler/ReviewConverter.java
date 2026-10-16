@@ -19,6 +19,10 @@ public interface ReviewConverter {
      * 聚合 → 评价 VO。
      *
      * <ul>
+     *   <li>{@code spuId} / {@code skuId} —— <b>两步走</b>：本转换器先把聚合持有的技术外键
+     *       （{@code Long}）按数值型字符串落到 VO，再由 {@code ReviewManager#fillBusinessKeys}
+     *       用同库只读批量查询<b>替换为 32-hex 业务键</b>（ADR-058 §3 / ADR-061 §决策 2：
+     *       聚合只持技术外键，业务键由应用层拼装；fail-open，未命中留空）。</li>
      *   <li>{@code likedByMe} —— 请求者相关字段，由 {@code ReviewManager.enrichVO} 按当前登录用户
      *       查询（fail-open：查询失败仅记日志，评价列表照常返回）；转换器不持有请求上下文。</li>
      *   <li>{@code username} / {@code avatar} —— <b>item 域无数据源</b>（评价表只存 userId，
@@ -27,6 +31,8 @@ public interface ReviewConverter {
      *       未在本批脚手架内实现 —— 显式 ignore 使其保持可见，不得靠默默警告掩盖。</li>
      * </ul>
      */
+    @Mapping(target = "spuId", expression = "java(review.getSpuId() == null ? null : review.getSpuId().toString())")
+    @Mapping(target = "skuId", expression = "java(review.getSkuId() == null ? null : review.getSkuId().toString())")
     @Mapping(target = "likedByMe", ignore = true)
     @Mapping(target = "username", ignore = true)
     @Mapping(target = "avatar", ignore = true)

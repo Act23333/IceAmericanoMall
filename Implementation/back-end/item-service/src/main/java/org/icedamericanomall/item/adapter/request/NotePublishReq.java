@@ -33,7 +33,12 @@ public class NotePublishReq implements Serializable {
     @Size(max = Note.MAX_IMAGES, message = "图片数量不能超过9")
     private List<String> images;
 
-    /** 关联商品 id（≤5，服务端去重；可空）。 */
+    /**
+     * 关联商品（SPU 业务键 32-hex，≤5，服务端去重；可空）。
+     *
+     * <p><b>标识口径（ADR-061 §决策 2）</b>：入参是 {@code spu.spu_id} 的 32-hex 形态，
+     * 与 {@code SpuVO.spuId} 同型同义；应用层解析为本域技术键后落 {@code note_spu}（表结构不动）。
+     */
     @Size(max = Note.MAX_SPUS, message = "关联商品数量不能超过5")
-    private List<Long> spuIds;
+    private List<String> spuIds;
 }

@@ -15,6 +15,8 @@ import org.icedamericanomall.item.adapter.assembler.ReviewConverter;
 import org.icedamericanomall.item.adapter.request.ReviewCreateReq;
 import org.icedamericanomall.item.adapter.response.ReviewSummaryVO;
 import org.icedamericanomall.item.adapter.response.ReviewVO;
+import org.icedamericanomall.item.app.dto.SkuSpuDisplay;
+import org.icedamericanomall.item.app.port.SkuSpuDisplayQuery;
 import org.icedamericanomall.item.domain.model.spu.Spu;
 import org.icedamericanomall.item.domain.model.review.Review;
 import org.icedamericanomall.item.domain.repository.SpuRepository;
@@ -27,6 +29,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 评价编排（应用层）—— 评价用例（发布/分页/汇总/回复/追评/点赞）+ 站内信通知触发
@@ -51,23 +54,35 @@ public class ReviewManager {
 
     private final ReviewRepository reviewRepository;
     private final SpuRepository spuRepository;
+    private final SkuSpuDisplayQuery skuSpuDisplayQuery;
     private final ReviewConverter reviewConverter;
     private final NotificationClient notificationClient;
     private final TaskClient taskClient;
 
-    /** 发表评价（同订单同用户去重），累加商品评论数，并在事务提交后触发每日评价任务（F9）。 */
+    /**
+     * 发表评价（同订单同用户去重），累加商品评论数，并在事务提交后触发每日评价任务（F9）。
+     *
+     * <p><b>标识口径（ADR-061 §决策 2）</b>：入参 {@code spuId}/{@code skuId} 均为
+     * <b>SPU/SKU 业务键</b>（32-hex）；本层用同库只读索引（{@code spu.spu_id} /
+     * {@code sku.sku_id}）解析为本域技术键后再落库 —— <b>表结构不动</b>（A 案）。
+     * 解析不到的键属参数缺陷 → {@code PARAM_ERROR} fail-fast（写路径不静默留空）。
+     */
     @Transactional(rollbackFor = Exception.class)
     public ReviewVO createReview(Long userId, ReviewCreateReq req) {
         String orderNo = normalizeOrderNo(req.getOrderNo());
         if (reviewRepository.countByOrderNoAndUserId(orderNo, userId) > 0) {
             throw new BizException(ErrorCode.REVIEW_ALREADY_EXISTS);
         }
-        Review review = Review.post(userId, req.getSpuId(), orderNo, req.getSkuId(),
+        Long spuId = resolveSpuTechnicalId(req.getSpuId());
+        Long skuId = resolveSkuTechnicalId(req.getSkuId());
+        Review review = Review.post(userId, spuId, orderNo, skuId,
                 req.getRating(), req.getContent(), req.getImages());
         reviewRepository.save(review);
-        spuRepository.incrementCommentCount(req.getSpuId());
+        spuRepository.incrementCommentCount(spuId);
         triggerDailyReviewTask(userId);
-        return reviewConverter.toVO(review);
+        ReviewVO vo = reviewConverter.toVO(review);
+        fillBusinessKeys(List.of(vo));
+        return vo;
     }
 
     /**
@@ -84,17 +99,21 @@ public class ReviewManager {
         }
     }
 
-    /** 商品评价分页（创建时间倒序，带 likedByMe 回填）。 */
+    /** 商品评价分页（创建时间倒序，带 likedByMe 回填 + 业务键回填）。 */
     public IPage<ReviewVO> pageBySpu(Long spuId, int page, int size) {
-        return reviewRepository.pageBySpu(spuId, page, size)
+        IPage<ReviewVO> result = reviewRepository.pageBySpu(spuId, page, size)
                 .convert(r -> enrichVO(reviewConverter.toVO(r)));
+        fillBusinessKeys(result.getRecords());
+        return result;
     }
 
     /** 商品评价分页（星级/有图过滤 + 排序归一）。 */
     public IPage<ReviewVO> pageBySpuFiltered(Long spuId, Integer rating, Boolean hasMedia,
                                                  String sort, int page, int size) {
-        return reviewRepository.pageFiltered(spuId, rating, hasMedia, sort, page, size)
+        IPage<ReviewVO> result = reviewRepository.pageFiltered(spuId, rating, hasMedia, sort, page, size)
                 .convert(r -> enrichVO(reviewConverter.toVO(r)));
+        fillBusinessKeys(result.getRecords());
+        return result;
     }
 
     /**
@@ -208,6 +227,132 @@ public class ReviewManager {
             log.warn("填充点赞状态失败: reviewId={}, cause={}", vo.getId(), e.getMessage());
         }
         return vo;
+    }
+
+    // ==================== 标识口径（ADR-058 §3 / ADR-061 §决策 2） ====================
+
+    /**
+     * SPU 业务键（32-hex，线格式入参）→ 本域技术键。
+     *
+     * <p>同库只读解析（{@code spu.spu_id} 唯一索引，A 案：表结构不动）。缺失/非法/不存在
+     * 一律 {@code PARAM_ERROR}——<b>写路径 fail-fast</b>，不静默落一条指向不存在商品的评价。
+     */
+    private Long resolveSpuTechnicalId(String spuBusinessId) {
+        Map<String, Long> resolved = spuRepository.idMapByBusinessIds(
+                spuBusinessId == null ? List.of() : List.of(spuBusinessId));
+        Long spuId = resolved.get(spuBusinessId);
+        if (spuId == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR,
+                    "商品不存在或 spuId 非法（应为 32 位 hex 业务键）: " + spuBusinessId);
+        }
+        return spuId;
+    }
+
+    /** SKU 业务键（32-hex，可空）→ 本域技术键；未提供返回 {@code null}，提供但解析不到 fail-fast。 */
+    private Long resolveSkuTechnicalId(String skuBusinessId) {
+        if (skuBusinessId == null || skuBusinessId.isBlank()) {
+            return null;
+        }
+        Map<String, SkuSpuDisplay> found = skuSpuDisplayQuery.findBySkuBusinessIds(List.of(skuBusinessId));
+        SkuSpuDisplay display = found == null ? null : found.get(skuBusinessId);
+        if (display == null || display.skuId() == null) {
+            throw new BizException(ErrorCode.PARAM_ERROR,
+                    "SKU 不存在或 skuId 非法（应为 32 位 hex 业务键）: " + skuBusinessId);
+        }
+        return display.skuId();
+    }
+
+    /**
+     * 批量回填线格式业务键（{@code ReviewVO.spuId} / {@code skuId}）。
+     *
+     * <p><b>为何必须回填</b>：{@code review} 表只存技术外键（{@code spu.id} / {@code sku.id}，
+     * 与订单/收藏/足迹一致，ADR-061 §决策 4），而线格式标识一律业务键 32-hex（§决策 2）。
+     *
+     * <p><b>批量</b>：整页的 SPU 技术键一次 {@code SpuRepository#businessIdMapByTechnicalIds}
+     * 反向解析（{@code spu} 主键 IN）、整页 SKU 技术键一次 {@code SkuSpuDisplayQuery#findBySkuIds}
+     * 批量取数 —— <b>两条 SQL 服务整页</b>，禁止逐行调用（无 N+1）。
+     *
+     * <p><b>fail-open</b>：解析异常/未命中 → 相应字段留 {@code null} + WARN，评价行照常返回
+     * （与 {@link #enrichVO} 同口径，展示字段失败不得让评价列表少一条或整页失败）。
+     */
+    private void fillBusinessKeys(List<ReviewVO> vos) {
+        if (vos == null || vos.isEmpty()) {
+            return;
+        }
+        List<Long> spuIds = vos.stream().map(ReviewVO::getSpuId)
+                .filter(Objects::nonNull).map(ReviewManager::parseTechnicalId)
+                .filter(Objects::nonNull).distinct().toList();
+        List<Long> skuIds = vos.stream().map(ReviewVO::getSkuId)
+                .filter(Objects::nonNull).map(ReviewManager::parseTechnicalId)
+                .filter(Objects::nonNull).distinct().toList();
+        Map<Long, String> spuBusinessKeys = spuBusinessKeysById(spuIds);
+        Map<Long, String> skuBusinessKeys = skuBusinessKeysById(skuIds);
+        for (ReviewVO vo : vos) {
+            Long spuId = parseTechnicalId(vo.getSpuId());
+            if (spuId != null) {
+                String key = spuBusinessKeys.get(spuId);
+                if (key == null) {
+                    log.warn("评价商品业务键回填未命中（fail-open，字段留空）: spuId={}", spuId);
+                }
+                vo.setSpuId(key);
+            }
+            Long skuId = parseTechnicalId(vo.getSkuId());
+            if (skuId != null) {
+                vo.setSkuId(skuBusinessKeys.get(skuId));
+            }
+        }
+    }
+
+    /** SPU 技术键集合 → 业务键映射（异常 fail-open 返回空 Map）。 */
+    private Map<Long, String> spuBusinessKeysById(List<Long> spuIds) {
+        if (spuIds.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            Map<Long, String> resolved = spuRepository.businessIdMapByTechnicalIds(spuIds);
+            return resolved == null ? Map.of() : resolved;
+        } catch (Exception e) {
+            log.warn("评价商品业务键批量解析失败，字段留空（fail-open）: cause={}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    /** SKU 技术键集合 → 业务键映射（复用 I13 只读联表读模型；异常 fail-open 返回空 Map）。 */
+    private Map<Long, String> skuBusinessKeysById(List<Long> skuIds) {
+        if (skuIds.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            Map<Long, SkuSpuDisplay> displays = skuSpuDisplayQuery.findBySkuIds(skuIds);
+            if (displays == null || displays.isEmpty()) {
+                return Map.of();
+            }
+            Map<Long, String> result = new LinkedHashMap<>(displays.size());
+            displays.forEach((technicalId, display) -> {
+                if (technicalId != null && display != null && display.skuBusinessId() != null) {
+                    result.putIfAbsent(technicalId, display.skuBusinessId());
+                }
+            });
+            return result;
+        } catch (Exception e) {
+            log.warn("评价 SKU 业务键批量解析失败，字段留空（fail-open）: cause={}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    /**
+     * VO 上的技术键数字串 → {@code Long}（转换器把 {@code Review.spuId} 映为数值型字符串）。
+     * 非数值形态返回 {@code null}（fail-open：不在装配阶段抛错，交由上方留空处理）。
+     */
+    private static Long parseTechnicalId(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(raw);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**

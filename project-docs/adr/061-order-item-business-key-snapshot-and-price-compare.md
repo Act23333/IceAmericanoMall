@@ -2,9 +2,11 @@
 
 ## 状态
 
-**已实施（2026-10-17，提交 `2325031d`）** —— 决策日期 2026-10-16（批次 B1.5，契约与决策先行），实施日期 2026-10-17（批次 B2）。
+**已实施（2026-10-17，提交 `2325031d`）** —— 决策日期 2026-10-16（批次 B1.5，契约与决策先行），实施日期 2026-10-17（批次 B2）；**守卫缺陷与残留于同日批次 B2.5 修复/处置**（见 §决策 8 补注、§后果 R7/R8）。
 
 **实施范围与证据**：`order_item` 三处 DB 改动、线格式标识类型收口、比价读模型端口与装配、ES 文档标识口径、券 scope 业务键化**均已落码并通过全量验证**（1913 tests / 0 failures / 0 errors / 1 skipped；端点对账 287/0/43；ID 门禁 `[OK]`）。逐项实施事实见本 ADR §决策 1/2/3/5 与 §后果 R1-R4 的「**实施**」标注，以及交付记录 `Implementation/back-end/docs/b2-delivery-status.md`。
+
+**B2.5 补记（2026-10-17）**：① ID 门禁第 4 项检查的命中面 glob **对 adapter 面零匹配**（假绿，见 R7），已改 `find` 遍历 + 自证；② 该缺陷掩盖的 **9 处** type 违规中 **6 处收口为 `String` 业务键**、**3 处登记白名单保留技术键**（逐项理由见 §决策 8.2）；③ **零 DB 改动**（A 案）；④ 全量 **1918 / 0 / 0 / 1**（+5 用例，无删除），端点对账 **287/0/43 不变**。**据此不得外推为「全平台标识类型已全量收口」** —— 未收口项见 R1/R8。
 
 > ⚠ **两项本文档据此更正的既有表述**：
 > 1. **§决策 2 的「增业务键字段」建议未采纳**：B2 实际选择**直接改型**（`SkuCO.spuId`、`SpuVector*` 全链由 `Long` → `String`），未走 ADR-058 §3 的「先增字段」过渡路径 —— 依据是库无存量数据（ADR-045）且该批已是一次性 BREAKING 批次，双字段会重新引入 ADR-058 记录的「同名异型异义」。
@@ -229,6 +231,41 @@ SPU 实体化后其名字列/线上名统一为 `spu_name`（列名与 JSON 键�
 
 > 核对方式：`wc -l Implementation/back-end/architecture-tests/archunit_store/33c4c196-5fdf-4aab-920e-05e5c6c112b0` → **24**；`git show 2325031d -- Implementation/back-end/architecture-tests/archunit_store/` → **1 file changed, 1 deletion(-)**，diff 中删除的正是 `OrderRepository.pageOrders` 那一条。
 
+### 8. B2.5 补注（2026-10-17）：守卫 glob 修复 + 9 处违规的逐项处置
+
+**背景**：B2.5 实测发现 §守卫 表中「线格式标识类型断言」**对 adapter 面零匹配**（glob 不跨 `/`），
+即 §决策 2 的类型收口在 **adapter 面从未被机械校验**（详见 §后果 R7）。本节登记修复与处置结论。
+
+**8.1 守卫修复**：命中面由 bash glob 改为 **`find` 遍历**（对路径深度不敏感），并加两条自证 ——
+① `SCANNED_DIRS == 0` → 直接 `[FAIL]`（杜绝「零匹配却报 OK」）；② 白名单条目**陈旧即失败**
+（字段改名/收口后仍挂白名单会被点名）。修复后命中 **26 个目录**（13 `adapter/response` +
+12 `adapter/request` + 1 `ia-api/dto`），`[OK]` 行会打印该数字。
+
+**8.2 逐项处置（9 处）**
+
+| # | 字段 | 处置 | 依据 |
+| :- | :-- | :-- | :-- |
+| 1–2 | `ReviewVO.spuId` / `.skuId` | **`Long` → `String`** | §决策 2；聚合仍持技术键，业务键由 `ReviewManager` **整页批量**回填（`spu` 主键 IN + I13 联表读模型各一次；fail-open 不缩行） |
+| 3–4 | `ReviewCreateReq.spuId` / `.skuId` | **`Long` → `String`** | §决策 2；写路径同库只读解析（`spu_id` / `sku_id` 唯一索引），**解析不到 → `PARAM_ERROR` fail-fast**（不静默落指向不存在商品的评价） |
+| 5 | `NoteDetailVO.spus[].spuId` | **`Long` → `String`** | §决策 2；`NoteManager` 同批一次反向解析（新增 `SpuRepository.businessIdMapByTechnicalIds`，`spu` 主键 IN） |
+| 6 | `NotePublishReq.spuIds` | **`List<Long>` → `List<String>`** | §决策 2；整批解析 + **完备性守卫**（解析不到的键 → 400，**不静默丢弃**） |
+| 7 | `RecommendSpuVO.spuId` | **白名单保留 `Long`** | 与商品详情路径变量 `GET /api/item/product/{id}` **同口径**（P27 卡 / P35 搭配卡回链走同一路径）—— §后果 R1 已登记为「有意的口径并存」；收口须与路径变量同批（本批未获授权） |
+| 8–9 | `ShopDecorationVO.hotSpuIds` / `ShopDecorationReq.hotSpuIds` | **白名单保留 `List<Long>`** | 该字段是 **`spu.id` 寻址**且**展示端过滤失效/非在售**；ADR-048 §决策 4 明确登记 `shop_decoration.hot_spu_ids` **内部外键保持 `BIGINT`**；merchant 域**不持有也不解析** SPU 业务键（跨域校验留 Phase 2），收口需**改 DB 列形态 + 新增解析端点**（违反「不新增端点」硬约束）。写侧与读侧**必须同型同义**，故一并保留 |
+
+**8.3 零 DB 改动（A 案）**：本批全部走「**线格式收业务键、库内保持技术键**」——
+`review.spu_id/sku_id`、`note_spu.spu_id`、`shop_decoration.hot_spu_ids` 一律**未动**
+（§决策 4 原文口径）。业务键 ↔ 技术键的解析/回填全在应用层，走既有唯一索引与主键，无 N+1。
+
+**8.4 变异验证（adapter 面）**：把 `user-service` `adapter/response/FavoriteVO.spuId` 临时改回 `Long`
+→ 门禁红并指名该文件该行；恢复 → 绿。**为何必须改在 adapter 面**：B2 的变异落在 `ia-api/dto`
+（当时唯一生效的扫描面），**不能**证明 adapter 面被扫描；本批的变异面正是修前**漏扫**的面。
+
+**8.5 仍未收口（不得据此宣称「全量收口」）**：`RecommendSpuVO.spuId`、
+`ShopDecoration{VO,Req}.hotSpuIds`（白名单，见 R1/R8 与 §8.2 #7–#9）、
+`KgEdgeUpsertCO.srcId`（不在命中面）、**对外路径变量**（R1，含 `ReviewController` 的
+`/api/item/review/product/{spuId}` —— 由此形成「`ReviewVO.spuId` 是业务键、该端点入参仍是技术键」
+的并存口径，属 R1 待裁决）。
+
 ## 备选方案
 
 | 方案 | 优点 | 缺点 |
@@ -269,14 +306,14 @@ SPU 实体化后其名字列/线上名统一为 `spu_name`（列名与 JSON 键�
 | R4 | `merchant_reply_template.content` 的 `{product_name}` 占位符 | ✅ **B2 已顺手改**（该功能端点 CH6-CH8 `/api/seller/templates` **仍未实现**） | 模板变量名残留旧词 | **已落地**：`Initialize.sql` 注释改为 `变量: {buyer_name},{spu_name},{order_no}`（属 SQL 注释，端点未实现故**不构成线上契约变更**） |
 | R5 | 前端消费点尚未同步 | B3 未执行前 | 前端按旧键名/旧类型消费 → 渲染空白或字符串拼接异常 | B3 实施清单已随本批次交付（含空态/降级态要求） |
 | R6 | **SPU 主图线上名出现两种方言** | ✅ **B2 已落定：统一为 `main_image`**（契约与后端主代码零 `spu_image`、零 `product_image` 线上名） | 同一概念两种线上名 —— 与 ADR-058 §2「同型同义」精神不符 | **已消解**，依据见 §决策 5「为何是 `main_image`」表；本批实际改动仅 `FlashSaleVO` 一处（回退），其余 VO 本已一致 |
-| R7 | **ADR-061 类型守卫存在实现缺陷 —— 扫描路径 glob 不匹配，实际未生效**（🆕 2026-10-17 B2.5 实测发现，**非 B2 引入**） | ① `Implementation/back-end/scripts/check-id-invariants.sh` 检查 4 的命中面写为 `*/src/main/java/*/adapter/response` 等 glob，而实际目录深度为 `<service>/src/main/java/org/icedamericanomall/<svc>/adapter/response`（多一层包路径）；bash glob 的 `*` **不跨 `/`** 且脚本未开 `globstar` → 该 glob **零匹配**，检查 4 对 adapter 面**从未真正扫描**。② 理论命中面内确实仍有 **9 处**标识类型违规未被捕获（修正案正则实测，2026-10-17）：`ReviewVO.spuId` / `ReviewVO.skuId`（`Long`）、`ReviewCreateReq.spuId` / `ReviewCreateReq.skuId`（`Long`）、`NoteDetailVO.spus[].spuId`（`Long`）、`RecommendSpuVO.spuId`（`Long`，见 R1）、`NotePublishReq.spuIds`（`List<Long>`）、**`ShopDecorationVO.hotSpuIds` / `ShopDecorationReq.hotSpuIds`（`List<Long>`，`merchant-service`）**。`ia-api/src/main/java/org/icedamericanomall/dto` 这一项 glob **正好命中**，故 B2 的变异验证（`SpuVectorHitCO.spuId` 改回 `Long` → 红）**成立**，但那是**唯一**实际生效的扫描面 | 门禁给**假绿**：`[OK]` 只证明 `ia-api` dto 面合规，**不能**推广为「全量线格式标识类型已收口」；据此宣称「已收口」即为**失实** | 建议由 java-architect 在后续批次修 glob（改 `*/src/main/java/**/adapter/{response,request}` 或显式 `find` 遍历）并决定上表 9 处的收口批次。**本 ADR 不据此宣布类型收口已完成** |
-| R8 | **I13/I14/I15 等内部入参形态与部分 adapter 标识类型仍未收口**（🔄 遗留） | `KgEdgeUpsertCO.srcId`（`Long`，不在本批门禁命中面）；`ReviewVO` / `ReviewCreateReq` / `NoteDetailVO.spus[]` / `NotePublishReq` / `ShopDecorationVO`·`ShopDecorationReq.hotSpuIds` 的标识类型（见 R7）；对外路径变量（见 R1）；**契约-实现漂移**（🆕 2026-10-17 实测）：契约 P35 记「卡内 `spu_id` 为 SPU 业务键 32-hex」且卡类型写作 `SpuCardVO`，而**代码中不存在 `SpuCardVO`** —— `PairingCardVO.items` 的实际类型是 `RecommendSpuVO`，故 P35 卡内 `spu_id` **实测仍为技术键 `Long`**（与 P27 同因，见 R1），**契约该句失实** | 调用方在「业务键已得、仍需技术键入参」处口径不一致；P35 前端若按契约把 `spu_id` 当 32-hex 消费则**回链失败** | 随 R7 的 glob 修复与 R1 的路径变量裁决一并排批；**未收口前不得声称已全量收口**；P35 契约表述须由契约 Owner 订正（本 ADR 只登记，不改契约域正文） |
+| R7 | **ADR-061 类型守卫存在实现缺陷 —— 扫描路径 glob 不匹配，实际未生效**（🆕 2026-10-17 B2.5 实测发现，非 B2 引入；✅ **B2.5 已修复**） | ① `Implementation/back-end/scripts/check-id-invariants.sh` 检查 4 的命中面写为 `*/src/main/java/*/adapter/response` 等 glob，而实际目录深度为 `<service>/src/main/java/org/icedamericanomall/<svc>/adapter/response`（多一层包路径）；bash glob 的 `*` **不跨 `/`** 且脚本未开 `globstar` → 该 glob **零匹配**，检查 4 对 adapter 面**从未真正扫描**。② 理论命中面内确实仍有 **9 处**标识类型违规未被捕获（修正案正则实测，2026-10-17）：`ReviewVO.spuId` / `ReviewVO.skuId`（`Long`）、`ReviewCreateReq.spuId` / `ReviewCreateReq.skuId`（`Long`）、`NoteDetailVO.spus[].spuId`（`Long`）、`RecommendSpuVO.spuId`（`Long`，见 R1）、`NotePublishReq.spuIds`（`List<Long>`）、**`ShopDecorationVO.hotSpuIds` / `ShopDecorationReq.hotSpuIds`（`List<Long>`，`merchant-service`）**。`ia-api/src/main/java/org/icedamericanomall/dto` 这一项 glob **正好命中**，故 B2 的变异验证（`SpuVectorHitCO.spuId` 改回 `Long` → 红）**成立**，但那是**唯一**实际生效的扫描面 | 门禁给**假绿**：`[OK]` 只证明 `ia-api` dto 面合规，**不能**推广为「全量线格式标识类型已收口」；据此宣称「已收口」即为**失实** | **已消解（B2.5，2026-10-17）**。修法 = 命中面改 **`find` 遍历**（对路径深度不敏感）：`find . -type d -path '*/src/main/java/*/adapter/{response,request}'` + `find ia-api/…/dto -type d`；并加两条**自证**防再犯 —— ① `SCANNED_DIRS == 0` 直接 `[FAIL]`（不再「零匹配却报 OK」）；② 白名单条目**陈旧即失败**。修复后实测命中 **26 个目录**（13 response + 12 request + 1 dto；`[OK]` 行会打印该数字）。上表 9 处的处置：**6 处收口为 `String` 业务键**（`ReviewVO.spuId/skuId`、`ReviewCreateReq.spuId/skuId`、`NoteDetailVO.spus[].spuId`、`NotePublishReq.spuIds`），**3 处登记白名单保留技术键**（`RecommendSpuVO.spuId`、`ShopDecorationVO/Req.hotSpuIds`，理由见下）。**零 DB 改动**（A 案：库内仍技术键，业务键由应用层解析/回填）。变异验证**改在 adapter 面**（`user-service` `FavoriteVO.spuId` 改回 `Long` → 红；恢复 → 绿），用以证明修复后的扫描面确有捕获力 —— B2 的 `ia-api/dto` 变异**不能**证明这一点 |
+| R8 | **I13/I14/I15 等内部入参形态与部分 adapter 标识类型仍未收口**（🔄 **B2.5 部分收口，仍遗留**） | `KgEdgeUpsertCO.srcId`（`Long`，不在本批门禁命中面）；**✅ B2.5 已收口**：`ReviewVO` / `ReviewCreateReq` / `NoteDetailVO.spus[]` / `NotePublishReq` 的标识类型（→ `String` 32-hex）；**🔄 仍保留**：`ShopDecorationVO`·`ShopDecorationReq.hotSpuIds`（`List<Long>`，**白名单 + 理由**见 §「B2.5 补注」）、`RecommendSpuVO.spuId`（`Long`，见 R1）；对外路径变量（见 R1）；**契约-实现漂移**（🆕 2026-10-17 实测）：契约 P35 记「卡内 `spu_id` 为 SPU 业务键 32-hex」且卡类型写作 `SpuCardVO`，而**代码中不存在 `SpuCardVO`** —— `PairingCardVO.items` 的实际类型是 `RecommendSpuVO`，故 P35 卡内 `spu_id` **实测仍为技术键 `Long`**（与 P27 同因，见 R1），**契约该句失实** | 调用方在「业务键已得、仍需技术键入参」处口径不一致；P35 前端若按契约把 `spu_id` 当 32-hex 消费则**回链失败** | **已随 R7 的 glob 修复处理 4 项**（收口为 `String`）；**未收口的 3 项已登记白名单**（不得据 `[OK]` 外推）；对外路径变量随 R1 待裁决；P35 契约表述须由契约 Owner 订正（本 ADR 只登记，不改契约域正文） |
 
 ## 守卫（防复发）
 
 | 守卫 | 断言 |
 | --- | --- |
-| **线格式标识类型断言（本 ADR 新增，闭合 ADR-059 漏洞）** ⚠ **实现有缺陷，见 R7** | 扫描 `*/src/main/java/**/adapter/response/**`、`*/adapter/request/**` 与 `ia-api/src/main/java/**/dto/**`：**字段名**对应 `spu_id`/`sku_id`（`spuId`/`skuId`/`spuIds`/`skuIds`…）者，其 Java 类型**必须**是 `String`（`List<String>`）；出现 `Long`/`Integer`/基本类型即失败 —— **命名之外的第二个维度**，正是本条收口的既有违规（`SkuVO.spuId: Long`）的拦截点。已落为 `check-id-invariants.sh` 的「检查 4」（CI 既有调用点 `.github/workflows/ci.yml` → `ID Invariants Gate`）。⚠ **但命中面 glob 不匹配实际目录深度，adapter 面零匹配（见 R7）** —— 修复前本守卫**仅对 `ia-api/src/main/java/org/icedamericanomall/dto` 有效**，`[OK]` 不得外推为全量收口 |
+| **线格式标识类型断言（本 ADR 新增，闭合 ADR-059 漏洞）** ✅ **B2.5 已修复 glob（见 R7）** | 扫描 `*/src/main/java/**/adapter/response/**`、`*/adapter/request/**` 与 `ia-api/src/main/java/**/dto/**`：**字段名**对应 `spu_id`/`sku_id`（`spuId`/`skuId`/`spuIds`/`skuIds`，含 `hotSpuIds` 等前缀形态）者，其 Java 类型**必须**是 `String`（`List<String>`）；出现 `Long`/`Integer`/基本类型即失败 —— **命名之外的第二个维度**，正是本条收口的既有违规（`SkuVO.spuId: Long`）的拦截点。已落为 `check-id-invariants.sh` 的「检查 4」（CI 既有调用点 `.github/workflows/ci.yml` → `ID Invariants Gate`）。**B2.5 修正**：命中面由 bash glob（零匹配，见 R7）改为 **`find` 遍历**，并加 ① 命中目录数为 0 即失败（自证，防假绿）② 白名单条目陈旧即失败（防静默豁免）；修复后实测命中 **26 个目录**（13 + 12 + 1），`[OK]` 行打印该数字。**白名单**（有意保留技术键，共 3 条，逐条附理由）= `RecommendSpuVO.spuId`、`ShopDecorationVO.hotSpuIds`、`ShopDecorationReq.hotSpuIds`（依据见 §决策 8.2 #7–#9 与 §后果 R1） |
 | 业务键编解码唯一出口 | 业务标识编解码不得绕开 `ia-common` `IdGenerator`（`check-id-invariants.sh` 检查 1/2/3 已覆盖：禁散落 UUID、禁对 BINARY(16) 列传字符串字面量） |
 | **订单项快照不回查实时表** | 订单读取路径（`OrderManager` 详情/列表装配）**不得**调用任何实时商品查询来「补齐/刷新」快照列；比价读模型只允许**额外**产出比对态，禁止改写快照字段 |
 | 比价 fail-open | 端口实现异常 → 空 `Map`（不得抛）；装配后明细条数**必须**与无读模型时逐条相等（「不缩行」断言）。建议以 H2 语义测试 + 端口异常注入各一条用例锁定 |

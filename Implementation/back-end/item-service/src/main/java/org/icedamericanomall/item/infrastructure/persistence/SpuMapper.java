@@ -115,6 +115,21 @@ public interface SpuMapper extends BaseMapper<SpuPO> {
             """)
     List<SpuBusinessKeyRow> selectIdByBusinessIds(@Param("spuIds") List<byte[]> spuIds);
 
+    /**
+     * 技术键批量解析（{@link #selectIdByBusinessIds} 的<b>反向</b>）：{@code spu.id} → {@code spu.spu_id}。
+     *
+     * <p>供线格式出口把技术外键还原为业务键（评价列表 / 笔记关联商品卡）。
+     * 单条 SQL 走主键 {@code IN}，无 N+1；只映射两列，不取整行。
+     */
+    @Select("""
+            <script>
+            SELECT p.id AS id, p.spu_id AS spu_id FROM spu p
+            WHERE p.id IN
+            <foreach collection="ids" item="pid" open="(" separator="," close=")">#{pid}</foreach>
+            </script>
+            """)
+    List<SpuBusinessKeyRow> selectBusinessIdsByIds(@Param("ids") List<Long> ids);
+
     /** 商品名前缀联想（在售，销量降序；去重由应用层完成，与原 search 直读口径一致）。 */
     @Select("SELECT name FROM spu WHERE status = 1 AND name LIKE CONCAT(#{prefix}, '%') "
             + "ORDER BY sold_count DESC LIMIT #{limit}")

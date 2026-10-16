@@ -2,10 +2,14 @@ package org.icedamericanomall.item.app;
 
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.icedamericanomall.item.adapter.assembler.ReviewConverter;
 import org.icedamericanomall.item.adapter.request.ReviewCreateReq;
 import org.icedamericanomall.item.adapter.response.ReviewSummaryVO;
 import org.icedamericanomall.item.adapter.response.ReviewVO;
+import org.icedamericanomall.item.app.dto.SkuSpuDisplay;
+import org.icedamericanomall.item.app.port.SkuSpuDisplayQuery;
 import org.icedamericanomall.item.domain.model.spu.Spu;
 import org.icedamericanomall.item.domain.model.review.Review;
 import org.icedamericanomall.item.domain.repository.SpuRepository;
@@ -24,6 +28,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.*;
@@ -33,6 +38,9 @@ import static org.mockito.Mockito.*;
 /**
  * ReviewManager 单元测试 —— 评价发布去重、回复归属校验、追评守卫、汇总与通知触发。
  * （原 ReviewServiceImplTest 语义迁移：查询沉仓储、编排归本类。）
+ *
+ * <p>V5.19（B3.5）增量：标识口径收口（ADR-061 §决策 2）—— 入参/出参的 {@code spuId}/{@code skuId}
+ * 均为 32-hex <b>业务键</b>，本层用同库只读索引解析/回填技术键（表结构不动）。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ReviewManager 编排单元测试")
@@ -41,11 +49,21 @@ class ReviewManagerTest {
     /** 测试用订单号（32 位 hex 契约，ADR-050 三批）。 */
     private static final String ORDER_NO = "aaaaaaaa000070008000000000000077";
 
+    /** SPU 业务键（32-hex）；技术键 = 10L。 */
+    private static final String SPU_BIZ = "11111111111111111111111111111111";
+    /** SKU 业务键（32-hex）；技术键 = 2L。 */
+    private static final String SKU_BIZ = "22222222222222222222222222222222";
+    /** 未登记的非法业务键。 */
+    private static final String UNKNOWN_BIZ = "99999999999999999999999999999999";
+
     @Mock
     private ReviewRepository reviewRepository;
 
     @Mock
     private SpuRepository spuRepository;
+
+    @Mock
+    private SkuSpuDisplayQuery skuSpuDisplayQuery;
 
     @Mock
     private ReviewConverter reviewConverter;
@@ -60,8 +78,19 @@ class ReviewManagerTest {
 
     @BeforeEach
     void setUp() {
-        reviewManager = new ReviewManager(reviewRepository, spuRepository,
+        reviewManager = new ReviewManager(reviewRepository, spuRepository, skuSpuDisplayQuery,
                 reviewConverter, notificationClient, taskClient);
+        // 写入路径的业务键解析：业务键 → 技术键
+        lenient().when(spuRepository.idMapByBusinessIds(List.of(SPU_BIZ))).thenReturn(Map.of(SPU_BIZ, 10L));
+        lenient().when(skuSpuDisplayQuery.findBySkuBusinessIds(List.of(SKU_BIZ)))
+                .thenReturn(Map.of(SKU_BIZ, skuDisplay()));
+        // 读取路径的业务键回填：技术键 → 业务键
+        lenient().when(spuRepository.businessIdMapByTechnicalIds(anyList())).thenReturn(Map.of(10L, SPU_BIZ));
+        lenient().when(skuSpuDisplayQuery.findBySkuIds(anyList())).thenReturn(Map.of(2L, skuDisplay()));
+    }
+
+    private static SkuSpuDisplay skuDisplay() {
+        return new SkuSpuDisplay(2L, SKU_BIZ, 10L, SPU_BIZ, "商品", 100L, 1L, null);
     }
 
     private Review review(Long userId, Long spuId) {
@@ -71,14 +100,16 @@ class ReviewManagerTest {
     private ReviewVO vo(Long id) {
         ReviewVO vo = new ReviewVO();
         vo.setId(id);
+        vo.setSpuId("10");
+        vo.setSkuId("2");
         return vo;
     }
 
     private ReviewCreateReq reviewReq() {
         ReviewCreateReq req = new ReviewCreateReq();
         req.setOrderNo(ORDER_NO);
-        req.setSpuId(10L);
-        req.setSkuId(2L);
+        req.setSpuId(SPU_BIZ);
+        req.setSkuId(SKU_BIZ);
         req.setRating(5);
         req.setContent("很好");
         req.setImages("img.jpg");
@@ -92,7 +123,7 @@ class ReviewManagerTest {
     void shouldReject_whenAlreadyReviewed() {
         ReviewCreateReq req = new ReviewCreateReq();
         req.setOrderNo(ORDER_NO);
-        req.setSpuId(10L);
+        req.setSpuId(SPU_BIZ);
         when(reviewRepository.countByOrderNoAndUserId(ORDER_NO, 1L)).thenReturn(1L);
 
         BizException ex = assertThrows(BizException.class,
@@ -105,8 +136,8 @@ class ReviewManagerTest {
     void shouldSaveAndIncrementCommentCount() {
         ReviewCreateReq req = new ReviewCreateReq();
         req.setOrderNo(ORDER_NO);
-        req.setSpuId(10L);
-        req.setSkuId(2L);
+        req.setSpuId(SPU_BIZ);
+        req.setSkuId(SKU_BIZ);
         req.setRating(5);
         req.setContent("很好");
         req.setImages("img.jpg");
@@ -117,6 +148,38 @@ class ReviewManagerTest {
 
         verify(reviewRepository).save(any(Review.class));
         verify(spuRepository).incrementCommentCount(10L);
+    }
+
+    @Test
+    @DisplayName("createReview — 业务键入参解析为技术键落库，VO 回填 32-hex 业务键（ADR-061）")
+    void shouldResolveBusinessKeys_whenCreatingReview() {
+        when(reviewRepository.countByOrderNoAndUserId(ORDER_NO, 1L)).thenReturn(0L);
+        when(reviewConverter.toVO(any())).thenReturn(vo(1L));
+        ArgumentCaptor<Review> captor = ArgumentCaptor.forClass(Review.class);
+
+        ReviewVO vo = reviewManager.createReview(1L, reviewReq());
+
+        verify(reviewRepository).save(captor.capture());
+        assertEquals(10L, captor.getValue().getSpuId(), "聚合持技术键（表结构不动）");
+        assertEquals(2L, captor.getValue().getSkuId());
+        assertEquals(SPU_BIZ, vo.getSpuId(), "线格式出参必须是 32-hex 业务键");
+        assertEquals(SKU_BIZ, vo.getSkuId());
+    }
+
+    @Test
+    @DisplayName("createReview — spuId 非法/不存在（非 32-hex 或未登记）→ PARAM_ERROR fail-fast，不落库")
+    void shouldReject_whenSpuBusinessKeyUnresolvable() {
+        when(reviewRepository.countByOrderNoAndUserId(ORDER_NO, 1L)).thenReturn(0L);
+        ReviewCreateReq unknown = new ReviewCreateReq();
+        unknown.setOrderNo(ORDER_NO);
+        unknown.setSpuId(UNKNOWN_BIZ);
+        unknown.setRating(5);
+        unknown.setContent("很好");
+
+        BizException ex = assertThrows(BizException.class,
+                () -> reviewManager.createReview(1L, unknown));
+        assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
+        verify(reviewRepository, never()).save(any(Review.class));
     }
 
     @Test
@@ -280,11 +343,48 @@ class ReviewManagerTest {
         verify(notificationClient, never()).sendInAppMessage(any());
     }
 
+    // ==================== 分页（业务键回填） ====================
+
+    @Test
+    @DisplayName("pageBySpu — 整页评价的 spuId/skuId 批量回填为 32-hex 业务键（两条 SQL 服务整页）")
+    void shouldFillBusinessKeys_whenPagingReviews() {
+        Page<Review> page = new Page<>(1, 10);
+        page.setRecords(List.of(review(1L, 10L)));
+        page.setTotal(1);
+        when(reviewRepository.pageBySpu(10L, 1, 10)).thenReturn(page);
+        when(reviewConverter.toVO(any())).thenAnswer(inv -> vo(1L));
+
+        ReviewVO vo = reviewManager.pageBySpu(10L, 1, 10).getRecords().get(0);
+
+        assertEquals(SPU_BIZ, vo.getSpuId());
+        assertEquals(SKU_BIZ, vo.getSkuId());
+        verify(spuRepository).businessIdMapByTechnicalIds(List.of(10L));
+        verify(skuSpuDisplayQuery).findBySkuIds(List.of(2L));
+    }
+
+    @Test
+    @DisplayName("pageBySpu — 业务键回填异常 fail-open：整页照常返回、不缩行（ADR-057）")
+    void shouldNotShrinkPage_whenBusinessKeyLookupFails() {
+        Page<Review> page = new Page<>(1, 10);
+        page.setRecords(List.of(review(1L, 10L), review(2L, 10L)));
+        page.setTotal(2);
+        when(reviewRepository.pageBySpu(10L, 1, 10)).thenReturn(page);
+        when(reviewConverter.toVO(any())).thenAnswer(inv -> vo(1L));
+        when(spuRepository.businessIdMapByTechnicalIds(anyList()))
+                .thenThrow(new RuntimeException("db down"));
+
+        IPage<ReviewVO> result = reviewManager.pageBySpu(10L, 1, 10);
+
+        assertEquals(2, result.getRecords().size(), "读模型失败不得让评价少一条");
+        assertNull(result.getRecords().get(0).getSpuId());
+    }
+
     @Test
     @DisplayName("createReview — orderNo 非 hex（如旧 orderId 形态）→ PARAM_ERROR fail-fast")
     void shouldRejectInvalidOrderNo_whenNotHex() {
         ReviewCreateReq req = new ReviewCreateReq();
         req.setOrderNo("77");
+        req.setSpuId(SPU_BIZ);
         assertThrows(BizException.class, () -> reviewManager.createReview(1L, req));
     }
 

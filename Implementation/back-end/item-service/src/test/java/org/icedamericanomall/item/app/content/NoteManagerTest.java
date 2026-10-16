@@ -49,6 +49,11 @@ class NoteManagerTest {
     private static final Long VIEWER_ID = 2L;
     private static final Long NOTE_ID = 5L;
 
+    /** 线格式 SPU 业务键夹具（32-hex）—— 技术键 10/20/30 与之互映（ADR-061 §决策 2）。 */
+    private static String bizOf(long technicalId) {
+        return String.format("%032x", technicalId);
+    }
+
     @Mock
     private NoteRepository noteRepository;
 
@@ -84,7 +89,7 @@ class NoteManagerTest {
 
     // ==================== 测试夹具 ====================
 
-    private NotePublishReq req(List<String> images, List<Long> spuIds) {
+    private NotePublishReq req(List<String> images, List<String> spuIds) {
         NotePublishReq req = new NotePublishReq();
         req.setTitle("秋冬通勤穿搭分享");
         req.setContent("这件大衣真的绝了，链接放下面。");
@@ -92,6 +97,20 @@ class NoteManagerTest {
         req.setImages(images);
         req.setSpuIds(spuIds);
         return req;
+    }
+
+    /** 线格式业务键入参（技术键 10L/20L/30L 的 32-hex 形态）。 */
+    private List<String> bizIds(long... technicalIds) {
+        return java.util.Arrays.stream(technicalIds).mapToObj(NoteManagerTest::bizOf).toList();
+    }
+
+    /** 写入路径桩：业务键 → 技术键（整批一次）。 */
+    private void stubResolveSpu(List<Long> technicalIds) {
+        Map<String, Long> map = new java.util.LinkedHashMap<>();
+        for (Long id : technicalIds) {
+            map.put(bizOf(id), id);
+        }
+        when(spuRepository.idMapByBusinessIds(anyList())).thenReturn(map);
     }
 
     private Note publishedNote() {
@@ -153,11 +172,12 @@ class NoteManagerTest {
     @DisplayName("publish — 关联商品校验通过：status=1、spuIds 去重保序落 note_spu、返回回填 id")
     void shouldSaveAndLinkSpus_whenPublishValid() {
         stubSaveBackfillsId();
+        stubResolveSpu(List.of(10L, 20L));
         when(spuRepository.findAllByIds(List.of(10L, 20L)))
                 .thenReturn(List.of(spu(10L, SpuStatusEnum.ON_SHELF),
                         spu(20L, SpuStatusEnum.ON_SHELF)));
         when(noteConverter.toVO(any())).thenAnswer(inv -> voOf(inv.getArgument(0)));
-        NotePublishReq req = req(null, List.of(10L, 20L, 10L));
+        NotePublishReq req = req(null, bizIds(10L, 20L, 10L));
 
         NoteVO vo = noteManager.publish(AUTHOR_ID, req);
 
@@ -177,20 +197,34 @@ class NoteManagerTest {
     @Test
     @DisplayName("publish — 关联商品含非在售/不存在 → PARAM_ERROR 且消息指明 spuId，不落库")
     void shouldReject_whenSpuOffShelfOrMissing() {
+        stubResolveSpu(List.of(10L, 20L, 30L));
         when(spuRepository.findAllByIds(List.of(10L, 20L)))
                 .thenReturn(List.of(spu(10L, SpuStatusEnum.ON_SHELF)));
 
         BizException ex = assertThrows(BizException.class,
-                () -> noteManager.publish(AUTHOR_ID, req(null, List.of(10L, 20L))));
+                () -> noteManager.publish(AUTHOR_ID, req(null, bizIds(10L, 20L))));
         assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
         assertTrue(ex.getMessage().contains("spuId=20"));
         verify(noteRepository, never()).save(any());
 
         when(spuRepository.findAllByIds(List.of(30L))).thenReturn(List.of());
         BizException missing = assertThrows(BizException.class,
-                () -> noteManager.publish(AUTHOR_ID, req(null, List.of(30L))));
+                () -> noteManager.publish(AUTHOR_ID, req(null, bizIds(30L))));
         assertEquals(ErrorCode.PARAM_ERROR, missing.getErrorCode());
         assertTrue(missing.getMessage().contains("spuId=30"));
+        verify(noteRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("publish — spuIds 为未登记业务键（解析不到技术键）→ PARAM_ERROR，不落库")
+    void shouldReject_whenSpuBusinessKeyUnresolvable() {
+        when(spuRepository.idMapByBusinessIds(anyList())).thenReturn(Map.of());
+
+        BizException ex = assertThrows(BizException.class,
+                () -> noteManager.publish(AUTHOR_ID, req(null, List.of(bizOf(404L)))));
+
+        assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("spuId=" + bizOf(404L)));
         verify(noteRepository, never()).save(any());
     }
 
@@ -273,7 +307,7 @@ class NoteManagerTest {
     }
 
     @Test
-    @DisplayName("noteDetail — 非在售/缺失商品被过滤，保 sort 序并批量回填最低价")
+    @DisplayName("noteDetail — 非在售/缺失商品被过滤，保 sort 序并批量回填最低价 + SPU 业务键")
     void shouldFilterOffShelfSpus_whenDetailAssembled() {
         when(noteRepository.findById(NOTE_ID)).thenReturn(publishedNote());
         when(noteLikeRepository.existsByNoteAndUser(NOTE_ID, VIEWER_ID)).thenReturn(false);
@@ -281,6 +315,8 @@ class NoteManagerTest {
         when(spuRepository.findAllByIds(List.of(10L, 20L, 30L)))
                 .thenReturn(List.of(spu(10L, SpuStatusEnum.ON_SHELF),
                         spu(20L, SpuStatusEnum.OFF_SHELF)));
+        when(spuRepository.businessIdMapByTechnicalIds(List.of(10L)))
+                .thenReturn(Map.of(10L, bizOf(10L)));
         when(skuManager.getMinPriceMapBySpuIds(List.of(10L))).thenReturn(Map.of(10L, 1250));
         when(noteConverter.toDetailVO(any())).thenAnswer(inv -> detailOf(inv.getArgument(0)));
 
@@ -288,7 +324,7 @@ class NoteManagerTest {
 
         assertEquals(1, vo.getSpus().size());
         NoteDetailVO.SpuSummaryVO summary = vo.getSpus().get(0);
-        assertEquals(10L, summary.getSpuId());
+        assertEquals(bizOf(10L), summary.getSpuId(), "线格式必须是 32-hex 业务键，不得出技术键");
         assertEquals("商品10", summary.getName());
         assertEquals(1250, summary.getMinPrice());
         verify(skuManager).getMinPriceMapBySpuIds(List.of(10L));
