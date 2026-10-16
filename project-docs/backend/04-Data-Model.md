@@ -3,10 +3,11 @@
 > 来源：`doc/项目的分析流程/04.数据建模.md`、`doc/项目代码/数据库/Initialize.sql.md`、`doc/项目的分析流程/03.领域建模.md`、`drawio/IA_E-R.drawio`
 > **2026-10-14（引用收敛批次）**：`review` 订单引用由技术 id（`order_id BIGINT`）收敛为业务键 `order_no BINARY(16)`（含 ReviewAPI 契约缺口修复：`ReviewCreateReq.orderNo` 替代前端无从获得的 `orderId`）；主键决策矩阵补「引用分层规则」脚注；分片影响面清单增补「跨服务技术键收敛项（order_logistics）」「跨服务物理 FK 清单」「user_id 口径前提（永久身份红线）」三行；现状核对快照口径统一为**全库表数 62 张**（分诊明细见 §一「现状核对快照」：真双 ID 23 + 特殊保留 1 + 仅技术主键 38 = 62）。
 >
-> **2026-10-15（fix-doc 表数与迁移残留批次）**：①全库表数口径统一为 **62 张**（实测 `grep -ciE '^\s*CREATE TABLE' Implementation/back-end/database/Initialize.sql` = 62），清除文中「45 张表 / 30 个迁移（V1.1.0→V5.6）」等过期表述（原 :7、:28）；②清除**全部** `database/migrations/V*.sql` 死链引用（该目录**已不存在**，ADR-045）；③补录 5 张此前缺条目的表（`shop_decoration`、`note_like`、`note_product`、`task_def`、`task_record`）。
+> **2026-10-15（fix-doc 表数与迁移残留批次）**：①全库表数口径统一为 **62 张**（实测 `grep -ciE '^\s*CREATE TABLE' Implementation/back-end/database/Initialize.sql` = 62），清除文中「45 张表 / 30 个迁移（V1.1.0→V5.6）」等过期表述（原 :7、:28）；②清除**全部** `database/migrations/V*.sql` 死链引用（该目录**已不存在**，ADR-045）；③补录 5 张此前缺条目的表（`shop_decoration`、`note_like`、`note_spu`、`task_def`、`task_record`）。
 >
 > **最后更新: 2026-10-08（ADR-050 B+ 业务标识存储升级）**：业务标识列 `VARCHAR(32)/CHAR(36)` → **`BINARY(16)`**（22 列转换 / 10 列保留，含 `refund_order`/`reconciliation_detail` 的 VARCHAR(64) 复制列闭包），生成算法 v4 随机 → **UUIDv7**（`IdGenerator` 全项目唯一出口），PO 层 `byte[]` 边界、domain/对外全链路 String 零契约改动；`admin` 种子业务 ID 改 `UNHEX` 定值；包装器/显式 SQL 参数强制 `toBytes`（外部输入 `toBytesOrNull`）。此前——2026-10-03
-> 最后更新: 2026-10-03（**P0 四项落地同步（V5.5/V5.6 已建，ADR-035/036/037）**：§十二 12.1–12.4 状态由"规划"收敛为"已建"——退款资金流（refund_order/wallet_transaction，F1）、渠道对账（reconciliation_batch/detail，F4）、运费模型（freight_template + product/orders 增量，F2）、拆单发货（order_logistics 主键与包裹改造 + order_item.package_no，F3）均已落库【**历史注记**：原文此处记为"随 `V5.5__…` / `V5.6__…` 迁移落库"——迁移机制已于 2026-10-05 废除（ADR-045），这些结构现全部直接位于 `Initialize.sql`，不存迁移文件】；金额不变式定稿 **V2：`payAmount = totalAmount − discountAmount + postFee`**；§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 规划标注同步收敛；§3.11「主键约定偏差」注记**清除**（代理主键 id 已补，ADR-037）；§12.3 纠错删除「order_id 转 UNIQUE uk_order_id」自相矛盾表述（实现为**普通外键 + uk_order_package**，未建单列唯一键）。此前——V5.6 规格先行：新增 §十二 四组 P0 规划表——refund_order/wallet_transaction/reconciliation_batch/reconciliation_detail（**V5.5 资金线**）、freight_template 及 product/orders/order_logistics/order_item 变更（**V5.6 履约线**），§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 补规划增量标注，金额不变式变更为 `payAmount = totalAmount − discountAmount + postFee`；规划表均未建库，以"🆕 V5.6 规划"标注，实现落库后本注记同步收敛。此前：数据库整治 + 1:N 拆分同步：seller 瘦身/shop 表（V5.4，ADR-019）、product/review 实际列修正、after_sale/order_logistics 补注、Initialize.sql 全量快照语义；遗留风险清零批次：`auth:blacklist:{jti}` 契约键注记（ADR-027）、`operation_log` 写入方恢复（ADR-032 管道二）、`merchant_knowledge_base.embedding_id` 口径 `es:{knowledgeId}`）
+> 最后更新: 2026-10-03（**P0 四项落地同步（V5.5/V5.6 已建，ADR-035/036/037）**：§十二 12.1–12.4 状态由"规划"收敛为"已建"——退款资金流（refund_order/wallet_transaction，F1）、渠道对账（reconciliation_batch/detail，F4）、运费模型（freight_template + spu/orders 增量，F2）、拆单发货（order_logistics 主键与包裹改造 + order_item.package_no，F3）均已落库【**历史注记**：原文此处记为"随 `V5.5__…` / `V5.6__…` 迁移落库"——迁移机制已于 2026-10-05 废除（ADR-045），这些结构现全部直接位于 `Initialize.sql`，不存迁移文件】；金额不变式定稿 **V2：`payAmount = totalAmount − discountAmount + postFee`**；§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 规划标注同步收敛；§3.11「主键约定偏差」注记**清除**（代理主键 id 已补，ADR-037）；§12.3 纠错删除「order_id 转 UNIQUE uk_order_id」自相矛盾表述（实现为**普通外键 + uk_order_package**，未建单列唯一键）。此前——V5.6 规格先行：新增 §十二 四组 P0 规划表——refund_order/wallet_transaction/reconciliation_batch/reconciliation_detail（**V5.5 资金线**）、freight_template 及 product/orders/order_logistics/order_item 变更（**V5.6 履约线**），§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 补规划增量标注，金额不变式变更为 `payAmount = totalAmount − discountAmount + postFee`；规划表均未建库，以"🆕 V5.6 规划"标注，实现落库后本注记同步收敛。此前：数据库整治 + 1:N 拆分同步：seller 瘦身/shop 表（V5.4，ADR-019）、product/review 实际列修正、after_sale/order_logistics 补注、Initialize.sql 全量快照语义；遗留风险清零批次：`auth:blacklist:{jti}` 契约键注记（ADR-027）、`operation_log` 写入方恢复（ADR-032 管道二）、`merchant_knowledge_base.embedding_id` 口径 `es:{knowledgeId}`）
+> **2026-10-16（SPU 词汇统一，ADR-059 落地批次，后端 `578fac27`）**：库表重命名同步 —— 表 `product`→`spu`、`product_view_log`→`spu_view_log`、`note_product`→`note_spu`；列 `product_id`→`spu_id`（`spu.spu_id` 业务键 `BINARY(16)`；`sku.spu_id` / `review.spu_id` / `favorite.spu_id` / `spu_view_log.spu_id` / `flash_sale.spu_id` / `note_spu.spu_id` / `group_buy_activity.spu_id` 为技术外键）、`product_ids`→`spu_ids`（`home_config`）、`hot_product_ids`→`hot_spu_ids`（`shop_decoration`）；索引/外键/唯一键 `uk_product_id`→`uk_spu_id`、`idx_product_id`→`idx_spu_id`、`idx_product`→`idx_spu`、`uk_user_product`→`uk_user_spu`、`uk_note_product`→`uk_note_spu`、`fk_sku_product`→`fk_sku_spu`、`fk_view_log_product`→`fk_view_log_spu`、`fk_product_seller`→`fk_spu_seller`、`fk_product_category`→`fk_spu_category`、`fk_product_freight_template`→`fk_spu_freight_template`（§3.5/§3.6、§七 7.1/7.2/7.7/7.8、§五、§十一、§十二同步；表数 62 不变）。**§11.2 原记 `idx_product_time` 有误**，实测 `spu_view_log` 为 `uk_user_spu(user_id, spu_id)` + `idx_user_time(user_id, view_time)`，本批次一并更正。**刻意保留**：展示名 `product_name`/`product_image`、ES 索引名 `products`、`conversation_id` 的 `product_{productId}` 格式（客户端自造，ADR-050）。线格式契约同步见 [05 §4](../contract/05-API-Specification.md)。
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/变更表结构时必须同步
 
 ---
@@ -46,7 +47,7 @@
 | 场景 | 主键方案 | 冰美商城示例 |
 |------|---------|-------------|
 | **业务需要看到 + 可读可排序** | `id` (技术PK) + `xxx_no` (独立流水号) | `orders.order_no`、`pay_order.pay_order_no` |
-| **业务需要看到 + 仅需唯一引用** | `id` (技术PK) + `xxx_id` (雪花/短UUID) | `user.user_id`、`product.product_id`、`sku.sku_id` |
+| **业务需要看到 + 仅需唯一引用** | `id` (技术PK) + `xxx_id` (雪花/短UUID) | `user.user_id`、`spu.spu_id`、`sku.sku_id` |
 | **业务不需要看到**（子实体/关联表/内部表） | 仅 `id` (技术PK) | `order_item`、`cart`、`category`、`address`、`seller`、`order_logistics` |
 | **现代轻量项目，无客服/对账场景** | 雪花ID直出，不额外维护业务编号 | （本项目不适用，保留 `order_no`） |
 
@@ -71,7 +72,7 @@
 | 技术主键 | `AUTO_INCREMENT` | 跨片自增冲突 | `IdType.AUTO → ASSIGN_ID`，列/字段零改动 |
 | 业务标识 | `BINARY(16)` + UUIDv7，全局 UNIQUE | UNIQUE 退化为**分片内唯一** | 生成端不碰撞（v7 74 位随机）+ 单号路由（基因位/映射表，见主键决策矩阵） |
 | 跨库 JOIN | 库内 JOIN 可用 | **全灭** | 组装上移应用层；逐条排查存量 JOIN |
-| 跨服务读库 | search-service 直读 `product`/`sku`（LIKE 降级） | 直读失效 | **硬红线**：分片启动前必须退出，路线见 [ADR-052](../adr/052-search-db-fallback-exemption.md) |
+| 跨服务读库 | search-service 直读 `spu`/`sku`（LIKE 降级） | 直读失效 | **硬红线**：分片启动前必须退出，路线见 [ADR-052](../adr/052-search-db-fallback-exemption.md) |
 | 跨表唯一约束 | `uk_order_active(order_no, active_flag)`、`uk_order_package` 等 | 仅分片内生效 | 校验/幂等上移应用层或收敛到分片键内 |
 | 对账/报表 | 多表 JOIN 查询 | 失效 | 收敛到报表库/ES（pay 对账链路已单表化） |
 | ES/MQ 同步 | 全量重建 + 事件驱动 | 同步载荷需携带分片键 | 现有 Feign/MQ 载荷均为 String ID，天然可扩展 |
@@ -119,9 +120,9 @@
 
 | 类别 | 数量 | 说明与典型表 |
 |---|---|---|
-| **真双 ID**（技术键 + `BINARY(16)` 业务键） | 23 张 | 资金/凭证/订单链/身份/资源类：user、product、sku、freight_template、orders、pay_order、user_coupon、flash_order_log、after_sale、settlement、withdrawal、chat_message（message_id）、refund_order、wallet_transaction、reconciliation_detail、member_growth_log、group_team、group_team_member、invoice、coupon、ai_conversation（预留）、ai_message（预留）、review（订单引用业务键，2026-10-14 收敛） |
+| **真双 ID**（技术键 + `BINARY(16)` 业务键） | 23 张 | 资金/凭证/订单链/身份/资源类：user、spu、sku、freight_template、orders、pay_order、user_coupon、flash_order_log、after_sale、settlement、withdrawal、chat_message（message_id）、refund_order、wallet_transaction、reconciliation_detail、member_growth_log、group_team、group_team_member、invoice、coupon、ai_conversation（预留）、ai_message（预留）、review（订单引用业务键，2026-10-14 收敛） |
 | **特殊保留** | 1 张 | chat_message.conversation_id（复合格式，内嵌技术 id，不可二进制化） |
-| **仅技术主键**（零业务标识，刻意为之） | 38 张 | 子实体/关联/内部/台账：order_item、cart、address、category、**note**、**note_like**、**note_product**、**shop_decoration**、**task_def**、**task_record**、sys_*、operation_log、points_log、promotion、flash_sale、shop、home_config、currency、exchange_rate、reconciliation_batch 等（表级条目见 §3/§七） |
+| **仅技术主键**（零业务标识，刻意为之） | 38 张 | 子实体/关联/内部/台账：order_item、cart、address、category、**note**、**note_like**、**note_spu**、**shop_decoration**、**task_def**、**task_record**、sys_*、operation_log、points_log、promotion、flash_sale、shop、home_config、currency、exchange_rate、reconciliation_batch 等（表级条目见 §3/§七） |
 
 > **灰区口径**：shop / flash_sale / promotion / note / group_buy_activity 等对 C 端可见但**技术 ID 直出**属有意识的务实豁免（大厂同类：类目/活动 ID 数字直出）；分库分表切换 `ASSIGN_ID` 时自动升级为雪花直出（稀疏空间，防密集枚举）；若单表先出现爬取/规模泄露顾虑，**补业务键为纯加法演进**（不破坏既有结构，不单独上雪花工程）。
 
@@ -136,9 +137,9 @@ user ───1:N─── address
               │
               ├──1:N─── shop（店铺档案，V5.4 拆分，ADR-019）
               │
-              └──1:N─── product ───1:N─── sku
+              └──1:N─── spu ───1:N─── sku
                            │                  │
-                           ├──0:N─── freight_template（运费模板，V5.6 已建，product.freight_template_id 可空回落商家默认）
+                           ├──0:N─── freight_template（运费模板，V5.6 已建，spu.freight_template_id 可空回落商家默认）
                            │                  │
        ┌───────────────────┘                  │
        │                                      │
@@ -260,7 +261,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 
 索引：`uk_merchant_shop_name(merchant_id, shop_name)`（业务唯一键）、`idx_merchant_status(merchant_id, status)`
 
-> **默认店铺口径**：遗留 `sellerId`（= 商家 `user_id`）经「该商家 `shop.id` 最小者」解析为默认店铺（应用层 `ShopManager` 唯一解析点，Phase A 兼容期）；存量迁移时每个商家生成一个店铺。下游表（product/orders/coupon/settlement/merchant_knowledge_base）的 `seller_id` 在 Phase B 前维持 `user_id` 口径不变（`fk_product_seller` 等外键不受影响）。
+> **默认店铺口径**：遗留 `sellerId`（= 商家 `user_id`）经「该商家 `shop.id` 最小者」解析为默认店铺（应用层 `ShopManager` 唯一解析点，Phase A 兼容期）；存量迁移时每个商家生成一个店铺。下游表（spu/orders/coupon/settlement/merchant_knowledge_base）的 `seller_id` 在 Phase B 前维持 `user_id` 口径不变（`fk_spu_seller` 等外键不受影响）。
 
 ### 3.4 category（类目表）
 
@@ -276,12 +277,12 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 
 外键：`fk_category_parent` → category.id ON DELETE SET NULL
 
-### 3.5 product（商品表 / SPU）
+### 3.5 spu（商品表 / SPU）
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK | 技术主键 |
-| product_id | BINARY(16) | UNIQUE, NOT NULL | 业务商品编号（UUIDv7 原始字节，ADR-050） |
+| spu_id | BINARY(16) | UNIQUE, NOT NULL | 业务商品编号（UUIDv7 原始字节，ADR-050） |
 | seller_id | BIGINT | FK → seller.id, NOT NULL | 所属商家 |
 | category_id | BIGINT | FK → category.id, NOT NULL | 所属类目 |
 | name | VARCHAR(200) | NOT NULL | 商品名称 |
@@ -303,9 +304,9 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 | create_time | DATETIME | NOT NULL | |
 | update_time | DATETIME | NOT NULL | |
 
-索引：`uk_product_id`, `idx_seller_id`, `idx_category_id`, `idx_status`, `idx_seller_status`
+索引：`uk_spu_id`, `idx_seller_id`, `idx_category_id`, `idx_status`, `idx_seller_status`
 
-外键：`fk_product_seller` → seller.id ON DELETE RESTRICT，`fk_product_category` → category.id ON DELETE RESTRICT
+外键：`fk_spu_seller` → seller.id ON DELETE RESTRICT，`fk_spu_category` → category.id ON DELETE RESTRICT
 
 ### 3.6 sku（规格表 / SKU）
 
@@ -313,7 +314,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 |------|------|------|------|
 | id | BIGINT | PK | 技术主键 |
 | sku_id | BINARY(16) | UNIQUE, NOT NULL | 业务 SKU 编码（UUIDv7 原始字节，ADR-050） |
-| product_id | BIGINT | FK → product.id, NOT NULL | 所属商品 |
+| spu_id | BIGINT | FK → spu.id, NOT NULL | 所属商品 |
 | spec | VARCHAR(200) | NOT NULL | 规格描述 |
 | price | INT | NOT NULL | 价格（分） |
 | original_price | INT | NULL | 原价（分）(V3.5) |
@@ -329,7 +330,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 | create_time | DATETIME | NOT NULL | |
 | update_time | DATETIME | NOT NULL | |
 
-外键：`fk_sku_product` → product.id ON DELETE CASCADE
+外键：`fk_sku_spu` → spu.id ON DELETE CASCADE
 
 ### 3.7 orders（订单表）
 
@@ -502,8 +503,8 @@ public void createOrder(OrderDTO dto) {
 核心关系要点：
 - `user` ↔ `address`：一对多（CASCADE 删除）
 - `user` ↔ `seller`：一对一（RESTRICT 删除）
-- `seller` → `product`：一对多
-- `product` → `sku`：一对多（CASCADE）
+- `seller` → `spu`：一对多
+- `spu` → `sku`：一对多（CASCADE）
 - `orders` → `order_item`：一对多组合（CASCADE）
 - `orders` ↔ `pay_order`：通过 `order_no` 关联（非外键约束）
 - `orders` ↔ `order_logistics`：一对多（V5.6 已建——按 `package_no` 区分包裹，代理主键 `id` + `uk_order_package`，见 §十二 12.3）
@@ -533,7 +534,7 @@ public void createOrder(OrderDTO dto) {
 |------|------|------|
 | id | BIGINT PK | |
 | user_id | BIGINT | |
-| product_id | BIGINT | |
+| spu_id | BIGINT | |
 | order_no | BINARY(16) | 关联订单号（orders.order_no，无外键），唯一约束 `uk_order_user`（ADR-050 三批收敛） |
 | rating | TINYINT | 1-5 星 |
 | content | TEXT | |
@@ -543,8 +544,8 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK | |
-| user_id | BIGINT | 唯一约束 `uk_user_product` |
-| product_id | BIGINT | |
+| user_id | BIGINT | 唯一约束 `uk_user_spu` |
+| spu_id | BIGINT | |
 | create_time | DATETIME | |
 
 ### 7.2 V1.2 秒杀 & 首页装修 & 操作日志 & 优惠券
@@ -553,7 +554,7 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK | |
-| product_id | BIGINT | |
+| spu_id | BIGINT | |
 | sku_id | BIGINT | |
 | flash_price | INT | 秒杀价（分） |
 | stock | INT | 秒杀库存 |
@@ -582,7 +583,7 @@ public void createOrder(OrderDTO dto) {
 | id | BIGINT PK | |
 | slot | VARCHAR(30) | 位置(banner/hot/new/sale) |
 | type | TINYINT | 1=商品组, 2=广告图, 3=活动链接 |
-| product_ids | VARCHAR(500) | 商品ID CSV |
+| spu_ids | VARCHAR(500) | 商品ID CSV |
 | image / link_url | VARCHAR(255) | |
 | sort_order | INT | |
 
@@ -623,7 +624,7 @@ public void createOrder(OrderDTO dto) {
 | price_in_cents | INT | **V4.0**: 付费券价格(分), grantType=PAID_PURCHASE时必填 |
 | **V4.3 适用范围 / 叠加规则（✅ 已打通映射，2026-10-15 [ADR-055](../adr/055-coupon-scope-and-stack-rule-materialization.md)）** | | |
 | scope_type | TINYINT NOT NULL DEFAULT 1 | **V4.3**：适用范围：1=ALL全场，2=CATEGORY品类，3=PRODUCT单品 |
-| scope_values | JSON NULL | **V4.3**：适用范围的 ID 列表（`categoryIds` 或 `productIds` 的 JSON 数组） |
+| scope_values | JSON NULL | **V4.3**：适用范围的 ID 列表（`categoryIds` 或 `spuIds` 的 JSON 数组） |
 | stack_rule | TINYINT NOT NULL DEFAULT 1 | **V4.3**：叠加规则：1=MUTUAL_EXCLUSIVE互斥，2=STACKABLE可叠加 |
 | stack_group | VARCHAR(32) NULL | **V4.3**：叠加分组 ID，**同组**券可叠加使用（跨组是否可叠由 `stack_rule` 决定） |
 
@@ -633,7 +634,7 @@ public void createOrder(OrderDTO dto) {
 > | :-- | :-- |
 > | **落库** | `CouponPO` 新增四列映射；管理端/商家端创建券（AD24 / AD27）可写入适用范围与叠加规则 |
 > | **回吐** | `CouponVO` 回吐 `scope_type`/`scope_values`/`stack_rule`/`stack_group`（契约 §4.10.1 示例已含四字段） |
-> | **校验生效** | 核销侧 `POST /internal/coupon/use`（I22）新增可选 `productIds`/`categoryIds`（逗号分隔）——用于 `scope_type/scope_values` 匹配；**缺省时若该券限定了品类/单品则拒绝核销**（不再静默放行） |
+> | **校验生效** | 核销侧 `POST /internal/coupon/use`（I22）新增可选 `spuIds`/`categoryIds`（逗号分隔）——用于 `scope_type/scope_values` 匹配；**缺省时若该券限定了品类/单品则拒绝核销**（不再静默放行） |
 > | **叠加校验** | 补录 `GET /internal/coupon/batch`（契约编号 I69，源码自记 I46）供下单方一次往返校验多券叠加 |
 >
 > ⚠️ **订正记录**：ADR-038 曾有「下单侧不受影响」的推论，**该推论错误**（四列未映射意味着适用范围形同虚设）。ADR-055 已订正并闭环。
@@ -743,12 +744,12 @@ public void createOrder(OrderDTO dto) {
 | shop_id | BIGINT NOT NULL | 店铺 id（→ `shop.id`，1:1，`uk_shop` 唯一键） |
 | announcement | VARCHAR(200) NULL | 店铺公告（契约限 ≤200） |
 | banners | VARCHAR(2000) NULL | 轮播图 **JSON 数组文本**（≤5 个 URL；非 JSON 列类型） |
-| hot_product_ids | VARCHAR(1000) NULL | 推荐商品位 **JSON 数组文本**（≤8 个 `product.id`；**存 id 无 FK**——展示端过滤非在售，Phase 1 不校验商品归属，ADR-048） |
+| hot_spu_ids | VARCHAR(1000) NULL | 推荐商品位 **JSON 数组文本**（≤8 个 `spu.id`；**存 id 无 FK**——展示端过滤非在售，Phase 1 不校验商品归属，ADR-048） |
 | create_time / update_time | DATETIME NOT NULL | 审计字段 |
 
 > 未装修的店铺无本表行（契约面表现为各字段空值/空数组）；UPSERT 写入（改装修 = 覆盖式）。
 
-### 7.8 V5.12 内容社区（`note` / `note_product` / `note_like`，item-service 所有）
+### 7.8 V5.12 内容社区（`note` / `note_spu` / `note_like`，item-service 所有）
 
 > **🆕 2026-10-15 fix-doc 补录**：三表此前仅被正文「`note*`」通配串一笔带过，现补表级条目。**F12 内容社区 Phase 1（[ADR-048](../adr/048-content-notes-in-item-domain.md)）**——与 `review` 同属商品 UGC，落位 item-service；契约端点 P28–P34（§4.4.xa）。
 
@@ -765,12 +766,12 @@ public void createOrder(OrderDTO dto) {
 | like_count | INT NOT NULL DEFAULT 0 | 点赞数（冗余计数，**原子维护**，取消不为负） |
 | create_time / update_time | DATETIME NOT NULL | 审计字段（`idx_status_time` 支撑发布流倒序分页） |
 
-**`note_product`** — 笔记关联商品（≤5/篇，发布时校验存在且在售）
+**`note_spu`** — 笔记关联商品（≤5/篇，发布时校验存在且在售）
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK AUTO_INCREMENT | 技术主键 |
-| note_id | BIGINT NOT NULL | 笔记 id（`uk_note_product(note_id, product_id)`） |
-| product_id | BIGINT NOT NULL | 关联商品 id（`idx_product`） |
+| note_id | BIGINT NOT NULL | 笔记 id（`uk_note_spu(note_id, spu_id)`） |
+| spu_id | BIGINT NOT NULL | 关联商品 id（`idx_spu`） |
 | sort | INT NOT NULL DEFAULT 0 | 展示顺序 |
 | create_time | DATETIME NOT NULL | |
 
@@ -969,17 +970,17 @@ public void createOrder(OrderDTO dto) {
 
 ## 十一、商品详情页增强数据模型 (V3.5 已实现)
 
-### 11.1 已落库的 product/sku/review 字段
+### 11.1 已落库的 spu/sku/review 字段
 
-**`product` 表已新增** (V3.5 migration)：`images` VARCHAR(2000)（多图，JSON 数组文本）/`video_url` VARCHAR(500)/`attributes` JSON（规格参数）/`service_tags` VARCHAR(500)（售后标签，JSON 数组文本）/`view_count` INT（浏览数）；V4.0 追加 `sales_tags` JSON（商品级销售标签）。
+**`spu` 表已新增** (V3.5 migration)：`images` VARCHAR(2000)（多图，JSON 数组文本）/`video_url` VARCHAR(500)/`attributes` JSON（规格参数）/`service_tags` VARCHAR(500)（售后标签，JSON 数组文本）/`view_count` INT（浏览数）；V4.0 追加 `sales_tags` JSON（商品级销售标签）。
 **`sku` 表已新增** (V3.5 migration)：`original_price` INT（原价，分；V4.0 另增 stock_type/is_hot/hot_reason VARCHAR(50)/sales_tags JSON）。
 **`review` 表实际列**（V3.5 基线 + V5.0.2 增强，与早期文档"media_urls/is_anonymous/helpful_count"不符，以本节为准）：`sku_id`、`images` VARCHAR(500)（逗号分隔）、`reply`/`reply_time`（商家回复）、`append_content`/`append_media_urls`/`append_time`（追评）、`like_count`（点赞数）、`tags` VARCHAR(500)（评价标签 JSON 数组文本）；唯一约束 `uk_order_user(order_no, user_id)`（ADR-050 三批：订单引用由技术 id 收敛为业务键）。
 
 ### 11.2 已建表
 
-**`product_view_log`** — 商品浏览记录 (user_id/product_id/view_time), idx_product_time
+**`spu_view_log`** — 商品浏览记录 (user_id/spu_id/view_time), uk_user_spu + idx_user_time
 **`store_follow`** — 店铺关注：**无 MySQL 表**（实现为 Redis Set，非表；2026-10 第六轮随商家域归 merchant-service，私有 Key `shop:followers:{sellerId}` / `user:follow:shops:{userId}`）
-**`sku_spec_dimension`** — SKU规格维度 (product_id/name/sort_order) (计划)
+**`sku_spec_dimension`** — SKU规格维度 (spu_id/name/sort_order) (计划)
 **`sku_spec_option`** — SKU规格选项 (dimension_id/value/image) (计划)
 
 ---
@@ -995,7 +996,7 @@ public void createOrder(OrderDTO dto) {
 > | 存档批次 | 表/变更 | 历史文件名（**已不存在**） |
 > | --- | --- | --- |
 > | **V5.5 资金线** | `refund_order`、`wallet_transaction`（F1）+ `reconciliation_batch`、`reconciliation_detail`（F4） | ~~`V5.5__refund_wallet_tx_and_reconciliation.sql`~~ |
-> | **V5.6 履约线** | `freight_template` 新表 + `product.freight_template_id` / `orders.post_fee`（F2）+ `order_logistics` 主键与包裹改造、`order_item.package_no`（F3） | ~~`V5.6__freight_template_and_package_split.sql`~~ |
+> | **V5.6 履约线** | `freight_template` 新表 + `spu.freight_template_id` / `orders.post_fee`（F2）+ `order_logistics` 主键与包裹改造、`order_item.package_no`（F3） | ~~`V5.6__freight_template_and_package_split.sql`~~ |
 > | **V5.7 订单留言** | `orders.remark VARCHAR(200) NULL`（买家留言快照，T1/T6 请求增量） | ~~`V5.7__order_remark.sql`~~ |
 > | **V5.8 促销与会员** | `promotion`（F5 满减/满折活动）+ `member_level_rule`、`member_growth_log`（F6 等级规则与成长值流水，含 seed） | ~~`V5.8__promotion_and_member_level.sql`~~ |
 > | **V5.9–V5.18 及后续** | P2/P3 与边界重构全部增量（`shop_decoration`/`note*`/`task_*`/`group_*`/`pairing_rule`/`currency`/`exchange_rate`/`invoice*` 等） | **无迁移文件**——直接改 `Initialize.sql`（ADR-045 口径） |
@@ -1056,7 +1057,7 @@ public void createOrder(OrderDTO dto) {
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
 | template_no | BINARY(16) | UNIQUE (`uk_template_no`), NOT NULL | 模板业务编号（UUIDv7 原始字节，ADR-050） |
-| seller_id | BIGINT | NOT NULL | 商家ID——**口径 = 商家 `user_id`**（与 `product.seller_id` 等下游口径一致，ADR-019 Phase A） |
+| seller_id | BIGINT | NOT NULL | 商家ID——**口径 = 商家 `user_id`**（与 `spu.seller_id` 等下游口径一致，ADR-019 Phase A） |
 | template_name | VARCHAR(50) | NOT NULL | 模板名称；同商家内唯一 `uk_seller_template(seller_id, template_name)` |
 | charge_mode | TINYINT | NOT NULL, DEFAULT 1 | 计费方式：1-固定运费（**Phase 1 唯一值**，为 Phase 2 模板/重量计费预留） |
 | fee | INT | NOT NULL | 固定运费（分，≥0） |
@@ -1071,7 +1072,7 @@ public void createOrder(OrderDTO dto) {
 
 | 表 | 变更 | 说明 |
 | --- | --- | --- |
-| `product` | 新增 `freight_template_id BIGINT NULL`，FK `fk_product_freight_template` → `freight_template.id` **ON DELETE SET NULL** | NULL/模板被删 → 回落商家默认模板；见 §3.5 |
+| `spu` | 新增 `freight_template_id BIGINT NULL`，FK `fk_spu_freight_template` → `freight_template.id` **ON DELETE SET NULL** | NULL/模板被删 → 回落商家默认模板；见 §3.5 |
 | `orders` | 新增 `post_fee INT NOT NULL DEFAULT 0` | 下单时计算并**快照**（模板后续改价不影响已建订单）；见 §3.7 |
 
 **计价规则（Phase 1 口径，与 05 §4.4.9/§4.6.1 契约同步）**：
@@ -1143,7 +1144,7 @@ public void createOrder(OrderDTO dto) {
 
 | 表 | 关键列 | 说明 |
 | --- | --- | --- |
-| `group_buy_activity` | seller_id / product_id / sku_id / group_price(分) / required_members(≥2) / time_limit_hours / start_time / end_time / status(1/2/3 时间窗推导) / version | 拼团活动（marketing 域，管理端 AD54-56） |
+| `group_buy_activity` | seller_id / spu_id / sku_id / group_price(分) / required_members(≥2) / time_limit_hours / start_time / end_time / status(1/2/3 时间窗推导) / version | 拼团活动（marketing 域，管理端 AD54-56） |
 | `group_team` | team_no(UK) / activity_id / leader_user_id / required_members / current_members / status(1拼团中 2已成团 3已失败) / expire_time / success_time | 团（成团状态机；参团条件更新 +1，满员条件置已成团） |
 | `group_team_member` | team_id / user_id / order_no(**UK**，幂等锚点：一单一团一次) | 团成员（uk_team_user 防同团重复参团） |
 | `refund_order`（改造） | `after_sale_id` 改**可空** + 新增 `biz_ref VARCHAR(64) NOT NULL` + `uk_biz_ref` | 幂等锚点泛化（修订 ADR-035 §1）：售后退款 `AS:{id}`、拼团退款 `GB:{orderNo}`；`uk_after_sale` 保留 |

@@ -2,6 +2,7 @@
 
 > 来源：`doc/项目的分析流程/03.领域建模.md`、`doc/项目的分析流程/00.用户分析.md`、`doc/IDEA.md`
 > 最后更新: 2026-10-05（**V5.9→V5.13 五批交付（P2 增长线，[ADR-045](../adr/045-db-snapshot-single-source.md)/[ADR-046](../adr/046-product-vector-recommendation.md)/[ADR-047](../adr/047-daily-task-system.md)/[ADR-048](../adr/048-content-notes-in-item-domain.md)）**：§一 限界上下文补 V5.9→V5.13 聚合落位注记；§三 新增五节——3.15 促销活动（Promotion，时间窗推导状态，ADR-043）、3.16 每日任务（TaskDef/TaskRecord，`uk_user_task_date` 每日幂等，ADR-047）、3.17 会员等级（MemberLevelRule/MemberGrowthLog，`uk_order_no` 幂等入账 + 只升不降，ADR-044）、3.18 店铺装修（ShopDecoration 与 Shop 1:1，ADR-048）、3.19 种草笔记（Note 内容聚合，软删 + 向量摄取钩子，ADR-048）；§四 聚合表新增四行 + user-service 聚合分包结论同步（domain/model 4 子包）；§六 词汇表新增 11 条（促销引擎/促销标签/每日任务/任务完成记录/会员成长值/会员等级重算/相似商品推荐/种草笔记/店铺装修/搜索联想/活动中心）；§七 领域服务补记 `PricingCalculator`/`PostageCalculator`/`ReconciliationComparer`/`MemberLevelPolicy`/`DocumentChunker` 与向量文本组装纯函数。此前——**P0 四项落地批次（[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)/[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)/[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：金额不变式 **V2**（`payAmount = totalAmount − discountAmount + postFee`，§3.7/§四 同步）；§六 词汇表新增九条：运费模板/运费/满额包邮阈值/商家默认模板/包裹与包裹号/部分发货/确认收到退货/原路退回/对账四态差异；订单状态口径补「部分发货停留待发货」（§3.7/待发货条目）；物流聚合 1:N 包裹化（§3.11 约定偏差消除）。此前——结构规范化 + 数据库整治 + 1:N 拆分同步：Shop 聚合拆分（ADR-019）、SKU 原子扣减（ADR-020）、购物车读时回填（ADR-021）、售后/物流状态机与词汇表修订、`domain/model` 聚合分包同步（ADR-025）；§十 图表说明同步 IA_UML/IA_E-R（Merchant/Shop）；遗留风险清零批次词汇补遗：握手令牌/契约键/吊销名单/向量索引/向量摄取/审计双管道/AUDIT 审计日志/收款账号脱敏，RAGRetriever 接线注记（T14）；工具类收口批次词汇补遗：边缘对端地址（ADR-034）+ 收款账号脱敏掩码单点定义注记；多粒度令牌吊销批次（T19，[ADR-031](../adr/031-multi-granularity-token-revocation.md)，修订 ADR-027）词汇补遗：令牌版本/用户级吊销/全端下线三条新增，契约键与吊销名单条目更新）
+> **2026-10-16（SPU 词汇统一，ADR-059 落地批次，后端 `578fac27`）**：①§一 上下文图「商品上下文 / Product Ctx」→「Spu Ctx / 商品(Spu)」；②§3.4 聚合根更名 **商品 (SPU) → `Spu`**（`Spu` 领域类 + `domain/model/spu` 包），聚合根标识 `productId` → `spuId`；§3.5 `Sku` 实体 `productId` → `spuId`（**SKU→SPU 技术外键 = `spu_id`**，业务键 = `sku_id`）；§3.18 `hotProductIds` → `hotSpuIds`；§3.19 `note_product` → `note_spu`；③§四 聚合表「商品聚合 Product」→「商品聚合（SPU）Spu」、「NoteProduct」→「NoteSpu」；§五 值对象所属聚合 Product → Spu；④§六 词汇表 **新增 SPU 词条**（标准产品单元）+ SKU 词条补业务键/外键口径 + 旧名 `Product` 标废弃，并**标注 `PRODUCT` 的三处非 SPU 独立词汇**（`ScopeTypeEnum.PRODUCT(3)` / `DocumentChunker.DocType.PRODUCT_MANUAL` / `ChatSendReq.contentType=PRODUCT_CARD`）不参与消歧；⑤§七 `ProductVectorTextBuilder` → `SpuVectorTextBuilder`；**`ProductVectorizer` 全仓无实现（文档有代码无）**，行内标注待清理。详见 [05 §4](../contract/05-API-Specification.md) 与 04-Data-Model。
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/变更聚合、端口、领域服务、领域事件时
 
 ---
@@ -14,9 +15,9 @@
 │                                                          │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  ┌──────────────┐  │
 │  │ 用户上下文    │  │ 商品上下文    │  │ 订单上下文     │  │ AI搜索上下文  │  │
-│  │ User Context │  │Product Ctx   │  │ Order Context │  │ AI Search Ctx│  │
+│  │ User Context │  │ Spu Ctx      │  │ Order Context │  │ AI Search Ctx│  │
 │  │              │  │              │  │               │  │ (✅ V2.0)    │  │
-│  │ 用户(User)   │  │ 商品(Product)│  │ 订单(Orders)  │  │              │  │
+│  │ 用户(User)   │  │ 商品(Spu)    │  │ 订单(Orders)  │  │              │  │
 │  │ 地址(Addr)   │  │ 规格(SKU)    │  │ 订单项(Item)  │  │ 商品向量索引  │  │
 │  │ 商家(Merchant)│  │ 类目(Cat)    │  │ 购物车(Cart)  │  │ Embedding    │  │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬────────┘  └──────┬───────┘  │
@@ -40,7 +41,7 @@
 ```
 
 > **2026-10 第六轮**：商家上下文（Merchant Ctx）随 merchant-service 独立——入驻申请/审核、店铺档案（`seller` 表所有权）、公开店铺页、店铺关注自用户上下文迁出（聚合/领域服务见 §3.3、§七）。
-> **V5.9→V5.13（P2 增长线）**：营销上下文新增 促销（Promotion，[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)）与 每日任务（TaskDef/TaskRecord，[ADR-047](../adr/047-daily-task-system.md)）聚合；用户上下文新增 会员等级（MemberLevelRule/MemberGrowthLog，[ADR-044](../adr/044-member-level-and-benefits.md)）；商家上下文新增 店铺装修（ShopDecoration，与 Shop 1:1，[ADR-048](../adr/048-content-notes-in-item-domain.md)）；商品上下文新增 内容聚合（Note + note_like/note_product，[ADR-048](../adr/048-content-notes-in-item-domain.md)，`domain/model/content` 分包预留 community-service 拆分）。明细见 §3.15–§3.19、§四。
+> **V5.9→V5.13（P2 增长线）**：营销上下文新增 促销（Promotion，[ADR-043](../adr/043-pricing-center-and-promotion-engine.md)）与 每日任务（TaskDef/TaskRecord，[ADR-047](../adr/047-daily-task-system.md)）聚合；用户上下文新增 会员等级（MemberLevelRule/MemberGrowthLog，[ADR-044](../adr/044-member-level-and-benefits.md)）；商家上下文新增 店铺装修（ShopDecoration，与 Shop 1:1，[ADR-048](../adr/048-content-notes-in-item-domain.md)）；商品上下文新增 内容聚合（Note + note_like/note_spu，[ADR-048](../adr/048-content-notes-in-item-domain.md)，`domain/model/content` 分包预留 community-service 拆分）。明细见 §3.15–§3.19、§四。
 
 ### 上下文映射 (Context Map)
 
@@ -150,11 +151,11 @@
 
 > **默认店铺口径**：遗留 `sellerId`（= 商家 `user_id`）经「该商家 `shop.id` 最小者」解析为默认店铺（应用层 `ShopManager` 唯一解析点，Phase A 兼容期）；店铺资料更新在持久化层带 `id + merchant_id` 双条件（越权写 0 行）。公开可见 = `shop.status=1`。下沉到下游的 `seller_id`（商品/订单/优惠券/结算/知识库）在 Phase B 前维持 `user_id` 口径不变。
 
-### 3.4 商品 (Product/SPU) — 商品上下文聚合根
+### 3.4 商品 (SPU) — 商品上下文聚合根
 
 | 属性           | 类型   | 说明           |
 | ------------ | ---- | ------------ |
-| productId    | 标识   | 商品业务编号       |
+| spuId        | 标识   | 商品业务编号（`spu_id`，32-hex 业务键，ADR-050） |
 | sellerId     | 关联   | 所属商家         |
 | categoryId   | 关联   | 所属类目         |
 | name         | 字符串  | 商品名称         |
@@ -173,14 +174,14 @@
 | 属性        | 类型  | 说明               |
 | --------- | --- | ---------------- |
 | skuId     | 标识  | SKU 业务编码         |
-| productId | 关联  | 所属商品             |
+| spuId     | 关联  | 所属商品（SKU→SPU 外键 `spu_id`） |
 | spec      | 字符串 | 规格描述（如"黑色 128G"） |
 | price     | 金额  | 价格               |
 | stock     | 整数  | 库存数量             |
 | stockType | 枚举  | 库存类型：LIMITED(1,限量)/UNLIMITED(2,不限量)/PRESALE(3,预售) |
 | isHot     | 布尔  | 热销标识             |
 | hotReason | 字符串 | 热销原因枚举码：discount / new_arrival / best_seller / clearance（`HotReasonEnum` 归一，非法值丢弃） |
-| salesTags | JSON字符串 | 销售标签（继承自Product，可覆盖） |
+| salesTags | JSON字符串 | 销售标签（SPU 级可覆盖） |
 | image     | URL | 规格专属图片           |
 | soldCount | 整数  | 该规格销量            |
 | status    | 枚举  | 可售 / 停售          |
@@ -403,13 +404,13 @@
 | shopId | 标识 | 店铺 ID（业务唯一键 `uk_shop`，与 Shop 1:1） |
 | announcement | 字符串 | 店铺公告（≤200，空白归一化为 null） |
 | banners | 列表 | 轮播图 URL（≤5，http(s) 校验） |
-| hotProductIds | 列表 | 推荐商品位（≤8，按 ID 引用商品；Phase 1 不校验商品归属，展示端按需过滤失效/非在售） |
+| hotSpuIds | 列表 | 推荐商品位（≤8，按 ID 引用商品；Phase 1 不校验商品归属，展示端按需过滤失效/非在售） |
 
-> **持久化口径**：`banners` / `hotProductIds` 以 JSON 字符串列存储（不引入 TypeHandler），JSON ↔ List 互转收口在仓储实现；条数 / URL 格式 / 去重校验内聚聚合（创建即校验 + 归一化）。
+> **持久化口径**：`banners` / `hotSpuIds` 以 JSON 字符串列存储（不引入 TypeHandler），JSON ↔ List 互转收口在仓储实现；条数 / URL 格式 / 去重校验内聚聚合（创建即校验 + 归一化）。
 
 ### 3.19 种草笔记 (Note) — 商品上下文内容聚合（V5.12 内容社区 Phase 1）
 
-> 内容聚合落位 item 域 `domain/model/content/` 分包（与 review 同构；**包边界 = 未来 community-service 拆分边界**，ADR-025/[ADR-048](../adr/048-content-notes-in-item-domain.md)）。聚合根为 `note` 行；点赞 `note_like`（笔记 × 用户，uk 幂等 + 原子计数）与关联商品 `note_product`（笔记 × 商品，≤5 条）为**聚合内部关联**，只经各自仓储端口访问；笔记与商品按 `productId` 引用、不持对象引用——发布时的商品存在性/在售校验属跨聚合协作，上移应用层编排。
+> 内容聚合落位 item 域 `domain/model/content/` 分包（与 review 同构；**包边界 = 未来 community-service 拆分边界**，ADR-025/[ADR-048](../adr/048-content-notes-in-item-domain.md)）。聚合根为 `note` 行；点赞 `note_like`（笔记 × 用户，uk 幂等 + 原子计数）与关联商品 `note_spu`（笔记 × SPU，≤5 条）为**聚合内部关联**，只经各自仓储端口访问；笔记与商品按 `spuId` 引用、不持对象引用——发布时的商品存在性/在售校验属跨聚合协作，上移应用层编排。
 
 | 属性 | 类型 | 说明 |
 | ---- | ---- | ---- |
@@ -434,8 +435,8 @@
 | 商家聚合 | Merchant       | —                  | 一个用户至多一个商家（`seller.user_id` 唯一 + `MerchantRegistrar`）；状态机 PENDING→NORMAL/FROZEN；归 merchant-service（2026-10 第六轮迁出） |
 | 店铺聚合 | Shop           | —                  | 1 商家 : N 店铺（`uk_merchant_shop_name(merchant_id, shop_name)`）；店铺状态机独立于商家生命周期；默认店铺 = 该商家 `shop.id` 最小者（V5.4，[ADR-019](../adr/019-merchant-shop-1n-split.md)） |
 | 店铺装修聚合 | ShopDecoration | —                  | 与 Shop 1:1（`uk_shop`）；轮播图 ≤5 / 推荐商品位 ≤8 / 公告 ≤200，创建即校验 + 归一化（[ADR-048](../adr/048-content-notes-in-item-domain.md)） |
-| 商品聚合 | Product        | SKU (1:N)          | SKU 不能脱离 Product 存在于订单中；库存不能为负 |
-| 内容聚合 | Note           | NoteLike / NoteProduct（聚合内关联） | 一笔记至多关联 5 商品（发布即校验存在且在售）；点赞 uk 幂等 + 原子计数；作者软删（status=2），发布即上架无草稿态（[ADR-048](../adr/048-content-notes-in-item-domain.md)） |
+| 商品聚合（SPU） | Spu            | SKU (1:N)          | SKU 不能脱离 SPU 存在于订单中（`sku.spu_id` → `spu.id`）；库存不能为负 |
+| 内容聚合 | Note           | NoteLike / NoteSpu（聚合内关联，`note_spu`） | 一笔记至多关联 5 商品（发布即校验存在且在售）；点赞 uk 幂等 + 原子计数；作者软删（status=2），发布即上架无草稿态（[ADR-048](../adr/048-content-notes-in-item-domain.md)） |
 | 订单聚合 | Orders         | OrderItem (1:N，组合) | **不变式 V2**：`payAmount = totalAmount − discountAmount + postFee`；`totalAmount` = Σ 订单项小计（运费不进小计，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）；订单项不能脱离订单     |
 | 支付聚合 | PayOrder       | —                  | 支付金额 = 关联订单应付金额                |
 | 物流聚合 | OrderLogistics | —                  | 物流必须关联已支付订单；1 订单 : N 包裹（`package_no` 区分，ADR-037） |
@@ -461,9 +462,9 @@
 
 | 值对象      | 属性            | 所属聚合                     |
 | -------- | ------------- | ------------------------ |
-| Money    | 金额(分) + 币种    | Order, PayOrder, Product |
+| Money    | 金额(分) + 币种    | Order, PayOrder, Spu |
 | Address  | 省+市+区+街道+详细地址 | User (作为值对象拷贝到 Order)    |
-| SpecDesc | 规格描述字符串       | Product/SKU              |
+| SpecDesc | 规格描述字符串       | Spu/SKU              |
 
 ---
 
@@ -477,8 +478,9 @@
 | 店铺状态     | Shop Status              | 0-审核中 / 1-正常 / 2-冻结；**公开可见 = shop.status=1** |
 | 默认店铺     | Default Shop             | 遗留 `sellerId`（= 商家 user_id）解析为「该商家 `shop.id` 最小者」；解析只在应用层 `ShopManager` 一处实现（Phase A 兼容期） |
 | 管理员      | Admin                    | 平台运营管理者         |
-| 商品 (SPU) | Product                  | 标准产品单元，同一款商品的抽象 |
-| 规格 (SKU) | SKU (Stock Keeping Unit) | 具体销售单元（如某颜色某尺寸） |
+| **SPU（标准产品单元）** | **SPU (Standard Product Unit)** | **同一款商品的抽象；全项目已显式化为 `spu`（原 `product`）：库表 `spu`、业务键列 `spu.spu_id`（`BINARY(16)`，ADR-050）、线格式 `spu_id`/`spu_ids`/`hot_spu_ids`、Java 类 `Spu*`、领域包 `domain/model/spu`（[ADR-059](../adr/059-spu-sku-vocabulary-disambiguation.md)）** |
+| 规格 (SKU) | SKU (Stock Keeping Unit) | 具体销售单元（如某颜色某尺寸）；**业务键 = `sku_id`（`BINARY(16)`）；SKU→SPU 的技术外键 = `spu_id`（`sku.spu_id` → `spu.id`）** |
+| ~~商品 (Product)~~ | ~~Product~~ | **已由 SPU 取代**——旧名 `product` 仅作历史注释保留，不再作为领域/表/线格式词汇 |
 | 类目       | Category                 | 商品分类体系          |
 | 订单       | Order                    | 一次购买行为生成的交易记录   |
 | 订单项      | OrderItem                | 订单中的单品明细        |
@@ -495,7 +497,7 @@
 | 秒杀库存预热   | Flash Stock Pre-warm     | 秒杀库存双保险：活动流转到「进行中」时**显式预热**（平均分配到热点分片并写哨兵）；每次预扣前**惰性兜底**（分片与哨兵都不存在时按 DB 剩余库存原子重建，哨兵防重复重置）——未预热场次不会永远命中「售罄」 |
 | 抢券补偿     | Coupon Grab Compensation | 抢券通道 Redis 预扣成功后 DB 落库失败时，回滚 Redis（INCR 归还库存 + SREM 撤销去重标记），防止券永久少一个名额（`CouponGrabLuaScript` 补偿通道，幂等） |
 | 秒杀商品无店铺归属 | Flash Sale - No Shop Ownership | 秒杀为平台活动，秒杀订单 `sellerId` 固定为 0（marketing 与 trade 的跨服务约定；`MarketingManager.FLASH_SALE_NO_SELLER_ID`） |
-| 最低价      | Minimum Price (minPrice) | 商品列表项的起售价：一次批量查询 + 内存聚合出各 SPU 在售 SKU 最低价（`getMinPriceMapByProductIds`）；`sort=price` 由数据库按在售 SKU 最低价排序，列表项不再挂完整 SKU 列表（[ADR-020](../adr/020-sku-stock-atomic-sql-deduction.md)） |
+| 最低价      | Minimum Price (minPrice) | 商品列表项的起售价：一次批量查询 + 内存聚合出各 SPU 在售 SKU 最低价（`SkuManager.getMinPriceMapBySpuIds`）；`sort=price` 由数据库按在售 SKU 最低价排序，列表项不再挂完整 SKU 列表（[ADR-020](../adr/020-sku-stock-atomic-sql-deduction.md)） |
 | 购物车读时回填  | Cart Read-time Enrichment | 购物车只存 `(user_id, sku_id, quantity, selected)`；商品名/规格/图片/单价/小计/总价由应用层 `CartManager` 在读时一次批量查询（`SkuClient.getSkuListByIds`）回填计算（[ADR-021](../adr/021-cart-readtime-enrichment-in-app-layer.md)） |
 | 全选状态     | allSelected              | 购物车非空 **且** 每项 `selected=true` **且** 每项都能取到单价（可计价）才为 true；SKU 下架/删除项不计入总价并使 `allSelected=false` |
 | 原子扣减     | Atomic Deduction         | 库存变更只走单条原子 SQL（校验条件内嵌 WHERE：`stock >= ?`），以受影响行数为唯一判定；不限量 SKU（stock_type=2）只动销量（[ADR-020](../adr/020-sku-stock-atomic-sql-deduction.md)） |
@@ -529,7 +531,7 @@
 | AUDIT 审计日志 | AUDIT Audit Log        | 专用 logger `AUDIT` 输出的**单行 JSON** 审计事件（timestamp / module / action / method / user / success / costMs；失败仅记异常类名；**默认不记参数值**），经既有 ELK 管道采集入 ES；查询「全平台谁改了什么」的入口（ADR-032） |
 | 收款账号脱敏 | Masked Payout Account    | 提现单出参口径（V5.4）：**商家端只返回脱敏号 `bankAccountMasked`（如 `****1234`），明文字段恒为 null；管理端（已有权限保护）返回明文**以满足打款核对；装配差异由 Converter（`toSellerVO` / `toVO`）承担（12-Security-Model §6.4）；掩码规则由 ia-common `DesensitizeUtil.maskAccount` 单点定义（≤4 全遮 / >4 保留末 4 位，[ADR-034](../adr/034-cross-module-utility-consolidation-and-boundaries.md)） |
 | 边缘对端地址 | Edge Peer Address | 网关 `EdgePeerIpResolver` 的 TCP 对端口径：只取连接对端地址、**绝不读任何入站代理头**（XFF 等已在链路入口被剥离），用于网关限流 Key / AI 配额 Key 并覆写 `X-Client-Ip` 下发；与下游消费的「客户端 IP」（ia-common `IpUtil` 只信网关注入头）分属两种口径、不可合并（[ADR-034](../adr/034-cross-module-utility-consolidation-and-boundaries.md)） |
-| 运费模板 | Freight Template | 商家在商品域配置的运费计价模板（`freight_template`，V5.6 已建）：固定运费 `fee` + 满额包邮阈值 `free_threshold` + 启用状态（Phase 1 计费方式仅 1-固定运费）；归属 item-service（`/api/item/freight-template/**`），商品经 `product.freight_template_id` 绑定（`ON DELETE SET NULL` 自动回落默认模板，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)） |
+| 运费模板 | Freight Template | 商家在商品域配置的运费计价模板（`freight_template`，V5.6 已建）：固定运费 `fee` + 满额包邮阈值 `free_threshold` + 启用状态（Phase 1 计费方式仅 1-固定运费）；归属 item-service（`/api/item/freight-template/**`），商品经 `spu.freight_template_id` 绑定（`ON DELETE SET NULL` 自动回落默认模板，[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)） |
 | 运费 | postFee | 订单金额一等项（`orders.post_fee`，V5.6 已建）：下单时按 Phase 1 口径计价并**快照**（模板后续改价/停用不影响已建订单）；同单同商家、取各生效模板中 `fee` 最高者计一次；秒杀单（orderType=3）恒 0；模板查询（I43）**fail-closed**——查询失败下单失败，不默认免邮（[ADR-011](../adr/011-feign-fallback-degradation-semantics.md) 判别型定类，ADR-037） |
 | 满额包邮阈值 | Free Threshold | `freight_template.free_threshold`（分）：0 = 不参与满额包邮；>0 时订单商品总额（`totalAmount`）达到该值则 `postFee = 0`（用**被选中模板**的阈值判定，ADR-037） |
 | 商家默认模板 | Merchant Default Freight Template | 商品未绑定模板（NULL）或绑定模板已停用/已删时的回落：该商家**最早创建的启用模板**（I43 返回集合兜底补入 `isDefault` 行）；商家无任何启用模板时 `postFee = 0`（不阻断下单，ADR-037） |
@@ -545,10 +547,17 @@
 | 会员成长值 | Member Growth | 确认收货按实付金额入账的成长值流水（`member_growth_log`，I46，[ADR-044](../adr/044-member-level-and-benefits.md)）：**`uk_order_no` 幂等锚点**（一订单至多入账一次）；trade 确认收货 fail-open 触发；`growthAmount` 只增不扣（年度降级考核留 roadmap） |
 | 会员等级重算 | Member Level Recalc | `MemberLevelPolicy` 纯函数（I45，[ADR-044](../adr/044-member-level-and-benefits.md)）：目标等级 = max(当前等级, 门槛匹配等级)——**只升不降**；门槛匹配取「累计成长值 ≥ threshold」最高者；等级权益/折扣查询 fail-open |
 | 相似商品推荐 | Similar Product Recommendation | 详情页相似商品卡（P27，[ADR-046](../adr/046-product-vector-recommendation.md)）：向量侧 = search I48 kNN（`products` 索引 dense_vector + knn mapping，reindex 重建带向量；摄取 I47 upsert 由商品写路径 afterCommit 触发）；item 装配侧 fail-open（召回失败回退无推荐卡） |
-| 种草笔记 | Content Note | 内容社区 Phase 1（P28-P33，[ADR-048](../adr/048-content-notes-in-item-domain.md)）：`note`/`note_product`/`note_like` 三表，item `domain/model/content` 聚合分包（包边界 = 未来 community-service 拆分边界）；纯文本 ≤2000 + 图集 ≤9 + 关联商品 ≤5（发布即校验存在且在售）；点赞 uk 幂等 + 原子计数；作者软删（status=2，无草稿态）；发布/软删 afterCommit 触发笔记向量摄取（I50/I51，`notes` 索引，fail-open） |
+| 种草笔记 | Content Note | 内容社区 Phase 1（P28-P33，[ADR-048](../adr/048-content-notes-in-item-domain.md)）：`note`/`note_spu`/`note_like` 三表，item `domain/model/content` 聚合分包（包边界 = 未来 community-service 拆分边界）；纯文本 ≤2000 + 图集 ≤9 + 关联商品 ≤5（发布即校验存在且在售）；点赞 uk 幂等 + 原子计数；作者软删（status=2，无草稿态）；发布/软删 afterCommit 触发笔记向量摄取（I50/I51，`notes` 索引，fail-open） |
 | 店铺装修 | Shop Decoration | 与 shop 1:1 的装修聚合（`shop_decoration`，`uk_shop`，[ADR-048](../adr/048-content-notes-in-item-domain.md)）：公告 ≤200 + 轮播图 ≤5 + 推荐商品位 ≤8（JSON 列持久化，领域层集中校验条数/URL/去重）；商家端 `GET/PUT /api/seller/shops/{shopId}/decoration`（S1c/S1d）；Phase 1 推荐商品位不校验商品归属 |
 | 搜索联想 | Search Suggestion | 搜索框联想（SE5）：热搜词前缀 + 商品名前缀双源合并去重，fail-open（任一源失败降级单源/空列表） |
 | 活动中心 | Activity Center | 聚合「进行中」促销的活动列表/详情（M12/M13，`/api/activity`，ActivityVO 源自 promotion 时间窗推导——不信任落库 status 快照）；首页活动入口配可领券三态计数（M7） |
+
+> **⚠️ `PRODUCT` 一词的三处「非 SPU 实体」独立词汇（不参与 SPU 消歧，2026-10-16 标注）**：以下三处的 `PRODUCT` 是各自的**枚举字面量/分类标签**，与本次 `product → spu` 改名**无关**，**不得**改为 `SPU`：
+> 1. **券适用范围** `ScopeTypeEnum.PRODUCT(3)`（marketing 域 `domain/enums/ScopeTypeEnum.java`，语义「限定单品」，落 `coupon.scope_type`，见 [ADR-055](../adr/055-coupon-scope-and-stack-rule-materialization.md)）——券域自己的范围类型码；
+> 2. **知识库文档类型** `PRODUCT_MANUAL`（search 域 `DocumentChunker.DocType{FAQ, POLICY, PRODUCT_MANUAL, ANNOUNCEMENT}`，按内容特征选择分块策略）——文档分类标签，非表列值；
+> 3. **聊天内容类型** `PRODUCT_CARD`（`ChatSendReq.contentType`：`TEXT / IMAGE / PRODUCT_CARD / ORDER_CARD`）——消息载荷形态标签，非实体类型。
+>
+> 三者的取值**已持久化于库/线格式**，改名即数据与契约双破坏；本次仅在 `spu`（表/列/类/线格式字段）层面消歧。
 
 ---
 
@@ -584,11 +593,11 @@
 | `ReconciliationComparer`（纯函数） | 渠道对账比对：渠道账单 ↔ 本地成功流水四态差异判定，只记录不调账（[ADR-036](../adr/036-channel-reconciliation-record-only-and-rewrite-idempotency.md)） | 支付上下文 |
 | `MemberLevelPolicy` | 会员等级重算纯函数（I45，[ADR-044](../adr/044-member-level-and-benefits.md)）：门槛匹配 + 只升不降 = max(当前, 匹配)；规则缺行按枚举声明序兜底；配套 `MemberLevelManager`（app 层编排入账与重算） | 用户上下文 |
 | `DocumentChunker` | 知识库文本分块（自 ai-service 迁入；`knowledge_vectors` 摄取链路，见 02-Architecture §3.4） | 搜索上下文 |
-| `ProductVectorTextBuilder` / `NoteVectorTextBuilder`（纯函数） | 商品 / 笔记 → Embedding 输入文本组装（I47 商品向量 / I50 笔记向量摄取链路，[ADR-046](../adr/046-product-vector-recommendation.md)/[ADR-048](../adr/048-content-notes-in-item-domain.md)） | 搜索上下文 |
+| `SpuVectorTextBuilder` / `NoteVectorTextBuilder`（纯函数） | 商品 / 笔记 → Embedding 输入文本组装（I47 商品向量 / I50 笔记向量摄取链路，[ADR-046](../adr/046-product-vector-recommendation.md)/[ADR-048](../adr/048-content-notes-in-item-domain.md)） | 搜索上下文 |
 | `EventPublisher`   | 领域事件投递：RocketMQ `domain-event-topic`（`order.created` trade→pay、`order.shipped` 已落地；`payment.succeeded` 常量预留未实现；原 RabbitMQ 通道已移除） | 全局（ia-common） |
 | ~~`NotificationService`~~ | 原规划 WebSocket 实时推送（V1.2）——**能力未采用（2026-10 清理）**：gateway WebSocketConfig/WebSocketNotifyController 已删除；站内信触达由 notification-service（`notification` 表，`/api/notifications/**`）承载，IM 实时通道由 ai-service STOMP `/ws/chat` 承载 | — |
 | `DistributedScheduler` | 分布式定时任务协调：XXL-Job 已落地（如 trade `AbnormalOrderJob.scanAbnormalOrders` 异常订单兜底；`@Scheduled` 保留单机兜底） | 全局 |
-| `ProductVectorizer` | 商品信息 → Embedding 向量（🟡 GATED, ai.enabled=false） | AI搜索上下文 |
+| ~~`ProductVectorizer`~~ | **代码中不存在本类**（全仓无 `*Vectorizer*` 实现，本轮 SPU 改名时核实，标为「文档有代码无」待清理，未核实其是否为历史遗留） | AI搜索上下文 |
 | `RAGRetriever`     | 多路召回（KNN + BM25）→ RRF 融合 → 重排序 → 上下文组装；`retrieveForSeller` **已接入客服应答链路**（`ai.rag.enabled` 渐进启用；失败/无命中返回 null 降级为无 RAG），商品召回管线供 `RAGSearchTool`（V5.4 接线，见 02-Architecture §3.4） | AI客服上下文 |
 | `AgentPlanner`     | ReAct 推理 + 工具链编排（🟡 GATED, ai.enabled=false：LangChain4j AiServices） | AI搜索上下文 |
 | `HandoffManager`   | 人机转交决策（🟡 GATED, ai.enabled=false）           | AI客服上下文 |
@@ -630,5 +639,5 @@
 
 | 图表   | 文件                     | 说明                                       |
 | ---- | ---------------------- | ---------------------------------------- |
-| 领域类图 | `drawio/IA_UML.drawio` | 12 个实体类 + 关联关系（User/Address/Merchant/Shop/Product/Sku/Category/Order/OrderDetail/Cart/PayOrder/OrderLogistics）；Merchant–Shop 1:N（ADR-019），Merchant 与 User 关联 |
+| 领域类图 | `drawio/IA_UML.drawio` | 12 个实体类 + 关联关系（User/Address/Merchant/Shop/Spu/Sku/Category/Order/OrderDetail/Cart/PayOrder/OrderLogistics）；Merchant–Shop 1:N（ADR-019），Merchant 与 User 关联 |
 | ER 图 | `drawio/IA_E-R.drawio` | 物理表关系（12 张表）；`seller` 表瘦身为 5 列（id/user_id/status/create_time/update_time，物理表名保留、领域类已更名 Merchant），店铺档案拆至 `shop` 表（1 商家 : N 店铺，uk_merchant_shop_name / idx_merchant_status，ADR-019） |

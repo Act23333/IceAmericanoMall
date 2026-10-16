@@ -2,7 +2,10 @@
 
 ## 状态
 
-已决策；**线格式（契约 + VO/DTO）先行**，库表/领域层重命名为后续独立批次
+**已落地（2026-10-15，提交 `578fac27`）** —— 实际执行为**一次性全量**（库表/列/索引/外键 + Java 类/包/字段/方法 + 线格式字段），而非本条原设想的「线格式先行、库表另批」；原因：本项目的类名与表名强耦合（PO `@TableName`、外键名、H2 内联 DDL、MapStruct 映射），分两批会造成中途不自洽。
+
+契约与四域文档同步见同批次（`05` 76 处 / `04` 43 处 / `03` 22 处 / `02` 6 处）。
+**仍待**：前端同步（BREAKING）、`drawio/` 图、存量 ES 索引 reindex、MySQL 重装 `Initialize.sql`。
 
 ## 背景
 
@@ -65,5 +68,5 @@
 ## 参考
 
 - ADR-002（双主键）、ADR-050（业务标识 `BINARY(16)`+UUIDv7）、**ADR-058**（VO 标识字段语义唯一性）、ADR-057（展示字段读模型）、ADR-045（库无存量数据）
-- `database/Initialize.sql:249`（`product.product_id BINARY(16)`）vs `:288`（`sku.product_id BIGINT`）
+- `database/Initialize.sql` 中 `spu.spu_id BINARY(16)`（原 `product.product_id`）vs `sku.spu_id BIGINT`（原 `sku.product_id`）
 - 审计报告 F-2（定性已由本 ADR 更正）
