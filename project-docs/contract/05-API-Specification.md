@@ -1,18 +1,22 @@
 # 05 — API 规格文档 (API Specification — SDD)
 
-> **最后更新**: 2026-10-17（**B4 批次：SPU 资源段与寻址口径收口，契约先行** —— [ADR-062](../adr/062-external-identifier-and-addressing.md)） | **版本**: V5.20.0 | **端点计数（可核验三元组，2026-10-17 由 `Implementation/back-end/scripts/extract-endpoints.mjs` 实测）**：**代码侧已实现 287**（公共 225 + 内部 62）+ **契约 §四 表行去重 330** = **契约条目合计 330**。**⚠ 契约与代码的路径字面量当前不一致（15 条），原因见下**：本批按裁决把 SPU 资源段由旧词改为 `spu`/`spus`（**契约先行**），代码侧落码待 **B5**、前端待 **B6** —— 因此提取器现报 **matched 272 / codeOnly 15 / docOnly 58**（B4 前为 287 / 0 / 43）；三项差值**全部**是同一批 15 条端点的「契约新路径 ↔ 代码旧路径」，**不存在未登记的第三方新增端点**。
+> **最后更新**: 2026-10-18（**B7a 批次：承载层解耦落契约 + 新增 P38 短码端点，契约先行** —— [ADR-063](../adr/063-external-channel-number-separation.md) §决策 7/8） | **版本**: V5.21.0
 >
-> **⚠️ 前端须知（本批次最重要的一条 —— B5 合并前不可按新路径编码）**：本批**只改文档**。在 B5 合并前，§四 中已改名的端点（§1.9 列出的 SPU 资源段）**照契约调用会 404**；接入方请以**代码实测**或 B5 合并后的契约为准。同时，标 `⚪` 的未实现端点本就**不可调用**（照契约编码必然 404，详见 §四 各表「状态」列的 `⚪` 标记）—— 如今**两类 404 成因不同，勿混**：`⚪` = 功能未实现；本批改名 = 路径已变、代码未跟。
+> **端点计数（可核验三元组，2026-10-18 由 `Implementation/back-end/scripts/extract-endpoints.mjs` 实测）**：**代码侧已实现 287**（公共 225 + 内部 62）+ **契约 §四 表行去重 331**；**matched 287 / codeOnly 0 / docOnly 44**。
 >
 > | 计数口径 | 数值 | 复核方式 |
 > | --- | --- | --- |
 > | 代码侧端点（去重 方法+路径） | **287** = 公共 225 + 内部 62 | `node Implementation/back-end/scripts/extract-endpoints.mjs` → `SUMMARY.code.distinct` |
-> | 契约 §四 表行（去重） | **330** | 同上 → `SUMMARY.doc.distinct`（**路径改名不改端点数**） |
-> | 双方匹配（方法+路径字面量一致） | **272** | 同上 → `SUMMARY.matched`（下降 15，**全部为 B4 改名项**） |
-> | 契约有 / 代码无 | **58**（= 原 43 + **B4 改名新增 15**） | 同上 → `SUMMARY.docOnly`；原 43 条的逐行证据与修复方向见 `quality/20-Doc-Code-Consistency-Audit.md` §A1 |
-> | 代码有 / 契约无 | **15**（= **B4 改名新增 15**；若不改名则为 0） | 同上 → `SUMMARY.codeOnly`。**判读口径**：这 15 条是**同一批端点的旧路径字面量**（代码尚未落码），不是新端点；B5 落码后应回到 **287 / 0 / 43** |
+> | 契约 §四 表行（去重） | **331**（B7a 前 330，**+1 = 新增 P38**） | 同上 → `SUMMARY.doc.distinct` |
+> | 双方匹配（方法+路径字面量一致） | **287** | 同上 → `SUMMARY.matched` |
+> | 契约有 / 代码无 | **44**（B7a 前 43，**+1 见下**） | 同上 → `SUMMARY.docOnly`；原 43 条（未实现 `⚪` 端点）的逐行证据见 `quality/20-Doc-Code-Consistency-Audit.md` §A1 |
+> | 代码有 / 契约无 | **0** | 同上 → `SUMMARY.codeOnly` |
 >
-> **判读这三对数字的正确方式（防止误判为回归）**：`codeOnly` 从 0 变 15 与 `docOnly` 从 43 变 58 **不是缺陷增长**，而是「契约先行」在该提取器口径下的必然投影 —— 提取器按**路径字面量**比对，本批刻意先把契约改成目标口径。**B5 的任务就是让这三项回到 287 / 0 / 43**（§十二 12.2 新增行给了精确落码面）。**同源影响**：§七 校验脚本 `check-section7.mjs` 的「不存在」由 **13 变 22**（**+9，同为改名项**），判读口径见 §七 开头注。
+> **本批（B7a）的唯一变化与判读**：`docOnly` **43 → 44**，变化**只有一个来源** —— 新增 **P38** `GET /api/item/spu/by-code/{code}` 已写进契约、**代码待 B7b 落码**（§4.4.1 状态列标 `⚪ 计划`）。按 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 4「**新增端点是显式决策**」，`docOnly` 上升是**预期内的决策投影，不是事故** —— 门禁的价值在于**暴露**决策，而不是逼人不加端点。`codeOnly` 仍为 **0**、`matched` 仍为 **287**。
+>
+> **B4 时点的 `272 / 15 / 58` 三元组已失效，勿再引用**：那是「契约先改名、代码未跟」的中间态；**B5（`4b999310`）已落码资源段改名**，路径字面量重新一致。同源脚本 `check-section7.mjs` 亦已回到 B4 前基线（**不存在 13 / 方法不符 2**，2026-10-18 实测）；本批 §七 新增 P38 一行后为 **14 / 2**（**+1 = P38 代码未落**，同属契约先行）。
+>
+> **⚠️ 前端须知（两类 404，成因不同，勿混）**：① 标 `⚪` 的端点 = **功能未实现**，照契约编码必然 404；② **P38 是本批新增、代码未落**，B7b 合并前调用同样 404 —— 落地页可先按「短码换 SPU 失败 → 走通用错误页」兜底。
 >
 > **V5.7–V5.18 全量落地**：FT/任务/活动中心/装修/笔记/推荐/facets/suggest/拼团/发票/知识图谱/多币种/小程序支付与分享码/AD48-68/I44-I61/P27-P37 均已实现，详见 §十 版本行 V5.7.0–V5.18.0。
 >
@@ -168,16 +172,16 @@ ADR-062 是决策记录，承担「历史字形」的存证职责。）
 | 载体 | 线上名 | 实测（2026-10-17） | 处置 |
 | :-- | :-- | :-- | :-- |
 | `HistoryVO`（U22 足迹） | `product_name` | `user-service` `adapter/response/HistoryVO.java` 以 `@JsonProperty("product_name")` **显式钉名**（javadoc 原话「避免改动前端报文契约」） | **保留为已登记例外** —— 不属「`spu_name` 名称收口」范围 |
-| S11 / AD14 统计行 | `productName` | `SellerDashboardManager.spuStats` / `AdminManager.topSpus` 返回 `Map` 的**字面键** `"productName"`（camelCase） | ⏳ **待收口为 `spu_name`**（BREAKING，随 B5，见 §十二 12.2） |
-| `CartItemCO`（I16 内部 Feign DTO） | `product_name` | `ia-api` `dto/CartItemCO.java` 字段 `productName`（cart → trade） | ⏳ **待收口为 `spu_name`**（随 B5，见 §十二 12.2） |
+| S11 / AD14 统计行 | `spu_name` | `SellerDashboardManager.spuStats` / `AdminManager.topSpus` 返回 `Map` 的**字面键** —— 2026-10-18 实测均为 `"spu_name"`（`spuStats` 走常量 `KEY_SPU_NAME`，`topSpus` 用字面量），聚合源字段 `OrderItem.spuName` | ✅ **已收口（B5，2026-10-18 B7a 实测复核）** —— 原记 `productName`（camelCase）/「⏳ 待收口随 B5」已作废；BREAKING 已随 B5 落地（ADR-062 §后果 E2） |
+| `CartItemCO`（I16 内部 Feign DTO） | `spu_name` | `ia-api` `dto/CartItemCO.java` 字段 `spuName`（cart → trade）；javadoc 明记「`productName`（线格式键 `product_name`）**已退役**」 | ✅ **已收口（B5，2026-10-18 B7a 实测复核）** —— 原记「⏳ 待收口随 B5」已作废 |
 | 前端页面路由 `/product/[id]`、`/seller/products`、`/admin/products` | — | 是**前端路由**，不是 API 路径 | **本批不动**；是否随 B6 改名另议（§十二 12.2） |
-| 非 API 命名空间：MinIO objectKey 前缀 `wxa-code/product/`、ES 索引名 `index=products`、DB 表 `note_product`、CDN 示例 `.../product/main_001.jpg`、示例串 `..._product_P001` | — | **不是 API 路径段** | **保留** —— 改名会孤立既有缓存对象 / 索引，收益为零（ADR-062 §决策 2 表 B） |
+| 非 API 命名空间：MinIO objectKey 前缀 `wxa-code/product/`、ES 索引名 `index=products`、DB 表 `note_product`、CDN 示例 `.../product/main_001.jpg`、示例串 `..._product_P001` | — | **不是 API 路径段** | **保留** —— 改名会孤立既有缓存对象 / 索引，收益为零（ADR-062 §决策 2 表 B）。⚠ **唯一例外（B7a 追加）**：小程序码 **objectKey 的形状**按 §1.9⑦-2 改为 **`wxa-code/v1/product/{内容哈希}.png`**（`v1/` 版本段承载旧键灰度）；`wxa-code/` 命名空间与 `product/` 层级**仍保留**，改的只是「用什么当键」，见 B7b 落码 |
 
 **⑤ 本批状态（诚实标注，不许含糊）**
 
-本批（B4）**只改文档**：契约已按新口径写定，**后端（B5）与前端（B6）尚未落码**。
-在 B5 合并前，§四 中已改名的端点**照契约调用会 404**；`extract-endpoints.mjs` 的 `matched` 会下降、
-`codeOnly` 会上升 —— **原因即此（契约先行），不是新增缺陷**（数字见文件头与 §十二 12.2）。
+- **B4（2026-10-17，只改文档）**：契约先按新口径写定，代码未跟 —— 那一时点 `matched` 下降、`codeOnly` 上升（`272 / 15 / 58`），**原因即「契约先行」，不是缺陷**。
+- **B5（`4b999310`）已落码**：资源段改名与业务键单形态**已在代码中生效**，路径字面量重新一致（2026-10-18 实测 **287 / 0 / 43**）。
+- **B7a（2026-10-18，本批，只改文档）**：新增 **P38**（代码待 B7b）→ `docOnly` **43 → 44**；这是[ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 4 所说的**显式决策**，不是回归。前端在 B7b 合并前**不得**把 P38 当作可用端点。
 
 **⑥ 渠道号不进对外报文（🆕 2026-10-18，[ADR-063](../adr/063-external-channel-number-separation.md)）**
 
@@ -190,7 +194,36 @@ ADR-062 是决策记录，承担「历史字形」的存证职责。）
 > **唯一例外（已登记）**：管理端对账差异明细 **AD45 的 `ReconciliationDetailVO` 新增 `channel_trade_no`**
 > —— 该字段就是**与渠道账单的比对键**，「渠道有本地无」的差异行更是**没有** `pay_order_no` 可供追查，
 > 不给渠道号则管理端无法定位。此为例外而非口径松动：**运维视图可见、业务报文不可见**。
-> AD45 仅**新增字段**，端点数量不变（端点对账仍 **287 / 0 / 43**）。
+> AD45 仅**新增字段**，端点数量不变（端点对账 B7a 实测 **287 / 0 / 44**）。
+
+**⑦ 承载层解耦：六类承载位的落位口径（🆕 2026-10-18，[ADR-063](../adr/063-external-channel-number-separation.md) §决策 7）**
+
+> **规则（一句话）**：**只有当承载位「天然表达实体身份」且「对外可寻址」时才放业务键；否则放内容派生值（内容哈希 / 短随机 / 短码）。**
+> 六项逐条给**裁决**与**条款**；「用业务键 / 用派生值 / 用短码」为该条唯一结论，不接受运行时二选一。
+
+1. **`scene`（P37 小程序码）→ 用短码。** `scene` 内容为 `p=<短码>`（短码口径见 ⑧），**不放业务键、也不放技术键**；短码换回 SPU 只走 **P38** `GET /api/item/spu/by-code/{code}`。依据：微信 `wxacode.getUnlimited` 的 `scene` 上限 **32 可见字符**，`p=` + 32-hex = **34 字符（已超限 2）**，而截断会指向**另一个商品**（不可接受，ADR-063 §决策 7 表 #2）。
+2. **objectKey（MinIO 对象键）→ 用内容派生值（内容哈希）；业务键与技术键一律不得作对象键。** 小程序码对象键为 **`wxa-code/v1/product/{c}.png`**，`c` = `sha256("<scene>|<page>")` 的**前 16 位小写 hex**（同 `scene`+`page` 恒得同键 ⇒ 覆盖写天然幂等，且**无需**新增存储列）。理由：换内部 ID 方案会令全部既有对象**孤立**、内容不变而键变会**重复生成**、对外对象键可被**枚举/反推**（ADR-063 §决策 7 表 #3）。**缓存影响必须同批处理**：改键会让旧键 `wxa-code/product/{技术键}.png` 下的对象变成**孤儿** ⇒ 新键加 **`v1/` 版本段**做灰度：① 回滚期旧对象仍在、仍可命中；② 可按前缀对旧键批量设生命周期清理；③ 将来再换算法即 `v2/`，与 `v1/` 并存灰度。
+3. **`home_config.spu_ids` → 用业务键**（这是**实体寻址**：装修配置项要回链商品详情，必须能被客户端直接消费）。**容量必须显式声明**：列宽 `VARCHAR(500)`，按「**33 字符/项 × n**」（32-hex + 1 个逗号分隔符，末项无逗号）⇒ **n ≤ 15**（15×32 + 14 = 494）。**写侧**：逐项 `IdGenerator.requireWire` 形态校验 + **条数上限 ≤ 15** + **去重**（重复项归一，不落重复值）；**读侧**：CSV 解析失败或个别项形态非法 ⇒ **fail-open 过滤**（丢弃该项、保留其余，不抛错、不使整条配置失效）—— 首屏装修数据坏一条**不得**拖垮首页。
+4. **`chat_message.conversation_id` → 用内容派生值（不用业务键）。** 它是**承载位**（会话聚合键），**不被当单号引用**；现形态 `buyer_{buyerId}_seller_{sellerId}_product_{productId}` 在业务键化后为 **57 字符**，而列宽 **`VARCHAR(36)`** ⇒ **超限 21 字符**（ADR-063 §决策 7 表）。改为 `sha256("<buyerId>|<sellerId>|<spuId>")` 的**前 32 位小写 hex**（或 32-hex 短随机）：**同三元组恒得同号**（会话幂等合并的前提），32 字符填入 36 位列宽并留 4 位余量，**不需要**映射表。⚠ **两套口径并存，必须同批对齐**：`ai_conversation.conversation_id` 是 **`BINARY(16)`（UUIDv7 原始字节，服务端 `IdGenerator.nextId()`）**，而 `chat_message.conversation_id` 是 **`VARCHAR(36)`（复合串口径）** —— 同名不同型、不同算法；若只改一侧，IM 会话与 AI 会话会**在同一个 `conversation_id` 名下互相查不到，且是静默的**。⚠ **实测补充（2026-10-18）**：该复合串在**代码与前端均无构造方**（`Implementation/back-end/ai-service` 无构造器，仅 `ChatSendReq` javadoc 与测试桩出现；`Implementation/front-end/**` `grep conversationId` 零命中）—— 即它目前只是**文档口径**，B7b 须**显式确定唯一派生点**（服务端），而不是继续「由调用方自造」；会话参与者不靠解析该串取得（`ChatMessageManager#loadParticipantIds` 从消息行 `sender_id`/`receiver_id` 归纳），故改成哈希**不影响鉴权**。
+5. **微信退款 `reason` → 人读摘要，不是身份。** 它**不承载任何标识**；适配层固化渠道上限常量 `MAX_REFUND_REASON_LENGTH = 80`（微信 v3 申请退款 `reason` 的字符上限；⚠ 仓库内**尚无**该常量，B7b 落地时须以渠道文档复核），并按**字符数**（不是字节数）截断或映射到**枚举文案**；**禁止把任何单号（`order_no` / `pay_order_no` / `refund_no` / `out_refund_no`）塞进 `reason`** —— 单号进人读字段会随渠道账单与工单外泄，且被截断后成为**半截单号**，比无单号更误导。
+6. **购物车条目上限 + CSV 阈值 → `MAX_CSV_IDS` 常量族**（`ia-common` 共享内核，与 `SecurityHeaders` 同风格集中定义，按「承载容量 ÷ 33 字符/项」倒推，**不按「以前用技术键时的习惯值」**）：
+
+   | 常量 | 值 | 覆盖载体 | 倒推依据 |
+   | :-- | :-- | :-- | :-- |
+   | `MAX_CSV_IDS_IN_COLUMN` | **15** | `home_config.spu_ids`（`VARCHAR(500)`） | ⌊500 / 33⌋ = 15（15×32+14 = 494 ≤ 500） |
+   | `MAX_COMPARE_SPU_IDS` | **4** | P24 `spu_ids`（Query，逗号分隔） | URL 预算：4×33 = 132 字符 request line，维持现契约「最多 4 个」 |
+   | `MAX_CART_ITEMS` | **200** | 购物车条目数（C2 加购） | **不是性能上限，是下单请求体预算**：200 项 × 32-hex ≈ 6.4 KB（旧技术键形态仅 ≈ 1.2 KB），网关/Feign/Sentinel 的 body 与 header 预算须按**业务键形态**重算 |
+   | `MAX_ORDER_ITEM_IDS` | **200** | T12 `ShipOrderReq.sku_ids`、C9 `sku_ids`（JSON body 数组） | ≤ `MAX_CART_ITEMS`：订单明细的来源是购物车/直购，明细数不会超过购物车条目上限 |
+
+   > 三条判据各管一类载体，**不得互相借用**：**列宽**决定列内 CSV（15）、**URL 长度预算**决定 Query CSV（4）、**请求体预算**决定 body 数组（200）。用错判据是本类缺陷的复发形态（ADR-063 §决策 7 的前缀预算表）。
+   > ⚠ **覆盖面诚实说明（2026-10-18 实测）**：四个常量里，`MAX_CART_ITEMS`（C2 已实现）与 `MAX_ORDER_ITEM_IDS`（T12 已实现）**有现存消费方**；`MAX_COMPARE_SPU_IDS`（P24 `GET /api/item/spu/compare`）与 C9 `DELETE /api/cart/batch` **在代码中尚不存在**（`extract-endpoints.mjs` 实测二者仍是 `docOnly`），故这两个值属**契约先行定义**，随对应端点实现时才被消费 —— **不得**据此宣称「已有代码校验」。
+
+**⑧ 短码（`short_code`）口径（🆕 2026-10-18，[ADR-063](../adr/063-external-channel-number-separation.md) §决策 8）**
+
+- **形态**：**8–10 位小写 `[0-9a-f]`**；当前取值 **10 位 hex**（40 bit 熵，`IdGenerator.randomHex(10)`，`SecureRandom` 纯随机、**无时间序**、**不复用业务键任何子串**）。列宽 `VARCHAR(16)` 为将来升到 16 位 hex 留位。
+- **短码不是实体标识（硬约束）**：**不得用于任何业务判断**（不得据此判重、判归属、判权限、判「是否同一商品」），**不得替代 `spu_id`** —— 也不得进入任何 VO / DTO 字段（把 `short_code` 加进 `SpuVO` 会把「承载层别名」升格成对外标识，本契约**明确禁止**）。它只是**寻址别名（alias）**，唯一用途 = 把 `scene` 换回 SPU。
+- **一对一且与商品同生命周期**：`spu.short_code`（`VARCHAR(16)` + `UNIQUE KEY uk_short_code`，**NOT NULL**）；**不过期**、**永不复用**（复用会把已投放的印刷物料指向另一个商品，与「截断 `scene`」同一类不可接受错误）。
+- **对外只出现在两处**：P37 写进 `scene`（`p=<短码>`）、P38 以路径变量 `{code}` 读出。**生成 / 存储 / 迁移的唯一细则见 ADR-063 §决策 8**（结论：**加列，不建映射表**；生成时机 = 商品创建时同一事务定稿，**不懒生成**；冲突 = 有界重试 ≤3 次后硬失败；库无存量数据 ⇒ 无迁移无回填）。
 
 ---
 
@@ -681,7 +714,10 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 | P36 | GET | `/api/currency/list` | 🌐  | —   | `List<CurrencyVO { code, name, symbol, exponent, rate_scaled, effect_time }>`（仅启用；本地表直读 + 可选 60s 缓存，I44 先例） | ✅ | ✅ V5.17 |
 | P37 | GET | `/api/item/spu/{spuId}/wxa-code` | 🌐  | Path: `spuId` (String, **SPU 业务键 32-hex**) | `WxaCodeVO { url }`（**商品分享小程序码**：微信 `wxacode.getUnlimited`（scene=`p={spuId}`）→ MinIO 缓存直返 URL；公开匿名，分享场景；✅ V5.18） | ✅ | ✅ V5.18 |
 
-> ⚠ **P37 `scene` 长度约束（🆕 B4，2026-10-17 实测记录，供 B5 处置 —— 本条未裁决）**：现实现为 `scene = "p=" + spuId`（`item-service` `SpuShareManager`），且其代码注释自称「远小于 32 字符上限」。**该注释只对技术键成立**：微信 `wxacode.getUnlimited` 的 `scene` 上限为 **32 个可见字符**，而 32-hex 业务键加前缀后为 **34 字符 → 超限**。B5 落码路径变量口径时**必须同时决策**：（a）`scene` 改存技术键（则小程序码成为**唯一**接受技术键的对外入口，须显式登记为例外）；（b）改用短码 / 短链映射；（c）`scene` 截断（**不可接受** —— 会导致分享回链错商品）。**未裁决前不得据本契约直接改 `SpuShareManager`**。
+> ✅ **P37 `scene` 长度约束 —— 已裁决（B7a，2026-10-18，[ADR-063](../adr/063-external-channel-number-separation.md) §决策 7/8）**：微信 `wxacode.getUnlimited` 的 `scene` 上限 **32 个可见字符**，而 `"p=" + 32-hex 业务键` = **34 字符 → 超限 2**（原代码注释「远小于 32 字符上限」**只对技术键成立**）。
+> **裁决**：`scene` 改存 **短码**（`scene = "p=<短码>"`，短码 10 位 hex ⇒ 共 **12 字符**，留 20 字符余量），落地页用 **P38** `GET /api/item/spu/by-code/{code}` 把短码换回 SPU。
+> **落码批次 = B7b**（`item-service` `SpuShareManager`：`scene` 与 objectKey 双改，见 §1.9⑦-1/-2）；**B7b 合并前现实现仍为 `scene="p="+技术键`、objectKey=`wxa-code/product/{技术键}.png`**，与契约**暂不一致**，已登记在 §十二 12.2。
+> **不可接受的选项（留档，防复发）**：（a）`scene` 改存技术键 —— 会让小程序码成为**唯一**接受技术键的对外入口；（c）`scene` 截断 —— 会把分享回链**指向另一个商品**。
 
 ### 4.3 商家/店铺服务 (merchant-service)
 
@@ -768,6 +804,26 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 | P3  | POST | `/api/item/spu`             | 🏪  | `CreateSpuReq { category_id, name, main_image?, description?, brand?, skus: [{ spec, price, stock, image?, original_price? }] }`               | `Void`             | ✅ | ✅   |
 | P4  | PUT  | `/api/item/spu/{spuId}`        | 🏪  | Path: `spuId` (String, **SPU 业务键 32-hex**，§1.8), Body: `UpdateSpuReq { name?, main_image?, description?, brand?, category_id? }`                                            | `Void`             | ✅ | ✅   |
 | P5  | PUT  | `/api/item/spu/{spuId}/status` | 🏪  | Path: `spuId` (String, **SPU 业务键 32-hex**，§1.8), Query: `status` (Integer: 1上架/0下架)                                                                                           | `Void`             | ✅ | ✅   |
+| P38 | GET  | `/api/item/spu/by-code/{code}` | 🌐  | Path: **`code`（String，短码 8–10 位 `[0-9a-f]` —— 非业务键、非技术键**，§1.9⑧）                                                                                       | **`SpuVO`（与 P2 `GET /{spuId}` 完全同形，不新增任何字段）** | **⚪ 计划** | **⚪ B7b（本批仅契约）** |
+
+> **P38 短码换业务键（🆕 2026-10-18，B7a 新增——[ADR-063](../adr/063-external-channel-number-separation.md) §决策 7/8）**
+>
+> - **用途**：小程序码 `scene`（`p=<短码>`）落地页用它把**短码换回 SPU**，拿到与 P2 同形的 `SpuVO` 后按 `spu_id` 继续正常调用（详情/评价/相似等）。**P38 是「短码 → 业务键」的唯一入口**，不做别名转发。
+> - **出参**：`SpuVO`，**与 P2 完全同形**；**不得新增 VO 字段** —— 特别是**不得**把 `short_code` 加进 `SpuVO`（那会把承载层别名升格为对外标识，§1.9⑧）。
+> - **失败语义**：
+>
+>   | 情形 | 结果 |
+>   | :-- | :-- |
+>   | `code` 形态非法（非 8–10 位 / 含 `[0-9a-f]` 之外字符） | **400 `PARAM_ERROR(1101)`** fail-fast（§1.9② 纪律：拼错的标识应得 400，而不是「查不到」的 404） |
+>   | 短码不存在（含从未分配） | **404 `NO_RESOURCE_FOUND(1103)`** |
+>   | 短码存在但商品已删除（`spu.status=3`） | **404 `NO_RESOURCE_FOUND(1103)`** |
+>   | 短码存在但商品已下架（`spu.status=2`） | **200 + `SpuVO`**（`status` 如实回给前端，由落地页渲染「已下架」态；判据与 P2 一致） |
+>
+>   ⚠ **「SPU 不存在」现有两套错误承载（本批登记，未统一）**：P2 详情走 **`PRODUCT_NOT_FOUND(3011)`，HTTP 200 信封**（§二：3xxx 业务码一律 HTTP 200）；**P37 分享码与 P38 走 `NO_RESOURCE_FOUND(1103)`，真 HTTP 404**。**P38 取 1103/404 的理由**：小程序码落地页需要**真 404** 才能落到宿主统一错误页，而 200 信封在分享入口会被当成「页面正常」渲染出空壳。**统一两套口径不在本批范围**（会改动 P2 的既有承载，属 BREAKING，需仲裁）。
+>   ⚠ **另注（事实订正）**：任务口径曾称「沿用既有 `SPU_NOT_FOUND`」——**该错误码在 `ia-common` `ErrorCode` 中不存在**（全仓 `grep` 零命中），故本行按**实测**口径写定 1103，不新造枚举项。
+> - **路由无歧义**：`/by-code/{code}` 的 `by-code` 是**字面段**，与既有 `/{spuId}`（变量段）、`/page`（字面段）共存；Spring 路径匹配字面段优先于变量段，故 `GET /api/item/spu/by-code/8f3a1c9d20` **不会**被 `/{spuId}` 吞掉。**网关零改动**：`/api/item/**` 既有路由且**仅 GET 匿名**已覆盖（§六）。
+> - **这是承载层解耦的产物（口径原文）**：**`scene` 只有 32 可见字符预算，而业务键 32-hex 加 `p=` 前缀即 34 字符 → 超限**，故 `scene` 里放**短码**、由 P38 换回 SPU。**短码不是实体标识：不得用于任何业务判断，也不得替代 `spu_id`。**（ADR-063 §决策 7 表 #2 / §决策 8）
+
 
 **`SpuVO`**（标识口径见 §1.8；`spu_id` 为 SPU 业务键 32-hex）:
 
@@ -2090,7 +2146,8 @@ Feature: 买家退款资金流（F1）
 | AD45 | GET  | `/api/admin/pay/reconciliation/batches/{id}/details` | 🔑 | Path: `id` (Long), Query: `page`(1), `size`(20), `result?`(1\|2\|3\|4) | `IPage<ReconciliationDetailVO>` | ✅ | ✅（V5.6） |
 | AD46 | POST | `/api/admin/pay/reconciliation/run?bill_date=` | 🔑  | Query: `bill_date` (yyyy-MM-dd，必填；channel 缺省=当日全部渠道)                | `List<ReconciliationBatchVO>`（本次批次列表——channel 缺省=全部渠道一次产出多条，指定单渠道时长度 1，ADR-036）  | ✅ | ✅（V5.6） |
 
-> - **AD43 退款重试**：仅 `status=失败(2)` 的退款单可重试（重新发起渠道退款，状态回处理中；微信渠道走原 refund_no 幂等）——非失败状态 → `REFUND_STATUS_INVALID(3039)`；`refund_no` 不存在 → `NO_RESOURCE_FOUND(1103)`。幂等：重复点击对同一失败单重试安全（渠道侧按退款单号幂等）。
+> - **AD43 退款重试**：仅 `status=失败(2)` 的退款单可重试（重新发起渠道退款，状态回处理中；**微信渠道走原 `out_refund_no` 幂等**）——非失败状态 → `REFUND_STATUS_INVALID(3039)`；`refund_no` 不存在 → `NO_RESOURCE_FOUND(1103)`。幂等：重复点击对同一失败单重试安全（**渠道侧按对外退款项号 `out_refund_no` 幂等**）。
+>   > **⚠ B7a 勘误（2026-10-18）**：本行原写「微信渠道走原 `refund_no` 幂等」，**与实现及 [ADR-063](../adr/063-external-channel-number-separation.md) §决策 4 冲突**。实测：渠道幂等键是 **`refund_order.out_refund_no`**（`Initialize.sql` 的 `uk_out_refund_no` 列），`WechatPaymentClient#refund` javadoc 原话「**`out_refund_no` 是渠道侧幂等键，重试必须复用同一 `outRefundNo`**」；`refund_no` 是**内部定位单号**，从不外发，渠道侧不认它。**「退款单号」在本表指 `refund_no`（内部）/「对外退款项号」指 `out_refund_no`（进渠道），两词不得互替**（三条术语见 §1.9⑥ 与 `backend/03-Domain-Model.md` §六）。
 > - **AD46 手动触发对账**：`bill_date` 缺失/格式非法 → 400 `PARAM_ERROR(1101)`；同日同渠道重复执行**幂等（先删后写）**。**账单拉取失败 → 落 `status=2 失败` 批次并继续其它渠道**（可区分"账单未生成"与"当日零交易"，ADR-036）。日终自动任务走 XXL-Job（dev 默认关闭）。
 > - **AD44/AD45 差异查看**：`result` 四态——1-匹配 / 2-渠道有本地无 / 3-本地有渠道无 / 4-金额不一致；**Phase 1 仅记录差异供查看，不自动调账**（本地侧只读，ADR-036）。
 > - 审计注记（ADR-032）：AD43/AD46 写操作产生审计留痕（ELK AUDIT 日志）。
@@ -2610,7 +2667,7 @@ data: [DONE]
 
 > 此映射表供 Next.js 前端开发对照使用。按页面路由组织，列出每个页面需要调用的 API。
 >
-> **§七 校验口径（🆕 2026-10-15 fix-doc；🔁 2026-10-17 B4 复核）**：本表由 `node Implementation/back-end/scripts/check-section7.mjs` 逐行校验（**动态锚定 §七↔§八 区间**；提取全表 `` `METHOD /path` `` 引用与代码实测端点取差集）。**fix-doc 批次实测：引用 145 条（去重）→ 代码中存在 130 / 不存在 13 / 方法不符 2**；**B4 改名后实测：引用 145（不变）→ 存在 121 / 不存在 22 / 方法不符 2** —— **「不存在」增加 9 条，全部是 B4 路径改名项**（`/api/item/spu*`、`/api/search/spu`、`/api/admin/spu*`、`/api/item/review/spu*` 共 9 行），**原因同 §1.9⑤（契约先行、代码未跟）**，B5 合并后应回到 130 / 13 / 2；其余 13 条的判读见下方「读数须知」。
+> **§七 校验口径（🆕 2026-10-15 fix-doc；🔁 2026-10-17 B4 复核；🔁 2026-10-18 B7a 复测）**：本表由 `node Implementation/back-end/scripts/check-section7.mjs` 逐行校验（**动态锚定 §七↔§八 区间**；提取全表 `` `METHOD /path` `` 引用与代码实测端点取差集）。**fix-doc 批次实测：引用 145 条（去重）→ 代码中存在 130 / 不存在 13 / 方法不符 2**；**B4 改名后曾为 121 / 22 / 2**（+9 全是 B4 改名项）；**B7a 复测（2026-10-18，B5 已落码）：145 → 存在 130 / 不存在 13 / 方法不符 2，已回到 fix-doc 基线**。**本批新增 P38 一行后，「不存在」变为 14**（**+1 = P38 代码待 B7b**，仍属契约先行，见文件头）。其余 13 条的判读见下方「读数须知」。
 >
 > **本批次已处理（原 19 条「不存在」+ 2 条方法不符）**：**9 条真实缺陷更正为代码真实路径**（注册发码 `POST /api/user/code` → `POST /api/verification/codes`；签到 `/api/user/sign*` → `/api/sign*`；购物车 `grouped`、结算 `available/filter`、商家审核 `application`、商品管理 `admin/spu/*`、品牌管理 3 条 → 已加 `⚪ 未实现` 标注或指向替代端点）；**9 条计划项加 `⚪ 未实现` 标注**；**2 条方法不符已更正**（`GET /api/seller/apply` → `POST`；`GET /api/admin/coupon` → 实测仅 `POST` 创建，无 GET）。
 >
@@ -2633,6 +2690,7 @@ data: [DONE]
 | 注册      | `/register`        | `POST /api/verification/codes`（`channel=SMS`；**原 `POST /api/user/code` 已删、调用 404**）, `POST /api/auth/register`                                                                                                                |
 | 找回密码    | `/reset-password`  | `POST /api/auth/reset-password`                                                                                                                                 |
 | 微信小程序登录 | `/login` (小程序)   | `POST /api/auth/wechat/mini/login`                                                                                                                              |
+| **小程序码落地页**（分享扫码进入，小程序） | `/pages/product/detail/index?scene=p=<短码>` | **`GET /api/item/spu/by-code/{code}`（P38，⚪ 计划——代码待 B7b，B7b 前调用 404）**：把 `scene` 中 `p=` 之后的**短码**换成 `SpuVO`（与 `GET /api/item/spu/{spuId}` 同形），随后按返回的 `spu_id` 继续调用详情同款接口（`GET /api/item/spu/{spuId}`、`…/skus`、评价等）。口径见 §1.9⑦-1/⑧ 与 §4.4.1 P38 |
 
 ### 7.2 用户端页面 (需登录)
 
@@ -2931,6 +2989,7 @@ data: [DONE]
 | **V5.19.0** | **2026-10-16** | **标识与命名口径统一（批次 B1.5，[ADR-061](../adr/061-order-item-business-key-snapshot-and-price-compare.md)；**BREAKING** — 代码由 B2/B3 实施）**：①**新增 §1.8「SPU/SKU 标识口径」**——全平台标识口径唯一真相源（业务键 32-hex `String` / 技术键仅留 PO 与领域层 / 命名收口 `spu_name`·`spu_image` / 例外与未收口项登记）；②**命名收口**：契约全文 SPU 名称字段 14 处 → `spu_name`、主图字段 2 处 → `spu_image`（旧名清单见 ADR-061 §决策 5；DB 侧 `order_item` 的商品名快照列由 B2 改名）；③**标识类型收口（BREAKING）**：`SkuVO.spu_id`、`OrderItemVO.spu_id`/`sku_id`、`CartItemVO.sku_id` 与 C2-C5/C9/C10 入参、`FavoriteVO.spu_id`/`HistoryVO.spu_id` 与 U18/U19/U21 入参、`ReviewVO.spu_id`/`ReviewCreateReq.spu_id`、`FlashSaleVO.spu_id`/`sku_id`、`FlashBuyVO.spu_id`、`GroupBuyActivityVO`/`GroupBuyCreateReq`、`FlashSaleCreateReq`、`ShopDecorationVO.hot_spu_ids`、`NotePublishReq.spu_ids`/`NoteDetailVO.spus[].spu_id`、`RecommendSpuVO`/`SpuCardVO`、T6 `DirectOrderReq.sku_id`、T12 `ShipOrderReq.sku_ids` 一律改 **32-hex `String` 业务键**，样例值同步 32-hex；④**订单项口径**：§4.6.1 明文「订单项 = 业务键标识 + 快照；比价/失效提示为读时增强、fail-open、不缩行」；⑤**I13 响应须补 `sku_id`/`spu_id` 业务键**（ADR-058 §3）；I22 `spu_ids` 取值语义实测记录 + 待裁决；⑥**券范围口径**：`CouponVO`/`UserCouponVO` 的 `scope_values` **对外 CSV 串 / 存储 JSON 数组**并互链，订正原「scope_type=3 装 spu 业务标识」的失实表述（实测为技术键）；⑦**§十二 12.2 汇总**：B1 遗留（`OrderItemVO.spu_id`、`AiChatResponse.spus[]`、`UserCouponVO.scope_type/scope_values`）+ 本批新增（命名收口/类型收口/比价读模型/CSV 归一）+ 待裁决 R1-R3（路径变量、内部契约、券 scope 取值）+ 既有样本漂移 |
 | **V5.19.1** | **2026-10-17** | **B2 落码补记（文档追代码，[ADR-061](../adr/061-order-item-business-key-snapshot-and-price-compare.md) 状态转「已实施」）**：①**§4.14.10 I47/I48 标识口径落码**——`spu_id`（I47 幂等键 / I48 入参 / I48 命中）由数字改为 **SPU 业务键 32-hex `String`**，级联 `SpuVectorHitCO`/`SpuVectorUpsertCO`/`SpuVectorUpsertReq`/`SpuVectorDoc`/`SpuVectorClient.similar`/`SpuSearchGateway.findVectorById`；**ES 文档 `_id`/`id` 仍为技术键**（与 reindex、I28 命中 `id` 同源）；②**§4.14.5.1 `GET /internal/item/search/detail/{spuId}` 入参放宽为 `String`**（当批为「**双形态**」：纯数字=技术键 / 32-hex=业务键，**不新增路由**，端点对账 287/0/43 不变）；⚠ **该「双形态」已由 B4 废止**（见下行 V5.20.0 与 §1.9③：门禁的正确处置是显式新增端点并同步计数，而非绕开它）；③**主图线上名回退 `spu_image` → `main_image`**（全契约，与 DB 列及多数 VO 对齐；「主图」为区分性命名）；④**§1.8 更新**：内部契约标识类型收口已落码；补「类型守卫 glob 未命中」的诚实注记与「camelCase 为 Java 标识符引用、非线上名」说明；⑤**§十二 12.2 挂账清理**：类型收口主力面 / 比价读时增强 / 命名收口（后端）/ `UserCouponVO` 投影 / `scope_values` CSV 归一 / 券 scope 取值语义（R3）/ 内部契约收口（R2）/ 主图方言（R4）/ `OrderItemVO` 标识与快照 / 模板占位符 → **改标 ✅ 已落码**；R1（路径变量）与 `RecommendSpuVO`、比价线格式字段、`ReviewVO` 等**仍遗留**；**新增 R7**（守卫 glob 缺陷，需仲裁）|
 | **V5.20.0** | **2026-10-17** | **B4 批次（文档批）：SPU 资源段与寻址口径收口 —— 契约先行，代码待 B5/B6（[ADR-062](../adr/062-external-identifier-and-addressing.md)；**BREAKING**）**：①**SPU 资源段改名**：契约全文把「指向 SPU 实体」的资源段由旧词统一为 **`spu` / `spus`**（涉及 §1.1/§1.2/§1.4/§1.6 示例、§4.2.11 P37、§4.3.2 S5、§4.4.1/§4.4.2/§4.4.4/§4.4.7/§4.4.8/§4.4.xa、§4.9.1 SE1、§4.13.12 AD38/AD39、§4.14.5.1 I65、§4.14.10 I47/I48、§七 映射、§十 历史行、§十二 挂账）；**逐条「改前 → 改后」对照表与 8 条「非 SPU 实体 / 非 API 路径段故保留」条目见 ADR-062 §决策 2**；②**路径变量去歧义 + 单形态业务键**：SPU/SKU 路径变量一律显式名（`{spuId}` / `{skuId}`）且为 32-hex `String`，`{id}` 在 SPU/SKU 资源段内**全部退役**；③**删除「双形态」**：I65 改为**业务键单形态 + 形态非法 400 fail-fast**，并确立纪律「**双形态是为绕开『不新增端点』门禁而造的垫片……门禁的目的是暴露决策，不是逼人绕开它**」；④**新增 §1.9「SPU 资源段与寻址口径」**（含线上名例外清单）；⑤**顺带订正**：`HistoryVO.product_name` 例外**显式登记**；§1.8 / §12.2 关于 `ReviewVO`·`ReviewCreateReq`·`NoteDetailVO.spus[]`·`NotePublishReq.spu_ids` 的「仍为 `Long`」按实测订正为**已收口 `String`**；`U33` 路径变量由失实的 `{productId}` 订正为 `{historyId}`（**足迹行主键，非 SPU 标识**）；`SkuVO`/`CartItemVO`/`OrderItemVO` 的「代码待补」按实测订正为**已落码**；§4.4.2 标题去掉代码中不存在的 `SpuDetailController`；⑥**新增 §十二 12.2 挂账行**：路径改名代码落码（B5）、前端跟随（B6）、统计行与 `CartItemCO` 的 `productName` 线格式键名收口、P37 `scene` 长度约束。**本批只改文档**：B5 合并前 §四 中已改名端点**调用会 404**，`extract-endpoints.mjs` 的 `matched` 下降、`codeOnly` 上升属**契约先行的预期结果**（实测数字见文件头） |
+| **V5.21.0** | **2026-10-18** | **B7a 批次（文档批）：承载层解耦落契约 + 新增 P38 短码端点 —— 契约先行，代码待 B7b（[ADR-063](../adr/063-external-channel-number-separation.md) §决策 7/8）**：①**新增端点 P38** `GET /api/item/spu/by-code/{code}`（§4.4.1）—— 入参 **短码** 8–10 位 `[0-9a-f]`（非业务键、非技术键）、出参 **`SpuVO` 与 P2 同形且不新增任何字段**、状态列标 `⚪ 计划`（代码待 B7b）；失败语义：形态非法 → **400 `PARAM_ERROR(1101)`**、短码不存在/商品已删除 → **404 `NO_RESOURCE_FOUND(1103)`**、已下架 → **200 + `SpuVO`（含 `status`）**；**P 号分配理由**：§四 现存 P1–P37 **连续无空缺**（2026-10-18 实测 37 个 P 号全占用），故最小空闲号为 **P38**；②**新增 §1.9⑦「承载层解耦：六类承载位落位口径」**——`scene`→**短码** / objectKey→**内容哈希 + `v1/` 版本段灰度**（业务键不得作对象键）/ `home_config.spu_ids`→**业务键** + 容量按「33 字符/项 × n」= **≤15** + 写侧 `requireWire`+上限+去重 + 读侧 **fail-open 过滤** / `chat_message.conversation_id`→**内容派生 32-hex**（且须与 `ai_conversation.conversation_id BINARY(16)` **同批对齐**）/ 微信退款 `reason`→**人读摘要、禁止塞单号** + `MAX_REFUND_REASON_LENGTH` / **`MAX_CSV_IDS` 常量族**（列宽→15、URL 预算→4、body 预算→200）+ 购物车 **`MAX_CART_ITEMS`=200**；③**新增 §1.9⑧「短码口径」**——**非实体标识**（不得用于业务判断、不得替代 `spu_id`、**不得进任何 VO**）、不过期、永不复用；存储/生成/迁移的**唯一方案**见 ADR-063 §决策 8（**加列不建映射表**、创建时定稿、有界重试后硬失败、无迁移无回填）；④**订正两处契约矛盾**：§4.13.14 AD43「微信渠道走原 `refund_no` 幂等」→ **走原 `out_refund_no` 幂等**（实测 `WechatPaymentClient#refund` javadoc「重试必须复用同一 `outRefundNo`」，与 ADR-063 §决策 4 一致）；§1.9④ 两行「⏳ 待收口为 `spu_name`（随 B5）」→ **✅ 已收口（B5；B7a 实测复核 `spuStats`/`topSpus` 字面键均 `spu_name`、`CartItemCO.spuName` 已改名）**；⑤**P37 `scene` 由「未裁决」转「已裁决 = 短码」**（§4.2.11 注重写），objectKey 落点同步；⑥**计数**：`docOnly` **43 → 44**（**唯一变化 = P38**，按 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 4 属**显式决策**），`codeOnly` 仍 **0**、`matched` 仍 **287**、契约去重 **330 → 331**；**文件头 B4 时点的 `272 / 15 / 58` 已标失效**（B5 `4b999310` 已落码改名）。**本批只改文档**：B7b 合并前 P38 调用 404，且 `SpuShareManager` 的 `scene`/objectKey 仍为寄存形态（与技术键绑定，§十二 12.2 已挂账） |
 | **V5.16.0** | **2026-10-06** | **P3 第三批（F15 知识图谱 Phase 1：商品关系导购）契约先行——完整 PRD 定稿（01-PRD §十六，O1 聚焦导购/O2 混合最小形态已裁决）后规格收口**：①§4.14.10b 新增 **I57 edge/upsert（先删后写幂等，哨兵 -1）/ I58 neighbors（≤2 跳 terms，fail-open 空列表）/ I59 edges 清边**（search `kg_edges` 边索引投影；I57-I59 全链路 fail-open 对齐 ADR-046 定类）；②§4.4.x 新增 **P35** `GET /api/item/spu/{spuId}/pairing`（KG 图主召回 → 向量兜底 → 空态，与 P27 同页共存 O6）；③§4.13.8f 新增管理端 **AD61-63** 规则 CRUD + **AD64** 全量重建（裁决增量，兑现 US-KG-8）；④Phase 1 唯一新增 MySQL 表 `pairing_rule`（Initialize.sql 直改 59→60 表）+ ES `kg_edges` 边索引（D1 混合最小形态：MySQL 真相源 + ES 检索面；NebulaGraph 触发器化 §16.9）；⑤网关 `/api/admin/kg/**` 先于兜底声明；LLM 抽取/审核队列/政策问答/可视化均 Phase 2（触发器量化） |
 
 ---
@@ -2984,6 +3043,8 @@ data: [DONE]
 > **🆕 2026-10-16 批次 B1.5 汇总（本批新增 + B1 遗留 + 待裁决项，同表登记便于按图实施）**：
 > **① 命名收口** `spu_name`；**② 标识类型收口** 业务键 32-hex；**③ 比价/失效读时增强**（ADR-061）；**④ 券范围投影与形态**（B1 遗留）；**⑤ 待裁决 R1-R3**（路径变量 / 内部契约 / 券 scope 取值语义）；**⑥ 既有样本漂移（漏改）**。
 >
+> **🆕 2026-10-18 批次 B7a 汇总**：**① 新增端点 P38**（`GET /api/item/spu/by-code/{code}`，**短码换业务键**，状态 `⚪ 计划` —— 代码待 B7b；`docOnly` 43→44 是 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 4 的**显式决策**，非事故）；**② 承载层六项口径写定**（§1.9⑦：scene→短码 / objectKey→内容哈希+`v1/` / `home_config.spu_ids`→业务键+≤15+fail-open / `conversation_id`→内容派生+同批对齐 / 退款 `reason`→人读摘要 / `MAX_CSV_IDS` 常量族+购物车上限 200）+ **短码口径**（§1.9⑧：非实体标识、不得进 VO、不过期、永不复用）；**③ 两处契约矛盾订正**（§4.13.14 AD43 → `out_refund_no`；§1.9④ 两行 → ✅ 已收口 `spu_name`）；**④ 三条 B7b 落码挂账行**（P38 端点 / 承载层六项 / `spu.short_code` 列）。
+>
 > **🆕 2026-10-17 批次 B4 汇总**：**① 资源段与寻址口径**（[ADR-062](../adr/062-external-identifier-and-addressing.md)）—— SPU 资源段改 `spu`/`spus`、路径变量改显式名 + 业务键、删除 I65「双形态」；**② R1 已裁决**（路径变量收口，契约侧完成）；**③ 三条勘误**——`ReviewVO` 等 4 类「仍为 `Long`」实为**已收口**、R1 中 C10 的「已收口」属**失实**（该端点未实现）、`U33` 路径变量 `{productId}` 实为**足迹行主键**；**④ 新增挂账行**（表尾 5 条「⑥ B4 新增」）：路径改名 B5 落码、B6 前端跟随、`productName` 线格式键名收口、P37 `scene` 长度约束、跨文档引用同步。
 
 | 事项 | 说明 |
@@ -3004,8 +3065,11 @@ data: [DONE]
 | **【R7｜🆕 2026-10-17】ADR-061 类型守卫的 glob 未命中 adapter 面，导致 4 类字段的收口被**漏检**** | `Implementation/back-end/scripts/check-id-invariants.sh` 检查 4 的命中面 glob（`*/src/main/java/*/adapter/response` 等）与实际目录深度不匹配（bash `*` 不跨 `/`，且未开 `globstar`）→ **adapter 面零匹配**；`ia-api/src/main/java/org/icedamericanomall/dto` 一项正好命中，故 B2 的变异验证成立但**只覆盖该面**。**漏检实测 9 处**：`ReviewVO.spu_id`/`sku_id`、`ReviewCreateReq.spu_id`/`sku_id`、`NoteDetailVO.spus[].spu_id`、`RecommendSpuVO.spu_id`（**有意保留**，见 R1 条）、`NotePublishReq.spu_ids`、**`ShopDecorationVO.hot_spu_ids` / `ShopDecorationReq.hot_spu_ids`（`merchant-service`，字段名 `hotSpuIds`，同样被该 glob 漏检）**。**后果（当时）**：门禁 `[OK]` 是**假绿**，不得外推为「全量线格式标识类型已收口」。✅ **已消解（2026-10-17 B2.5；B4 复核）**：命中面已改 `find` 遍历（实测 26 个目录）+ 两条自证（命中目录数为 0 即失败、白名单陈旧即失败）；9 处的现行处置 = **6 处收口为 `String` 业务键**（`ReviewVO`·`ReviewCreateReq`·`NoteDetailVO.spus[]`·`NotePublishReq`）、**3 处白名单保留技术键**（`RecommendSpuVO.spu_id`、`ShopDecoration{VO,Req}.hotSpuIds`，理由见 ADR-061 §决策 8.2 #7-#9）。详见 [ADR-061](../adr/061-order-item-business-key-snapshot-and-price-compare.md) §后果 R7。⚠ **本表原「仍未收口」清单中列出的 4 类已不再成立**（见本表【② 类型收口】行）。|
 | **【⑥ B4 新增】前端页面路由是否跟改（B6 决定）** | 前端路由 `/product/[id]`、`/seller/products`、`/admin/products` 是**页面路由**，不是 API 路径，本批**未动**。是否随 API 段改名（→ `/spu/[id]` 等）属**前端产品决策**（影响外链/SEO/收藏夹），不得由 API 改名自动推导。**需仲裁**（product-manager ↔ frontend-engineer）|
 | **【⑥ B4 新增】P37 `scene` 长度约束（未裁决）** | 微信 `wxacode.getUnlimited` 的 `scene` 上限 **32 可见字符**；现实现 `scene = "p=" + 技术键`（短）尚可，一旦按本批契约改成 32-hex 业务键即 **34 字符 → 超限**。**必须显式决策**（a 保技术键并登记为该规则**唯一**例外 / b 短码映射 / c 截断——**c 不可接受**）。**需仲裁**（product-manager ↔ java-architect）；未裁决前**不得**据本契约直接改 `SpuShareManager`。详见 §4.2.11 P37 表下注 |
-| **【⑥ B4 新增】`productName` 线格式键名收口（S11 / AD14 / `CartItemCO`）** | 契约 S11/AD14 声明响应键为 `spu_name`，**实测**为 `SellerDashboardManager.spuStats` / `AdminManager.topSpus` 返回 `Map` 的**字面键 `"productName"`**（camelCase，同时违反 ADR-056 snake_case 与 ADR-061 `spu_name`）；`ia-api` `CartItemCO.productName`（I16 cart → trade）同为线格式键名遗留。AD14 契约另写响应类型 `List<SpuStatVO>`，而**代码中不存在该类**（实测零命中），实为 `List<Map<String,Object>>`。**处置（B5）**：三处一并收口为 `spu_name`（**BREAKING**，需同步 B6 与 §七 映射）；`HistoryVO.product_name` **不在此列**（`@JsonProperty` 显式钉名，**例外保留**，见 §1.9④）|
-| **【⑥ B4 新增】SPU 资源段改名 —— 代码落码（B5）/ 前端跟随（B6）** | 契约已把「指向 SPU 实体」的资源段统一为 `spu` / `spus`（逐条对照表见 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 2），**代码与前端尚未落码**。⚠ **B5 合并前，§四 中已改名的端点照契约调用会 404**；`extract-endpoints.mjs` 的 `matched` 下降 / `codeOnly` 上升即为此故（**契约先行，非新增缺陷**）。**B5 落码面**：`SpuController` / `ReviewController` / `InternalItemSearchController` / `InternalSearchController` / `SearchController` 的 `@RequestMapping`·`@*Mapping` 字面量、`SpuVectorClient` 与 **`SpuDetailClient`** 的 `@FeignClient(path=...)`（后者还须把 `@PathVariable Long id` 改为 `String spuId`；其「走公开契约」的既有偏差见 §1.9② 与 ADR-062 §后果 E7）、`ItemSearchClient.detail`、`SpuShareManager` 的 scene 与 objectKey；网关 `application.yml` 用的是 `/api/item/**` 等**通配前缀**，**无需改动**；`SecurityConfig.PUBLIC_GET_PATHS` 同理（`/api/item/**`、`/api/search/**`、`/api/shop/**` 覆盖新路径）。**B6 落码面**：`packages/api/hooks/*`、`packages/api/server.ts`、`apps/web`、`apps/miniprogram` 的路径字面量。⛔ **不得**在改路径的同时把路径变量留在技术键（否则「路径说业务键、实现收技术键」，即 R1 的旧病复发）|
+| **【⑥ B4 新增】`productName` 线格式键名收口（S11 / AD14 / `CartItemCO`）** | 契约 S11/AD14 声明响应键为 `spu_name`，**实测**为 `SellerDashboardManager.spuStats` / `AdminManager.topSpus` 返回 `Map` 的**字面键 `"productName"`**（camelCase，同时违反 ADR-056 snake_case 与 ADR-061 `spu_name`）；`ia-api` `CartItemCO.productName`（I16 cart → trade）同为线格式键名遗留。AD14 契约另写响应类型 `List<SpuStatVO>`，而**代码中不存在该类**（实测零命中），实为 `List<Map<String,Object>>`。**处置（B5）**：三处一并收口为 `spu_name`（**BREAKING**，需同步 B6 与 §七 映射）；`HistoryVO.product_name` **不在此列**（`@JsonProperty` 显式钉名，**例外保留**，见 §1.9④）。✅ **已落码（B5；B7a 实测复核）**：`spuStats` 用常量 `KEY_SPU_NAME="spu_name"`、`topSpus` 字面键 `"spu_name"`、`CartItemCO` 字段已改名 `spuName`（javadoc 记「`productName` 已退役」）；§1.9④ 对应两行已同步改 ✅ |
+| **【⑥ B4 新增】SPU 资源段改名 —— 代码落码（B5）/ 前端跟随（B6）** | 契约已把「指向 SPU 实体」的资源段统一为 `spu` / `spus`（逐条对照表见 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 2），**代码与前端尚未落码**。⚠ **B5 合并前，§四 中已改名的端点照契约调用会 404**；`extract-endpoints.mjs` 的 `matched` 下降 / `codeOnly` 上升即为此故（**契约先行，非新增缺陷**）。**B5 落码面**：`SpuController` / `ReviewController` / `InternalItemSearchController` / `InternalSearchController` / `SearchController` 的 `@RequestMapping`·`@*Mapping` 字面量、`SpuVectorClient` 与 **`SpuDetailClient`** 的 `@FeignClient(path=...)`（后者还须把 `@PathVariable Long id` 改为 `String spuId`；其「走公开契约」的既有偏差见 §1.9② 与 ADR-062 §后果 E7）、`ItemSearchClient.detail`、`SpuShareManager` 的 scene 与 objectKey；网关 `application.yml` 用的是 `/api/item/**` 等**通配前缀**，**无需改动**；`SecurityConfig.PUBLIC_GET_PATHS` 同理（`/api/item/**`、`/api/search/**`、`/api/shop/**` 覆盖新路径）。**B6 落码面**：`packages/api/hooks/*`、`packages/api/server.ts`、`apps/web`、`apps/miniprogram` 的路径字面量。⛔ **不得**在改路径的同时把路径变量留在技术键（否则「路径说业务键、实现收技术键」，即 R1 的旧病复发）。**B7a 追记**：B5 实际**未动** `SpuShareManager` 的 `scene`/objectKey（仍为技术键**寄存形态**，代码 javadoc 已登记），该两项**改由 B7b 按 §1.9⑦-1/-2 落码**（见本表下方 B7a 新增行）|
+| **【⑦ B7a 新增】P38 短码端点 —— 代码落码（B7b）** | 契约已写定 `GET /api/item/spu/by-code/{code}`（§4.4.1，`⚪ 计划`），**代码尚不存在**（`extract-endpoints.mjs` 实测 `docOnly` +1 = 44）。**B7b 落码面**：`SpuController` 加 `@GetMapping("/by-code/{code}")`（同 Controller、零网关改动）、`SpuManager` 加 `getSpuDetailByCode`（短码 → SPU 业务键 → 复用既有详情装配，**不得**另建第二套装配逻辑）、`SpuRepository.findByShortCode`（`uk_short_code` 等值查）、`Spu#create` 生成短码。**验收断言**：① 短码形态非法 → 400 `PARAM_ERROR`；② 不存在/已删除 → 404 `1103`；③ 已下架 → 200 且 `status=2`；④ 返回报文与 P2 **逐字段同形**（比对同一商品的两次响应，`diff` 为空）；⑤ `SpuVO` **不含** `short_code` |
+| **【⑦ B7a 新增】承载层六项落码（B7b）** | 逐项落点见 §1.9⑦ 条款与 [ADR-063](../adr/063-external-channel-number-separation.md) §决策 8：① `scene` → 短码（`SpuShareManager`）；② objectKey → `wxa-code/v1/product/{sha256(scene\|page)[0:16]}.png`（**旧键对象成孤儿**，须同批声明 `v1/` 灰度与清理策略）；③ `home_config.spu_ids` 写侧 `requireWire`+≤15+去重、读侧 **fail-open 过滤**；④ `chat_message.conversation_id` → `sha256(buyerId\|sellerId\|spuId)[0:32]`，**与 `ai_conversation.conversation_id BINARY(16)` 同批对齐**；⑤ 微信退款 `reason` → `MAX_REFUND_REASON_LENGTH` 常量 + 按字符数截断，**禁插入单号**；⑥ `MAX_CSV_IDS` 常量族 + `MAX_CART_ITEMS=200`（`ia-common` 集中定义）。**未落码前，§1.9⑦ 的六条均为「契约已定、代码未跟」** —— 与 P38 同一笔账 |
+| **【⑦ B7a 新增】`spu.short_code` 列未建库** | 契约/数据模型已写定（`backend/04-Data-Model.md` §3.5），**`Initialize.sql` 尚未加列**（B7b 按 [ADR-045](../adr/045-db-snapshot-single-source.md) **直改快照，无迁移脚本**）。生成/存储/生命周期细则见 ADR-063 §决策 8 |
 | **【⑥ B4 新增】跨文档引用同步（未做，转派）** | 契约内路径已改；**其他 project-docs 文档仍引用旧路径字面量**，须与 B5/B6 同批同步（清单与处数见 B4 交付报告「待同步项」）：`product/01-PRD.md`(3)、`product/02-Frontend-Integration-Checklist.md`(2)、`product/16-Frontend-Product-Design.md`(4)、`backend/02-Architecture.md`(2)、`backend/13-AI-Technology-Selection.md`(1)、`frontend/18-platforms/web.md`(6)、`frontend/21-Frontend-Refactor-Readiness.md`(3)、`quality/19-Test-Flow-Guide.md`(3)、`quality/20-Doc-Code-Consistency-Audit.md`(2)、`quality/22-API-Spec-BigTech-Conformance-Review.md`(3)、`collaboration/07-Tasks.md`(6)、`adr/020`(1)、`adr/061`(2)。理由：多数文件的 Owner 不是契约域，按分权须**经主 agent 派单**，不在本批越界改 |
 | 售后凭证图 `evidenceImages` | `AfterSaleApplyReq` 不接受该字段；凭证图上传与存储方案待排期 |
 | **`AiChatResponse.spus[]`（🆕 2026-10-16 记入待规划）** | 实现只有 `reply` + `conversation_id`（Record 两字段）；商品命中是 ai-service 内部 `SpuHit`，经 `SearchTool` 渲染成文本进 LLM 上下文，**不做结构化出参**。原样例（含 `image`/`reason`/`spu_id:1`）与实现三重不符，已按实现修正并移出正文（§4.11.1）。**重开需先更新 PRD/规格**；计划形态以 `SpuHit` 实有字段为准（`spu_id` 32-hex / `name` / `description` / `price_cents` / `sold_count`），**不含** `image`/`reason` |

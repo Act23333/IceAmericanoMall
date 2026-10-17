@@ -10,6 +10,7 @@
 > **2026-10-16（SPU 词汇统一，ADR-059 落地批次，后端 `578fac27`）**：库表重命名同步 —— 表 `product`→`spu`、`product_view_log`→`spu_view_log`、`note_product`→`note_spu`；列 `product_id`→`spu_id`（`spu.spu_id` 业务键 `BINARY(16)`；`sku.spu_id` / `review.spu_id` / `favorite.spu_id` / `spu_view_log.spu_id` / `flash_sale.spu_id` / `note_spu.spu_id` / `group_buy_activity.spu_id` 为技术外键）、`product_ids`→`spu_ids`（`home_config`）、`hot_product_ids`→`hot_spu_ids`（`shop_decoration`）；索引/外键/唯一键 `uk_product_id`→`uk_spu_id`、`idx_product_id`→`idx_spu_id`、`idx_product`→`idx_spu`、`uk_user_product`→`uk_user_spu`、`uk_note_product`→`uk_note_spu`、`fk_sku_product`→`fk_sku_spu`、`fk_view_log_product`→`fk_view_log_spu`、`fk_product_seller`→`fk_spu_seller`、`fk_product_category`→`fk_spu_category`、`fk_product_freight_template`→`fk_spu_freight_template`（§3.5/§3.6、§七 7.1/7.2/7.7/7.8、§五、§十一、§十二同步；表数 62 不变）。**§11.2 原记 `idx_product_time` 有误**，实测 `spu_view_log` 为 `uk_user_spu(user_id, spu_id)` + `idx_user_time(user_id, view_time)`，本批次一并更正。**刻意保留**：展示名 `product_name`/`product_image`、ES 索引名 `products`、`conversation_id` 的 `product_{productId}` 格式（客户端自造，ADR-050）。线格式契约同步见 [05 §4](../contract/05-API-Specification.md)。
 > **2026-10-16（历史注记词汇同步小批，`product`→`spu`）**：上一段（2026-10-03「最后更新」历史注记）中的表名旧词 `product/orders/…`、`product/review 实际列修正` 已按 [ADR-059](../adr/059-spu-sku-vocabulary-disambiguation.md) 词汇口径一并改为 `spu/orders/…`、`spu/review 实际列修正` —— 该段的**事实内容与结论未动**，仅统一词汇，避免历史注记成为旧表名的埋伏源。本文档头仍保留 `product` 旧词的两处为**合法保留**：①下一段（2026-10-16 SPU 词汇统一批次）的「改前→改后」映射记录；②**代码标识符/展示名的刻意保留清单**——展示名 `product_name`/`product_image`、ES 索引名 `products`、`conversation_id` 的 `product_{productId}` 格式（ADR-059「刻意保留」清单）。
 > **2026-10-18（B6 批次：对外渠道号与内部业务键分离，[ADR-063](../adr/063-external-channel-number-separation.md)，代码 `256abbf3`）**：①`pay_order` 新增 `channel_trade_no VARCHAR(32)` + `uk_channel_trade_no` —— **对外渠道号**（渠道 `out_trade_no` 的唯一取值来源；20 位随机 hex / 80 bit 熵 / 无时间序 / 跨重试稳定 / 余额渠道为 `NULL`）；②`refund_order` 新增 `out_refund_no VARCHAR(64)` + `uk_out_refund_no` —— **对外退款项号**（渠道 `out_refund_no` 的唯一取值来源，与内部 `refund_no` 分离）；**同时明确 `channel_refund_no` 仍是「渠道退款单号（微信 `refund_id`，回调回填）」，不承载对外退款项号**（两列语义相反：一为「我方发出」、一为「渠道回填」，不可互相顶替）；③`reconciliation_detail` 新增 `channel_trade_no`（比对键）且 `pay_order_no` **放开 `NULL`**（「渠道有本地无」的明细没有本地支付单，不得伪造）；④同步订正 §12.1 `refund_order` 的 `after_sale_id`（ADR-049 起**可空**）与 `biz_ref`（ADR-049 新增，既有文档缺失）。两列均按 ADR-050「**外部格式列保留 VARCHAR**」口径（`channel_*` / 非业务标识），不进 `BINARY(16)` 转换面。
+> **2026-10-18（B7a 批次：承载层解耦契约先行，[ADR-063](../adr/063-external-channel-number-separation.md) §决策 7/8）**：①`spu` 新增 **`short_code VARCHAR(16) NOT NULL` + `UNIQUE KEY uk_short_code`** —— SPU **短码**（10 位小写 hex / 40 bit 熵 / 无时间序 / 不复用业务键任何子串），唯一用途是写入小程序码 `scene`（`p=<短码>`）并由新增端点 **P38** `GET /api/item/spu/by-code/{code}` 换回 SPU；**不是实体标识**，不得进任何 VO，不得替代 `spu_id`。**⚠ 本批只写文档：`Initialize.sql` 尚未加列，B7b 落码**（ADR-045：直改快照，无迁移无回填，库无存量数据）。②**承载位容量口径登记**（不新增列，但决定「一列能装多少业务键」）：`home_config.spu_ids VARCHAR(500)` ⇒ 按「33 字符/项」上限 **15 项**；`chat_message.conversation_id VARCHAR(36)` 与 `ai_conversation.conversation_id BINARY(16)` 是**两套并存口径**，B7b 须同批对齐为内容派生 32-hex（现复合串业务键化后为 57 字符，**超限 21**）。详见 [05 §1.9⑦/⑧](../contract/05-API-Specification.md)。
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/变更表结构时必须同步
 
 ---
@@ -285,6 +286,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 |------|------|------|------|
 | id | BIGINT | PK | 技术主键 |
 | spu_id | BINARY(16) | UNIQUE, NOT NULL | 业务商品编号（UUIDv7 原始字节，ADR-050） |
+| short_code | VARCHAR(16) | UNIQUE, NOT NULL（**B7a 契约写定 / B7b 建库**） | SPU **短码**（承载层别名，8–10 位小写 `[0-9a-f]`，取值 10 位 hex = 40 bit 熵，`IdGenerator.randomHex(10)`；**不是实体标识** —— 不得用于任何业务判断、不得替代 `spu_id`、不得进任何 VO）。唯一用途：写入小程序码 `scene`（`p=<短码>`）并由 **P38** `GET /api/item/spu/by-code/{code}` 换回 SPU。生命周期：不过期、**永不复用**（软删保留占位）。细则见 [ADR-063](../adr/063-external-channel-number-separation.md) §决策 8、[05 §1.9⑧](../contract/05-API-Specification.md) |
 | seller_id | BIGINT | FK → seller.id, NOT NULL | 所属商家 |
 | category_id | BIGINT | FK → category.id, NOT NULL | 所属类目 |
 | name | VARCHAR(200) | NOT NULL | 商品名称 |
@@ -306,9 +308,14 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 | create_time | DATETIME | NOT NULL | |
 | update_time | DATETIME | NOT NULL | |
 
-索引：`uk_spu_id`, `idx_seller_id`, `idx_category_id`, `idx_status`, `idx_seller_status`
+索引：`uk_spu_id`, `idx_seller_id`, `idx_category_id`, `idx_status`, `idx_seller_status`, **`uk_short_code`（B7b 建）**
 
 外键：`fk_spu_seller` → seller.id ON DELETE RESTRICT，`fk_spu_category` → category.id ON DELETE RESTRICT
+
+> **B7a 登记（契约先行，B7b 建库）**：`spu.short_code` 为 **B7a 写定、B7b 落库** 的新增列（[ADR-045](045-db-snapshot-single-source.md)：**直接改 `Initialize.sql` 快照，无迁移脚本、无回填** —— 库无存量数据，`NOT NULL` 可立即生效）。
+> **为何是加列而非独立映射表**：1 SPU : 1 短码且同生同灭；`NOT NULL` 强制「生成只能发生在商品创建这一处」（避免懒生成导致同一商品在不同请求拿到不同短码）；落地页热路径零 join；
+> 短码是 **SPU 自身对外别名**（不可变、唯一、无独立生命周期）⇒ 属聚合内属性，不侵 `spu` 聚合职责。理由与残余风险（R7：一 SPU 一短码不支持按渠道分发/召回）见 [ADR-063](../adr/063-external-channel-number-separation.md) §决策 8。
+> ⚠ **排序规则注意**：`spu` 表是 `utf8mb4_unicode_ci`（**大小写不敏感**），当前短码限定小写 hex 故无冲突；若将来改 base62，**必须**同批把 `short_code` 列改 `_bin`/`_as_cs`，否则 `AbC` 与 `abc` 会被唯一键判等（静默冲突）。
 
 ### 3.6 sku（规格表 / SKU）
 
