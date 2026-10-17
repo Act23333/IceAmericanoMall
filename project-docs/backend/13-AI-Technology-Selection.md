@@ -1249,11 +1249,21 @@ public class SearchTool {
 | 现有服务 | AI 场景角色 | 调用接口 | 调用方式 |
 |---------|-----------|---------|---------|
 | `search-service` | 商品搜索 Tool | `GET /api/search/spu` | Feign (V2.5) / RestTemplate (V2.0) |
-| `item-service` | 商品详情/SKU查询 Tool | `GET /internal/item/product/{id}` | Feign |
+| `item-service` | 商品详情/SKU查询 Tool | **⚪ 已裁决（2026-10-18）：显式新增 `GET /internal/item/spu/{spuId}`，待落码**；**当前实现仍走公开 `GET /api/item/spu/{spuId}`**（`ia-api` `SpuDetailClient`，[ADR-062](../adr/062-external-identifier-and-addressing.md) §E7） | Feign |
 | `trade-service` | 订单查询 Tool | `GET /api/trade/order/{orderNo}` | Feign (V2.5) / RestTemplate (V2.0) |
 | `user-service` | 用户身份、地址查询 | `GET /internal/user/{id}` | Feign |
 | `gate-service` | AI 请求入口鉴权、限流 | — | HTTP 路由 |
 | `ia-common` | Result 包装、异常处理、@RateLimit | — | 依赖注入 |
+
+> **⚠️ `item-service` 行的订正记录（2026-10-18，B11 报出的仲裁项，已由用户裁决）**：本行原写 `GET /internal/item/product/{id}`，
+> 属**断言已存在**——**代码中不存在该内部端点**：`item-service` 内部面截至本批只有 `/internal/item/{freight-template, search, sku}` 三组
+> （实测 `adapter/internal/` 仅 `InternalFreightTemplateController` / `InternalItemSearchController` / `InternalSkuController`）；
+> AI Tool 实际经 `SpuDetailClient` 走**公开** `GET /api/item/spu/{spuId}`（`path = "/api/item/spu"`），
+> 这是 ADR-062 §后果 E7 登记在案的待根治项（服务间调用走公开契约）。
+> **用户裁决**：「显式新增 internal 端点，立项迁入内网」→ 契约侧已在
+> `contract/05-API-Specification.md` §4.14.5.2 新增 **I70** `GET /internal/item/spu/{spuId}`（状态 `⚪ 计划`），
+> 落码前端点对账 `docOnly` **+1**（43 → 44），按 ADR-062 §决策 4 属**显式决策**。
+> 该端点落码前，本行「当前实现」一栏即为**事实口径**，不要按裁决后口径编写调用代码。
 
 ---
 

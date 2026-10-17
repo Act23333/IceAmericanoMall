@@ -1,16 +1,18 @@
 # 05 — API 规格文档 (API Specification — SDD)
 
-> **最后更新**: 2026-10-18（**B7b 落码回写（`265543d6`）+ B11 文档回写批**：P38 已实现、承载层六项已落码、**「SPU 不存在」口径已统一**、跨文档旧路径已同步 —— [ADR-063](../adr/063-external-channel-number-separation.md) §决策 7/8） | **版本**: V5.21.1
+> **最后更新**: 2026-10-18（**「甲a」批次（裁决「甲」的契约侧）：SPU 名读出侧统一 `spu_name`（§1.8④）+ 新增内部端点 I70（§4.14.5.2，`⚪ 计划`）** —— 契约先行，代码待「甲b」；上一批 = B7b 落码回写（`265543d6`）+ B11 文档回写批） | **版本**: V5.21.2
 >
-> **端点计数（可核验三元组，2026-10-18 由 `Implementation/back-end/scripts/extract-endpoints.mjs` 实测）**：**代码侧已实现 288**（公共 226 + 内部 62）+ **契约 §四 表行去重 331**；**matched 288 / codeOnly 0 / docOnly 43**（B7b 落码 P38 后由 `287 / 0 / 44` 复原，非新增噪声）。
+> **端点计数（可核验三元组，2026-10-18 由 `Implementation/back-end/scripts/extract-endpoints.mjs` 实测）**：**代码侧已实现 288**（公共 226 + 内部 62）+ **契约 §四 表行去重 332**；**matched 288 / codeOnly 0 / docOnly 44**。
 >
 > | 计数口径 | 数值 | 复核方式 |
 > | --- | --- | --- |
 > | 代码侧端点（去重 方法+路径） | **288** = 公共 226 + 内部 62 | `node Implementation/back-end/scripts/extract-endpoints.mjs` → `SUMMARY.code.distinct` |
-> | 契约 §四 表行（去重） | **331**（B7a 前 330，**+1 = 新增 P38**） | 同上 → `SUMMARY.doc.distinct` |
+> | 契约 §四 表行（去重） | **332**（B7b 后 331，**+1 = 甲a 新增 I70**） | 同上 → `SUMMARY.doc.distinct` |
 > | 双方匹配（方法+路径字面量一致） | **288** | 同上 → `SUMMARY.matched` |
-> | 契约有 / 代码无 | **43**（B7a 期 44，**B7b 落码 P38 后回到 43**） | 同上 → `SUMMARY.docOnly`；原 43 条（未实现 `⚪` 端点）的逐行证据见 `quality/20-Doc-Code-Consistency-Audit.md` §A1 |
+> | 契约有 / 代码无 | **44**（B7b 后 43，**+1 = 甲a 新增 I70 `GET /internal/item/spu/{spuId}`，代码待甲b**） | 同上 → `SUMMARY.docOnly`；原 43 条（未实现 `⚪` 端点）的逐行证据见 `quality/20-Doc-Code-Consistency-Audit.md` §A1 |
 > | 代码有 / 契约无 | **0** | 同上 → `SUMMARY.codeOnly` |
+>
+> **🔁 甲a 对三元组的影响（2026-10-18）：`docOnly` 43 → 44，唯一来源 = 新增内部端点 I70**（§4.14.5.2，用户裁决「显式新增 internal 端点，立项迁入内网」）。按 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 4「**新增端点是显式决策**」，`docOnly` 上升是**决策的投影，不是事故**；`codeOnly` 仍 **0**、`matched` 仍 **288**。I70 落码后 `docOnly` 应回到 **43**（届时同步删除 §十二 12.2 对应挂账行）。
 >
 > **🔁 B7b 已落码（`265543d6`，2026-10-18）：`docOnly` 44 → 43、`matched` 287 → 288**，P38 代码已实现（§4.4.1 状态列已改 ✅），三元组回到 **288 / 0 / 43**。以下为 **B7a 时点**的判读（历史保留，勿作现状引用）：**B7a 的变化**：`docOnly` **43 → 44**，来源**只有一个** —— 新增 **P38** `GET /api/item/spu/by-code/{code}` 已写进契约、**代码待 B7b 落码**（§4.4.1 状态列标 `⚪ 计划`）。按 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 4「**新增端点是显式决策**」，`docOnly` 上升是**预期内的决策投影，不是事故** —— 门禁的价值在于**暴露**决策，而不是逼人不加端点。`codeOnly` 仍为 **0**、`matched` 仍为 **287**。
 >
@@ -136,6 +138,39 @@
 
 **③ 订单项特别口径（ADR-061）**：`OrderItemVO` = **业务键标识** + **快照**，二者不得互相顶替；比价/失效提示为**读时增强、fail-open**（见 §4.6.1）。
 
+**④ 「某个 SPU 的名字」线上键一律 `spu_name`（🆕 2026-10-18，用户裁决「甲」；`docOnly` 变化见 §十 V5.21.2）**
+
+> **规则（一句话）**：凡线上**报文中表示某个 SPU 的名字**的字段，键名一律 **`spu_name`**。
+> 不属于「SPU 名」的 `name`（**别的实体自己的名字**）**一律不动** —— 改它们才是制造歧义。
+
+- **理由（同一实体只许一个名字）**：裁决前同一个概念有两个线上键 —— SPU 实体自身的 VO 用 `name`（`SpuVO` 无 `@JsonProperty`，在 `SNAKE_CASE` 策略下线上键即 `name`），而**回填旁路 VO** 用 `spu_name`（`SkuVO` / `CartItemVO` / `FavoriteVO` / `FlashSaleVO` / `OrderItemVO`）。前端按其中任一键取值，都会在另一侧**静默变 `undefined`**（不报错、只是显示为空/占位）—— 本会话多数「数据不显示」缺陷即此成因。故统一为语义自明的 **`spu_name`**。
+- **BREAKING 面（本批契约已改，代码待「甲b」）**：`SpuVO`（P1 / P2 / P38 / S5 / AD39 出参）、`RecommendSpuVO`（P27 / P35 卡内元素）、`NoteDetailVO.spus[]`（P30）、`SpuSearchVO`（SE1 / I28）、`SpuVectorUpsertReq`（I47 入参）—— `name` → **`spu_name`**。**内部 DTO 须同批同步**：`SpuSearchItemCO`（I62 / I64 / I65）、`SpuDetailCO`（ia-api `SpuDetailClient`）、`SpuVectorUpsertCO`（I47 服务端承接对象）。**同一 PR 内两侧同时改名**，否则 Feign 反序列化静默落 `null`。
+- **例外（已登记，含「不要再统一」的标注）**：`HistoryVO.product_name` 是**唯一**保留的 SPU 名旧键（`user-service` `@JsonProperty("product_name")` 显式钉名，见 §1.9④ 与下表）—— **本批再次标注在此，防止下一个人顺手统一**。
+
+**不改清单（2026-10-18 逐条实测；各指不同实体，键名差异是语义正确的）**：
+
+| 字段 | 线上键 | 指的是谁的「名字」 | 处置 |
+| :-- | :-- | :-- | :-- |
+| `CategoryVO.name` / `CategoryTreeVO.name` | `name` | **类目**自己的名字 | 不改 |
+| `ShopVO.shopName` | `shop_name` | **店铺**自己的名字（⚠ 已实测：`ShopVO` **没有** `name` 字段） | 不改 |
+| `UserCouponVO.name` / `CouponVO.name` | `name` | **券**（券面名称） | 不改 |
+| `PromotionTagVO.name` / `PromotionVO.name` / `ActivityVO.name` | `name` | **促销 / 活动**名称（P2 详情 `promotions[].name` 即此类，**不是**商品名） | 不改 |
+| `DailyTaskVO.name` / `TaskDefVO.name` | `name` | **任务**名称 | 不改 |
+| `GroupBuyActivityVO.name` | `name` | **拼团活动**名称 | 不改 |
+| `CurrencyVO.name` / `CurrencyAdminVO.name` | `name` | **币种**名称 | 不改 |
+| `RoleVO.name` / `PermissionVO.name` | `name` | **角色 / 权限**名称 | 不改 |
+| `SearchFacetsVO.brands[].name` | `name` | **品牌**聚合桶（ES terms 聚合键） | 不改 |
+| `FreightTemplateVO.templateName` | `template_name` | **运费模板**名称 | 不改 |
+| `OrderVO.receiverName` / `WithdrawalVO.bankName` / `InAppMessageVO.senderName` | `receiver_name` / `bank_name` / `sender_name` | 收件人 / 开户行 / 发送者 | 不改 |
+| `NoteCardVO.title` / `NoteDetailVO.title` | `title` | **笔记**标题（⚠ 已实测：`NoteVO` 只有 `id`，**没有** `title`） | 不改 |
+| `ReviewVO.username` / `OperationLogVO.username` / `UserInfoResp.username` | `username` | **用户**账号名 | 不改 |
+| **`HistoryVO.productName`** | **`product_name`** | **SPU 名** —— ⚠ **唯一登记例外** | **保留**（`@JsonProperty` 钉名；§1.9④ 已登记，本条为**二次标注**） |
+| `CreateSpuReq.name` / `UpdateSpuReq.name` | `name` | **SPU 名**（**写侧入参**，P3 / P4） | **本轮未动** —— 待裁决，见 §十一 11.2 O2 |
+
+> ⚠ **事实订正（2026-10-18 实测，防后来者按不存在的字段做判断）**：`SkuVO` **没有** `name` 字段 —— 它的 SPU 名字段是 `spuName`（线上键已收口为 `spu_name`），`spec` 才是 SKU 规格；`ShopVO` **没有** `name`（是 `shopName`）；`NoteVO` **没有** `title`（只有 `id`）。任务口径里「`SkuVO.name` 是 SKU 自己的名字」这类说法**与代码不符**，本契约按实测口径写定。
+>
+> 非 API 命名空间的同名项**不在本规则范围内**（改名收益为零，见 §1.9④）：ES 索引字段 `SpuDocument.name`、ai-service 领域 `record SpuHit.name`（只经 `SearchTool` 渲染成文本进 LLM 上下文，不出报文）。
+
 ### 1.9 SPU 资源段与寻址口径（🆕 2026-10-17，ADR-062）
 
 > 与 §1.8 的分工：**§1.8 管「标识用什么形态」（业务键 32-hex），本节管「对外怎么寻址」** ——
@@ -171,7 +206,7 @@ ADR-062 是决策记录，承担「历史字形」的存证职责。）
 
 | 载体 | 线上名 | 实测（2026-10-17） | 处置 |
 | :-- | :-- | :-- | :-- |
-| `HistoryVO`（U22 足迹） | `product_name` | `user-service` `adapter/response/HistoryVO.java` 以 `@JsonProperty("product_name")` **显式钉名**（javadoc 原话「避免改动前端报文契约」） | **保留为已登记例外** —— 不属「`spu_name` 名称收口」范围 |
+| `HistoryVO`（U22 足迹） | `product_name` | `user-service` `adapter/response/HistoryVO.java` 以 `@JsonProperty("product_name")` **显式钉名**（javadoc 原话「避免改动前端报文契约」） | **保留为已登记例外** —— 不属「`spu_name` 名称收口」范围。**§1.8④（甲a）已二次标注**：这是全平台**唯一**保留的 SPU 名旧键，**勿顺手统一** |
 | S11 / AD14 统计行 | `spu_name` | `SellerDashboardManager.spuStats` / `AdminManager.topSpus` 返回 `Map` 的**字面键** —— 2026-10-18 实测均为 `"spu_name"`（`spuStats` 走常量 `KEY_SPU_NAME`，`topSpus` 用字面量），聚合源字段 `OrderItem.spuName` | ✅ **已收口（B5，2026-10-18 B7a 实测复核）** —— 原记 `productName`（camelCase）/「⏳ 待收口随 B5」已作废；BREAKING 已随 B5 落地（ADR-062 §后果 E2） |
 | `CartItemCO`（I16 内部 Feign DTO） | `spu_name` | `ia-api` `dto/CartItemCO.java` 字段 `spuName`（cart → trade）；javadoc 明记「`productName`（线格式键 `product_name`）**已退役**」 | ✅ **已收口（B5，2026-10-18 B7a 实测复核）** —— 原记「⏳ 待收口随 B5」已作废 |
 | 前端页面路由 `/product/[id]`、`/seller/products`、`/admin/products` | — | 是**前端路由**，不是 API 路径 | **本批不动**；是否随 B6 改名另议（§十二 12.2） |
@@ -836,7 +871,7 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
   "shop_logo": "https://...",
   "category_id": 1,
   "category_name": "陶瓷器具",
-  "name": "手工陶瓷茶杯",
+  "spu_name": "手工陶瓷茶杯",
   "main_image": "https://cdn.icedmall.com/product/main_001.jpg",
   "images": ["https://...", "https://..."],
   "description": "纯手工制作，高温烧制...",
@@ -858,6 +893,7 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
   "id": 1,
   "sku_id": "1a2b3c4d5e6f708192a3b4c5d6e7f809",
   "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "spu_name": "手工陶瓷茶杯",
   "spec": "天青/标准",
   "spec_dimensions": { "颜色": "天青", "尺寸": "标准" },
   "price": 12800,
@@ -1006,7 +1042,7 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 | --- | ------ | ------------------------------------ | --- | -------------------- | ---------------- | --- | ------ |
 | P25 | POST   | `/api/item/sku/{skuId}/stock-notify` | 🔒  | Path: `skuId` (Long) | `Void` (到货后推送通知) | ⚪ | ⚪ V5.0 |
 | P26 | DELETE | `/api/item/sku/{skuId}/stock-notify` | 🔒  | Path: `skuId` (Long) | `Void`           | ⚪ | ⚪ V5.0 |
-| P27 | GET  | `/api/item/spu/{spuId}/similar` | 🌐  | Path: `spuId` (String, **SPU 业务键 32-hex**)（⚠ 代码实测仍为技术键 `Long`，随 B5 收口）, Query: `size`(缺省5, ≤20) | `List<RecommendSpuVO>`（相似商品卡 `{ spu_id(SPU 业务键 32-hex), name, main_image, min_price }`；⚠ **实测 `RecommendSpuVO.spuId` 仍为 `Long` 技术键**（ADR-061 §决策 8.2 #7 白名单保留），随 B5 与路径变量同批收口 —— B5 前前端**不得**把该值当 32-hex 回链：按向量相似度降序，**恒过滤在售**并排除自身；ES 关闭/无相似命中 → 空列表不报错） | ✅ | ✅ V5.9 |
+| P27 | GET  | `/api/item/spu/{spuId}/similar` | 🌐  | Path: `spuId` (String, **SPU 业务键 32-hex**)（✅ **B5 已收口：`@PathVariable String spuId`**，2026-10-18 实测）, Query: `size`(缺省5, ≤20) | `List<RecommendSpuVO>`（相似商品卡 `{ spu_id(SPU 业务键 32-hex), spu_name, main_image, min_price }`；✅ **`RecommendSpuVO.spuId` 已随 B5 收口为 `String` 业务键**（2026-10-18 实测，ADR-062 §E3；原「保技术键」已作废），前端可**直接**把该值当 32-hex 回链：按向量相似度降序，**恒过滤在售**并排除自身；ES 关闭/无相似命中 → 空列表不报错） | ✅ | ✅ V5.9 |
 
 #### 4.4.xa NoteController — `/api/notes` (item-service, ✅ V5.12 — F12 内容社区 Phase 1，[ADR-048](../adr/048-content-notes-in-item-domain.md))
 
@@ -1016,12 +1052,12 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 | --- | ---- | ---------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --- | ------- |
 | P28 | POST | `/api/notes`             | 🔒  | `NotePublishReq { title(必填, ≤50), content(必填, ≤2000), cover_image?, images?(≤9 个 URL), spu_ids?(≤5 个 **SPU 业务键 32-hex**，去重，§1.8) }`                     | `NoteVO { id }`（发布即上架）                                                              | ✅ | ✅ V5.12 |
 | P29 | GET  | `/api/notes`             | 🌐  | Query: `page`(1), `size`(20)                                                                                                          | `Page<NoteCardVO>`（已发布，按发布时间倒序；`NoteCardVO { id, title, cover_image, like_count, author_id, create_time }`） | ✅ | ✅ V5.12 |
-| P30 | GET  | `/api/notes/{id}`        | 🌐  | Path: `id` (Long)                                                                                                                     | `NoteDetailVO { id, title, content, images, like_count, liked(登录用户视角，匿名恒 false), author_id, create_time, spus: [{ spu_id(SPU 业务键 32-hex), name, main_image, min_price }] }`（已发布；关联商品**在售过滤**，本地库直查） | ✅ | ✅ V5.12 |
+| P30 | GET  | `/api/notes/{id}`        | 🌐  | Path: `id` (Long)                                                                                                                     | `NoteDetailVO { id, title, content, images, like_count, liked(登录用户视角，匿名恒 false), author_id, create_time, spus: [{ spu_id(SPU 业务键 32-hex), spu_name, main_image, min_price }] }`（已发布；关联商品**在售过滤**，本地库直查） | ✅ | ✅ V5.12 |
 | P31 | POST | `/api/notes/{id}/like`   | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（uk 幂等：重复点赞空操作；首次原子 +1）                                              | ✅ | ✅ V5.12 |
 | P32 | DELETE | `/api/notes/{id}/like` | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（未点赞空操作；取消原子 -1 且不为负）                                                | ✅ | ✅ V5.12 |
 | P33 | DELETE | `/api/notes/{id}`      | 🔒  | Path: `id` (Long)                                                                                                                     | `Void`（**仅作者本人**，非本人 → 403；软删 status=2，流与详情不可见）                          | ✅ | ✅ V5.12 |
 | P34 | GET  | `/api/notes/{id}/similar` | 🌐  | Path: `id` (Long), Query: `size`(缺省5, ≤20)                                                                                          | `List<NoteCardVO>`（相似笔记卡：I51 kNN 命中 id 由 item 组装**发布态**笔记卡、排除自身、按相似度降序；ES 关闭/无命中 → 空列表不报错） | ✅ | ✅ V5.13 |
-| P35 | GET  | `/api/item/spu/{spuId}/pairing` | 🌐  | Path: `spuId` (String, **SPU 业务键 32-hex**)（⚠ 代码实测仍为技术键 `Long`，随 B5 收口）, Query: `limit`(缺省6, ≤10)                                                                             | `PairingCardVO { source: KG\|FALLBACK\|NONE, items: List<RecommendSpuVO> }`（卡内 `spu_id` 的**契约口径**为 **SPU 业务键 32-hex**；⚠ **实测**：代码中不存在 `SpuCardVO`，实际元素类型为 `RecommendSpuVO`，其 `spuId` 仍为 `Long` 技术键 —— 与 P27 同一张卡、同一原因，随 B5 收口，见 §十二 12.2 R8；**KG 搭配推荐卡**：图主召回（I58 类目 PAIR_WITH 邻居 → item 组装在售商品卡，按规则 weight 与销量排序、排除自身）→ 无规则回退向量相似（FALLBACK）→ 空态（NONE）；全链路 fail-open 不报错；O6 裁决与 P27 同页共存、位次随前端设计） | ✅ | ✅ V5.16 |
+| P35 | GET  | `/api/item/spu/{spuId}/pairing` | 🌐  | Path: `spuId` (String, **SPU 业务键 32-hex**)（✅ **B5 已收口：`@PathVariable String spuId`**，2026-10-18 实测）, Query: `limit`(缺省6, ≤10)                                                                             | `PairingCardVO { source: KG\|FALLBACK\|NONE, items: List<RecommendSpuVO> }`（卡内 `spu_id` 的**契约口径**为 **SPU 业务键 32-hex**；**实测**：代码中不存在 `SpuCardVO`，实际元素类型为 `RecommendSpuVO`（其 `spuId` ✅ 已随 B5 收口为 `String` 业务键），与 P27 同一张卡，见 §十二 12.2 R8；**KG 搭配推荐卡**：图主召回（I58 类目 PAIR_WITH 邻居 → item 组装在售商品卡，按规则 weight 与销量排序、排除自身）→ 无规则回退向量相似（FALLBACK）→ 空态（NONE）；全链路 fail-open 不报错；O6 裁决与 P27 同页共存、位次随前端设计） | ✅ | ✅ V5.16 |
 
 #### 4.4.9 FreightTemplateController — `/api/item/freight-template` (item-service)
 
@@ -1547,7 +1583,7 @@ Feature: 买家退款资金流（F1）
   "id": 1,
   "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
   "category_id": 1,
-  "name": "手工陶瓷茶杯",
+  "spu_name": "手工陶瓷茶杯",
   "description": "纯手工制作...",
   "brand": "冰美精选",
   "main_image": "https://...",
@@ -1770,12 +1806,12 @@ Feature: 买家退款资金流（F1）
 > - 线上响应体的 `AiChatResponse` 是 Java Record `AiChatResponse(String reply, String conversationId)` —— **只有 `reply` + `conversation_id` 两个键，没有 `spus`**。商品命中不做结构化出参：`SpuHit` 是 ai-service **服务内部**的领域 DTO（`domain/model/spu/SpuHit`），只经 `SearchTool` 渲染成**纯文本**追加进 LLM 上下文，最终由 LLM 把商品信息写进 `reply` 自然语言里（见 `SearchTool#searchSpus` 的 `- 名称 (ID:…) ¥价格 销量:…` 行格式）。**故 `spus` 已从样例删除并按"不保留无排期承诺"记入 §十二 12.2**，前端不应解析该键。
 > - 内部 `SpuHit` 的实际字段是 `spuId / name / description / priceCents / soldCount`（无 `image`、无 `reason`）。`spuId` 是 **SPU 业务标识的 32-hex 字符串形态**（`SpuVO.spu_id` / `SearchVO.spu_id` 同型，ADR-059），**不是 Long**。
 >
-> **⚪ 计划（若后续把商品命中结构化出参）**——形态以 `SpuHit` 为准（键名转 snake_case，ADR-056）：
+> **⚪ 计划（若后续把商品命中结构化出参）**——形态以 `SpuHit` 为准（键名转 snake_case，ADR-056；**SPU 名键为 `spu_name`**，§1.8④）：
 >
 > ```json
 > // ⚪ 计划字段，当前报文不含；启动前必须更新 PRD/规格
 > "spus": [
->   { "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0", "name": "Nike ZoomX",
+>   { "spu_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0", "spu_name": "Nike ZoomX",
 >     "description": "透气网面跑鞋", "price_cents": 49900, "sold_count": 1280 }
 > ]
 > ```
@@ -2315,6 +2351,21 @@ Feature: 渠道对账（F4）
 >
 > **实现落点（B5）**：`item-service` `ItemSearchQueryManager#detail(String spuId)` 只按业务键解析；`search-service` 侧 `SpuSearchGateway` / 向量锚点调用方（B2 已传业务键）不需再改，**只剩 `publishTime` 回填一处仍传技术键**，须改为先取业务键（ES 文档已存业务键字段，**无需新端点**）。
 
+#### 4.14.5.2 InternalItemSpuController — `/internal/item/spu` (item-service, ⚪ 计划中 — 🆕 2026-10-18 用户裁决「显式新增」)
+
+> **裁决背景（不是本批新造的口径，是给一条已存在的偏差补正路）**：`ia-api` `SpuDetailClient`（调用方 `ai-service` `FeignSpuDetailAdapter`，**活链路**）是**服务间调用却走公开契约** —— `@FeignClient(path = "/api/item/spu")` 打 `GET /api/item/spu/{spuId}`（ADR-062 §后果 E7 登记的待根治项）。按 §1.9② 与本契约 `collaboration/09-constraints.md` §三·六的口径，服务间调用应走 `/internal/**`（不过网关、不包装 `Result`）。
+> **用户裁决（2026-10-18）**：「**显式新增 internal 端点，立项迁入内网**」。按 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 4，**新增端点是显式决策** —— 本节新增使 `docOnly` **+1**（见 §十 V5.21.2），属**预期内的决策投影，不是事故**。
+> **编号理由**：§四 现存内部端点编号 **I7–I69 连续无空缺**（2026-10-18 实测 63 个 I 号全占用），故最小空闲号为 **I70**。
+
+| #   | 方法 | 路径                            | 请求                                                                                       | 响应 (原始)                                                                                                                                                                              | 状态 | 阶段                                     |
+| --- | -- | ----------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -- | -------------------------------------- |
+| I70 | GET | `/internal/item/spu/{spuId}` | Path: `spuId`（**`String`，SPU 业务键 32-hex**，必填；**形态非法 → 400 `PARAM_ERROR(1101)` fail-fast**，与 I65 同纪律） | `SpuDetailCO`（**原始类型，不包 `Result` 信封**）`{ id, spu_id, spu_name(§1.8④), description, brand, category_id, main_image, images, attributes, sold_count, status }`；SPU 不存在 / 已删除 → 按 §三·六 **404 `NO_RESOURCE_FOUND(1103)`** + 极简 `{"code","msg"}` | **⚪ 计划** | **⚪ 待「甲b」落码**（契约先行，见下「落码清单」） |
+
+> - **与公开 P2 的关系**：这是**同一份详情数据的内部出口**，不是第二套装配逻辑 —— 落码时**必须复用** `SpuManager` 的既有详情装配（`getSpuDetail(String spuId)` 同源），只换承载层（`/internal/**` + 不包 `Result`）。字段为 `SpuVO` 的子集（`SpuDetailCO` 现有形态，**不含** `skus` / `min_price` / `promotions` / `freight_template_id` / `comment_count`）。
+> - **当前实现（必须如实记录）**：截至本批（2026-10-18），`item-service` 内部面**只有** `/internal/item/freight-template`（I43）、`/internal/item/search`（I62-I65）、`/internal/item/sku`（I13-I15）**三组**，`/internal/item/spu` **在代码中不存在**；`SpuDetailClient` 仍走**公开** `GET /api/item/spu/{spuId}` 并解析 `Result<SpuDetailCO>` 信封。**故本行状态标 `⚪`，前端与任何调用方在落码前不得依赖它。**
+> - **落码清单（甲b）**：① `item-service` 新增 `adapter/internal/InternalItemSpuController`（`@RequestMapping("/internal/item/spu")` + `@GetMapping("/{spuId}")`，返回裸 `SpuDetailCO`，业务键解析复用 `SpuRepository` 的 `uk_spu_id` 查询，形态校验走 `IdGenerator` 的 wire 形态校验）；② `SpuDetailCO` 字段 `name` → **`spuName`**（§1.8④，与 `SpuVO` 同批）；③ `SpuDetailClient`：`path` → `/internal/item/spu`、返回类型 `Result<SpuDetailCO>` → **`SpuDetailCO`**（内部面不包信封，见 §1.3），并同步 `SpuDetailClientFallback` / ai-service `SpuDetailPort` / `FeignSpuDetailAdapter` / `SpuDetailTool`；④ 落码后本行状态改 ✅、`docOnly` 44 → 43，并**删除** §十二 12.2 对应挂账行。
+> - **零网关改动**：`/internal/**` 不经 Gateway（§1.1），故 §六 路由表无新增行。
+
 #### 4.14.6 InternalCartController — `/internal/cart` (cart-service)
 
 | #   | 方法     | 路径                        | 请求                                                     | 响应 (原始)             | 状态 | 阶段     |
@@ -2419,7 +2470,7 @@ Feature: 渠道对账（F4）
 | I28 | POST | `/internal/search/vector`                   | `VectorSearchReq { embedding: [Double], size?, seller_id?, index? }` | `List`（按 `index` 分流） | ✅ | ✅ 扩展 V5.5 |
 | I37 | POST | `/internal/search/vector/knowledge/upsert`  | `KnowledgeVectorUpsertReq { knowledge_id(必填), seller_id?, title?, content? }` | `int` (写入 chunk 数) | ✅ | 🆕 V5.5 |
 | I38 | POST | `/internal/search/vector/knowledge/delete`  | Query: `knowledge_id` (Long)                            | `boolean` (是否处理)        | ✅ | 🆕 V5.5 |
-| I47 | POST | `/internal/search/vector/spu/upsert`    | `SpuVectorUpsertReq { spu_id(必填，**SPU 业务键 32-hex `String`**), name(必填), description?, brand?, category_id?, main_image?, price?, sold_count? }` | `int`（1=已写入向量；**0=ES/Embedding 未启用静默跳过**；Feign 降级哨兵 `-1`） | ✅ | 🆕 V5.9，标识口径 ✅ B2 |
+| I47 | POST | `/internal/search/vector/spu/upsert`    | `SpuVectorUpsertReq { spu_id(必填，**SPU 业务键 32-hex `String`**), spu_name(必填, §1.8④), description?, brand?, category_id?, main_image?, price?, sold_count? }` | `int`（1=已写入向量；**0=ES/Embedding 未启用静默跳过**；Feign 降级哨兵 `-1`） | ✅ | 🆕 V5.9，标识口径 ✅ B2 |
 | I48 | GET  | `/internal/search/vector/spu/similar`   | Query: `spu_id` (**SPU 业务键 32-hex `String`**, 必填), `size`(缺省5, ≤20)     | `List<SpuVectorHitCO> { spu_id(**SPU 业务键 32-hex**), score }`（自身向量 kNN，排除自身；ES 关闭/自身无向量 → 空列表） | ✅ | 🆕 V5.9，标识口径 ✅ B2 |
 | I50 | POST | `/internal/search/vector/note/upsert`       | `NoteVectorUpsertReq { note_id(必填), title(必填), content?(≤2000) }` | `int`（1=已写入；**0=ES/Embedding 未启用**；Feign 降级哨兵 `-1`）；软删/取消发布 → 以 status=0 语义调用本端点删除该向量文档 | ✅ | 🆕 V5.13 |
 | I51 | GET  | `/internal/search/vector/note/similar`      | Query: `note_id` (Long, 必填), `size`(缺省5, ≤20)        | `List<NoteVectorHitCO> { note_id, score }`（自身向量 kNN 排除自身；命中仅 id+score，**发布态过滤与卡片组装归 item**） | ✅ | 🆕 V5.13 |
@@ -2798,7 +2849,7 @@ data: [DONE]
 
 ```json
 // SpuVO (标识口径见 §1.8：spu_id 为 SPU 业务键 32-hex)
-{ "id":1, "spu_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "seller_id":5, "shop_name":"冰美精选陶瓷", "category_id":1, "name":"手工陶瓷茶杯", "main_image":"https://...", "images":[...], "description":"...", "brand":"冰美精选", "sold_count":1280, "comment_count":86, "rating":4.7, "status":1, "sales_tags":["热销"], "publish_time":"...", "skus":[...] }
+{ "id":1, "spu_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "seller_id":5, "shop_name":"冰美精选陶瓷", "category_id":1, "spu_name":"手工陶瓷茶杯", "main_image":"https://...", "images":[...], "description":"...", "brand":"冰美精选", "sold_count":1280, "comment_count":86, "rating":4.7, "status":1, "sales_tags":["热销"], "publish_time":"...", "skus":[...] }
 
 // SkuVO (标识口径见 §1.8：sku_id / spu_id 均为业务键 32-hex String)
 { "id":1, "sku_id":"1a2b3c4d5e6f708192a3b4c5d6e7f809", "spu_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "spec":"天青/标准", "price":12800, "original_price":15800, "stock":50, "stock_type":1, "is_hot":true, "image":"https://...", "sold_count":320, "status":1 }
@@ -2872,7 +2923,7 @@ data: [DONE]
 
 ```json
 // SpuSearchVO (V5.4 删除 embedding；无 original_price/rating/shop_name/sales_tags；标识口径见 §1.8：spu_id 为 SPU 业务键 32-hex)
-{ "id":1, "spu_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "category_id":1, "name":"手工陶瓷茶杯", "description":"...", "brand":"冰美精选", "main_image":"https://...", "price":12800, "sold_count":1280 }
+{ "id":1, "spu_id":"0f1e2d3c4b5a69788796a5b4c3d2e1f0", "category_id":1, "spu_name":"手工陶瓷茶杯", "description":"...", "brand":"冰美精选", "main_image":"https://...", "price":12800, "sold_count":1280 }
 ```
 
 ### 8.9 营销
@@ -2991,6 +3042,7 @@ data: [DONE]
 | **V5.20.0** | **2026-10-17** | **B4 批次（文档批）：SPU 资源段与寻址口径收口 —— 契约先行，代码待 B5/B6（[ADR-062](../adr/062-external-identifier-and-addressing.md)；**BREAKING**）**：①**SPU 资源段改名**：契约全文把「指向 SPU 实体」的资源段由旧词统一为 **`spu` / `spus`**（涉及 §1.1/§1.2/§1.4/§1.6 示例、§4.2.11 P37、§4.3.2 S5、§4.4.1/§4.4.2/§4.4.4/§4.4.7/§4.4.8/§4.4.xa、§4.9.1 SE1、§4.13.12 AD38/AD39、§4.14.5.1 I65、§4.14.10 I47/I48、§七 映射、§十 历史行、§十二 挂账）；**逐条「改前 → 改后」对照表与 8 条「非 SPU 实体 / 非 API 路径段故保留」条目见 ADR-062 §决策 2**；②**路径变量去歧义 + 单形态业务键**：SPU/SKU 路径变量一律显式名（`{spuId}` / `{skuId}`）且为 32-hex `String`，`{id}` 在 SPU/SKU 资源段内**全部退役**；③**删除「双形态」**：I65 改为**业务键单形态 + 形态非法 400 fail-fast**，并确立纪律「**双形态是为绕开『不新增端点』门禁而造的垫片……门禁的目的是暴露决策，不是逼人绕开它**」；④**新增 §1.9「SPU 资源段与寻址口径」**（含线上名例外清单）；⑤**顺带订正**：`HistoryVO.product_name` 例外**显式登记**；§1.8 / §12.2 关于 `ReviewVO`·`ReviewCreateReq`·`NoteDetailVO.spus[]`·`NotePublishReq.spu_ids` 的「仍为 `Long`」按实测订正为**已收口 `String`**；`U33` 路径变量由失实的 `{productId}` 订正为 `{historyId}`（**足迹行主键，非 SPU 标识**）；`SkuVO`/`CartItemVO`/`OrderItemVO` 的「代码待补」按实测订正为**已落码**；§4.4.2 标题去掉代码中不存在的 `SpuDetailController`；⑥**新增 §十二 12.2 挂账行**：路径改名代码落码（B5）、前端跟随（B6）、统计行与 `CartItemCO` 的 `productName` 线格式键名收口、P37 `scene` 长度约束。**本批只改文档**：B5 合并前 §四 中已改名端点**调用会 404**，`extract-endpoints.mjs` 的 `matched` 下降、`codeOnly` 上升属**契约先行的预期结果**（实测数字见文件头） |
 | **V5.21.0** | **2026-10-18** | **B7a 批次（文档批）：承载层解耦落契约 + 新增 P38 短码端点 —— 契约先行，代码待 B7b（[ADR-063](../adr/063-external-channel-number-separation.md) §决策 7/8）**：①**新增端点 P38** `GET /api/item/spu/by-code/{code}`（§4.4.1）—— 入参 **短码** 8–10 位 `[0-9a-f]`（非业务键、非技术键）、出参 **`SpuVO` 与 P2 同形且不新增任何字段**、状态列标 `⚪ 计划`（代码待 B7b）；失败语义：形态非法 → **400 `PARAM_ERROR(1101)`**、短码不存在/商品已删除 → **404 `NO_RESOURCE_FOUND(1103)`**、已下架 → **200 + `SpuVO`（含 `status`）**；**P 号分配理由**：§四 现存 P1–P37 **连续无空缺**（2026-10-18 实测 37 个 P 号全占用），故最小空闲号为 **P38**；②**新增 §1.9⑦「承载层解耦：六类承载位落位口径」**——`scene`→**短码** / objectKey→**内容哈希 + `v1/` 版本段灰度**（业务键不得作对象键）/ `home_config.spu_ids`→**业务键** + 容量按「33 字符/项 × n」= **≤15** + 写侧 `requireWire`+上限+去重 + 读侧 **fail-open 过滤** / `chat_message.conversation_id`→**内容派生 32-hex**（且须与 `ai_conversation.conversation_id BINARY(16)` **同批对齐**）/ 微信退款 `reason`→**人读摘要、禁止塞单号** + `MAX_REFUND_REASON_LENGTH` / **`MAX_CSV_IDS` 常量族**（列宽→15、URL 预算→4、body 预算→200）+ 购物车 **`MAX_CART_ITEMS`=200**；③**新增 §1.9⑧「短码口径」**——**非实体标识**（不得用于业务判断、不得替代 `spu_id`、**不得进任何 VO**）、不过期、永不复用；存储/生成/迁移的**唯一方案**见 ADR-063 §决策 8（**加列不建映射表**、创建时定稿、有界重试后硬失败、无迁移无回填）；④**订正两处契约矛盾**：§4.13.14 AD43「微信渠道走原 `refund_no` 幂等」→ **走原 `out_refund_no` 幂等**（实测 `WechatPaymentClient#refund` javadoc「重试必须复用同一 `outRefundNo`」，与 ADR-063 §决策 4 一致）；§1.9④ 两行「⏳ 待收口为 `spu_name`（随 B5）」→ **✅ 已收口（B5；B7a 实测复核 `spuStats`/`topSpus` 字面键均 `spu_name`、`CartItemCO.spuName` 已改名）**；⑤**P37 `scene` 由「未裁决」转「已裁决 = 短码」**（§4.2.11 注重写），objectKey 落点同步；⑥**计数**：`docOnly` **43 → 44**（**唯一变化 = P38**，按 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 4 属**显式决策**），`codeOnly` 仍 **0**、`matched` 仍 **287**、契约去重 **330 → 331**；**文件头 B4 时点的 `272 / 15 / 58` 已标失效**（B5 `4b999310` 已落码改名）。**本批只改文档**：B7b 合并前 P38 调用 404，且 `SpuShareManager` 的 `scene`/objectKey 仍为寄存形态（与技术键绑定，§十二 12.2 已挂账） |
 | **V5.21.1** | **2026-10-18** | **B7b 落码回写 + B11 文档回写批（口径统一 + 跨文档旧路径同步）**：① **P38 短码端点代码已落**（`docOnly` 44→43 / `matched` 288）；② **承载层六项（§1.9⑦）全部落码**（scene 短码 / objectKey 内容哈希+`v1/` / `spu_ids` 业务键+≤15+fail-open / `conversation_id` 内容派生 / 退款 `reason` 80 常量 / `CsvIdLimits` 常量族）；③ **「SPU 不存在」两套错误承载已统一** → P2/P38 一律 404 + `NO_RESOURCE_FOUND(1103)`（依据 `collaboration/09-constraints.md` §三·六）；④ **P37 `scene` 长度约束闭合**（ADR-062 §E1 状态改 ✅）；⑤ **跨文档旧路径同步**（改前 `/api/item/product/**` → 改后 `/api/item/spu/**`、改前 `review/product` → 改后 `review/spu`、改前 `/api/search/product` → 改后 `/api/search/spu`）；端点三元组 **288 / 0 / 43** 不变 |
+| **V5.21.2** | **2026-10-18** | **「甲a」批次（用户裁决「甲」的契约侧）：SPU 名读出侧线上键统一 `spu_name` + 新增内部端点 I70 —— 契约先行，代码待「甲b」（**BREAKING**）**：①**新增 §1.8④**——「**凡报文中表示某个 SPU 名字的字段，键名一律 `spu_name`**」；写明**裁决理由**（同一实体只许一个名字：`SpuVO` 用 `name`、回填旁路 VO 用 `spu_name`，前端按任一键取值都会在另一侧**静默 `undefined`**，是本会话多数前端「数据不显示」的成因）；给出**BREAKING 面**（`SpuVO`/`RecommendSpuVO`/`NoteDetailVO.spus[]`/`SpuSearchVO`/`SpuVectorUpsertReq` + 内部 `SpuSearchItemCO`/`SpuDetailCO`/`SpuVectorUpsertCO`）与**不改清单**（14 类「别的实体自己的名字」逐条实测：`CategoryVO`/`CategoryTreeVO`/`ShopVO.shopName`/`UserCouponVO`/`CouponVO`/`PromotionTagVO`/`PromotionVO`/`ActivityVO`/`DailyTaskVO`/`TaskDefVO`/`GroupBuyActivityVO`/`Currency*VO`/`RoleVO`/`PermissionVO`/`SearchFacetsVO.brands[]`/`FreightTemplateVO.templateName`/`OrderVO.receiverName`/`WithdrawalVO.bankName`/`InAppMessageVO.senderName`/`NoteCardVO·NoteDetailVO.title`/`*VO.username`），并**再次标注唯一例外** `HistoryVO.product_name`；②**契约 8 处改名**：§4.4.1 `SpuVO` 样例、P27 卡字段、P30 `NoteDetailVO.spus[]` 卡字段、§4.9.1 `SpuSearchVO` 样例、I47 `SpuVectorUpsertReq` 入参、§8.3、§8.8（以上 7 处为现行正文）+ §4.11.1 `AiChatResponse.spus[]` 的 **`⚪ 计划`样例**（未实现的规划形态同步，防后续照抄旧键）；另**补齐** §4.4.1 `SkuVO` 样例漏写的 `spu_name`（该字段代码中一直存在）；③**新增内部端点 I70** `GET /internal/item/spu/{spuId}`（§4.14.5.2，`⚪ 计划`）—— 兑现 ADR-062 §后果 **E7** 与用户裁决「显式新增 internal 端点，立项迁入内网」；**编号理由**：I7–I69 连续无空缺（实测 63 个全占用），最小空闲号 I70；**当前实现仍走公开** `GET /api/item/spu/{spuId}`（`SpuDetailClient`），落码清单见该节表下注；④**计数**：`docOnly` **43 → 44**（**唯一变化 = I70**，按 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 4 属**显式决策**，不是回归）、`codeOnly` 仍 **0**、`matched` 仍 **288**、契约 §四 去重 **331 → 332**；⑤**登记两条开放/待裁决**：§十一 11.2 新增 **O2**（写侧 `CreateSpuReq.name`/`UpdateSpuReq.name` 是否同批收口 —— 本轮**未动**，理由与建议见该行）；§十二 12.2 新增三条「⑧ 甲a 新增」挂账（读出侧改名落码 / I70 落码 / 写侧待裁决）；⑥**顺带订正三处事实**：`SkuVO` **没有** `name` 字段（任务口径中「`SkuVO.name` 是 SKU 自己的名字」与代码不符，其 SPU 名字段为 `spuName`）、`ShopVO` **没有** `name`（是 `shopName`）、`NoteVO` **没有** `title`（只有 `id`）；⑦**本批只改文档**：甲b 合并前，前端按 `spu_name` 读 P2/P27/P30/SE1 会得到 `undefined`（旧键 `name` 仍在）—— 这是**契约先行的预期窗口期**，与 B4/B7a 同性质 |
 | **V5.16.0** | **2026-10-06** | **P3 第三批（F15 知识图谱 Phase 1：商品关系导购）契约先行——完整 PRD 定稿（01-PRD §十六，O1 聚焦导购/O2 混合最小形态已裁决）后规格收口**：①§4.14.10b 新增 **I57 edge/upsert（先删后写幂等，哨兵 -1）/ I58 neighbors（≤2 跳 terms，fail-open 空列表）/ I59 edges 清边**（search `kg_edges` 边索引投影；I57-I59 全链路 fail-open 对齐 ADR-046 定类）；②§4.4.x 新增 **P35** `GET /api/item/spu/{spuId}/pairing`（KG 图主召回 → 向量兜底 → 空态，与 P27 同页共存 O6）；③§4.13.8f 新增管理端 **AD61-63** 规则 CRUD + **AD64** 全量重建（裁决增量，兑现 US-KG-8）；④Phase 1 唯一新增 MySQL 表 `pairing_rule`（Initialize.sql 直改 59→60 表）+ ES `kg_edges` 边索引（D1 混合最小形态：MySQL 真相源 + ES 检索面；NebulaGraph 触发器化 §16.9）；⑤网关 `/api/admin/kg/**` 先于兜底声明；LLM 抽取/审核队列/政策问答/可视化均 Phase 2（触发器量化） |
 
 ---
@@ -3015,11 +3067,12 @@ data: [DONE]
 | 9 | 售后 `type` | **Integer 保留**，仅允许 1=退货退款 / 2=仅退款（`@Range` 校验，非法 → 400 `PARAM_ERROR`）；枚举值表已补 | §4.6.4 |
 | 10 | 站内信端点 | **按 notification-service 实现补录**（U28-U32 草案行下线重定义为已实现端点） | §4.2.9、§7.2 |
 
-### 11.2 开放项（待产品评审，1 条）
+### 11.2 开放项（待决策，2 条）
 
 | # | 事项 | 现状 | 归属 |
 | - | ---- | ---- | ---- |
 | O1 | 多券叠加接线（`user_coupon_ids`） | 策略层多券逻辑已就绪，请求体字段已删（V5.5）；重新接线需先出《多券金额分摊规则》PRD（金额分摊、跨券互斥、退款回滚口径） | **待产品评审 → PRD**；挂账 §十二 12.2 |
+| **O2** | **SPU 名的写侧入参是否同批收口**：`CreateSpuReq.name` / `UpdateSpuReq.name`（P3 `POST /api/item/spu`、P4 `PUT /api/item/spu/{spuId}`）现为 `name`，而**读出侧**本批已统一为 `spu_name`（§1.8④） | **本轮未改（明确的取舍，不是遗漏）**。理由：① 用户裁决的冲突面是「**同一 SPU 名在出参有两个键**」（`name` vs `spu_name`）造成的**静默 `undefined`**；写侧只有**一个**键名，**不存在**该冲突；② 改它会将 BREAKING 扩到**商家写接口**（`POST`/`PUT /api/item/spu`），超出本批「裁决甲」的范围；③ 实测前端**未调用**这两个端点（`Implementation/front-end/**` 对 `/api/item/spu` 的 `POST`/`PUT` 零命中），改动的收益与风险均低。**但登记在案**：若采纳「SPU 名字段一律 `spu_name`」的强读法，写侧也应改名 → **需主 agent 裁决**（建议：与「甲b」同批或明确写入「写侧保持 `name`」的长期口径，二选一，勿悬空） | **需仲裁**（contract ↔ 前端/商家端）；挂账 §十二 12.2 |
 
 ---
 
@@ -3045,6 +3098,8 @@ data: [DONE]
 > **① 命名收口** `spu_name`；**② 标识类型收口** 业务键 32-hex；**③ 比价/失效读时增强**（ADR-061）；**④ 券范围投影与形态**（B1 遗留）；**⑤ 待裁决 R1-R3**（路径变量 / 内部契约 / 券 scope 取值语义）；**⑥ 既有样本漂移（漏改）**。
 >
 > **🆕 2026-10-18 批次 B7a 汇总**：**① 新增端点 P38**（`GET /api/item/spu/by-code/{code}`，**短码换业务键**；✅ **B7b 已落码**，状态列已改 ✅；`docOnly` 43→44 是 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 4 的**显式决策**，非事故）；**② 承载层六项口径写定**（§1.9⑦：scene→短码 / objectKey→内容哈希+`v1/` / `home_config.spu_ids`→业务键+≤15+fail-open / `conversation_id`→内容派生+同批对齐 / 退款 `reason`→人读摘要 / `MAX_CSV_IDS` 常量族+购物车上限 200）+ **短码口径**（§1.9⑧：非实体标识、不得进 VO、不过期、永不复用）；**③ 两处契约矛盾订正**（§4.13.14 AD43 → `out_refund_no`；§1.9④ 两行 → ✅ 已收口 `spu_name`）；**④ 三条 B7b 落码挂账行**（P38 端点 / 承载层六项 / `spu.short_code` 列）—— ✅ **三条均已随 B7b（`265543d6`）收口**（见本表各行状态）。
+>
+> **🆕 2026-10-18 批次「甲a」汇总（用户裁决「甲」的契约侧）**：**① SPU 名读出侧线上键统一为 `spu_name`**（§1.8④ 规则 + 不改清单 + `HistoryVO.product_name` 例外二次标注；契约 **7 处现行正文** + 1 处 `⚪ 计划`样例 + `SkuVO` 样例补 `spu_name`）—— **代码待「甲b」**（`SpuVO` / `RecommendSpuVO` / `NoteDetailVO.SpuSummaryVO` / `SpuSearchVO` / `SpuDetailCO` / `SpuSearchItemCO` / `SpuVectorUpsertCO`）；**② 新增内部端点 I70** `GET /internal/item/spu/{spuId}`（§4.14.5.2，`⚪ 计划`，`docOnly` 43 → 44 属 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 4 的**显式决策**）；**③ 写侧 `CreateSpuReq.name`/`UpdateSpuReq.name` 未动**，登记入 §十一 11.2 **O2**（待裁决）。三条挂账见本表末尾「⑧ 甲a 新增」行。
 >
 > **🆕 2026-10-17 批次 B4 汇总**：**① 资源段与寻址口径**（[ADR-062](../adr/062-external-identifier-and-addressing.md)）—— SPU 资源段改 `spu`/`spus`、路径变量改显式名 + 业务键、删除 I65「双形态」；**② R1 已裁决**（路径变量收口，契约侧完成）；**③ 三条勘误**——`ReviewVO` 等 4 类「仍为 `Long`」实为**已收口**、R1 中 C10 的「已收口」属**失实**（该端点未实现）、`U33` 路径变量 `{productId}` 实为**足迹行主键**；**④ 新增挂账行**（表尾 5 条「⑥ B4 新增」）：路径改名 B5 落码、B6 前端跟随、`productName` 线格式键名收口、P37 `scene` 长度约束、跨文档引用同步。
 
@@ -3073,12 +3128,15 @@ data: [DONE]
 | **【⑦ B7a 新增】`spu.short_code` 列** ✅ **已收口（B7b）：`Initialize.sql` 已加列 `short_code VARCHAR(16) NOT NULL` + `UNIQUE KEY uk_short_code`** | 契约/数据模型已写定（`backend/04-Data-Model.md` §3.5），~~`Initialize.sql` 尚未加列~~（B7a 时点状态；**B7b 已按 [ADR-045](../adr/045-db-snapshot-single-source.md) 直改快照加列，无迁移脚本**）。生成/存储/生命周期细则见 ADR-063 §决策 8 |
 | **【⑥ B4 新增】跨文档引用同步** ✅ **已收口（B11，2026-10-18）** | 契约内路径已改；**其他 project-docs 文档仍引用旧路径字面量**，须与 B5/B6 同批同步（清单与处数见 B4 交付报告「待同步项」）：`product/01-PRD.md`(3)、`product/02-Frontend-Integration-Checklist.md`(2)、`product/16-Frontend-Product-Design.md`(4)、`backend/02-Architecture.md`(2)、`backend/13-AI-Technology-Selection.md`(1)、`frontend/18-platforms/web.md`(6)、`frontend/21-Frontend-Refactor-Readiness.md`(3)、`quality/19-Test-Flow-Guide.md`(3)、`quality/20-Doc-Code-Consistency-Audit.md`(2)、`quality/22-API-Spec-BigTech-Conformance-Review.md`(3)、`collaboration/07-Tasks.md`(6)、`adr/020`(1)、`adr/061`(2)。理由：多数文件的 Owner 不是契约域，按分权须**经主 agent 派单**，不在本批越界改。✅ **B11 已按派单逐条同步（2026-10-18）**：实测 **70 处 / 14 文件**（`grep -o` 按处计数，非按行）；处置 = **直接改名 41 处 / 11 文件**、**保留原字面量并注明「改前→改后」9 处**（`adr/020` 1、`adr/061` 6、`collaboration/07-Tasks.md` 2 —— 均为决策期与交付记录原文，按「历史事实不改写」保留）、**ADR-062 §决策 2 表 A/表 B 的 20 处为改前→改后对照（保留）**。**与原文逐文件处数的差异**：原数是**按行计数**且**未计入 `review/product` 与 `/api/search/product`**，故本次三类旧段合并后数字上升；`backend/13-AI-Technology-Selection.md` 原记 1 处，实测 **2 处**（§12.2 代码示例 + §12.4 服务角色表）。 |
 | 售后凭证图 `evidenceImages` | `AfterSaleApplyReq` 不接受该字段；凭证图上传与存储方案待排期 |
-| **`AiChatResponse.spus[]`（🆕 2026-10-16 记入待规划）** | 实现只有 `reply` + `conversation_id`（Record 两字段）；商品命中是 ai-service 内部 `SpuHit`，经 `SearchTool` 渲染成文本进 LLM 上下文，**不做结构化出参**。原样例（含 `image`/`reason`/`spu_id:1`）与实现三重不符，已按实现修正并移出正文（§4.11.1）。**重开需先更新 PRD/规格**；计划形态以 `SpuHit` 实有字段为准（`spu_id` 32-hex / `name` / `description` / `price_cents` / `sold_count`），**不含** `image`/`reason` |
+| **`AiChatResponse.spus[]`（🆕 2026-10-16 记入待规划）** | 实现只有 `reply` + `conversation_id`（Record 两字段）；商品命中是 ai-service 内部 `SpuHit`，经 `SearchTool` 渲染成文本进 LLM 上下文，**不做结构化出参**。原样例（含 `image`/`reason`/`spu_id:1`）与实现三重不符，已按实现修正并移出正文（§4.11.1）。**重开需先更新 PRD/规格**；计划形态以 `SpuHit` 实有字段为准（`spu_id` 32-hex / `name` / `description` / `price_cents` / `sold_count`），**不含** `image`/`reason`。⚠ **若将来实现，名称键必须为 `spu_name`**（§1.8④；`SpuHit` 的 `name` 是 **Java 字段名**，不是线上键） |
 | **`OrderItemVO` 标识与快照（原「`spu_id` 待补」条）** ✅ **已落码（2026-10-17，B2）** | 契约 §4.6.1：`OrderItemVO = 标识(sku_id/spu_id 业务键 32-hex) + 快照(spu_name/sku_spec/image/price/sub_total)`，**比价/失效提示为读时增强 fail-open**。**B2 已落码**：`order_item` 新增 `spu_id BINARY(16)`、`sku_id` 改 `BINARY(16)`（`fk_orderitem_sku` 移除）、商品名快照列改 `spu_name`；`trade` 侧 `OrderItemVO` 现有 `skuId`/`spuId`（均 `String` 业务键）+ `spuName`。订单项报文可安全用于回链与展示。⚠**比价结果字段仍未出栈**（见下条）|
 | 多券叠加 `user_coupon_ids` | 已从下单请求体删除（V5.5）；策略层多券逻辑保留，接线需先出《多券金额分摊规则》PRD（§十一 11.2 O1） |
 | 微信回调 `out_trade_no` 断链修复 | **已完成**（ADR-033 落地：验签+AES-GCM 解密+字段提取收口 ia-integration 通道适配层，V5.5）；PAY2 对外契约不变（§4.7.1） |
 | 知识图谱（RAG+KG 混合检索） | ✅ **Phase 1 已定稿并落地（V5.16）**：I57-I59（§4.14.10b）/ P35（§4.4.x）/ AD61-64（§4.13.8f）；完整 PRD 见 `../product/01-PRD.md` §十六；P2 政策问答/可视化随 §16.9 触发器另案 |
 | 多币种（展示换算 + 订单快照锁汇，Phase 1；多币种结算另评审） | ✅ **已定稿并落地（V5.17）**：P36/I61/AD66-68 + `currency`/`exchange_rate` 两表 + `orders.display_*` 快照列；完整 PRD 见 `../product/01-PRD.md` §十七（裁决记录 17.2.0）；多币种结算随 §17.8 量化触发器另评审 |
+| **【⑧ 甲a 新增】SPU 名读出侧线上键 `name` → `spu_name`**（§1.8④） | **契约侧已改（2026-10-18，甲a）**，**代码待「甲b」**。**契约改动 7 处（现行正文）+ 1 处 `⚪ 计划`样例**：§4.4.1 `SpuVO` 样例、§4.4.x P27 卡字段、§4.4.x P30 `NoteDetailVO.spus[]` 卡字段、§4.9.1 `SpuSearchVO` 样例、§4.14.10 I47 `SpuVectorUpsertReq` 入参、§8.3、§8.8（另：§4.4.1 `SkuVO` 样例**补齐** `spu_name`——该字段代码中一直存在、样例此前漏写；§4.11.1 的 `AiChatResponse.spus[]` **计划**样例同口径改键，防后续照抄）。**甲b 代码面（逐文件）**：`item-service` `adapter/response/SpuVO.java#name`→`spuName`、`RecommendSpuVO.java#name`→`spuName`、`NoteDetailVO.java#SpuSummaryVO.name`→`spuName`、`search-service` `adapter/response/SpuSearchVO.java#name`→`spuName`、`ia-api` `dto/SpuDetailCO.java#name`→`spuName`（record 组件）、`dto/SpuSearchItemCO.java#name`→`spuName`、`dto/SpuVectorUpsertCO.java#name`→`spuName`。**验收断言**：① P2 响应经 `SNAKE_CASE` 后含 `spu_name` 且**不含** `name`；② P27/P30/P35 卡内键为 `spu_name`；③ SE1 与 I62/I65 一致；④ 前端 `spu_name` 取值在 P2/P27/P30/SE1 四处均非 `undefined`；⑤ **`CategoryVO`/`CouponVO`/`PromotionTagVO` 等「非 SPU 实体」的 `name` 一字不动**（§1.8④ 不改清单）。<br>⚠ **不得**顺手改动：`SkuVO`（无 `name` 字段；其 `spuName` 已正确）、`ShopVO.shopName`、`NoteCardVO/NoteDetailVO.title`、`HistoryVO.product_name`（例外保留） |
+| **【⑧ 甲a 新增】内部端点 I70 `GET /internal/item/spu/{spuId}`** | **契约已写定（§4.14.5.2，`⚪ 计划`），代码不存在** —— 这是 [`adr/062`](../adr/062-external-identifier-and-addressing.md) §后果 **E7**（`SpuDetailClient` 服务间调用却走公开契约）+ 用户 2026-10-18 裁决「显式新增 internal 端点，立项迁入内网」的落地项。**当前事实**：`item-service` 内部面只有 `/internal/item/{freight-template, search, sku}`；AI Tool 走公开 `GET /api/item/spu/{spuId}` 并解析 `Result<SpuDetailCO>`。**端点数影响**：`docOnly` **43 → 44**（ADR-062 §决策 4 显式决策）、`codeOnly` 仍 0、`matched` 仍 288、契约去重 **331 → 332**。**落码后**：状态改 ✅、`docOnly` 44 → 43、删除本行。落码清单见 §4.14.5.2 表下注 |
+| **【⑧ 甲a 新增】SPU 名写侧入参 `CreateSpuReq.name` / `UpdateSpuReq.name`** | **本轮未动**（取舍见 §十一 11.2 **O2**）：写侧只有一个键名、不构成「同一实体两个键名」的静默失效面，改它会扩 BREAKING 到商家写接口。**需主 agent 裁决**：「与甲b 同批收口」或「写侧长期保持 `name`」—— 二者都必须**写定**，不得悬空（否则下一个人会照 §1.8④ 的强读法把它改掉，或反之永不动） |
 
 ---
 
