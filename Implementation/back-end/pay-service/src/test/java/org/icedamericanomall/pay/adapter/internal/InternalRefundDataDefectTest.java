@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -57,9 +58,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 「Manager 抛什么 → 全局异常处理器回什么」全过程，而不是把异常直接塞给控制器。
  *
  * <p><b>改前必失败</b>：本批之前三条缺陷用例全部返回 <b>404 + 3009 + category=CLIENT</b>。
+ *
+ * <p><b>批次 R2 两处改严</b>：① I40 的「缺 {@code amount}」原被金额双保险守卫折叠成
+ * <b>400 + {@code PARAM_ERROR}(1101)</b>（文案「退款金额超过实付金额」），本批拆条件后归 500/1000/BUG；
+ * ② 真正的「支付单不存在」由 <b>3009 {@code ORDER_NOT_FOUND}（码名说的是「订单」）</b>改为
+ * <b>1103 {@code NO_RESOURCE_FOUND}</b>（同为 404，零新增码），并加「不是 3009」的负向断言。
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("退款内部端点 — 支付单数据不完整 → 500 + 1000 + BUG（不再是 404/3009）")
+@DisplayName("退款内部端点 — 支付单数据不完整 → 500 + 1000 + BUG（不是 404/1103，也不是 3009）")
 class InternalRefundDataDefectTest {
 
     private static final String PAY_ORDER_NO = "PAY-1";
@@ -175,10 +181,34 @@ class InternalRefundDataDefectTest {
                         containsString(PAY_ORDER_NO))));
     }
 
-    // ==================== 反向回归：真正的「支付单不存在」仍是 404 + 3009 ====================
+    @Test
+    @DisplayName("I40 支付单缺少金额 → 500 + 1000 + BUG + retryable=false（不是 400/1101，也不是拆箱 NPE）")
+    void shouldReturnBug500_whenI40PayOrderLacksAmount() throws Exception {
+        when(refundOrderService.getByAfterSaleId(9L)).thenReturn(null);
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(payOrder(BUYER_ID, null));
+
+        mockMvc.perform(MockMvcRequestBuilders.post("/internal/pay/refund")
+                        .contentType(MediaType.APPLICATION_JSON).content(I40_BODY))
+                .andExpect(status().isInternalServerError())
+                .andExpect(result -> assertNotEquals(400, result.getResponse().getStatus(),
+                        "服务端数据缺陷不得折叠成「你退多了」的 400"))
+                .andExpect(jsonPath("$.code").value(1000))
+                .andExpect(jsonPath("$.code").value(not(1101)))
+                .andExpect(jsonPath("$.category").value(ErrorCategory.BUG.name()))
+                .andExpect(jsonPath("$.retryable").value(false))
+                // 文案带定位信息 ⇒ 确实走的是聚合断言，而不是在 `int > Integer` 拆箱处空指针
+                .andExpect(jsonPath("$.msg").value(allOf(
+                        containsString("支付单数据不完整"),
+                        containsString("缺少金额"),
+                        containsString(PAY_ORDER_NO))));
+        verify(refundOrderService, never()).createProcessing(any(), anyString(), anyString(), any(),
+                anyString(), anyInt());
+    }
+
+    // ==================== 反向回归：真正的「支付单不存在」是 404 + 1103 ====================
 
     @Test
-    @DisplayName("反向回归 I40 — 支付单真的不存在 → 仍 404 + 3009 + CLIENT（两类不得混成一种）")
+    @DisplayName("反向回归 I40 — 支付单真的不存在 → 仍 404 + 1103 + CLIENT（不是 500，也不是 3009）")
     void shouldKeep404_whenI40PayOrderTrulyMissing() throws Exception {
         when(refundOrderService.getByAfterSaleId(9L)).thenReturn(null);
         when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(null);
@@ -188,13 +218,15 @@ class InternalRefundDataDefectTest {
                 .andExpect(status().isNotFound())
                 .andExpect(result -> assertNotEquals(500, result.getResponse().getStatus(),
                         "资源不存在不得升级成服务端缺陷"))
-                .andExpect(jsonPath("$.code").value(3009))
+                // 【语义变更（批次 R2，改严）】3009 → 1103：码名与实体（支付单）对齐；HTTP 承载仍是 404
+                .andExpect(jsonPath("$.code").value(1103))
+                .andExpect(jsonPath("$.code").value(not(3009)))
                 .andExpect(jsonPath("$.category").value(ErrorCategory.CLIENT.name()))
                 .andExpect(jsonPath("$.retryable").value(false));
     }
 
     @Test
-    @DisplayName("反向回归 I55 — 支付单真的不存在 → 仍 404 + 3009 + CLIENT（两类不得混成一种）")
+    @DisplayName("反向回归 I55 — 支付单真的不存在 → 仍 404 + 1103 + CLIENT（不是 500，也不是 3009）")
     void shouldKeep404_whenI55PayOrderTrulyMissing() throws Exception {
         when(refundOrderService.getByBizRef(SCENE_REF)).thenReturn(null);
         when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(null);
@@ -203,7 +235,9 @@ class InternalRefundDataDefectTest {
                         .contentType(MediaType.APPLICATION_JSON).content(I55_BODY))
                 .andExpect(status().isNotFound())
                 .andExpect(result -> assertNotEquals(500, result.getResponse().getStatus()))
-                .andExpect(jsonPath("$.code").value(3009))
+                // 【语义变更（批次 R2，改严）】3009 → 1103（同上）
+                .andExpect(jsonPath("$.code").value(1103))
+                .andExpect(jsonPath("$.code").value(not(3009)))
                 .andExpect(jsonPath("$.category").value(ErrorCategory.CLIENT.name()));
     }
 }

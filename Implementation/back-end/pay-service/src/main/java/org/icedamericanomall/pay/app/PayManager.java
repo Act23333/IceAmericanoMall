@@ -81,7 +81,9 @@ public class PayManager {
      * @param userId  支付用户
      * @param channel 支付渠道
      * @return 支付单视图（含支付链接或已支付状态）
-     * @throws BizException 订单不存在（ORDER_NOT_FOUND）/ 已支付 / 余额不足（BALANCE_INSUFFICIENT）
+     * @throws BizException 订单不存在（ORDER_NOT_FOUND）/ 已支付 / 订单摘要金额不完整
+     *                      （{@code INTERNAL_ERROR}/500，上游契约违约，不可重试）/
+     *                      余额不足（BALANCE_INSUFFICIENT）
      */
     public PayOrderVO initiatePayment(String orderNo, Long userId, PayChannelEnum channel) {
         PayOrder existing = payOrderService.getByBizOrderNo(orderNo);
@@ -116,7 +118,8 @@ public class PayManager {
      * @param userId  支付用户
      * @param openid  用户在下单 appid（小程序 appid）下的 openid
      * @return 小程序拉起参数集（appId/timeStamp/nonceStr/packageVal/signType/paySign）
-     * @throws BizException 已支付 / 订单不存在（ORDER_NOT_FOUND）/ 渠道下单失败
+     * @throws BizException 已支付 / 订单不存在（ORDER_NOT_FOUND）/ 订单摘要金额不完整
+     *                      （{@code INTERNAL_ERROR}/500）/ 渠道下单失败
      */
     public JsapiPayParamsVO initiateJsapiPayment(String orderNo, Long userId, String openid) {
         PayOrder existing = payOrderService.getByBizOrderNo(orderNo);
@@ -135,7 +138,22 @@ public class PayManager {
         return payOrderConverter.toParamsVO(params);
     }
 
-    /** 扣款金额取「应付 payAmount」；历史订单缺字段时降级用原价并告警。 */
+    /**
+     * 扣款金额取「应付 payAmount」；历史订单缺 {@code payAmount} 时降级用原价 {@code totalAmount} 并告警。
+     *
+     * <p><b>两个都不可用 = 上游契约违约，不是「你参数错」（批次 R2）</b>：{@code totalAmount} 来自
+     * trade-service 的订单摘要（Feign {@code OrderClient#getOrder}）—— 摘要<b>返回 200 但缺金额</b>
+     * 属<b>上游契约违约</b>，归 {@code INTERNAL_ERROR(1000)} / HTTP 500 / {@code BUG} / 不可重试
+     * （{@code collaboration/09-constraints.md} §三·六 四类划分：服务端数据不一致 ≠ 调用方错误）。
+     *
+     * <p><b>为什么不用 {@code SYSTEM_BUSY} / {@code UpstreamException}</b>：那是「服务<b>不可用</b>」
+     * （网络/超时/熔断，重试有机会成功）的承载；本条是「服务可用，但回的数据<b>不完整</b>」——
+     * 重试必然重复拿到同一个残缺报文。把它说成 {@code SYSTEM_BUSY} 是<b>另一个方向的误报</b>
+     * （历史缺陷 R-4 就是「把数据问题说成服务不可用」这个病），还会误导调用方进入退避重试。
+     *
+     * <p><b>文案口径</b>：带 {@code orderNo}（业务标识、<b>不含 PII</b>），让运维能直接定位到
+     * 哪张订单的摘要坏了，无需回问调用方。
+     */
     private int resolvePayAmount(OrderSummaryCO summary, String orderNo) {
         Integer payAmount = summary.getPayAmount();
         if (payAmount != null && payAmount > 0) {
@@ -143,7 +161,9 @@ public class PayManager {
         }
         Integer totalAmount = summary.getTotalAmount();
         if (totalAmount == null || totalAmount <= 0) {
-            throw new BizException(ErrorCode.PARAM_ERROR, "订单金额非法: " + orderNo);
+            // 应付金额与原价同时不可用 = 上游契约违约（1000/500/BUG/不可重试），不是 400「你参数错」
+            throw new BizException(ErrorCode.INTERNAL_ERROR,
+                    "订单摘要金额不完整（缺少应付金额与原价）: orderNo=" + orderNo);
         }
         log.warn("订单缺少应付金额(payAmount)，降级使用原价(totalAmount): orderNo={}, totalAmount={}",
                 orderNo, totalAmount);

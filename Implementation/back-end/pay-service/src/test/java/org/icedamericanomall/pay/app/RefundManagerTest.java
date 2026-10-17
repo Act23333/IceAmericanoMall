@@ -4,6 +4,7 @@ import org.icedamericanomall.client.AfterSaleClient;
 import org.icedamericanomall.client.BalanceClient;
 import org.icedamericanomall.client.NotificationClient;
 import org.icedamericanomall.client.TradeInvoiceClient;
+import org.icedamericanomall.common.enums.ErrorCategory;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.BalanceRefundCO;
@@ -34,6 +35,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -289,7 +291,7 @@ class RefundManagerTest {
     }
 
     @Test
-    @DisplayName("微信退款回调 — 对外退款项号查无退款单：抛 ORDER_NOT_FOUND（控制器转 500 触发渠道重推）")
+    @DisplayName("微信退款回调 — 对外退款项号查无退款单：抛 NO_RESOURCE_FOUND(1103)（控制器转 500 触发渠道重推）")
     void shouldThrow_whenRefundOrderMissingOnCallback() {
         when(channelRouter.parseWechatRefundCallback(any(), anyString()))
                 .thenReturn(new WechatRefundCallbackResult("UNKNOWN-OUT", true, "5000099", "SUCCESS"));
@@ -298,7 +300,14 @@ class RefundManagerTest {
         BizException ex = assertThrows(BizException.class,
                 () -> refundManager.handleWechatRefundCallback(Map.of(), "{}"));
 
-        assertEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode());
+        // 【语义变更（批次 R2，改严）】3009 → 1103：实体是「退款单」，码名不得再说「订单不存在」；
+        // 两者同为 404，HTTP 承载不变，故调用方行为零变化
+        assertEquals(ErrorCode.NO_RESOURCE_FOUND, ex.getErrorCode());
+        assertNotEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode(),
+                "退款单不存在不得再用 ORDER_NOT_FOUND(3009)「订单不存在」");
+        assertEquals(404, ex.getErrorCode().getHttpStatus().value(), "承载必须仍是 404（零行为变化）");
+        assertTrue(ex.getDisplayMessage().contains("outRefundNo=UNKNOWN-OUT"),
+                "文案须带实体名 + 对外退款项号，便于渠道工单定位: " + ex.getDisplayMessage());
     }
 
     // ==================== Scenario 3：同售后单重复请求幂等 ====================
@@ -387,7 +396,7 @@ class RefundManagerTest {
     // ==================== Scenario 5：退款金额超实付 / 支付单缺失 ====================
 
     @Test
-    @DisplayName("退款金额超过实付 — PARAM_ERROR（双保险校验，不创建退款单）")
+    @DisplayName("退款金额超过实付 — PARAM_ERROR(1101)/400/CLIENT（不是 500，不创建退款单）")
     void shouldReject_whenRefundAmountExceedsPaid() {
         RefundCreateCO req = request();
         req.setRefundAmount(AMOUNT + 1000);
@@ -397,18 +406,47 @@ class RefundManagerTest {
         BizException ex = assertThrows(BizException.class, () -> refundManager.refund(req));
 
         assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
+        // 【新增负向断言（批次 R2）】超额是「业务规则拒绝」，不得折叠成服务端缺陷（500/BUG）
+        assertEquals(400, ex.getErrorCode().getHttpStatus().value(), "超额必须是 400，不是 500");
+        assertEquals(ErrorCategory.CLIENT, ErrorCategory.of(ex.getErrorCode()), "category 必须是 CLIENT");
+        assertNotEquals(ErrorCode.INTERNAL_ERROR, ex.getErrorCode(), "不得把调用方错误报成服务端缺陷");
         verify(refundOrderService, never()).createProcessing(any(), any(), any(), any(), any(), anyInt());
     }
 
     @Test
-    @DisplayName("支付单不存在 — ORDER_NOT_FOUND（无支付单即无原路退回目标）")
+    @DisplayName("支付单缺 amount — INTERNAL_ERROR(1000)/500/BUG（不是 400/1101，也不是拆箱 NPE）")
+    void shouldReject_whenPayOrderAmountMissing() {
+        PayOrder incomplete = payOrder("WECHAT", AMOUNT);
+        incomplete.setAmount(null);
+        when(refundOrderService.getByAfterSaleId(AFTER_SALE_ID)).thenReturn(null);
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(incomplete);
+
+        BizException ex = assertThrows(BizException.class, () -> refundManager.refund(request()));
+
+        // 【语义变更（批次 R2，改严）】缺 amount 由 400/PARAM_ERROR 改为 500/1000/BUG，与 I55 同口径
+        assertEquals(ErrorCode.INTERNAL_ERROR, ex.getErrorCode());
+        assertNotEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode(), "服务端数据缺陷不得再说成「你退多了」");
+        assertEquals(500, ex.getErrorCode().getHttpStatus().value());
+        assertEquals(ErrorCategory.BUG, ErrorCategory.of(ex.getErrorCode()));
+        // 断言确实走的是聚合断言（而非 `int > Integer` 拆箱处的空指针）——NPE 文案不含这些定位信息
+        assertTrue(ex.getDisplayMessage().contains("支付单数据不完整"), ex.getDisplayMessage());
+        assertTrue(ex.getDisplayMessage().contains("缺少金额"), ex.getDisplayMessage());
+        assertTrue(ex.getDisplayMessage().contains(PAY_ORDER_NO), ex.getDisplayMessage());
+        verify(refundOrderService, never()).createProcessing(any(), any(), any(), any(), any(), anyInt());
+    }
+
+    @Test
+    @DisplayName("支付单不存在 — NO_RESOURCE_FOUND(1103)/404（不是 3009「订单不存在」）")
     void shouldReject_whenPayOrderMissing() {
         when(refundOrderService.getByAfterSaleId(AFTER_SALE_ID)).thenReturn(null);
         when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(null);
 
         BizException ex = assertThrows(BizException.class, () -> refundManager.refund(request()));
 
-        assertEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode());
+        // 【语义变更（批次 R2，改严）】实体是支付单，不用「订单不存在」的 3009；同为 404，承载不变
+        assertEquals(ErrorCode.NO_RESOURCE_FOUND, ex.getErrorCode());
+        assertNotEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode());
+        assertEquals(404, ex.getErrorCode().getHttpStatus().value());
     }
 
     @Test

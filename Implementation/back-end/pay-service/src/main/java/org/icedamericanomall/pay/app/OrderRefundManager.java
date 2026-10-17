@@ -37,7 +37,7 @@ import org.springframework.stereotype.Component;
  * Scenario: 并发同 sceneRef 建单
  *   Then DuplicateKeyException 回落为返回既有退款单
  * Scenario: 支付单不存在
- *   Then ORDER_NOT_FOUND 原始透出（ADR-004，fail-closed，ADR-035 §5 定类不变）
+ *   Then NO_RESOURCE_FOUND(1103) / 404 原始透出（ADR-004，fail-closed，ADR-035 §5 定类不变）
  * Scenario: 支付单存在但缺金额/支付用户（数据缺陷）
  *   Then INTERNAL_ERROR(1000) / 500 / BUG / 不可重试 —— 不谎称「不存在」（批次 R1）
  * Scenario: 余额渠道
@@ -60,7 +60,7 @@ public class OrderRefundManager {
      * @param cmd 无售后单退款命令（orderNo / sceneRef / reason 可选摘要）
      * @return I55 内部契约（字段子集：refundNo + status）
      * @throws BadRequestException 入参非法（{@code PARAM_ERROR}）
-     * @throws BizException        支付单不存在（{@code ORDER_NOT_FOUND} / 404）/ <b>支付单数据不完整</b>
+     * @throws BizException        支付单不存在（{@code NO_RESOURCE_FOUND} / 404）/ <b>支付单数据不完整</b>
      *                             （{@code INTERNAL_ERROR} / 500，服务端数据缺陷，不可重试）/
      *                             渠道退款失败（原异常透出，退款单已置失败，AD43 可重试）
      */
@@ -106,18 +106,22 @@ public class OrderRefundManager {
     /**
      * 取支付单（退款金额 = 支付单全额，ADR-049）；用户/金额缺失无法原路退回，同口径拒绝。
      *
-     * <p><b>错误承载（批次 R1）</b>：查无支付单 = <b>资源不存在</b>（{@code ORDER_NOT_FOUND} / 404）；
+     * <p><b>错误承载（批次 R1/R2）</b>：查无支付单 = <b>资源不存在</b>（{@code NO_RESOURCE_FOUND} / 404）；
      * 而「支付单<b>存在</b>但缺 {@code amount} / {@code bizUserId}」= <b>服务端数据不一致</b>，
      * 断言归聚合（{@link PayOrder#assertRefundAmountPresent} /
      * {@link PayOrder#assertRefundPayeePresent}）→ {@code INTERNAL_ERROR(1000)} / HTTP 500 /
      * {@code BUG} / 不可重试。此前两处均抛 {@code ORDER_NOT_FOUND}，在批次 ① 把该码改成 404 之后
      * 对外表现为「404：支付单金额缺失」——调用方会读成「支付单不存在」，而真相是数据坏了
      * （{@code 09-constraints} §三·六 四类划分）。
+     *
+     * <p><b>为什么「不存在」用 1103 而不是 3009（批次 R2）</b>：{@code ORDER_NOT_FOUND(3009)} 的码名说的是
+     * 「订单」，而本方法查的实体是<b>支付单</b>；{@code NO_RESOURCE_FOUND(1103)} 同为 404、
+     * <b>零新增错误码</b>，只是把码名与实体对齐 —— 前端按 404 走通用错误页的行为一字未变。
      */
     private PayOrder requirePayOrder(OrderRefundCO cmd) {
         PayOrder payOrder = payOrderService.getByBizOrderNo(cmd.getOrderNo());
         if (payOrder == null) {
-            throw new BizException(ErrorCode.ORDER_NOT_FOUND, "支付单不存在: " + cmd.getOrderNo());
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "支付单不存在: orderNo=" + cmd.getOrderNo());
         }
         // 缺金额/缺支付用户 = 服务端数据缺陷（非「不存在」）：仅换错误承载，退款流程控制不变（fail-closed）
         payOrder.assertRefundAmountPresent();

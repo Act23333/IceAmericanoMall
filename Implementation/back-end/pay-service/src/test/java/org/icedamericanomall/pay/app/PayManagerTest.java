@@ -23,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.icedamericanomall.common.enums.ErrorCategory;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 
@@ -75,6 +76,14 @@ class PayManagerTest {
         return s;
     }
 
+    /** 上游摘要金额可空（用于构造「返回 200 但缺字段」的契约违约报文）。 */
+    private OrderSummaryCO summaryOf(Integer totalAmount, Integer payAmount) {
+        OrderSummaryCO s = new OrderSummaryCO();
+        s.setOrderNo(ORDER_NO); s.setUserId(100L);
+        s.setTotalAmount(totalAmount); s.setPayAmount(payAmount); s.setStatus(1);
+        return s;
+    }
+
     private PayOrder payOrder(int status) {
         PayOrder p = new PayOrder();
         p.setId(1L); p.setBizOrderNo(ORDER_NO); p.setPayOrderNo(PAY_ORDER_NO);
@@ -115,6 +124,49 @@ class PayManagerTest {
         // 渠道号落到支付单自身，链接随后回填到同一行
         verify(payOrderService).createPending(ORDER_NO, 100L, 11900, "WECHAT", PayTypeEnum.NATIVE.getCode());
         verify(payOrderService).attachPayUrl(created, "weixin://qr");
+    }
+
+    @Test
+    @DisplayName("initiatePayment(WECHAT) — 摘要缺应付金额但原价可用：降级用 totalAmount 并告警（行为不变）")
+    void shouldFallbackToTotalAmount_whenPayAmountMissing() {
+        PayOrder created = payOrder(PayStatusEnum.PENDING_PAY.getCode());
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(null);
+        when(orderClient.getOrder(ORDER_NO)).thenReturn(summaryOf(12900, null));
+        when(payOrderService.createPending(ORDER_NO, 100L, 12900, "WECHAT", PayTypeEnum.NATIVE.getCode()))
+                .thenReturn(created);
+        when(channelRouter.initiatePayment(eq(CHANNEL_TRADE_NO), eq(12900), anyString(),
+                eq(PayChannelEnum.WECHAT))).thenReturn("weixin://qr");
+
+        payManager.initiatePayment(ORDER_NO, 100L, PayChannelEnum.WECHAT);
+
+        // 降级口径不变：只有「应付金额」不可用、原价可用时才降级（批次 R2 只改「两者都不可用」的承载）
+        verify(channelRouter).initiatePayment(eq(CHANNEL_TRADE_NO), eq(12900), anyString(),
+                eq(PayChannelEnum.WECHAT));
+    }
+
+    @Test
+    @DisplayName("initiatePayment — 摘要缺应付金额且缺原价：INTERNAL_ERROR(1000)/500/BUG（上游契约违约，不是 400）")
+    void shouldReject_whenOrderSummaryLacksAmounts() {
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(null);
+        when(orderClient.getOrder(ORDER_NO)).thenReturn(summaryOf(null, null));
+
+        BizException ex = assertThrows(BizException.class,
+                () -> payManager.initiatePayment(ORDER_NO, 100L, PayChannelEnum.WECHAT));
+
+        // 【语义变更（批次 R2，改严）】400/PARAM_ERROR → 500/INTERNAL_ERROR：上游返回 200 但缺字段 = 契约违约
+        assertEquals(ErrorCode.INTERNAL_ERROR, ex.getErrorCode());
+        assertNotEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode(),
+                "上游返回 200 但缺字段是契约违约，不是「你的参数错」");
+        assertNotEquals(ErrorCode.SYSTEM_BUSY, ex.getErrorCode(),
+                "数据不完整不是「服务不可用」（历史缺陷 R-4 的反面）");
+        assertEquals(500, ex.getErrorCode().getHttpStatus().value());
+        assertEquals(ErrorCategory.BUG, ErrorCategory.of(ex.getErrorCode()));
+        assertFalse(ErrorCategory.of(ex.getErrorCode()).isRetryable(), "确定性失败不可重试");
+        // 文案可定位：带 orderNo（业务标识、不含 PII）
+        assertTrue(ex.getDisplayMessage().contains("orderNo=" + ORDER_NO),
+                "文案须可定位: " + ex.getDisplayMessage());
+        verify(payOrderService, never()).createPending(anyString(), anyLong(), anyInt(), anyString(), anyInt());
+        verifyNoInteractions(channelRouter);
     }
 
     @Test

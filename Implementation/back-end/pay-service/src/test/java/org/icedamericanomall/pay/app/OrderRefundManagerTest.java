@@ -30,6 +30,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -44,7 +45,7 @@ import static org.mockito.Mockito.when;
  * OrderRefundManager 无售后单退款编排单元测试（I55，F13 拼团，ADR-049）。
  *
  * <p>覆盖契约 §4.14.15b：sceneRef 幂等重放、并发 DuplicateKey 回落、支付单全额退款金额口径、
- * 微信处理中 / 余额同步成功、支付单不存在（ORDER_NOT_FOUND 原始透出）、入参缺失（PARAM_ERROR）、
+ * 微信处理中 / 余额同步成功、支付单不存在（NO_RESOURCE_FOUND(1103) 原始透出）、入参缺失（PARAM_ERROR）、
  * 渠道失败 fail-closed 置失败重抛、无售后单退款成功不回写 I42 且买家触达照常。
  * RefundManager 用真实实例（Mock 依赖 + 真实 MapStruct 转换器），锁死「I55 与 I40/PAY6 同一执行路径」。
  */
@@ -208,7 +209,7 @@ class OrderRefundManagerTest {
     // ==================== 校验：支付单缺失 / 入参缺失 / 渠道失败 ====================
 
     @Test
-    @DisplayName("支付单不存在 — ORDER_NOT_FOUND 原始透出（ADR-004），不创建退款单")
+    @DisplayName("支付单不存在 — NO_RESOURCE_FOUND(1103) 原始透出（不是 3009「订单不存在」），不创建退款单")
     void shouldThrowOrderNotFound_whenPayOrderMissing() {
         when(refundOrderService.getByBizRef(SCENE_REF)).thenReturn(null);
         when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(null);
@@ -216,7 +217,11 @@ class OrderRefundManagerTest {
         BizException ex = assertThrows(BizException.class,
                 () -> orderRefundManager.refundByOrder(command()));
 
-        assertEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode());
+        // 【语义变更（批次 R2，改严）】实体是支付单：3009 → 1103（同为 404，零新增码）
+        assertEquals(ErrorCode.NO_RESOURCE_FOUND, ex.getErrorCode());
+        assertNotEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode(),
+                "支付单不存在不得再用 ORDER_NOT_FOUND(3009)「订单不存在」");
+        assertEquals(404, ex.getErrorCode().getHttpStatus().value());
         verify(refundOrderService, never()).createOrderRefundProcessing(any(), any(), any(), any(),
                 anyInt(), any());
     }

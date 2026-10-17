@@ -141,7 +141,10 @@ class RefundChannelNoFlowTest {
         BizException ex = assertThrows(BizException.class,
                 () -> refundManager.handleWechatRefundCallback(Map.of(), "{}"));
 
-        assertEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode());
+        // 【语义变更（批次 R2，改严）】实体是退款单：3009 → 1103（同为 404，零新增码）
+        assertEquals(ErrorCode.NO_RESOURCE_FOUND, ex.getErrorCode());
+        assertNotEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode(),
+                "退款单不存在不得再用 ORDER_NOT_FOUND(3009)「订单不存在」");
         assertEquals(RefundStatusEnum.PROCESSING.getCode(),
                 refundOrderRepository.getByRefundNo(refundOrder.getRefundNo()).getStatus(),
                 "查不到即不得推进状态");

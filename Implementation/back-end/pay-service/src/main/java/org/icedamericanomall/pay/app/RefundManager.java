@@ -82,7 +82,7 @@ public class RefundManager {
      * @param req 退款发起参数
      * @return I40 内部契约（字段子集：refundNo + status）
      * @throws BadRequestException 入参非法
-     * @throws BizException        支付单不存在（{@code ORDER_NOT_FOUND}/404）/ 退款金额超实付（{@code PARAM_ERROR}）/
+     * @throws BizException        支付单不存在（{@code NO_RESOURCE_FOUND}/404）/ 退款金额超实付（{@code PARAM_ERROR}/400）/
      *                             数据不完整（{@code INTERNAL_ERROR}/500，不可重试）/ 渠道退款失败（原异常透出）
      */
     public RefundResultCO refund(RefundCreateCO req) {
@@ -123,7 +123,8 @@ public class RefundManager {
      * @param refundNo 退款单号
      * @return 重试后的退款单视图
      * @throws BizException 退款单不存在（{@code NO_RESOURCE_FOUND}）/ 非失败状态（{@code REFUND_STATUS_INVALID}，
-     *                      由 {@link RefundOrder#assertRetryable} 断言）/ 支付单缺失 / 渠道再次失败（原异常透出）
+     *                      由 {@link RefundOrder#assertRetryable} 断言）/ 支付单缺失（{@code NO_RESOURCE_FOUND}）/
+     *                      渠道再次失败（原异常透出）
      */
     public RefundVO retry(String refundNo) {
         return refundConverter.toVO(doRetry(refundNo));
@@ -139,7 +140,9 @@ public class RefundManager {
         refundOrder.assertRetryable();
         PayOrder payOrder = payOrderService.getByPayOrderNo(refundOrder.getPayOrderNo());
         if (payOrder == null) {
-            throw new BizException(ErrorCode.ORDER_NOT_FOUND, "支付单不存在: " + refundOrder.getPayOrderNo());
+            // 实体是「支付单」而非「订单」：码名与实体必须对齐（1103 / 404，零新增码）
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND,
+                    "支付单不存在: payOrderNo=" + refundOrder.getPayOrderNo());
         }
         if (!refundOrderService.markProcessingIfFailed(refundNo)) {
             // 条件更新未命中 = 并发下已被其它请求推进（重复点击重试安全）
@@ -158,7 +161,7 @@ public class RefundManager {
      *
      * @param headers HTTP 请求头（微信签名头）
      * @param rawBody 回调原始报文
-     * @throws BizException {@code ILLEGAL_REQUEST} 验签/解密失败 / {@code ORDER_NOT_FOUND} 退款单不存在
+     * @throws BizException {@code ILLEGAL_REQUEST} 验签/解密失败 / {@code NO_RESOURCE_FOUND} 退款单不存在
      */
     public void handleWechatRefundCallback(Map<String, String> headers, String rawBody) {
         var result = channelRouter.parseWechatRefundCallback(headers, rawBody);
@@ -181,7 +184,8 @@ public class RefundManager {
         RefundOrder refundOrder = refundOrderService.getByOutRefundNo(outRefundNo);
         if (refundOrder == null) {
             log.error("退款单不存在（按对外退款项号查无）: outRefundNo={}, refundId={}", outRefundNo, refundId);
-            throw new BizException(ErrorCode.ORDER_NOT_FOUND, "退款单不存在");
+            // 实体是「退款单」：码名与实体对齐（1103 / 404），文案带对外退款项号，便于渠道工单定位
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "退款单不存在: outRefundNo=" + outRefundNo);
         }
         if (!refundOrderService.markSuccessIfProcessing(refundOrder.getRefundNo(), refundId)) {
             log.info("退款回调重复（退款单非处理中），忽略: refundNo={}", refundOrder.getRefundNo());
@@ -287,15 +291,31 @@ public class RefundManager {
 
     /**
      * 取支付单并做退款金额双保险校验（申请时已校验 ≤ payAmount）。
-     * <p>金额超实付 = 业务规则拒绝（{@code PARAM_ERROR}）；缺 {@code bizUserId} = 服务端数据缺陷
-     * （{@code INTERNAL_ERROR} / 500 / {@code BUG}，见 {@link PayOrder#assertRefundPayeePresent}）。
+     *
+     * <p><b>两条判据必须分开，且顺序不可颠倒（批次 R2）</b>：
+     * <ol>
+     *   <li>先 {@link PayOrder#assertRefundAmountPresent()} —— 支付单<b>存在但缺 {@code amount}</b> 是
+     *       <b>服务端数据缺陷</b>（{@code INTERNAL_ERROR}/500/{@code BUG}，与 I55 同口径）；</li>
+     *   <li>再比金额 —— 超过实付是<b>业务规则拒绝</b>（{@code PARAM_ERROR}/400/{@code CLIENT}）。</li>
+     * </ol>
+     *
+     * <p><b>为什么不能写成 {@code amount == null || refundAmount > amount}</b>：那条短路表达式
+     * 既是「两个缺陷折叠成一个错误码」的根源（服务端数据坏了却告诉调用方「你退多了」），
+     * 又<b>恰好靠短路挡着一次拆箱 NPE</b> —— {@code req.getRefundAmount() > payOrder.getAmount()}
+     * 是 {@code int > Integer}，{@code amount == null} 时右侧拆箱直接空指针。
+     * 若只把条件拆开而不先断言，结果是「错误码不精确」升级成「500 空指针」：同样是 500，
+     * 但堆栈落在比较行、文案丢失定位信息，比原缺陷更难排查。先断言再比较是唯一安全顺序。
      */
     private PayOrder requirePayOrder(RefundCreateCO req) {
         PayOrder payOrder = payOrderService.getByBizOrderNo(req.getOrderNo());
         if (payOrder == null) {
-            throw new BizException(ErrorCode.ORDER_NOT_FOUND, "支付单不存在: " + req.getOrderNo());
+            // 实体是「支付单」而非「订单」：码名与实体对齐（1103 / 404，零新增码）
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "支付单不存在: orderNo=" + req.getOrderNo());
         }
-        if (payOrder.getAmount() == null || req.getRefundAmount() > payOrder.getAmount()) {
+        // ① 缺 amount = 服务端数据缺陷（1000/500/BUG）—— 必须在比较前断言，否则 `int > Integer` 拆箱空指针
+        payOrder.assertRefundAmountPresent();
+        // ② 超额 = 业务规则拒绝（1101/400/CLIENT）
+        if (req.getRefundAmount() > payOrder.getAmount()) {
             throw new BizException(ErrorCode.PARAM_ERROR, "退款金额超过实付金额");
         }
         // 缺支付用户 = 服务端数据缺陷（非「不存在」）：只换错误承载，退款流程控制不变（fail-closed）
