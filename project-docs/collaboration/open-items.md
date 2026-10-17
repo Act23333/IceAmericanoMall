@@ -75,7 +75,27 @@
 ## 2. 待办
 
 ### 2.1 在跑
-（当前无 agent 在跑）
+（当前无 agent 在跑 —— 连续 6 个子 agent 失败，已停止派单，改为人工推进）
+
+#### F 批现状（**未完成，未提交，勿当作已完成**）
+- **16 / 30 个 fallback 已改**（工作区未提交、**零验证**：没跑构建、没有测试、没有 ArchUnit 守卫）
+- 已改的 16 个：`Address / AfterSale / AuthContext / Balance / Cart / Coupon / Currency / FreightTemplate / GroupBuy / GroupBuyTeam / ItemSearch / Kg / KnowledgeVector / Logistics / Member / NoteVector`（+ 原有的 `SpuDetail`）
+- **14 个未改**：`Notification / Order / OrderRefund / Points / Promotion / Refund / Search / Sku / SpuVector / Task / TradeInvoice / User / UserProfile / Verification`
+- **16 个里 4 个 fail-open（无 throw）**：`Kg / KnowledgeVector / Member / NoteVector`；其余 12 个 fail-closed 抛 `SYSTEM_BUSY`（503/TRANSIENT/可重试）
+- **U11 未做**：`PayManager` 仍 9 处 `ORDER_NOT_FOUND`
+
+#### 续做 F 的必读要点（省去重新摸索）
+1. **真实 API（我踩过坑）**：`UpstreamFailures.classify(Throwable)` 返回 **`ErrorCategory`**（不是 ErrorInfo）；
+   `UpstreamException.findIn(cause)` 返回可空；fail-closed 承载是 **`ErrorCode.SYSTEM_BUSY`**（不是 `BUSINESS_EXECUTION_EXCEPTION`——后者是 200/RULE/不可重试，曾误用在 `BalanceClientFallback`，已修）
+2. **统一形态**：`create()` 里取 `category` + `upstream`；每个方法内 `category == CLIENT && upstream != null` → `throw upstream`（透传）；否则 fail-open 返回降级值 + warn，或 fail-closed 抛 `SYSTEM_BUSY` + 私有 `DEGRADED_MESSAGE`
+3. **14 个的决策**（已判定，实现时核实调用方）：`Notification`/`Points`/`SpuVector`/`Task`/`UserProfile` → fail-open；
+   `Order`/`OrderRefund`/`Promotion`/`Refund`/`TradeInvoice`/`User` → fail-closed；
+   `Search` → CLIENT 透传 + 其余降级「搜索暂时不可用」（现为无条件 SYSTEM_BUSY）；
+   `Sku` → **写 fail-closed / 读可 fail-open**；
+   **`Verification` → fail-closed，安全关键（fail-open = 绕过验证），理由必须写进 javadoc**
+4. **验证未做**：M1（改回无条件 SYSTEM_BUSY 必须红）、M2（fail-closed 改成 fail-open 必须红）、
+   ArchUnit 守卫（扫 `*Fallback` 的 `create` 必须引用 `UpstreamFailures`）+ **守卫自身的变异**（塞一个绕过的必须红）、U11、一次干净全量
+5. **教训**：不要给子 agent 一个"读 17 个参照文件"的派单（上下文必爆）；**模板必须逐字取自已验证代码**
 
 ### 2.2 排队（按既定顺序）
 | 序 | 批 | 内容 |
