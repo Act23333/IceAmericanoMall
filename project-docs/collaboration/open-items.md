@@ -8,7 +8,7 @@
 
 | 指标 | 值 | 唯一校验口 |
 |---|---|---|
-| 测试 | **2217 / 0 failures / 0 errors / 1 skipped** | `mvn -f Implementation/back-end/pom.xml clean test` |
+| 测试 | **2235 / 0 failures / 0 errors / 1 skipped** | `mvn -f Implementation/back-end/pom.xml clean test` |
 | 端点对账 | **matched 289 / codeOnly 0 / docOnly 43** | `node Implementation/back-end/scripts/extract-endpoints.mjs` |
 | 错误码 | **99** | `node Implementation/front-end/scripts/check-error-codes.mjs` |
 | 表 | **62** | `sync-doc-counts.mjs --list-tables` |
@@ -58,14 +58,24 @@
 - 新增 **admin / seller 可登录种子**（`user_auth` USERNAME+BCrypt，`ROLE_ADMIN`/`ROLE_SELLER`，seller 另带 `seller`+`shop`）——此前**无人能登录管理端/商家端**
 - 在真实 MySQL 8.0.36 上：**0 错误 / 62 表 / 连跑两遍幂等 / 种子落库 / 无旧名表残留**
 
+### 1.8 错误承载收口（批次 R2）
+- I40「缺 `amount`」不再折叠成客户错误 → `1000/500/BUG`，**且先 assert 再比较**（原 `||` 短路在挡拆箱 NPE，顺序错了会变成"500 空指针"）
+- 上游订单摘要缺金额由 `1101/400` 改 `1000/500/BUG`；**刻意不用** `SYSTEM_BUSY`（那是"服务不可用"，本条是"数据不完整"，重试必然重复失败）
+- 退款命令面「支付单/退款单不存在」`3009` → **`1103`**（4 处：I40/AD43/PAY6/I55，同 404、零新增码）
+- 契约 §二 **删除**覆盖率计数（原文「实测 98 个 / 共 40 个 / 未收录约 58 个」当时就已全错）→ 改指 `ErrorCode` 为唯一真源；**删除而非校准**的理据写进契约
+
+### 1.9 H2 测试的键集与承重（批次 U1）
+- 14 处 H2 DDL 补回丢失的 UNIQUE 键（`user` 4 ×2 实例、`user_auth` 2、`spu.uk_spu_id` ×3、`cart.uk_user_sku`）；`user.user_id` 改 **`BINARY(16) NOT NULL`**
+- **真正的 enabler**：4 个测试由裸 `openSession().getMapper()` 改用 **`SqlSessionTemplate`**（裸 session 只抛 MyBatis `PersistenceException`，Spring 不做异常翻译 ⇒ `catch (DuplicateKeyException)` 永不进入）。**没有这一步，补键等于白补**
+- 14 条新用例，4 条直接读 `INFORMATION_SCHEMA.TABLE_CONSTRAINTS` 断言键集 + 列序 + 列类型；**三条变异验证**（删 `uk_phone_hash`/`uk_spu_id`/`uk_user_sku` → 各 3 例红，含 `expected:1 but was:2`，即生产"双账号/双购物车行"的等价物）
+- 9 处"缺列导致键无处可挂"按口径豁免并逐条说明（7 个 spu 表无 `short_code` 列、2 个 sku 表无 `sku_id` 列）
+
 ---
 
 ## 2. 待办
 
 ### 2.1 在跑
-| 批 | 内容 |
-|---|---|
-| **U1** | 给 15 处 H2 测试 DDL 补回丢失的 UNIQUE 键，并**让键真的承重**（新增走 DB 级兜底的用例 + 变异验证）|
+（当前无 agent 在跑）
 
 ### 2.2 排队（按既定顺序）
 | 序 | 批 | 内容 |
@@ -86,6 +96,9 @@
 | **U7** | `database/seed-data.js` 与 `Initialize.sql` 新种子**冲突**（它也写 `USERNAME/'admin'`，口令 `Dev123456`，命中同一唯一键；且仍是 ADR-050 前的非 hex 业务 ID）→ 退役或重写 | 待裁决 |
 | **U8** | `docker-compose.yml:46` 注释仍写「48 表终态」（实为 62）| 低 |
 | **U9** | 通知 `type` **无枚举化真源**（4 个服务各持私有常量，10 个值）→ 建议收口为 `ia-api` 共享枚举 | 架构，需立项 |
+| **U11** | **PAY2/PAY3 支付回调仍用 `3009`**（渠道号查不到支付单）—— R2 未改（属回调面），已登记契约 §12.2 ⑩；改则同为 404、调用方零感知 | 待裁决 |
+| **U12** | **7 个 spu 表无 `short_code` 列、2 个 sku 表无 `sku_id` 列** ⇒ 这些 H2 表无法补唯一键（U1 豁免）。若日后参与写入用例，必须补列+补键 | 低（目前只读）|
+| **U13** | `FavoriteSpuBriefQueryImplH2Test` 的 `spu_id` 约束是**匿名**（H2 自动名），键在但名与生产 `uk_spu_id` 不同 | 低 |
 | **U10** | 契约 §二 覆盖率数字（98/40/58 → 实测 99/52）—— **A/B/C/E 批的 E 项就是删这些数字** | 在 R2 批内 |
 
 ---
