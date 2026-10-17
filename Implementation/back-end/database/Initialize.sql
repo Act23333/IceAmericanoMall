@@ -1044,7 +1044,7 @@ CREATE TABLE `reconciliation_detail` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对账差异明细（pay-service）';
 
 -- =====================================================================
--- 九、种子数据（RBAC + 管理员）
+-- 九、种子数据（RBAC + 管理员 / 商家占位账号）
 --   种子集合以本文件为**权威定义**（V3.0 为引入版本标注；ADR-045 后无迁移文件）
 --   幂等：重复执行不因主键 / 唯一键冲突失败
 --   注: VALUES() 在 MySQL 8.0.20+ 标记为 deprecated（仍可用）
@@ -1094,25 +1094,95 @@ INSERT INTO `sys_role_permission` (`role_id`, `permission_id`) VALUES (4,1), (4,
 ON DUPLICATE KEY UPDATE `permission_id` = VALUES(`permission_id`);
 
 -- =====================================================================
--- 管理员种子用户 (admin / admin123)
+-- 管理员 / 商家种子用户（本地联调占位；账号 admin、seller）
 -- =====================================================================
 -- ⚠️⚠️ 安全警告 ⚠️⚠️
---   以下账号为**硬编码弱口令的开发占位账号**，仅为本地联调提供可用管理员：
+--   以下账号为**硬编码弱口令的开发占位账号**，仅为本地联调提供可用的管理端 / 商家端身份：
 --     - 严禁流向共享 / 测试 / 预发 / 生产等任何非本地环境；
---     - 任何非本地部署必须先删除该行，或改为经运维注入的强口令账号；
---     - V5.2 起密码凭证的权威为 user_auth.credential，本行的 password 仅为历史兼容：
---       如需该账号可登录，需按 §V5.2 运行存量迁移器（LegacyCredentialMigrationRunner）
---       生成 user_auth 行，或直接改为在 user_auth 中建档。
+--     - 任何非本地部署必须先删除这些行，或改为经运维注入的强口令账号；
+--     - V5.2 起密码凭证的权威为 user_auth.credential（ADR-017）：本区块的 user 行只是资料载体，
+--       「能否登录」只取决于下方 user_auth 行，「有何角色」只取决于下方 sys_user_role 行。
+--       user.password / user.phone / user.role_type 均为 deprecated 列，登录链路不读它们
+--       （见 user 表列注释与 RoleTypeDerivation：对外 roleType 由 RBAC 角色编码派生）。
+--   账号 / 口令 / 角色（明文仅记录在本注释，禁止外传）：
+--     - admin  / Admin@123456   → ROLE_ADMIN（sys_role 种子 id=4）
+--     - seller / Seller@123456  → ROLE_SELLER（sys_role 种子 id=3；另带 seller + shop 记录，供商家端开发）
+--   BCrypt 哈希生成方式（可复核，勿自行编造字符串）：Spring Security 6.5.2 ——
+--     即 Spring Boot 3.5.4 所管理的版本，与 authorization-service 的 PasswordVerifierAdapter
+--     注入的 PasswordEncoder bean 同源（BCryptPasswordEncoder 默认构造 = BCryptVersion $2A + strength 10）：
+--       new BCryptPasswordEncoder().encode("Admin@123456")     → 下方 60 字符 $2a$10$… 字面量
+--       new BCryptPasswordEncoder().encode("Seller@123456")    → 下方 60 字符 $2a$10$… 字面量
+--     两个字面量均已用 matches(明文, 该字面量) == true 反向自证（且 matches("wrong-pass", …) == false）。
 -- =====================================================================
 -- admin 账号业务 ID 为定值（32-hex UUIDv7 形态）；BINARY(16) 列不可存 'admin-001' 字面量（ADR-050）
+--   列序：user_id / username / phone / password / role_type / status / balance / register_time / create_time / update_time
+--   register_time、create_time、update_time 为 NOT NULL 且无默认值 ⇒ 必须显式给（NOW()）；
+--   status=1（正常）、balance=0（deprecated 列，恒 0）、role_type=2（deprecated 列，2=管理员，仅历史留痕）。
+--   第 4 值 password 为 42a080f7 之前的历史占位哈希（明文不可考），该列 deprecated 且不被读取 ——
+--   admin 的真实可用凭证是下面 user_auth 行（Admin@123456）。
 INSERT INTO `user` (`user_id`, `username`, `phone`, `password`, `role_type`, `status`, `balance`, `register_time`, `create_time`, `update_time`)
-VALUES (UNHEX('aaaaaaaa000070008000000000000001'), 'admin', '10000000000',
+VALUES (UNHEX('aaaaaaaa000070008000000000000001'), 'admin', '10000000000', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5Eh', 2, 1, 0, NOW(), NOW(), NOW())
 ON DUPLICATE KEY UPDATE `username` = VALUES(`username`);
+
+-- admin 的登录凭证（USERNAME + 密码）—— 按 user.id 关联，供 POST /api/auth/web/login 使用
+--   列口径取证：user_auth DDL（identity_type ∈ USERNAME/PHONE/EMAIL/WECHAT/WECHAT_MINI）
+--   + PasswordLoginStrategy（USERNAME 属非敏感标识 → 查 identifier_plain，不走盲索引）
+--   + UserAuthRepositoryImpl.findByIdentity（identity_type + identifier_plain + status=1）
+--   ⇒ identifier_plain='admin'，identifier_cipher/hash/mask 三列留 NULL，credential=BCrypt，status=1（有效）
+--   幂等用 INSERT IGNORE（唯一键 uk_type_plain(identity_type, identifier_plain) 命中即跳过），
+--   与下方 member_level_rule / task_def 种子同一写法；换口令时请先删该行再重跑（IGNORE 不覆盖已有值）。
+--   ⚠ 互斥提示：可选的开发数据脚本 database/seed-data.js 也会写 USERNAME/'admin' 凭证行（口令 Dev123456），
+--     与本行命中同一唯一键 —— 二者只应取其一（本文件是装库真相源；seed-data.js 非必需，且其业务 ID 仍是
+--     ADR-050 之前的非 hex 形态）。先跑本文件时，seed-data.js 会因唯一键冲突整事务回滚。
+INSERT IGNORE INTO `user_auth` (`user_id`, `identity_type`, `identifier_plain`, `credential`, `status`)
+SELECT u.id, 'USERNAME', 'admin', '$2a$10$US9lcWT7eSp5fPuJzCm9/ePoEHIELv.xSrinyJW3RwiXBcKrXWPpS', 1
+FROM `user` u WHERE u.user_id = UNHEX('aaaaaaaa000070008000000000000001');
 
 -- 为管理员分配角色 (user 表 id 为自增，通过子查询获取)
 INSERT INTO `sys_user_role` (`user_id`, `role_id`)
 SELECT u.id, 4 FROM `user` u WHERE u.user_id = UNHEX('aaaaaaaa000070008000000000000001')
 ON DUPLICATE KEY UPDATE `role_id` = 4;
+
+-- ---------------------------------------------------------------
+-- 商家端开发用占位商家（seller 登录身份 + 商家资料 + 店铺）
+--   前端商家端（apps/seller）与 merchant-service 的 /api/seller/** 需要一条
+--   「可登录 + 已是商家 + 有店铺」的完整链路；此前 user 表只有 admin 一行、user_auth 无任何种子 ⇒ 无人能登录。
+--   三张表按依赖顺序插入：user → user_auth / sys_user_role → seller → shop。
+-- ---------------------------------------------------------------
+-- seller 账号业务 ID 为定值（与 admin 同段，末位 0002；ADR-050 BINARY(16)）
+--   phone 与 password 两个 deprecated 列对本行留 NULL（新行无历史值可留，凭证一律落 user_auth）：
+--   手机号明文列 V5.2 起应由 phone_cipher/phone_hash/phone_mask 三字段承载，种子无法生成 PII 密文故不填。
+INSERT INTO `user` (`user_id`, `username`, `phone`, `password`, `role_type`, `status`, `balance`, `register_time`, `create_time`, `update_time`)
+VALUES (UNHEX('aaaaaaaa000070008000000000000002'), 'seller', NULL, NULL, 1, 1, 0, NOW(), NOW(), NOW())
+ON DUPLICATE KEY UPDATE `username` = VALUES(`username`);
+
+-- seller 的登录凭证（USERNAME + 密码），列口径与幂等写法同 admin（Seller@123456）
+INSERT IGNORE INTO `user_auth` (`user_id`, `identity_type`, `identifier_plain`, `credential`, `status`)
+SELECT u.id, 'USERNAME', 'seller', '$2a$10$6pzd4KGAF9p9v57/RHkD8ujDz7dMA72SuDh60fdPPNDscacOjsr4S', 1
+FROM `user` u WHERE u.user_id = UNHEX('aaaaaaaa000070008000000000000002');
+
+-- 分配 ROLE_SELLER —— role_id 按角色编码从上方 sys_role 种子（本文件 §九 首段，id=3）实取，不写死猜测值
+INSERT IGNORE INTO `sys_user_role` (`user_id`, `role_id`)
+SELECT u.id, r.id
+FROM `user` u
+JOIN `sys_role` r ON r.code = 'ROLE_SELLER'
+WHERE u.user_id = UNHEX('aaaaaaaa000070008000000000000002');
+
+-- 商家身份（seller.user_id 指向 user.id 技术主键；1:1 由 uk_user_id 保证）
+--   status=1（正常）⇒ 商家端无需再走入驻审批即可联调
+INSERT INTO `seller` (`user_id`, `status`, `create_time`, `update_time`)
+SELECT u.id, 1, NOW(), NOW()
+FROM `user` u WHERE u.user_id = UNHEX('aaaaaaaa000070008000000000000002')
+ON DUPLICATE KEY UPDATE `status` = 1;
+
+-- 店铺（shop.merchant_id 指向 seller.id；1 商家 : N 店铺由 uk_merchant_shop_name 保证幂等，ADR-019）
+--   status=1（正常）；contact_phone 为店铺对外联系电话（NOT NULL，非 PII 三字段列）
+INSERT INTO `shop` (`merchant_id`, `shop_name`, `contact_phone`, `province`, `city`, `district`, `detail_address`, `status`, `create_time`, `update_time`)
+SELECT s.id, 'IceAmericanoMall 测试旗舰店', '10000000001', '浙江省', '杭州市', '西湖区', '文三路 100 号 3 幢 501 室', 1, NOW(), NOW()
+FROM `seller` s
+JOIN `user` u ON u.id = s.user_id
+WHERE u.user_id = UNHEX('aaaaaaaa000070008000000000000002')
+ON DUPLICATE KEY UPDATE `status` = 1, `update_time` = NOW();
 
 -- =====================================================================
 -- 重新启用外键检查
