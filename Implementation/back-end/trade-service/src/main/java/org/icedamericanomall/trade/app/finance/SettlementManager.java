@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.trade.adapter.assembler.TradeConverter;
+import org.icedamericanomall.trade.adapter.response.SellerBalanceVO;
 import org.icedamericanomall.trade.adapter.response.SettlementVO;
 import org.icedamericanomall.trade.domain.enums.OrderStatusEnum;
 import org.icedamericanomall.trade.domain.enums.SettlementStatusEnum;
@@ -84,6 +85,23 @@ public class SettlementManager {
                 .stream()
                 .mapToInt(s -> s.getSettlementAmount() != null ? s.getSettlementAmount() : 0)
                 .sum();
+    }
+
+    /**
+     * 商家可提现余额视图（T22 {@code GET /api/seller/finance/balance}）。
+     *
+     * <p><b>批次 D</b>：该端点此前在 Controller 内以 {@code Map.of("sellerId", …, "balance", …)}
+     * 就地拼弱类型报文（违反「Controller 只做参数校验 + 调用 Manager + 包 Result」），
+     * 现由本方法装配 VO。<b>数值口径不变</b> —— 仍委托 {@link #availableBalance(Long)}。
+     *
+     * @param sellerId 商家标识（{@code seller.user_id}；由适配层从 {@code UserContext} 取，禁止信任前端传参）
+     * @return 余额视图对象（{@code balance} 为分，口径见 {@link org.icedamericanomall.trade.adapter.response.SellerBalanceVO}）
+     */
+    public SellerBalanceVO sellerBalance(Long sellerId) {
+        SellerBalanceVO vo = new SellerBalanceVO();
+        vo.setSellerId(sellerId);
+        vo.setBalance(availableBalance(sellerId));
+        return vo;
     }
 
     /** 管理后台：全部结算单分页（创建时间倒序）。 */

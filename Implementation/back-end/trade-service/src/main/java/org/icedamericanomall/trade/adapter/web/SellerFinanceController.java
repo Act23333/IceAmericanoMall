@@ -6,13 +6,12 @@ import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.trade.adapter.request.WithdrawalApplyReq;
+import org.icedamericanomall.trade.adapter.response.SellerBalanceVO;
 import org.icedamericanomall.trade.adapter.response.SettlementVO;
 import org.icedamericanomall.trade.adapter.response.WithdrawalVO;
 import org.icedamericanomall.trade.app.finance.SettlementManager;
 import org.icedamericanomall.trade.app.finance.WithdrawalManager;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
 
 /** 商家财务中心 */
 @RestController
@@ -36,11 +35,18 @@ public class SellerFinanceController {
         return Result.ok(settlementManager.getSellerSettlement(id, UserContext.getUserId()));
     }
 
-    /** 可提现余额 = 所有已结算未打款金额 */
+    /**
+     * 可提现余额 = 所有已结算未打款金额（<b>单位：分</b>）。
+     *
+     * <p><b>批次 D</b>：出参由 {@code Result<Map<String,Object>>}（Controller 内
+     * {@code Map.of("sellerId", …, "balance", …)} 就地拼装）改为
+     * {@code Result<SellerBalanceVO>}；装配下沉到 {@link SettlementManager#sellerBalance(Long)}。
+     * 线上键随之由 camelCase 的 {@code sellerId} 变为契约声明的 {@code seller_id}
+     * （<b>线上键 BREAKING</b>，实测前端零消费）。
+     */
     @GetMapping("/balance")
-    public Result<Map<String, Object>> balance() {
-        Long sellerId = UserContext.getUserId();
-        return Result.ok(Map.of("sellerId", sellerId, "balance", settlementManager.availableBalance(sellerId)));
+    public Result<SellerBalanceVO> balance() {
+        return Result.ok(settlementManager.sellerBalance(UserContext.getUserId()));
     }
 
     /** 申请提现 */

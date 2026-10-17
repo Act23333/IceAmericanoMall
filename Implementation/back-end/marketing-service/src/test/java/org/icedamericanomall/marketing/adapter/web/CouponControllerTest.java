@@ -2,6 +2,7 @@ package org.icedamericanomall.marketing.adapter.web;
 
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.common.security.UserInfo;
+import org.icedamericanomall.marketing.adapter.response.UserCouponCountVO;
 import org.icedamericanomall.marketing.app.coupon.CouponAdminManager;
 import org.icedamericanomall.marketing.app.coupon.CouponClaimManager;
 import org.icedamericanomall.marketing.app.coupon.CouponUsageManager;
@@ -15,8 +16,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-
-import java.util.Map;
 
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.verify;
@@ -67,7 +66,7 @@ class CouponControllerTest {
     @DisplayName("count — 当前用户（UserContext）委托 CouponUsageManager，Result 包装三态计数")
     void shouldDelegateWithCurrentUser_whenCountCoupons() throws Exception {
         when(couponUsageManager.countMyCoupons(USER_ID))
-                .thenReturn(Map.of("available", 2, "used", 1, "expired", 3));
+                .thenReturn(UserCouponCountVO.of(2, 1, 3));
 
         mockMvc.perform(MockMvcRequestBuilders.get("/api/coupon/count"))
                 .andExpect(status().isOk())

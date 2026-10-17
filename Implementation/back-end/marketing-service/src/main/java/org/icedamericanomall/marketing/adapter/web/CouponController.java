@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.marketing.adapter.response.CouponVO;
+import org.icedamericanomall.marketing.adapter.response.UserCouponCountVO;
 import org.icedamericanomall.marketing.adapter.response.UserCouponVO;
 import org.icedamericanomall.marketing.app.coupon.CouponAdminManager;
 import org.icedamericanomall.marketing.app.coupon.CouponClaimManager;
@@ -15,7 +16,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 用户端优惠券接口。
@@ -66,9 +66,14 @@ public class CouponController {
         return Result.ok(couponAdminManager.listActiveTemplates());
     }
 
-    /** 我的券三态计数（M7：available/used/expired，V5.11）。 */
+    /**
+     * 我的券三态计数（M7：available/used/expired，V5.11；批次 D 改为类型化 VO）。
+     *
+     * <p>出参由 {@code Result<Map<String, Integer>>} 改为 {@code Result<UserCouponCountVO>}
+     * —— 三个线上键 {@code available}/{@code used}/{@code expired} <b>逐字节不变</b>（无 BREAKING）。
+     */
     @GetMapping("/count")
-    public Result<Map<String, Integer>> count() {
+    public Result<UserCouponCountVO> count() {
         return Result.ok(couponUsageManager.countMyCoupons(UserContext.getUserId()));
     }
 }

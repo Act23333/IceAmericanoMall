@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.notification.adapter.response.InAppMessageVO;
+import org.icedamericanomall.notification.adapter.response.UnreadCountVO;
 import org.icedamericanomall.notification.app.InAppMessageManager;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,8 +14,6 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.Map;
 
 /**
  * 站内信公开端点（适配层）—— 消息通知中心。
@@ -48,10 +47,17 @@ public class NotificationController {
                 inAppMessageManager.pageInApp(userId, type, pageNum, pageSize)));
     }
 
-    /** 未读计数。 */
+    /**
+     * 未读计数（U29）。
+     *
+     * <p><b>批次 D</b>：出参由 {@code Result<Map<String, Integer>>} 改为
+     * {@code Result<UnreadCountVO>}（线上键 {@code unread} 不变 → <b>无 BREAKING</b>）。
+     * 装配用 VO 静态工厂 {@link UnreadCountVO#of}，与同控制器 {@code list} 用
+     * {@link InAppMessageVO#fromPage} 装配分页报文同形（适配层不手写 Map）。
+     */
     @GetMapping("/unread-count")
-    public Result<Map<String, Integer>> unreadCount() {
-        return Result.ok(Map.of("unread", inAppMessageManager.countUnread(UserContext.getUserId())));
+    public Result<UnreadCountVO> unreadCount() {
+        return Result.ok(UnreadCountVO.of(inAppMessageManager.countUnread(UserContext.getUserId())));
     }
 
     /** 标记单条已读。 */

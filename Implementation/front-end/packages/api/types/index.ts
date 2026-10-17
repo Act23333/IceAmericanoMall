@@ -588,6 +588,112 @@ export interface CreateOrderReq {
   display_currency?: string;
 }
 
+// ===== 交易统计 / 看板（trade-service，批次 D：Map → 类型化 VO） =====
+
+/*
+ * ── 批次 D 说明（2026-10-18）────────────────────────────────────────────────
+ * 后端把这 6 个统计端点从 `Result<Map<String,Object>>` / `Result<List<Map>>` 换成强类型 VO
+ * （08-agents/09-constraints「Controller 返回 Map」反模式收口）。**线上键统一 snake_case**
+ * （全局 `spring.jackson.property-naming-strategy: SNAKE_CASE`）。
+ *
+ * ⚠️ **线上键 BREAKING**：改造前这几个端点的 Map 键是 **camelCase 字面量**
+ * （`todayOrderCount` / `sellerId` / `totalUsers` …），改造后由 VO 字段名 + 命名策略产出
+ * `today_order_count` / `seller_id` / `total_users` —— 与契约 §4.3.4 / §4.6.5 / §4.13.4
+ * 早已声明的键**对齐**（此前是实现与契约不符）。若曾在别处按 camelCase 取值，
+ * 会静默变 `undefined`，故**统一以本文件的类型为准**。
+ *
+ * ⚠️ **金额单位一律「分」**（`Integer`）—— 这 9 个端点里 `revenue` 的单位此前从未定义，
+ * 本批钉死为「分」，前端展示时除以 100（`formatPrice`）。
+ *
+ * 消费现状（实测）：`apps/web` 目前**未消费**下列任何端点，故本批对 Web 无行为影响；
+ * 商家端/管理端前端（`apps/seller`、`apps/admin`）后续接入时直接用这里导出的类型。
+ */
+
+/** `GET /api/trade/seller/dashboard`（S10）响应 `SellerDashboardVO`。 */
+export interface SellerDashboardVO {
+  /** 今日订单数（`create_time >= 今日零点`，**全状态**，单位：笔）。 */
+  today_order_count: number;
+  /** 待发货订单数（`status = 2 PENDING_SHIPMENT`，单位：笔）。 */
+  pending_ship_count: number;
+  /** 本月营收（本月已完成订单 `total_amount` 合计）—— **单位：分**（商品原价口径，不含运费、未减优惠）。 */
+  monthly_revenue: number;
+}
+
+/**
+ * `GET /api/trade/seller/dashboard/product-stats`（S11）与
+ * `GET /api/trade/admin/stats/top-products`（AD14）**共用**的元素类型 `SpuStatVO`。
+ *
+ * ⚠️ 聚合键是 `order_item.spu_name` **快照**：同一 SPU 若存在多个历史快照名会被拆成多行，
+ * 不同 SPU 同名会合并 —— 属后端既有口径（本批只换类型，未改算法）。
+ */
+export interface SpuStatVO {
+  /** SPU 名称（线上键恒为 `spu_name`，契约 §1.8④）。 */
+  spu_name: string;
+  /** 销量（`order_item.quantity` 累加，单位：件）。 */
+  quantity: number;
+  /** 销售额（`order_item.sub_total` 累加，成交快照口径）—— **单位：分**。 */
+  revenue: number;
+}
+
+/**
+ * `GET /api/trade/admin/dashboard`（AD11）响应 `AdminDashboardVO`。
+ *
+ * ⚠️ 与契约 AD11 样例的差异（后端实测为准，契约已按此订正）：
+ * 契约样例里的 `today_new_users` / `pending_seller_count` **代码从未产出**（本批不新增业务指标）；
+ * 反之本类型里的 `completed_orders` 契约样例原先漏写。
+ */
+export interface AdminDashboardVO {
+  /** 平台注册用户总数（跨服务读取，user-service 不可用时 fail-open 为 0）。 */
+  total_users: number;
+  /** 平台订单总数（全状态，单位：笔）。 */
+  total_orders: number;
+  /** 已完成订单数（`status = 4 COMPLETED`，单位：笔）。 */
+  completed_orders: number;
+  /** 累计营收 = 全部已完成订单 `total_amount` 合计 —— **单位：分**（原价口径）。 */
+  total_revenue: number;
+  /** 今日订单数（全状态，单位：笔）。 */
+  today_orders: number;
+  /** 今日营收 = 今日已完成订单 `total_amount` 合计 —— **单位：分**。 */
+  today_revenue: number;
+}
+
+/** `GET /api/trade/admin/stats/trend`（AD13）响应元素 `OrderTrendVO`（近 N 天，升序）。 */
+export interface OrderTrendVO {
+  /** 统计日期 `yyyy-MM-dd`（「当天」取服务端 JVM 默认时区）。 */
+  date: string;
+  /** 当日下单数（全状态，单位：笔）。 */
+  orders: number;
+  /** 当日营收（当日已完成订单 `total_amount` 合计）—— **单位：分**。 */
+  revenue: number;
+}
+
+/**
+ * `GET /api/trade/admin/stats/sales?from=&to=`（AD15）响应元素 `SalesByDateVO`。
+ *
+ * 与 `OrderTrendVO` 字段同形但语义不同：本类型的区间由 `from`/`to` 显式给出（**左闭右闭**，
+ * 逐日枚举含端点）；`OrderTrendVO` 是「最近 N 天，以今天为终点」。
+ */
+export interface SalesByDateVO {
+  /** 统计日期 `yyyy-MM-dd`。 */
+  date: string;
+  /** 当日下单数（全状态，单位：笔）。 */
+  orders: number;
+  /** 当日营收（当日已完成订单 `total_amount` 合计）—— **单位：分**。 */
+  revenue: number;
+}
+
+/** `GET /api/seller/finance/balance`（T22）响应 `SellerBalanceVO`。 */
+export interface SellerBalanceVO {
+  /** 商家标识 = 商家账号 `user_id`（**不是** `seller.id` 技术主键）。 */
+  seller_id: number;
+  /**
+   * 可提现余额 = 所有「已结算未打款」结算单 `settlement_amount` 合计 —— **单位：分**。
+   * 已扣 5% 佣金（结算单 `totalAmount` 取买家实付 `payAmount`，含运费、已减优惠），
+   * 与看板 `revenue`（`total_amount` 原价口径）**不同源**；且**未扣减**在途提现申请。
+   */
+  balance: number;
+}
+
 // ===== 支付 (pay-service) =====
 
 export type PayChannel = 'WECHAT' | 'ALIPAY' | 'BALANCE';
@@ -804,6 +910,23 @@ export interface SignResultVO {
   continuous_days: number;
 }
 
+/**
+ * `GET /api/coupon/count`（M7）响应 `UserCouponCountVO` —— 我的券三态计数。
+ *
+ * 批次 D：后端由 `Result<Map<String, Integer>>` 改为强类型 VO；三个线上键
+ * `available` / `used` / `expired` **逐字节不变**（单词键，snake_case 无差异）⇒ **无 BREAKING**。
+ * 口径与 `GET /api/coupon/available`、`/used` 的列表查询同源（`user_coupon.status` 落库态
+ * 1/2/3，三者互斥且穷尽）；**0 是合法业务态**。
+ */
+export interface UserCouponCountVO {
+  /** 未使用券数（`status = 1`，单位：张）。 */
+  available: number;
+  /** 已使用券数（`status = 2`，单位：张）。 */
+  used: number;
+  /** 已过期券数（`status = 3`，单位：张）。 */
+  expired: number;
+}
+
 // ===== 通知 (notification-service) =====
 
 /** `GET /api/notifications` 响应 `InAppMessageVO`（分页信封为 `IPage`）。 */
@@ -827,8 +950,14 @@ export interface InAppMessageVO {
   // 已按 item-4「同类静默失效」口径删除该字段（B3）。
 }
 
-/** `GET /api/notifications/unread-count` 响应 `Map<String,Integer>` → `{"unread": n}`。 */
+/**
+ * `GET /api/notifications/unread-count`（U29）响应 `UnreadCountVO` —— `{"unread": n}`。
+ *
+ * 批次 D：后端由 `Result<Map<String, Integer>>` 改为强类型 VO（`UnreadCountVO.of(...)` 装配）；
+ * 线上键 `unread` 不变 ⇒ **无 BREAKING**（本文件与小程序 `pages/profile` 的读取点均无需改动）。
+ */
 export interface UnreadCountVO {
+  /** 未读条数（`notification.is_read = 0`，非负；0 为合法业务态）。 */
   unread: number;
 }
 

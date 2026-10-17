@@ -1,6 +1,7 @@
 package org.icedamericanomall.marketing.app.coupon;
 
 import org.icedamericanomall.marketing.adapter.assembler.MarketingConverter;
+import org.icedamericanomall.marketing.adapter.response.UserCouponCountVO;
 import org.icedamericanomall.marketing.domain.enums.UserCouponStatusEnum;
 import org.icedamericanomall.marketing.domain.repository.CouponRepository;
 import org.icedamericanomall.marketing.domain.repository.UserCouponRepository;
@@ -12,18 +13,20 @@ import org.mapstruct.factory.Mappers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.Map;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.when;
 
 /**
  * CouponUsageManager 持券计数单元测试（V5.11 M7 我的券三态计数）。
  *
- * <p>覆盖：三态计数键值口径（available/used/expired 对应 status 1/2/3）、
+ * <p>覆盖：三态计数口径（available/used/expired 对应 status 1/2/3）、
  * 无持券时全零（合法业务态）。
+ *
+ * <p><b>批次 D（{@code Result<Map>} → 类型化 VO）</b>：返回值由
+ * {@code Map<String, Integer>} 改为 {@link UserCouponCountVO}，断言由
+ * {@code counts.get("available")} 改为 {@code counts.getAvailable()} ——
+ * <b>线上键未变</b>（三个单字键），故 JSON 断言面零改动。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("CouponUsageManager — M7 三态计数单元测试")
@@ -49,7 +52,7 @@ class CouponUsageManagerTest {
     }
 
     @Test
-    @DisplayName("count — 三态各自计数：available=未使用 / used=已使用 / expired=已过期")
+    @DisplayName("count — 三态各自计数：available=未使用 / used=已使用 / expired=已过期（批次 D：类型化 VO）")
     void shouldCountThreeStates_whenUserHasCoupons() {
         when(userCouponRepository.countByUserIdAndStatus(eq(USER_ID), eq(UserCouponStatusEnum.UNUSED)))
                 .thenReturn(2L);
@@ -58,20 +61,20 @@ class CouponUsageManagerTest {
         when(userCouponRepository.countByUserIdAndStatus(eq(USER_ID), eq(UserCouponStatusEnum.EXPIRED)))
                 .thenReturn(3L);
 
-        Map<String, Integer> counts = couponUsageManager.countMyCoupons(USER_ID);
+        UserCouponCountVO counts = couponUsageManager.countMyCoupons(USER_ID);
 
-        assertEquals(3, counts.size());
-        assertEquals(2, counts.get("available"));
-        assertEquals(1, counts.get("used"));
-        assertEquals(3, counts.get("expired"));
+        assertEquals(2, counts.getAvailable());
+        assertEquals(1, counts.getUsed());
+        assertEquals(3, counts.getExpired());
     }
 
     @Test
     @DisplayName("count — 用户无持券 → 三态全零（合法业务态）")
     void shouldReturnZeros_whenUserHasNoCoupons() {
-        Map<String, Integer> counts = couponUsageManager.countMyCoupons(USER_ID);
+        UserCouponCountVO counts = couponUsageManager.countMyCoupons(USER_ID);
 
-        assertEquals(3, counts.size());
-        assertTrue(counts.values().stream().allMatch(v -> v == 0));
+        assertEquals(0, counts.getAvailable());
+        assertEquals(0, counts.getUsed());
+        assertEquals(0, counts.getExpired());
     }
 }
