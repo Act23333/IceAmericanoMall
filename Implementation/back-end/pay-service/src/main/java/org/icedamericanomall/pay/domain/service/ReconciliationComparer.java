@@ -16,11 +16,17 @@ import java.util.Map;
  *
  * <h2>比对口径（与 05-API-Specification §4.13.14 契约同步）</h2>
  * <ol>
- *   <li><b>比对键</b>：支付单号 —— 渠道账单的「商户订单号」即本地 {@code pay_order.pay_order_no}；</li>
+ *   <li><b>比对键 = 对外渠道号</b>（{@code pay_order.channel_trade_no}）：渠道账单的「商户订单号」
+ *       列就是本平台发起支付时传给渠道的 {@code out_trade_no}，即渠道号 —— <b>不是</b>
+ *       {@code pay_order_no}（内部键从不外发，账单里不可能出现）；</li>
  *   <li><b>四态判定</b>：本地单在账单中缺失 → 3-本地有渠道无；账单单在本地缺失 →
  *       2-渠道有本地无；双方都有且金额不等 → 4-金额不一致；相等 → 1-匹配；</li>
  *   <li><b>record-only</b>：只产出差异明细供管理端查看，<b>不自动调账</b>（ADR-036）。</li>
  * </ol>
+ *
+ * <p><b>明细两侧标识</b>：命中本地单的明细同时回填 {@code payOrderNo}（内部定位用）与
+ * {@code channelTradeNo}（与账单核对用）；只有渠道有的明细<b>没有</b>本地支付单号（它为
+ * {@code null}），仅回填渠道号 —— 这类差异正是「渠道侧有、本地未落账」，不应伪造本地单号。
  *
  * <p><b>调用方职责</b>：渠道账单条目（ia-integration {@code ChannelBillItem}）属外部模型，
  * 由应用层先转换为 {@link BillEntry}（防腐层职责），本类不感知任何渠道 SDK 类型。
@@ -36,11 +42,11 @@ public final class ReconciliationComparer {
     /**
      * 渠道账单条目（领域侧入参）—— 应用层从渠道 SDK 账单项转换而来的最小字段集。
      *
-     * @param outTradeNo  商户订单号（比对键，即本地支付单号）
-     * @param channelTxnId 渠道交易号（渠道有此单时回填明细）
-     * @param amount      账单金额（分，可 {@code null}）
+     * @param channelTradeNo 商户订单号（比对键，即本平台对外渠道号 {@code pay_order.channel_trade_no}）
+     * @param channelTxnId   渠道交易号（渠道有此单时回填明细）
+     * @param amount         账单金额（分，可 {@code null}）
      */
-    public record BillEntry(String outTradeNo, String channelTxnId, Integer amount) {
+    public record BillEntry(String channelTradeNo, String channelTxnId, Integer amount) {
     }
 
     /**
@@ -54,36 +60,37 @@ public final class ReconciliationComparer {
     }
 
     /**
-     * 本地流水 ↔ 渠道账单比对，产出四态明细与两侧总额。
+     * 本地流水 ↔ 渠道账单比对（按对外渠道号匹配），产出四态明细与两侧总额。
      *
-     * @param localOrders 本地支付成功流水
+     * @param localOrders 本地支付成功流水（须含 {@code channelTradeNo}）
      * @param billEntries 渠道账单条目（已由应用层完成防腐转换）
      * @return 比对结果（明细 + 渠道/本地总额）
      */
     public static Diff compare(List<PayOrder> localOrders, List<BillEntry> billEntries) {
-        Map<String, BillEntry> channelByOrderNo = new LinkedHashMap<>();
+        Map<String, BillEntry> channelByTradeNo = new LinkedHashMap<>();
         for (BillEntry entry : billEntries) {
-            if (entry.outTradeNo() != null) {
-                channelByOrderNo.putIfAbsent(entry.outTradeNo(), entry);
+            if (entry.channelTradeNo() != null) {
+                channelByTradeNo.putIfAbsent(entry.channelTradeNo(), entry);
             }
         }
         List<ReconciliationDetail> details = new ArrayList<>(billEntries.size() + localOrders.size());
         for (PayOrder local : localOrders) {
-            BillEntry entry = channelByOrderNo.remove(local.getPayOrderNo());
-            details.add(buildDetail(local.getPayOrderNo(), entry, local.getAmount()));
+            BillEntry entry = channelByTradeNo.remove(local.getChannelTradeNo());
+            details.add(buildDetail(local.getPayOrderNo(), local.getChannelTradeNo(), entry, local.getAmount()));
         }
-        for (BillEntry entry : channelByOrderNo.values()) {
-            details.add(buildDetail(entry.outTradeNo(), entry, null));
+        for (BillEntry entry : channelByTradeNo.values()) {
+            details.add(buildDetail(null, entry.channelTradeNo(), entry, null));
         }
         return new Diff(details, sumChannel(billEntries), sumLocal(localOrders));
     }
 
     /** 组装一条明细（{@code entry == null} → 本地有渠道无；{@code localAmount == null} → 渠道有本地无）。 */
-    private static ReconciliationDetail buildDetail(String payOrderNo, BillEntry entry,
+    private static ReconciliationDetail buildDetail(String payOrderNo, String channelTradeNo, BillEntry entry,
                                                     Integer localAmount) {
         Integer channelAmount = entry == null ? null : entry.amount();
         ReconciliationDetail detail = new ReconciliationDetail();
         detail.setPayOrderNo(payOrderNo);
+        detail.setChannelTradeNo(channelTradeNo);
         detail.setChannelTxnId(entry == null ? null : entry.channelTxnId());
         detail.setChannelAmount(channelAmount);
         detail.setLocalAmount(localAmount);

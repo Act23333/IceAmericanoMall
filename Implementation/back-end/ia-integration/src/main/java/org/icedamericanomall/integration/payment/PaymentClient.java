@@ -21,8 +21,23 @@ import java.util.Map;
  */
 public interface PaymentClient {
 
-    /** 发起支付，返回二维码链接 / 支付链接 */
-    String initiatePayment(String orderNo, int amount, String description);
+    /**
+     * 渠道商户订单号（{@code out_trade_no}）的协议长度上限 —— 微信支付 API v3 规定
+     * {@code out_trade_no} 为 6–32 个字符，超长/过短渠道直接拒单。
+     *
+     * <p><b>为何收在适配层</b>：这是<b>渠道协议知识</b>，不是业务口径。调用方（pay-service）
+     * 生成对外渠道号时按业务需要取 12–20 位，<b>必须</b> ≤ 本上限；单测以本常量断言，
+     * 避免把 32 写成散落的魔法数（也避免再次出现「正好 32 位、零余量」的隐性越界）。
+     */
+    int MAX_OUT_TRADE_NO_LENGTH = 32;
+
+    /**
+     * 发起支付，返回二维码链接 / 支付链接。
+     *
+     * @param outTradeNo 对外渠道交易号（微信 {@code out_trade_no}）—— <b>不是</b>内部
+     *                   业务订单号/支付单号，必须是 {@code pay_order.channel_trade_no}
+     */
+    String initiatePayment(String outTradeNo, int amount, String description);
 
     /**
      * 发起微信 JSAPI 下单（小程序内拉起支付，PAY7）：{@code payer.openid} 与商户下单 appid
@@ -33,7 +48,7 @@ public interface PaymentClient {
      * <p>支付结果不经本方法返回：仍由 {@link #parseWechatCallback}（PAY2 回调）确认，
      * 与 Native 通道共用同一套回调确认链路。
      *
-     * @param orderNo     业务订单号（微信 {@code out_trade_no}）
+     * @param outTradeNo  对外渠道交易号（微信 {@code out_trade_no}，取自 {@code pay_order.channel_trade_no}）
      * @param amount      支付金额（<b>分</b>）
      * @param description 商品描述
      * @param openid      用户在<b>下单 appid</b> 下的 openid
@@ -41,7 +56,7 @@ public interface PaymentClient {
      * @throws org.icedamericanomall.common.exception.BizException
      *         {@code BUSINESS_EXECUTION_EXCEPTION} —— 渠道拒绝 / 调用失败（下单失败不允许静默丢失）
      */
-    JsapiPayResult initiateJsapiPayment(String orderNo, int amount, String description, String openid);
+    JsapiPayResult initiateJsapiPayment(String outTradeNo, int amount, String description, String openid);
 
     /**
      * 解析微信支付 v3 回调：验签 → AES-GCM 解密 {@code resource} → 提取强类型结果。
@@ -76,8 +91,10 @@ public interface PaymentClient {
      * 的 {@code amount.total} 必须等于原支付单金额、{@code amount.refund} 才是本次退款额，
      * 两者不等时渠道直接拒绝。故调用方需把支付单金额一并传入（支持部分退款）。
      *
-     * @param payOrderNo   原支付单号（微信 {@code out_trade_no}）
-     * @param refundNo     退款单号（微信 {@code out_refund_no}；渠道侧幂等键，重试复用同号）
+     * @param outTradeNo   原支付单的对外渠道交易号（微信 {@code out_trade_no}，
+     *                     <b>不是</b>内部 {@code pay_order_no}）
+     * @param outRefundNo  对外退款项号（微信 {@code out_refund_no}；渠道侧幂等键，重试复用同号，
+     *                     <b>不是</b>内部 {@code refund_no}）
      * @param refundAmount 本次退款金额（<b>分</b>）
      * @param orderAmount  原支付单金额（<b>分</b>）
      * @param reason       退款原因摘要（可空）
@@ -85,7 +102,7 @@ public interface PaymentClient {
      * @throws org.icedamericanomall.common.exception.BizException
      *         {@code BUSINESS_EXECUTION_EXCEPTION} —— 渠道拒绝 / 调用失败（退款发起不允许静默丢失）
      */
-    ChannelRefundResult refund(String payOrderNo, String refundNo, int refundAmount, int orderAmount,
+    ChannelRefundResult refund(String outTradeNo, String outRefundNo, int refundAmount, int orderAmount,
                                String reason);
 
     /**
@@ -94,14 +111,14 @@ public interface PaymentClient {
      * <p>与 PAY6 回调互为冗余：回调丢失/未达时，由补偿任务凭本查询收敛退款单终态。
      * 渠道原始状态串在本适配层归一化为 {@link ChannelRefundState} 三值语义，调用方不感知渠道协议细节。
      *
-     * @param refundNo 商户退款单号（微信 {@code out_refund_no}，重试复用同号）
+     * @param outRefundNo 对外退款项号（微信 {@code out_refund_no}，重试复用同号）
      * @return 强类型查询结果（渠道退款单号 + 归一化状态）
      * @throws UnsupportedOperationException 当前渠道不支持退款查询（default 实现；支付宝等无查询 API 的渠道）
      * @throws org.icedamericanomall.common.exception.BizException
      *         {@code BUSINESS_EXECUTION_EXCEPTION} —— 查询调用失败（网络/渠道错误，不允许吞掉伪装成「仍在处理」）
      */
-    default ChannelRefundQueryResult queryRefund(String refundNo) {
-        throw new UnsupportedOperationException("当前渠道不支持退款查询: " + refundNo);
+    default ChannelRefundQueryResult queryRefund(String outRefundNo) {
+        throw new UnsupportedOperationException("当前渠道不支持退款查询: " + outRefundNo);
     }
 
     /**

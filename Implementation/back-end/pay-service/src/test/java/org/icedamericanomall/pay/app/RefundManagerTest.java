@@ -60,7 +60,11 @@ import static org.mockito.Mockito.when;
 class RefundManagerTest {
 
     private static final String REFUND_NO = "RFD-1";
+    /** 对外退款项号（渠道 out_refund_no）：与内部 REFUND_NO 刻意不同，锁死「两个号已分离」。 */
+    private static final String OUT_REFUND_NO = "out00000000000000001";
     private static final String PAY_ORDER_NO = "PAY-1";
+    /** 原支付的对外渠道号（渠道 out_trade_no）：与内部 PAY_ORDER_NO 刻意不同。 */
+    private static final String CHANNEL_TRADE_NO = "ctn0000000000000001";
     private static final String ORDER_NO = "ORD-1";
     private static final long AFTER_SALE_ID = 9L;
     private static final int AMOUNT = 12800;
@@ -95,6 +99,7 @@ class RefundManagerTest {
         PayOrder payOrder = new PayOrder();
         payOrder.setId(1L);
         payOrder.setPayOrderNo(PAY_ORDER_NO);
+        payOrder.setChannelTradeNo(CHANNEL_TRADE_NO);
         payOrder.setBizOrderNo(ORDER_NO);
         payOrder.setBizUserId(100L);
         payOrder.setPayChannelCode(channel);
@@ -106,6 +111,7 @@ class RefundManagerTest {
         RefundOrder entity = new RefundOrder();
         entity.setId(1L);
         entity.setRefundNo(REFUND_NO);
+        entity.setOutRefundNo(OUT_REFUND_NO);
         entity.setAfterSaleId(AFTER_SALE_ID);
         entity.setOrderNo(ORDER_NO);
         entity.setPayOrderNo(PAY_ORDER_NO);
@@ -173,7 +179,7 @@ class RefundManagerTest {
         when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(payOrder("WECHAT", AMOUNT));
         when(refundOrderService.createProcessing(any(), anyString(), anyString(), any(), anyString(), anyInt()))
                 .thenReturn(refundOrder(0, "WECHAT"));
-        when(channelRouter.refund(any(), eq(PAY_ORDER_NO), eq(REFUND_NO), eq(AMOUNT), eq(AMOUNT), any()))
+        when(channelRouter.refund(any(), eq(CHANNEL_TRADE_NO), eq(OUT_REFUND_NO), eq(AMOUNT), eq(AMOUNT), any()))
                 .thenReturn(ChannelRefundResult.processing("ch-rfd-1"));
         when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(refundOrder(0, "WECHAT"));
 
@@ -185,15 +191,17 @@ class RefundManagerTest {
     }
 
     @Test
-    @DisplayName("微信退款回调成功 — 条件置成功 + 回填渠道退款单号 + I42 回写售后单")
+    @DisplayName("微信退款回调成功 — 按对外退款项号查单 → 条件置成功 + 回填渠道退款单号 + I42 回写售后单")
     void shouldConfirmRefunded_whenWechatRefundCallbackSuccess() {
         when(channelRouter.parseWechatRefundCallback(any(), anyString()))
-                .thenReturn(new WechatRefundCallbackResult(REFUND_NO, true, "5000099", "SUCCESS"));
-        when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(refundOrder(0, "WECHAT"));
+                .thenReturn(new WechatRefundCallbackResult(OUT_REFUND_NO, true, "5000099", "SUCCESS"));
+        when(refundOrderService.getByOutRefundNo(OUT_REFUND_NO)).thenReturn(refundOrder(0, "WECHAT"));
         when(refundOrderService.markSuccessIfProcessing(REFUND_NO, "5000099")).thenReturn(true);
 
         refundManager.handleWechatRefundCallback(Map.of("Wechatpay-Signature", "sig"), "{\"resource\":{}}");
 
+        verify(refundOrderService).getByOutRefundNo(OUT_REFUND_NO);
+        verify(refundOrderService, never()).getByRefundNo(OUT_REFUND_NO);
         verify(refundOrderService).markSuccessIfProcessing(REFUND_NO, "5000099");
         verify(afterSaleClient).markRefunded(AFTER_SALE_ID);
     }
@@ -202,8 +210,8 @@ class RefundManagerTest {
     @DisplayName("退款成功触达 — 回调置成功：买家收到 REFUND_SUCCESS 站内信（订单号+退款金额+原路渠道）")
     void shouldNotifyBuyerRefundSuccess_whenWechatCallbackConfirmed() {
         when(channelRouter.parseWechatRefundCallback(any(), anyString()))
-                .thenReturn(new WechatRefundCallbackResult(REFUND_NO, true, "5000099", "SUCCESS"));
-        when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(refundOrder(0, "WECHAT"));
+                .thenReturn(new WechatRefundCallbackResult(OUT_REFUND_NO, true, "5000099", "SUCCESS"));
+        when(refundOrderService.getByOutRefundNo(OUT_REFUND_NO)).thenReturn(refundOrder(0, "WECHAT"));
         when(refundOrderService.markSuccessIfProcessing(REFUND_NO, "5000099")).thenReturn(true);
 
         refundManager.handleWechatRefundCallback(Map.of(), "{}");
@@ -245,8 +253,8 @@ class RefundManagerTest {
         RefundOrder noBuyer = refundOrder(0, "WECHAT");
         noBuyer.setUserId(null);
         when(channelRouter.parseWechatRefundCallback(any(), anyString()))
-                .thenReturn(new WechatRefundCallbackResult(REFUND_NO, true, "5000099", "SUCCESS"));
-        when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(noBuyer);
+                .thenReturn(new WechatRefundCallbackResult(OUT_REFUND_NO, true, "5000099", "SUCCESS"));
+        when(refundOrderService.getByOutRefundNo(OUT_REFUND_NO)).thenReturn(noBuyer);
         when(refundOrderService.markSuccessIfProcessing(REFUND_NO, "5000099")).thenReturn(true);
 
         refundManager.handleWechatRefundCallback(Map.of(), "{}");
@@ -259,7 +267,7 @@ class RefundManagerTest {
     @DisplayName("微信退款回调非成功终态（CLOSED）— 不改退款单状态、不回写售后单")
     void shouldIgnore_whenWechatRefundCallbackNotSuccess() {
         when(channelRouter.parseWechatRefundCallback(any(), anyString()))
-                .thenReturn(new WechatRefundCallbackResult(REFUND_NO, false, "5000099", "CLOSED"));
+                .thenReturn(new WechatRefundCallbackResult(OUT_REFUND_NO, false, "5000099", "CLOSED"));
 
         refundManager.handleWechatRefundCallback(Map.of(), "{}");
 
@@ -271,8 +279,8 @@ class RefundManagerTest {
     @DisplayName("微信退款回调重复通知 — 退款单非处理中：幂等忽略，不重复回写售后单")
     void shouldBeIdempotent_whenDuplicateRefundCallback() {
         when(channelRouter.parseWechatRefundCallback(any(), anyString()))
-                .thenReturn(new WechatRefundCallbackResult(REFUND_NO, true, "5000099", "SUCCESS"));
-        when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(refundOrder(1, "WECHAT"));
+                .thenReturn(new WechatRefundCallbackResult(OUT_REFUND_NO, true, "5000099", "SUCCESS"));
+        when(refundOrderService.getByOutRefundNo(OUT_REFUND_NO)).thenReturn(refundOrder(1, "WECHAT"));
         when(refundOrderService.markSuccessIfProcessing(REFUND_NO, "5000099")).thenReturn(false);
 
         refundManager.handleWechatRefundCallback(Map.of(), "{}");
@@ -281,11 +289,11 @@ class RefundManagerTest {
     }
 
     @Test
-    @DisplayName("微信退款回调 — 退款单不存在：抛 ORDER_NOT_FOUND（控制器转 500 触发渠道重推）")
+    @DisplayName("微信退款回调 — 对外退款项号查无退款单：抛 ORDER_NOT_FOUND（控制器转 500 触发渠道重推）")
     void shouldThrow_whenRefundOrderMissingOnCallback() {
         when(channelRouter.parseWechatRefundCallback(any(), anyString()))
-                .thenReturn(new WechatRefundCallbackResult("UNKNOWN", true, "5000099", "SUCCESS"));
-        when(refundOrderService.getByRefundNo("UNKNOWN")).thenReturn(null);
+                .thenReturn(new WechatRefundCallbackResult("UNKNOWN-OUT", true, "5000099", "SUCCESS"));
+        when(refundOrderService.getByOutRefundNo("UNKNOWN-OUT")).thenReturn(null);
 
         BizException ex = assertThrows(BizException.class,
                 () -> refundManager.handleWechatRefundCallback(Map.of(), "{}"));
@@ -453,8 +461,8 @@ class RefundManagerTest {
     @DisplayName("全额退款发票联动 — 微信 PAY6 回调确认成功（回调路径）：voidOnFullRefund 收到 orderNo+sceneRef")
     void shouldVoidInvoiceOnFullRefund_whenWechatCallbackConfirmed() {
         when(channelRouter.parseWechatRefundCallback(any(), anyString()))
-                .thenReturn(new WechatRefundCallbackResult(REFUND_NO, true, "5000099", "SUCCESS"));
-        when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(settledRefundOrder("WECHAT"));
+                .thenReturn(new WechatRefundCallbackResult(OUT_REFUND_NO, true, "5000099", "SUCCESS"));
+        when(refundOrderService.getByOutRefundNo(OUT_REFUND_NO)).thenReturn(settledRefundOrder("WECHAT"));
         when(refundOrderService.markSuccessIfProcessing(REFUND_NO, "5000099")).thenReturn(true);
         when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder("WECHAT", AMOUNT));
 

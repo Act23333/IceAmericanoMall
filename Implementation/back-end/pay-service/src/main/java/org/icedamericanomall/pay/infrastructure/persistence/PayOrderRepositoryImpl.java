@@ -45,10 +45,27 @@ public class PayOrderRepositoryImpl implements PayOrderRepository {
                 .stream().findFirst().map(PayOrderRepositoryImpl::toDomain).orElse(null);
     }
 
+    /**
+     * 按对外渠道交易号取（回调 / 对账的寻址入口）。
+     *
+     * <p>{@code channel_trade_no} 是 <b>VARCHAR</b> 列（不是 BINARY(16) 业务键），故等值参数直传
+     * {@code String} —— 此处<b>不得</b>套 {@code IdGenerator.toBytes}（那会把 20 位短号当 32 位 hex 解析，
+     * 直接抛 IllegalArgumentException）。空值返回 {@code null}（渠道报文缺字段时的防御口径）。
+     */
     @Override
-    public PayOrder createPending(String bizOrderNo, Long userId, int amount, String payUrl,
+    public PayOrder getByChannelTradeNo(String channelTradeNo) {
+        if (channelTradeNo == null || channelTradeNo.isBlank()) {
+            return null;
+        }
+        return payOrderMapper.selectList(new LambdaQueryWrapper<PayOrderPO>()
+                        .eq(PayOrderPO::getChannelTradeNo, channelTradeNo))
+                .stream().findFirst().map(PayOrderRepositoryImpl::toDomain).orElse(null);
+    }
+
+    @Override
+    public PayOrder createPending(String bizOrderNo, Long userId, int amount,
                                   String channelCode, int payType) {
-        PayOrder payOrder = PayOrder.newPending(bizOrderNo, userId, amount, payUrl, channelCode, payType);
+        PayOrder payOrder = PayOrder.newPending(bizOrderNo, userId, amount, channelCode, payType);
         PayOrderPO po = toPO(payOrder);
         payOrderMapper.insert(po);
         payOrder.setId(po.getId());
@@ -56,23 +73,36 @@ public class PayOrderRepositoryImpl implements PayOrderRepository {
     }
 
     @Override
-    public PayOrder resetPending(PayOrder existing, int amount, String channelCode,
-                                 String payUrl, int payType) {
+    public PayOrder resetPending(PayOrder existing, int amount, String channelCode, int payType) {
         LocalDateTime payOverTime = LocalDateTime.now().plusMinutes(PAY_TIMEOUT_MINUTES);
         boolean updated = payOrderMapper.update(null, new LambdaUpdateWrapper<PayOrderPO>()
                 .eq(PayOrderPO::getId, existing.getId())
                 .eq(PayOrderPO::getStatus, PayStatusEnum.PENDING_PAY.getCode())
                 .set(PayOrderPO::getAmount, amount)
                 .set(PayOrderPO::getPayChannelCode, channelCode)
-                .set(PayOrderPO::getQrCodeUrl, payUrl)
+                .set(PayOrderPO::getQrCodeUrl, null)
                 .set(PayOrderPO::getPayType, payType)
                 .set(PayOrderPO::getPayOverTime, payOverTime)) > 0;
         if (!updated) {
             log.info("支付单状态已变更，无法复用: payOrderNo={}", existing.getPayOrderNo());
             return null;
         }
-        existing.applyPendingReset(amount, channelCode, payUrl, payType, payOverTime);
+        existing.applyPendingReset(amount, channelCode, payType, payOverTime);
         return existing;
+    }
+
+    @Override
+    public boolean attachPayUrl(PayOrder payOrder, String payUrl) {
+        boolean updated = payOrderMapper.update(null, new LambdaUpdateWrapper<PayOrderPO>()
+                .eq(PayOrderPO::getId, payOrder.getId())
+                .eq(PayOrderPO::getStatus, PayStatusEnum.PENDING_PAY.getCode())
+                .set(PayOrderPO::getQrCodeUrl, payUrl)) > 0;
+        if (updated) {
+            payOrder.applyPayUrl(payUrl);
+        } else {
+            log.info("支付单状态已变更，支付链接不回填: payOrderNo={}", payOrder.getPayOrderNo());
+        }
+        return updated;
     }
 
     @Override
@@ -124,6 +154,7 @@ public class PayOrderRepositoryImpl implements PayOrderRepository {
                 .id(po.getId())
                 .bizOrderNo(IdGenerator.toHexString(po.getBizOrderNo()))
                 .payOrderNo(IdGenerator.toHexString(po.getPayOrderNo()))
+                .channelTradeNo(po.getChannelTradeNo())
                 .bizUserId(po.getBizUserId())
                 .payChannelCode(po.getPayChannelCode())
                 .amount(po.getAmount())
@@ -145,6 +176,7 @@ public class PayOrderRepositoryImpl implements PayOrderRepository {
         po.setId(payOrder.getId());
         po.setBizOrderNo(IdGenerator.toBytes(payOrder.getBizOrderNo()));
         po.setPayOrderNo(IdGenerator.toBytes(payOrder.getPayOrderNo()));
+        po.setChannelTradeNo(payOrder.getChannelTradeNo());
         po.setBizUserId(payOrder.getBizUserId());
         po.setPayChannelCode(payOrder.getPayChannelCode());
         po.setAmount(payOrder.getAmount());

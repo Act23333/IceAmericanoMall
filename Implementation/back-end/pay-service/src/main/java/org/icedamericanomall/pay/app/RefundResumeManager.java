@@ -103,22 +103,24 @@ public class RefundResumeManager {
     }
 
     /**
-     * 微信渠道补偿：查渠道退款终态并收敛本地状态。
+     * 微信渠道补偿：按<b>对外退款项号</b>查渠道退款终态并收敛本地状态。
      *
      * <p>查询异常向上抛出（由批量循环兜底告警），本地状态不动 —— 查询不到结果不等于退款失败。
      */
     private void resumeWechat(RefundOrder refundOrder) {
         String refundNo = refundOrder.getRefundNo();
-        ChannelRefundQueryResult result = channelRouter.queryWechatRefund(refundNo);
+        String outRefundNo = refundOrder.getOutRefundNo();
+        ChannelRefundQueryResult result = channelRouter.queryWechatRefund(outRefundNo);
         switch (result.state()) {
             case SUCCESS -> refundManager.markSuccessAndNotify(refundNo, result.refundId());
             case FAILED -> {
                 String failReason = "渠道退款查询终止: " + result.state() + " refundId=" + result.refundId();
                 refundManager.markFailedWithReason(refundNo, failReason);
-                log.warn("[refund-resume][channel-failed] refundNo={} 渠道退款已终止，置失败待 AD43 重试: {}",
-                        refundNo, failReason);
+                log.warn("[refund-resume][channel-failed] outRefundNo={} 渠道退款已终止，置失败待 AD43 重试: {}",
+                        outRefundNo, failReason);
             }
-            case PROCESSING -> log.debug("[refund-resume][skip] refundNo={} 渠道仍在处理中，本轮跳过", refundNo);
+            case PROCESSING -> log.debug("[refund-resume][skip] outRefundNo={} 渠道仍在处理中，本轮跳过",
+                    outRefundNo);
         }
     }
 

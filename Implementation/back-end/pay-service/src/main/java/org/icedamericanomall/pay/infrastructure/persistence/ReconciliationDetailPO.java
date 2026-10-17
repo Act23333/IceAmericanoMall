@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 /**
  * 对账差异明细实体 —— 持久化模型（{@code reconciliation_detail} 表，F4 渠道对账）。
  *
- * <p>一条明细 = 一个比对键（{@code pay_order_no}）的四态结论，见
+ * <p>一条明细 = 一个比对键（<b>对外渠道号 {@code channel_trade_no}</b>）的四态结论，见
  * {@link org.icedamericanomall.pay.domain.enums.ReconciliationResultEnum}。
  */
 @Data
@@ -30,9 +30,15 @@ public class ReconciliationDetailPO implements Serializable {
     /** 所属批次 ID。 */
     private Long batchId;
 
-    /** 本地支付单号（比对键）。 */
-    /** 本地支付单号（比对键，pay_order.pay_order_no 复制，BINARY(16) ↔ byte[]，ADR-050） */
+    /**
+     * 本地支付单号（内部定位用，可空；BINARY(16) ↔ byte[]，ADR-050）。
+     *
+     * <p>「渠道有本地无」的差异行没有本地支付单，故为 {@code null}。
+     */
     private byte[] payOrderNo;
+
+    /** 对外渠道号（{@code pay_order.channel_trade_no}，<b>比对键</b>；VARCHAR，不套 byte[] 转换）。 */
+    private String channelTradeNo;
 
     /** 渠道交易号（渠道账单有则回填）。 */
     private String channelTxnId;

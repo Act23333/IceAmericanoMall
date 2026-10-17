@@ -12,8 +12,17 @@ import java.util.List;
  */
 public interface RefundOrderRepository {
 
-    /** 按退款单号取（业务唯一键）。 */
+    /** 按退款单号取（内部业务唯一键；管理端 AD43 重试 / 内部定位）。 */
     RefundOrder getByRefundNo(String refundNo);
+
+    /**
+     * 按对外退款项号取（{@code refund_order.out_refund_no}）—— <b>渠道退款回调 / 退款状态查询的
+     * 唯一寻址入口</b>（渠道只认它，永远不认内部 {@code refund_no}）。
+     *
+     * @param outRefundNo 对外退款项号（微信 {@code out_refund_no}）
+     * @return 退款单；不存在返回 {@code null}
+     */
+    RefundOrder getByOutRefundNo(String outRefundNo);
 
     /** 按售后单 ID 取（uk_after_sale 幂等锚点，售后场景）。 */
     RefundOrder getByAfterSaleId(Long afterSaleId);

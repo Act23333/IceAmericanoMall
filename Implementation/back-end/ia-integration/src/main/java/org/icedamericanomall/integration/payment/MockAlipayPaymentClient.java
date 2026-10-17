@@ -35,9 +35,9 @@ public class MockAlipayPaymentClient implements AlipayPaymentClient {
     static final String MOCK_CHANNEL_TXN_NO_PREFIX = "mock-ali-txn-";
 
     @Override
-    public String initiatePayment(String orderNo, int amount, String description) {
-        String payUrl = "https://mock-alipay.example.com/pay?order=" + orderNo + "&amount=" + amount;
-        log.info("[MockAlipay] 发起支付: orderNo={}, amount={} -> {}（虚拟链接）", orderNo, amount, payUrl);
+    public String initiatePayment(String outTradeNo, int amount, String description) {
+        String payUrl = "https://mock-alipay.example.com/pay?order=" + outTradeNo + "&amount=" + amount;
+        log.info("[MockAlipay] 发起支付: outTradeNo={}, amount={} -> {}（虚拟链接）", outTradeNo, amount, payUrl);
         return payUrl;
     }
 
@@ -47,11 +47,11 @@ public class MockAlipayPaymentClient implements AlipayPaymentClient {
     }
 
     @Override
-    public ChannelRefundResult refund(String payOrderNo, String refundNo, int refundAmount, int orderAmount,
+    public ChannelRefundResult refund(String outTradeNo, String outRefundNo, int refundAmount, int orderAmount,
                                       String reason) {
-        log.info("===== MOCK ALIPAY REFUND ===== payOrderNo={}, refundNo={}, refundAmount={}, orderAmount={}",
-                payOrderNo, refundNo, refundAmount, orderAmount);
-        return ChannelRefundResult.settled(MOCK_CHANNEL_REFUND_NO_PREFIX + refundNo);
+        log.info("===== MOCK ALIPAY REFUND ===== outTradeNo={}, outRefundNo={}, refundAmount={}, orderAmount={}",
+                outTradeNo, outRefundNo, refundAmount, orderAmount);
+        return ChannelRefundResult.settled(MOCK_CHANNEL_REFUND_NO_PREFIX + outRefundNo);
     }
 
     @Override
@@ -64,7 +64,7 @@ public class MockAlipayPaymentClient implements AlipayPaymentClient {
     }
 
     @Override
-    public String queryStatus(String payOrderNo) {
+    public String queryStatus(String outTradeNo) {
         return "SUCCESS";
     }
 }

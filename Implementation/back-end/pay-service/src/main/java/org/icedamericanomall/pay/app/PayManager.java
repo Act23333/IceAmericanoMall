@@ -27,6 +27,12 @@ import java.util.Map;
  * 支付编排 Manager —— 按渠道（微信/支付宝/余额）路由发起支付与回调，编排跨服务 Feign。
  * 领域内的支付单读写下沉至 {@link PayOrderRepository}。
  *
+ * <p><b>资金链路口径（本类最关键的约束）</b>：对渠道只发「对外渠道号」
+ * {@code pay_order.channel_trade_no}，内部 {@code order_no} / {@code pay_order_no} <b>绝不外发</b>；
+ * 回调/对账也只按渠道号寻址（{@link PayOrderRepository#getByChannelTradeNo}）。
+ * 二者在此彻底分离 —— 修复前发起侧发的是 {@code orders.order_no}、回调侧却按
+ * {@code pay_order.pay_order_no} 查，真实回调<b>必然查不到</b>支付单。
+ *
  * <p><b>事务纪律</b>：本类方法一律<b>不</b>加 {@code @Transactional}（事务内调 Feign 属硬约束违规），
  * 需要事务的只是单条 SQL，下沉到 {@link PayOrderRepository} 的领域方法；Feign（余额扣款、
  * 通知订单状态）全在事务外执行。支付成功的买家站内信触达（ADR-042）委托
@@ -34,18 +40,20 @@ import java.util.Map;
  *
  * <pre>
  * Scenario: 微信/支付宝发起
- *   Then 调对应渠道客户端拿支付链接，复用或创建"待支付"支付单，返回链接
+ *   Then 先落/复用"待支付"支付单（含对外渠道号，跨重试不变）→ 用该渠道号调渠道拿支付链接
+ *        → 条件回填链接并返回
  * Scenario: 小程序内拉起（微信 JSAPI，PAY7）
- *   Then 与微信发起同构：幂等已支付检查 → 校验订单 → JSAPI 下单（openid 与 wechat.pay.app-id
- *        绑定）返回带签名拉起参数集；支付结果仍由微信回调确认，此处不推进状态
+ *   Then 与微信发起同构：幂等已支付检查 → 校验订单 → 落/复用待支付单（含渠道号）
+ *        → JSAPI 下单（openid 与 wechat.pay.app-id 绑定）返回带签名拉起参数集；
+ *        支付结果仍由微信回调确认，此处不推进状态
  * Scenario: 余额支付
- *   Then 先落"待支付"支付单 → 事务外 Feign 扣余额 → 扣款成功条件置成功并通知订单；
- *        扣款失败则条件取消支付单并抛 BALANCE_INSUFFICIENT（禁止只记日志吞掉）
+ *   Then 先落"待支付"支付单（余额渠道本地闭环，无对外渠道号）→ 事务外 Feign 扣余额
+ *        → 扣款成功条件置成功并通知订单；扣款失败则条件取消支付单并抛 BALANCE_INSUFFICIENT
  * Scenario: 回调/超时
  *   Then 微信回调经通道适配层整包解析（验签 + 解密 + 提取强类型结果，ADR-033），
- *        非成功终态仅告警不改状态；成功则条件更新（PENDING→SUCCESS）命中才通知订单待发货；
- *        支付宝回调走表单参数验签 + 直接取键；超时条件取消（PENDING→TIMEOUT_CANCEL）命中才通知订单已取消，
- *        并发/重复调用安全
+ *        非成功终态仅告警不改状态；成功则<b>按渠道号</b>查支付单 → 条件更新（PENDING→SUCCESS）
+ *        命中才通知订单待发货；支付宝回调走表单参数验签 + 直接取键（同为渠道号）；
+ *        超时条件取消（PENDING→TIMEOUT_CANCEL）命中才通知订单已取消，并发/重复调用安全
  * </pre>
  */
 @Slf4j
@@ -63,6 +71,11 @@ public class PayManager {
 
     /**
      * 发起支付（微信/支付宝/余额）。
+     *
+     * <p><b>调用顺序不可颠倒</b>：先落/复用「待支付」支付单（对外渠道号在此定稿），
+     * 再用该渠道号调渠道拿链接，最后条件回填链接。这样任何时刻收到的渠道回调都能按渠道号
+     * 查回本地支付单 —— 反过来（先调渠道后落库）会在「渠道已受理、本地尚未落库」的窗口内
+     * 必然丢回调。
      *
      * @param orderNo 业务订单号
      * @param userId  支付用户
@@ -83,19 +96,21 @@ public class PayManager {
         if (channel == PayChannelEnum.BALANCE) {
             return payOrderConverter.toVO(payByBalance(orderNo, userId, amount));
         }
-        String payUrl = channelRouter.initiatePayment(orderNo, amount, PAY_DESC, channel);
-        PayOrder payOrder = reuseOrCreatePending(existing, orderNo, userId, amount, payUrl, channel,
+        PayOrder payOrder = reuseOrCreatePending(existing, orderNo, userId, amount, channel,
                 PayTypeEnum.NATIVE.getCode());
+        String payUrl = channelRouter.initiatePayment(payOrder.getChannelTradeNo(), amount, PAY_DESC, channel);
+        payOrderService.attachPayUrl(payOrder, payUrl);
         return payOrderConverter.toVO(payOrder);
     }
 
     /**
      * 发起微信 JSAPI 支付（小程序内拉起，PAY7）—— 与 {@link #initiatePayment} 同构：
-     * 幂等已支付检查 → Feign 校验订单 → 渠道 JSAPI 下单（appid/openid 同源绑定由
-     * {@code wechat.pay.app-id} 配置侧保证）→ 建/复用待支付单（channel=WECHAT、payType=小程序）。
+     * 幂等已支付检查 → Feign 校验订单 → 落/复用待支付单（对外渠道号定稿）→
+     * 渠道 JSAPI 下单（appid/openid 同源绑定由 {@code wechat.pay.app-id} 配置侧保证）。
      *
      * <p>返回<b>带签名</b>的拉起参数集，前端直传 {@code wx.requestPayment}；支付结果不经本方法
      * 推进——仍走 PAY2 微信回调 → {@link #confirmPaid} 全链路，此处零额外状态分支。
+     * JSAPI 的拉起参数不留存（{@code qrCodeUrl} 保持 {@code null}），故无链接回填步骤。
      *
      * @param orderNo 业务订单号
      * @param userId  支付用户
@@ -113,9 +128,10 @@ public class PayManager {
             throw new BizException(ErrorCode.ORDER_NOT_FOUND, "订单不存在: " + orderNo);
         }
         int amount = resolvePayAmount(summary, orderNo);
-        JsapiPayResult params = channelRouter.initiateWechatJsapi(orderNo, amount, PAY_DESC, openid);
-        reuseOrCreatePending(existing, orderNo, userId, amount, null,
-                PayChannelEnum.WECHAT, PayTypeEnum.MINI.getCode());
+        PayOrder payOrder = reuseOrCreatePending(existing, orderNo, userId, amount, PayChannelEnum.WECHAT,
+                PayTypeEnum.MINI.getCode());
+        JsapiPayResult params = channelRouter.initiateWechatJsapi(payOrder.getChannelTradeNo(), amount,
+                PAY_DESC, openid);
         return payOrderConverter.toParamsVO(params);
     }
 
@@ -134,26 +150,34 @@ public class PayManager {
         return totalAmount;
     }
 
-    /** 复用已有「待支付」支付单（条件更新），否则新建，避免同一订单重复新增支付行。 */
+    /**
+     * 复用已有「待支付」支付单（条件重置），否则新建，避免同一订单重复新增支付行。
+     *
+     * <p><b>对外渠道号跨重试稳定</b>：复用路径不改 {@code channel_trade_no}（聚合的
+     * {@link PayOrder#applyPendingReset} 刻意不碰该字段），新建路径由
+     * {@link PayOrder#newPending} 现生成一个 —— 两条路径都不会出现「同一笔支付两个对外号」。
+     */
     private PayOrder reuseOrCreatePending(PayOrder existing, String orderNo, Long userId,
-                                                int amount, String payUrl, PayChannelEnum channel, int payType) {
+                                          int amount, PayChannelEnum channel, int payType) {
         if (existing != null && existing.isPendingPay()) {
-            PayOrder reused = payOrderService.resetPending(
-                    existing, amount, channel.getCode(), payUrl, payType);
+            PayOrder reused = payOrderService.resetPending(existing, amount, channel.getCode(), payType);
             if (reused != null) {
                 return reused;
             }
         }
-        return payOrderService.createPending(orderNo, userId, amount, payUrl, channel.getCode(), payType);
+        return payOrderService.createPending(orderNo, userId, amount, channel.getCode(), payType);
     }
 
     /**
      * 余额支付：落"待支付"支付单（本地事务）→ 事务外 Feign 扣款 → 条件置成功并通知订单。
      *
+     * <p>余额渠道本地闭环，不对外发起，故 {@code channel_trade_no} 为 {@code null}
+     * （见 {@link PayOrder#newChannelTradeNo}）。
+     *
      * @throws BizException 余额不足（BALANCE_INSUFFICIENT）—— 支付单已被条件取消
      */
     private PayOrder payByBalance(String orderNo, Long userId, int amount) {
-        PayOrder payOrder = payOrderService.createPending(orderNo, userId, amount, null,
+        PayOrder payOrder = payOrderService.createPending(orderNo, userId, amount,
                 PayChannelEnum.BALANCE.getCode(), PayTypeEnum.BALANCE.getCode());
         try {
             channelRouter.deductBalance(userId, amount);
@@ -175,7 +199,7 @@ public class PayManager {
      * 处理微信支付回调（微信 v3：裸 JSON + {@code resource} 密文）。
      *
      * <p><b>时序</b>：通道适配层整包解析（验签 + AES-GCM 解密 + 提取，见 ADR-033）→ 非成功终态则
-     * 仅告警并返回（<b>不改支付单状态</b>）→ 按支付单号查单（不存在抛 {@code ORDER_NOT_FOUND}）→
+     * 仅告警并返回（<b>不改支付单状态</b>）→ <b>按对外渠道号</b>查单（不存在抛 {@code ORDER_NOT_FOUND}）→
      * 条件置成功（仅 {@code PENDING_PAY} 命中才通知订单待发货；未命中视为重复通知，静默返回）。
      *
      * <p><b>非成功终态（{@code CLOSED} / {@code PAYERROR} / {@code REVOKED} 等）为何不改状态</b>：
@@ -191,7 +215,7 @@ public class PayManager {
     public void handleWechatCallback(Map<String, String> headers, String rawBody) {
         WechatCallbackResult result = channelRouter.parseWechatCallback(headers, rawBody);
         if (!result.success()) {
-            log.warn("微信回调非成功终态，支付单状态保持不变: payOrderNo={}, tradeState={}, transactionId={}",
+            log.warn("微信回调非成功终态，支付单状态保持不变: channelTradeNo={}, tradeState={}, transactionId={}",
                     result.outTradeNo(), result.rawState(), result.channelTradeNo());
             return;
         }
@@ -210,7 +234,7 @@ public class PayManager {
      */
     public void handleAlipayCallback(Map<String, String> params) {
         if (!channelRouter.verifyAlipayCallback(params)) {
-            log.error("支付宝回调签名验证失败: payOrderNo={}", params.get(AlipayPaymentClient.PARAM_OUT_TRADE_NO));
+            log.error("支付宝回调签名验证失败: channelTradeNo={}", params.get(AlipayPaymentClient.PARAM_OUT_TRADE_NO));
             throw new BizException(ErrorCode.ILLEGAL_REQUEST, "支付回调验证失败");
         }
         confirmPaid(params.get(AlipayPaymentClient.PARAM_OUT_TRADE_NO),
@@ -218,19 +242,24 @@ public class PayManager {
     }
 
     /**
-     * 回调确认收款：查单 → 条件置成功 → 命中才通知订单。并发/重复回调安全
+     * 回调确认收款：<b>按对外渠道号</b>查单 → 条件置成功 → 命中才通知订单。并发/重复回调安全
      * （仅受影响行数=1 的调用会推进订单状态）。
+     *
+     * @param channelTradeNo  渠道回传的 {@code out_trade_no}（= 本地 {@code channel_trade_no}）
+     * @param channelState    渠道交易状态串（落 {@code result_code} 供排障）
+     * @param channelTxnId    渠道交易号（微信 {@code transaction_id}，仅日志）
+     * @throws BizException {@code ORDER_NOT_FOUND} 渠道号查不到支付单
      */
-    private void confirmPaid(String payOrderNo, String channelState, String channelTradeNo) {
-        PayOrder payOrder = payOrderService.getByPayOrderNo(payOrderNo);
+    private void confirmPaid(String channelTradeNo, String channelState, String channelTxnId) {
+        PayOrder payOrder = payOrderService.getByChannelTradeNo(channelTradeNo);
         if (payOrder == null) {
-            log.error("支付单不存在: payOrderNo={}, channelState={}, channelTradeNo={}",
-                    payOrderNo, channelState, channelTradeNo);
+            log.error("支付单不存在（按对外渠道号查无）: channelTradeNo={}, channelState={}, channelTxnId={}",
+                    channelTradeNo, channelState, channelTxnId);
             throw new BizException(ErrorCode.ORDER_NOT_FOUND, "支付单不存在");
         }
-        if (!payOrderService.markSuccessIfPending(payOrderNo, channelState)) {
+        if (!payOrderService.markSuccessIfPending(payOrder.getPayOrderNo(), channelState)) {
             log.info("支付回调重复（支付单非待支付状态），忽略: payOrderNo={}, channelState={}",
-                    payOrderNo, channelState);
+                    payOrder.getPayOrderNo(), channelState);
             return;
         }
         notifyOrderPaid(payOrder.getBizOrderNo());

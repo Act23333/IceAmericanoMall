@@ -150,6 +150,7 @@ public class ReconciliationRepositoryImpl implements ReconciliationRepository {
         detail.setId(po.getId());
         detail.setBatchId(po.getBatchId());
         detail.setPayOrderNo(IdGenerator.toHexString(po.getPayOrderNo()));
+        detail.setChannelTradeNo(po.getChannelTradeNo());
         detail.setChannelTxnId(po.getChannelTxnId());
         detail.setChannelAmount(po.getChannelAmount());
         detail.setLocalAmount(po.getLocalAmount());
@@ -164,6 +165,7 @@ public class ReconciliationRepositoryImpl implements ReconciliationRepository {
         po.setId(detail.getId());
         po.setBatchId(detail.getBatchId());
         po.setPayOrderNo(IdGenerator.toBytes(detail.getPayOrderNo()));
+        po.setChannelTradeNo(detail.getChannelTradeNo());
         po.setChannelTxnId(detail.getChannelTxnId());
         po.setChannelAmount(detail.getChannelAmount());
         po.setLocalAmount(detail.getLocalAmount());

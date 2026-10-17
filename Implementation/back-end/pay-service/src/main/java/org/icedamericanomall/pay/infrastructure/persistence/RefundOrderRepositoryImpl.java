@@ -31,6 +31,22 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
                 .stream().findFirst().map(RefundOrderRepositoryImpl::toDomain).orElse(null);
     }
 
+    /**
+     * 按对外退款项号取（退款回调 / 退款状态查询的寻址入口）。
+     *
+     * <p>{@code out_refund_no} 是 <b>VARCHAR</b> 列（不是 BINARY(16) 业务键），等值参数直传
+     * {@code String} —— 套 {@code IdGenerator.toBytes} 会把 20 位短号当 32 位 hex 解析而抛异常。
+     */
+    @Override
+    public RefundOrder getByOutRefundNo(String outRefundNo) {
+        if (outRefundNo == null || outRefundNo.isBlank()) {
+            return null;
+        }
+        return refundOrderMapper.selectList(new LambdaQueryWrapper<RefundOrderPO>()
+                        .eq(RefundOrderPO::getOutRefundNo, outRefundNo))
+                .stream().findFirst().map(RefundOrderRepositoryImpl::toDomain).orElse(null);
+    }
+
     @Override
     public RefundOrder getByAfterSaleId(Long afterSaleId) {
         return refundOrderMapper.selectList(new LambdaQueryWrapper<RefundOrderPO>()
@@ -105,6 +121,7 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
         return RefundOrder.builder()
                 .id(po.getId())
                 .refundNo(IdGenerator.toHexString(po.getRefundNo()))
+                .outRefundNo(po.getOutRefundNo())
                 .orderNo(IdGenerator.toHexString(po.getOrderNo()))
                 .payOrderNo(IdGenerator.toHexString(po.getPayOrderNo()))
                 .afterSaleId(po.getAfterSaleId())
@@ -124,6 +141,7 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
         RefundOrderPO po = new RefundOrderPO();
         po.setId(refundOrder.getId());
         po.setRefundNo(IdGenerator.toBytes(refundOrder.getRefundNo()));
+        po.setOutRefundNo(refundOrder.getOutRefundNo());
         po.setOrderNo(IdGenerator.toBytes(refundOrder.getOrderNo()));
         po.setPayOrderNo(IdGenerator.toBytes(refundOrder.getPayOrderNo()));
         po.setAfterSaleId(refundOrder.getAfterSaleId());

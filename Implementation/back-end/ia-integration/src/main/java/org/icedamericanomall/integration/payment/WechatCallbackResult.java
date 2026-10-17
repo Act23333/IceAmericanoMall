@@ -10,7 +10,9 @@ package org.icedamericanomall.integration.payment;
  * 回调必然失败。现在验签与解密归通道适配层（{@link WechatPaymentClient}），应用层只消费本强类型结果，
  * 跨层的字段名字符串契约随之消失。
  *
- * @param outTradeNo   商户订单号（本平台语义下的<b>支付单号</b>，微信 v3 中即 {@code out_trade_no}）
+ * @param outTradeNo   商户订单号（微信 {@code out_trade_no}）—— <b>本平台语义下是「对外渠道号」
+ *                     {@code pay_order.channel_trade_no}</b>，不是内部 {@code pay_order_no}、
+ *                     也不是 {@code orders.order_no}；应用层据此查本地支付单
  * @param success      渠道交易是否成功终态（{@code "SUCCESS".equals(tradeState)}）
  * @param channelTradeNo 渠道交易号（微信 {@code transaction_id}，供对账/排障；缺失时可能为 {@code null}）
  * @param rawState     渠道原始交易状态（微信 {@code trade_state}，或 Mock/支付宝口径的 {@code result_code}）；

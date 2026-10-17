@@ -53,7 +53,11 @@ import static org.mockito.Mockito.when;
 class OrderRefundManagerTest {
 
     private static final String REFUND_NO = "RFD-GB-1";
+    /** 对外退款项号（渠道 out_refund_no）：与内部 REFUND_NO 刻意不同。 */
+    private static final String OUT_REFUND_NO = "out00000000000000002";
     private static final String PAY_ORDER_NO = "PAY-1";
+    /** 原支付的对外渠道号（渠道 out_trade_no）：与内部 PAY_ORDER_NO 刻意不同。 */
+    private static final String CHANNEL_TRADE_NO = "ctn0000000000000002";
     private static final String ORDER_NO = "ORD-1";
     private static final String SCENE_REF = "GB:ORD-1";
     private static final String REASON = "拼团失败自动退款";
@@ -87,6 +91,7 @@ class OrderRefundManagerTest {
         PayOrder payOrder = new PayOrder();
         payOrder.setId(1L);
         payOrder.setPayOrderNo(PAY_ORDER_NO);
+        payOrder.setChannelTradeNo(CHANNEL_TRADE_NO);
         payOrder.setBizOrderNo(ORDER_NO);
         payOrder.setBizUserId(BUYER_ID);
         payOrder.setPayChannelCode(channel);
@@ -98,6 +103,7 @@ class OrderRefundManagerTest {
         RefundOrder entity = new RefundOrder();
         entity.setId(1L);
         entity.setRefundNo(REFUND_NO);
+        entity.setOutRefundNo(OUT_REFUND_NO);
         entity.setAfterSaleId(null);
         entity.setBizRef(SCENE_REF);
         entity.setOrderNo(ORDER_NO);
@@ -118,7 +124,7 @@ class OrderRefundManagerTest {
         when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(payOrder("WECHAT", AMOUNT));
         when(refundOrderService.createOrderRefundProcessing(anyString(), anyString(), any(), anyString(),
                 anyInt(), anyString())).thenReturn(refundOrder(0, "WECHAT"));
-        when(channelRouter.refund(eq(PayChannelEnum.WECHAT), eq(PAY_ORDER_NO), eq(REFUND_NO),
+        when(channelRouter.refund(eq(PayChannelEnum.WECHAT), eq(CHANNEL_TRADE_NO), eq(OUT_REFUND_NO),
                 eq(AMOUNT), eq(AMOUNT), eq(REASON))).thenReturn(ChannelRefundResult.processing("ch-rfd-1"));
         when(refundOrderService.getByRefundNo(REFUND_NO)).thenReturn(refundOrder(0, "WECHAT"));
 

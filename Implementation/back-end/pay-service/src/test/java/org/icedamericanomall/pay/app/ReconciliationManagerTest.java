@@ -65,9 +65,16 @@ class ReconciliationManagerTest {
                 channelRouter, new ReconciliationConverterImpl());
     }
 
-    private PayOrder localPaid(String payOrderNo, int amount) {
+    /**
+     * 本地支付成功流水：对外渠道号 {@code chn-00x}，内部支付单号刻意是另一个值 {@code pay-00x}。
+     *
+     * <p>两者不同才能锁死「比对键 = 渠道号」：若实现按支付单号比对，账单里的 {@code chn-00x}
+     * 一条都匹配不上，四态判定会整体塌成 CHANNEL_ONLY / LOCAL_ONLY。
+     */
+    private PayOrder localPaid(String channelTradeNo, int amount) {
         PayOrder payOrder = new PayOrder();
-        payOrder.setPayOrderNo(payOrderNo);
+        payOrder.setPayOrderNo("pay-" + channelTradeNo.substring("chn-".length()));
+        payOrder.setChannelTradeNo(channelTradeNo);
         payOrder.setPayChannelCode("WECHAT");
         payOrder.setAmount(amount);
         payOrder.setStatus(3);
@@ -83,29 +90,29 @@ class ReconciliationManagerTest {
         return batch;
     }
 
-    /** 捕获本次落库的明细（按支付单号索引）。 */
+    /** 捕获本次落库的明细（按对外渠道号索引，即比对键）。 */
     @SuppressWarnings("unchecked")
     private Map<String, ReconciliationDetail> captureDetails(int invocationIndex) {
         ArgumentCaptor<List<ReconciliationDetail>> captor = ArgumentCaptor.forClass(List.class);
         verify(reconciliationService, times(invocationIndex)).saveBatchResult(eq(BILL_DATE), anyString(),
                 anyInt(), anyInt(), captor.capture());
         return captor.getValue().stream()
-                .collect(Collectors.toMap(ReconciliationDetail::getPayOrderNo, Function.identity()));
+                .collect(Collectors.toMap(ReconciliationDetail::getChannelTradeNo, Function.identity()));
     }
 
     @Test
-    @DisplayName("当日账单比对 — 生成四态明细（匹配 / 渠道有本地无 / 本地有渠道无 / 金额不一致）")
+    @DisplayName("当日账单比对 — 按对外渠道号生成四态明细（匹配 / 渠道有本地无 / 本地有渠道无 / 金额不一致）")
     void shouldProduceFourStates_whenComparingBill() {
         when(channelRouter.downloadWechatBill("2026-10-02")).thenReturn(List.of(
-                new ChannelBillItem("pay-001", "TXN-1", 9900),
-                new ChannelBillItem("pay-002", "TXN-2", 12800),
-                new ChannelBillItem("pay-00X", "TXN-X", 6600),
-                new ChannelBillItem("pay-003", "TXN-3", 5500)));
+                new ChannelBillItem("chn-001", "TXN-1", 9900),
+                new ChannelBillItem("chn-002", "TXN-2", 12800),
+                new ChannelBillItem("chn-00X", "TXN-X", 6600),
+                new ChannelBillItem("chn-003", "TXN-3", 5500)));
         when(payOrderService.listPaidByDateAndChannel(BILL_DATE, "WECHAT")).thenReturn(List.of(
-                localPaid("pay-001", 9900),
-                localPaid("pay-002", 12800),
-                localPaid("pay-003", 5000),
-                localPaid("pay-004", 3000)));
+                localPaid("chn-001", 9900),
+                localPaid("chn-002", 12800),
+                localPaid("chn-003", 5000),
+                localPaid("chn-004", 3000)));
         when(reconciliationService.saveBatchResult(eq(BILL_DATE), eq("WECHAT"), anyInt(), anyInt(), anyList()))
                 .thenReturn(savedBatch("WECHAT"));
 
@@ -114,17 +121,18 @@ class ReconciliationManagerTest {
         assertEquals(1, batches.size());
         Map<String, ReconciliationDetail> details = captureDetails(1);
         assertEquals(5, details.size(), "4 条渠道流水 + 1 条本地独有");
-        assertEquals(ReconciliationResultEnum.MATCHED.getCode(), details.get("pay-001").getResult());
-        assertEquals(ReconciliationResultEnum.MATCHED.getCode(), details.get("pay-002").getResult());
-        assertEquals(ReconciliationResultEnum.CHANNEL_ONLY.getCode(), details.get("pay-00X").getResult());
-        assertEquals(ReconciliationResultEnum.AMOUNT_MISMATCH.getCode(), details.get("pay-003").getResult());
-        assertEquals(ReconciliationResultEnum.LOCAL_ONLY.getCode(), details.get("pay-004").getResult());
+        assertEquals(ReconciliationResultEnum.MATCHED.getCode(), details.get("chn-001").getResult());
+        assertEquals(ReconciliationResultEnum.MATCHED.getCode(), details.get("chn-002").getResult());
+        assertEquals(ReconciliationResultEnum.CHANNEL_ONLY.getCode(), details.get("chn-00X").getResult());
+        assertEquals(ReconciliationResultEnum.AMOUNT_MISMATCH.getCode(), details.get("chn-003").getResult());
+        assertEquals(ReconciliationResultEnum.LOCAL_ONLY.getCode(), details.get("chn-004").getResult());
         // 金额不一致明细需同时回填两侧金额，供管理端核对
-        assertEquals(5500, details.get("pay-003").getChannelAmount());
-        assertEquals(5000, details.get("pay-003").getLocalAmount());
-        // 渠道有本地无：localAmount 为 null；本地有渠道无：channelAmount 为 null
-        assertEquals(null, details.get("pay-00X").getLocalAmount());
-        assertEquals(null, details.get("pay-004").getChannelAmount());
+        assertEquals(5500, details.get("chn-003").getChannelAmount());
+        assertEquals(5000, details.get("chn-003").getLocalAmount());
+        // 渠道有本地无：localAmount 为 null 且没有本地支付单号；本地有渠道无：channelAmount 为 null
+        assertEquals(null, details.get("chn-00X").getLocalAmount());
+        assertEquals(null, details.get("chn-00X").getPayOrderNo());
+        assertEquals(null, details.get("chn-004").getChannelAmount());
         // 总额：渠道 9900+12800+6600+5500；本地 9900+12800+5000+3000
         verify(reconciliationService).saveBatchResult(eq(BILL_DATE), eq("WECHAT"), eq(34800), eq(30700), anyList());
     }
@@ -133,9 +141,9 @@ class ReconciliationManagerTest {
     @DisplayName("重复执行同日对账 — 幂等重入（每次均走「先删后写」入口，结果一致）")
     void shouldBeIdempotent_whenRunTwice() {
         when(channelRouter.downloadWechatBill("2026-10-02")).thenReturn(List.of(
-                new ChannelBillItem("pay-001", "TXN-1", 9900)));
+                new ChannelBillItem("chn-001", "TXN-1", 9900)));
         when(payOrderService.listPaidByDateAndChannel(BILL_DATE, "WECHAT")).thenReturn(List.of(
-                localPaid("pay-001", 9900)));
+                localPaid("chn-001", 9900)));
         when(reconciliationService.saveBatchResult(eq(BILL_DATE), eq("WECHAT"), anyInt(), anyInt(), anyList()))
                 .thenReturn(savedBatch("WECHAT"));
 
@@ -151,9 +159,9 @@ class ReconciliationManagerTest {
     @DisplayName("仅记录差异不自动调账 — 对账只读本地流水，不触碰任何本地支付单写操作")
     void shouldNotAdjustAnything_whenDiffersFound() {
         when(channelRouter.downloadWechatBill("2026-10-02")).thenReturn(List.of(
-                new ChannelBillItem("pay-003", "TXN-3", 5500)));
+                new ChannelBillItem("chn-003", "TXN-3", 5500)));
         when(payOrderService.listPaidByDateAndChannel(BILL_DATE, "WECHAT")).thenReturn(List.of(
-                localPaid("pay-003", 5000)));
+                localPaid("chn-003", 5000)));
         when(reconciliationService.saveBatchResult(eq(BILL_DATE), eq("WECHAT"), anyInt(), anyInt(), anyList()))
                 .thenReturn(savedBatch("WECHAT"));
 

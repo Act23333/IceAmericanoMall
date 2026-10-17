@@ -23,7 +23,8 @@ import org.icedamericanomall.common.utils.IdGenerator;
  *   1. biz_ref 唯一（uk_biz_ref）—— 统一幂等业务键：售后=AS:{afterSaleId}，拼团=GB:{orderNo}（ADR-049），
  *      退款发起的幂等由该唯一约束兜底
  *   2. after_sale_id 唯一且可空（uk_after_sale）—— 售后场景一售后单一次退款；无售后场景（拼团，I55）为 null
- *   3. refund_no 唯一（uk_refund_no）—— 对外定位键与管理端重试定位键
+ *   3. refund_no 唯一（uk_refund_no）—— <b>内部</b>定位键（管理端重试 AD43 / 运维排查）；
+ *      对外退款项号是 out_refund_no（uk_out_refund_no），渠道回调/查询按它寻址，二者不可混用
  *   4. 成功迁移只在「处理中」态发生（条件更新），保证回调重复幂等
  *   5. 售后单状态仅在退款成功后回写（PROCESSING / FAILED 时停留 APPROVED）；无售后单退款跳过回写
  * </pre>
@@ -37,11 +38,29 @@ import org.icedamericanomall.common.utils.IdGenerator;
 @AllArgsConstructor
 public class RefundOrder {
 
+    /**
+     * 对外退款项号长度（位，hex）：12–20 位随机口径内取 <b>20</b>（80 bit 熵）。
+     *
+     * <p>微信 {@code out_refund_no} / 支付宝 {@code out_request_no} 的协议上限都是 64 位，
+     * 20 位余量充足；但<b>仍与内部 {@code refund_no} 分离</b> —— 二者若共用一个值，
+     * 将来更换内部 ID 方案（长度/形态变化）就会立刻变成对外契约 BREAKING 变更。
+     */
+    public static final int OUT_REFUND_NO_LENGTH = 20;
+
     /** 技术主键（集群内部口径，不对外暴露）。 */
     private Long id;
 
-    /** 退款单号（业务唯一键，32 位 UUID；渠道侧即 {@code out_refund_no}，重试复用同号）。 */
+    /** 退款单号（业务唯一键，32 位 UUID；<b>纯内部口径</b>，不下发给任何渠道）。 */
     private String refundNo;
+
+    /**
+     * 对外退款项号（微信 {@code out_refund_no} 的唯一取值来源）。
+     *
+     * <p>12–20 位随机 hex（默认 20），与内部 {@code refund_no} <b>彻底分离</b>：
+     * 渠道退款回调、退款单查询、账单核对一律按它寻址；渠道回填的「渠道退款单号」
+     * （微信 {@code refund_id}）是<b>另一个</b>字段 {@link #channelRefundNo}，二者不可混用。
+     */
+    private String outRefundNo;
 
     /** 关联订单号（{@code orders.order_no}）。 */
     private String orderNo;
@@ -110,6 +129,7 @@ public class RefundOrder {
                                              String channel, int refundAmount) {
         return RefundOrder.builder()
                 .refundNo(newBusinessId())
+                .outRefundNo(newOutRefundNo())
                 .afterSaleId(afterSaleId)
                 .bizRef(afterSaleBizRef(afterSaleId))
                 .orderNo(orderNo)
@@ -140,6 +160,7 @@ public class RefundOrder {
                                                  String channel, int refundAmount, String bizRef) {
         return RefundOrder.builder()
                 .refundNo(newBusinessId())
+                .outRefundNo(newOutRefundNo())
                 .orderNo(orderNo)
                 .payOrderNo(payOrderNo)
                 .userId(userId)
@@ -150,9 +171,18 @@ public class RefundOrder {
                 .build();
     }
 
-    /** 生成业务唯一键（32 位 UUID，无连字符；与存量 {@code refund_no} 取值格式保持一致）。 */
+    /** 生成业务唯一键（32 位 UUID，无连字符；与 {@code refund_no} 列对齐，纯内部口径）。 */
     public static String newBusinessId() {
         return IdGenerator.nextId();
+    }
+
+    /**
+     * 生成对外退款项号（{@value #OUT_REFUND_NO_LENGTH} 位随机 hex，无时间序）。
+     *
+     * @return 对外退款项号（渠道 {@code out_refund_no} 的唯一取值来源）
+     */
+    public static String newOutRefundNo() {
+        return IdGenerator.randomHex(OUT_REFUND_NO_LENGTH);
     }
 
     // ==================== 状态谓词 ====================

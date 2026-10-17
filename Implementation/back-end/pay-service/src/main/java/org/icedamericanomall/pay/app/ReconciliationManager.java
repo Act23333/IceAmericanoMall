@@ -93,14 +93,17 @@ public class ReconciliationManager {
         };
     }
 
-    /** 防腐转换：渠道 SDK 账单条目 → 领域比对入参（ia-integration 类型不进领域层）。 */
+    /**
+     * 防腐转换：渠道 SDK 账单条目 → 领域比对入参（ia-integration 类型不进领域层）。
+     *
+     * <p>账单的「商户订单号」列 = 本平台对外渠道号（{@code pay_order.channel_trade_no}），
+     * 字段名沿用渠道协议叫法 {@code outTradeNo}，语义按渠道号传入比对函数。
+     */
     private List<ReconciliationComparer.BillEntry> toBillEntries(List<ChannelBillItem> channelBill) {
         return channelBill.stream()
                 .map(item -> new ReconciliationComparer.BillEntry(item.outTradeNo(), item.channelTxnId(), item.amount()))
                 .toList();
-    }
-
-    /** AD44 对账批次分页（管理端，时间倒序，可按渠道/状态/账单日过滤）。 */
+    }    /** AD44 对账批次分页（管理端，时间倒序，可按渠道/状态/账单日过滤）。 */
     public IPage<ReconciliationBatchVO> pageBatches(int page, int size, String channel, Integer status,
                                                     LocalDate billDate) {
         return reconciliationRepository.pageBatches(page, size, channel, status, billDate)

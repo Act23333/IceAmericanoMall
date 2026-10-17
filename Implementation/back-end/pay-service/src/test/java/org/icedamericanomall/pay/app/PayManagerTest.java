@@ -36,12 +36,26 @@ import static org.mockito.Mockito.*;
 
 /**
  * PayManager 支付编排单元测试 —— 微信/支付宝/余额三渠道；Feign / 支付渠道 / 领域服务全部打桩。
- * 重点覆盖：扣款金额口径（payAmount）、回调幂等（受影响行数分支）、超时分支、余额补偿、
- * 支付成功买家触达（ADR-042，经真实 PayEventNotifier 打通到 NotificationClient）。
+ * 重点覆盖：扣款金额口径（payAmount）、<b>对外渠道号</b>寻址与落库时序、回调幂等（受影响行数分支）、
+ * 超时分支、余额补偿、支付成功买家触达（ADR-042，经真实 PayEventNotifier 打通到 NotificationClient）。
+ *
+ * <p><b>本类刻意区分三个号</b>：{@code ORD-1}（业务订单号）/ {@code PAY-1}（内部支付单号）/
+ * {@code ctn-…}（对外渠道号）。对渠道的调用只允许出现最后一个，回调也只按它寻址 ——
+ * 若实现回退成「发起传 order_no、回调查 pay_order_no」，本类的断言会立刻失败。
+ *
+ * <p>跨「发起 → 落库 → 回调」的<b>真实语义链路</b>（真实聚合工厂 + 内存仓储 + 真实渠道路由）
+ * 见 {@link PayChannelTradeNoFlowTest}。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("PayManager 支付编排单元测试")
 class PayManagerTest {
+
+    /** 业务订单号（外部交易主体，绝不作为渠道号外发）。 */
+    private static final String ORDER_NO = "ORD-1";
+    /** 内部支付单号（30 位示意，绝不作为渠道号外发）。 */
+    private static final String PAY_ORDER_NO = "PAY-1";
+    /** 对外渠道号（渠道 out_trade_no 的唯一合法来源）。 */
+    private static final String CHANNEL_TRADE_NO = "ctn0000000000000001";
 
     @Mock PayOrderRepository payOrderService;
     @Mock PayOrderConverter payOrderConverter;
@@ -56,14 +70,15 @@ class PayManagerTest {
     /** 原价 12900，应付 11900（已抵扣 1000 优惠券）。 */
     private OrderSummaryCO summary(int totalAmount, int payAmount) {
         OrderSummaryCO s = new OrderSummaryCO();
-        s.setOrderNo("ORD-1"); s.setUserId(100L);
+        s.setOrderNo(ORDER_NO); s.setUserId(100L);
         s.setTotalAmount(totalAmount); s.setPayAmount(payAmount); s.setStatus(1);
         return s;
     }
 
     private PayOrder payOrder(int status) {
         PayOrder p = new PayOrder();
-        p.setId(1L); p.setBizOrderNo("ORD-1"); p.setPayOrderNo("PAY-1"); p.setStatus(status);
+        p.setId(1L); p.setBizOrderNo(ORDER_NO); p.setPayOrderNo(PAY_ORDER_NO);
+        p.setChannelTradeNo(CHANNEL_TRADE_NO); p.setStatus(status);
         return p;
     }
 
@@ -79,116 +94,124 @@ class PayManagerTest {
         lenient().when(payOrderConverter.toVO(any())).thenReturn(new PayOrderVO());
     }
 
-    // ==================== 发起支付 ====================
+    // ==================== 发起支付：先落库（渠道号定稿）→ 再调渠道 → 回填链接 ====================
 
     @Test
-    @DisplayName("initiatePayment(WECHAT) — 取应付金额、生成二维码、创建待支付单")
+    @DisplayName("initiatePayment(WECHAT) — 取应付金额、先落待支付单、用对外渠道号下单、回填链接")
     void shouldInitiateWechat_whenOrderValid() {
-        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
-        when(orderClient.getOrder("ORD-1")).thenReturn(summary(12900, 11900));
-        when(channelRouter.initiatePayment(eq("ORD-1"), eq(11900), anyString(), eq(PayChannelEnum.WECHAT)))
-                .thenReturn("weixin://qr");
-        when(payOrderService.createPending("ORD-1", 100L, 11900, "weixin://qr", "WECHAT",
-                PayTypeEnum.NATIVE.getCode())).thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
+        PayOrder created = payOrder(PayStatusEnum.PENDING_PAY.getCode());
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(null);
+        when(orderClient.getOrder(ORDER_NO)).thenReturn(summary(12900, 11900));
+        when(payOrderService.createPending(ORDER_NO, 100L, 11900, "WECHAT", PayTypeEnum.NATIVE.getCode()))
+                .thenReturn(created);
+        when(channelRouter.initiatePayment(eq(CHANNEL_TRADE_NO), eq(11900), anyString(),
+                eq(PayChannelEnum.WECHAT))).thenReturn("weixin://qr");
 
-        assertNotNull(payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.WECHAT));
+        assertNotNull(payManager.initiatePayment(ORDER_NO, 100L, PayChannelEnum.WECHAT));
+
         // 扣款/支付链接金额必须用 payAmount，而非原价 totalAmount
-        verify(channelRouter).initiatePayment(eq("ORD-1"), eq(11900), anyString(), eq(PayChannelEnum.WECHAT));
-        verify(payOrderService).createPending("ORD-1", 100L, 11900, "weixin://qr", "WECHAT",
-                PayTypeEnum.NATIVE.getCode());
+        verify(channelRouter).initiatePayment(eq(CHANNEL_TRADE_NO), eq(11900), anyString(),
+                eq(PayChannelEnum.WECHAT));
+        // 渠道号落到支付单自身，链接随后回填到同一行
+        verify(payOrderService).createPending(ORDER_NO, 100L, 11900, "WECHAT", PayTypeEnum.NATIVE.getCode());
+        verify(payOrderService).attachPayUrl(created, "weixin://qr");
     }
 
     @Test
-    @DisplayName("initiatePayment(WECHAT) — 已有待支付单：复用并更新金额/渠道，不新增行")
+    @DisplayName("initiatePayment(WECHAT) — 已有待支付单：复用并更新金额/渠道，不新增行、渠道号不变")
     void shouldReusePendingRow_whenReInitiate() {
         PayOrder pending = payOrder(PayStatusEnum.PENDING_PAY.getCode());
-        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(pending);
-        when(orderClient.getOrder("ORD-1")).thenReturn(summary(12900, 11900));
-        when(channelRouter.initiatePayment(eq("ORD-1"), eq(11900), anyString(), eq(PayChannelEnum.ALIPAY)))
-                .thenReturn("https://alipay/pay");
-        when(payOrderService.resetPending(pending, 11900, "ALIPAY", "https://alipay/pay",
-                PayTypeEnum.NATIVE.getCode())).thenReturn(pending);
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(pending);
+        when(orderClient.getOrder(ORDER_NO)).thenReturn(summary(12900, 11900));
+        when(payOrderService.resetPending(pending, 11900, "ALIPAY", PayTypeEnum.NATIVE.getCode()))
+                .thenReturn(pending);
+        when(channelRouter.initiatePayment(eq(CHANNEL_TRADE_NO), eq(11900), anyString(),
+                eq(PayChannelEnum.ALIPAY))).thenReturn("https://alipay/pay");
 
-        payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.ALIPAY);
+        payManager.initiatePayment(ORDER_NO, 100L, PayChannelEnum.ALIPAY);
 
-        verify(payOrderService).resetPending(pending, 11900, "ALIPAY", "https://alipay/pay",
-                PayTypeEnum.NATIVE.getCode());
+        verify(payOrderService).resetPending(pending, 11900, "ALIPAY", PayTypeEnum.NATIVE.getCode());
         verify(payOrderService, never()).createPending(anyString(), anyLong(), anyInt(),
-                any(), anyString(), anyInt());
+                anyString(), anyInt());
+        // 复用行的对外渠道号保持不变（跨重试稳定）
+        verify(channelRouter).initiatePayment(eq(CHANNEL_TRADE_NO), eq(11900), anyString(),
+                eq(PayChannelEnum.ALIPAY));
     }
 
     @Test
     @DisplayName("initiatePayment(WECHAT) — 复用条件更新未命中（0 行）：退回新建支付单")
     void shouldCreateNewRow_whenResetPendingMisses() {
         PayOrder pending = payOrder(PayStatusEnum.PENDING_PAY.getCode());
-        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(pending);
-        when(orderClient.getOrder("ORD-1")).thenReturn(summary(8800, 8800));
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(pending);
+        when(orderClient.getOrder(ORDER_NO)).thenReturn(summary(8800, 8800));
+        when(payOrderService.resetPending(eq(pending), anyInt(), anyString(), anyInt())).thenReturn(null);
+        when(payOrderService.createPending(eq(ORDER_NO), eq(100L), anyInt(), anyString(), anyInt()))
+                .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
         when(channelRouter.initiatePayment(anyString(), anyInt(), anyString(), any()))
                 .thenReturn("weixin://qr");
-        when(payOrderService.resetPending(eq(pending), anyInt(), anyString(), anyString(), anyInt()))
-                .thenReturn(null);
-        when(payOrderService.createPending(eq("ORD-1"), eq(100L), anyInt(), anyString(), anyString(), anyInt()))
-                .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
 
-        payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.WECHAT);
+        payManager.initiatePayment(ORDER_NO, 100L, PayChannelEnum.WECHAT);
 
-        verify(payOrderService).createPending(eq("ORD-1"), eq(100L), anyInt(), anyString(), anyString(), anyInt());
+        verify(payOrderService).createPending(eq(ORDER_NO), eq(100L), anyInt(), anyString(), anyInt());
     }
 
     @Test
-    @DisplayName("initiatePayment(ALIPAY) — 走支付宝客户端拿链接")
+    @DisplayName("initiatePayment(ALIPAY) — 走支付宝客户端拿链接（入参同为对外渠道号）")
     void shouldInitiateAlipay() {
-        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
-        when(orderClient.getOrder("ORD-1")).thenReturn(summary(8800, 8800));
-        when(channelRouter.initiatePayment(eq("ORD-1"), eq(8800), anyString(), eq(PayChannelEnum.ALIPAY)))
-                .thenReturn("https://alipay/pay");
-        when(payOrderService.createPending("ORD-1", 100L, 8800, "https://alipay/pay", "ALIPAY",
-                PayTypeEnum.NATIVE.getCode())).thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(null);
+        when(orderClient.getOrder(ORDER_NO)).thenReturn(summary(8800, 8800));
+        when(payOrderService.createPending(ORDER_NO, 100L, 8800, "ALIPAY", PayTypeEnum.NATIVE.getCode()))
+                .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
+        when(channelRouter.initiatePayment(eq(CHANNEL_TRADE_NO), eq(8800), anyString(),
+                eq(PayChannelEnum.ALIPAY))).thenReturn("https://alipay/pay");
 
-        assertNotNull(payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.ALIPAY));
-        verify(channelRouter).initiatePayment(eq("ORD-1"), eq(8800), anyString(), eq(PayChannelEnum.ALIPAY));
+        assertNotNull(payManager.initiatePayment(ORDER_NO, 100L, PayChannelEnum.ALIPAY));
+
+        verify(channelRouter).initiatePayment(eq(CHANNEL_TRADE_NO), eq(8800), anyString(),
+                eq(PayChannelEnum.ALIPAY));
     }
 
     @Test
     @DisplayName("initiatePayment — 已支付订单拒绝重复支付")
     void shouldReject_whenAlreadyPaid() {
-        when(payOrderService.getByBizOrderNo("ORD-1"))
+        when(payOrderService.getByBizOrderNo(ORDER_NO))
                 .thenReturn(payOrder(PayStatusEnum.SUCCESS.getCode()));
-        assertThrows(BizException.class, () -> payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.WECHAT));
+        assertThrows(BizException.class, () -> payManager.initiatePayment(ORDER_NO, 100L, PayChannelEnum.WECHAT));
         verify(orderClient, never()).getOrder(anyString());
     }
 
     // ==================== 余额通道（事务外扣款 + 补偿） ====================
 
     @Test
-    @DisplayName("initiatePayment(BALANCE) — 先落待支付单，扣款成功后条件置成功并通知待发货")
+    @DisplayName("initiatePayment(BALANCE) — 先落待支付单（无对外渠道号），扣款成功后条件置成功并通知待发货")
     void shouldPayByBalance() {
-        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
-        when(orderClient.getOrder("ORD-1")).thenReturn(summary(5000, 5000));
-        when(payOrderService.createPending("ORD-1", 100L, 5000, null, "BALANCE",
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(null);
+        when(orderClient.getOrder(ORDER_NO)).thenReturn(summary(5000, 5000));
+        when(payOrderService.createPending(ORDER_NO, 100L, 5000, "BALANCE",
                 PayTypeEnum.BALANCE.getCode())).thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
         when(payOrderService.markBalancePaidIfPending(1L)).thenReturn(true);
 
-        payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.BALANCE);
+        payManager.initiatePayment(ORDER_NO, 100L, PayChannelEnum.BALANCE);
 
         verify(channelRouter).deductBalance(100L, 5000);
         verify(payOrderService).markBalancePaidIfPending(1L);
-        verify(orderClient).updateOrderStatus("ORD-1", 2);   // 待发货
+        verify(orderClient).updateOrderStatus(ORDER_NO, 2);   // 待发货
         verify(payOrderService, never()).cancelPending(anyLong());
+        verify(channelRouter, never()).initiatePayment(any(), anyInt(), any(), any());
     }
 
     @Test
     @DisplayName("initiatePayment(BALANCE) — 余额不足：条件取消支付单 + 抛 BALANCE_INSUFFICIENT + 不通知订单")
     void shouldCancelPayOrderAndThrow_whenBalanceInsufficient() {
-        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
-        when(orderClient.getOrder("ORD-1")).thenReturn(summary(5000, 5000));
-        when(payOrderService.createPending(anyString(), anyLong(), anyInt(), any(), anyString(), anyInt()))
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(null);
+        when(orderClient.getOrder(ORDER_NO)).thenReturn(summary(5000, 5000));
+        when(payOrderService.createPending(anyString(), anyLong(), anyInt(), anyString(), anyInt()))
                 .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
         doThrow(new BizException(ErrorCode.BALANCE_INSUFFICIENT, "余额不足"))
                 .when(channelRouter).deductBalance(100L, 5000);
 
         BizException ex = assertThrows(BizException.class,
-                () -> payManager.initiatePayment("ORD-1", 100L, PayChannelEnum.BALANCE));
+                () -> payManager.initiatePayment(ORDER_NO, 100L, PayChannelEnum.BALANCE));
 
         assertEquals(ErrorCode.BALANCE_INSUFFICIENT, ex.getErrorCode());
         verify(payOrderService).cancelPending(1L);           // 补偿：条件取消本地支付单
@@ -198,36 +221,37 @@ class PayManagerTest {
 
     // ==================== 回调幂等（微信：通道适配层整包解析；支付宝：表单参数） ====================
 
-    /** 微信回调解析结果：{@code success} 由 {@code trade_state} 判定。 */
-    private WechatCallbackResult wechatResult(String payOrderNo, boolean success, String tradeState) {
-        return new WechatCallbackResult(payOrderNo, success, "TXN-1", tradeState);
+    /** 微信回调解析结果：{@code success} 由 {@code trade_state} 判定；outTradeNo 即对外渠道号。 */
+    private WechatCallbackResult wechatResult(String channelTradeNo, boolean success, String tradeState) {
+        return new WechatCallbackResult(channelTradeNo, success, "TXN-1", tradeState);
     }
 
     @Test
-    @DisplayName("handleWechatCallback — 解析成功（trade_state=SUCCESS）且条件更新命中：通知订单待发货")
+    @DisplayName("handleWechatCallback — 按对外渠道号查单 + 条件更新命中：通知订单待发货")
     void shouldMarkSuccess_whenWechatCallbackParsed() {
         when(channelRouter.parseWechatCallback(anyMap(), anyString()))
-                .thenReturn(wechatResult("PAY-1", true, "SUCCESS"));
-        when(payOrderService.getByPayOrderNo("PAY-1"))
+                .thenReturn(wechatResult(CHANNEL_TRADE_NO, true, "SUCCESS"));
+        when(payOrderService.getByChannelTradeNo(CHANNEL_TRADE_NO))
                 .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
-        when(payOrderService.markSuccessIfPending("PAY-1", "SUCCESS")).thenReturn(true);
+        when(payOrderService.markSuccessIfPending(PAY_ORDER_NO, "SUCCESS")).thenReturn(true);
 
         payManager.handleWechatCallback(Map.of("Wechatpay-Signature", "sig"), "{\"id\":\"EV-1\"}");
 
-        verify(payOrderService).markSuccessIfPending("PAY-1", "SUCCESS");
-        verify(orderClient).updateOrderStatus("ORD-1", 2);
+        verify(payOrderService).getByChannelTradeNo(CHANNEL_TRADE_NO);
+        verify(payOrderService).markSuccessIfPending(PAY_ORDER_NO, "SUCCESS");
+        verify(orderClient).updateOrderStatus(ORDER_NO, 2);
     }
 
     @Test
     @DisplayName("支付成功触达 — 条件置成功命中：买家收到 PAY_SUCCESS 站内信（订单号+实付金额+订单链接）")
     void shouldNotifyBuyerPaySuccess_whenConfirmPaidHits() {
         when(channelRouter.parseWechatCallback(anyMap(), anyString()))
-                .thenReturn(wechatResult("PAY-1", true, "SUCCESS"));
+                .thenReturn(wechatResult(CHANNEL_TRADE_NO, true, "SUCCESS"));
         PayOrder paid = payOrder(PayStatusEnum.PENDING_PAY.getCode());
         paid.setBizUserId(100L);
         paid.setAmount(11900);
-        when(payOrderService.getByPayOrderNo("PAY-1")).thenReturn(paid);
-        when(payOrderService.markSuccessIfPending("PAY-1", "SUCCESS")).thenReturn(true);
+        when(payOrderService.getByChannelTradeNo(CHANNEL_TRADE_NO)).thenReturn(paid);
+        when(payOrderService.markSuccessIfPending(PAY_ORDER_NO, "SUCCESS")).thenReturn(true);
 
         payManager.handleWechatCallback(Map.of(), "body");
 
@@ -236,37 +260,37 @@ class PayManagerTest {
         InAppMessageSendReqCO message = captor.getValue();
         assertEquals("PAY_SUCCESS", message.getType());
         assertEquals(100L, message.getRecipientId());
-        assertTrue(message.getContent().contains("ORD-1"), "内容须含订单号: " + message.getContent());
+        assertTrue(message.getContent().contains(ORDER_NO), "内容须含订单号: " + message.getContent());
         assertTrue(message.getContent().contains("119.00"), "内容须含实付金额(元): " + message.getContent());
-        assertEquals("/orders/ORD-1", message.getLinkUrl());
+        assertEquals("/orders/" + ORDER_NO, message.getLinkUrl());
     }
 
     @Test
     @DisplayName("触达失败不侵染主流程 — NotificationClient 抛异常：支付仍置成功、订单仍通知待发货")
     void shouldStillConfirmPaid_whenBuyerNotificationFails() {
         when(channelRouter.parseWechatCallback(anyMap(), anyString()))
-                .thenReturn(wechatResult("PAY-1", true, "SUCCESS"));
+                .thenReturn(wechatResult(CHANNEL_TRADE_NO, true, "SUCCESS"));
         PayOrder paid = payOrder(PayStatusEnum.PENDING_PAY.getCode());
         paid.setBizUserId(100L);
-        when(payOrderService.getByPayOrderNo("PAY-1")).thenReturn(paid);
-        when(payOrderService.markSuccessIfPending("PAY-1", "SUCCESS")).thenReturn(true);
+        when(payOrderService.getByChannelTradeNo(CHANNEL_TRADE_NO)).thenReturn(paid);
+        when(payOrderService.markSuccessIfPending(PAY_ORDER_NO, "SUCCESS")).thenReturn(true);
         doThrow(new RuntimeException("notification-service down"))
                 .when(notificationClient).sendInAppMessage(any(InAppMessageSendReqCO.class));
 
         assertDoesNotThrow(() -> payManager.handleWechatCallback(Map.of(), "body"));
 
-        verify(payOrderService).markSuccessIfPending("PAY-1", "SUCCESS");
-        verify(orderClient).updateOrderStatus("ORD-1", 2);
+        verify(payOrderService).markSuccessIfPending(PAY_ORDER_NO, "SUCCESS");
+        verify(orderClient).updateOrderStatus(ORDER_NO, 2);
     }
 
     @Test
     @DisplayName("handleWechatCallback — 并发重复回调：条件更新 0 行，不再重复通知订单")
     void shouldSkipNotify_whenCallbackAlreadyProcessed() {
         when(channelRouter.parseWechatCallback(anyMap(), anyString()))
-                .thenReturn(wechatResult("PAY-1", true, "SUCCESS"));
-        when(payOrderService.getByPayOrderNo("PAY-1"))
+                .thenReturn(wechatResult(CHANNEL_TRADE_NO, true, "SUCCESS"));
+        when(payOrderService.getByChannelTradeNo(CHANNEL_TRADE_NO))
                 .thenReturn(payOrder(PayStatusEnum.SUCCESS.getCode()));
-        when(payOrderService.markSuccessIfPending("PAY-1", "SUCCESS")).thenReturn(false);
+        when(payOrderService.markSuccessIfPending(PAY_ORDER_NO, "SUCCESS")).thenReturn(false);
 
         payManager.handleWechatCallback(Map.of(), "body");
 
@@ -277,21 +301,21 @@ class PayManagerTest {
     @DisplayName("handleWechatCallback — 非成功终态（CLOSED）：不改支付单状态、不通知订单")
     void shouldNotChangeState_whenTradeStateNotSuccess() {
         when(channelRouter.parseWechatCallback(anyMap(), anyString()))
-                .thenReturn(wechatResult("PAY-1", false, "CLOSED"));
+                .thenReturn(wechatResult(CHANNEL_TRADE_NO, false, "CLOSED"));
 
         payManager.handleWechatCallback(Map.of(), "body");
 
         verify(payOrderService, never()).markSuccessIfPending(anyString(), any());
-        verify(payOrderService, never()).getByPayOrderNo(anyString());
+        verify(payOrderService, never()).getByChannelTradeNo(anyString());
         verify(orderClient, never()).updateOrderStatus(anyString(), anyInt());
     }
 
     @Test
-    @DisplayName("handleWechatCallback — 解析成功但支付单不存在：抛 ORDER_NOT_FOUND 触发渠道重推")
+    @DisplayName("handleWechatCallback — 渠道号查不到支付单：抛 ORDER_NOT_FOUND 触发渠道重推")
     void shouldThrowOrderNotFound_whenPayOrderMissing() {
         when(channelRouter.parseWechatCallback(anyMap(), anyString()))
-                .thenReturn(wechatResult("PAY-X", true, "SUCCESS"));
-        when(payOrderService.getByPayOrderNo("PAY-X")).thenReturn(null);
+                .thenReturn(wechatResult("ctn-not-exist", true, "SUCCESS"));
+        when(payOrderService.getByChannelTradeNo("ctn-not-exist")).thenReturn(null);
 
         BizException ex = assertThrows(BizException.class,
                 () -> payManager.handleWechatCallback(Map.of(), "body"));
@@ -314,18 +338,20 @@ class PayManagerTest {
     }
 
     @Test
-    @DisplayName("handleAlipayCallback — 用支付宝验签器 + 表单参数提取（out_trade_no/trade_status）")
+    @DisplayName("handleAlipayCallback — 支付宝验签 + 表单 out_trade_no（= 对外渠道号）查单置成功")
     void shouldUseAlipayVerifier() {
         when(channelRouter.verifyAlipayCallback(anyMap())).thenReturn(true);
-        when(payOrderService.getByPayOrderNo("PAY-1"))
+        when(payOrderService.getByChannelTradeNo(CHANNEL_TRADE_NO))
                 .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
-        when(payOrderService.markSuccessIfPending(eq("PAY-1"), any())).thenReturn(true);
+        when(payOrderService.markSuccessIfPending(eq(PAY_ORDER_NO), any())).thenReturn(true);
 
-        payManager.handleAlipayCallback(Map.of("out_trade_no", "PAY-1", "trade_status", "TRADE_SUCCESS"));
+        payManager.handleAlipayCallback(Map.of("out_trade_no", CHANNEL_TRADE_NO,
+                "trade_status", "TRADE_SUCCESS"));
 
         verify(channelRouter).verifyAlipayCallback(anyMap());
-        verify(payOrderService).markSuccessIfPending("PAY-1", "TRADE_SUCCESS");
-        verify(orderClient).updateOrderStatus("ORD-1", 2);
+        verify(payOrderService).getByChannelTradeNo(CHANNEL_TRADE_NO);
+        verify(payOrderService).markSuccessIfPending(PAY_ORDER_NO, "TRADE_SUCCESS");
+        verify(orderClient).updateOrderStatus(ORDER_NO, 2);
     }
 
     @Test
@@ -334,7 +360,7 @@ class PayManagerTest {
         when(channelRouter.verifyAlipayCallback(anyMap())).thenReturn(false);
 
         BizException ex = assertThrows(BizException.class,
-                () -> payManager.handleAlipayCallback(Map.of("out_trade_no", "PAY-1")));
+                () -> payManager.handleAlipayCallback(Map.of("out_trade_no", CHANNEL_TRADE_NO)));
 
         assertEquals(ErrorCode.ILLEGAL_REQUEST, ex.getErrorCode());
         verify(payOrderService, never()).markSuccessIfPending(anyString(), any());
@@ -349,52 +375,54 @@ class PayManagerTest {
     }
 
     @Test
-    @DisplayName("initiateJsapiPayment — 取应付金额、JSAPI 下单、建小程序待支付单、返回拉起参数集")
+    @DisplayName("initiateJsapiPayment — 取应付金额、先落小程序待支付单、用对外渠道号 JSAPI 下单")
     void shouldInitiateJsapi_whenOrderValid() {
-        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
-        when(orderClient.getOrder("ORD-1")).thenReturn(summary(12900, 11900));
-        when(channelRouter.initiateWechatJsapi(eq("ORD-1"), eq(11900), anyString(), eq("openid-1")))
+        PayOrder created = payOrder(PayStatusEnum.PENDING_PAY.getCode());
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(null);
+        when(orderClient.getOrder(ORDER_NO)).thenReturn(summary(12900, 11900));
+        when(payOrderService.createPending(ORDER_NO, 100L, 11900, "WECHAT", PayTypeEnum.MINI.getCode()))
+                .thenReturn(created);
+        when(channelRouter.initiateWechatJsapi(eq(CHANNEL_TRADE_NO), eq(11900), anyString(), eq("openid-1")))
                 .thenReturn(jsapiResult());
-        when(payOrderService.createPending("ORD-1", 100L, 11900, null, "WECHAT",
-                PayTypeEnum.MINI.getCode())).thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
         JsapiPayParamsVO vo = new JsapiPayParamsVO();
         when(payOrderConverter.toParamsVO(any())).thenReturn(vo);
 
-        JsapiPayParamsVO result = payManager.initiateJsapiPayment("ORD-1", 100L, "openid-1");
+        JsapiPayParamsVO result = payManager.initiateJsapiPayment(ORDER_NO, 100L, "openid-1");
 
         assertSame(vo, result);
-        // 扣款金额必须用 payAmount 而非原价；openid 原样透传渠道做同源绑定
-        verify(channelRouter).initiateWechatJsapi(eq("ORD-1"), eq(11900), anyString(), eq("openid-1"));
-        verify(payOrderService).createPending("ORD-1", 100L, 11900, null, "WECHAT",
-                PayTypeEnum.MINI.getCode());
+        // 金额用 payAmount 而非原价；openid 原样透传渠道做同源绑定；out_trade_no 用渠道号
+        verify(channelRouter).initiateWechatJsapi(eq(CHANNEL_TRADE_NO), eq(11900), anyString(), eq("openid-1"));
+        verify(payOrderService).createPending(ORDER_NO, 100L, 11900, "WECHAT", PayTypeEnum.MINI.getCode());
     }
 
     @Test
     @DisplayName("initiateJsapiPayment — 已有待支付单（Native 发起过）：条件重置为小程序方式，不新增行")
     void shouldReusePendingRow_whenJsapiReInitiate() {
         PayOrder pending = payOrder(PayStatusEnum.PENDING_PAY.getCode());
-        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(pending);
-        when(orderClient.getOrder("ORD-1")).thenReturn(summary(12900, 11900));
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(pending);
+        when(orderClient.getOrder(ORDER_NO)).thenReturn(summary(12900, 11900));
+        when(payOrderService.resetPending(pending, 11900, "WECHAT", PayTypeEnum.MINI.getCode()))
+                .thenReturn(pending);
         when(channelRouter.initiateWechatJsapi(anyString(), anyInt(), anyString(), anyString()))
                 .thenReturn(jsapiResult());
-        when(payOrderService.resetPending(pending, 11900, "WECHAT", null, PayTypeEnum.MINI.getCode()))
-                .thenReturn(pending);
         when(payOrderConverter.toParamsVO(any())).thenReturn(new JsapiPayParamsVO());
 
-        payManager.initiateJsapiPayment("ORD-1", 100L, "openid-1");
+        payManager.initiateJsapiPayment(ORDER_NO, 100L, "openid-1");
 
-        verify(payOrderService).resetPending(pending, 11900, "WECHAT", null, PayTypeEnum.MINI.getCode());
+        verify(payOrderService).resetPending(pending, 11900, "WECHAT", PayTypeEnum.MINI.getCode());
         verify(payOrderService, never()).createPending(anyString(), anyLong(), anyInt(),
-                any(), anyString(), anyInt());
+                anyString(), anyInt());
+        verify(channelRouter).initiateWechatJsapi(eq(CHANNEL_TRADE_NO), eq(11900), anyString(),
+                eq("openid-1"));
     }
 
     @Test
     @DisplayName("initiateJsapiPayment — 幂等：已支付订单拒绝重复拉起且不重复下单")
     void shouldRejectJsapi_whenAlreadyPaid() {
-        when(payOrderService.getByBizOrderNo("ORD-1"))
+        when(payOrderService.getByBizOrderNo(ORDER_NO))
                 .thenReturn(payOrder(PayStatusEnum.SUCCESS.getCode()));
 
-        assertThrows(BizException.class, () -> payManager.initiateJsapiPayment("ORD-1", 100L, "openid-1"));
+        assertThrows(BizException.class, () -> payManager.initiateJsapiPayment(ORDER_NO, 100L, "openid-1"));
 
         verify(orderClient, never()).getOrder(anyString());
         verify(channelRouter, never()).initiateWechatJsapi(anyString(), anyInt(), anyString(), anyString());
@@ -403,11 +431,11 @@ class PayManagerTest {
     @Test
     @DisplayName("initiateJsapiPayment — 订单不存在：抛 ORDER_NOT_FOUND 且不下单")
     void shouldRejectJsapi_whenOrderMissing() {
-        when(payOrderService.getByBizOrderNo("ORD-1")).thenReturn(null);
-        when(orderClient.getOrder("ORD-1")).thenReturn(null);
+        when(payOrderService.getByBizOrderNo(ORDER_NO)).thenReturn(null);
+        when(orderClient.getOrder(ORDER_NO)).thenReturn(null);
 
         BizException ex = assertThrows(BizException.class,
-                () -> payManager.initiateJsapiPayment("ORD-1", 100L, "openid-1"));
+                () -> payManager.initiateJsapiPayment(ORDER_NO, 100L, "openid-1"));
 
         assertEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode());
         verify(channelRouter, never()).initiateWechatJsapi(anyString(), anyInt(), anyString(), anyString());
@@ -424,7 +452,7 @@ class PayManagerTest {
 
         payManager.cancelTimeoutPayOrders();
 
-        verify(orderClient).updateOrderStatus("ORD-1", 5);
+        verify(orderClient).updateOrderStatus(ORDER_NO, 5);
     }
 
     @Test

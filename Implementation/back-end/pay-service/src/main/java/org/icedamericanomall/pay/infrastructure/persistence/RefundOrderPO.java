@@ -37,15 +37,20 @@ public class RefundOrderPO implements Serializable {
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    /** 退款单号（业务唯一键，UUID）。 */
-    /** 退款单号（业务唯一键，渠道侧 out_refund_no；BINARY(16) ↔ byte[]，ADR-050） */
+    /** 退款单号（内部业务唯一键，BINARY(16) ↔ byte[]，ADR-050；<b>不</b>下发给渠道） */
     private byte[] refundNo;
 
-    /** 关联订单号（orders.order_no）。 */
+    /**
+     * 对外退款项号（微信 {@code out_refund_no} 的唯一取值来源，{@code uk_out_refund_no}）。
+     *
+     * <p>20 位随机 hex（12–20 口径），与内部 {@code refund_no} 彻底分离；渠道回调 / 退款状态查询
+     * 按本列寻址。与 {@link #channelRefundNo}（渠道回填的 {@code refund_id}）是<b>两个不同字段</b>。
+     */
+    private String outRefundNo;
+
     /** 关联订单号（orders.order_no 复制，BINARY(16) ↔ byte[]，ADR-050） */
     private byte[] orderNo;
 
-    /** 关联支付单号（pay_order.pay_order_no）。 */
     /** 关联支付单号（pay_order.pay_order_no 复制，BINARY(16) ↔ byte[]，ADR-050） */
     private byte[] payOrderNo;
 
@@ -67,7 +72,7 @@ public class RefundOrderPO implements Serializable {
     /** 状态：0-处理中 / 1-成功 / 2-失败。 */
     private Integer status;
 
-    /** 渠道退款单号（微信 refund_id 等，回调回填）。 */
+    /** 渠道退款单号（微信 {@code refund_id} 等，回调回填；对外退款项号见 {@link #outRefundNo}）。 */
     private String channelRefundNo;
 
     /** 失败原因（渠道返回或系统错误摘要，不含敏感细节）。 */

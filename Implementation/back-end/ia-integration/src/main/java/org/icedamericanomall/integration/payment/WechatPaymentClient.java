@@ -116,23 +116,24 @@ public class WechatPaymentClient implements PaymentClient {
     }
 
     @Override
-    public String initiatePayment(String orderNo, int amount, String description) {
+    public String initiatePayment(String outTradeNo, int amount, String description) {
         PrepayRequest request = new PrepayRequest();
         // V5.18 修复既有缺陷：微信 v3 下单报文必填 appid，此前漏传真实环境必然下单失败
         request.setAppid(props.getAppId());
         request.setMchid(props.getMerchantId());
         request.setDescription(description);
-        request.setOutTradeNo(orderNo);
+        // 对外渠道交易号（channel_trade_no）—— 不是内部 order_no / pay_order_no（两者已彻底分离）
+        request.setOutTradeNo(outTradeNo);
         request.setNotifyUrl(props.getNotifyUrl());
         Amount amountObj = new Amount();
         amountObj.setTotal(amount);
         request.setAmount(amountObj);
         try {
             var response = nativePayService.prepay(request);
-            log.info("微信支付 Native 下单: orderNo={}", orderNo);
+            log.info("微信支付 Native 下单: outTradeNo={}", outTradeNo);
             return response.getCodeUrl();
         } catch (Exception e) {
-            log.error("微信支付下单失败: orderNo={}", orderNo, e);
+            log.error("微信支付下单失败: outTradeNo={}", outTradeNo, e);
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "支付下单失败: " + e.getMessage());
         }
     }
@@ -144,7 +145,7 @@ public class WechatPaymentClient implements PaymentClient {
      *
      * <p>微信支付结果不经本方法返回，仍由 PAY2 支付回调确认（与 Native 通道共用同一链路）。
      *
-     * @param orderNo     业务订单号（微信 {@code out_trade_no}）
+     * @param outTradeNo  对外渠道交易号（微信 {@code out_trade_no}，取自 {@code pay_order.channel_trade_no}）
      * @param amount      支付金额（分）
      * @param description 商品描述
      * @param openid      用户在下单 appid 下的 openid
@@ -152,12 +153,12 @@ public class WechatPaymentClient implements PaymentClient {
      * @throws BizException {@code BUSINESS_EXECUTION_EXCEPTION} 渠道拒绝 / 调用失败
      */
     @Override
-    public JsapiPayResult initiateJsapiPayment(String orderNo, int amount, String description, String openid) {
+    public JsapiPayResult initiateJsapiPayment(String outTradeNo, int amount, String description, String openid) {
         var request = new com.wechat.pay.java.service.payments.jsapi.model.PrepayRequest();
         request.setAppid(props.getAppId());
         request.setMchid(props.getMerchantId());
         request.setDescription(description);
-        request.setOutTradeNo(orderNo);
+        request.setOutTradeNo(outTradeNo);
         request.setNotifyUrl(props.getNotifyUrl());
         Payer payer = new Payer();
         payer.setOpenid(openid);
@@ -167,10 +168,10 @@ public class WechatPaymentClient implements PaymentClient {
         request.setAmount(amountObj);
         try {
             var response = jsapiServiceExtension.prepayWithRequestPayment(request);
-            log.info("微信支付 JSAPI 下单: orderNo={}", orderNo);
+            log.info("微信支付 JSAPI 下单: outTradeNo={}", outTradeNo);
             return toJsapiPayResult(response);
         } catch (Exception e) {
-            log.error("微信 JSAPI 下单失败: orderNo={}", orderNo, e);
+            log.error("微信 JSAPI 下单失败: outTradeNo={}", outTradeNo, e);
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "JSAPI 支付下单失败: " + e.getMessage());
         }
     }
@@ -200,7 +201,7 @@ public class WechatPaymentClient implements PaymentClient {
     public WechatCallbackResult parseWechatCallback(Map<String, String> headers, String rawBody) {
         verifyWechatSignature(headers, rawBody);
         WechatCallbackResult result = WechatCallbackDecoder.decode(props.getApiV3Key(), rawBody);
-        log.info("微信回调解析成功: payOrderNo={}, tradeState={}, transactionId={}",
+        log.info("微信回调解析成功: outTradeNo={}, tradeState={}, transactionId={}",
                 result.outTradeNo(), result.rawState(), result.channelTradeNo());
         return result;
     }
@@ -255,19 +256,21 @@ public class WechatPaymentClient implements PaymentClient {
      *
      * <p><b>金额口径</b>：微信 {@code amount.total} 必须等于原支付单金额、{@code amount.refund}
      * 才是本次退款额（部分退款靠两者不等表达），否则渠道直接拒绝。
-     * <b>幂等</b>：{@code out_refund_no} 是渠道侧幂等键，重试必须复用同一 {@code refundNo}
+     * <b>幂等</b>：{@code out_refund_no} 是渠道侧幂等键，重试必须复用同一 {@code outRefundNo}
      * （重复提交同号返回原退款单，不会重复出款）。
+     * <b>寻址</b>：定位原支付单的是 {@code out_trade_no}（= 我方 {@code channel_trade_no}），
+     * 不是内部 {@code pay_order_no}。
      *
      * @return 渠道受理结果；微信同步返回 {@code SUCCESS} 时即 {@code settled=true}，
      *         {@code PROCESSING} 时为 {@code settled=false}（等 PAY6 回调确认）
      * @throws BizException {@code BUSINESS_EXECUTION_EXCEPTION} 渠道拒绝 / 调用失败
      */
     @Override
-    public ChannelRefundResult refund(String payOrderNo, String refundNo, int refundAmount, int orderAmount,
+    public ChannelRefundResult refund(String outTradeNo, String outRefundNo, int refundAmount, int orderAmount,
                                       String reason) {
         CreateRequest request = new CreateRequest();
-        request.setOutTradeNo(payOrderNo);
-        request.setOutRefundNo(refundNo);
+        request.setOutTradeNo(outTradeNo);
+        request.setOutRefundNo(outRefundNo);
         request.setReason(reason);
         request.setNotifyUrl(props.getRefundNotifyUrl());
         AmountReq amountReq = new AmountReq();
@@ -277,14 +280,14 @@ public class WechatPaymentClient implements PaymentClient {
         request.setAmount(amountReq);
         try {
             Refund refund = refundService.create(request);
-            String channelRefundNo = refund.getRefundId();
+            String channelRefundId = refund.getRefundId();
             boolean settled = Status.SUCCESS == refund.getStatus();
-            log.info("微信退款已受理: refundNo={}, payOrderNo={}, refundAmount={}, status={}, refundId={}",
-                    refundNo, payOrderNo, refundAmount, refund.getStatus(), channelRefundNo);
-            return new ChannelRefundResult(channelRefundNo, settled);
+            log.info("微信退款已受理: outRefundNo={}, outTradeNo={}, refundAmount={}, status={}, refundId={}",
+                    outRefundNo, outTradeNo, refundAmount, refund.getStatus(), channelRefundId);
+            return new ChannelRefundResult(channelRefundId, settled);
         } catch (Exception e) {
-            log.error("微信退款申请失败: refundNo={}, payOrderNo={}, refundAmount={}",
-                    refundNo, payOrderNo, refundAmount, e);
+            log.error("微信退款申请失败: outRefundNo={}, outTradeNo={}, refundAmount={}",
+                    outRefundNo, outTradeNo, refundAmount, e);
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "微信退款申请失败");
         }
     }
@@ -297,23 +300,23 @@ public class WechatPaymentClient implements PaymentClient {
      * 在本适配层归一化（SUCCESS→SUCCESS，CLOSED/ABNORMAL→FAILED，PROCESSING→PROCESSING），
      * 调用方不接触微信原始状态串。
      *
-     * @param refundNo 商户退款单号（微信 {@code out_refund_no}）
+     * @param outRefundNo 对外退款项号（微信 {@code out_refund_no}，重试复用同号）
      * @return 强类型查询结果
      * @throws BizException {@code BUSINESS_EXECUTION_EXCEPTION} 查询调用失败（不允许吞掉伪装成「仍在处理」）
      */
     @Override
-    public ChannelRefundQueryResult queryRefund(String refundNo) {
+    public ChannelRefundQueryResult queryRefund(String outRefundNo) {
         QueryByOutRefundNoRequest request = new QueryByOutRefundNoRequest();
-        request.setOutRefundNo(refundNo);
+        request.setOutRefundNo(outRefundNo);
         try {
             Refund refund = refundService.queryByOutRefundNo(request);
             ChannelRefundQueryResult result =
                     new ChannelRefundQueryResult(refund.getRefundId(), toChannelRefundState(refund.getStatus()));
-            log.info("微信退款查询成功: refundNo={}, refundId={}, refundStatus={}",
-                    refundNo, result.refundId(), refund.getStatus());
+            log.info("微信退款查询成功: outRefundNo={}, refundId={}, refundStatus={}",
+                    outRefundNo, result.refundId(), refund.getStatus());
             return result;
         } catch (Exception e) {
-            log.error("微信退款查询失败: refundNo={}", refundNo, e);
+            log.error("微信退款查询失败: outRefundNo={}", outRefundNo, e);
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "微信退款查询失败");
         }
     }
@@ -385,14 +388,14 @@ public class WechatPaymentClient implements PaymentClient {
     }
 
     @Override
-    public String queryStatus(String payOrderNo) {
+    public String queryStatus(String outTradeNo) {
         QueryOrderByOutTradeNoRequest request = new QueryOrderByOutTradeNoRequest();
-        request.setOutTradeNo(payOrderNo);
+        request.setOutTradeNo(outTradeNo);
         request.setMchid(props.getMerchantId());
         try {
             return nativePayService.queryOrderByOutTradeNo(request).getTradeState().name();
         } catch (Exception e) {
-            log.error("微信支付状态查询失败: payOrderNo={}", payOrderNo, e);
+            log.error("微信支付状态查询失败: outTradeNo={}", outTradeNo, e);
             return null;
         }
     }
@@ -427,9 +430,9 @@ public class WechatPaymentClient implements PaymentClient {
         static final String MOCK_SIGN_TYPE = "RSA";
 
         @Override
-        public String initiatePayment(String orderNo, int amount, String description) {
-            log.info("===== MOCK WECHAT PAY ===== OrderNo: {}, Amount: {} 分", orderNo, amount);
-            return "https://mock-pay.example.com/qrcode?order=" + orderNo;
+        public String initiatePayment(String outTradeNo, int amount, String description) {
+            log.info("===== MOCK WECHAT PAY ===== OutTradeNo: {}, Amount: {} 分", outTradeNo, amount);
+            return "https://mock-pay.example.com/qrcode?order=" + outTradeNo;
         }
 
         /**
@@ -438,10 +441,10 @@ public class WechatPaymentClient implements PaymentClient {
          * 供本地打通「PAY7 下单 → 前端拉起 → PAY2 回调确认」链路。
          */
         @Override
-        public JsapiPayResult initiateJsapiPayment(String orderNo, int amount, String description, String openid) {
-            log.info("===== MOCK WECHAT JSAPI ===== OrderNo: {}, Amount: {} 分", orderNo, amount);
+        public JsapiPayResult initiateJsapiPayment(String outTradeNo, int amount, String description, String openid) {
+            log.info("===== MOCK WECHAT JSAPI ===== OutTradeNo: {}, Amount: {} 分", outTradeNo, amount);
             return new JsapiPayResult(MOCK_APP_ID, String.valueOf(System.currentTimeMillis() / 1000),
-                    "mock-nonce", MOCK_PREPAY_ID_PREFIX + orderNo, MOCK_SIGN_TYPE, "mock-pay-sign");
+                    "mock-nonce", MOCK_PREPAY_ID_PREFIX + outTradeNo, MOCK_SIGN_TYPE, "mock-pay-sign");
         }
 
         /**
@@ -474,11 +477,11 @@ public class WechatPaymentClient implements PaymentClient {
          * 便于在 Mock 环境验证「处理中 → 回调置成功 → 回写售后单」的完整链路。
          */
         @Override
-        public ChannelRefundResult refund(String payOrderNo, String refundNo, int refundAmount, int orderAmount,
+        public ChannelRefundResult refund(String outTradeNo, String outRefundNo, int refundAmount, int orderAmount,
                                           String reason) {
-            log.info("===== MOCK WECHAT REFUND ===== payOrderNo={}, refundNo={}, refundAmount={}, orderAmount={}",
-                    payOrderNo, refundNo, refundAmount, orderAmount);
-            return ChannelRefundResult.processing(MOCK_CHANNEL_REFUND_NO_PREFIX + refundNo);
+            log.info("===== MOCK WECHAT REFUND ===== outTradeNo={}, outRefundNo={}, refundAmount={}, orderAmount={}",
+                    outTradeNo, outRefundNo, refundAmount, orderAmount);
+            return ChannelRefundResult.processing(MOCK_CHANNEL_REFUND_NO_PREFIX + outRefundNo);
         }
 
         /** Mock 账单：返回样例交易流水，供本地打通「下载 → 比对 → 落差异明细」链路。 */
@@ -497,14 +500,14 @@ public class WechatPaymentClient implements PaymentClient {
          * 保证悬挂补偿任务在 Mock 环境可空跑（查询不报错、不改本地状态）。
          */
         @Override
-        public ChannelRefundQueryResult queryRefund(String refundNo) {
-            log.info("[MockWechat] 退款查询: refundNo={}, refundStatus=PROCESSING", refundNo);
-            return new ChannelRefundQueryResult(MOCK_CHANNEL_REFUND_NO_PREFIX + refundNo,
+        public ChannelRefundQueryResult queryRefund(String outRefundNo) {
+            log.info("[MockWechat] 退款查询: outRefundNo={}, refundStatus=PROCESSING", outRefundNo);
+            return new ChannelRefundQueryResult(MOCK_CHANNEL_REFUND_NO_PREFIX + outRefundNo,
                     ChannelRefundState.PROCESSING);
         }
 
         @Override
-        public String queryStatus(String payOrderNo) {
+        public String queryStatus(String outTradeNo) {
             return "SUCCESS";
         }
     }

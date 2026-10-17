@@ -52,7 +52,11 @@ class RefundResumeManagerTest {
 
     private static final String REFUND_NO_1 = "RFD-1";
     private static final String REFUND_NO_2 = "RFD-2";
+    /** 对外退款项号前缀：与内部 refundNo 刻意不同（渠道只认对外号，二者已分离）。 */
+    private static final String OUT_REFUND_NO_PREFIX = "out-";
     private static final String PAY_ORDER_NO = "PAY-1";
+    /** 原支付的对外渠道号（渠道侧 out_trade_no；与内部 pay_order_no 刻意不同）。 */
+    private static final String CHANNEL_TRADE_NO = "ctn0000000000000001";
     private static final String ORDER_NO = "ORD-1";
     private static final long AFTER_SALE_ID_1 = 9L;
     private static final long AFTER_SALE_ID_2 = 10L;
@@ -80,6 +84,7 @@ class RefundResumeManagerTest {
         RefundOrder entity = new RefundOrder();
         entity.setId(1L);
         entity.setRefundNo(refundNo);
+        entity.setOutRefundNo(OUT_REFUND_NO_PREFIX + refundNo);
         entity.setAfterSaleId(afterSaleId);
         entity.setOrderNo(ORDER_NO);
         entity.setPayOrderNo(PAY_ORDER_NO);
@@ -94,6 +99,7 @@ class RefundResumeManagerTest {
         PayOrder payOrder = new PayOrder();
         payOrder.setId(1L);
         payOrder.setPayOrderNo(PAY_ORDER_NO);
+        payOrder.setChannelTradeNo(CHANNEL_TRADE_NO);
         payOrder.setBizOrderNo(ORDER_NO);
         payOrder.setBizUserId(100L);
         payOrder.setPayChannelCode(channel);
@@ -108,7 +114,7 @@ class RefundResumeManagerTest {
     void shouldSettleSuccessAndNotify_whenWechatQueryReturnsSuccess() {
         when(refundOrderService.listStaleProcessing(any(), anyInt()))
                 .thenReturn(List.of(refundOrder(REFUND_NO_1, AFTER_SALE_ID_1, 0, "WECHAT")));
-        when(channelRouter.queryWechatRefund(REFUND_NO_1))
+        when(channelRouter.queryWechatRefund(OUT_REFUND_NO_PREFIX + REFUND_NO_1))
                 .thenReturn(new ChannelRefundQueryResult("5000099", ChannelRefundState.SUCCESS));
         when(refundOrderService.markSuccessIfProcessing(REFUND_NO_1, "5000099")).thenReturn(true);
         when(refundOrderService.getByRefundNo(REFUND_NO_1))
@@ -125,7 +131,7 @@ class RefundResumeManagerTest {
     void shouldMarkFailedWithStateReason_whenWechatQueryReturnsFailed() {
         when(refundOrderService.listStaleProcessing(any(), anyInt()))
                 .thenReturn(List.of(refundOrder(REFUND_NO_1, AFTER_SALE_ID_1, 0, "WECHAT")));
-        when(channelRouter.queryWechatRefund(REFUND_NO_1))
+        when(channelRouter.queryWechatRefund(OUT_REFUND_NO_PREFIX + REFUND_NO_1))
                 .thenReturn(new ChannelRefundQueryResult("5000099", ChannelRefundState.FAILED));
 
         resumeManager.resumeStuckRefunds();
@@ -141,7 +147,7 @@ class RefundResumeManagerTest {
     void shouldKeepProcessing_whenWechatQueryReturnsProcessing() {
         when(refundOrderService.listStaleProcessing(any(), anyInt()))
                 .thenReturn(List.of(refundOrder(REFUND_NO_1, AFTER_SALE_ID_1, 0, "WECHAT")));
-        when(channelRouter.queryWechatRefund(REFUND_NO_1))
+        when(channelRouter.queryWechatRefund(OUT_REFUND_NO_PREFIX + REFUND_NO_1))
                 .thenReturn(new ChannelRefundQueryResult("5000099", ChannelRefundState.PROCESSING));
 
         resumeManager.resumeStuckRefunds();
@@ -181,7 +187,7 @@ class RefundResumeManagerTest {
         when(refundOrderService.listStaleProcessing(any(), anyInt()))
                 .thenReturn(List.of(refundOrder(REFUND_NO_1, AFTER_SALE_ID_1, 0, "ALIPAY")));
         when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder("ALIPAY", AMOUNT));
-        when(channelRouter.refund(eq(PayChannelEnum.ALIPAY), eq(PAY_ORDER_NO), eq(REFUND_NO_1),
+        when(channelRouter.refund(eq(PayChannelEnum.ALIPAY), eq(CHANNEL_TRADE_NO), eq(OUT_REFUND_NO_PREFIX + REFUND_NO_1),
                 eq(AMOUNT), eq(AMOUNT), isNull())).thenReturn(ChannelRefundResult.settled("alipay-rfd-1"));
         when(refundOrderService.markSuccessIfProcessing(REFUND_NO_1, "alipay-rfd-1")).thenReturn(true);
         when(refundOrderService.getByRefundNo(REFUND_NO_1))
@@ -217,7 +223,7 @@ class RefundResumeManagerTest {
                 .thenReturn(List.of(
                         refundOrder(REFUND_NO_1, AFTER_SALE_ID_1, 0, "WECHAT"),
                         refundOrder(REFUND_NO_2, AFTER_SALE_ID_2, 0, "BALANCE")));
-        when(channelRouter.queryWechatRefund(REFUND_NO_1))
+        when(channelRouter.queryWechatRefund(OUT_REFUND_NO_PREFIX + REFUND_NO_1))
                 .thenThrow(new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "微信退款查询失败"));
         when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder("BALANCE", AMOUNT));
         when(refundOrderService.markSuccessIfProcessing(eq(REFUND_NO_2), any())).thenReturn(true);

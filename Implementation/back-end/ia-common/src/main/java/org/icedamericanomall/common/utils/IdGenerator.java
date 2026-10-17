@@ -49,7 +49,10 @@ import java.util.HexFormat;
  *       字符应得到 400，而不是 404/空列表）；</li>
  *   <li>{@link #secureToken()} —— 32 字节（256 位熵）SecureRandom hex，<b>专供
  *       refreshToken / jti 等凭据场景</b>：凭据要求不可预测且不可从时间序推断，
- *       绝不允许用时间有序的 v7 生成凭据。</li>
+ *       绝不允许用时间有序的 v7 生成凭据；</li>
+ *   <li>{@link #randomHex(int)} —— 指定长度的纯随机 hex <b>短串</b>，专供「对外渠道单号」
+ *       （如微信 {@code out_trade_no} / {@code out_refund_no}）：对外单号既要短（渠道协议上限）、
+ *       又不得可从时间序推断，因此不能用 v7，也不复用凭据 64 位全量。</li>
  * </ul>
  *
  * <p>纯 JDK 实现（JDK 21 无内置 v7），零 Spring / MyBatis 依赖；线程安全
@@ -80,6 +83,12 @@ public final class IdGenerator {
 
     /** 32 字节 = 256 位凭据熵的字节数。 */
     private static final int TOKEN_BYTES = 32;
+
+    /** 凭据 hex 长度（32 字节 = 64 位 hex），同时是 {@link #randomHex(int)} 的长度上限。 */
+    private static final int TOKEN_HEX_LEN = TOKEN_BYTES * 2;
+
+    /** {@link #randomHex(int)} 的最小长度（8 位 hex = 32 bit 熵，再短即不具抗碰撞性）。 */
+    private static final int MIN_RANDOM_HEX_LEN = 8;
 
     /** 128 位 ID 的 hex 长度（无连字符）。 */
     private static final int HEX_LEN_32 = 32;
@@ -190,6 +199,33 @@ public final class IdGenerator {
         byte[] bytes = new byte[TOKEN_BYTES];
         RANDOM.nextBytes(bytes);
         return HEX.formatHex(bytes);
+    }
+
+    /**
+     * 生成指定长度的<b>纯随机</b> hex 短串 —— 专供「对外渠道单号」等<b>需要短、
+     * 且不得从时间序推断</b>的对外标识（如 {@code pay_order.channel_trade_no} 对应微信
+     * {@code out_trade_no}）。
+     *
+     * <p><b>为什么不复用 {@link #nextId()}</b>：UUIDv7 的前 48 位就是毫秒时间戳 —— 交给
+     * 渠道/第三方后，任何人都能从单号反推下单时刻并做流量画像；且 v7 固定 32 位 hex，
+     * 与「渠道 {@code out_trade_no} 上限 32 位」零余量（任何前缀/拼接即超限）。
+     * 本方法全随机（{@link SecureRandom}），熵 = 4 bit/位，无时间序、无版本位。
+     *
+     * <p><b>长度选择由调用方按渠道协议给定</b>（协议上限属渠道知识，不在此处固化）；
+     * 本方法只保证「长度可控 + 全随机 + 小写 hex」。
+     *
+     * @param length 期望长度（位，8–64）；20 位 = 80 bit 熵，碰撞概率可忽略
+     * @return 指定长度的小写 hex 随机串
+     * @throws IllegalArgumentException 长度越界
+     */
+    public static String randomHex(int length) {
+        if (length < MIN_RANDOM_HEX_LEN || length > TOKEN_HEX_LEN) {
+            throw new IllegalArgumentException("随机 hex 长度必须在 " + MIN_RANDOM_HEX_LEN
+                    + "~" + TOKEN_HEX_LEN + " 之间: " + length);
+        }
+        byte[] bytes = new byte[(length + 1) / 2];
+        RANDOM.nextBytes(bytes);
+        return HEX.formatHex(bytes).substring(0, length);
     }
 
     // ==================== 编解码唯一出口（ADR-062 §决策 1） ====================

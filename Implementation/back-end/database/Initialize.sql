@@ -392,11 +392,20 @@ CREATE TABLE `cart` (
 
 -- ---------------------------------------------------------------
 -- pay_order（支付订单表）
+--   2026-10-18（批次 X 资金链路口径修复）：新增 channel_trade_no —— 对外渠道号。
+--   背景：发起侧此前把 orders.order_no 当微信 out_trade_no 传给渠道，回调/对账侧却按
+--   pay_order.pay_order_no 解析 → 真实回调必然查不到本地支付单。现对外号是独立列：
+--     ① 12–20 位随机 hex（取 20 位，80 bit 熵），跨重试稳定，不可从时间序推断（不用 UUIDv7：
+--        其前 48 位是毫秒时间戳，且 32 位 hex 对微信 out_trade_no 上限 32 位是零余量）；
+--     ② VARCHAR 短号，不是 BINARY(16) 业务键 —— 与 pay_order_no 彻底分离；
+--     ③ 余额渠道本地闭环、不对外发起，故允许 NULL（MySQL UNIQUE 允许多个 NULL）。
+--   库无存量数据（ADR-045），故无迁移脚本、无回填。
 -- ---------------------------------------------------------------
 CREATE TABLE `pay_order` (
                              `id` BIGINT AUTO_INCREMENT COMMENT '技术主键',
                              `biz_order_no` BINARY(16) NOT NULL COMMENT '业务订单号（关联 orders.order_no，UUIDv7 原始字节，ADR-050）',
-                             `pay_order_no` BINARY(16) NOT NULL COMMENT '支付单号（UUIDv7 原始字节，ADR-050）',
+                             `pay_order_no` BINARY(16) NOT NULL COMMENT '支付单号（纯内部口径，不下发渠道；UUIDv7 原始字节，ADR-050）',
+                             `channel_trade_no` VARCHAR(32) DEFAULT NULL COMMENT '对外渠道号（渠道 out_trade_no 的唯一取值来源；12–20 位随机 hex，跨重试稳定，库内唯一；余额渠道为 NULL）',
                              `biz_user_id` BIGINT DEFAULT NULL COMMENT '用户ID',
                              `pay_channel_code` VARCHAR(20) NOT NULL COMMENT '支付渠道代码',
                              `amount` INT NOT NULL COMMENT '支付金额（分）',
@@ -412,6 +421,7 @@ CREATE TABLE `pay_order` (
                              `update_time` DATETIME NOT NULL COMMENT '更新时间',
                              PRIMARY KEY (`id`),
                              UNIQUE KEY `uk_pay_order_no` (`pay_order_no`),
+                             UNIQUE KEY `uk_channel_trade_no` (`channel_trade_no`),
                              KEY `idx_biz_order_no` (`biz_order_no`),
                              KEY `idx_biz_user_id` (`biz_user_id`),
                              KEY `idx_status` (`status`),
@@ -928,9 +938,14 @@ CREATE TABLE `wallet_account` (
 -- =====================================================================
 
 -- refund_order（退款单）— pay-service；uk_after_sale 是一售后单一次退款的幂等锚点
+--   2026-10-18（批次 X）：新增 out_refund_no —— 对外退款项号（渠道 out_refund_no 的唯一取值来源）。
+--   与内部 refund_no 分离，理由同 pay_order.channel_trade_no（换内部 ID 方案不构成对外 BREAKING）。
+--   与既有 channel_refund_no（渠道回填的微信 refund_id）是**两个不同字段**，不可互相顶替：
+--   若共用一个列，回调写入 refund_id 就会覆盖对外退款项号 → 后续重试/查询的 out_refund_no 丢失。
 CREATE TABLE `refund_order` (
     `id`                BIGINT       AUTO_INCREMENT COMMENT '技术主键',
-    `refund_no`         BINARY(16)   NOT NULL COMMENT '退款单号（业务唯一键，UUIDv7 原始字节；对外与幂等重试的定位键，ADR-050）',
+    `refund_no`         BINARY(16)   NOT NULL COMMENT '退款单号（内部业务唯一键，UUIDv7 原始字节；管理端重试定位键，ADR-050）',
+    `out_refund_no`     VARCHAR(64)  DEFAULT NULL COMMENT '对外退款项号（渠道 out_refund_no 的唯一取值来源；12–20 位随机 hex，跨重试稳定，库内唯一）',
     `order_no`          BINARY(16)   NOT NULL COMMENT '关联订单号（orders.order_no 复制，UUIDv7 原始字节，ADR-050）',
     `pay_order_no`      BINARY(16)   NOT NULL COMMENT '关联支付单号（pay_order.pay_order_no 复制，UUIDv7 原始字节，ADR-050）',
     `after_sale_id`     BIGINT       NULL        COMMENT '关联售后单（after_sale.id）——售后场景退款；拼团等无售后场景为 NULL（ADR-049）',
@@ -939,12 +954,13 @@ CREATE TABLE `refund_order` (
     `channel`           VARCHAR(16)  NOT NULL COMMENT '退款渠道：WECHAT / ALIPAY / BALANCE（与原支付渠道一致，原路退回）',
     `refund_amount`     INT          NOT NULL COMMENT '退款金额（分），申请时已校验 ≤ 订单实付 payAmount',
     `status`            TINYINT      NOT NULL DEFAULT 0 COMMENT '状态：0-处理中，1-成功，2-失败',
-    `channel_refund_no` VARCHAR(64)  DEFAULT NULL COMMENT '渠道退款单号（微信 refund_id 等，回调回填）',
+    `channel_refund_no` VARCHAR(64)  DEFAULT NULL COMMENT '渠道退款单号（微信 refund_id 等，回调回填；对外退款项号见 out_refund_no）',
     `fail_reason`       VARCHAR(255) DEFAULT NULL COMMENT '失败原因（渠道返回或系统错误摘要，不含敏感细节）',
     `create_time`       DATETIME     NOT NULL COMMENT '创建时间',
     `update_time`       DATETIME     NOT NULL COMMENT '更新时间',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_refund_no` (`refund_no`),
+    UNIQUE KEY `uk_out_refund_no` (`out_refund_no`),
     UNIQUE KEY `uk_after_sale` (`after_sale_id`),
     UNIQUE KEY `uk_biz_ref` (`biz_ref`),
     KEY `idx_order_no` (`order_no`)
@@ -981,16 +997,20 @@ CREATE TABLE `reconciliation_batch` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对账批次（pay-service）';
 
 -- reconciliation_detail（对账差异明细）— pay-service；result 四态，Phase 1 仅记录不自动调账
+--   2026-10-18（批次 X）：比对键改为「对外渠道号」。
+--     ① 新增 channel_trade_no —— 渠道账单里的「商户订单号」列，即 pay_order.channel_trade_no；
+--     ② pay_order_no 放开 NOT NULL —— 「渠道有本地无」的差异行本就没有本地支付单，强行填号是伪造数据。
 CREATE TABLE `reconciliation_detail` (
-    `id`             BIGINT      AUTO_INCREMENT COMMENT '技术主键',
-    `batch_id`       BIGINT      NOT NULL COMMENT '所属批次（reconciliation_batch.id）',
-    `pay_order_no`   BINARY(16)  NOT NULL COMMENT '本地支付单号（比对键，pay_order.pay_order_no 复制，UUIDv7 原始字节，ADR-050）',
-    `channel_txn_id` VARCHAR(64) DEFAULT NULL COMMENT '渠道交易号（渠道账单有则回填）',
-    `channel_amount` INT         DEFAULT NULL COMMENT '渠道账单金额（分；渠道无此单为 NULL）',
-    `local_amount`   INT         DEFAULT NULL COMMENT '本地金额（分；本地无此单为 NULL）',
-    `result`         TINYINT     NOT NULL COMMENT '比对结果：1-匹配，2-渠道有本地无，3-本地有渠道无，4-金额不一致',
-    `create_time`    DATETIME    NOT NULL COMMENT '创建时间',
-    `update_time`    DATETIME    NOT NULL COMMENT '更新时间',
+    `id`               BIGINT      AUTO_INCREMENT COMMENT '技术主键',
+    `batch_id`         BIGINT      NOT NULL COMMENT '所属批次（reconciliation_batch.id）',
+    `pay_order_no`     BINARY(16)  DEFAULT NULL COMMENT '本地支付单号（内部定位用；渠道有本地无时为 NULL，UUIDv7 原始字节，ADR-050）',
+    `channel_trade_no` VARCHAR(32) DEFAULT NULL COMMENT '对外渠道号（比对键，pay_order.channel_trade_no）',
+    `channel_txn_id`   VARCHAR(64) DEFAULT NULL COMMENT '渠道交易号（渠道账单有则回填）',
+    `channel_amount`   INT         DEFAULT NULL COMMENT '渠道账单金额（分；渠道无此单为 NULL）',
+    `local_amount`     INT         DEFAULT NULL COMMENT '本地金额（分；本地无此单为 NULL）',
+    `result`           TINYINT     NOT NULL COMMENT '比对结果：1-匹配，2-渠道有本地无，3-本地有渠道无，4-金额不一致',
+    `create_time`      DATETIME    NOT NULL COMMENT '创建时间',
+    `update_time`      DATETIME    NOT NULL COMMENT '更新时间',
     PRIMARY KEY (`id`),
     KEY `idx_batch_result` (`batch_id`, `result`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对账差异明细（pay-service）';

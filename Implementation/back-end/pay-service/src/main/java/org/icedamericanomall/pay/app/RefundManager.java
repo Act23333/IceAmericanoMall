@@ -35,17 +35,25 @@ import java.util.Map;
  * 退款成功的售后单回写（I42）与买家站内信触达（ADR-042）统一委托
  * {@link PayEventNotifier}（事务外 fail-open）。
  *
+ * <p><b>寻址口径（资金链路硬约束）</b>：对渠道只发两个对外号 —— 原支付的
+ * {@code pay_order.channel_trade_no}（渠道 {@code out_trade_no}）与本次退款的
+ * {@code refund_order.out_refund_no}（渠道 {@code out_refund_no}）；内部
+ * {@code pay_order_no} / {@code refund_no} 只在本服务内定位。渠道退款回调也<b>只</b>按对外退款项号
+ * 寻址（{@link RefundOrderRepository#getByOutRefundNo}）。渠道回填的退款单号（微信
+ * {@code refund_id}）是第三个号，落 {@code channel_refund_no}，三者不可混用。
+ *
  * <pre>
  * Scenario: 余额渠道退款
- *   Then 调 I41 余额入账（transactionNo=refundNo 幂等）→ 同步成功 → 退款单置成功 → I42 回写售后单
+ *   Then 调 I41 余额入账（transactionNo=refundNo 幂等，本地账本口径）→ 同步成功 → 退款单置成功 → I42 回写售后单
  * Scenario: 微信/支付宝渠道退款
- *   Then 调渠道退款 API；支付宝 Mock 同步成功即置成功；微信保持处理中，等 PAY6 回调
+ *   Then 调渠道退款 API（out_trade_no=渠道号 / out_refund_no=对外退款项号）；支付宝 Mock 同步成功即置成功；
+ *        微信保持处理中，等 PAY6 回调
  * Scenario: 同售后单重复请求（幂等）
  *   Then 返回既有退款单，不新建（uk_after_sale 兜底）
  * Scenario: 渠道退款失败
  *   Then 退款单置失败并记录 failReason，售后单停留 APPROVED（异常向上透出，管理端 AD43 重试）
  * Scenario: 微信退款回调成功
- *   Then 退款单条件置成功（仅处理中可迁移，重复通知幂等）→ I42 回写售后单
+ *   Then 按 out_refund_no 查退款单 → 条件置成功（仅处理中可迁移，重复通知幂等）→ I42 回写售后单
  * </pre>
  *
  * <p><b>与 {@link RefundResumeManager} / {@link OrderRefundManager} 的关系</b>：悬挂退款补偿
@@ -155,22 +163,28 @@ public class RefundManager {
     public void handleWechatRefundCallback(Map<String, String> headers, String rawBody) {
         var result = channelRouter.parseWechatRefundCallback(headers, rawBody);
         if (!result.success()) {
-            log.warn("微信退款回调非成功终态，退款单状态保持不变: refundNo={}, refundStatus={}, refundId={}",
+            log.warn("微信退款回调非成功终态，退款单状态保持不变: outRefundNo={}, refundStatus={}, refundId={}",
                     result.outRefundNo(), result.rawRefundStatus(), result.refundId());
             return;
         }
         confirmRefunded(result.outRefundNo(), result.refundId());
     }
 
-    /** 退款确认成功：查单 → 条件置成功（仅处理中命中）→ 命中才回写售后单。并发/重复回调安全。 */
-    private void confirmRefunded(String refundNo, String channelRefundNo) {
-        RefundOrder refundOrder = refundOrderService.getByRefundNo(refundNo);
+    /**
+     * 退款确认成功：<b>按对外退款项号</b>查单 → 条件置成功（仅处理中命中）→ 命中才回写售后单。
+     * 并发/重复回调安全。
+     *
+     * @param outRefundNo 渠道回传的 {@code out_refund_no}（= 本地 {@code out_refund_no}）
+     * @param refundId    渠道退款单号（微信 {@code refund_id}，落 {@code channel_refund_no}）
+     */
+    private void confirmRefunded(String outRefundNo, String refundId) {
+        RefundOrder refundOrder = refundOrderService.getByOutRefundNo(outRefundNo);
         if (refundOrder == null) {
-            log.error("退款单不存在: refundNo={}, channelRefundNo={}", refundNo, channelRefundNo);
+            log.error("退款单不存在（按对外退款项号查无）: outRefundNo={}, refundId={}", outRefundNo, refundId);
             throw new BizException(ErrorCode.ORDER_NOT_FOUND, "退款单不存在");
         }
-        if (!refundOrderService.markSuccessIfProcessing(refundNo, channelRefundNo)) {
-            log.info("退款回调重复（退款单非处理中），忽略: refundNo={}", refundNo);
+        if (!refundOrderService.markSuccessIfProcessing(refundOrder.getRefundNo(), refundId)) {
+            log.info("退款回调重复（退款单非处理中），忽略: refundNo={}", refundOrder.getRefundNo());
             return;
         }
         payEventNotifier.onRefundSuccess(refundOrder);
@@ -217,6 +231,8 @@ public class RefundManager {
                                                String reason) {
         PayChannelEnum channel = PayChannelEnum.of(refundOrder.getChannel());
         if (channel == PayChannelEnum.BALANCE) {
+            // 余额渠道本地闭环、不对外发起：记账幂等键继续用内部 refundNo（wallet 侧
+            // transaction_no 的既有契约不变），对外退款项号不参与本地账本。
             BalanceRefundCO request = new BalanceRefundCO();
             request.setTransactionNo(refundOrder.getRefundNo());
             request.setUserId(payOrder.getBizUserId());
@@ -225,13 +241,17 @@ public class RefundManager {
             balanceClient.refund(request);
             return ChannelRefundResult.settled(null);
         }
-        return channelRouter.refund(channel, payOrder.getPayOrderNo(), refundOrder.getRefundNo(),
+        // 对外两个号：原交易的渠道号（不是 pay_order_no）+ 本次退款的对外退款项号（不是 refund_no）
+        return channelRouter.refund(channel, payOrder.getChannelTradeNo(), refundOrder.getOutRefundNo(),
                 refundOrder.getRefundAmount(), payOrder.getAmount(), reason);
     }
 
     /**
      * 条件置成功后回写售后单（命中才回写，重复回调不重复回写）。
      * 共享结算入口：PAY6 回调 / 渠道同步终态 / 悬挂补偿（微信查询 SUCCESS、余额/支付宝重放）统一走此方法。
+     *
+     * @param refundNo        内部退款单号（条件更新的 WHERE 键）
+     * @param channelRefundNo 渠道退款单号（微信 {@code refund_id}，落 {@code channel_refund_no}；可空）
      */
     void markSuccessAndNotify(String refundNo, String channelRefundNo) {
         if (!refundOrderService.markSuccessIfProcessing(refundNo, channelRefundNo)) {

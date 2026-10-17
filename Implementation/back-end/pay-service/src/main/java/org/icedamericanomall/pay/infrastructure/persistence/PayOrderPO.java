@@ -32,8 +32,16 @@ public class PayOrderPO implements Serializable {
     private Long id;
     /** 业务订单号（orders.order_no 复制，BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
     private byte[] bizOrderNo;
-    /** 支付单号（业务唯一键，渠道侧 out_trade_no；BINARY(16) ↔ byte[]，ADR-050） */
+    /** 支付单号（业务唯一键，纯内部口径；BINARY(16) ↔ byte[]，ADR-050） */
     private byte[] payOrderNo;
+    /**
+     * 对外渠道交易号（微信/支付宝 {@code out_trade_no} 的唯一取值来源，{@code uk_channel_trade_no}）。
+     *
+     * <p>与 {@link #payOrderNo} 等内部业务键<b>彻底分离</b>：它是 VARCHAR 短随机串（12–20 位），
+     * 不是 BINARY(16) 业务键，因此查询直接传 {@code String}（<b>不要</b>套 {@code IdGenerator.toBytes}）。
+     * 余额渠道不对外发起 → 为 {@code null}。
+     */
+    private String channelTradeNo;
     private Long bizUserId;
     private String payChannelCode;
     private Integer amount;
@@ -57,6 +65,7 @@ public class PayOrderPO implements Serializable {
     public void setId(Long v) { this.id = v; }
     public void setBizOrderNo(byte[] v) { this.bizOrderNo = v; }
     public void setPayOrderNo(byte[] v) { this.payOrderNo = v; }
+    public void setChannelTradeNo(String v) { this.channelTradeNo = v; }
     public void setBizUserId(Long v) { this.bizUserId = v; }
     public void setPayChannelCode(String v) { this.payChannelCode = v; }
     public void setAmount(Integer v) { this.amount = v; }

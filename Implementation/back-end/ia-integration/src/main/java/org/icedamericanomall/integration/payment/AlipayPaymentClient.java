@@ -17,14 +17,18 @@ import java.util.Map;
  */
 public interface AlipayPaymentClient {
 
-    /** 异步通知参数键：商户订单号（本平台语义下的支付单号）。 */
+    /** 异步通知参数键：商户订单号（<b>对外渠道交易号</b>口径，即 {@code pay_order.channel_trade_no}）。 */
     String PARAM_OUT_TRADE_NO = "out_trade_no";
 
     /** 异步通知参数键：交易状态。 */
     String PARAM_TRADE_STATUS = "trade_status";
 
-    /** 发起支付，返回支付链接（PC 网页/二维码）。 */
-    String initiatePayment(String orderNo, int amount, String description);
+    /**
+     * 发起支付，返回支付链接（PC 网页/二维码）。
+     *
+     * @param outTradeNo 对外渠道交易号（支付宝 {@code out_trade_no}，非内部业务单号）
+     */
+    String initiatePayment(String outTradeNo, int amount, String description);
 
     /** 验证支付回调签名。 */
     boolean verifyCallback(Map<String, String> params);
@@ -35,10 +39,12 @@ public interface AlipayPaymentClient {
      * <p>契约与微信侧同形（见 {@code PaymentClient#refund}）：{@code refundAmount} 为本次退款额，
      * {@code orderAmount} 为原支付单金额。当前为 Mock 实现（同步成功）。
      *
+     * @param outTradeNo  原支付单的对外渠道交易号
+     * @param outRefundNo 对外退款项号（渠道幂等键）
      * @return 渠道受理结果（Mock 为 {@code settled=true}）
      * @throws org.icedamericanomall.common.exception.BizException 渠道拒绝 / 调用失败
      */
-    ChannelRefundResult refund(String payOrderNo, String refundNo, int refundAmount, int orderAmount,
+    ChannelRefundResult refund(String outTradeNo, String outRefundNo, int refundAmount, int orderAmount,
                                String reason);
 
     /**
@@ -49,7 +55,7 @@ public interface AlipayPaymentClient {
      */
     List<ChannelBillItem> billDownload(String billDate);
 
-    /** 查询支付单状态。 */
-    String queryStatus(String payOrderNo);
+    /** 查询支付单状态（按对外渠道交易号）。 */
+    String queryStatus(String outTradeNo);
 }
 
