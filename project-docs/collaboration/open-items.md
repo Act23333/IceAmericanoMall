@@ -178,3 +178,28 @@
 2. **注释不得复写会漂的清单**（枚举值/字段名/路径/计数）。已发生 3 次事故：`notification.type` 列注释 → 前端 4 个标签页恒空；`ProductVO.name` 教义；`backend/02` "路径刻意不变"。
 3. **门禁过重会逼人删断言**。所以：门禁必须便宜易修；**"删除门禁"要是一条合法且有记录的正路**；能从**类型**上强制的（`Result<VO>`）就绝不做成检查；白名单必须"陈旧即失败"。
 4. **测量的可信度低于结论**。本轮我自己的核验手段出错 ≥6 次（grep 不排除 javadoc、`^CREATE TABLE` 漏缩进、MySQL 输出 CR 未剥、`$?` 被二次展开污染、正则漏转义、验收标准算术不可满足）。**凡是"我核验过"，都要能给出命令与原始输出。**
+
+---
+
+## 6. TradeInvoice 三态设计 —— 三件事实已查明（2026-10-18）
+
+用户裁决：**不改 fail-closed，退款优先**；但「静默」必须升级为 **降级 + 可观测 + 可补偿** 三态。
+`TradeInvoiceClientFallback` 在决策表中标注为 **特殊 case：不走 classify 二元**；ArchUnit 守卫需为 `void` 方法开**白名单**，
+白名单要求「有日志 + 有补偿记录 + 有告警」——否则守监会逼人把它改成 `SYSTEM_BUSY`，**那就是 R-4 重演**。
+
+### 三件事实（实测）
+| 问题 | 结论 | 证据 |
+|---|---|---|
+| 补偿表是否已有？ | **没有独立的 outbox/补偿表**；但 `invoice.partial_refund_flag`（`Initialize.sql:1413`）+ `idx_partial_refund`（`:1422`）**本身就是 D4/O6 的补偿标记**，管理端按它人工收敛 | 全 62 表里无 outbox/compensation 类表 |
+| 告警通道是否已有？ | **基建在、埋点为零**：2 个 pom 引了 actuator/micrometer-prometheus，但全仓 **`MeterRegistry` 使用 0 处** | `grep -rl MeterRegistry` = 0 |
+| `markPartialRefund` 是否幂等？ | **是**：`InvoiceAdminManager:183` 用「条件更新 + 影响行数判断」（`marked == 0` 即已标记过，直接 return） | 同上 |
+
+### 因此的最小实现（不引新框架）
+1. **可观测**：在 fallback 降级分支打 **Micrometer Counter**（依赖已在，零新增）；指标名如
+   `ia.invoice.link.degraded{kind=VOID|PARTIAL}`
+2. **可补偿**：`partial_refund_flag` 已覆盖 `markPartialRefund`；**只有 `voidOnFullRefund`（冲红/作废）缺标记承载**
+   → 新增一张小表 `invoice_link_compensation`（`order_no`/`scene_ref`/`kind`/`status`/`retry_count`/`next_retry_at`/`last_error`/审计列 + 索引）
+3. **自动重试**：`@Scheduled` 扫 `status=PENDING AND next_retry_at<=now()` → 重调 Feign → 成功置 DONE / 失败退避 + 计数
+4. **不再静默**：fallback 降级时**落一条补偿记录**（而不是只打日志），这是白名单要求的「有补偿记录」
+
+**注意**：`voidOnFullRefund` 与 `markPartialRefund` 的补偿语义不同 —— 前者要**新建承载**，后者**已有 flag**，不要重复造。
