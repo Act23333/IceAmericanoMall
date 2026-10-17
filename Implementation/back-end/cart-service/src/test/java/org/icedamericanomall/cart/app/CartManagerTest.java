@@ -11,7 +11,9 @@ import org.icedamericanomall.cart.app.port.CartSkuViewQuery;
 import org.icedamericanomall.cart.domain.model.cart.CartItem;
 import org.icedamericanomall.cart.domain.repository.CartRepository;
 import org.icedamericanomall.common.constant.CsvIdLimits;
+import org.icedamericanomall.common.enums.ErrorCategory;
 import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BadRequestException;
 import org.icedamericanomall.common.exception.BizException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -28,6 +30,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -191,17 +194,56 @@ class CartManagerTest {
         verify(cartRepository, never()).save(any());
     }
 
+    /**
+     * 拆分守卫（批次 ③「拆双义错误码」）：<b>业务键形态非法</b> → {@code PARAM_ERROR(1101)} / 400
+     * （{@code CLIENT}），<b>不再是</b> {@code SKU_NOT_FOUND(3016)}。
+     *
+     * <p><b>改前必失败</b>：改前本用例（原名 {@code shouldThrow_whenSkuBusinessIdUnresolvable}）
+     * 把「形态非法 {@code prod-001}」与「SKU 不存在」写成同一个断言
+     * {@code assertEquals(SKU_NOT_FOUND)} —— 拆分前拿到 3016，本用例的
+     * {@code PARAM_ERROR} 断言<b>必然</b>红。{@code prod-001} 保留为非法样例，正是为了让
+     * 「旧语义」与「新语义」在同一输入上可区分。
+     */
     @Test
-    @DisplayName("加购 — 业务键解析不到（SKU 不存在/格式非法）→ 抛 SKU_NOT_FOUND，不落脏行（fail-closed）")
-    void shouldThrow_whenSkuBusinessIdUnresolvable() {
-        when(cartSkuViewQuery.findBySkuBusinessIds(List.of("prod-001"))).thenReturn(Map.of());
-
+    @DisplayName("加购 — 业务键形态非法（拼错/长度错/非 hex）→ PARAM_ERROR(400)，不是「SKU 不存在」")
+    void shouldThrowParamError_whenSkuBusinessIdMalformed() {
         CartAddReq req = new CartAddReq();
         req.setSkuId("prod-001");
         req.setQuantity(1);
 
+        BadRequestException ex = assertThrows(BadRequestException.class,
+                () -> cartManager.addItem(USER_ID, req));
+
+        assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
+        assertNotEquals(ErrorCode.SKU_NOT_FOUND, ex.getErrorCode(),
+                "形态非法是参数错误，不得冒充「SKU 不存在」");
+        // 归属判定用 ErrorCategory 派生（不手填 category）：400 → CLIENT
+        assertEquals(ErrorCategory.CLIENT, ErrorCategory.of(ex.getErrorCode()));
+        verify(cartRepository, never()).save(any());
+        // 形态非法连「解析」都不该发起（fail-fast，不打库）
+        verify(cartSkuViewQuery, never()).findBySkuBusinessIds(any());
+    }
+
+    /**
+     * 拆分守卫的另一半：<b>形态合法但 SKU 不存在</b> → {@code SKU_NOT_FOUND(3016)}（fail-closed）。
+     *
+     * <p><b>改前必失败</b>：改前该语义与「形态非法」共用一个断言，无法区分本用例与上面那条 ——
+     * 现在两条用例对同一码的<b>不同输入</b>给出<b>不同</b>期望，任一方向写错都会红。
+     */
+    @Test
+    @DisplayName("加购 — 业务键形态合法但 SKU 不存在 → SKU_NOT_FOUND(3016)，不落脏行（fail-closed）")
+    void shouldThrowSkuNotFound_whenBusinessKeyWellFormedButAbsent() {
+        when(cartSkuViewQuery.findBySkuBusinessIds(List.of(SKU_ID_A))).thenReturn(Map.of());
+
+        CartAddReq req = new CartAddReq();
+        req.setSkuId(SKU_ID_A);
+        req.setQuantity(1);
+
         BizException ex = assertThrows(BizException.class, () -> cartManager.addItem(USER_ID, req));
+
         assertEquals(ErrorCode.SKU_NOT_FOUND, ex.getErrorCode());
+        assertNotEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode(),
+                "形态合法的业务键解析不到，是「不存在」而不是「参数错误」");
         verify(cartRepository, never()).save(any());
     }
 
@@ -260,7 +302,7 @@ class CartManagerTest {
     }
 
     @Test
-    @DisplayName("修改数量 — SKU 业务键解析不到 → 幂等空操作（目标行本就不存在）")
+    @DisplayName("修改数量 — 形态合法的业务键但 SKU 不存在 → 幂等空操作（目标行本就不存在）")
     void shouldBeNoOp_whenBusinessIdUnresolvable() {
         when(cartSkuViewQuery.findBySkuBusinessIds(List.of(SKU_ID_A))).thenReturn(Map.of());
 
@@ -270,6 +312,45 @@ class CartManagerTest {
         cartManager.updateItem(USER_ID, req);
 
         verify(cartRepository, never()).updateQuantity(anyLong(), anyInt());
+    }
+
+    /**
+     * 拆分守卫（批次 ③，{@code resolveTechnicalIdOrNull} 分支）：<b>形态非法</b>不得被
+     * 「幂等空操作」吞掉 —— 客户端会以为已经改好了。
+     *
+     * <p><b>改前必失败</b>：改前 {@code resolveTechnicalIdOrNull} 对非法形态直接返回
+     * {@code null} → 空操作 200 成功，本用例的 {@code assertThrows} <b>必然</b>红。
+     */
+    @Test
+    @DisplayName("改数量/删除/改选 — 业务键形态非法 → PARAM_ERROR(400)，不得静默当空操作成功")
+    void shouldThrowParamError_whenUpdateBusinessKeyMalformed() {
+        CartUpdateReq req = new CartUpdateReq();
+        req.setSkuId("prod-001");
+        req.setQuantity(5);
+
+        BadRequestException ex = assertThrows(BadRequestException.class,
+                () -> cartManager.updateItem(USER_ID, req));
+
+        assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
+        assertEquals(ErrorCategory.CLIENT, ErrorCategory.of(ex.getErrorCode()));
+        verify(cartRepository, never()).updateQuantity(anyLong(), anyInt());
+        verify(cartRepository, never()).delete(anyLong());
+    }
+
+    @Test
+    @DisplayName("删除/改选 — 业务键形态非法同样 400；形态合法的未命中仍是幂等空操作")
+    void shouldSplitMalformedFromAbsent_forRemoveAndSelect() {
+        BadRequestException removeEx = assertThrows(BadRequestException.class,
+                () -> cartManager.removeItem(USER_ID, "prod-001"));
+        assertEquals(ErrorCode.PARAM_ERROR, removeEx.getErrorCode());
+
+        BadRequestException selectEx = assertThrows(BadRequestException.class,
+                () -> cartManager.selectItem(USER_ID, "1122334455", true));
+        assertEquals(ErrorCode.PARAM_ERROR, selectEx.getErrorCode());
+
+        when(cartSkuViewQuery.findBySkuBusinessIds(List.of(SKU_ID_B))).thenReturn(Map.of());
+        assertDoesNotThrow(() -> cartManager.selectItem(USER_ID, SKU_ID_B, false),
+                "形态合法的未命中保持幂等空操作（本批不改该语义）");
     }
 
     @Test

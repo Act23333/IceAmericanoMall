@@ -8,7 +8,12 @@ import lombok.Data;
  * 修改购物车项数量请求（C3 {@code PUT /api/cart/item}）。
  *
  * <p><b>{@code sku_id} 口径（契约 §1.8② + ADR-061 §决策 2）</b>：<b>SKU 业务键</b> 32-hex。
- * 解析不到 → 幂等空操作（目标行本就不存在，与「删除不存在的购物车项」同语义）。
+ * <ul>
+ *   <li><b>形态非法</b> → {@code PARAM_ERROR(1101)} + HTTP 400（适配层 fail-fast，
+ *       批次 ③ 拆双义错误码）；</li>
+ *   <li><b>形态合法但 SKU 不存在</b> → 幂等空操作（目标行本就不存在，与
+ *       「删除不存在的购物车项」同语义）。</li>
+ * </ul>
  */
 @Data
 public class CartUpdateReq {

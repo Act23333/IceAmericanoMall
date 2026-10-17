@@ -1,6 +1,8 @@
 package org.icedamericanomall.item.app;
 
+import org.icedamericanomall.common.enums.ErrorCategory;
 import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BadRequestException;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.SkuCO;
 import org.icedamericanomall.item.app.dto.SkuSpuDisplay;
@@ -22,6 +24,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -118,14 +121,57 @@ class SkuManagerTest {
         verify(skuRepository, never()).deductStock(anyLong(), anyInt());
     }
 
+    /**
+     * 拆分守卫（批次 ③「拆双义错误码」）：<b>业务键形态非法</b> → {@code PARAM_ERROR(1101)} / 400
+     * （{@code CLIENT}），<b>不再是</b> {@code SKU_NOT_FOUND(3016)}。
+     *
+     * <p><b>改前必失败</b>：改前本用例（原名 {@code shouldThrowNotFound_whenBusinessKeyUnresolvable}）
+     * 对 {@code prod-001} 断言 {@code SKU_NOT_FOUND} —— 旧实现通过、本用例红；
+     * 拆分后反之。{@code prod-001} 刻意保留为同一台「旧语义探测器」。
+     */
     @Test
-    @DisplayName("deductStock — 业务键解析不到 → SKU_NOT_FOUND（fail-closed，不碰库存 SQL）")
-    void shouldThrowNotFound_whenBusinessKeyUnresolvable() {
-        when(skuSpuDisplayQuery.findBySkuBusinessIds(List.of("prod-001"))).thenReturn(Map.of());
+    @DisplayName("deductStock — 业务键形态非法 → PARAM_ERROR(400)，不是「SKU 不存在」，不碰库存 SQL")
+    void shouldThrowParamError_whenBusinessKeyMalformed() {
+        BadRequestException ex = assertThrows(BadRequestException.class,
+                () -> skuManager.deductStock("prod-001", 2));
 
-        BizException ex = assertThrows(BizException.class, () -> skuManager.deductStock("prod-001", 2));
-        assertEquals(ErrorCode.SKU_NOT_FOUND, ex.getErrorCode());
+        assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
+        assertNotEquals(ErrorCode.SKU_NOT_FOUND, ex.getErrorCode(),
+                "形态非法是参数错误，不得冒充「SKU 不存在」");
+        // 归属判定走 ErrorCategory 派生（不手填 category）：400 → CLIENT
+        assertEquals(ErrorCategory.CLIENT, ErrorCategory.of(ex.getErrorCode()));
         verify(skuRepository, never()).deductStock(anyLong(), anyInt());
+    }
+
+    /**
+     * 拆分守卫的另一半：<b>形态合法但 SKU 不存在</b> → {@code SKU_NOT_FOUND(3016)}（fail-closed）。
+     */
+    @Test
+    @DisplayName("deductStock — 业务键形态合法但 SKU 不存在 → SKU_NOT_FOUND(3016)，不碰库存 SQL")
+    void shouldThrowNotFound_whenBusinessKeyWellFormedButAbsent() {
+        when(skuSpuDisplayQuery.findBySkuBusinessIds(List.of(SKU_BIZ))).thenReturn(Map.of());
+
+        BizException ex = assertThrows(BizException.class, () -> skuManager.deductStock(SKU_BIZ, 2));
+
+        assertEquals(ErrorCode.SKU_NOT_FOUND, ex.getErrorCode());
+        assertNotEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode(),
+                "形态合法的业务键解析不到，是「不存在」而不是「参数错误」");
+        verify(skuRepository, never()).deductStock(anyLong(), anyInt());
+    }
+
+    /**
+     * 恢复链路（I15，fail-open）：形态非法<b>不</b>抛 400，也不打库 —— 补偿链路不得因脏键中断。
+     *
+     * <p><b>改前必失败</b>：改前该分支会走「解析 → 未命中 → 返回 null」，虽然结果同为跳过，
+     * 但本用例额外断言「根本不去查解析读模型」，这正是把「形态非法」在链路最早处截断的证据。
+     */
+    @Test
+    @DisplayName("restoreStock — 业务键形态非法 → 按「不存在」幂等跳过（补偿链路 fail-open，不打库）")
+    void shouldSkipSilently_whenRestoreBusinessKeyMalformed() {
+        assertDoesNotThrow(() -> skuManager.restoreStock("prod-001", 2));
+
+        verify(skuSpuDisplayQuery, never()).findBySkuBusinessIds(anyCollection());
+        verify(skuRepository, never()).restoreStock(anyLong(), anyInt());
     }
 
     @Test

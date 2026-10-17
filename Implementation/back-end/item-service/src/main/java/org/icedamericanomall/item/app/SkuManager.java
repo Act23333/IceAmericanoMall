@@ -3,7 +3,9 @@ package org.icedamericanomall.item.app;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BadRequestException;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.item.adapter.assembler.SkuConverter;
 import org.icedamericanomall.item.adapter.response.SkuVO;
 import org.icedamericanomall.item.app.dto.SkuSpuDisplay;
@@ -33,6 +35,29 @@ import java.util.stream.Collectors;
  * <p><b>业务键（ADR-058 §3 / ADR-061）</b>：同一次联表<B>顺带</B>带出
  * {@code sku.sku_id}/{@code spu.spu_id} 两个业务键，供 {@code SkuCO}/{@code SkuVO} 直接使用；
  * 调用方无需为拿业务键再打一次库。
+ *
+ * <p><b>「形态非法」不是「SKU 不存在」（批次 ③ 拆双义错误码，2026-10-18）</b>：
+ * 本类此前把「业务键拼错」与「SKU 不存在」写成同一个 {@code SKU_NOT_FOUND(3016)}，
+ * 现按 {@code collaboration/09-constraints.md} §三·六 拆开：
+ * <table border="1">
+ *   <caption>两种语义 → 两种承载</caption>
+ *   <tr><th>语义</th><th>抛出</th><th>HTTP</th><th>判据</th></tr>
+ *   <tr>
+ *     <td><b>业务键形态非法</b>（拼错 / 长度错 / 非 hex）</td>
+ *     <td>{@link ErrorCode#PARAM_ERROR}（1101）</td>
+ *     <td><b>400</b></td>
+ *     <td><b>参数/形态非法</b>（{@code CLIENT}）</td>
+ *   </tr>
+ *   <tr>
+ *     <td><b>SKU 不存在</b>（形态合法但解析不到 / 行已删）</td>
+ *     <td>{@link ErrorCode#SKU_NOT_FOUND}（3016）</td>
+ *     <td>200（批次 ① 归位为 404 + 1103）</td>
+ *     <td><b>资源不存在</b></td>
+ *   </tr>
+ * </table>
+ * <p>形态校验的主责在适配层（{@code InternalSkuController#deductStock} 经
+ * {@code IdGenerator#requireWire} fail-fast，ADR-062 §决策 7），本类保留同口径的第二道防线。
+ * {@code 3016} 的 {@code HttpStatus} 本批<b>刻意不动</b>（先拆语义、再改状态码），归位由批次 ① 执行。
  */
 @Slf4j
 @Component
@@ -117,6 +142,16 @@ public class SkuManager {
      * <p><b>入参口径（ADR-061 §决策 2）</b>：{@code skuBusinessId} 为 <b>SKU 业务键</b> 32-hex，
      * 内部按 {@code sku.sku_id} 唯一索引解析为技术键后再走原子 SQL（性能与按技术键等价）。
      * 解析不到 → {@code SKU_NOT_FOUND}（<b>fail-closed</b>：库存是资金安全关键路径）。
+     *
+     * <p><b>形态非法 ≠ 不存在（批次 ③）</b>：{@code skuBusinessId} 形态非法（拼错/长度错/非 hex）
+     * → {@code PARAM_ERROR(1101)} + <b>HTTP 400</b>（{@code CLIENT}），由
+     * {@link #resolveTechnicalId(String, boolean)} 判定；只有「形态合法但库里没有」才是
+     * {@code SKU_NOT_FOUND(3016)}。
+     *
+     * @param skuBusinessId SKU 业务键（适配层已归一化；此处仍做形态校验，第二道防线）
+     * @param quantity      扣减数量
+     * @throws BadRequestException 业务键形态非法（400 / PARAM_ERROR）
+     * @throws BizException        SKU 不存在（SKU_NOT_FOUND）或库存不足（STOCK_INSUFFICIENT）
      */
     @Transactional(rollbackFor = Exception.class)
     public void deductStock(String skuBusinessId, int quantity) {
@@ -162,18 +197,40 @@ public class SkuManager {
     /**
      * SKU 业务键 → 技术键（同库只读，走 {@code sku.sku_id} 唯一索引；A 案：表结构不变）。
      *
-     * @param failClosed {@code true} = 解析不到抛 {@code SKU_NOT_FOUND}（扣减链路）；
-     *                   {@code false} = 返回 {@code null}（恢复链路按幂等跳过）
+     * <p><b>三分支（批次 ③ 拆双义错误码）</b>：
+     * <ol>
+     *   <li><b>形态非法</b> → 写链路（{@code failClosed=true}）抛 {@link BadRequestException}
+     *       + {@code PARAM_ERROR(1101)} / <b>400</b>：这是<b>参数错误</b>，不是「SKU 不存在」；</li>
+     *   <li><b>形态合法但解析不到</b> → 写链路抛 {@code SKU_NOT_FOUND(3016)}（真不存在）；</li>
+     *   <li><b>恢复链路</b>（{@code failClosed=false}）：两种失败都返回 {@code null}，
+     *       由调用方按幂等跳过 —— 取消/超时补偿链路<b>不得</b>因 SKU 已删而失败，
+     *       更不得因上游传了脏键而阻断整批回滚。</li>
+     * </ol>
+     *
+     * @param skuBusinessId SKU 业务键（适配层已归一化；此处仍做形态校验，第二道防线）
+     * @param failClosed    {@code true} = 解析不到抛异常（扣减链路）；
+     *                      {@code false} = 返回 {@code null}（恢复链路按幂等跳过）
+     * @return SKU 技术键；恢复链路解析不到时返回 {@code null}
+     * @throws BadRequestException 业务键形态非法且 {@code failClosed=true}（400 / PARAM_ERROR）
+     * @throws BizException        SKU 不存在且 {@code failClosed=true}（SKU_NOT_FOUND）
      */
     private Long resolveTechnicalId(String skuBusinessId, boolean failClosed) {
-        Map<String, SkuSpuDisplay> found = loadDisplaysByBusinessIds(
-                skuBusinessId == null ? List.of() : List.of(skuBusinessId));
+        if (!IdGenerator.isWire(skuBusinessId)) {
+            if (failClosed) {
+                log.warn("SKU 业务键形态非法（400 fail-fast）: skuId={}", skuBusinessId);
+                throw new BadRequestException(ErrorCode.PARAM_ERROR,
+                        "sku_id 必须为 32 位 hex 业务键：形态非法属参数错误，不是「SKU 不存在」");
+            }
+            log.warn("SKU 业务键形态非法，恢复链路按「不存在」幂等跳过: skuId={}", skuBusinessId);
+            return null;
+        }
+        Map<String, SkuSpuDisplay> found = loadDisplaysByBusinessIds(List.of(skuBusinessId));
         SkuSpuDisplay display = found.get(skuBusinessId);
         if (display != null && display.skuId() != null) {
             return display.skuId();
         }
         if (failClosed) {
-            log.warn("SKU 业务键解析失败（fail-closed）: skuId={}", skuBusinessId);
+            log.warn("SKU 业务键解析不到（SKU 不存在, fail-closed）: skuId={}", skuBusinessId);
             throw new BizException(ErrorCode.SKU_NOT_FOUND);
         }
         return null;

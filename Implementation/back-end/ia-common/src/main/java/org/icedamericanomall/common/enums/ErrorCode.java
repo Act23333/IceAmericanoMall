@@ -113,7 +113,55 @@ public enum ErrorCode {
     STOCK_INSUFFICIENT(3012, "库存不足", HttpStatus.OK),
     CART_EMPTY(3013, "购物车为空", HttpStatus.OK),
     CROSS_STORE_FORBIDDEN(3014, "暂不支持跨店下单", HttpStatus.OK),
+    /**
+     * 店铺<b>不存在</b> —— <b>仅表示资源不存在</b>，不得用于「状态不允许」，也不得用于「越权」。
+     *
+     * <p><b>语义拆分（批次 ③「拆双义错误码」，2026-10-18）</b>：本码此前同时承载三种语义，
+     * 现按 {@code collaboration/09-constraints.md} §三·六「错误承载的四类划分」逐条归位：
+     * <table border="1">
+     *   <caption>拆出去的两种语义</caption>
+     *   <tr><th>原语义</th><th>归到哪</th><th>判据（09 §三·六）</th></tr>
+     *   <tr>
+     *     <td>店铺存在但<b>状态不允许</b>（{@code PENDING} 审核中 / {@code FROZEN} 冻结）</td>
+     *     <td>{@link #BUSINESS_EXECUTION_EXCEPTION}（3000）+ 自定义文案，HTTP 200</td>
+     *     <td><b>业务规则拒绝</b>：资源存在、请求合法，规则不允许 → 200 + body code（{@code RULE}）</td>
+     *   </tr>
+     *   <tr>
+     *     <td><b>店铺归属其他商家</b>（已认证但无权访问）</td>
+     *     <td>{@link #FORBIDDEN}（1013），HTTP 403</td>
+     *     <td><b>无权限</b> → 真 403。这是既有实现（{@code ShopManager#loadOwnedShop}），
+     *         本批<b>未</b>用 not-found 掩盖，故<b>不存在</b>「反枚举取舍」待裁决项</td>
+     *   </tr>
+     * </table>
+     *
+     * <p><b>状态码为什么仍是 {@code HttpStatus.OK}</b>：本批（③）只拆语义、<b>不动状态码</b> ——
+     * 若在拆分的同时把本码改成 404，会把上表刚拆出去的「状态不允许」等分支<b>一起</b>变成 404，
+     * 顺序反了。状态码归位（→ {@link #NO_RESOURCE_FOUND} 1103 / HTTP 404，见 §三·六 第 2 条）
+     * 由批次 ① 单独执行，届时<b>只</b>需要改本枚举的 status，不需要再动调用点。
+     *
+     * <p><b>安全默认</b>：即便 ① 之前有人新增调用，返回值也只是「200 + 店铺不存在」，
+     * 不会退化成「200 + 状态不允许」这种被拆掉的错误语义。
+     */
     SHOP_NOT_FOUND(3015, "店铺不存在", HttpStatus.OK),
+    /**
+     * SKU <b>不存在</b> —— <b>仅表示资源不存在</b>，<b>不得</b>用于「业务键形态非法」。
+     *
+     * <p><b>语义拆分（批次 ③，2026-10-18）</b>：本码此前把两件事写成同一个异常 ——
+     * 「SKU 不存在」与「业务键拼错（长度/字符集错）」。后者是<b>参数非法</b>，
+     * 按 §三·六 属 <b>{@code CLIENT}</b>：<b>HTTP 400 + {@link #PARAM_ERROR}（1101）</b>，
+     * 且<b>校验前移到适配层 fail-fast</b>（{@code IdGenerator#requireWire}，
+     * ADR-062 §决策 7「编解码唯一出口 + 形态非法 400」）：
+     * <ul>
+     *   <li>购物车：{@code CartController} 的 C2/C3 请求体与 C4/C5 路径变量；</li>
+     *   <li>库存：{@code InternalSkuController#deductStock}（I14）的请求体。</li>
+     * </ul>
+     * 应用层（{@code CartManager}/{@code SkuManager}）保留同口径的<b>第二道防线</b>：
+     * 形态非法同样抛 400 + 1101，<b>绝不</b>把「拼错一个 hex 字符」降级成「SKU 不存在」
+     * （ADR-062 §决策 7：那会把排查成本全部转嫁给调用方）。
+     *
+     * <p><b>状态码为什么仍是 {@code HttpStatus.OK}</b>：同 {@link #SHOP_NOT_FOUND} ——
+     * 本批只拆语义，状态码归位（→ 404 / 1103）由批次 ① 统一执行。
+     */
     SKU_NOT_FOUND(3016, "SKU不存在", HttpStatus.OK),
     HOME_CONFIG_NOT_FOUND(3017, "首页配置不存在", HttpStatus.OK),
     REVIEW_ALREADY_EXISTS(3018, "该商品已评价", HttpStatus.OK),

@@ -13,7 +13,9 @@ import org.icedamericanomall.cart.domain.model.cart.CartItem;
 import org.icedamericanomall.cart.domain.repository.CartRepository;
 import org.icedamericanomall.common.constant.CsvIdLimits;
 import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BadRequestException;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.dto.CartItemCO;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
@@ -43,11 +45,37 @@ import java.util.Objects;
  * <ul>
  *   <li><b>列表回填（读）fail-open</b>（ADR-057）：数据源异常 → 字段留空 + WARN，
  *       列表照常返回；{@code sku_id} 亦留空（<b>不回落技术键</b>，ADR-061 §决策 3）。</li>
- *   <li><b>加购（写）fail-closed</b>：业务键解析不到 → {@code SKU_NOT_FOUND}，
+ *   <li><b>加购（写）fail-closed</b>：<b>SKU 不存在</b> → {@code SKU_NOT_FOUND}（3016），
  *       绝不静默插入一条无法下单的行。</li>
- *   <li><b>改数量/删除/改选</b>：解析不到即<b>幂等空操作</b>（目标行本就不存在，
+ *   <li><b>改数量/删除/改选</b>：<b>SKU 不存在</b>即<b>幂等空操作</b>（目标行本就不存在，
  *       与「删除不存在的购物车项」同语义，不产生 500）。</li>
  * </ul>
+ *
+ * <p><b>「形态非法」不是「不存在」（批次 ③「拆双义错误码」，2026-10-18）</b>：
+ * 本类此前把「业务键拼错（长度/字符集错）」与「SKU 不存在」写成<b>同一个</b>
+ * {@code SKU_NOT_FOUND(3016)}，现按 {@code collaboration/09-constraints.md} §三·六
+ * 拆开、<b>不得合流</b>：
+ * <table border="1">
+ *   <caption>两种语义 → 两种承载</caption>
+ *   <tr><th>语义</th><th>抛出</th><th>HTTP</th><th>判据（09 §三·六）</th></tr>
+ *   <tr>
+ *     <td><b>业务键形态非法</b>（拼错 / 长度错 / 非 hex）</td>
+ *     <td>{@link ErrorCode#PARAM_ERROR}（1101）</td>
+ *     <td><b>400</b></td>
+ *     <td><b>参数/形态非法</b>（{@code CLIENT}）：请求本身不合法，与「查不到」无关</td>
+ *   </tr>
+ *   <tr>
+ *     <td><b>SKU 不存在</b>（形态合法的业务键解析不到）</td>
+ *     <td>{@link ErrorCode#SKU_NOT_FOUND}（3016）</td>
+ *     <td>200（批次 ① 归位为 404 + 1103）</td>
+ *     <td><b>资源不存在</b></td>
+ *   </tr>
+ * </table>
+ * <p><b>形态校验的主责在适配层</b>（{@code CartController} 经
+ * {@code IdGenerator#requireWire} fail-fast，ADR-062 §决策 7「编解码唯一出口 + 形态非法 400」），
+ * 本类保留<b>同口径的第二道防线</b>：拼错一个 hex 字符绝不能静默降级成「SKU 不存在」
+ * 或「幂等空操作」—— 那会把排查成本全部转嫁给调用方。{@code 3016} 的 {@code HttpStatus}
+ * 本批<b>刻意不动</b>（先拆语义、再改状态码），归位由批次 ① 执行。
  */
 @Slf4j
 @Component
@@ -120,8 +148,13 @@ public class CartManager {
      *   Then 捕获 DuplicateKeyException 转为增量合并，不返回 500
      *
      * Scenario: SKU 业务键解析不到
-     *   When 传非法业务键或 SKU 不存在
+     *   When 传形态合法（32-hex）但库里没有的业务键
      *   Then 抛 SKU_NOT_FOUND（fail-closed，绝不静默插入无法下单的行）
+     *
+     * Scenario: SKU 业务键形态非法（拼错 / 长度错 / 非 hex）
+     *   When 传 "prod-001" 这类非法形态
+     *   Then 抛 PARAM_ERROR（1101）+ HTTP 400 —— 属「参数非法」，不是「SKU 不存在」
+     *     （适配层 CartController 已 fail-fast；此处为第二道防线）
      * </pre>
      */
     @Transactional(rollbackFor = Exception.class)
@@ -178,7 +211,8 @@ public class CartManager {
      *   When PUT /api/cart/item with {sku_id(业务键), quantity}
      *   Then 更新该购物车项的数量
      * Scenario: 数量 ≤ 0 则删除该项
-     * Scenario: SKU 业务键解析不到 → 幂等空操作（行本就不存在）
+     * Scenario: SKU 不存在（形态合法的业务键）→ 幂等空操作（行本就不存在）
+     * Scenario: SKU 业务键形态非法 → PARAM_ERROR（1101）+ HTTP 400（属参数错误，不是空操作）
      * </pre>
      */
     @Transactional(rollbackFor = Exception.class)
@@ -198,7 +232,7 @@ public class CartManager {
         cartRepository.updateQuantity(existing.get().getId(), req.getQuantity());
     }
 
-    /** 移除购物车项（入参为 SKU 业务键；解析不到 → 幂等空操作）。 */
+    /** 移除购物车项（入参为 SKU 业务键；不存在 → 幂等空操作；形态非法 → 400 PARAM_ERROR）。 */
     @Transactional(rollbackFor = Exception.class)
     public void removeItem(Long userId, String skuId) {
         Long skuTechnicalId = resolveTechnicalIdOrNull(skuId);
@@ -208,7 +242,7 @@ public class CartManager {
         cartRepository.deleteByUserIdAndSkuId(userId, skuTechnicalId);
     }
 
-    /** 切换选中状态（入参为 SKU 业务键；解析不到 → 幂等空操作）。 */
+    /** 切换选中状态（入参为 SKU 业务键；不存在 → 幂等空操作；形态非法 → 400 PARAM_ERROR）。 */
     @Transactional(rollbackFor = Exception.class)
     public void selectItem(Long userId, String skuId, Boolean selected) {
         Long skuTechnicalId = resolveTechnicalIdOrNull(skuId);
@@ -258,26 +292,70 @@ public class CartManager {
     // ==================== 私有方法 ====================
 
     /**
-     * SKU 业务键 → 技术键；解析不到即抛 {@code SKU_NOT_FOUND}（fail-closed）。
+     * SKU 业务键 → 技术键（<b>加购写路径</b>，fail-closed）。
      *
-     * @throws BizException 业务键格式非法 / SKU 不存在
+     * <p><b>两种失败语义必须分开（批次 ③）</b>：
+     * <ol>
+     *   <li><b>形态非法</b>（长度 / 字符集错）→ {@link BadRequestException} +
+     *       {@code PARAM_ERROR(1101)}（<b>HTTP 400</b>）：这是<b>参数错误</b>
+     *       （{@code CLIENT}），请求本身不合法；</li>
+     *   <li><b>形态合法但解析不到</b> → {@code SKU_NOT_FOUND(3016)}：这才是「资源不存在」。</li>
+     * </ol>
+     * 归到 3016 会把「客户端拼错一个 hex 字符」变成「SKU 不存在」，排查成本全部转嫁给调用方
+     * （ADR-062 §决策 7）。
+     *
+     * @param skuBusinessId SKU 业务键（适配层已归一化；此处仍做形态校验，第二道防线）
+     * @return SKU 技术键（{@code sku.id}）
+     * @throws BadRequestException 业务键形态非法（400 / PARAM_ERROR）
+     * @throws BizException        SKU 不存在（SKU_NOT_FOUND）
      */
     private Long resolveTechnicalId(String skuBusinessId) {
+        requireWireShape(skuBusinessId);
         SkuView sku = loadByBusinessIds(List.of(skuBusinessId)).get(skuBusinessId);
         if (sku == null || sku.skuTechnicalId() == null) {
-            log.warn("SKU 业务键解析失败（fail-closed）: skuId={}", skuBusinessId);
+            log.warn("SKU 业务键解析不到（SKU 不存在, fail-closed）: skuId={}", skuBusinessId);
             throw new BizException(ErrorCode.SKU_NOT_FOUND);
         }
         return sku.skuTechnicalId();
     }
 
-    /** SKU 业务键 → 技术键；解析不到返回 {@code null}（调用方按幂等空操作处理）。 */
+    /**
+     * SKU 业务键 → 技术键（<b>改数量/删除/改选</b>；解析不到 → {@code null}，调用方按幂等空操作处理）。
+     *
+     * <p><b>形态非法仍然抛 400</b>（批次 ③）：幂等空操作针对的是「这个 SKU 眼下不在购物车里」，
+     * 而<b>不是</b>「入参本身写错了」。把拼错的业务键静默当成功，等于让客户端以为已经删掉/
+     * 改好了（ADR-062 §决策 7：非法形态必须是 400，不是「静默落 null」）。
+     *
+     * @param skuBusinessId SKU 业务键；{@code null} 表示未提供（调用方按空操作处理）
+     * @return SKU 技术键，或 {@code null} 表示解析不到
+     * @throws BadRequestException 业务键形态非法（400 / PARAM_ERROR）
+     */
     private Long resolveTechnicalIdOrNull(String skuBusinessId) {
         if (skuBusinessId == null) {
             return null;
         }
+        requireWireShape(skuBusinessId);
         SkuView sku = loadByBusinessIds(List.of(skuBusinessId)).get(skuBusinessId);
         return sku == null ? null : sku.skuTechnicalId();
+    }
+
+    /**
+     * 业务键<b>形态</b>校验（第二道防线：适配层 {@code CartController} 已用
+     * {@code IdGenerator.requireWire} fail-fast 过一遍）。
+     *
+     * <p>放在应用层不是为了替代适配层，而是为了不让「内部调用方绕过 Controller」时
+     * 把非法形态降级成 not-found / 空操作 —— 守卫 {@code check-id-invariants.sh} 检查 6 只约束
+     * 「{@code IdGenerator.requireWire} 可以出现在 adapter、{@code toBytes} 系列不可以」，
+     * 应用层做形态判定是允许的。
+     *
+     * @param skuBusinessId 待校验业务键
+     * @throws BadRequestException 形态非法（HTTP 400 / {@code PARAM_ERROR}）
+     */
+    private static void requireWireShape(String skuBusinessId) {
+        if (!IdGenerator.isWire(skuBusinessId)) {
+            throw new BadRequestException(ErrorCode.PARAM_ERROR,
+                    "sku_id 必须为 32 位 hex 业务键：形态非法属参数错误，不是「SKU 不存在」");
+        }
     }
 
     /** 购物车行持有的技术键集合（A 案：{@code cart.sku_id} 保持技术键）。 */
@@ -308,8 +386,15 @@ public class CartManager {
     /**
      * 按 <b>SKU 业务键</b>批量解析（写路径：入参收业务键 → 技术键）。
      *
-     * <p>异常语义为<b>空 Map</b>：加购侧据此抛 {@code SKU_NOT_FOUND}（fail-closed），
-     * 改数量/删除/改选侧据此幂等空操作 —— 由调用方决定，读模型自身不抛。
+     * <p><b>本方法只表达一件事：解析结果为「命中 / 未命中」</b>（未命中返回空 Map，自身不抛）。
+     * 「未命中之后怎么办」由调用方按各端点语义决定，<b>而「形态非法」根本不走这条分支</b> ——
+     * 它在进入本方法之前就被 {@link #requireWireShape(String)} 以 400
+     * {@code PARAM_ERROR} 拦下（批次 ③ 拆双义：形态非法 ≠ 不存在）：
+     * <ul>
+     *   <li><b>加购</b>：未命中 → {@code SKU_NOT_FOUND(3016)}（fail-closed，不插脏行）；</li>
+     *   <li><b>改数量/删除/改选</b>：未命中 → 幂等空操作（目标行本就不存在）。</li>
+     * </ul>
+     * 数据源异常同样归一为「未命中」（fail-open 读模型，ADR-057），WARN 后不抛。
      */
     private Map<String, SkuView> loadByBusinessIds(List<String> skuBusinessIds) {
         if (skuBusinessIds == null || skuBusinessIds.isEmpty()) {

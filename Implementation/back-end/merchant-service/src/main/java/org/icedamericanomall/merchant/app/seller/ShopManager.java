@@ -35,6 +35,34 @@ import java.util.Objects;
  * Redis Set 基数（与 SF4 {@code GET /api/shop/follow/count} 同源），列表路径按店铺 ID 集合
  * <b>一次</b> pipeline 批量读（无 N 次往返）；Redis 异常时该字段为 null 而店铺照常返回
  * （fail-open，绝不因展示字段让店铺页/商家后台失败）。
+ *
+ * <p><b>错误语义口径（批次 ③「拆双义错误码」，2026-10-18 —— 逐字阅读）</b>：
+ * 本类此前对「店铺不存在」与「店铺状态不允许」抛<b>同一个</b> {@code SHOP_NOT_FOUND(3015)}，
+ * 现按 {@code collaboration/09-constraints.md} §三·六「错误承载的四类划分」拆开，<b>不得合流</b>：
+ * <table border="1">
+ *   <caption>三种语义 → 三种承载</caption>
+ *   <tr><th>语义</th><th>抛出</th><th>HTTP</th><th>判据</th></tr>
+ *   <tr>
+ *     <td><b>店铺不存在</b>（含遗留 {@code sellerId} 口径解析不到店铺）</td>
+ *     <td>{@link ErrorCode#SHOP_NOT_FOUND}（3015）</td>
+ *     <td>200（批次 ① 归位为 404 + 1103）</td>
+ *     <td>资源不存在</td>
+ *   </tr>
+ *   <tr>
+ *     <td><b>店铺存在但状态不允许</b>（审核中 {@code PENDING} / 冻结 {@code FROZEN}）</td>
+ *     <td>{@link ErrorCode#BUSINESS_EXECUTION_EXCEPTION}（3000）+ 自定义文案</td>
+ *     <td>200</td>
+ *     <td><b>业务规则拒绝</b>（{@code RULE}）：资源存在、请求合法，规则不允许</td>
+ *   </tr>
+ *   <tr>
+ *     <td><b>店铺归属其他商家</b>（已认证、无权访问）</td>
+ *     <td>{@link ForbiddenException} / {@link ErrorCode#FORBIDDEN}（1013）</td>
+ *     <td>403</td>
+ *     <td><b>无权限</b> —— 不用 not-found 掩盖（无「反枚举」取舍，见 {@link #loadOwnedShop}）</td>
+ *   </tr>
+ * </table>
+ * <p>{@code 3015} 的 {@code HttpStatus} 本批<b>刻意不动</b>（先拆语义、再改状态码，
+ * 顺序反了会把刚拆出去的两种语义一起变成 404），归位由批次 ① 执行。
  */
 @Slf4j
 @Component
@@ -54,13 +82,25 @@ public class ShopManager {
      * <p>V5.12 增量：装配店铺装修 {@code decoration}（公告/轮播/推荐商品位），
      * 未装修为 {@code null}（ADR-048，直读无缓存）。
      *
-     * @throws BizException 店铺不存在或非正常状态（SHOP_NOT_FOUND）
+     * <p><b>两种失败语义必须分开（批次 ③）</b>：
+     * <ul>
+     *   <li>{@code findById} 落空 = <b>店铺真不存在</b> → {@code SHOP_NOT_FOUND(3015)}
+     *       （{@code 3015} 仅表示资源不存在，不得用于状态不允许/越权）；</li>
+     *   <li>{@code status != NORMAL} = <b>店铺存在但状态不允许</b> → 抛
+     *       {@code BUSINESS_EXECUTION_EXCEPTION(3000)} + 自定义文案，<b>HTTP 仍 200</b>：
+     *       按 §三·六 属「业务规则拒绝」（资源存在、请求合法、规则不允许），
+     *       用 404 表达会把「审核中/冻结」永久伪装成「店铺不存在」，前端无法给出正确文案。</li>
+     * </ul>
+     *
+     * @throws BizException 店铺不存在（SHOP_NOT_FOUND）或状态不允许（BUSINESS_EXECUTION_EXCEPTION）
      */
     public ShopVO getVisibleShop(Long shopId) {
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new BizException(ErrorCode.SHOP_NOT_FOUND));
         if (!shop.isNormal()) {
-            throw new BizException(ErrorCode.SHOP_NOT_FOUND);
+            // 业务规则拒绝（不是 not-found）：资源存在、请求合法，只是状态不允许
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
+                    "店铺当前不可访问（审核中或已冻结）");
         }
         ShopVO vo = ShopVO.from(shop, loadMerchant(shop.getMerchantId()).getUserId());
         vo.setDecoration(shopDecorationRepository.findByShopId(shopId)
@@ -83,6 +123,10 @@ public class ShopManager {
 
     /**
      * 解析目标店铺 ID：{@code shopId} 优先，其次遗留 {@code sellerId} → 默认店铺。
+     *
+     * <p>这里的 {@code SHOP_NOT_FOUND} 是<b>纯「寻址目标不存在」</b>语义（批次 ③）：
+     * {@code shopId} 查不到、或遗留 {@code sellerId} 解析不出店铺，都属「该地址指向的东西没有」。
+     * 本方法<b>不</b>承载「状态不允许」（无状态判断）、也<b>不</b>承载归属校验（无身份入参）。
      *
      * @throws BizException 两者皆未提供（PARAM_ERROR）或店铺不存在（SHOP_NOT_FOUND）
      */
@@ -133,6 +177,9 @@ public class ShopManager {
 
     /**
      * 遗留别名：当前商家的默认店铺。
+     *
+     * <p>失败语义（批次 ③）：商家存在但<b>没有</b>任何店铺 → {@code SHOP_NOT_FOUND(3015)}
+     * 属「寻址目标不存在」（该商家名下确实没有这个资源），是纯 not-found，不含状态/越权含义。
      *
      * @deprecated 改用 {@link #listMyShops(Long)}（多店铺）或
      *         {@code GET /api/seller/shops/{shopId}}。
@@ -248,7 +295,20 @@ public class ShopManager {
         }
     }
 
-    /** 加载当前用户名下的店铺（不存在 → SHOP_NOT_FOUND；归属他人 → FORBIDDEN）。 */
+    /**
+     * 加载当前用户名下的店铺。
+     *
+     * <p><b>三分支口径（批次 ③ 逐条判定结论）</b>：
+     * <ol>
+     *   <li>尚未开通商家 → {@code USER_NOT_FOUND(1102)}（既有语义，与「店铺」无关，未动）；</li>
+     *   <li>店铺不存在 → {@code SHOP_NOT_FOUND(3015)}（纯 not-found，可安全归位为 404）；</li>
+     *   <li>店铺归属<b>其他</b>商家 → {@link ForbiddenException}：已认证用户访问无权的具体资源，
+     *       按 §三·六 属「无权限」→ 真 <b>403</b>。<b>刻意不用 not-found 掩盖</b> ——
+     *       本路径无「反枚举」产品要求（店铺是公开资源，{@code GET /api/shops/{shopId}} 本来就
+     *       对访客暴露存在性），掩盖只会让商家把「无权限」误读成「店铺被删了」。
+     *       因此<b>不存在</b>待裁决的反枚举取舍项。</li>
+     * </ol>
+     */
     private Shop loadOwnedShop(Long userId, Long shopId) {
         Merchant merchant = loadMerchantByUserId(userId);
         Shop shop = shopRepository.findById(shopId)
@@ -259,7 +319,15 @@ public class ShopManager {
         return shop;
     }
 
-    /** sellerId（商家 user_id）→ 默认店铺 ID。 */
+    /**
+     * 遗留 {@code sellerId}（商家 user_id）→ 默认店铺 ID。
+     *
+     * <p><b>错误语义（批次 ③）</b>：两处 {@code SHOP_NOT_FOUND} 都是<b>寻址目标不存在</b>
+     * —— ① 该 {@code sellerId} 没有商家（所以更谈不上有店）；② 商家存在但名下没有店铺。
+     * 二者对调用方等价：「按这个 sellerId 找不到店」。<b>不</b>含状态判断、<b>不</b>含越权判断。
+     * <br>注：文案沿用枚举默认的「店铺不存在」，<b>不复用</b> {@code USER_NOT_FOUND} ——
+     * 本方法对外暴露的资源是「店铺」，把内部实现细节（商家表查空）透给调用方只会增加耦合。
+     */
     private Long resolveDefaultShopId(Long sellerId) {
         Merchant merchant = merchantRepository.findByUserId(sellerId)
                 .orElseThrow(() -> new BizException(ErrorCode.SHOP_NOT_FOUND));

@@ -1,5 +1,6 @@
 package org.icedamericanomall.merchant.app.seller;
 
+import org.icedamericanomall.common.enums.ErrorCategory;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.exception.ForbiddenException;
@@ -26,8 +27,10 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.never;
@@ -89,23 +92,51 @@ class ShopManagerTest {
     }
 
     @Test
-    @DisplayName("公开店铺页 — 店铺不存在 → SHOP_NOT_FOUND")
+    @DisplayName("公开店铺页 — 店铺不存在 → SHOP_NOT_FOUND（纯 not-found，不是状态/越权语义）")
     void shouldThrowShopNotFound_whenShopAbsent() {
         when(shopRepository.findById(5L)).thenReturn(Optional.empty());
 
         BizException ex = assertThrows(BizException.class, () -> shopManager.getVisibleShop(5L));
 
         assertEquals(ErrorCode.SHOP_NOT_FOUND, ex.getErrorCode());
+        // 拆分守卫：本分支只许「不存在」，不得串到状态不允许（批次 ③ 的语义边界）
+        assertNotEquals(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, ex.getErrorCode(),
+                "「不存在」不得复用「状态不允许」的码");
     }
 
+    /**
+     * 拆分守卫（批次 ③「拆双义错误码」）：<b>店铺存在但状态不允许</b> → {@code RULE}（200 + body code），
+     * <b>不再是</b> {@code SHOP_NOT_FOUND}。
+     *
+     * <p><b>改前必失败</b>：改前本分支抛 {@code SHOP_NOT_FOUND(3015)}
+     * （改前用例名 {@code shouldThrowShopNotFound_whenShopNotNormal}），
+     * 断言 {@code assertEquals(ErrorCode.SHOP_NOT_FOUND, ...)} 会通过 —— 本用例正是把
+     * 「两种语义共用一个码」钉死的哨兵：拆分前它<b>必然</b>红（拿到的是 3015）。
+     *
+     * <p><b>状态码口径</b>：本批<b>只拆语义不改状态码</b>（{@code 3015} 仍是 200，由批次 ① 归位 404）；
+     * 因此这里断言的是<b>类别</b>而非具体数字 —— {@code ErrorCategory.of(code)} 由
+     * {@code ErrorCode.httpStatus} <b>派生</b>（不手填 category），{@code RULE} 即「200 + 业务码」。
+     */
     @Test
-    @DisplayName("公开店铺页 — 非正常状态（审核中/冻结）→ SHOP_NOT_FOUND")
-    void shouldThrowShopNotFound_whenShopNotNormal() {
-        when(shopRepository.findById(5L)).thenReturn(Optional.of(shop(5L, 1L, ShopStatusEnum.PENDING)));
+    @DisplayName("公开店铺页 — 店铺存在但状态非正常（审核中/冻结）→ RULE 拒绝（200 + 业务码），不是 SHOP_NOT_FOUND")
+    void shouldRejectAsBusinessRule_whenShopStatusNotNormal() {
+        for (ShopStatusEnum status : new ShopStatusEnum[]{ShopStatusEnum.PENDING, ShopStatusEnum.FROZEN}) {
+            when(shopRepository.findById(5L)).thenReturn(Optional.of(shop(5L, 1L, status)));
 
-        BizException ex = assertThrows(BizException.class, () -> shopManager.getVisibleShop(5L));
+            BizException ex = assertThrows(BizException.class, () -> shopManager.getVisibleShop(5L));
 
-        assertEquals(ErrorCode.SHOP_NOT_FOUND, ex.getErrorCode());
+            // ① 语义已独立：不再是 not-found
+            assertNotEquals(ErrorCode.SHOP_NOT_FOUND, ex.getErrorCode(),
+                    "状态不允许不是「店铺不存在」（批次 ③ 拆双义错误码）: status=" + status);
+            // ② 承载归属：业务规则拒绝 = 200 + body code（09 §三·六 第四类），由状态码派生类别
+            assertEquals(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, ex.getErrorCode());
+            assertEquals(ErrorCategory.RULE, ErrorCategory.of(ex.getErrorCode()),
+                    "状态不允许属 RULE（200 + 业务码），不是 CLIENT（4xx）");
+            assertTrue(ex.getErrorCode().getHttpStatus().is2xxSuccessful(),
+                    "本批不改状态码：该分支仍是 HTTP 200");
+            // ③ 文案必须能区分「被拆出去的状态语义」与「店铺不存在」
+            assertNotEquals(ErrorCode.SHOP_NOT_FOUND.getMessage(), ex.getDisplayMessage());
+        }
     }
 
     @Test
@@ -209,7 +240,7 @@ class ShopManagerTest {
     }
 
     @Test
-    @DisplayName("更新店铺 — 店铺归属其他商家 → FORBIDDEN，不落库")
+    @DisplayName("更新店铺 — 店铺归属其他商家 → FORBIDDEN(403)，不得用 not-found 掩盖，不落库")
     void shouldThrowForbidden_whenShopBelongsToOtherMerchant() {
         when(merchantRepository.findByUserId(100L)).thenReturn(Optional.of(merchant(1L, 100L)));
         when(shopRepository.findById(5L)).thenReturn(Optional.of(shop(5L, 2L, ShopStatusEnum.NORMAL)));
@@ -218,6 +249,11 @@ class ShopManagerTest {
                 () -> shopManager.updateMyShop(100L, 5L, new UpdateShopReq()));
 
         assertEquals(ErrorCode.FORBIDDEN, ex.getErrorCode());
+        // 越权必须是 403（09 §三·六「未认证/无权限」），不得退化成 not-found
+        assertNotEquals(ErrorCode.SHOP_NOT_FOUND, ex.getErrorCode(),
+                "越权不得用「店铺不存在」掩盖（本仓无「反枚举」产品要求）");
+        assertEquals(ErrorCategory.CLIENT, ErrorCategory.of(ex.getErrorCode()));
+        assertTrue(ex.getErrorCode().getHttpStatus().is4xxClientError());
         verify(shopRepository, never()).updateProfile(any(Shop.class));
     }
 

@@ -15,6 +15,9 @@ import org.icedamericanomall.cart.domain.repository.CartRepository;
 import org.icedamericanomall.cart.infrastructure.persistence.CartMapper;
 import org.icedamericanomall.cart.infrastructure.persistence.CartRepositoryImpl;
 import org.icedamericanomall.cart.infrastructure.persistence.CartSkuViewQueryImpl;
+import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BadRequestException;
+import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.utils.IdGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,6 +29,7 @@ import javax.sql.DataSource;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -142,11 +146,38 @@ class CartManagerH2Test {
         assertTrue(items.get(0).getSelected());
     }
 
+    /**
+     * 拆分守卫（批次 ③「拆双义错误码」，H2 端到端口径）：<b>形态非法 → 400 / 1101</b>，不落行。
+     *
+     * <p><b>改前必失败</b>：改前本用例（原名 {@code shouldReject_whenBusinessKeyInvalid}）
+     * 只断言「抛 {@code BizException}」，实际拿到的是 {@code SKU_NOT_FOUND(3016)} ——
+     * 「形态非法」与「SKU 不存在」在真实仓储链路上被同一个码吞掉。现在改为断言
+     * {@link BadRequestException} + {@code PARAM_ERROR}，旧实现<b>必然</b>红。
+     */
     @Test
-    @DisplayName("addItem — 业务键格式非法/不存在 → SKU_NOT_FOUND，且不落任何行（fail-closed）")
-    void shouldReject_whenBusinessKeyInvalid() {
-        assertThrows(org.icedamericanomall.common.exception.BizException.class,
+    @DisplayName("addItem — 业务键形态非法 → PARAM_ERROR(400/1101)，且不落任何行（fail-fast）")
+    void shouldRejectMalformed_whenBusinessKeyInvalid() {
+        BadRequestException ex = assertThrows(BadRequestException.class,
                 () -> cartManager.addItem(1L, addReq("prod-001", 1)));
+        assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
+        assertTrue(cartRepository.findByUserIdOrderByCreateTimeDesc(1L).isEmpty());
+    }
+
+    /**
+     * 另一半（H2 端到端）：<b>形态合法但 SKU 不存在 → SKU_NOT_FOUND(3016)</b>，同样不落行。
+     *
+     * <p>与上一条用例<b>共享同一张 H2 表</b>、只在入参形态上不同 —— 于是「两个语义被写成一个码」
+     * 这类回归无法伪装成通过。
+     */
+    @Test
+    @DisplayName("addItem — 形态合法但 SKU 不存在 → SKU_NOT_FOUND(3016)，且不落任何行（fail-closed）")
+    void shouldRejectAbsent_whenBusinessKeyWellFormed() {
+        String unknownWellFormed = "deadbeefdeadbeefdeadbeefdeadbeef";
+
+        BizException ex = assertThrows(BizException.class,
+                () -> cartManager.addItem(1L, addReq(unknownWellFormed, 1)));
+        assertEquals(ErrorCode.SKU_NOT_FOUND, ex.getErrorCode());
+        assertNotEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
         assertTrue(cartRepository.findByUserIdOrderByCreateTimeDesc(1L).isEmpty());
     }
 

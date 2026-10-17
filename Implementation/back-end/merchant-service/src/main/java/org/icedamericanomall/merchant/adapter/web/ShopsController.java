@@ -18,9 +18,15 @@ import org.springframework.web.bind.annotation.RestController;
  *   When GET /api/shops/{shopId}
  *   Then 返回 ShopVO（shopId/sellerId/shopName/shopLogo/contactPhone/address/status）
  *
- * Scenario: 查看不存在或非正常状态的店铺
+ * Scenario: 查看不存在的店铺
  *   When GET /api/shops/{shopId}
- *   Then 抛 SHOP_NOT_FOUND（不再返回魔法值错误）
+ *   Then 抛 SHOP_NOT_FOUND（3015，纯「资源不存在」）
+ *
+ * Scenario: 店铺存在但状态非正常（审核中 / 冻结）
+ *   Given 店铺 shopId 存在且 status != 1
+ *   When GET /api/shops/{shopId}
+ *   Then 抛 BUSINESS_EXECUTION_EXCEPTION（3000）+ 自定义文案，HTTP 200
+ *     —— 这是「业务规则拒绝」，不是 not-found（批次 ③ 拆双义错误码）
  * </pre>
  */
 @RestController
