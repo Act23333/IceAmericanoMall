@@ -57,7 +57,67 @@ jobs:
       - name: Package
         run: mvn -f Implementation/back-end/pom.xml package -DskipTests
 
+  # Stage 1b: 前端设计 token 一致性
+  # 依据 project-docs/frontend/17-Frontend-Design-System.md §2.4。
+  # 不需要安装依赖 —— 检查脚本只用 node 内置模块。
+  # 拦住三类漂移：① 出现无人引用的 tailwind.config.*（Tailwind v4 是 CSS-first，不读 JS config）
+  # ② 17 §2.4 与 apps/web/app/globals.css 的 token 缺项或值不同 ③ 源码裸写 hex（当前为警告）
+  frontend-tokens:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 设计 token 一致性（17 §2.4 ⇄ apps/web/app/globals.css）
+        run: node Implementation/front-end/scripts/check-design-tokens.mjs
+
   # Stage 2: Docker 镜像构建 + 推送（仅 push main/develop）
+  # Stage 1c: 契约 ⇄ 后端 ⇄ 前端 三方一致性门禁（只读脚本，仅用 node 内置模块，无需装依赖）
+  # 依据 ADR-056（snake_case 线格式）、ADR-062（对外标识与寻址口径）、
+  #      09-constraints 三·六（错误承载四类划分）、ADR-063（承载层解耦）。
+  # 存在的理由：这些守卫此前只在开发者记得时才跑 —— B7b 曾因后端新增错误码让
+  # check-error-codes 变红却无人发现。门禁不进 CI，等于没有门禁。
+  consistency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 契约七节与代码端点一致性
+        run: node Implementation/back-end/scripts/check-section7.mjs
+
+      - name: 前端 API 死路径（源码剥注释后必须 0 命中）
+        run: node Implementation/front-end/scripts/check-frontend-api-paths.mjs
+
+      - name: 前端路径与契约路径互校
+        run: node Implementation/front-end/scripts/crosscheck-api-paths.mjs
+
+      - name: 前端错误码表与后端 ErrorCode
+        run: node Implementation/front-end/scripts/check-error-codes.mjs
+
+      - name: 查询参数命名（snake_case / POJO 绑定）
+        run: node Implementation/front-end/scripts/check-query-param-naming.mjs
+
+      # 端点漂移的唯一判据：codeOnly（代码里有、契约里没有）必须为 0。
+      # docOnly 是契约里标计划中的端点，属登记在册的待办，不是漂移，故不拦截。
+      - name: 端点漂移（codeOnly 必须为 0）
+        run: |
+          node Implementation/back-end/scripts/extract-endpoints.mjs > "$RUNNER_TEMP/endpoints.txt"
+          if ! grep -Eq '"codeOnly"[[:space:]]*:[[:space:]]*0([^0-9]|$)' "$RUNNER_TEMP/endpoints.txt"; then
+            echo "::error::端点漂移：codeOnly 不为 0（代码中存在契约未登记的端点）"
+            grep -E '"(matched|codeOnly|docOnly)"' "$RUNNER_TEMP/endpoints.txt"
+            exit 1
+          fi
+          grep -E '"(matched|codeOnly|docOnly)"' "$RUNNER_TEMP/endpoints.txt"
+
   docker:
     needs: build
     if: github.event_name == 'push'
@@ -85,7 +145,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Health check loop (target: gateway)
+      - name: "Health check loop (target: gateway)"
         run: |
           for i in $(seq 1 12); do
             http_code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/actuator/health 2>/dev/null || echo 000)
