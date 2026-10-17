@@ -54,6 +54,12 @@ jobs:
       - name: Run Unit Tests
         run: mvn -f Implementation/back-end/pom.xml test
 
+      # 根文档计数必须由脚本生成（--write 是唯一写入口）：手改数字下次 --check 必红。
+      # 放 build job 而非 consistency job：这里刚跑完全量测试，surefire 报告在工作区；
+      # consistency job 不跑 mvn，放那儿等于把「测试数」这条断言关掉。
+      - name: Doc counts (--check)
+        run: node Implementation/back-end/scripts/sync-doc-counts.mjs --check --strict-tests
+
       - name: Package
         run: mvn -f Implementation/back-end/pom.xml package -DskipTests
 
