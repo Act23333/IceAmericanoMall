@@ -84,6 +84,18 @@
 - **16 个里 4 个 fail-open（无 throw）**：`Kg / KnowledgeVector / Member / NoteVector`；其余 12 个 fail-closed 抛 `SYSTEM_BUSY`（503/TRANSIENT/可重试）
 - **U11 未做**：`PayManager` 仍 9 处 `ORDER_NOT_FOUND`
 
+#### 剩余 14 个的**实测形态**（2026-10-18 逐个读源码所得，省去重新摸索）
+| 文件 | 行数 | 现状 | 判断 |
+|---|---|---|---|
+| `VerificationClientFallback` | 61 | 已返回 `fail(SERVICE_UNAVAILABLE)` | ✅ **本来就是 fail-closed**（不是缺陷）；仅缺 `CLIENT` 透传——但需先确认 verification-service 对"验证码错"是回 4xx 还是 200+ResultCode，**不要凭猜改** |
+| `UserClientFallback` | 31 | `getOrCreateUser` 返回 **`null`** | ❌ **真缺陷**：建档 fail-open，调用方可能 NPE/重复建档 → 应 fail-closed |
+| `PointsClientFallback` | 18 | `addPoints` 返回 **`0L`** | ⚠️ 需核实调用方语义：`0` 若被当成"已发放 0 积分"即**静默成功** |
+| `TradeInvoiceClientFallback` | 38 | 两个 `void` 静默成功 | ⚠️ javadoc 写明「管理端筛选人工收敛，PRD D4 已知风险」→ **刻意的取舍**，改 fail-closed 会改变发布链路行为，需裁决 |
+| `TaskClientFallback` | 34 | `TaskCompleteResultCO(false,0)` | ✅ 显式失败对象，合理 |
+| `SpuVectorClientFallback` | 46 | 哨兵 `-1` + 空列表，可由 reindex 补齐 | ✅ 合理 |
+| `UserProfileClientFallback` | 49 | 空列表（纯展示） | ✅ 合理 |
+| `Notification` / `Order` / `OrderRefund` / `Promotion` / `Refund` / `Search` / `Sku` | 33–69 | 均已有 `SYSTEM_BUSY`，缺的是 `category == CLIENT → throw upstream` 的透传分流 | 待改（机械） |
+
 #### 续做 F 的必读要点（省去重新摸索）
 1. **真实 API（我踩过坑）**：`UpstreamFailures.classify(Throwable)` 返回 **`ErrorCategory`**（不是 ErrorInfo）；
    `UpstreamException.findIn(cause)` 返回可空；fail-closed 承载是 **`ErrorCode.SYSTEM_BUSY`**（不是 `BUSINESS_EXECUTION_EXCEPTION`——后者是 200/RULE/不可重试，曾误用在 `BalanceClientFallback`，已修）
