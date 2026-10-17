@@ -1,6 +1,6 @@
 # 05 — API 规格文档 (API Specification — SDD)
 
-> **最后更新**: 2026-10-18（**批次 ④「登录失败口径与抗枚举」**：登录失败统一 `401 + 3007 + 中性文案`（§2.0 末 + §4.1.1），`3007/3008` 的 `HttpStatus` 由 200 纠正为 401、`1017` 退役；**端点集合零变化**；上一批 = 甲b 落码回写（I70 / `spu_name`）） | **版本**: V5.22.0
+> **最后更新**: 2026-10-18（**批次 C1「契约收口四组并批」**：`Result<Map>` → 9 处类型化 VO（§1.10 三级 BREAKING 登记）、12 个 not-found 业务码落 **HTTP 404**（§二 例外由 3 项扩为 15 项）、I40/I55 退款「数据不完整」口径（`1000`/500/`BUG`）、U28 通知类型 10 值 + P14 评价排序 3 值订正；**端点集合零变化 289 / 0 / 43**；上一批 = 批次 ④ 登录失败口径与抗枚举） | **版本**: V5.23.0
 >
 > **端点计数（可核验三元组，2026-10-18 由 `Implementation/back-end/scripts/extract-endpoints.mjs` 实测）**：**代码侧已实现 289**（公共 226 + 内部 63）+ **契约 §四 表行去重 332**；**matched 289 / codeOnly 0 / docOnly 43**（批次 ④ 未增删端点，实测与上一批一致）。
 >
@@ -69,7 +69,7 @@
 
 - 成功: `code=200`, `data` 为业务数据
 - 失败: `code≠200`, `msg` 为错误描述，`data` 为 null
-- `/internal/**` 路径**不包装** Result。**V5.4 修正**：内部接口错误响应的 HTTP 状态码 = `ErrorCode` 对应状态（不再一律 500），body 为极简 `{"code":...,"msg":...}`（不含 `data`，不构成 `Result` 信封契约）；注意业务码 3000-3041 的 HTTP 状态本身为 200，调用方需按 body 内 `code` 判定业务失败。
+- `/internal/**` 路径**不包装** Result。**V5.4 修正**：内部接口错误响应的 HTTP 状态码 = `ErrorCode` 对应状态（不再一律 500），body 为极简 `{"code":...,"msg":...}`（不含 `data`，不构成 `Result` 信封契约）；注意业务码码段（`3000-3042`，旧文写 `3000-3041`）的 HTTP 状态**默认**为 200，调用方需按 body 内 `code` 判定业务失败；**例外 15 项**（12 个 not-found 码 → **404**、`3011` → 404、`3007`/`3008` → 401，清单见 §2.1a）—— 例外码的 HTTP 状态即 `ErrorCode` 状态，**`3000` 仍为 200**。
 - 全平台方法参数校验失败（`@Valid` 请求体 / `@Validated` 方法参数 / 表单绑定）统一映射为 `400 PARAM_ERROR(1101)`（**V5.4 收紧**，此前部分场景被兜底为 500）。
 
 ### 1.4 分页
@@ -209,7 +209,7 @@ ADR-062 是决策记录，承担「历史字形」的存证职责。）
 | 载体 | 线上名 | 实测（2026-10-17） | 处置 |
 | :-- | :-- | :-- | :-- |
 | `HistoryVO`（U22 足迹） | `product_name` | `user-service` `adapter/response/HistoryVO.java` 以 `@JsonProperty("product_name")` **显式钉名**（javadoc 原话「避免改动前端报文契约」） | **保留为已登记例外** —— 不属「`spu_name` 名称收口」范围。**§1.8④（甲a）已二次标注**：这是全平台**唯一**保留的 SPU 名旧键，**勿顺手统一** |
-| S11 / AD14 统计行 | `spu_name` | `SellerDashboardManager.spuStats` / `AdminManager.topSpus` 返回 `Map` 的**字面键** —— 2026-10-18 实测均为 `"spu_name"`（`spuStats` 走常量 `KEY_SPU_NAME`，`topSpus` 用字面量），聚合源字段 `OrderItem.spuName` | ✅ **已收口（B5，2026-10-18 B7a 实测复核）** —— 原记 `productName`（camelCase）/「⏳ 待收口随 B5」已作废；BREAKING 已随 B5 落地（ADR-062 §后果 E2） |
+| S11 / AD14 统计行 | `spu_name` | `SellerDashboardManager.spuStats` / `AdminManager.topSpus` 返回 **`SpuStatVO.spu_name`**（批次 C1 起为 VO 字段、不是 Map 字面键；`SNAKE_CASE` 渲染）—— 2026-10-18 实测均为 `"spu_name"`（`spuStats` 走常量 `KEY_SPU_NAME`，`topSpus` 用字面量），聚合源字段 `OrderItem.spuName` | ✅ **已收口（B5，2026-10-18 B7a 实测复核）** —— 原记 `productName`（camelCase）/「⏳ 待收口随 B5」已作废；BREAKING 已随 B5 落地（ADR-062 §后果 E2） |
 | `CartItemCO`（I16 内部 Feign DTO） | `spu_name` | `ia-api` `dto/CartItemCO.java` 字段 `spuName`（cart → trade）；javadoc 明记「`productName`（线格式键 `product_name`）**已退役**」 | ✅ **已收口（B5，2026-10-18 B7a 实测复核）** —— 原记「⏳ 待收口随 B5」已作废 |
 | 前端页面路由 `/product/[id]`、`/seller/products`、`/admin/products` | — | 是**前端路由**，不是 API 路径 | **本批不动**；是否随 B6 改名另议（§十二 12.2） |
 | 非 API 命名空间：MinIO objectKey 前缀 `wxa-code/product/`、ES 索引名 `index=products`、DB 表 `note_product`、CDN 示例 `.../product/main_001.jpg`、示例串 `..._product_P001` | — | **不是 API 路径段** | **保留** —— 改名会孤立既有缓存对象 / 索引，收益为零（ADR-062 §决策 2 表 B）。⚠ **唯一例外（B7a 追加）**：小程序码 **objectKey 的形状**按 §1.9⑦-2 改为 **`wxa-code/v1/product/{内容哈希}.png`**（`v1/` 版本段承载旧键灰度）；`wxa-code/` 命名空间与 `product/` 层级**仍保留**，改的只是「用什么当键」—— ✅ **B7b 已落码**（`SpuShareManager#objectKeyOf`） |
@@ -264,16 +264,54 @@ ADR-062 是决策记录，承担「历史字形」的存证职责。）
 
 ---
 
+### 1.10 批次 C1：`Result<Map>` → 类型化 VO 与 BREAKING 登记（🆕 2026-10-18）
+
+> **为什么改**：下列 9 个端点此前以 `Map<String,Object>` / `List<Map<String,Object>>` 作为出参 —— 属 `collaboration/09-constraints.md` 的「Controller / Manager 返回 Map」反模式：字段名无编译期约束、单位无从声明、契约只能写「键大概有这些」。**批次 D 已把实现改为强类型 VO（聚合口径与数值零改动，纯类型重构）**，本批（C1）把契约同步到实现，并把影响面按「是否影响线上字节」分三级登记。
+>
+> **根因先说清（否则会被误读为本批引入的破坏）**：Map 字面键**绕开**了全局 `spring.jackson.property-naming-strategy: SNAKE_CASE` —— 该策略只作用于**对象字段**，管不到 `Map` 的 key。于是同一份契约下出现两种方言：VO 端点发 snake_case、Map 端点发 camelCase。改成 VO 后统一为 snake_case。
+
+**① 线上键 BREAKING（键名逐字节变化）—— S10 / AD11 / T22**
+
+| 端点 | 改前（实现实际发出的键） | 改后（= 契约**原本就已声明**的键） |
+| :-- | :-- | :-- |
+| S10 `GET /api/trade/seller/dashboard` | `todayOrderCount` / `pendingShipCount` / `monthlyRevenue` | `today_order_count` / `pending_ship_count` / `monthly_revenue` |
+| AD11 `GET /api/trade/admin/dashboard` | `totalUsers` / `totalOrders` / `completedOrders` / `totalRevenue` / `todayOrders` / `todayRevenue` | `total_users` / `total_orders` / `completed_orders` / `total_revenue` / `today_orders` / `today_revenue` |
+| T22 `GET /api/seller/finance/balance` | `sellerId` / `balance` | `seller_id` / `balance` |
+
+> **这是「把实现改成契约」，不是「契约改了」**：上述 snake_case 键名在本契约中早已写定，是**实现**游离于契约之外。
+> **实测影响面为零**：`Implementation/front-end/**` 对这三个端点**零消费**（2026-10-18 实测）。前端若曾按 camelCase 取键，按上表改名。
+
+**② 类型级 BREAKING（响应元素的弱类型承诺消失）—— S11 / AD13 / AD14 / AD15**
+
+- 响应元素由 `Map` 变为 VO：**字段集合与键名均未变**，按契约字段编码的客户端**无运行时变化**；消失的是「任意未知键都可能出现、客户端也不会报错」这层宽松承诺。
+- **AD13 / AD15 是「声明名纠错」**：契约原写 `TrendDataVO` / `DailySalesVO`，而**这两个类在代码中从不存在**（实测 `grep` 零命中）；现行类名为 `OrderTrendVO` / `SalesByDateVO`。**线上报文未变**，变的是契约里的类型名。
+- **AD14 是反向情形**：契约早已声明 `List<SpuStatVO>`、代码缺该类（B4 曾按实测回退成 Map）；**批次 D 补齐该类**，契约恢复原声明（§十二 12.2 已标 ✅）。
+
+**③ 非 BREAKING（键名逐字节不变）—— M7 / U29**
+
+- M7 `GET /api/coupon/count`（`UserCouponCountVO`）与 U29 `GET /api/notifications/unread-count`（`UnreadCountVO`）的键都是**单词**：`available` / `used` / `expired` / `unread` —— 在 `SNAKE_CASE` 下与改造前 Map 字面键**逐字节相同**，**线上键名不变、前端零改动**。
+
+> **单位口径本批首次成文**：上述 9 个端点的金额字段一律**整数分**（`Integer`），字段名不带单位后缀，单位只在 §4.3.4 / §4.6.5 / §4.13.4 的字段表与各 VO 的 javadoc 声明。
+> **端点集合零变化**：本批**不新增、不删除任何端点**，三元组维持 **289 / 0 / 43**（见文件头）。
+
 ## 二、错误码体系
 
 > **V5.4 对齐实现**（`ia-common` `ErrorCode` 枚举，**实测 98 个**）：基础码 1xxx / 业务码 3xxx / 第三方码 4xxx / AI 码 31xx。
-> **业务码区间（本批次更正）**：**`3000-3041`** 的 HTTP 状态为 200（业务失败不等于传输失败），前端按 body 内 `code` 分流。⚠ **例外共三个**：①`3011 PRODUCT_NOT_FOUND` 的 `HttpStatus` 已按 `collaboration/09-constraints.md` §三·六纠正为 **404**（资源不存在走真 404 + `1103`），且该码已 `@Deprecated`、生产代码零引用；②③**`3007 PASSWORD_ERROR` 与 `3008 USER_STATUS_ABNORMAL` 于 2026-10-18（批次 ④）纠正为 `401`** —— 见 §2.0 末「登录失败口径」与 §4.1.1「A1 登录失败语义」：登录失败若用 200 承载，与「账号不存在」的 404 之间的差异本身就是账号枚举信道。旧文写 `3000-3039` 已过期——枚举中 `3040 FREIGHT_TEMPLATE_NAME_EXISTS`、`3041 FREIGHT_TEMPLATE_NOT_FOUND` 同为 `HttpStatus.OK`。
+> **业务码区间（本批次更正）**：码段 **`3000-3042`**（旧文写 `3000-3039` / `3000-3041`；2026-10-18 实测枚举另含 `3042 CART_ITEM_LIMIT_EXCEEDED`）的业务码**默认**用 HTTP 200 承载（业务失败不等于传输失败），前端按 body 内 `code` 分流。⚠ **例外共 15 项（2026-10-18 批次 ① 由「三个」扩为 15 项，完整清单见 §2.1a）**，**不是「一律 404」**：
+>
+> - **① 12 个 not-found 业务码改配 `404`**（批次 ①，依据 `collaboration/09-constraints.md` §三·六「资源不存在 = 真 404」）：`3009 ORDER_NOT_FOUND`、`3015 SHOP_NOT_FOUND`、`3016 SKU_NOT_FOUND`、`3017 HOME_CONFIG_NOT_FOUND`、`3019 COUPON_NOT_FOUND`、`3020 FLASH_SALE_NOT_FOUND`、`3032 APPLICATION_NOT_FOUND`、`3033 WITHDRAWAL_NOT_FOUND`、`3034 NOTIFICATION_NOT_FOUND`、`3035 LOGISTICS_NOT_FOUND`、`3036 REVIEW_NOT_FOUND`、`3041 FREIGHT_TEMPLATE_NOT_FOUND`。**业务码与文案一字未动** —— 前端仍需区分「订单不存在」与「店铺不存在」，变的只是**承载它的 HTTP 状态**（此前这些失败全落 `fetch` 的 `then` 分支，现在会进 `catch`）。
+> - **② 既有 3 项（本批未改动其状态）**：`3011 PRODUCT_NOT_FOUND` 已 `@Deprecated`、`HttpStatus` 纠正为 **404**、生产代码零抛出；**`3007 PASSWORD_ERROR` 与 `3008 USER_STATUS_ABNORMAL` 于 2026-10-18（批次 ④）纠正为 `401`** —— 见 §2.0 末「登录失败口径」与 §4.1.1「A1 登录失败语义」。
+>
+> **⚠ 两类不得混用（判据是「资源在不在」，不是「请求成不成」）**：
+> - **资源不存在 → 真 404**：上列 12 个 not-found 码 + `1102` / `1103` / `3011`；
+> - **资源存在、请求合法、规则不允许 → 200 + 业务码**：`3000` / `3010` / `3012` / `3013` / `3014` / `3018` / `3021`-`3024` / `3030` / `3031` / `3037` / `3038` / `3039` / `3040` / `3042`。**`3000 BUSINESS_EXECUTION_EXCEPTION` 永远 200，不得并入 404**；**`3007` / `3008` 属「未认证」类 → 401，也不在 404 清单内**（登录失败若回 404，`404 vs 401` 的差异本身就是账号枚举信道）。
 >
 > **收录口径声明（重要，避免把本节误读为全量清单）**：枚举 98 个码中，本节**只列前端需要分流 / 展示文案的子集**，共 40 个——即下列 §2.0（1xxx 基础码与网关类）、§2.1（3xxx 业务码速查）、§2.2（31xx AI 专项）。**未收录的约 58 个**主要分两类，前端**无需逐码分支**：
 > | 未收录类别 | 码段 | 前端处理建议 |
 > | :-- | :-- | :-- |
 > | 第三方与加解密类 | `4000-4045`、`4050-4053`、`4999`、`5000-5002` | 一律按"服务暂不可用"统一提示（可由 `msg` 直显），**不分支** |
-> | 细分业务码（HTTP 200 信封内） | `3004/3009/3011/3016/3017/3018/3020-3038` 等 | 直接展示服务端 `msg`；仅在需要**定制交互**（如余额不足引导换支付方式）时才按码分支，此类已在本节列出 |
+> | 细分业务码（HTTP 200 信封内） | `3004/3018/3021-3024/3030/3031/3037/3038/3039/3040/3042` 等 | 直接展示服务端 `msg`；仅在需要**定制交互**（如余额不足引导换支付方式）时才按码分支，此类已在本节列出 |
+> | 细分业务码（**真 404**，不在 200 信封内） | `3009/3015/3016/3017/3019/3020/3032/3033/3034/3035/3036/3041`（+ `3011`） | 与 4xx 同类处理：`404` 即「资源不存在」，前端落通用错误页 / 空态；`code` 与 `msg` 仍可用于细化文案。**原先把这些码归入「200 信封内」是过期口径（批次 ① 重划）** |
 > 完整枚举与 HTTP 状态映射以 `Implementation/back-end/ia-common/src/main/java/org/icedamericanomall/common/enums/ErrorCode.java` 为唯一事实来源；本表与其不一致时**以枚举为准**。
 
 ### 2.0 基础错误码（1xxx，含网关与风控）
@@ -324,21 +362,52 @@ ADR-062 是决策记录，承担「历史字形」的存证职责。）
 | 3006 | 用户已存在（并发重复入驻申请等） | "请勿重复提交" |
 | **3007** | **登录失败（唯一对外码）**（`PASSWORD_ERROR`，🆕 本批次补录——**登录失败最高频分支，必备**；⚠ **2026-10-18 批次 ④ 起：HTTP `200 → 401`，文案改中性，并成为「账号不存在 / 密码错 / 账号状态不可登录 / 风控冻结」四类失败的统一出口**） | "账号或密码不正确"（**不得**再复述是密码错、更不得提示「账号不存在」，防账号枚举） |
 | **3008** | **用户状态异常**（`USER_STATUS_ABNORMAL`，🆕 本批次补录；⚠ **2026-10-18 批次 ④：HTTP `200 → 401`；登录链路禁止使用**，登录侧一律改抛 `3007`。本码仅保留给非登录域，如 user-service 冻结用户的资料读取） | "用户状态异常"（仅非登录域；登录页**不得**展示可区分的状态文案） |
-| **3009** | **订单不存在**（`ORDER_NOT_FOUND`，🆕 本批次补录） | "订单不存在或已删除" + 刷新列表 |
+| **3009** | **订单不存在**（`ORDER_NOT_FOUND`，🆕 本批次补录；**HTTP 404**，批次 ①） | "订单不存在或已删除" + 刷新列表 |
 | 3010 | 订单状态不支持此操作（不可取消等） | "当前订单状态不允许该操作"    |
 | **3011** | **商品不存在**（`PRODUCT_NOT_FOUND`，🆕 本批次补录）⚠ **2026-10-18 B7b 起 `@Deprecated` 且 HTTP 改为 404**（原 200 信封）：资源不存在统一抛 `NO_RESOURCE_FOUND(1103)` + 真 404，本码仅兼容存量引用保留 | "商品已下架或不存在" |
 | 3012 | 库存不足     | "该商品库存不足，请调整数量"  |
 | 3013 | 购物车为空   | "先去逛逛挑点好物吧" |
 | 3014 | 跨店下单     | "暂不支持跨店下单" |
-| 3015 | 店铺不存在   | "店铺不存在或已关闭" |
-| **3016** | **SKU 不存在**（`SKU_NOT_FOUND`，🆕 本批次补录） | "该规格已下架，请重新选择" |
+| 3015 | 店铺不存在（`SHOP_NOT_FOUND`；**HTTP 404**，批次 ①） | "店铺不存在或已关闭" |
+| **3016** | **SKU 不存在**（`SKU_NOT_FOUND`，🆕 本批次补录；**HTTP 404**，批次 ①） | "该规格已下架，请重新选择" |
 | **3018** | **该商品已评价**（`REVIEW_ALREADY_EXISTS`，🆕 本批次补录） | "该商品已评价过" |
-| 3019 | 优惠券不存在/不可用 | "该优惠券不适用于当前订单"   |
-| 3020-3024 | 秒杀（活动不存在/未开始/售罄/超限购/失败） | "秒杀活动已结束"等 |
-| **3030-3038** | **售后/提现/通知/物流/评价细分码**（`APPLICATION_EXISTS` 3030、`AFTER_SALE_EXISTS` 3031、`APPLICATION_NOT_FOUND` 3032、`WITHDRAWAL_NOT_FOUND` 3033、`NOTIFICATION_NOT_FOUND` 3034、`LOGISTICS_NOT_FOUND` 3035、`REVIEW_NOT_FOUND` 3036、`REVIEW_ALREADY_REPLIED` 3037、`REVIEW_APPEND_CONFLICT` 3038，🆕 本批次补录码段） | 直接展示服务端 `msg`（无需逐码定制交互） |
+| 3019 | 优惠券不存在/不可用（`COUPON_NOT_FOUND`；**HTTP 404**，批次 ①） | "该优惠券不适用于当前订单"   |
+| 3020-3024 | 秒杀（活动不存在/未开始/售罄/超限购/失败）。**⚠ 只有 `3020 FLASH_SALE_NOT_FOUND` 是 HTTP 404（批次 ①）；`3021`-`3024` 仍是 200** | "秒杀活动已结束"等 |
+| **3030-3038** | **售后/提现/通知/物流/评价细分码**（`APPLICATION_EXISTS` 3030、`AFTER_SALE_EXISTS` 3031、`APPLICATION_NOT_FOUND` 3032、`WITHDRAWAL_NOT_FOUND` 3033、`NOTIFICATION_NOT_FOUND` 3034、`LOGISTICS_NOT_FOUND` 3035、`REVIEW_NOT_FOUND` 3036、`REVIEW_ALREADY_REPLIED` 3037、`REVIEW_APPEND_CONFLICT` 3038，🆕 本批次补录码段；**⚠ 其中 `3032` / `3033` / `3034` / `3035` / `3036` 五个 not-found 码为 HTTP 404（批次 ①），`3030` / `3031` / `3037` / `3038` 仍为 200**） | 直接展示服务端 `msg`（无需逐码定制交互） |
 | 3039 | 退款状态不支持此操作（`REFUND_STATUS_INVALID`，✅ V5.6：重试仅限"失败"退款单、回写仅限"同意(2)/已退货(4)"售后单、已退款(5)售后单不可再审核/再确认退货等状态类拒绝） | "当前退款状态不允许该操作" |
 | 3040 | 运费模板名称已存在（`FREIGHT_TEMPLATE_NAME_EXISTS`，✅ V5.6：同商家模板名唯一 `uk_seller_template`） | "运费模板名称已存在" |
-| 3041 | 运费模板不存在（`FREIGHT_TEMPLATE_NOT_FOUND`，✅ V5.6：模板不存在 / 非本商家模板统一按此拒绝，含商品绑定他人模板） | "运费模板不存在" |
+| 3041 | 运费模板不存在（`FREIGHT_TEMPLATE_NOT_FOUND`；**HTTP 404**，批次 ①；✅ V5.6：模板不存在 / 非本商家模板统一按此拒绝，含商品绑定他人模板） | "运费模板不存在" |
+
+### 2.1a not-found 例外清单（15 项：3xxx 中的真 404 / 401 集合，🆕 2026-10-18 批次 ①）
+
+> **本表是「哪些 3xxx 业务码不走 200 信封」的唯一清单**；未列入的 3xxx 码一律 HTTP 200 + body 内 `code`。
+> 依据：`collaboration/09-constraints.md` §三·六「错误承载的四类划分」—— **「资源不存在」= 真 404 + 业务码**，只有「业务规则拒绝」（资源存在、请求合法、规则不允许）才用 200 + body `code`。
+> **前端迁移提示**：这 12 个 not-found 码的 `code` 与 `msg` **一字未变**，变的只是承载它的 HTTP 状态。此前它们全落 `fetch(...).then()` 的成功分支（按 body `code` 分流），现在会进 `catch`/`!res.ok` 分支 —— **两处逻辑必须都能识别这些码**，否则会出现「服务端已返回错误、前端当成成功」的静默失败。
+
+| # | 码 | 枚举名 | HTTP | 抛出方（2026-10-18 实测 `*/src/main`） | 说明 |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| 1 | `3009` | `ORDER_NOT_FOUND` | **404** | trade-service / pay-service / logistics-service | 订单不存在；**pay 侧同码用于「支付单不存在」**（I55，§4.14.15b） |
+| 2 | `3015` | `SHOP_NOT_FOUND` | **404** | merchant-service | 店铺不存在或非正常营业（SH1 仅 `status=1` 可见） |
+| 3 | `3016` | `SKU_NOT_FOUND` | **404** | item-service / cart-service | SKU 不存在 |
+| 4 | `3017` | `HOME_CONFIG_NOT_FOUND` | **404** | item-service | 首页配置项不存在（**原 §2.1 码表未收录该码，本表补录**） |
+| 5 | `3019` | `COUPON_NOT_FOUND` | **404** | marketing-service | 券不存在 / 非本人券 / 非本店券（AD29 不泄露他人券存在性即依赖此码） |
+| 6 | `3020` | `FLASH_SALE_NOT_FOUND` | **404** | marketing-service | 秒杀活动不存在（⚠ 同码段 `3021`-`3024` 仍是 **200**） |
+| 7 | `3032` | `APPLICATION_NOT_FOUND` | **404** | trade-service | 售后申请不存在（`AfterSaleManager.requireAfterSale`） |
+| 8 | `3033` | `WITHDRAWAL_NOT_FOUND` | **404** | trade-service | 提现申请不存在 |
+| 9 | `3034` | `NOTIFICATION_NOT_FOUND` | **404** | notification-service | 站内信不存在 / 非本人 |
+| 10 | `3035` | `LOGISTICS_NOT_FOUND` | **404** | logistics-service | 物流记录不存在 |
+| 11 | `3036` | `REVIEW_NOT_FOUND` | **404** | —（枚举声明；**当前零生产抛出**） | 评价不存在 |
+| 12 | `3041` | `FREIGHT_TEMPLATE_NOT_FOUND` | **404** | item-service | 模板不存在 / **非本商家模板**（含商品绑定他人模板，防探测） |
+| 13 | `3011` | `PRODUCT_NOT_FOUND` | **404** | —（`@Deprecated`；main 面仅 ai-service 作兼容**读入**判定，无抛出方） | 商品不存在；资源不存在已统一改抛 `NO_RESOURCE_FOUND(1103)`（真 404） |
+| 14 | `3007` | `PASSWORD_ERROR` | **401** | authorization-service | 登录失败**唯一对外码**（批次 ④ 抗枚举，§2.0 末） |
+| 15 | `3008` | `USER_STATUS_ABNORMAL` | **401** | —（枚举声明；批次 ④ 起登录链路禁抛、改抛 `3007`；main 面零抛出） | 用户状态异常（仅非登录域语义保留） |
+
+> **三点澄清（防把本表误读为「一律 404」）**：
+> - **`3000 BUSINESS_EXECUTION_EXCEPTION` 仍为 `200`** —— 它是「业务规则拒绝」的兜底码（资源存在、请求合法、规则不允许），语义与「资源不存在」**正交**；把泛化兜底码改成 404，会把「库存不足」「状态不允许」一并变成 404。
+> - **`3007` / `3008` 是 `401`，不是 404** —— 属「未认证 / 凭证或身份不可用」，与「资源不存在」是两类失败；登录失败若回 404，`404 vs 401` 的差异本身就是账号枚举信道（§2.0 末硬约束）。
+> - **`3011` 保留 404 且已退役** —— 与上列 12 项并列为 15 项，属「既有例外」，**本批未改动其状态**。
+>
+> **受影响的端点族（§四 中引用上列码的端点行，其错误码标注已补 `404`，业务码与文案保留）**：订单/支付/物流（`3009`）、店铺（`3015`）、SKU（`3016`）、首页配置（`3017`）、优惠券（`3019`）、秒杀（`3020`）、售后（`3032`）、提现（`3033`）、通知（`3034`）、物流（`3035`）、评价（`3036`）、运费模板（`3041`）。
 
 > **V5.4 验证码校验失败错误码映射**（verification-service 结果码 → 对外错误码，authorization-service/user-service 调用侧统一）：
 > `CODE_MISMATCH → CAPTCHA_ERROR(3001)`；`CODE_EXPIRED → CAPTCHA_EXPIRED(3002)`；`TOO_MANY_ATTEMPTS → FREQUENT_ERROR(1014, HTTP 429)`。
@@ -739,11 +808,31 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 
 | #   | 方法     | 路径                                     | 认证  | 请求                                                             | 响应                      | 状态 | 阶段     |
 | --- | ------ | ---------------------------------------- | --- | ---------------------------------------------------------------- | ----------------------- | --- | ------ |
-| U28 | GET    | `/api/notifications`                     | 🔒  | Query: `type?`(String 业务类型), `page_num`(1), `page_size`(10) | `IPage<InAppMessageVO>` | ✅ | ✅ V5.2+ |
-| U29 | GET    | `/api/notifications/unread-count`        | 🔒  | —                                                              | `Map<String,Integer>` `{"unread": n}` | ✅ | ✅ V5.2+ |
+| U28 | GET    | `/api/notifications`                     | 🔒  | Query: `type?`(**枚举 10 值，单值精确匹配**，见本节下注), `page_num`(1), `page_size`(10) | `IPage<InAppMessageVO>` | ✅ | ✅ V5.2+ |
+| U29 | GET    | `/api/notifications/unread-count`        | 🔒  | —                                                              | **`UnreadCountVO`**（`{unread: n}`，单位**条** —— 批次 C1 由 `Map` 改为类型化 VO，**线上键名不变**） | ✅ | ✅ V5.2+ |
 | U30 | PUT    | `/api/notifications/{id}/read`           | 🔒  | Path: `id` (Long)                                              | `Void`                  | ✅ | ✅ V5.2+ |
 | U31 | PUT    | `/api/notifications/read-all`            | 🔒  | —                                                              | `Void`                  | ✅ | ✅ V5.2+ |
 | U32 | DELETE | `/api/notifications/{id}`                | 🔒  | Path: `id` (Long)                                              | `Void`                  | ✅ | ✅ V5.2+ |
+
+> **U28 `type?` 的合法值（🆕 2026-10-18，B10 前端审计交回）—— 共 10 个**
+>
+> 契约此前只写「String 业务类型」，前端无从核对。现按**生产方常量**逐条落定（**唯一事实来源是 4 个服务的生产者，不是某个枚举类** —— `notification-service` **自身没有 `type` 枚举**，它在 `notification` 表里只做透传存储）：
+>
+> | # | `type` 值 | 生产方（服务 / 常量） | 触发时机 |
+> | :-- | :-- | :-- | :-- |
+> | 1 | `LIKE` | item-service `ReviewManager.NOTIFY_TYPE_LIKE` | 评价被点赞 |
+> | 2 | `REPLY` | item-service `ReviewManager.NOTIFY_TYPE_REPLY` | 评价被商家回复 |
+> | 3 | `FOLLOW` | merchant-service `StoreFollowManager.NOTIFY_TYPE_FOLLOW` | 店铺被关注 |
+> | 4 | `ORDER_SHIPPED` | trade-service `TradeEventNotifier.NOTIFY_TYPE_ORDER_SHIPPED` | 订单发货 |
+> | 5 | `AFTER_SALE_REVIEWED` | trade-service `TradeEventNotifier.NOTIFY_TYPE_AFTER_SALE_REVIEWED` | 售后审核有结果 |
+> | 6 | `INVOICE_ISSUED` | trade-service `TradeEventNotifier.NOTIFY_TYPE_INVOICE_ISSUED` | 发票开具 |
+> | 7 | `INVOICE_RED_FLUSHED` | trade-service `TradeEventNotifier.NOTIFY_TYPE_INVOICE_RED_FLUSHED` | 发票冲红 |
+> | 8 | `INVOICE_VOIDED` | trade-service `TradeEventNotifier.NOTIFY_TYPE_INVOICE_VOIDED` | 发票作废 |
+> | 9 | `PAY_SUCCESS` | pay-service `PayEventNotifier.NOTIFY_TYPE_PAY_SUCCESS` | 支付成功 |
+> | 10 | `REFUND_SUCCESS` | pay-service `PayEventNotifier.NOTIFY_TYPE_REFUND_SUCCESS` | 退款成功 |
+>
+> - **语义**：`type` 与 `notification.type` 列**等值精确匹配**，大小写敏感（全大写 snake_case）；未知值 → **返回空分页不报错**（等值查不到行，不是 400）。
+> - **⚠ 后端不支持多值 / 分组筛选（能力缺口，已在 §十二 12.2 登记）**：`type` 只接受**单个值**（`@RequestParam String type`）。**不支持** `type[]`、`type=LIKE,REPLY` CSV、`type_group=interaction` 之类的写法 —— 传 CSV 会被当作一个整串去等值匹配，**静默返回空列表**（不报错、不告警）。前端做「互动 / 订单 / 发票」分组筛选时，只能客户端全量拉取后本地分组，会受分页限制而漏数据。
 
 **`InAppMessageVO`**:
 
@@ -837,7 +926,7 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 
 | #    | 方法  | 路径                              | 认证  | 请求                                                                                   | 响应                                 | 状态 | 阶段     |
 | ---- | --- | ------------------------------- | --- | ------------------------------------------------------------------------------------ | ---------------------------------- | --- | ------ |
-| SH1  | GET | `/api/shops/{shopId}`           | 🌐  | Path: `shopId` (Long)                                                                | `ShopVO`（**仅 shop.status=1 可见**；不存在/非正常 → `SHOP_NOT_FOUND(3015)`；**V5.11 增量 `decoration`**: `ShopDecorationVO`——店铺装修（公告/轮播/推荐商品位），未装修 → null） | ✅ | 🆕 V5.4 |
+| SH1  | GET | `/api/shops/{shopId}`           | 🌐  | Path: `shopId` (Long)                                                                | `ShopVO`（**仅 shop.status=1 可见**；不存在/非正常 → **404** `SHOP_NOT_FOUND(3015)`；**V5.11 增量 `decoration`**: `ShopDecorationVO`——店铺装修（公告/轮播/推荐商品位），未装修 → null） | ✅ | 🆕 V5.4 |
 | S4   | GET | `/api/shop/{sellerId}`          | 🌐  | Path: `sellerId` (Long)                                                              | `ShopVO`（遗留解析：seller_id → 该商家默认店铺） | ✅ | ✅ @Deprecated V5.4 |
 | S5   | GET | `/api/shop/{sellerId}/spus` | 🌐  | Path: `sellerId` (Long), Query: `page`(1), `size`(20), `sort?`(sales\|price\|newest) | `IPage<SpuVO>`                 | ⚪ | ⚪ 未实现（移入 §十二 roadmap——Phase A 店铺页商品列表用 P1 `seller_id` 过滤参数；shop_id 口径待 Phase B） |
 
@@ -863,8 +952,34 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 
 | #   | 方法  | 路径                                          | 认证  | 请求                | 响应                                                                         | 状态 | 阶段     |
 | --- | --- | ------------------------------------------- | --- | ----------------- | -------------------------------------------------------------------------- | --- | ------ |
-| S10 | GET | `/api/trade/seller/dashboard`               | 🏪  | —                 | `Map<String,Object>` `{today_order_count, pending_ship_count, monthly_revenue}` | ✅ | ✅      |
-| S11 | GET | `/api/trade/seller/dashboard/product-stats` | 🏪  | Query: `days`(30) | `List<Map<String,Object>>` (spu_name/quantity/revenue)                  | ✅ | ✅ V4.0 |
+| S10 | GET | `/api/trade/seller/dashboard`               | 🏪  | —                 | **`SellerDashboardVO`**（`{today_order_count, pending_ship_count, monthly_revenue}` —— 批次 C1 由 `Result<Map>` 改为类型化 VO，字段表见下） | ✅ | ✅      |
+| S11 | GET | `/api/trade/seller/dashboard/product-stats` | 🏪  | Query: `days`(30) | **`List<SpuStatVO>`**（元素 `{spu_name, quantity, revenue}` —— 批次 C1 由 `List<Map>` 改为类型化 VO，字段表见下）                  | ✅ | ✅ V4.0 |
+
+> **批次 C1（`Result<Map>` → 类型化 VO，2026-10-18）：S10 / S11 出参改为强类型 VO**
+>
+> 改前：`SellerDashboardManager` 以 `LinkedHashMap.put("todayOrderCount", …)` 就地拼 payload，契约侧只能写 `Map<String,Object>`。
+> 改后：出参为 `SellerDashboardVO` / `List<SpuStatVO>`（`trade-service` `adapter/response`），**聚合口径与数值零改动**（纯类型重构）。
+> 单位口径本批**首次成文**：金额字段一律**整数分**，与全平台「金额 = `Integer` 分」硬约束一致（改造前这些键在任何文档里都没有单位声明）。
+>
+> **`SellerDashboardVO`**（S10 出参）：
+>
+> | 字段 | 类型 | 单位 | 口径 |
+> | :-- | :-- | :-- | :-- |
+> | `today_order_count` | `long` | 笔 | `orders.create_time >= 今日零点`，**全状态下单笔数**（含待付款 / 已取消） |
+> | `pending_ship_count` | `long` | 笔 | `orders.status = 2`（待发货） |
+> | `monthly_revenue` | `Integer` | **分** | 本月**已完成**订单的 `orders.total_amount` 合计，**商品原价口径**（不含运费 `post_fee`、未减优惠）⇒ 与 T22 `SellerBalanceVO.balance`（`payAmount` 口径、已扣 5% 佣金）**不同源，不可互相校验** |
+>
+> **`SpuStatVO`**（S11 出参元素；与 AD14 **共用同一个 VO**）：
+>
+> | 字段 | 类型 | 单位 | 口径 |
+> | :-- | :-- | :-- | :-- |
+> | `spu_name` | `String` | — | `order_item.spu_name` **快照**。聚合键就是快照名 ⇒ 同一 SPU 改名前后会**拆成多行**、不同 SPU 同名会**合并且不可分**（既有算法口径，本批只换类型、未改算法） |
+> | `quantity` | `Integer` | 件 | `order_item.quantity` 累加 |
+> | `revenue` | `Integer` | **分** | `order_item.sub_total` 累加（下单时单价快照 × 数量 ⇒ 成交口径，非现价口径；不含运费） |
+>
+> ⚠ **S11 不限订单状态 —— 与 AD14 不可横向对比（硬约束）**：S11 走 `findBySellerAndCreateTimeAfter(...)`，**不限状态（含已取消订单的订单项）**；AD14 走 `findByStatus(COMPLETED)`，**仅已完成**。同一个 SPU 的 `revenue` 在 S11 语义更接近「下单额」、在 AD14 才是「成交额」，**禁止把两端的 `revenue` 相加或互相校验**。
+>
+> ⚠ **另两处已登记的既有口径差异（本批未改算法，如实登记）**：① S11 的 `days`（默认 30）实际覆盖 **`days + 1` 个自然日**（起点 = 今日零点减 `days` 天，含今日），而 AD13 的 `days` 恰好返回 `days` 行 —— **同名参数两种语义**；② S11 按 **`revenue` 金额倒序**全量返回、AD14 按 **`quantity` 销量倒序**并 `limit` 截断。两项均待产品裁决（§十二 12.2）。
 
 ---
 
@@ -898,7 +1013,6 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 >   ⚠ **另注（事实订正）**：任务口径曾称「沿用既有 `SPU_NOT_FOUND`」——**该错误码在 `ia-common` `ErrorCode` 中不存在**（全仓 `grep` 零命中），故本行按**实测**口径写定 1103，不新造枚举项。
 > - **路由无歧义**：`/by-code/{code}` 的 `by-code` 是**字面段**，与既有 `/{spuId}`（变量段）、`/page`（字面段）共存；Spring 路径匹配字面段优先于变量段，故 `GET /api/item/spu/by-code/8f3a1c9d20` **不会**被 `/{spuId}` 吞掉。**网关零改动**：`/api/item/**` 既有路由且**仅 GET 匿名**已覆盖（§六）。
 > - **这是承载层解耦的产物（口径原文）**：**`scene` 只有 32 可见字符预算，而业务键 32-hex 加 `p=` 前缀即 34 字符 → 超限**，故 `scene` 里放**短码**、由 P38 换回 SPU。**短码不是实体标识：不得用于任何业务判断，也不得替代 `spu_id`。**（ADR-063 §决策 7 表 #2 / §决策 8）
-
 
 **`SpuVO`**（标识口径见 §1.8；`spu_id` 为 SPU 业务键 32-hex）:
 
@@ -991,11 +1105,24 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 | --- | ---- | ---------------------------------------------- | --- | ----------------------------------------------------------------------------------------------- | ----------------- | --- | --------- |
 | P12 | POST | `/api/item/review`                             | 🔒  | `ReviewCreateReq { order_no(32-hex，来源 OrderVO.order_no，ADR-050 三批), spu_id(String, **SPU 业务键 32-hex**，§1.8), rating(1-5), content?, images? }`            | `ReviewVO`        | ✅ | ✅         |
 | P13 | GET  | `/api/item/review/spu/{spuId}`         | 🌐  | Path: `spuId` (String, **SPU 业务键 32-hex**), Query: `page`(1), `size`(10), `sort?`(newest\|highest\|lowest)        | `IPage<ReviewVO>` | ✅ | ✅         |
-| P14 | GET  | `/api/item/review/spu/{spuId}/filter`  | 🌐  | Path: `spuId` (String, **SPU 业务键 32-hex**), Query: `rating?`(1-5), `has_media?`(Boolean), `page`(默认 1), `size`(默认 10), `sort?`(newest\|highest) | `IPage<ReviewVO>` | ✅ | ✅ V3.5    |
+| P14 | GET  | `/api/item/review/spu/{spuId}/filter`  | 🌐  | Path: `spuId` (String, **SPU 业务键 32-hex**), Query: `rating?`(1-5), `has_media?`(Boolean), `page`(默认 1), `size`(默认 10), `sort?`(**`newest`\|`highest`\|`lowest`**，见本节下注) | `IPage<ReviewVO>` | ✅ | ✅ V3.5    |
 | P15 | GET  | `/api/item/review/spu/{spuId}/summary` | 🌐  | Path: `spuId` (String, **SPU 业务键 32-hex**)                                                                        | `ReviewSummaryVO` | ✅ | ✅ V3.5    |
 | P16 | POST | `/api/item/review/{id}/reply`                  | 🏪  | Path: `id` (Long), Body: `{ content }` (商家回复)                                                   | `Void`            | ✅ | ✅ V5.0 |
 | P17 | POST | `/api/item/review/{id}/append`                 | 🔒  | Path: `id` (Long), Body: `{ content, media_urls? }` (追评)                                         | `Void`            | ✅ | ✅ V5.0 |
 | P18 | POST | `/api/item/review/{id}/like`                   | 🔒  | Path: `id` (Long)                                                                               | `Void` (点赞)       | ✅ | ✅ V5.0 |
+
+> **P13 / P14 的 `sort?` 合法值（🆕 2026-10-18，B10 前端审计交回）**
+>
+> 后端 `item-service` `domain/enums/ReviewSortEnum` 实为**三值**（P13 早已写全，P14 本批补齐）：
+>
+> | `sort` 值 | 语义 | 备注 |
+> | :-- | :-- | :-- |
+> | `newest` | 最新优先（默认） | 同分时以创建时间兜底 |
+> | `highest` | 评分从高到低 | 同上 |
+> | `lowest` | 评分从低到高 | **P14 本批补齐**（此前只写 `newest\|highest`） |
+>
+> - **⚠ `oldest` 不存在** —— 后端**没有**「最旧优先」枚举值（`newest` 的反序）。该能力缺口已在 §十二 12.2 登记。
+> - **⚠ 非法码会被静默吞掉**：`ReviewSortEnum#fromCode(code)` 于未知码**回退 `NEWEST`**（**不抛 400、不告警、不返回错误**）。即前端传 `oldest` / `Latest` / `HIGEST` 之类的拼写错误时，**得到的是「最新优先」**且**毫无提示** —— 这正是本批要把枚举值写进契约的原因。前端请**只用上表三值**，并自行做一层白名单校验。
 
 **`ReviewVO`**（标识口径见 §1.8；`spu_id` 为 SPU 业务键 32-hex）:
 
@@ -1126,7 +1253,7 @@ ws(s)://<gateway>/ws/chat/...?token=<access_token>
 }
 ```
 
-> - **错误语义（V5.6 按实现对齐，ADR-037）**：同商家模板名重复（唯一键 `uk_seller_template`）→ `3040 FREIGHT_TEMPLATE_NAME_EXISTS`；必填缺失 / `fee`<0 / `free_threshold`<0 → 400 `PARAM_ERROR(1101)`；模板不存在 / **非本商家模板**（编辑、删除、商品绑定他人模板）→ 统一 `3041 FREIGHT_TEMPLATE_NOT_FOUND`（不区分"不存在"与"归属他人"，防探测）。原草拟的 3006/1103/403 语义不符，已作废。
+> - **错误语义（V5.6 按实现对齐，ADR-037）**：同商家模板名重复（唯一键 `uk_seller_template`）→ `3040 FREIGHT_TEMPLATE_NAME_EXISTS`；必填缺失 / `fee`<0 / `free_threshold`<0 → 400 `PARAM_ERROR(1101)`；模板不存在 / **非本商家模板**（编辑、删除、商品绑定他人模板）→ 统一 **404** `3041 FREIGHT_TEMPLATE_NOT_FOUND`（不区分"不存在"与"归属他人"，防探测）。原草拟的 3006/1103/403 语义不符，已作废。
 > - **计价消费方**：trade 下单计价经内部端点 I43（§4.14.17）批量取模板（**降级 fail-closed**：查询失败下单抛错，不默认免邮）；下单快照 `post_fee` 后模板改价/停用不影响已建订单。计价规则（最高 fee 计一次 / 满额包邮 / 默认模板回落）见 04 §十二 12.2。
 
 **F2 验收场景（BDD，V5.6 已实现——每条 Scenario ≥1 测试）**：
@@ -1417,9 +1544,18 @@ Feature: 拆单发货（F3）
 | --- | ---- | ------------------------------------- | --- | ------------------------------------------------------------------- | ------------------------------------------ | --- | --- |
 | T20 | GET  | `/api/seller/finance/settlement/page` | 🏪  | Query: `page`(1), `size`(20)                                        | `IPage<SettlementVO>`                      | ✅ | ✅   |
 | T21 | GET  | `/api/seller/finance/settlement/{id}` | 🏪  | Path: `id` (Long)                                                   | `SettlementVO`                             | ✅ | ✅   |
-| T22 | GET  | `/api/seller/finance/balance`         | 🏪  | —                                                                   | `Map<String,Object>` `{seller_id, balance}` | ✅ | ✅   |
+| T22 | GET  | `/api/seller/finance/balance`         | 🏪  | —                                                                   | **`SellerBalanceVO`**（`{seller_id, balance}` —— 批次 C1 由 `Map` 改为类型化 VO，字段表见下） | ✅ | ✅   |
 | T23 | POST | `/api/seller/finance/withdrawal`      | 🏪  | `WithdrawalApplyReq { amount(必填, ≥1), bank_account?, bank_name? }`（**V5.4 收紧**：amount 缺失/≤0 → 400 `PARAM_ERROR`） | `WithdrawalVO`（仅脱敏账号）                             | ✅ | ✅   |
 | T24 | GET  | `/api/seller/finance/withdrawal/page` | 🏪  | Query: `page`(1), `size`(20)                                        | `IPage<WithdrawalVO>`（仅脱敏账号）                      | ✅ | ✅   |
+
+> **批次 C1（`Result<Map>` → 类型化 VO，2026-10-18）：T22 出参改为 `SellerBalanceVO`**
+>
+> 改前是在 **Controller 内**就地 `Map.of("sellerId", …, "balance", …)` 拼弱类型报文（违反「Controller 只做参数校验 + 调 Manager + 包 `Result`」）；改后由 `SettlementManager` 装配 VO、Controller 直接透出。**数值口径零改动**。
+>
+> | 字段 | 类型 | 单位 | 口径 |
+> | :-- | :-- | :-- | :-- |
+> | `seller_id` | `Long` | — | 商家标识 = **`seller.user_id`**（与 `UserContext.getUserId()` 同源）—— **不是** `seller.id` 技术主键（对外 seller 口径见 §1.8） |
+> | `balance` | `Integer` | **分** | Σ`settlement_amount`（`settlement.status = SETTLED` 已结算未打款），**已扣 5% 佣金**（`commission = 结算基数 × 5 / 100`）；结算基数 = 买家**实付 `payAmount`**（含运费、已减优惠）⇒ 与看板类 `revenue`（`total_amount` 原价口径、不含运费）**不同源，两者不可互相校验**。<br>⚠ **未扣在途提现**：已申请未打款的提现单不改变结算单状态，故本值**不随提现申请减少**（既有实现口径，本批未改） |
 
 **`WithdrawalVO`**（V5.5 已决——收款账号分端口径，明文不下商家端）:
 
@@ -1646,7 +1782,7 @@ Feature: 买家退款资金流（F1）
 | M4  | GET  | `/api/coupon/used`             | 🔒  | —                                                          | `List<UserCouponVO>` (已使用/已过期)                     | ✅ | ✅         |
 | M5  | GET  | `/api/coupon/template`         | 🌐  | —                                                          | `List<CouponVO>` (可领取的券模板)                         | ✅ | ✅         |
 | M6  | POST | `/api/coupon/available/filter` | 🔒  | `CouponFilterReq { sku_ids: [Long], total_amount: Integer }` | `List<UserCouponVO>` (结算页预过滤)                      | ⚪ | ⚪ 计划中（**V5.4 漂移更正**：代码中不存在本端点与 `CouponFilterReq`，原标 ✅ V4.3 有误；结算页现用 `GET /api/coupon/available`（M3）按商品/金额本地过滤） |
-| M7  | GET  | `/api/coupon/count`            | 🔒  | —                                                          | `Map<String,Integer>` `{available, used, expired}`（我的券三态计数） | ✅ | ✅ V5.11 |
+| M7  | GET  | `/api/coupon/count`            | 🔒  | —                                                          | **`UserCouponCountVO`**（`{available, used, expired}`，单位**张**；我的券三态计数 —— 批次 C1 由 `Map` 改为类型化 VO，**线上键名不变**） | ✅ | ✅ V5.11 |
 
 **`CouponVO`** (券模板；V5.4 按实现修正字段名：`min_amount` / `total_qty` / `issued_qty`):
 
@@ -2032,9 +2168,9 @@ Feature: 买家退款资金流（F1）
 | ---- | --- | ------------------------------------- | --- | ----------------------------------------------------------------------------- | ------------------------------- | --- | ------ |
 | AD11 | GET | `/api/trade/admin/dashboard`          | 🔑  | —                                                                             | `AdminDashboardVO`              | ✅ | ✅      |
 | AD12 | GET | `/api/trade/admin/orders/page`        | 🔑  | Query: `page`(1), `size`(20), `status?`, `keyword?`, `start_date?`, `end_date?` | `IPage<OrderVO>`                | ✅ | ✅      |
-| AD13 | GET | `/api/trade/admin/stats/trend`        | 🔑  | Query: `days`(30)                                                             | `List<TrendDataVO>` (每日订单数+销售额) | ✅ | ✅ V4.0 |
-| AD14 | GET | `/api/trade/admin/stats/top-products` | 🔑  | Query: `limit`(10), `days?`(30)                                               | `List<SpuStatVO>`           | ✅ | ✅ V4.0 |
-| AD15 | GET | `/api/trade/admin/stats/sales`        | 🔑  | Query: `from`, `to` (yyyy-MM-dd)                                              | `List<DailySalesVO>`            | ✅ | ✅ V4.0 |
+| AD13 | GET | `/api/trade/admin/stats/trend`        | 🔑  | Query: `days`(30)                                                             | **`List<OrderTrendVO>`**（每日订单数+销售额；⚠ `TrendDataVO` 这个类**不存在**，批次 C1 订正为 `OrderTrendVO`，字段表见下） | ✅ | ✅ V4.0 |
+| AD14 | GET | `/api/trade/admin/stats/top-products` | 🔑  | Query: `limit`(10), `days?`(30)                                               | **`List<SpuStatVO>`**（元素字段表见 §4.3.4 S11 —— 与 S11 **同一张表、同一个 VO**；⚠ 本端点**仅已完成**、按销量倒序，与 S11 不可横向对比） | ✅ | ✅ V4.0 |
+| AD15 | GET | `/api/trade/admin/stats/sales`        | 🔑  | Query: `from`, `to` (yyyy-MM-dd)                                              | **`List<SalesByDateVO>`**（⚠ `DailySalesVO` 这个类**不存在**，批次 C1 订正为 `SalesByDateVO`，字段表见下） | ✅ | ✅ V4.0 |
 
 **`AdminDashboardVO`**:
 
@@ -2042,13 +2178,44 @@ Feature: 买家退款资金流（F1）
 {
   "total_users": 12580,
   "total_orders": 45620,
+  "completed_orders": 38940,
   "total_revenue": 892450000,
-  "today_new_users": 128,
   "today_orders": 356,
-  "today_revenue": 5680000,
-  "pending_seller_count": 3
+  "today_revenue": 5680000
 }
 ```
+
+> ⚠ **样例订正（批次 C1，以实现为准）**：原样例的 `today_new_users` 与 `pending_seller_count` 二键**代码从未产出**（涉 user-service 今日新增与商家待审数，属跨域聚合，本批**不新增业务**）—— 已删除；原样例**缺** `completed_orders`（代码实际产出）—— 已补。**本批以代码实际产出的 6 个键为准**（与 §11.1 已决第 8 条「全部删除，以实现为准」同口径）。
+
+| 字段 | 类型 | 单位 | 口径 |
+| :-- | :-- | :-- | :-- |
+| `total_users` | `long` | 人 | 平台注册用户总数（`GET /internal/user/count`）。跨服务读取 **fail-open**：user-service 不可用时落 `0`（既有实现口径）—— **不得**据此判定「平台无用户」 |
+| `total_orders` | `long` | 笔 | `orders` **全状态**行数 |
+| `completed_orders` | `long` | 笔 | `orders.status = COMPLETED` 行数（**批次 C1 补记录**：代码一直产出该键） |
+| `total_revenue` | `Integer` | **分** | **全部已完成订单**的 `orders.total_amount` 合计，**商品原价口径**（不含运费、未减优惠）⇒ 与结算单 `settlement_amount`（`payAmount` 口径、再扣 5% 佣金）**不同源** |
+| `today_orders` | `long` | 笔 | 今日**全状态**下单笔数（与 `today_revenue` 口径不对称 = 同日「下单量 vs 成交额」两把尺，属既有实现口径） |
+| `today_revenue` | `Integer` | **分** | 今日**已完成**订单的 `total_amount` 合计，不含运费 |
+
+**`List<OrderTrendVO>`**（AD13 元素；`TrendDataVO` 类不存在）:
+
+| 字段 | 类型 | 单位 | 口径 |
+| :-- | :-- | :-- | :-- |
+| `date` | `String` | — | `yyyy-MM-dd`（区间 = 最近 `days` 天、**以今天为终点含今日**，按日期升序；时区取 JVM 默认 `LocalDate.now()`，部署侧 DB 连接固定 `Asia/Shanghai`） |
+| `orders` | `long` | 笔 | 当日**全状态**下单笔数（`create_time ∈ [当日 00:00, 次日 00:00)`） |
+| `revenue` | `Integer` | **分** | 当日**已完成**订单的 `total_amount` 合计，原价口径（不含运费、未减优惠） |
+
+**`List<SalesByDateVO>`**（AD15 元素；`DailySalesVO` 类不存在）:
+
+| 字段 | 类型 | 单位 | 口径 |
+| :-- | :-- | :-- | :-- |
+| `date` | `String` | — | `yyyy-MM-dd`。区间由 `from`/`to` 显式给出，**左闭右闭、逐日枚举**（含两端；**无成交的日期也出行**，`orders`/`revenue` 为 `0`） |
+| `orders` | `long` | 笔 | 当日**全状态**下单笔数 |
+| `revenue` | `Integer` | **分** | 当日**已完成**订单的 `total_amount` 合计，原价口径 |
+
+> **AD13 / AD15 为何保留两个类型、不合并**：字段集合相同但**语义不同**（AD13 = 最近 N 天趋势图，AD15 = 指定闭区间分日销售额）。契约分别命名 `OrderTrendVO` / `SalesByDateVO`，任一端的语义演进（如给趋势图加「环比」）**不应污染**另一端 —— 与「同名字段两处独立定义」是两回事。
+>
+> ⚠ **AD14 与 S11 的差别（本批再次强调，防误用）**：AD14 **仅已完成**（`findByStatus(COMPLETED)`）、按 **`quantity` 销量倒序**取前 `limit`；S11 **不限状态（含已取消）**、按 **`revenue` 金额倒序**全量返回。同一 SPU 的 `revenue` 与排序口径在两端**均不可横向对比**。
+> ⚠ **AD14 的 `days?` 参数实测未实现**（`AdminOrderController#topSpus` 只接 `limit`，无 `days`）—— 契约该参数属**未落地声明**，已登记 §十二 12.2 待裁决（本批不擅自删除端点行的参数声明）。
 
 #### 4.13.5 AdminAfterSaleController — `/api/admin/after-sale` (trade-service)
 
@@ -2171,7 +2338,7 @@ Feature: 买家退款资金流（F1）
 | ---- | ---- | --------------------------------------- | --- | ------------------------- | ---------------- | --- | --- |
 | AD27 | POST | `/api/seller/coupon`                    | 🏪  | `CouponCreateReq` (店铺券)   | `CouponVO`       | ✅ | ✅   |
 | AD28 | GET  | `/api/seller/coupon`                    | 🏪  | —                         | `List<CouponVO>` | ✅ | ✅   |
-| AD29 | PUT  | `/api/seller/coupon/{couponId}/disable` | 🏪  | Path: `couponId` (String) | `CouponVO`（**V5.4 行为修正**：非本店/不存在券由 200 空改为 `COUPON_NOT_FOUND(3019)`——不泄露他人券存在性） | ✅ | ✅   |
+| AD29 | PUT  | `/api/seller/coupon/{couponId}/disable` | 🏪  | Path: `couponId` (String) | `CouponVO`（**V5.4 行为修正**：非本店/不存在券由 200 空改为 **404** `COUPON_NOT_FOUND(3019)`——不泄露他人券存在性） | ✅ | ✅   |
 
 #### 4.13.10 RoleController — `/api/admin/roles` (user-service, V3.1 RBAC)
 
@@ -2296,7 +2463,7 @@ Feature: 渠道对账（F4）
 
 > 以下端点仅供集群内微服务间通过 Feign 调用。**不经过 Gateway**，返回原始类型（不包装 Result）。
 >
-> **V5.4 错误响应口径（全量 `/internal/**`）**：业务异常的 HTTP 状态码 = `ErrorCode` 对应状态（**不再一律 500**——修复了此前内部 BizException 一律伪装成"服务宕机"的 P1 缺陷，429/400 等确定性失败可被 Feign 调用方区分），body 为极简 `{"code":...,"msg":...}`（不包 Result 信封、不含 data）。注意：业务码 3000-3041 的 HTTP 状态本身为 200，调用方需按 body 内 `code` 判定业务失败。
+> **V5.4 错误响应口径（全量 `/internal/**`）**：业务异常的 HTTP 状态码 = `ErrorCode` 对应状态（**不再一律 500**——修复了此前内部 BizException 一律伪装成"服务宕机"的 P1 缺陷，429/400 等确定性失败可被 Feign 调用方区分），body 为极简 `{"code":...,"msg":...}`（不包 Result 信封、不含 data）。注意：业务码码段（`3000-3042`）的 HTTP 状态**默认**为 200，调用方需按 body 内 `code` 判定业务失败；**例外 15 项**（12 个 not-found 码 + `3011` → 404、`3007`/`3008` → 401，清单见 §2.1a）—— **内部端点上的 not-found 同样走真 404**（如 I55 的 `3009`「支付单不存在」、I42 的「售后单不存在」），`3000` 仍为 200。
 
 #### 4.14.1 InternalAuthController — `/internal/auth` (user-service) — ⚠️ 已整体下线（ADR-017）
 
@@ -2598,6 +2765,8 @@ Feature: 渠道对账（F4）
 > - **渠道路由**：按原支付单渠道原路退回——`BALANCE` 同步入账（I41）后置成功；`WECHAT`/`ALIPAY` 异步，成功由渠道回调确认（PAY6，§4.7.3）。
 > - **金额校验**：`refund_amount` 超过订单实付 `pay_amount` → `PARAM_ERROR(1101)`（申请时已有校验的双保险）。pay 侧不持有售后域：售后单存在性由 trade 侧保证，pay 以**支付单存在性 + 金额 ≤ 支付单金额**代理校验（ADR-035）。
 > - **错误口径（ADR-004）**：失败以原始 HTTP 异常透出，不包 `Result`；调用方降级**fail-closed**——退款发起失败不允许静默丢失（售后单停留 APPROVED/RETURNED，由管理端重试 AD43 收敛），与吊销类 fail-open 刻意不同（ADR-011 三分法）。
+> - **「支付单存在但字段不完整」的错误口径（🆕 2026-10-18，批次 R1）**：支付单**查得到**、但缺 `biz_user_id`（不知道退给谁）→ **`INTERNAL_ERROR(1000)` + HTTP 500**，`category=BUG`（由 500 派生）、`retryable=false`（重试必然重复失败），**不是** `ORDER_NOT_FOUND(3009)`。理由：`collaboration/09-constraints.md` §三·六 把「资源不存在」（4xx）与「服务端数据不一致」（500）分为两类 —— 把后者谎报成前者，会让客户端走「重新下单」分支（它本来没错），也会让监控按 4xx 记账（实则需值班修数）。断言归聚合：`PayOrder#assertRefundPayeePresent`。文案带 `payOrderNo` + `orderNo`（**不含 PII，刻意不带 `bizUserId` 的值**）。
+> - **⚠ I40「缺 `amount`」的实现差异（如实登记，待裁决）**：I55 走 `PayOrder#assertRefundAmountPresent` 得 `1000`/500；但 I40 的金额双保险守卫把 `payOrder.getAmount() == null` 与「`refund_amount` 超实付」**折叠在同一分支**（`RefundManager#requirePayOrder`），故 I40 缺 `amount` 时实际返回 **`PARAM_ERROR(1101)` / HTTP 400**（文案「退款金额超过实付金额」，语义偏斜）。**本批不改代码**，仅登记：两端口径不一致，建议后续把该判据拆成两条（缺 `amount` → `1000`/500），见 §十二 12.2。
 
 #### 4.14.15b InternalPayOrderRefundController — `/internal/pay/refund/order` (pay-service, ✅ V5.14)
 
@@ -2606,7 +2775,10 @@ Feature: 渠道对账（F4）
 | I55 | POST | `/internal/pay/refund/order` | Body: `OrderRefundCO { order_no(必填), scene_ref(必填, 幂等业务键), reason?(摘要) }` | `RefundResultCO { refund_no, status }`（退款金额 = 订单实付全额） | ✅ | ✅（V5.14） |
 
 > - **幂等**：同 `scene_ref` 重放返回既有退款单。**金额口径**：按 `order_no` 关联支付单**全额**退款（拼团失败=整单退）。退款成功**不回写售后单**（无售后域），买家触达复用 ADR-042 `REFUND_SUCCESS`。
-> - **错误口径（ADR-004）**：支付单不存在 → `ORDER_NOT_FOUND(3009)` 原始透出（HTTP 状态按 ErrorCode 映射 + 极简 `{"code","msg"}` JSON，与 I40 同口径）；调用方 fail-closed（ADR-035 §5 定类不变）。
+> - **错误口径（ADR-004）**：支付单不存在 → **HTTP 404** `ORDER_NOT_FOUND(3009)` 原始透出（HTTP 状态 = `ErrorCode` 状态，批次 ① 起为真 404 + 极简 `{"code","msg"}` JSON，与 I40 同口径）；调用方 fail-closed（ADR-035 §5 定类不变）。**本条规定继续有效，不因下条而失效。**
+> - **「支付单存在但字段不完整」的错误口径（🆕 2026-10-18，批次 R1 —— 与上条「支付单不存在」并列，两者不得互相覆盖）**：支付单**存在**但缺 `biz_user_id`（不知道退给谁）**或**缺 `amount`（不知道退多少）→ **`INTERNAL_ERROR(1000)` + HTTP 500**，`category=BUG`（由 HTTP 500 派生）、`retryable=false`（重试必然重复失败），**不是** `ORDER_NOT_FOUND(3009)`、**也不是** `PARAM_ERROR`。断言归聚合：`PayOrder#assertRefundPayeePresent` / `PayOrder#assertRefundAmountPresent`（`OrderRefundManager` 两条都调，**顺序为先金额后收款人**）。
+>   - **两类必须并存（判据是「查不查得到」，不是「能不能退」）**：① **查不到支付单** → 404 `3009`（not-found 语义，批次 ① 起为真 404）；② **查到了但字段残缺** → 500 `1000`（服务端数据缺陷）。把②谎报成①会让客户端走「重新下单」（它本来没错）并让监控按 4xx 记账（实则需值班修数）。
+>   - 文案：`支付单数据不完整（缺少支付用户|缺少金额）: payOrderNo=…, orderNo=…` —— **不含 PII、不带 `bizUserId` 的值**（避免用户 ID 随错误体流进调用方日志）。
 
 #### 4.14.16 InternalAfterSaleController — `/internal/trade/after-sale` (trade-service, ✅ V5.6)
 
@@ -3085,6 +3257,7 @@ data: [DONE]
 | **V5.21.2** | **2026-10-18** | **「甲a」批次（用户裁决「甲」的契约侧）：SPU 名读出侧线上键统一 `spu_name` + 新增内部端点 I70 —— 契约先行，代码待「甲b」（**BREAKING**）**：①**新增 §1.8④**——「**凡报文中表示某个 SPU 名字的字段，键名一律 `spu_name`**」；写明**裁决理由**（同一实体只许一个名字：`SpuVO` 用 `name`、回填旁路 VO 用 `spu_name`，前端按任一键取值都会在另一侧**静默 `undefined`**，是本会话多数前端「数据不显示」的成因）；给出**BREAKING 面**（`SpuVO`/`RecommendSpuVO`/`NoteDetailVO.spus[]`/`SpuSearchVO`/`SpuVectorUpsertReq` + 内部 `SpuSearchItemCO`/`SpuDetailCO`/`SpuVectorUpsertCO`）与**不改清单**（14 类「别的实体自己的名字」逐条实测：`CategoryVO`/`CategoryTreeVO`/`ShopVO.shopName`/`UserCouponVO`/`CouponVO`/`PromotionTagVO`/`PromotionVO`/`ActivityVO`/`DailyTaskVO`/`TaskDefVO`/`GroupBuyActivityVO`/`Currency*VO`/`RoleVO`/`PermissionVO`/`SearchFacetsVO.brands[]`/`FreightTemplateVO.templateName`/`OrderVO.receiverName`/`WithdrawalVO.bankName`/`InAppMessageVO.senderName`/`NoteCardVO·NoteDetailVO.title`/`*VO.username`），并**再次标注唯一例外** `HistoryVO.product_name`；②**契约 8 处改名**：§4.4.1 `SpuVO` 样例、P27 卡字段、P30 `NoteDetailVO.spus[]` 卡字段、§4.9.1 `SpuSearchVO` 样例、I47 `SpuVectorUpsertReq` 入参、§8.3、§8.8（以上 7 处为现行正文）+ §4.11.1 `AiChatResponse.spus[]` 的 **`⚪ 计划`样例**（未实现的规划形态同步，防后续照抄旧键）；另**补齐** §4.4.1 `SkuVO` 样例漏写的 `spu_name`（该字段代码中一直存在）；③**新增内部端点 I70** `GET /internal/item/spu/{spuId}`（§4.14.5.2，`⚪ 计划`）—— 兑现 ADR-062 §后果 **E7** 与用户裁决「显式新增 internal 端点，立项迁入内网」；**编号理由**：I7–I69 连续无空缺（实测 63 个全占用），最小空闲号 I70；**当前实现仍走公开** `GET /api/item/spu/{spuId}`（`SpuDetailClient`），落码清单见该节表下注；④**计数**：`docOnly` **43 → 44**（**唯一变化 = I70**，按 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 4 属**显式决策**，不是回归）、`codeOnly` 仍 **0**、`matched` 仍 **288**、契约 §四 去重 **331 → 332**；⑤**登记两条开放/待裁决**：§十一 11.2 新增 **O2**（写侧 `CreateSpuReq.name`/`UpdateSpuReq.name` 是否同批收口 —— 本轮**未动**，理由与建议见该行）；§十二 12.2 新增三条「⑧ 甲a 新增」挂账（读出侧改名落码 / I70 落码 / 写侧待裁决）；⑥**顺带订正三处事实**：`SkuVO` **没有** `name` 字段（任务口径中「`SkuVO.name` 是 SKU 自己的名字」与代码不符，其 SPU 名字段为 `spuName`）、`ShopVO` **没有** `name`（是 `shopName`）、`NoteVO` **没有** `title`（只有 `id`）；⑦**本批只改文档**：甲b 合并前，前端按 `spu_name` 读 P2/P27/P30/SE1 会得到 `undefined`（旧键 `name` 仍在）—— 这是**契约先行的预期窗口期**，与 B4/B7a 同性质 |
 | **V5.22.0** | **2026-10-18** | **批次 ④（登录失败口径与抗枚举）：登录失败一律 `401` + 唯一对外码 `3007` + 中性文案** ——① **§二 错误码纠正**：`3007 PASSWORD_ERROR` 的 `HttpStatus` `200 → 401` 且 `message` 改中性「账号或密码不正确」；`3008 USER_STATUS_ABNORMAL` `200 → 401`（**登录链路禁止使用**，仅留非登录域）；`1017 ACCOUNT_FROZEN` `403 → 401` 且标 `@Deprecated`（登录链路已改抛 3007，零生产引用）；② **新增 §2.0 末「登录失败口径」硬约束**（不得以状态码 / 文案 / 响应时间区分失败原因；原因细分只进服务端日志 `LoginFailureReason`；「被冻结」提示只能走登录成功后的一次性提示或站内信）；③ **§4.1.1 新增登录失败语义表**（四类原因「改前 → 改后」逐行对照：账号不存在 `404/1102`、密码错 `200/3007`、状态不可登录 `200/3008`、风控冻结 `403/1017` → 全部 `401/3007/「账号或密码不正确」`）；并声明**不受影响**的失败（`3001` 验证码错 / `1016` 需人机验证 / `1014` 频控 429 / `1101` 参数错）；④ **抗时序枚举**：账号不存在时服务端仍对预置 BCrypt 哈希做一次 dummy verify（结果丢弃），使两条失败路径耗时同一量级 —— 这不是安全强度，只为消除可观测时间差；⑤ **端点集合零变化**：三元组实测 **289 / 0 / 43** 不变（本批只改失败语义）；文件头计数表按甲b 落码（I70）订正 `288/0/44 → 289/0/43`）。配套代码：`ErrorCode` / `PasswordLoginStrategy` / `UserAuth` / `AccountFreezeHandler` / 前端 `error-codes.ts` + 登录页 |
 | **V5.16.0** | **2026-10-06** | **P3 第三批（F15 知识图谱 Phase 1：商品关系导购）契约先行——完整 PRD 定稿（01-PRD §十六，O1 聚焦导购/O2 混合最小形态已裁决）后规格收口**：①§4.14.10b 新增 **I57 edge/upsert（先删后写幂等，哨兵 -1）/ I58 neighbors（≤2 跳 terms，fail-open 空列表）/ I59 edges 清边**（search `kg_edges` 边索引投影；I57-I59 全链路 fail-open 对齐 ADR-046 定类）；②§4.4.x 新增 **P35** `GET /api/item/spu/{spuId}/pairing`（KG 图主召回 → 向量兜底 → 空态，与 P27 同页共存 O6）；③§4.13.8f 新增管理端 **AD61-63** 规则 CRUD + **AD64** 全量重建（裁决增量，兑现 US-KG-8）；④Phase 1 唯一新增 MySQL 表 `pairing_rule`（Initialize.sql 直改 59→60 表）+ ES `kg_edges` 边索引（D1 混合最小形态：MySQL 真相源 + ES 检索面；NebulaGraph 触发器化 §16.9）；⑤网关 `/api/admin/kg/**` 先于兜底声明；LLM 抽取/审核队列/政策问答/可视化均 Phase 2（触发器量化） |
+| **V5.23.0** | **2026-10-18** | **批次 C1（契约收口，四组并批）：`Result<Map>` → 类型化 VO + not-found 业务码落真 404 + 退款「数据不完整」口径 + 前端审计交回** —— ① **组 1（批次 D 交付）**：**S10 → `SellerDashboardVO`**（`today_order_count` / `pending_ship_count` / `monthly_revenue`，分）、**S11 → `List<SpuStatVO>`**（`spu_name` 快照名聚合 / `quantity` 件 / `revenue` 分；**明确 S11 不限订单状态（含已取消），与 AD14 仅已完成不可横向对比**）、**AD11 样例订正**（删代码从未产出的 `today_new_users` / `pending_seller_count`，补 `completed_orders`）、**AD13 `TrendDataVO` → `OrderTrendVO`**（原类不存在）、**AD14 保留 `List<SpuStatVO>` + 字段表**（该类批次 D 已补齐）、**AD15 `DailySalesVO` → `SalesByDateVO`**（原类不存在；`from`/`to` 左闭右闭逐日枚举）、**T22 → `SellerBalanceVO`**（`seller_id` = `seller.user_id` 而非 `seller.id`；`balance` 分、Σ`SETTLED` 的 `settlement_amount`、已扣 5% 佣金、未扣在途提现）、**M7 → `UserCouponCountVO`**、**U29 → `UnreadCountVO`**（后两者单词键逐字节不变）；**新增 §1.10 三级 BREAKING 登记**（① 线上键 BREAKING = S10/AD11/T22 的 Map 字面键 camelCase → snake_case，成因是**把实现改成契约已声明口径**；② 类型级 BREAKING = S11/AD13/AD14/AD15 元素由 Map → VO；③ 非 BREAKING = M7/U29）；② **组 2（批次 ① 交付）**：**12 个 not-found 业务码由 HTTP 200 改配 404** —— `3009 / 3015 / 3016 / 3017 / 3019 / 3020 / 3032 / 3033 / 3034 / 3035 / 3036 / 3041`，**业务码与文案一律保留**；§二 例外清单由 **3 项扩为 15 项**（另含既有 `3011` 404 与 `3007` / `3008` 401），并新增 15 项完整对照表；**`3000` 仍 200、`3007`/`3008` 仍 401，不得并入「一律 404」**；§1.3 内部接口口径与 §4.14 抬头「3000-3041 一律 200」同步重划；③ **组 3（批次 R1 交付）**：I40 / I55 补「**支付单存在但字段不完整**（缺 `biz_user_id` / 缺 `amount`）→ `INTERNAL_ERROR(1000)` + HTTP 500、`category=BUG`、`retryable=false`，**非** `ORDER_NOT_FOUND`」，与 I55 既有「支付单不存在 → `ORDER_NOT_FOUND(3009)`」**并列并存**；并如实登记 I40 上「缺 `amount`」被金额双保险守卫折叠为 `PARAM_ERROR(1101)`/400 的**实现差异**（与 I55 不同，待裁决）；④ **组 4（B10 前端审计交付）**：U28 `type?` 补齐**10 个合法值枚举**（`LIKE`/`REPLY`/`FOLLOW`/`ORDER_SHIPPED`/`AFTER_SALE_REVIEWED`/`INVOICE_ISSUED`/`INVOICE_RED_FLUSHED`/`INVOICE_VOIDED`/`PAY_SUCCESS`/`REFUND_SUCCESS`，来源 = 4 个服务的生产方常量，notification-service **自身无枚举类**；**后端不支持多值/分组筛选**）、P14 `sort?` 由 `newest\|highest` 补为 **`newest\|highest\|lowest`**（`ReviewSortEnum` 实为三值，**`oldest` 不存在**，**`fromCode()` 对未知码静默回退 `newest`**）；§十二 12.2 登记**两处能力缺口**（评价缺「最旧优先」、通知缺多值/分组 `type` 筛选），并复核 `HistoryVO.product_name` **唯一 SPU 名旧键例外仍在案**；**端点集合零变化：三元组 289 / 0 / 43 不变**（本批只改类型 / 字段表 / 错误口径 / 说明） |
 
 ---
 
@@ -3162,7 +3335,7 @@ data: [DONE]
 | **【R7｜🆕 2026-10-17】ADR-061 类型守卫的 glob 未命中 adapter 面，导致 4 类字段的收口被**漏检**** | `Implementation/back-end/scripts/check-id-invariants.sh` 检查 4 的命中面 glob（`*/src/main/java/*/adapter/response` 等）与实际目录深度不匹配（bash `*` 不跨 `/`，且未开 `globstar`）→ **adapter 面零匹配**；`ia-api/src/main/java/org/icedamericanomall/dto` 一项正好命中，故 B2 的变异验证成立但**只覆盖该面**。**漏检实测 9 处**：`ReviewVO.spu_id`/`sku_id`、`ReviewCreateReq.spu_id`/`sku_id`、`NoteDetailVO.spus[].spu_id`、`RecommendSpuVO.spu_id`（**有意保留**，见 R1 条）、`NotePublishReq.spu_ids`、**`ShopDecorationVO.hot_spu_ids` / `ShopDecorationReq.hot_spu_ids`（`merchant-service`，字段名 `hotSpuIds`，同样被该 glob 漏检）**。**后果（当时）**：门禁 `[OK]` 是**假绿**，不得外推为「全量线格式标识类型已收口」。✅ **已消解（2026-10-17 B2.5；B4 复核）**：命中面已改 `find` 遍历（实测 26 个目录）+ 两条自证（命中目录数为 0 即失败、白名单陈旧即失败）；9 处的现行处置 = **6 处收口为 `String` 业务键**（`ReviewVO`·`ReviewCreateReq`·`NoteDetailVO.spus[]`·`NotePublishReq`）、**3 处白名单保留技术键**（`RecommendSpuVO.spu_id`、`ShopDecoration{VO,Req}.hotSpuIds`，理由见 ADR-061 §决策 8.2 #7-#9）。详见 [ADR-061](../adr/061-order-item-business-key-snapshot-and-price-compare.md) §后果 R7。⚠ **本表原「仍未收口」清单中列出的 4 类已不再成立**（见本表【② 类型收口】行）。|
 | **【⑥ B4 新增】前端页面路由是否跟改（B6 决定）** | 前端路由 `/product/[id]`、`/seller/products`、`/admin/products` 是**页面路由**，不是 API 路径，本批**未动**。是否随 API 段改名（→ `/spu/[id]` 等）属**前端产品决策**（影响外链/SEO/收藏夹），不得由 API 改名自动推导。**需仲裁**（product-manager ↔ frontend-engineer）|
 | **【⑥ B4 新增】P37 `scene` 长度约束** ✅ **已闭合（B7b）**：`scene = "p=" + 10 位短码 = 12 字符 ≤ 32**（ADR-063 §决策 8；状态见 ADR-062 §E1） | 微信 `wxacode.getUnlimited` 的 `scene` 上限 **32 可见字符**；现实现 `scene = "p=" + 技术键`（短）尚可，一旦按本批契约改成 32-hex 业务键即 **34 字符 → 超限**。**必须显式决策**（a 保技术键并登记为该规则**唯一**例外 / b 短码映射 / c 截断——**c 不可接受**）。**已按方案 (b) 短码落码**（`SpuShareManager#sceneOf` 现生成 `p=<短码>`），无需再仲裁。详见 §4.2.11 P37 表下注与 §1.9⑦-1 |
-| **【⑥ B4 新增】`productName` 线格式键名收口（S11 / AD14 / `CartItemCO`）** | 契约 S11/AD14 声明响应键为 `spu_name`，**实测**为 `SellerDashboardManager.spuStats` / `AdminManager.topSpus` 返回 `Map` 的**字面键 `"productName"`**（camelCase，同时违反 ADR-056 snake_case 与 ADR-061 `spu_name`）；`ia-api` `CartItemCO.productName`（I16 cart → trade）同为线格式键名遗留。AD14 契约另写响应类型 `List<SpuStatVO>`，而**代码中不存在该类**（实测零命中），实为 `List<Map<String,Object>>`。**处置（B5）**：三处一并收口为 `spu_name`（**BREAKING**，需同步 B6 与 §七 映射）；`HistoryVO.product_name` **不在此列**（`@JsonProperty` 显式钉名，**例外保留**，见 §1.9④）。✅ **已落码（B5；B7a 实测复核）**：`spuStats` 用常量 `KEY_SPU_NAME="spu_name"`、`topSpus` 字面键 `"spu_name"`、`CartItemCO` 字段已改名 `spuName`（javadoc 记「`productName` 已退役」）；§1.9④ 对应两行已同步改 ✅ |
+| **【⑥ B4 新增】`productName` 线格式键名收口（S11 / AD14 / `CartItemCO`）** | 契约 S11/AD14 声明响应键为 `spu_name`，**实测**为 `SellerDashboardManager.spuStats` / `AdminManager.topSpus` 返回 `Map` 的**字面键 `"productName"`**（camelCase，同时违反 ADR-056 snake_case 与 ADR-061 `spu_name`）；`ia-api` `CartItemCO.productName`（I16 cart → trade）同为线格式键名遗留。AD14 契约另写响应类型 `List<SpuStatVO>`，而**代码中不存在该类**（实测零命中），实为 `List<Map<String,Object>>`。✅ **已补齐（批次 D）**：`trade-service` `adapter/response/SpuStatVO.java` 已建类，AD14 / S11 共用；契约恢复原声明，并经批次 C1 补齐字段表（`spu_name` / `quantity` / `revenue`，`revenue` 为分）。**处置（B5）**：三处一并收口为 `spu_name`（**BREAKING**，需同步 B6 与 §七 映射）；`HistoryVO.product_name` **不在此列**（`@JsonProperty` 显式钉名，**例外保留**，见 §1.9④）。✅ **已落码（B5；B7a 实测复核）**：`spuStats` 用常量 `KEY_SPU_NAME="spu_name"`、`topSpus` 字面键 `"spu_name"`、`CartItemCO` 字段已改名 `spuName`（javadoc 记「`productName` 已退役」）；§1.9④ 对应两行已同步改 ✅ |
 | **【⑥ B4 新增】SPU 资源段改名** ✅ **已收口（B5 代码 `4b999310` / B8 前端 `995a4593`）** | 契约已把「指向 SPU 实体」的资源段统一为 `spu` / `spus`（逐条对照表见 [ADR-062](../adr/062-external-identifier-and-addressing.md) §决策 2），~~**代码与前端尚未落码**~~ → **B5/B8 已落码**（本行保留为实施面记录）。⚠ **B5 合并前曾出现窗口期**：§四 中已改名的端点照契约调用会 404；`extract-endpoints.mjs` 的 `matched` 下降 / `codeOnly` 上升即为此故（**契约先行，非新增缺陷**）。**B5 落码面**：`SpuController` / `ReviewController` / `InternalItemSearchController` / `InternalSearchController` / `SearchController` 的 `@RequestMapping`·`@*Mapping` 字面量、`SpuVectorClient` 与 **`SpuDetailClient`** 的 `@FeignClient(path=...)`（后者还须把 `@PathVariable Long id` 改为 `String spuId`；其「走公开契约」的既有偏差见 §1.9② 与 ADR-062 §后果 E7）、`ItemSearchClient.detail`、`SpuShareManager` 的 scene 与 objectKey；网关 `application.yml` 用的是 `/api/item/**` 等**通配前缀**，**无需改动**；`SecurityConfig.PUBLIC_GET_PATHS` 同理（`/api/item/**`、`/api/search/**`、`/api/shop/**` 覆盖新路径）。**B6 落码面**：`packages/api/hooks/*`、`packages/api/server.ts`、`apps/web`、`apps/miniprogram` 的路径字面量。⛔ **不得**在改路径的同时把路径变量留在技术键（否则「路径说业务键、实现收技术键」，即 R1 的旧病复发）。**B7a 追记**：B5 实际**未动** `SpuShareManager` 的 `scene`/objectKey（仍为技术键**寄存形态**，代码 javadoc 已登记），该两项**改由 B7b 按 §1.9⑦-1/-2 落码**（见本表下方 B7a 新增行）|
 | **【⑦ B7a 新增】P38 短码端点** ✅ **已收口（B7b `265543d6`）** | 契约已写定 `GET /api/item/spu/by-code/{code}`（§4.4.1，`⚪ 计划`），~~**代码尚不存在**~~（B7a 时点 `extract-endpoints.mjs` 实测 `docOnly` +1 = 44；**B7b 后已回到 43**）。**B7b 落码面**：`SpuController` 加 `@GetMapping("/by-code/{code}")`（同 Controller、零网关改动）、`SpuManager` 加 `getSpuDetailByCode`（短码 → SPU 业务键 → 复用既有详情装配，**不得**另建第二套装配逻辑）、`SpuRepository.findByShortCode`（`uk_short_code` 等值查）、`Spu#create` 生成短码。**验收断言**：① 短码形态非法 → 400 `PARAM_ERROR`；② 不存在/已删除 → 404 `1103`；③ 已下架 → 200 且 `status=2`；④ 返回报文与 P2 **逐字段同形**（比对同一商品的两次响应，`diff` 为空）；⑤ `SpuVO` **不含** `short_code` |
 | **【⑦ B7a 新增】承载层六项落码** ✅ **已收口（B7b `265543d6`）** | 逐项落点见 §1.9⑦ 条款与 [ADR-063](../adr/063-external-channel-number-separation.md) §决策 8：① `scene` → 短码（`SpuShareManager`）；② objectKey → `wxa-code/v1/product/{sha256(scene\|page)[0:16]}.png`（**旧键对象成孤儿**，须同批声明 `v1/` 灰度与清理策略）；③ `home_config.spu_ids` 写侧 `requireWire`+≤15+去重、读侧 **fail-open 过滤**；④ `chat_message.conversation_id` → `sha256(buyerId\|sellerId\|spuId)[0:32]`，**与 `ai_conversation.conversation_id BINARY(16)` 同批对齐**；⑤ 微信退款 `reason` → `MAX_REFUND_REASON_LENGTH` 常量 + 按字符数截断，**禁插入单号**；⑥ `MAX_CSV_IDS` 常量族 + `MAX_CART_ITEMS=200`（`ia-common` 集中定义）。✅ **六项均已落码（2026-10-18 实测）**：①`item` `SpuShareManager#sceneOf`（`scene = "p=" + 短码`）；②`#objectKeyOf`（`wxa-code/v1/product/{sha256(scene\|page)[0:16]}.png`）；③`item` `SpuIdCsv`（`requireWire` + ≤`MAX_CSV_IDS_IN_COLUMN` + 去重 + 读侧 fail-open）；④`ai` `ConversationId.derive`（与 `ai_conversation` 同批对齐）；⑤`ia-integration` `PaymentClient.MAX_REFUND_REASON_LENGTH=80` + `RefundReason`；⑥`ia-common` `common/constant/CsvIdLimits`（15 / 4 / 200 / 200） |
@@ -3178,6 +3351,13 @@ data: [DONE]
 | **【⑧ 甲a 新增】SPU 名读出侧线上键 `name` → `spu_name`**（§1.8④） | **契约侧已改（2026-10-18，甲a）**，**代码待「甲b」**。**契约改动 7 处（现行正文）+ 1 处 `⚪ 计划`样例**：§4.4.1 `SpuVO` 样例、§4.4.x P27 卡字段、§4.4.x P30 `NoteDetailVO.spus[]` 卡字段、§4.9.1 `SpuSearchVO` 样例、§4.14.10 I47 `SpuVectorUpsertReq` 入参、§8.3、§8.8（另：§4.4.1 `SkuVO` 样例**补齐** `spu_name`——该字段代码中一直存在、样例此前漏写；§4.11.1 的 `AiChatResponse.spus[]` **计划**样例同口径改键，防后续照抄）。**甲b 代码面（逐文件）**：`item-service` `adapter/response/SpuVO.java#name`→`spuName`、`RecommendSpuVO.java#name`→`spuName`、`NoteDetailVO.java#SpuSummaryVO.name`→`spuName`、`search-service` `adapter/response/SpuSearchVO.java#name`→`spuName`、`ia-api` `dto/SpuDetailCO.java#name`→`spuName`（record 组件）、`dto/SpuSearchItemCO.java#name`→`spuName`、`dto/SpuVectorUpsertCO.java#name`→`spuName`。**验收断言**：① P2 响应经 `SNAKE_CASE` 后含 `spu_name` 且**不含** `name`；② P27/P30/P35 卡内键为 `spu_name`；③ SE1 与 I62/I65 一致；④ 前端 `spu_name` 取值在 P2/P27/P30/SE1 四处均非 `undefined`；⑤ **`CategoryVO`/`CouponVO`/`PromotionTagVO` 等「非 SPU 实体」的 `name` 一字不动**（§1.8④ 不改清单）。<br>⚠ **不得**顺手改动：`SkuVO`（无 `name` 字段；其 `spuName` 已正确）、`ShopVO.shopName`、`NoteCardVO/NoteDetailVO.title`、`HistoryVO.product_name`（例外保留） |
 | **【⑧ 甲a 新增】内部端点 I70 `GET /internal/item/spu/{spuId}`** | **契约已写定（§4.14.5.2，`⚪ 计划`），代码不存在** —— 这是 [`adr/062`](../adr/062-external-identifier-and-addressing.md) §后果 **E7**（`SpuDetailClient` 服务间调用却走公开契约）+ 用户 2026-10-18 裁决「显式新增 internal 端点，立项迁入内网」的落地项。**当前事实**：`item-service` 内部面只有 `/internal/item/{freight-template, search, sku}`；AI Tool 走公开 `GET /api/item/spu/{spuId}` 并解析 `Result<SpuDetailCO>`。**端点数影响**：`docOnly` **43 → 44**（ADR-062 §决策 4 显式决策）、`codeOnly` 仍 0、`matched` 仍 288、契约去重 **331 → 332**。**落码后**：状态改 ✅、`docOnly` 44 → 43、删除本行。落码清单见 §4.14.5.2 表下注 |
 | **【⑧ 甲a 新增】SPU 名写侧入参 `CreateSpuReq.name` / `UpdateSpuReq.name`** | **本轮未动**（取舍见 §十一 11.2 **O2**）：写侧只有一个键名、不构成「同一实体两个键名」的静默失效面，改它会扩 BREAKING 到商家写接口。**需主 agent 裁决**：「与甲b 同批收口」或「写侧长期保持 `name`」—— 二者都必须**写定**，不得悬空（否则下一个人会照 §1.8④ 的强读法把它改掉，或反之永不动） |
+| **【⑨ C1 新增】S11 与 AD14 的取数 / 排序口径差异（待产品裁决）** | 两端**共用** `SpuStatVO`，但：**S11 不限订单状态（含已取消订单的订单项）、按 `revenue` 金额倒序全量返回**；**AD14 仅已完成（`findByStatus(COMPLETED)`）、按 `quantity` 销量倒序并 `limit` 截断**。同一 SPU 的 `revenue` 与排序口径在两端口径不同 ⇒ 契约已明文「**不可横向对比**」（§4.3.4 / §4.13.4）。属既有实现（批次 D 为纯类型重构、未改算法）。**待裁决**：S11 是否收敛为「仅已完成」，或把 `revenue` 改名为 `order_amount` 以体现「下单额」。**裁决前前端不得把两端数值相加或互相校验。** |
+| **【⑨ C1 新增】S11 `days` 与 AD13 `days` 同名不同义** | S11 的 `days`（默认 30）实际覆盖 **`days + 1` 个自然日**（起点 = 今日零点减 `days` 天，含今日）；AD13 的 `days` 恰好返回 `days` 行。**同名参数两种语义**（`SellerDashboardManager#spuStats` 既有实现），本批未改算法，登记待裁决（建议二选一并统一两侧）。 |
+| **【⑨ C1 新增】AD14 `days?` 参数未实现** | 契约 AD14 行声明 `Query: limit(10), days?(30)`，而 `AdminOrderController#topSpus` **只接 `limit`**，无 `days` —— 属**未落地声明**。本批**不擅自删除端点行的参数声明**（需与「该不该有该参数」的产品判断一起裁决）。裁决为「删除」时同步改该行；**端点三元组应不变**（删的是 Query 参数，不是端点）。 |
+| **【⑨ C1 新增】I40 与 I55 对「支付单缺 `amount`」的错误承载不一致（待裁决）** | I55 走 `PayOrder#assertRefundAmountPresent` → `INTERNAL_ERROR(1000)`/500；I40 的金额双保险守卫把 `getAmount() == null` 与「`refund_amount` 超实付」折叠在同一分支 → 实际返回 `PARAM_ERROR(1101)`/400（文案「退款金额超过实付金额」）。两端口径不一致，**本批只登记不改代码**（`RefundManager#requirePayOrder`）。建议把判据拆成两条（缺 `amount` → `1000`/500），与 I55 对齐。 |
+| **【⑨ C1 新增】评价缺「最旧优先」排序值（B10 交付的能力缺口）** | `ReviewSortEnum` 实为三值 `newest` / `highest` / `lowest`，**无 `oldest`**（`newest` 的反序）。P13/P14 的 `sort?` 已按三值写定（P14 本批补齐 `lowest`）。**缺口**：评价列表**无法按最旧优先排序**。改枚举属代码变更，本批只登记。⚠ 前端**不得**传 `oldest` —— `fromCode()` 对未知码**静默回退 `newest`**，传错会得到相反顺序且无任何提示。 |
+| **【⑨ C1 新增】通知缺多值 / 分组 `type` 筛选（B10 交付的能力缺口）** | U28 的 `type?` 只支持**单值等值匹配**（`@RequestParam String type` → `notification.type` 等值条件）。**缺口**：无法一次取「互动类（`LIKE`+`REPLY`+`FOLLOW`）」「订单类（`ORDER_SHIPPED`+`PAY_SUCCESS`+`REFUND_SUCCESS`+`AFTER_SALE_REVIEWED`）」「发票类（`INVOICE_*`）」，也无法一次全选。前端做分组筛选**只能**客户端全量拉取后本地分组（受分页限制会漏数据）。改多值需改契约参数形态（`type[]` / CSV）+ 后端条件，本批只登记。 |
+| **【⑨ C1 新增】`HistoryVO.product_name` 唯一 SPU 名旧键例外 —— 复核仍在案** | §1.9④ 登记的唯一例外（`user-service` `adapter/response/HistoryVO.java` 以 `@JsonProperty("product_name")` **显式钉名**）。**2026-10-18 批次 C1 复核：仍在案，未被批次「甲b」的统一口径改掉**（全平台 SPU 名读出侧已统一 `spu_name`，这是唯一保留的旧键）。本批**不动**；将来若收口，须同步改 `HistoryVO` + 前端读取点 + §1.9④ + §1.8④，并升版本登记 BREAKING。 |
 
 ---
 
