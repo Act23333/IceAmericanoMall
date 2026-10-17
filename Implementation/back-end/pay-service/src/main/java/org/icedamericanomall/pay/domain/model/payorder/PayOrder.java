@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.NoArgsConstructor;
 import lombok.Data;
+import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.pay.domain.enums.PayChannelEnum;
 import org.icedamericanomall.pay.domain.enums.PayStatusEnum;
 
@@ -24,6 +26,9 @@ import org.icedamericanomall.common.utils.IdGenerator;
  *   3. 支付单号（业务唯一键）在创建时生成，此后不可变
  *   4. 对外渠道交易号（channelTradeNo）与内部业务键彻底分离：回调/对账一律按它寻址，
  *      它跨重试稳定、库内唯一，且绝不等于 order_no / pay_order_no
+ *   5. <b>退款要素完整性</b>：能原路退回的前提是知道「退给谁」（{@code bizUserId}）与「退多少」
+ *      （{@code amount}）—— 二者缺失属<b>服务端数据缺陷</b>（{@link #assertRefundPayeePresent} /
+ *      {@link #assertRefundAmountPresent}），<b>不是</b>「支付单不存在」
  * </pre>
  *
  * <p><b>与持久化的分工</b>：本聚合持有<b>业务判断</b>（创建口径、状态谓词、置成功语义），
@@ -218,5 +223,49 @@ public class PayOrder {
      */
     public void applyPayUrl(String payUrl) {
         this.qrCodeUrl = payUrl;
+    }
+
+    // ==================== 退款要素不变量（服务端数据缺陷的唯一出口） ====================
+
+    /**
+     * 断言「知道退给谁」——退款必须能定位收款人（{@code biz_user_id}）。
+     *
+     * <p><b>为什么是 BUG 而不是 not-found</b>：能查到这个对象，说明<b>支付单确实存在</b>；
+     * 缺的是这一行的字段值。{@code collaboration/09-constraints.md} §三·六 的四类划分里，
+     * 「资源不存在」（404）与「服务端数据不一致」（500）是两类 —— 把后者谎报成前者，会让客户端
+     * 走「重新下单」分支（它本来没错），也会让监控按 4xx 记账（其实是数据坏了，需要值班修数）。
+     * 故一律 {@code INTERNAL_ERROR(1000)} / HTTP 500，{@code ErrorCategory} 派生
+     * {@code BUG}、{@code retryable=false}（重试必然重复失败）。
+     *
+     * <p><b>文案口径</b>：这是<b>内部/运维视角</b>的失败，文案必须能让人定位 —— 带支付单号
+     * （{@code pay_order_no}）与业务订单号（{@code order_no}），二者都是业务标识、
+     * <b>不含 PII</b>（刻意不带 {@code bizUserId} 的值，避免用户 ID 随错误体流进调用方日志）。
+     *
+     * @throws BizException 支付单缺少支付用户（{@link ErrorCode#INTERNAL_ERROR}）
+     */
+    public void assertRefundPayeePresent() {
+        if (bizUserId == null) {
+            throw new BizException(ErrorCode.INTERNAL_ERROR, refundPayloadDefect("缺少支付用户"));
+        }
+    }
+
+    /**
+     * 断言「知道退多少」——退款必须能确定金额（{@code amount}）。
+     *
+     * <p>与 {@link #assertRefundPayeePresent()} 同口径：存在但缺字段 = 服务端数据缺陷，
+     * 走 {@code INTERNAL_ERROR(1000)} / HTTP 500 / {@code BUG} / 不可重试，<b>不是</b> not-found。
+     *
+     * @throws BizException 支付单缺少金额（{@link ErrorCode#INTERNAL_ERROR}）
+     */
+    public void assertRefundAmountPresent() {
+        if (amount == null) {
+            throw new BizException(ErrorCode.INTERNAL_ERROR, refundPayloadDefect("缺少金额"));
+        }
+    }
+
+    /** 数据缺陷文案：统一前缀 + 缺失项 + 可定位业务号（无 PII）。 */
+    private String refundPayloadDefect(String missingField) {
+        return "支付单数据不完整（" + missingField + "）: payOrderNo=" + payOrderNo
+                + ", orderNo=" + bizOrderNo;
     }
 }

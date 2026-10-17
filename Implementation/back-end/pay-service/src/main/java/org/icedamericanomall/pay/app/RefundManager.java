@@ -82,8 +82,8 @@ public class RefundManager {
      * @param req 退款发起参数
      * @return I40 内部契约（字段子集：refundNo + status）
      * @throws BadRequestException 入参非法
-     * @throws BizException        支付单不存在（{@code ORDER_NOT_FOUND}）/ 退款金额超实付（{@code PARAM_ERROR}）/
-     *                             渠道退款失败（原异常透出，退款单已置失败）
+     * @throws BizException        支付单不存在（{@code ORDER_NOT_FOUND}/404）/ 退款金额超实付（{@code PARAM_ERROR}）/
+     *                             数据不完整（{@code INTERNAL_ERROR}/500，不可重试）/ 渠道退款失败（原异常透出）
      */
     public RefundResultCO refund(RefundCreateCO req) {
         return refundConverter.toResultCO(doRefund(req));
@@ -285,7 +285,11 @@ public class RefundManager {
         }
     }
 
-    /** 取支付单并做退款金额双保险校验（申请时已校验 ≤ payAmount）。 */
+    /**
+     * 取支付单并做退款金额双保险校验（申请时已校验 ≤ payAmount）。
+     * <p>金额超实付 = 业务规则拒绝（{@code PARAM_ERROR}）；缺 {@code bizUserId} = 服务端数据缺陷
+     * （{@code INTERNAL_ERROR} / 500 / {@code BUG}，见 {@link PayOrder#assertRefundPayeePresent}）。
+     */
     private PayOrder requirePayOrder(RefundCreateCO req) {
         PayOrder payOrder = payOrderService.getByBizOrderNo(req.getOrderNo());
         if (payOrder == null) {
@@ -294,9 +298,8 @@ public class RefundManager {
         if (payOrder.getAmount() == null || req.getRefundAmount() > payOrder.getAmount()) {
             throw new BizException(ErrorCode.PARAM_ERROR, "退款金额超过实付金额");
         }
-        if (payOrder.getBizUserId() == null) {
-            throw new BizException(ErrorCode.ORDER_NOT_FOUND, "支付单缺少支付用户: " + req.getOrderNo());
-        }
+        // 缺支付用户 = 服务端数据缺陷（非「不存在」）：只换错误承载，退款流程控制不变（fail-closed）
+        payOrder.assertRefundPayeePresent();
         return payOrder;
     }
 
