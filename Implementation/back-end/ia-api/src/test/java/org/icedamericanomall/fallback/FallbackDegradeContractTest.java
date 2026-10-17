@@ -75,6 +75,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>调用参数的构造：{@code Mockito.mock(paramType)} + 标量默认值 —— 部分实现会直接
  * {@code request.getChannel()} / {@code request.getScene()}（不判空），所以<b>必须传 mock 而不是 null</b>。
+ *
+ * <h2>本类如何自证「断言真的会咬人」（自身变异）</h2>
+ * 逐工厂跑真实实现全绿，只能证明「当前实现合规」，证明不了「检测逻辑会红」—— 一个恒真的判定
+ * （比如把扫描结果丢掉）同样全绿。故两段扫描循环抽成
+ * {@link #scanClientErrorPassThrough(Class, Object, int)} /
+ * {@link #scanUnavailableViolations(Class, Object, ExpectationLookup)}（真实扫描与前文<b>共用同一份</b>判定），
+ * 再用合成违规客户端反向喂它：
+ * <ul>
+ *   <li>{@link RewriteToBusyFactory}：CLIENT（4xx）场景下无条件抛 {@code BizException(SYSTEM_BUSY)}
+ *       —— M1 变异形态，必须被 4xx 扫描判红；</li>
+ *   <li>{@link SilentFailOpenFactory}：不可用时应抛却不抛（静默返回降级值）—— M2 变异形态，
+ *       必须被不可用扫描判红；</li>
+ *   <li>两者在对方场景下必须<b>零违规</b>（反向对照）—— 否则「恒红」的检测逻辑也能让上面两条通过。</li>
+ * </ul>
  */
 @DisplayName("降级工厂语义契约 — 4xx 透传 / 不可用时按处置表分流（逐工厂、逐方法）")
 class FallbackDegradeContractTest {
@@ -291,28 +305,10 @@ class FallbackDegradeContractTest {
 
         for (Class<?> factoryClass : discoverFactoryClasses()) {
             Object client = instantiate(factoryClass).create(clientCause);
-            for (Method method : clientMethods(client)) {
-                Throwable thrown = invokeCapturingFailure(client, method);
-                if (thrown == null) {
-                    // 返回降级值也可以通过：本类只锁「不得把 4xx 改写成 SYSTEM_BUSY」。
-                    // （AfterSaleClientFallback / KgClientFallback#neighbors / MemberClientFallback
-                    //   按各自类注释显式豁免透传，属既定例外。）
-                    returnedDegradedValue++;
-                    continue;
-                }
-                passedThrough++;
-                String where = describe(factoryClass, method);
-                if (thrown instanceof BizException biz) {
-                    violations.add(where + " 把下游 4xx 改写成了 BizException(" + biz.getErrorCode()
-                            + ")，破坏了 §三·八·1「4xx 原样透传」");
-                } else if (!(thrown instanceof UpstreamException upstream)) {
-                    violations.add(where + " 抛出 " + thrown.getClass().getName()
-                            + " —— 4xx 分支只允许抛出原始 UpstreamException");
-                } else if (upstream.getCode() != DOWNSTREAM_CLIENT_CODE) {
-                    violations.add(where + " 透传时改了下游业务码：期望 " + DOWNSTREAM_CLIENT_CODE
-                            + "，实际 " + upstream.getCode());
-                }
-            }
+            ClientErrorScan scan = scanClientErrorPassThrough(factoryClass, client, DOWNSTREAM_CLIENT_CODE);
+            violations.addAll(scan.violations());
+            passedThrough += scan.passedThrough();
+            returnedDegradedValue += scan.returnedDegradedValue();
         }
 
         System.out.println("[fallback-contract] 4xx 场景分支覆盖: 透传 UpstreamException = " + passedThrough
@@ -335,29 +331,175 @@ class FallbackDegradeContractTest {
 
         for (Class<?> factoryClass : discoverFactoryClasses()) {
             Object client = instantiate(factoryClass).create(unavailableCause);
-            for (Method method : clientMethods(client)) {
-                Disposition disposition = dispositionOf(factoryClass, method);
-                ErrorCode expectedCode = expectedErrorCode(factoryClass, method);
-                String where = describe(factoryClass, method) + "（处置=" + disposition
-                        + (expectedCode == null ? "" : ", 期望错误码=" + expectedCode) + "）";
-                Throwable thrown = invokeCapturingFailure(client, method);
-
-                if (disposition == Disposition.THROWS) {
-                    if (!(thrown instanceof BizException biz)) {
-                        violations.add(where + " 未抛 BizException，实际 "
-                                + (thrown == null ? "正常返回（fail-open —— 静默成功 = 操作丢了）" : "抛 " + thrown.getClass().getName()));
-                    } else if (biz.getErrorCode() != expectedCode) {
-                        violations.add(where + " 错误码不符：实际 " + biz.getErrorCode());
-                    }
-                } else if (thrown != null) {
-                    violations.add(where + " 不应抛出，实际抛 " + thrown.getClass().getName() + ": " + thrown.getMessage());
-                }
-            }
+            violations.addAll(scanUnavailableViolations(factoryClass, client,
+                    method -> new UnavailableExpectation(
+                            dispositionOf(factoryClass, method), expectedErrorCode(factoryClass, method))));
         }
 
         assertThat(violations)
                 .as("下列工厂方法在「下游不可用」时与处置表不符（M2 变异「fail-closed → fail-open」的形态）")
                 .isEmpty();
+    }
+
+    // ==================================================================================
+    // ④ 检测逻辑本体（②③ 的真实扫描与 ⑤ 的自证共用同一份判定，抽出来才能反向喂合成输入）
+    // ==================================================================================
+
+    /** 「下游 4xx」扫描结果：透传 / 返回降级值 的计数 + 违规列表。 */
+    record ClientErrorScan(int passedThrough, int returnedDegradedValue, List<String> violations) {
+    }
+
+    /**
+     * 「下游 4xx 必须原样透传」的检测逻辑 —— <b>唯一一份</b>判定，② 与 ⑤ 都调它。
+     *
+     * <p>4xx 场景返回降级值不判违规（{@code AfterSaleClientFallback} / {@code KgClientFallback#neighbors} /
+     * {@code MemberClientFallback} 按各自类注释显式豁免透传，属既定例外），但<b>必须</b>计入
+     * {@link ClientErrorScan#returnedDegradedValue()} —— 否则「零违规」可能只是「一个方法都没扫到」。
+     */
+    static ClientErrorScan scanClientErrorPassThrough(Class<?> factoryClass, Object client, int downstreamClientCode) {
+        List<String> violations = new ArrayList<>();
+        int passedThrough = 0;
+        int returnedDegradedValue = 0;
+        for (Method method : clientMethods(client)) {
+            Throwable thrown = invokeCapturingFailure(client, method);
+            if (thrown == null) {
+                returnedDegradedValue++;
+                continue;
+            }
+            passedThrough++;
+            String where = describe(factoryClass, method);
+            if (thrown instanceof BizException biz) {
+                violations.add(where + " 把下游 4xx 改写成了 BizException(" + biz.getErrorCode()
+                        + ")，破坏了 §三·八·1「4xx 原样透传」");
+            } else if (!(thrown instanceof UpstreamException upstream)) {
+                violations.add(where + " 抛出 " + thrown.getClass().getName()
+                        + " —— 4xx 分支只允许抛出原始 UpstreamException");
+            } else if (upstream.getCode() != downstreamClientCode) {
+                violations.add(where + " 透传时改了下游业务码：期望 " + downstreamClientCode
+                        + "，实际 " + upstream.getCode());
+            }
+        }
+        return new ClientErrorScan(passedThrough, returnedDegradedValue, List.copyOf(violations));
+    }
+
+    /** 一个工厂方法在「不可用」场景的既定期望（处置 + 期望错误码；{@code RETURNS} 时期望错误码为 null）。 */
+    record UnavailableExpectation(Disposition disposition, ErrorCode expectedCode) {
+    }
+
+    /** 期望来源：②③ 的真实扫描读处置表（{@link #dispositionOf}），⑤ 的自证喂合成期望。 */
+    @FunctionalInterface
+    interface ExpectationLookup {
+        UnavailableExpectation expectationOf(Method method);
+    }
+
+    /** 「不可用时按处置表分流」的检测逻辑 —— <b>唯一一份</b>判定，③ 与 ⑤ 都调它。 */
+    static List<String> scanUnavailableViolations(Class<?> factoryClass, Object client, ExpectationLookup lookup) {
+        List<String> violations = new ArrayList<>();
+        for (Method method : clientMethods(client)) {
+            UnavailableExpectation expectation = lookup.expectationOf(method);
+            String where = describe(factoryClass, method) + "（处置=" + expectation.disposition()
+                    + (expectation.expectedCode() == null ? "" : ", 期望错误码=" + expectation.expectedCode()) + "）";
+            Throwable thrown = invokeCapturingFailure(client, method);
+
+            if (expectation.disposition() == Disposition.THROWS) {
+                if (!(thrown instanceof BizException biz)) {
+                    violations.add(where + " 未抛 BizException，实际 "
+                            + (thrown == null ? "正常返回（fail-open —— 静默成功 = 操作丢了）" : "抛 " + thrown.getClass().getName()));
+                } else if (biz.getErrorCode() != expectation.expectedCode()) {
+                    violations.add(where + " 错误码不符：实际 " + biz.getErrorCode());
+                }
+            } else if (thrown != null) {
+                violations.add(where + " 不应抛出，实际抛 " + thrown.getClass().getName() + ": " + thrown.getMessage());
+            }
+        }
+        return violations;
+    }
+
+    // ==================================================================================
+    // ⑤ 自身变异自证：合成违规客户端 → 检测逻辑必须报违规（反向对照必须零违规）
+    //
+    // 这一节回答的是「②③ 的断言凭什么可信」：逐 30+ 个真实工厂全绿，只能说明当前实现合规；
+    // 一个恒真的判定（比如把扫描结果丢掉）同样全绿。故用合成变异体反向喂同一份检测逻辑。
+    // ==================================================================================
+
+    /** 合成探针接口（不依赖任何真实 Feign 契约，方法只有一个，失败信息里就是 {@code #call()}）。 */
+    interface ProbeClient {
+        String call();
+    }
+
+    /**
+     * 合成变异体 <b>M1 形态</b>：「CLIENT（4xx）场景下无条件抛 {@code BizException(SYSTEM_BUSY)}」。
+     *
+     * <p>4xx 扫描必须判它违规；而不可用（TRANSIENT）场景下抛 {@code SYSTEM_BUSY} 恰好合规，
+     * 所以它同时充当不可用扫描的<b>反向对照</b>（期望零违规）。
+     */
+    static final class RewriteToBusyFactory implements FallbackFactory<ProbeClient> {
+        @Override
+        public ProbeClient create(Throwable cause) {
+            return () -> {
+                throw new BizException(ErrorCode.SYSTEM_BUSY);
+            };
+        }
+    }
+
+    /**
+     * 合成变异体 <b>M2 形态</b>：「应当抛却不抛」—— 静默返回降级值（fail-closed 被改成 fail-open）。
+     *
+     * <p>不可用扫描必须判它违规；4xx 场景返回降级值属既定豁免，故也是 4xx 扫描的反向对照。
+     */
+    static final class SilentFailOpenFactory implements FallbackFactory<ProbeClient> {
+        @Override
+        public ProbeClient create(Throwable cause) {
+            return () -> null;
+        }
+    }
+
+    @Test
+    @DisplayName("★ 自证 — 4xx 扫描对「CLIENT 场景无条件抛 SYSTEM_BUSY」的合成客户端必须报违规；返回降级值不误判")
+    void shouldFlagSyntheticClientThatRewritesClientErrorToSystemBusy() {
+        Class<?> violatingFactory = RewriteToBusyFactory.class;
+        Object violatingClient = new RewriteToBusyFactory().create(clientErrorCause());
+
+        ClientErrorScan violating = scanClientErrorPassThrough(violatingFactory, violatingClient, DOWNSTREAM_CLIENT_CODE);
+        System.out.println("[fallback-contract][mutation] 4xx 扫描 × 合成违规客户端 -> " + violating.violations());
+
+        assertThat(violating.violations())
+                .as("4xx 检测逻辑必须咬住「把下游 4xx 改写成 SYSTEM_BUSY」的客户端 —— 咬不住则 ② 的断言是空的")
+                .hasSize(1);
+        assertThat(violating.violations().get(0))
+                .as("违规文案必须点名「哪个工厂哪个方法」并说明改写成了什么码")
+                .contains("RewriteToBusyFactory#call()")
+                .contains("SYSTEM_BUSY")
+                .contains("4xx 原样透传");
+
+        ClientErrorScan tolerated = scanClientErrorPassThrough(violatingFactory,
+                new SilentFailOpenFactory().create(clientErrorCause()), DOWNSTREAM_CLIENT_CODE);
+        assertThat(tolerated.violations()).as("4xx 场景返回降级值不得被判违规（既定豁免透传）").isEmpty();
+        assertThat(tolerated.returnedDegradedValue()).as("必须真的扫到了那个方法（否则「零违规」毫无意义）").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("★ 自证 — 不可用扫描对「应当抛却不抛」的合成客户端必须报违规；无条件抛 SYSTEM_BUSY 不误判")
+    void shouldFlagSyntheticClientThatSwallowsUnavailableFailure() {
+        ExpectationLookup throwsSystemBusy =
+                method -> new UnavailableExpectation(Disposition.THROWS, ErrorCode.SYSTEM_BUSY);
+        Class<?> violatingFactory = SilentFailOpenFactory.class;
+        Object violatingClient = new SilentFailOpenFactory().create(unavailableCause());
+
+        List<String> violating = scanUnavailableViolations(violatingFactory, violatingClient, throwsSystemBusy);
+        System.out.println("[fallback-contract][mutation] 不可用扫描 × 合成违规客户端 -> " + violating);
+
+        assertThat(violating)
+                .as("不可用检测逻辑必须咬住「应抛却不抛（fail-open）」的客户端 —— 咬不住则 ③ 的断言是空的")
+                .hasSize(1);
+        assertThat(violating.get(0))
+                .as("违规文案必须点名工厂方法，并说明「正常返回 = 静默成功 = 操作丢了」")
+                .contains("SilentFailOpenFactory#call()")
+                .contains("fail-open");
+
+        List<String> compliant = scanUnavailableViolations(RewriteToBusyFactory.class,
+                new RewriteToBusyFactory().create(unavailableCause()), throwsSystemBusy);
+        assertThat(compliant).as("不可用场景下抛 SYSTEM_BUSY 是合规的，不得误判").isEmpty();
     }
 
     // ==================================================================================

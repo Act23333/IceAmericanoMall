@@ -1,0 +1,44 @@
+# =============================================================================
+# 类长度棘轮基线（Class Size Ratchet Baseline）—— 这是**棘轮**，不是许可。
+# =============================================================================
+# 硬约束是「方法 ≤ 50 行、类 ≤ 300 行」（project-docs/collaboration/09-constraints.md
+# 编码规则 / 10-review 评审清单），但本仓库在约束机械落地之前就已存在 19 个超限类。
+# 一次性拆完不现实，故用「只减不增」的棘轮过渡（门禁见 ClassSizeRatchetTest）：
+#
+#   · 登记在这里 = 承认它是**存量债务**，且该类的行数**不许再涨**。要涨必须在同一个
+#     提交里显式上调 maxLines —— 那处 diff 就是评审必看的审查点。
+#   · **缩小不算违规**：实测小于 maxLines 时门禁不红，但会在 [class-size-ratchet][update]
+#     提示把 maxLines 下调到实测值（否则基线会漂成一张免责名单）。
+#   · **还清即删**：类已拆到 ≤ 300 行、或文件已删除/改名/移动，对应条目必须从本文件
+#     删掉，否则门禁判红（陈旧条目）。基线只减不增。
+#   · **新增超限类一律判红**：任何 ../<module>/src/main/java/**/*.java 超过 300 行且不在本
+#     文件里 → 构建失败。确有需要（如"D 批拆类"排期之前的限时豁免）必须同时填 deadline，
+#     到期即红，不允许无限期挂着。
+#
+# 格式（TSV，正好 4 列，理由必填，路径不许重复，空行与 # 注释行忽略）：
+#   <相对 back-end 根的路径> <TAB> <maxLines> <TAB> <deadline yyyy-MM-dd 或留空> <TAB> <理由>
+#   · maxLines 一律取**登记时的实测行数**（不许预留增长空间 —— 预留等于发许可）。
+#   · 行数口径 = 文件的文本行数（与 wc -l / Files.lines 一致，不含末尾换行产生的空行）。
+#   · deadline 留空 = 只受「不许增长 / 还清即删」约束；填了日期 = 到期（deadline < 今天）即红。
+#
+# 登记时间：2026-10-18（HEAD 34e28c6e，19 个类实测值，最大 trade OrderRepositoryImpl 581 行）
+# =============================================================================
+authorization-service/src/main/java/org/icedamericanomall/auth/app/AuthManager.java	313		登录/注册/改密多策略编排集中在一类，登记时已超限；可拆出凭证校验与注册两族
+cart-service/src/main/java/org/icedamericanomall/cart/app/CartManager.java	434		购物车写路径与读时视图装配（ADR-021）同处一类，读侧可抽独立 assembler
+ia-common/src/main/java/org/icedamericanomall/common/aspect/GlobalExceptionHandler.java	302		异常→HTTP 状态映射分支密集，属映射表类；新增错误类型时行数仍会增长
+ia-common/src/main/java/org/icedamericanomall/common/aspect/OperationLogAspect.java	307		审计切面（ADR-032 管道一）拦截/脱敏/JSON 渲染三段挤在一类，脱敏与渲染可下沉工具类
+ia-common/src/main/java/org/icedamericanomall/common/enums/ErrorCategory.java	431		错误处置类别判定表（纯常量 + 判定函数），属字典类；按业务域增补条目而增长
+ia-common/src/main/java/org/icedamericanomall/common/enums/ErrorCode.java	439		错误码目录（纯枚举常量），按业务域线性增长，属字典类，不按用例拆
+ia-common/src/main/java/org/icedamericanomall/common/utils/IdGenerator.java	313		业务标识生成/编码双向唯一出口（ADR-050），生成与解析/校验集中一处
+ia-integration/src/main/java/org/icedamericanomall/integration/payment/WechatPaymentClient.java	530		微信支付 v3 全接口（下单/回调验签/退款/查询）单类承载，可拆支付与退款两端口
+item-service/src/main/java/org/icedamericanomall/item/app/ReviewManager.java	473		评价用例族与每日评价任务触发（ADR-047）混在一类，任务触发可拆出
+item-service/src/main/java/org/icedamericanomall/item/app/SkuManager.java	312		SKU 用例族（增删改查 + 内部查询）集中一类，登记时已超限
+item-service/src/main/java/org/icedamericanomall/item/app/SpuManager.java	476		SPU 用例族（列表/详情/上下架/维护）编排集中一类，可按读写拆两侧
+item-service/src/main/java/org/icedamericanomall/item/app/content/NoteManager.java	351		种草笔记用例族（P28-P34 发布/流/详情/点赞/软删/相似）单类承载
+item-service/src/main/java/org/icedamericanomall/item/infrastructure/persistence/SpuRepositoryImpl.java	358		SPU 仓储实现：PO↔聚合转换 + 查询拼装同处一类，转换可抽静态转换为独立类
+marketing-service/src/main/java/org/icedamericanomall/marketing/adapter/assembler/MarketingConverter.java	301		MapStruct 装配器：逐字段映射随 VO 增长，属机械映射类
+merchant-service/src/main/java/org/icedamericanomall/merchant/app/seller/ShopManager.java	352		店铺用例族（公开页/自有店铺/装修 ADR-048/遗留 sellerId 解析 ADR-019）合并一类
+pay-service/src/main/java/org/icedamericanomall/pay/app/PayManager.java	344	2026-11-15	改动前就已超限；D 批拆类前的限时豁免 —— 支付编排（多渠道 + 回调 + 买家通知 ADR-042）需按渠道/回调拆分
+pay-service/src/main/java/org/icedamericanomall/pay/app/RefundManager.java	334	2026-11-15	改动前就已超限；D 批拆类前的限时豁免 —— 三通道原路退款编排（ADR-035/049）需按通道拆分
+trade-service/src/main/java/org/icedamericanomall/trade/app/order/OrderCreationManager.java	376		下单 Saga 全链路（校验→建单→扣库存→落库→afterCreate）单方法族集中一类，可抽核对与补偿段
+trade-service/src/main/java/org/icedamericanomall/trade/infrastructure/persistence/order/OrderRepositoryImpl.java	581		订单仓储实现：PO↔聚合转换 + 多语句条件更新 SQL 集中于此，全仓最大类

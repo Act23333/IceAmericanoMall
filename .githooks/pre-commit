@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# 提交前门禁（秒级）。安装: git config core.hooksPath .githooks
+# 为什么在这里拦：2026-10-18 曾有一个「工作区已红、交接单仍写全绿」的窗口持续数小时，
+# 而 CI 只在 push 后运行 —— 提交动作是唯一能可靠插桩的位置。
+exec bash "$(git rev-parse --show-toplevel)/Implementation/back-end/scripts/verify-gates.sh" fast

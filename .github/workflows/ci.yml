@@ -124,6 +124,11 @@ jobs:
           fi
           grep -E '"(matched|codeOnly|docOnly)"' "$RUNNER_TEMP/endpoints.txt"
 
+      # 交接单不是 SSOT：它曾被当成状态快照（写着「已改大半、零验证」而代码早已改完并提交），
+      # 导致下一会话照着过期清单动手。本步禁止它在任何一行上复述可测量事实。
+      - name: 交接单未复述可测量事实（open-items 不是 SSOT）
+        run: bash Implementation/back-end/scripts/check-ledger-facts.sh
+
   docker:
     needs: build
     if: github.event_name == 'push'

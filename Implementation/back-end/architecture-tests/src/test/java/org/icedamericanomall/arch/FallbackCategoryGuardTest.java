@@ -13,15 +13,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import javax.tools.JavaCompiler;
-import javax.tools.ToolProvider;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -61,8 +55,10 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  *       {@code org.icedamericanomall.fallback.fixture.BypassFallbackFixture}（会抛
  *       {@code BizException} 但完全不引用 {@code UpstreamFailures}）跑<b>同一条规则</b>，
  *       并断言它<b>必定失败</b>。样本源码见
- *       {@code src/test/resources/org/icedamericanomall/fallback/fixture/BypassFallbackFixture.java}
- *       （为什么不在 {@code src/test/java} 见该文件注释：本模块刻意不依赖业务模块）。</li>
+ *       {@code ia-api/src/test/java/org/icedamericanomall/fallback/fixture/BypassFallbackFixture.java}
+ *       （为什么放在 ia-api 的测试源、以及为什么**不能**再用运行期 {@code javac} 现场编译，
+ *       见该文件注释 —— 那条路被实测证明是 flaky 的）。本类只通过
+ *       {@code importPaths("../ia-api/target/test-classes")} 导入它，仍不依赖业务模块。</li>
  * </ol>
  *
  * <h2>豁免机制</h2>
@@ -84,8 +80,14 @@ class FallbackCategoryGuardTest {
 
     /** 变异样本的类全名（必须落在 {@link #FALLBACK_PACKAGE} 下，否则规则选不中它）。 */
     private static final String FIXTURE_FQN = "org.icedamericanomall.fallback.fixture.BypassFallbackFixture";
-    private static final String FIXTURE_RESOURCE =
-            "org/icedamericanomall/fallback/fixture/BypassFallbackFixture.java";
+
+    /**
+     * 变异样本的编译产物目录 —— 样本源码在 <b>ia-api 的测试源</b>
+     * （{@code ia-api/src/test/java/org/icedamericanomall/fallback/fixture/BypassFallbackFixture.java}），
+     * 因为只有那里才有 ia-common 的编译期类路径。本模块仍只做 {@code importPaths}，不依赖业务模块。
+     */
+    private static final Path FIXTURE_CLASSES =
+            Paths.get("..", "ia-api", "target", "test-classes", "org", "icedamericanomall", "fallback", "fixture");
 
     /**
      * 豁免表（类全名 → 理由）。<b>当前为空</b>；任何新增条目都会在
@@ -267,49 +269,34 @@ class FallbackCategoryGuardTest {
     }
 
     // ==================================================================================
-    // 变异样本：运行时编译（见 BypassFallbackFixture.java 的「为什么不在 src/test/java」）
+    // 变异样本：导入 ia-api 的测试编译产物（见 BypassFallbackFixture.java 的类注释）
     // ==================================================================================
 
     /**
-     * 用 JDK 编译器现场编译变异样本，并连同 ia-common 一起导入（让依赖解析到真实类而不是桩）。
+     * 导入变异样本的<b>编译产物</b>（连同 ia-common，让依赖解析到真实类而不是桩）。
+     *
+     * <p><b>为什么不再用 {@code javax.tools.JavaCompiler} 现场编译</b>：那条路实测 flaky ——
+     * 单跑绿、整模块跑红（样本有时没被导入，反空断言报「变异样本未被规则选中」），
+     * 某次全量绿只是运气。flaky 的守卫迟早会被 {@code @Disabled}，所以改为普通编译产物：
+     * 样本源码在 ia-api 的测试源里（那里有 ia-common 的编译期类路径），本模块只做 {@code importPaths}。
+     *
+     * <p>只导入 {@code .../fallback/fixture} 这一个子目录（而不是整个 test-classes）：
+     * 否则 ia-api 里名字含 Fallback 的**测试类**（如 {@code FallbackDegradeContractTest}）也会被
+     * 规则当成「降级工厂」选中，语义错误。
      *
      * @return 只含「样本 + ia-common」的小宇宙，供同一条规则判定
      */
     private static JavaClasses importMutationFixture() {
+        if (!Files.isDirectory(FIXTURE_CLASSES)) {
+            throw new IllegalStateException("缺少变异样本的编译产物: " + FIXTURE_CLASSES.toAbsolutePath()
+                    + " —— 请先编译 ia-api 的测试类（back-end 根目录执行 mvn -pl ia-api test-compile，"
+                    + "或从根运行全量 mvn test 由 reactor 顺序保证）");
+        }
         Path iaCommonClasses = Paths.get("..", "ia-common", "target", "classes");
         if (!Files.isDirectory(iaCommonClasses)) {
             throw new IllegalStateException("缺少编译产物: " + iaCommonClasses.toAbsolutePath()
                     + " —— 请先在 back-end 根目录执行全量编译（mvn -DskipTests install）");
         }
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        if (compiler == null) {
-            throw new IllegalStateException("当前 JVM 不是 JDK（ToolProvider.getSystemJavaCompiler() == null），"
-                    + "无法编译变异样本；请用 JDK 21 运行本模块测试");
-        }
-        try {
-            Path workDir = Files.createTempDirectory("fallback-guard-fixture");
-            Path classesDir = Files.createDirectories(workDir.resolve("classes"));
-            Path sourceFile = workDir.resolve("src").resolve(FIXTURE_RESOURCE);
-            Files.createDirectories(sourceFile.getParent());
-            try (InputStream source = FallbackCategoryGuardTest.class.getClassLoader()
-                    .getResourceAsStream(FIXTURE_RESOURCE)) {
-                if (source == null) {
-                    throw new IllegalStateException("缺少变异样本源码资源: " + FIXTURE_RESOURCE
-                            + "（应位于 architecture-tests/src/test/resources/ 下）");
-                }
-                Files.copy(source, sourceFile, StandardCopyOption.REPLACE_EXISTING);
-            }
-            int exitCode = compiler.run(null, null, null,
-                    "-proc:none",
-                    "-classpath", iaCommonClasses.toAbsolutePath().toString(),
-                    "-d", classesDir.toString(),
-                    sourceFile.toString());
-            if (exitCode != 0) {
-                throw new IllegalStateException("变异样本编译失败（javac exit=" + exitCode + "），见上方 javac 输出");
-            }
-            return new ClassFileImporter().importPaths(classesDir, iaCommonClasses);
-        } catch (IOException e) {
-            throw new UncheckedIOException("准备变异样本失败", e);
-        }
+        return new ClassFileImporter().importPaths(FIXTURE_CLASSES, iaCommonClasses);
     }
 }

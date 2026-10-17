@@ -34,4 +34,28 @@ public enum InvoiceLinkKindEnum {
         this.code = code;
         this.desc = desc;
     }
+
+    /**
+     * 按库值取枚举（<b>补偿重试的还原口径</b>：{@code invoice_link_compensation.kind} → 该重调哪一条联动）。
+     *
+     * <p>存在的理由：重试任务只拿到落库的 {@code kind}（{@code TINYINT}），若在调度侧写
+     * {@code switch (1)} / {@code if (kind == 2)}，就地把「1=VOID / 2=PARTIAL」这条映射复制出了
+     * 第二份真相 —— 将来 {@code kind} 增项时必然漏改一处。映射只留在本枚举。
+     *
+     * @param code 库值（1=VOID / 2=PARTIAL）
+     * @return 对应枚举
+     * @throws IllegalArgumentException 未知值（列上有 {@code NOT NULL} 无 {@code CHECK}，
+     *                                 脏数据仍可能绕过；抛出后由重试任务按失败计次，最终转永久失败，
+     *                                 <b>不</b>静默跳过）
+     */
+    public static InvoiceLinkKindEnum of(Integer code) {
+        if (code != null) {
+            for (InvoiceLinkKindEnum kind : values()) {
+                if (kind.code == code) {
+                    return kind;
+                }
+            }
+        }
+        throw new IllegalArgumentException("未知的发票联动补偿类型: " + code);
+    }
 }

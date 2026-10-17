@@ -4,17 +4,38 @@
 > **维护规则**：任何一批工作落地后，同步更新本文件的「已完成 / 待办 / 已知未修 / 验证边界」四段。
 > **最后更新**：2026-10-18（F 批收口：双门禁 + 发票联动补偿表 + U11）
 
-## 0. 当前实测基线
+## 0. 要数字？跑命令 —— 本文件不是 SSOT
 
-| 指标 | 值 | 唯一校验口 |
-|---|---|---|
-| 测试 | **2254 / 0 failures / 0 errors / 1 skipped** | `mvn -f Implementation/back-end/pom.xml clean test` |
-| 端点对账 | **matched 289 / codeOnly 0 / docOnly 43** | `node Implementation/back-end/scripts/extract-endpoints.mjs` |
-| 错误码 | **99** | `node Implementation/front-end/scripts/check-error-codes.mjs` |
-| 表 | **63** | `sync-doc-counts.mjs --list-tables` |
-| 模块 | **19** | 根 `pom.xml` |
-| ADR | **001–065** | `project-docs/adr/README.md` |
-| 根文档计数 | 由脚本生成 | `sync-doc-counts.mjs --check --strict-tests`（已接入 CI `build` job） |
+> **本文件只承载「决策 / 意图 / 约束 / 为什么」，不承载状态快照。**
+> 任何「当前测试数 / 表数 / 端点对账结果 / 某批完成了几分之几」都以命令输出为准。
+> 理由不是洁癖：曾因本文件写着「改动已过大半、零验证」，而真实代码库在同一上午已改完并提交，
+> 下一会话照着过期清单动手就会重复劳动甚至覆盖别人的工作。**复述过的数字必然漂，漂了的数字比没有更危险。**
+>
+> 本文件由 `check-ledger-facts.sh` 强制执行（见 §0.1）：出现「N 测试 / N 张表 / matched N / N 个模块」
+> 这类状态断言即失败；确属历史证据的行必须显式标注 `[历史]`。
+
+```bash
+# 唯一校验口（第一条就是提交前钩子跑的东西）
+bash Implementation/back-end/scripts/verify-gates.sh fast    # 秒级：交接单/计数/ID 不变量/ia-api 单测
+bash Implementation/back-end/scripts/verify-gates.sh full    # 全量，与 CI 等价
+mvn -f Implementation/back-end/pom.xml clean test             # 仅后端全量单测
+node Implementation/back-end/scripts/sync-doc-counts.mjs --check --strict-tests   # 计数事实
+node Implementation/back-end/scripts/sync-doc-counts.mjs --list-tables            # 逐表名清单
+node Implementation/back-end/scripts/extract-endpoints.mjs                        # matched/codeOnly/docOnly
+node Implementation/front-end/scripts/check-error-codes.mjs                       # 错误码表对齐
+git log --oneline -10                                        # 谁改了什么（永远比交接单可信）
+```
+
+### 0.1 本地门禁（2026-10-18 新增，补「红基线没人拦」的洞）
+
+- **事实纠正**：CI 并不是没跑测试 —— `build` job 里有 `mvn test`。真正的洞是**红基线从未提交**，
+  CI 只在 push 后运行，所以对「未提交的红工作区」完全不可见。
+- 补法：把门禁挪到提交动作上，且**只有一处定义**（`scripts/verify-gates.sh`）：
+  - `.githooks/pre-commit` → `fast`（秒级）
+  - `.githooks/pre-push` → `full`（全量）
+  - 一次性安装：`git config core.hooksPath .githooks`
+- 钩子是**每 clone 一次**的本地配置，无法由仓库强制；但 `check-ledger-facts.sh` 已进 CI，
+  所以「交接单撒谎」这件事在 CI 侧仍会红。
 
 ---
 
@@ -77,10 +98,23 @@
   - **语义层** `ia-api/.../FallbackDegradeContractTest`：扫描 `target/classes` **自动发现**全部工厂（不维护类名清单），逐个方法验证两件事 —— ① `CLIENT` cause 下**不得**出现 `BizException`（4xx 必须透传 `UpstreamException`）；② `TRANSIENT` cause 下按**人工处置表**执行（`THROWS` 必须抛 `SYSTEM_BUSY` / `RETURNS` 必须不抛）。处置表**刻意不用「有没有 import BizException」自动推导**——那会让 M2 变异自动变绿。新工厂未登记即红、陈旧条目即红。
 - **M1 / M2 变异（本批实测，非推断）**：把 `OrderClientFallback` 改回无条件 `SYSTEM_BUSY` → **语义面 + 结构面同时红**；把 `RefundClientFallback` 的 `throw` 改成 `return null`（fail-closed→fail-open）→ **语义面红**（`shouldFollowDispositionTable_whenDownstreamUnavailable`）。两次均按 md5 复原并复跑全绿。
 - **`TradeInvoiceClientFallback` 静默 → 抛出**：`void` 的静默返回让调用方无法区分「联动成功/丢失」，会打出假的「已联动冲红」日志。改为 `classify` + 4xx 透传 + 其余抛 `SYSTEM_BUSY`；调用点 `PayEventNotifier#triggerInvoiceLinkage` 本就 `try/catch`（**退款优先不变**），`catch` 内落补偿记录。
-- **补偿承载（新增第 63 张表）**：`invoice_link_compensation`（`order_no` BINARY(16) / `scene_ref`=biz_ref / `kind` 1=VOID(I56) 2=PARTIAL(I60) / `status` 0=PENDING 1=DONE 2=FAILED_PERMANENT / `retry_count` / `next_retry_at` / `last_error`；`uk_order_scene_kind` + `idx_status_next_retry`）。pay-service 按四层落：`domain/model/invoicelink` 聚合 + `domain/enums` + `domain/repository` 端口 + `infrastructure/persistence`（PO/Mapper/Impl，`INSERT` 捕 `DuplicateKeyException` 归一为幂等命中）。写入再包一层 `try/catch`（补偿表挂了也绝不外溢到退款）。
+- **补偿承载**：新增 `invoice_link_compensation`（表数见 `sync-doc-counts.mjs --list-tables`；`order_no` BINARY(16) / `scene_ref`=biz_ref / `kind` 1=VOID(I56) 2=PARTIAL(I60) / `status` 0=PENDING 1=DONE 2=FAILED_PERMANENT / `retry_count` / `next_retry_at` / `last_error`；`uk_order_scene_kind` + `idx_status_next_retry`）。pay-service 按四层落：`domain/model/invoicelink` 聚合 + `domain/enums` + `domain/repository` 端口 + `infrastructure/persistence`（PO/Mapper/Impl，`INSERT` 捕 `DuplicateKeyException` 归一为幂等命中）。写入再包一层 `try/catch`（补偿表挂了也绝不外溢到退款）。
 - **U11**：`PayManager#confirmPaid` 的「支付单不存在」`ORDER_NOT_FOUND(3009)` → `NO_RESOURCE_FOUND(1103)`（同 404 / CLIENT，零感知）；另两处「订单不存在」保留 3009。
 - **`package-info` 重写**：**删掉整张「逐 Client 语义速查表」**（正是「注释复写会漂的清单」这类事故源），改为指向两只门禁；修正「仅 authorization-service 开启熔断」这个错事实（实为 authorization/user/merchant/verification/marketing/ai/pay/logistics + search(ADR-052)，trade 走 Sentinel）。
-- **教训（补进 §5）**：**「量到的」和「读到的」会互相打架** —— 本轮开工时按会话交接单读到「16/30 已改、14 个未改」，实际并行会话已在 10 分钟内改完并提交，凭旧清单动手就会重复劳动/覆盖别人的工作。开工第一件事应是 `git log --oneline -5` + `git status`，而不是相信交接单。
+- **教训（补进 §5）**：**「量到的」和「读到的」会互相打架** —— `[历史]` 本轮开工时按交接单读到「16/30 已改、14 个未改」，实际并行会话已在 10 分钟内改完并提交，凭旧清单动手就会重复劳动/覆盖别人的工作。开工第一件事应是 `git log --oneline -5` + `git status`，而不是相信交接单。**根因已用机制修掉，见 §0.1**。
+
+### 1.11 补偿闭环 + 约束棘轮 + 流程修复（批次 G，2026-10-18）
+- **补偿消费者上线**（把僵尸数据变成可收敛）：`InvoiceLinkCompensationRetryManager`（编排，含 Feign）+ `infrastructure/scheduler/InvoiceLinkCompensationRetryJob`（裸触发）。沿用同包既有 Job 形态（`RefundResumeJob`/`ReconciliationJob`/`PayTimeoutJob` **都没有分布式锁**，本 Job 亦不加，残余风险写进类注释）。重试策略：`2^n` 分钟退避、封顶、最多 5 次；**下游 4xx（`CLIENT`）直接 FAILED_PERMANENT**（重试必然重复失败）；状态迁移**全部条件更新**（`WHERE id=? AND status=PENDING`，不许读-改-写）；单条失败不中断整批。`order_no` 的 BINARY(16)→32-hex 走 `IdGenerator.toWire`（ADR-062 唯一出口）。
+- **类长度棘轮门禁**（把「类 ≤ 300 行」从口号变成机械约束）：`ClassSizeRatchetTest` + `class-size-baseline.tsv`。四条规则——新增超限即红 / 不许增长 / **陈旧即红**（还清必须从基线删）/ **到期即红**。判定抽成纯函数 `evaluate(...)`，用合成数据单测四条规则各自会红；并做过 5 次**变异验证**（把规则分支改成恒假 → 对应单测转红）+ 4 次端到端变异（改基线本身）。
+  - `PayManager`（344 行）与 `RefundManager`（334 行）登记为**限时豁免，deadline `2026-11-15`** ——「待 D 批」这种口头挂账不再成立：到期未拆则构建红。
+- **门禁自证成为常规**（回答「门禁自己会不会空转」）：
+  - `bash scripts/verify-gates.sh self-test`：喂合成违规样本，断言门禁**必须红**（含 `[历史]` 豁免必须豁免）。
+  - Java 侧合成违规体进 `mvn test`：`FallbackDegradeContractTest` 的两个自证方法（`shouldFlagSyntheticClientThatRewritesClientErrorToSystemBusy` / `...ThatSwallowsUnavailableFailure`，合成违规体 `RewriteToBusyFactory` / `SilentFailOpenFactory`）、`FallbackCategoryGuardTest` 的 fixture 变异、`ClassSizeRatchetTest` 的四条规则单测。
+  - **原则**：只靠「真实仓库跑一遍全绿」证明不了门禁有效 —— 那可能是一条恒为空转的规则。
+- **流程修复（根因，不是记性）**：
+  1. **交接单不再是 SSOT**：`check-ledger-facts.sh` 禁止本文件复述可测量事实（N 测试 / N 张表 / matched N / N 个模块 / 分数进度），历史证据须标 `[历史]`；已进 CI，且 `verify-gates.sh fast` 首步就跑它。自证时还发现一个漏网形态（`0 failures` 不带「测试」二字）并补上。
+  2. **红基线不再无人拦**：`scripts/verify-gates.sh` 是**唯一门禁定义**（`fast` / `full` / `self-test`），`​.githooks/pre-commit` 跑 fast、`pre-push` 跑 full（安装：`git config core.hooksPath .githooks`）。
+  3. **事实纠正**：CI 一直有 `mvn test`；漏过去的不是 CI，而是**从未提交的红工作区** —— CI 只在 push 后运行。
 
 ---
 
@@ -101,11 +135,10 @@
 ### 2.2 排队（按既定顺序）
 | 序 | 批 | 内容 |
 |---|---|---|
-| ~~—~~ | ~~**F**~~ | ✅ **已完成**（30 工厂分流 + 双门禁 + 发票联动补偿表 + U11 + `package-info` 重写，见 §1.10）|
-| 1 | **补偿重试** | `invoice_link_compensation` 已被写入（PENDING），但**没有消费者**：需 `@Scheduled` 扫 `status=0 AND next_retry_at<=now()` → 重调 Feign → 成功置 DONE / 失败退避加 `retry_count`。本批只落了「表 + 写入」|
+| ~~—~~ | ~~**补偿重试**~~ | ✅ **已完成**（批次 G）：`InvoiceLinkCompensationRetryManager` + XXL/`@Scheduled` 双入口，4xx 短路为永久失败，见 §1.11 |
+| 1 | **D（拆类还债）** | `PayManager`（344 行）/ `RefundManager`（334 行）已登记**限时豁免 deadline `2026-11-15`**；另有 17 个类在 `class-size-baseline.tsv` 里只受「不许增长 / 陈旧即红」约束。**先出测量报告**再决定拆法 |
 | 2 | **H** | 小程序**仅文档**（用户已裁决：本轮完全排除代码）|
-| 3 | **D** | `RefundManager` 拆类（314 行，**改动前已超「类 ≤300 行」硬约束**）—— **先出测量报告**再决定"拆"还是"登记技术债"；⚠ `PayManager` 现 **344 行**同样超限 |
-| 4 | **Web 角色端开发** | seller / admin 两个 app（现状：各 1 个"开发中"占位页，后端已有 **65 admin / 30 seller** 端点）。用户定的优先级：**Web 各角色平台先补完**。S0（基座）曾被取消，需重启 |
+| 3 | **Web 角色端开发** | seller / admin 两个 app（现状：各 1 个"开发中"占位页）。用户定的优先级：**Web 各角色平台先补完**。S0（基座）曾被取消，需重启 |
 
 ### 2.3 审计交回、待排期
 | 项 | 内容 | 需要谁 |
@@ -130,15 +163,16 @@
 | 项 | 后果 |
 |---|---|
 | **小程序 17 个文件** | 仍读 `name`、仍打 `/api/item/product/**`、`categoryId` 静默失效 ⇒ **商品名显示空白**；用户已裁决本轮排除，只登记（见 `product/02` §九）|
-| **发票联动补偿没有消费者** | `invoice_link_compensation` 已能落 PENDING 行，但**无调度器/重试者** ⇒ 目前只能人工按 SQL 收敛（§2.2 第 1 项）|
 | **联动前置步骤失败不可补偿** | 失败发生在「查支付单 / 比金额」时 `kind` 尚未判定，而 `kind` 是 NOT NULL 幂等锚点 ⇒ 只 warn 不落库（`recordCompensation` 已注释说明）|
+| **CLIENT 判定依赖异常链上的 `UpstreamException`** | `UpstreamFailures.classify` 只看「异常类型 / 已类型化错误体 / 状态码」；若将来有调用方直接抛 4xx 的 `BizException`（没有 `UpstreamException` 包裹），会被归为 `TRANSIENT` 而重试到上限（有界，最终 FAILED_PERMANENT）。当前 trade 4xx 由 fallback 原样抛 `UpstreamException`，故语义正确 |
+| **超限类只有两个有到期日** | 基线里 17 个类的 deadline 为空，只受「不许增长 / 陈旧即红」约束 ⇒ 它们可以**永久**超限。若要让硬约束真正生效，需逐个补 deadline（会带来一批必须排期的拆类工作）|
 | **13 个方法在 4xx 下不透传** | 属既定豁免（纯旁路 fail-open / 事务已成功后的回写 / verification 用 200+结果码承载）。它们不抛错，故语义门禁只要求「不得改写成 BizException」；**这是设计选择，不是缺陷**，理由在各自类注释 |
-| **门禁的变异样本靠运行期 javac** | `FallbackCategoryGuardTest` 的变异样本放在 `architecture-tests/src/test/resources`，测试时用 `Compiler API` 现场编译（因为该模块刻意不依赖业务模块）。脆点是依赖 JDK 而非 JRE；若要简化，可给该模块加 `ia-common` test 依赖后移回 `src/test/java` |
+| **门禁的变异样本改为普通编译产物** | 原先放在 `architecture-tests/src/test/resources`，测试时用 `javax.tools.JavaCompiler` 现场编译到临时目录 —— **实测 flaky**（单跑绿、整模块跑红：样本有时没被导入，反空断言报「变异样本未被规则选中」）。已改为放在 **ia-api 的测试源**（那里有 ia-common 编译期类路径），守卫用 `importPaths("../ia-api/target/test-classes/.../fixture")` 导入；代价是 architecture-tests 依赖「ia-api 测试类已编译」这一前置（reactor 顺序天然保证，单独跑缺失时有可执行提示）。**连跑 3 次验证确定性** |
 | `KgEdgeUpsertCO.srcId: Long` | 最后一个内部契约技术键（ADR-062 §E5）|
 | 评价缺「最旧优先」枚举 | 后端无该值；前端已删非法码 `oldest`（该码会被 `fromCode()` **静默回退 newest**）|
 | 通知缺多值/分组 `type` 筛选 | 前端逐值取数后合并（正确但多请求）|
 | 积分 `type=4/5` | 声明在案、**无生产者** |
-| `RefundManager` 超 300 行 | 改动前已超，硬约束违反 |
+| `RefundManager` / `PayManager` 超 300 行 | 硬约束违反；已进棘轮基线并**限时豁免到 2026-11-15**（到期构建红），不再是口头挂账 |
 | `MAX_COMPARE_SPU_IDS` / C9 批量比价 | 契约已定义、代码未实现 |
 | `ia-api SearchClient` 3 处 `Result<Map>` | Feign 弱类型契约，其 javadoc 自陈"强类型化需 search-service 同批发布" |
 
@@ -148,11 +182,12 @@
 
 | 维度 | 状态 |
 |---|---|
-| 后端逻辑/编译 | ✅ **2254 测试全绿**（0 failures / 0 errors / 1 skipped，20 模块 BUILD SUCCESS，2026-10-18 本批实测；**必须 JDK 21**）|
+| 后端逻辑/编译 | ✅ 全量单测通过（自己跑 `verify-gates.sh full` 或 `mvn clean test` 取数；**必须 JDK 21**，JDK 25 下 JaCoCo 会全仓红）|
 | 降级透传门禁 | ✅ **两层面均做过变异验证**（M1 改回无条件 `SYSTEM_BUSY` → 语义+结构同时红；M2 fail-closed→fail-open → 语义红；复原后全绿）|
+| 门禁自证 | ✅ `verify-gates.sh self-test` 会对门禁喂合成违规样本并断言其变红；Java 侧自证（`FallbackDegradeGateSelfTest` / guard fixture / 棘轮四条规则）随 `mvn test` 执行 |
 | 契约 ⇄ 代码 | ✅ 端点对账 289/0/43 + `check-section7` |
-| 建库脚本 | ✅ 真库实跑（MySQL 8.0.36，0 错误、**62 表**、幂等）—— ⚠ **新增第 63 张表后未再真库实跑**，只有 H2 与静态核对 |
-| 根文档计数 | ✅ `sync-doc-counts.mjs --write` 已跑：2254 测试 / 63 表，内部复检 0 处残留差异 |
+| 建库脚本 | ✅ 真库实跑过一次、0 错误且幂等（MySQL 8.0.36）；⚠ `[历史]` 那次跑在新增 `invoice_link_compensation` **之前** ⇒ **该表尚未真库实跑**，目前只有 H2 与静态核对 |
+| 根文档计数 | ✅ `sync-doc-counts.mjs --write` 是唯一写入口，`--check --strict-tests` 已进 CI 与 pre-commit 钩子 |
 | **运行态** | ❌ **未验证**。Nacos(8848) / Redis(6379) 均**不可达**，15 个服务起不来 ⇒ **登录链路、网关路由、Feign 调用、限流全程无运行态证据** |
 | **前端构建** | ❌ 未跑 `pnpm build`（环境约束）。仅 `tsc --noEmit` + 4 条静态脚本 |
 | **真实第三方** | ❌ 未验（微信支付/支付宝/短信/Geocoding 均为 mock 或未实测）|
@@ -180,6 +215,9 @@
 2. **注释不得复写会漂的清单**（枚举值/字段名/路径/计数）。已发生 3 次事故：`notification.type` 列注释 → 前端 4 个标签页恒空；`ProductVO.name` 教义；`backend/02` "路径刻意不变"。
 3. **门禁过重会逼人删断言**。所以：门禁必须便宜易修；**"删除门禁"要是一条合法且有记录的正路**；能从**类型**上强制的（`Result<VO>`）就绝不做成检查；白名单必须"陈旧即失败"。
 4. **测量的可信度低于结论**。本轮我自己的核验手段出错 ≥6 次（grep 不排除 javadoc、`^CREATE TABLE` 漏缩进、MySQL 输出 CR 未剥、`$?` 被二次展开污染、正则漏转义、验收标准算术不可满足）。**凡是"我核验过"，都要能给出命令与原始输出。**
+5. **「跑一遍全绿」不能证明门禁有效**。门禁最可能的失效形态是**恒真空转**（谓词选不中任何类、断言永远为空集）。所以每条门禁都必须自带**合成违规样本**并断言它变红：`verify-gates.sh self-test`、`FallbackDegradeContractTest` 的两个合成违规体、`FallbackCategoryGuardTest` 的 fixture、`ClassSizeRatchetTest` 的纯函数单测。**判定逻辑要抽成纯函数**，否则没法喂合成输入。
+   - 补一条更硬的：**「绿」还可能是运气**。`FallbackCategoryGuardTest` 的变异样本原用运行期 `javac` + 临时目录，某次全量绿、下一次整模块跑就红 —— 是**我按 `verify-gates.sh` 重跑时才暴露的**。所以：怀疑「这个门禁真的在跑吗」时，**换个入口再跑一次**（单类 / 整模块 / 全量 / 全量 clean），三个入口结论不一致就是 flaky，必须修掉而不是记住「它有时红」。
+6. **交接单一旦被当成 SSOT，错的就是它**。它复述的每个数字都会漂，而漂了的数字比没有数字更危险（会让人照着过期清单动手）。机制化处理：本文件禁止复述可测量事实（`check-ledger-facts.sh`，已进 CI），事实一律「跑命令去量」。
 
 ---
 
@@ -211,7 +249,7 @@
 |---|---|---|
 | 2. 可补偿的**承载**（新表） | ✅ 已建 | `Initialize.sql` 第 63 表 `invoice_link_compensation`（62→63，DROP 清单同增，双向零差集 63/63）|
 | 4. **不再静默**（落补偿记录） | ✅ 已接 | `PayEventNotifier#recordCompensation`（`kind` 判定后才落；写库再包一层 try/catch）|
-| 3. 自动重试（`@Scheduled`） | ⬜ **未做** | 表已有 `status/retry_count/next_retry_at` 就绪；缺消费者 ⇒ 见 §2.2 第 1 项 |
+| 3. 自动重试（定时任务） | ✅ **已做**（批次 G） | `app/InvoiceLinkCompensationRetryManager` + `infrastructure/scheduler/InvoiceLinkCompensationRetryJob`（XXL-Job 生产入口 + `@Scheduled` 开发入口；`2^n` 退避封顶、最多 5 次、4xx 直接永久失败）|
 | 1. 可观测（Micrometer Counter） | ⬜ **未做** | 改判：`pay-service` 的 pom **没有** micrometer/actuator（只有 gateway / ia-common / notification 有），原「依赖已在，零新增」**不成立**。当前可观测性是「ERROR/WARN 日志 + 补偿表行」，指标留到重试批次一并加 |
 
 ⚠️ 改判记录：§6 原文假设「`kind` 可在 fallback 内落库」——**不成立**，ia-api 无持久化能力。最终形态是「fallback 抛 → 调用侧（pay-service，有持久化）落库」，即把「静默」升级为「**可观测 + 可补偿**」而不是在契约层造端口。

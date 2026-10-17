@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# 推送前门禁（全量，等价 CI）。安装: git config core.hooksPath .githooks
+# 为什么放在 push 而不是 commit：全量约 5~6 分钟，每次提交都跑会逼人加 --no-verify；
+# 而 push 是「代码离开本机」的最后一道闸，戴在这里既便宜又拦得住。
+exec bash "$(git rev-parse --show-toplevel)/Implementation/back-end/scripts/verify-gates.sh" full
