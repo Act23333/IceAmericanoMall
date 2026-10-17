@@ -4,6 +4,7 @@
 > 编码前必读，Code Review 时逐条对照。
 > **2026-10-18（B6 批次）**：§三·五 新增两条硬约束 —— 「**对外渠道号与内部业务键不得共用 / 混用**」与「**对外单号类用 `IdGenerator.randomHex`、凭据类用 `secureToken`、对外单号禁 UUIDv7**」（依据 [ADR-063](../adr/063-external-channel-number-separation.md)，代码 `256abbf3`）。
 > **2026-10-18（B7a 批次）**：§三·五 再增两条硬约束 —— 「**承载层解耦：先判『是否表达实体身份』再决定放什么**」与「**短码不得当标识用**」（依据 [ADR-063](../adr/063-external-channel-number-separation.md) §决策 7/8；条款原文见 [05 §1.9⑦/⑧](../contract/05-API-Specification.md)）。**本批只写契约/约束，代码待 B7b**。
+> **2026-10-18（ADR-066 收口）**：§三·六 补齐判据一句话（「请求在协议层有没有被处理完」）与「**凭证无效**」一类（原表只写「未认证 / 无权限」，**未覆盖"提交上来的凭证本身不对"** ⇒ `3001`/`3002` 决策为 `400`，代码待 F 批次后落地）；新增「**三条禁令**」；§三·八 增加 `HttpStatus → category` 逐行映射的指针（[ADR-066](../adr/066-http-status-and-business-code-layering.md) §决策 3，**理由与源码取证只写在那里，本节不复制**）。
 > 归属域: collaboration | Owner: doc-engineer | 更新触发条件: 新增硬约束时（须有 ADR 或主 agent 依据）
 
 ---
@@ -376,12 +377,16 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 
 **D4「业务错误保留 HTTP 200 + body code」只适用于「业务规则拒绝」，不适用于「HTTP 语义错误」。** 二者判据如下，**不得混用**：
 
+> **判据（一句话，[ADR-066](../adr/066-http-status-and-business-code-layering.md) §决策 1）**：不是「有没有出错」，而是「**这次请求在协议层有没有被处理完**」—— 处理不完（资源不存在 / 参数**或凭证**非法 / 没认证 / 无权 / 被限流 / 依赖坏了）→ **HTTP 错误码**；处理完、只是业务规则不同意 → **200 + `code`**。5 问决策树与理由只在 ADR-066，本节只留可执行口径。
+
 | 类别 | 判据 | HTTP | 承载 |
 | :-- | :-- | :-- | :-- |
 | **资源不存在** | URL 指向的东西根本没有（详情/短码/单号查不到） | **404** | 真状态码 + `NO_RESOURCE_FOUND(1103)` |
 | **参数/形态非法** | 请求本身不合法（缺参、类型错、短码形态错、编码非法） | **400** | 真状态码 + `PARAM_ERROR(1101)` |
+| **凭证无效**（2026-10-18 [ADR-066](../adr/066-http-status-and-business-code-layering.md) 补齐） | **提交上来的凭证本身不能作为通过依据**（验证码不符/过期、签名或金额不合规）—— 与「未认证」同侧：服务端连"你是不是本人"都没确认 ⇒ **请求无法被处理** | **400** | 真状态码 + `1101` 或原业务码。⚠ **`3001 CAPTCHA_ERROR` / `3002 CAPTCHA_EXPIRED` 决策为 400，落地状态：待 F 批次之后执行**（当前仍是 `200`，与业务规则拒绝不可区分） |
 | **未认证 / 无权限** | 没有身份，或身份无权访问该资源 | **401 / 403** | 真状态码 |
 | **业务规则拒绝** | **资源存在、请求合法**，但规则不允许（余额不足、库存不足、状态不允许、券不适用、超限） | **200** | `Result` 信封 + body `code` |
+
 
 **子类「服务端数据不一致」（2026-10-18 批次 R1 补 —— 不计入上表四类，也不要拿它与四类里的任一格凑合）**：资源**存在**（按标识能查到这一行），但该行**字段缺失 / 自相矛盾**。它既不是「资源不存在」（客户端改参数或另寻资源就能解决），也不是「参数/形态非法」（请求本身合法），更不是「业务规则拒绝」（规则不允许而数据完好）—— 它是**服务端数据缺陷**：
 
@@ -402,6 +407,18 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 3. 新增端点一律按本表选承载；存量端点如发现同型偏离，按同一口径纠正并在契约登记。
 
 **注意**：`ErrorCode` 中若某枚举的 `HttpStatus` 与上表冲突（如 `PRODUCT_NOT_FOUND` 原配 `HttpStatus.OK`），**以本表为准**修改该枚举的 status，不要在新代码里"绕过枚举"手写状态码。
+
+**三条禁令（2026-10-18 立，依据 [ADR-066](../adr/066-http-status-and-business-code-layering.md) §决策 8 —— 本节只写条款，**为什么**与**已登记例外**只在 ADR-066，不在此重复）**
+
+| # | 禁令 | 违规形态 | 检测 |
+| :-- | :-- | :-- | :-- |
+| 1 | **禁止用 200 承载 not-found**（已修，**禁止回退**） | .md 名称含 `NOT_FOUND` 的码配 `HttpStatus.OK`；或用"通用兜底码 + 200"表达查不到 | 与契约 §2.1a 台账核对；`NOT_FOUND` 族状态必须是 `404` |
+| 2 | **禁止用 4xx 承载业务规则拒绝** | 余额/库存/状态/已评价/限购/名称重复配 `400/403/404/409/422` | 新增码走 §三·六 判据；`404` 只许用于「资源不存在」 |
+| 3 | **禁止每个服务自定义状态映射**（唯一出口是 `ErrorCode#getHttpStatus()`） | Controller/服务内 `ResponseEntity.status(...)` 手写状态；服务内自建「业务码 → 状态」第二张表；复制 `ErrorCategory` 派生规则 | 唯一出口 `ErrorCode` + `GlobalExceptionHandler`；`category` 唯一出口 `ErrorCategory`（**已登记例外仅两类**：网关边缘过滤、渠道回调协议 —— 见 ADR-066 §决策 8 禁令 3，**不得扩大到业务服务**） |
+
+> **「一事多码」的准确含义**：**同一个语义事件不得落两个不同的 HTTP 状态**（如"库存不足"既允许 200 又允许 409）。它**不**禁止同一状态下的多个业务码 —— `404` 有 21 条、`200` 有 23 条、`400` 有 14 条，业务码正是用来承担细粒度语义的。
+> **`409` / `422` 的边界**：本项目**刻意不用**它们承载业务规则拒绝（业务规则拒绝一律 200，理由与代价见 ADR-066 §决策 4）；`422` **永久不用**（与 `400` 重叠，选 `400 + 1101` 以保留前端字段高亮分支）；`409` 若将来引入，唯一合法用途是「**并发写冲突且必须就地恢复**」—— 注意其 `category` 会被派生为 `CLIENT`（**不可重试**），需要"可自动重试"的冲突语义应用 `429`/`503`。
+
 
 ## 三·七 响应信封与「单值响应」（2026-10-18 立：**收窄 `T` 的形态，不放宽信封**）
 
@@ -429,6 +446,7 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 > | 解码下游错误体 / 未知一律降级不吞错 | `ia-api` `exception/UpstreamErrorDecoder` | `UpstreamErrorDecoderTest` |
 > | 解码路径与降级路径**同一个类别入口**（禁止一处说 TRANSIENT、另一处说 BUG） | `ia-api` `exception/UpstreamFailures#classify` | `UpstreamFailuresTest`（真实 `feign.RetryableException` / resilience4j `CallNotPermittedException`） |
 > | `traceId` 跨服务透传（`X-Trace-Id`，**MDC 有值才注入**） | `ia-api` `config/DefaultFeignConfig`（`RequestInterceptor`） | `DefaultFeignConfigTest` / `TraceIdPropagationChainTest` |
+> | 状态码 → `category` 的**逐行映射**（`408/429/502/503/504` + `null` ⇒ `TRANSIENT`；`≥500` ⇒ `BUG`；`≥400` ⇒ `CLIENT`；`2xx` ⇒ `RULE`；覆盖表当前 3 条）与**三看分工**（状态码 → 网关/缓存/熔断/SLO；`code` → 前端文案；`category` → 跨服务透传或降级） | `ia-common` `common/enums/ErrorCategory#ofStatus` / `#of(Integer,Throwable)` | 逐行取证、覆盖表清单、判定顺序与「**`category` 不能按码段判定**」的反例 → [ADR-066](../adr/066-http-status-and-business-code-layering.md) §决策 2 / §决策 3 |
 
 1. **透传优先**：下游 **4xx + 已知 `code` 必须原样透传**；**只有 5xx / 超时 / 熔断**才允许改写成本域的 `SYSTEM_BUSY`。
    > 反例（本仓已发生）：`SpuDetailClient` 把下游 404（商品不存在）降级成 `SYSTEM_BUSY("商品服务暂不可用")`，导致「商品不存在」被说成「服务故障」。
