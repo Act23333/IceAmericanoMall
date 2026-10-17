@@ -46,7 +46,9 @@ class SpuSearchMapperH2Test {
                     id BIGINT AUTO_INCREMENT PRIMARY KEY, spu_id BINARY(16),
                     category_id BIGINT, name VARCHAR(100), description VARCHAR(255),
                     brand VARCHAR(50), main_image VARCHAR(255), sold_count INT DEFAULT 0,
-                    status INT DEFAULT 1, publish_time TIMESTAMP, create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    status INT DEFAULT 1, publish_time TIMESTAMP, create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    -- 唯一键集对齐 Initialize.sql:298（批次 U1 · D3 同表同键）：spu_id 列在、键就必须在
+                    CONSTRAINT uk_spu_id UNIQUE (spu_id)
                 )""");
             stmt.execute("""
                 CREATE TABLE sku (

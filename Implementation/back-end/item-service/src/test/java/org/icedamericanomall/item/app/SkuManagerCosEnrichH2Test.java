@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -56,10 +57,11 @@ class SkuManagerCosEnrichH2Test {
 
     private SkuRepository skuRepository;
     private SkuManager skuManager;
+    private DataSource dataSource;
 
     @BeforeEach
     void setUp() throws Exception {
-        DataSource dataSource = new SimpleDriverDataSource(
+        dataSource = new SimpleDriverDataSource(
                 new Driver(),
                 "jdbc:h2:mem:sku_cos_" + System.nanoTime() + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
                 "sa", "");
@@ -200,5 +202,52 @@ class SkuManagerCosEnrichH2Test {
         assertTrue(manager.getCosByIds(List.of()).isEmpty());
         assertTrue(manager.getCosByIds(null).isEmpty());
         assertEquals(0, calls.get(), "空入参不应触发商品展示查询");
+    }
+
+    /**
+     * <b>D6 承重用例（本批新增）</b>：{@code uk_sku_id} 真的承重 —— 同 {@code sku_id} 插两行必须报错。
+     *
+     * <p><b>凭什么说它测的是数据库约束</b>：这条 INSERT 完全不经过应用层（无仓储、无判重 if），
+     * 能拦下它的只有 {@code sku_id} 上的唯一索引。把该索引从 DDL 去掉，第二行会插进去
+     * （表里变 4 行），{@code assertThrows} 拿不到异常。
+     * 改前的假绿正是这种形态：{@code sku_id} 重复插入在 H2 不报错，
+     * 「插入侧唯一性」这一侧从未被验证过（{@code uk_sku_id} 只承担插入侧唯一性）。
+     */
+    @Test
+    @DisplayName("uk_sku_id — 同 sku_id 插两行必须报错（插入侧唯一性由 DB 承重）")
+    void shouldRejectDuplicateSkuId_byDatabaseKey() throws Exception {
+        long before = new JdbcTemplate(dataSource)
+                .queryForObject("SELECT COUNT(*) FROM sku", Long.class);
+
+        try (var conn = dataSource.getConnection(); var stmt = conn.createStatement()) {
+            var ex = assertThrows(java.sql.SQLException.class, () -> stmt.execute(
+                    "INSERT INTO sku (id, sku_id, spu_id, spec, price, status) VALUES "
+                            + "(99, X'00000000000000000000000000000011', 1001, '撞键规格', 100, 1)"),
+                    "若 uk_sku_id 缺失，此行插入成功 → 本用例变红");
+            assertTrue(String.valueOf(ex.getMessage()).toUpperCase().contains("UK_SKU_ID"),
+                    "冲突必须由 uk_sku_id 拦下: " + ex.getMessage());
+        }
+
+        assertEquals(before, new JdbcTemplate(dataSource)
+                .queryForObject("SELECT COUNT(*) FROM sku", Long.class), "重复 sku_id 不得落库");
+    }
+
+    /**
+     * <b>键集断言（本批新增）</b>：{@code sku} 上对 {@code sku_id} 的唯一索引与
+     * {@code Initialize.sql:331-332}（{@code uk_sku_id(sku_id)}）一致。缺一即红。
+     */
+    @Test
+    @DisplayName("DDL 键集 — sku 的 uk_sku_id(sku_id) 与 Initialize.sql 一致")
+    void shouldExposeProductionUniqueKeySet() {
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+
+        List<String> uniqueIndexes = jdbcTemplate.queryForList(
+                "SELECT index_name FROM information_schema.indexes "
+                        + "WHERE table_name = 'sku' AND index_type_name = 'UNIQUE INDEX'", String.class);
+
+        assertEquals(1, uniqueIndexes.size(), "生产 sku 表只有一个业务键唯一索引");
+        // 约束式建键时 H2 会派生成 <name>_INDEX_n，故按前缀断言
+        assertTrue(uniqueIndexes.get(0).toUpperCase().startsWith("UK_SKU_ID"),
+                "唯一索引名必须是 uk_sku_id: " + uniqueIndexes.get(0));
     }
 }

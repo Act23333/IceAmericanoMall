@@ -22,16 +22,27 @@ import org.icedamericanomall.common.utils.IdGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mybatis.spring.SqlSessionTemplate;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 
 import javax.sql.DataSource;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.spy;
 
 /**
  * CartManager H2 集成测试 —— 加购去重合并 / 数量更新(≤0删除) / 选中切换 / 选中项查询 / 清空，
@@ -42,6 +53,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * （{@code CartSkuViewQueryImpl}，同库只读 {@code sku LEFT JOIN spu}）——
  * 因此「业务键 → 技术键」这一步的 SQL 口径（BINARY(16) 用 {@code byte[]} 比较、
  * 走 {@code sku.sku_id} 唯一索引）也被本测试覆盖，而不是被 mock 掉。
+ *
+ * <p><b>键集纪律（批次 U1）</b>：{@code cart} 的 {@code uk_user_sku} 与 {@code Initialize.sql} 一致，
+ * 并有用例<b>显式依赖</b>它（并发撞键 → 增量合并、重复插入 → {@code DuplicateKeyException}）——
+ * 少了这个键，{@code CartManager} 的并发兜底路径在测试里根本不可达。
  */
 @DisplayName("CartManager H2 集成测试（含 ADR-061 业务键端到端）")
 class CartManagerH2Test {
@@ -62,13 +77,16 @@ class CartManagerH2Test {
                 "jdbc:h2:mem:cart_" + System.nanoTime() + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
                 "sa", "");
         jdbcTemplate = new JdbcTemplate(dataSource);
+        // 键集与 Initialize.sql:405-419 逐字一致：撤掉 uk_user_sku 就等于撤掉
+        // CartManager 的「并发增量合并」兜底 —— 那条路径只能由 DB 唯一键触发，应用层没有等价 if。
         jdbcTemplate.execute("""
                 CREATE TABLE cart (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     user_id BIGINT NOT NULL, sku_id BIGINT NOT NULL,
                     quantity INT DEFAULT 1, selected BOOLEAN DEFAULT TRUE,
                     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT uk_user_sku UNIQUE (user_id, sku_id)
                 )""");
         // 读模型的数据源：真实 sku / spu 两表（列口径与 Initialize.sql 对齐）
         jdbcTemplate.execute("""
@@ -104,7 +122,11 @@ class CartManagerH2Test {
         factoryBean.setGlobalConfig(globalConfig);
         SqlSessionFactory sqlSessionFactory = factoryBean.getObject();
 
-        cartRepository = new CartRepositoryImpl(sqlSessionFactory.openSession().getMapper(CartMapper.class));
+        // 生产同款装配：SqlSessionTemplate 挂 Spring 异常翻译器（H2 23505 → DuplicateKeyException）。
+        // 裸 openSession() 只能抛 MyBatis PersistenceException —— 唯一键冲突到不了 CartManager 的
+        // catch，「并发合并」在测试里被静默绕过（本批要修的可验证性缺口）。
+        cartRepository = new CartRepositoryImpl(
+                new SqlSessionTemplate(sqlSessionFactory).getMapper(CartMapper.class));
         CartConverter converter = new CartConverterImpl();
         CartSkuViewQuery query = new CartSkuViewQueryImpl(jdbcTemplate);
         cartManager = new CartManager(cartRepository, query, converter);
@@ -261,5 +283,89 @@ class CartManagerH2Test {
 
         List<CartItem> remaining = cartRepository.findByUserIdOrderByCreateTimeDesc(1L);
         assertEquals(1, remaining.size());
+    }
+
+    /**
+     * <b>D4 承重用例 ①（本批新增）</b>：同 {@code (user_id, sku_id)} 二次插入必须由 DB 拦下。
+     *
+     * <p><b>凭什么说它测的是数据库约束</b>：{@code CartRepositoryImpl#save} 里没有任何判重 if
+     * （它就是 {@code cartMapper.insert}），仓储也不翻译异常 —— 拦下这次插入的只能是
+     * {@code uk_user_sku}。本断言在<b>无</b>该键的 H2 DDL 上会失败：第二行插得进去，
+     * {@code assertThrows} 拿不到异常，且表里变 2 行。
+     */
+    @Test
+    @DisplayName("uk_user_sku — 同 (user_id, sku_id) 二次插入 → DuplicateKeyException（DB 唯一键抛出）")
+    void shouldRejectDuplicateUserSku_byDatabaseKey() {
+        cartRepository.save(CartItem.create(1L, 1000L, 1));
+
+        assertThrows(DuplicateKeyException.class,
+                () -> cartRepository.save(CartItem.create(1L, 1000L, 1)),
+                "若 uk_user_sku 缺失，此行插入成功 → 本用例变红：唯一键才是并发兜底的载体");
+        assertEquals(1, cartRepository.findByUserIdOrderByCreateTimeDesc(1L).size(), "不得出现第二行");
+    }
+
+    /**
+     * <b>D4 承重用例 ②（本批新增）</b>：并发加购撞唯一键 → {@code CartManager} 转为增量合并。
+     *
+     * <p>竞态窗口用 spy 复现：另一请求已经把 {@code (user 1, sku 1000)} 那一行写进去，
+     * 而本请求的「先查」落在窗口内（第一次判定「不存在」），于是走到 {@code save}。
+     *
+     * <p><b>凭什么说它测的是数据库约束</b>：能进入 {@code catch (DuplicateKeyException)} 的唯一
+     * 原因是 DB 抛了 23505（经 {@code SqlSessionTemplate} 翻译）；应用层没有任何 if 能判出「并发」。
+     * 无 {@code uk_user_sku} 时插入成功 → 购物车里出现两行同 SKU（{@code size()==1} 断言变红），
+     * 合并逻辑根本不执行。
+     */
+    @Test
+    @DisplayName("uk_user_sku — 并发撞键：改为增量合并（不新增行、不 500）")
+    void shouldMergeQuantity_whenConcurrentInsertHitsUniqueKey() {
+        // 另一请求已落库的那一行（数量 2）
+        cartRepository.save(CartItem.create(1L, 1000L, 2));
+
+        CartRepositoryImpl racingRepository = spy((CartRepositoryImpl) cartRepository);
+        // 只有第一次「先查」落在竞态窗口内；撞键后的回查走真实实现
+        doReturn(Optional.empty()).doCallRealMethod()
+                .when(racingRepository).findByUserIdAndSkuId(anyLong(), anyLong());
+        CartManager racingManager = new CartManager(racingRepository,
+                new CartSkuViewQueryImpl(jdbcTemplate), new CartConverterImpl());
+
+        racingManager.addItem(1L, addReq(SKU_A, 3));
+
+        List<CartItem> items = cartRepository.findByUserIdOrderByCreateTimeDesc(1L);
+        assertEquals(1, items.size(), "撞键后必须合并到既有一行，不得新增第二行");
+        assertEquals(5, items.get(0).getQuantity(), "2 + 3：走的是 incrementQuantity 合并分支");
+    }
+
+    /**
+     * <b>键集断言（本批新增）</b>：{@code cart} 表唯一键集与 {@code Initialize.sql:413-414} 一致
+     * （{@code uk_user_sku(user_id, sku_id)}，列序不差）。缺一即红。
+     */
+    @Test
+    @DisplayName("DDL 键集 — cart 表的 uk_user_sku(user_id, sku_id) 与 Initialize.sql 一致")
+    void shouldExposeProductionUniqueKeySet() {
+        Map<String, List<String>> keys = uniqueKeysOf("cart");
+
+        assertEquals(Set.of("uk_user_sku"), keys.keySet(), "生产唯一键（业务键）只有 uk_user_sku");
+        assertEquals(List.of("user_id", "sku_id"), keys.get("uk_user_sku"), "列序必须与生产一致");
+    }
+
+    /**
+     * 该表的唯一键 → 有序列集（列顺序取自 {@code KEY_COLUMN_USAGE.ORDINAL_POSITION}）。
+     *
+     * @param table 表名（本测试 DATABASE_TO_LOWER=TRUE，传小写）
+     * @return 键名 → 列名列表
+     */
+    private Map<String, List<String>> uniqueKeysOf(String table) {
+        Map<String, List<String>> keys = new LinkedHashMap<>();
+        jdbcTemplate.query("SELECT c.constraint_name AS name, k.column_name AS col "
+                        + "FROM information_schema.table_constraints c "
+                        + "JOIN information_schema.key_column_usage k "
+                        + "ON k.constraint_name = c.constraint_name AND k.table_name = c.table_name "
+                        + "WHERE c.table_name = ? AND c.constraint_type = 'UNIQUE' "
+                        + "ORDER BY c.constraint_name, k.ordinal_position",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs ->
+                        keys.computeIfAbsent(rs.getString("name"), name -> new ArrayList<>())
+                                .add(rs.getString("col")),
+                table);
+        return keys;
     }
 }
