@@ -383,6 +383,19 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 | **未认证 / 无权限** | 没有身份，或身份无权访问该资源 | **401 / 403** | 真状态码 |
 | **业务规则拒绝** | **资源存在、请求合法**，但规则不允许（余额不足、库存不足、状态不允许、券不适用、超限） | **200** | `Result` 信封 + body `code` |
 
+**子类「服务端数据不一致」（2026-10-18 批次 R1 补 —— 不计入上表四类，也不要拿它与四类里的任一格凑合）**：资源**存在**（按标识能查到这一行），但该行**字段缺失 / 自相矛盾**。它既不是「资源不存在」（客户端改参数或另寻资源就能解决），也不是「参数/形态非法」（请求本身合法），更不是「业务规则拒绝」（规则不允许而数据完好）—— 它是**服务端数据缺陷**：
+
+| 项 | 口径 |
+| :-- | :-- |
+| HTTP | **500**（真状态码） |
+| 业务码 | **`INTERNAL_ERROR(1000)`** |
+| `category` | **`BUG`**（由 500 派生，见 §三·八·3 —— 不手填） |
+| `retryable` | **`false`** —— 重试必然重复失败，只会把数据缺陷刷成调用方故障 |
+| **禁止承载** | ❌ **not-found 族**（`NO_RESOURCE_FOUND(1103)` / `PRODUCT_NOT_FOUND(3011)` / `SHOP_NOT_FOUND(3015)` …）· ❌ **`PARAM_ERROR(1101)`** |
+
+**为什么必须单列**：谎报成 404 → 客户端会走「重新下单 / 换个资源」分支（它本来没错），监控按 4xx 记账（其实是数据坏了，要值班修数）；谎报成 400 更糟 → 把服务端的账记到调用方头上，调用方无从修正。
+**落码实例（批次 R1）**：pay-service `PayOrder#assertRefundPayeePresent` / `#assertRefundAmountPresent` —— 支付单**存在**却缺 `biz_user_id` / `amount` → `INTERNAL_ERROR(1000)` + HTTP 500 + `BUG` + 不可重试；文案带 `payOrderNo` / `orderNo`（业务标识、**不含 PII**）以便定位。
+
 **定性与纪律**：
 1. 用 `200 + body code` 承载 **not-found** 属**偏离 HTTP 语义**，不只属"双口径"：它让 CDN/浏览器缓存、监控告警（全是 200 看起来都健康）、客户端重试策略、第三方 SDK 全部失去判断依据。
 2. 因此 `GET /api/item/spu/{spuId}` 由 `PRODUCT_NOT_FOUND(3011) + HTTP 200` 改为 **`NO_RESOURCE_FOUND(1103) + 404`**，**定性为「纠正错误」，不是「风格选择」，不得以 D4 为由回退**。
@@ -404,13 +417,24 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 **入参同批口径**：除「简单类型且参数少（≤2 个）」外，一律用 `XxxReq`；**≥3 个散装 `@RequestParam`/`@PathVariable` 必须聚合为 `XxxReq`**（query 场景用 `@QueryModel`）。
 **例外（须在契约登记出处）**：渠道回调（ADR-029：微信/支付宝报文形态由渠道规定）· JWKS（RFC 7517）· SSE 流式 · 二进制下载 · `/internal/**` 裸 CO（ADR-004）。
 
-## 三·八 跨服务错误传递铁律（2026-10-18 立）
+## 三·八 跨服务错误传递铁律（2026-10-18 立，2026-10-18 批次 ⑤/⑤b **已落码**）
+
+> **状态：已落码**（不再是「判据已立、实现待做」）—— 下列判据全部有代码落点与回归守卫：
+>
+> | 判据 | 代码落点 | 守卫 |
+> | :-- | :-- | :-- |
+> | `category`（`CLIENT` / `RULE` / `TRANSIENT` / `BUG`）**由 `HttpStatus` 派生** + 极短覆盖表（≤5 条、**启动期自检**） | `ia-common` `common/enums/ErrorCategory`（派生与覆盖表全仓唯一实现） | `ErrorCategoryTest`（含「覆盖值 = 派生结果即启动失败」等用例） |
+> | 判定顺序 **异常类型 → HTTP 状态码 → 500 才是 BUG** | `ErrorCategory#of(Integer,Throwable)` / `#isTransientCause` | `ErrorCategoryTest`（真实 JDK 网络类构造） |
+> | 内部错误体五字段 `code / msg / category / retryable / traceId` | `ia-common` `common/api/ErrorInfo`（record；`@JsonProperty` 逐字钉名 + `@JsonInclude(ALWAYS)`，键集合恒稳定） | `ErrorInfoTest`（键集合逐字断言）+ `GlobalExceptionHandlerTest` |
+> | 解码下游错误体 / 未知一律降级不吞错 | `ia-api` `exception/UpstreamErrorDecoder` | `UpstreamErrorDecoderTest` |
+> | 解码路径与降级路径**同一个类别入口**（禁止一处说 TRANSIENT、另一处说 BUG） | `ia-api` `exception/UpstreamFailures#classify` | `UpstreamFailuresTest`（真实 `feign.RetryableException` / resilience4j `CallNotPermittedException`） |
+> | `traceId` 跨服务透传（`X-Trace-Id`，**MDC 有值才注入**） | `ia-api` `config/DefaultFeignConfig`（`RequestInterceptor`） | `DefaultFeignConfigTest` / `TraceIdPropagationChainTest` |
 
 1. **透传优先**：下游 **4xx + 已知 `code` 必须原样透传**；**只有 5xx / 超时 / 熔断**才允许改写成本域的 `SYSTEM_BUSY`。
    > 反例（本仓已发生）：`SpuDetailClient` 把下游 404（商品不存在）降级成 `SYSTEM_BUSY("商品服务暂不可用")`，导致「商品不存在」被说成「服务故障」。
 2. **fallback 只许降级，不许吞错**。
    - 只读展示类：可 fail-open，但降级文案必须是「**暂时无法获取/比对**」，**不得写成「服务不可用」**；
    - 写 / 资金 / 库存：**fail-closed**，**绝不** fallback 成「成功」。
-3. **错误体必须足以判定处置**：内部错误体应含 `code` + `category`（`CLIENT` / `RULE` / `TRANSIENT` / `BUG`）+ `retryable` + `traceId`；调用方**不得仅凭状态码猜测语义**。
+3. **错误体必须足以判定处置（已落码）**：`/internal/**` 的错误体是 **`ErrorInfo{code,msg,category,retryable,traceId}`** 五字段（`ia-common` `common/api/ErrorInfo`；`retryable = (category == TRANSIENT)` 由 `category` **单向派生**，下游报文若自相矛盾（如 `category=CLIENT,retryable=true`）由解码器按 `category` 重新派生）。`/api/**` **仍是** `Result{code,msg,data}` —— **对外信封零变化**。调用方**不得仅凭状态码猜测语义**。
 4. **`/internal/**` 不得用 `void`/标量承载"可能失败"的操作**：失败必须以**非 2xx** 表达，否则调用方无法感知（ADR-004 §修订末段已登记该风险）。
 5. **状态码是被观测面**：熔断（resilience4j/Sentinel）、重试、指标、告警**都以 HTTP 状态码为键** —— 用 200 承载错误会让熔断器**永不触发**、成功率指标**虚高**。这是"错误必须用真状态码"的运维理由，不是风格偏好。

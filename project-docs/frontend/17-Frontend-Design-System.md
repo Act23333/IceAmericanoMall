@@ -8,6 +8,8 @@
 > 归属域: frontend | Owner: frontend-engineer | 更新触发条件: 设计系统变更时；新增平台适配差异时
 >
 > **平台轴**：设计系统保持**跨平台单篇**（不按平台拆分）；五平台（Web / 桌面端 / Android / iOS / 小程序）的 token 注入机制与允许的偏离集中在 **§十二 平台适配差异**。
+>
+> **2026-10-18（C2 批次）**：§4.11 新增 **`LoadFailed`（失败态）** 条目 —— 组件此前**只存在于代码**（`packages/ui/components/load-failed.tsx` + `apps/web` 的 `LoadFailedState` 封装），设计系统里没有条目、没有 token 归属、没有文案口径；本节补齐组件契约、与空态的视觉差异，以及「**失败态与空态必须视觉 / 文案 / 动作三分**」规约。
 
 ---
 
@@ -607,6 +609,46 @@ Size:
 └──────────────────────────────────────────────┘
 ```
 
+### 4.11 LoadFailed — 失败态组件（**失败态与空态必须三分**）
+
+> 2026-10-18（C2 批次）新增本节。组件此前**只存在于代码**（`packages/ui` + 应用层封装），设计系统没有条目 —— 于是各页仍可能用 `isError ? 暂无数据 : ...` 把「请求失败」渲染成「空」。**本节是代码的镜像：改组件时同步改本节。**
+
+**实现落点（两层）**
+
+| 位置 | 职责 |
+| :-- | :-- |
+| `Implementation/front-end/packages/ui/components/load-failed.tsx` | **纯展示**组件 `LoadFailed`：不引 `next/navigation`、不取数；重试动作由调用方注入，故 Web / 桌面端 / 其它 Next 应用都能复用 |
+| `Implementation/front-end/apps/web/app/components/load-failed-state.tsx` | Web 应用层封装 `LoadFailedState`：给**服务端组件页**补缺省「重试」= `router.refresh()`；**客户端页面应显式传自己的 `refetch`**（react-query 语义更准，且不会整页重渲染） |
+
+**组件契约（与代码逐字对齐）**
+
+| prop | 类型 / 默认 | 说明 |
+| :-- | :-- | :-- |
+| `title` | `string`，默认「加载失败」 | 主标题 |
+| `description` | `string`，默认「网络或服务暂时不可用，请重试。」 | 副文案 —— **必须让用户能分辨「加载失败」与「没有数据」** |
+| `onRetry` | `() => void`，可选 | **缺省时不渲染按钮**（只展示状态）；Web 层封装默认给 `router.refresh()` |
+| `retrying` | `boolean`，默认 `false` | 重试进行中：按钮置灰 + 文案变「重试中…」（防重复点击） |
+| `compact` | `boolean`，默认 `false` | 区块级失败（评价列表 / 店铺卡）用，不撑满屏、不抢主内容 |
+| `detail` | `string`，可选 | 技术细节小字位；`category=BUG` 等场景**不得**把内部细节塞进 `title`/`description` |
+| `className` | `string`，可选 | 追加样式 |
+
+**视觉（与空态的差异 —— 改样式时不得退化）**：容器 `role="alert"` + `aria-live="polite"`；语义色 **`danger`**（`#C45A5A`，`globals.css` `--color-danger`；§2.3 语义色表以 `error` 命名，同一 HEX）描边 `border-danger/25` + 底 `bg-danger/5`；图形 `AlertTriangle`（整页 `h-10 w-10` / 紧凑 `h-6 w-6`，`aria-hidden`）；标题 `text-ink-black`；副文案 `text-text-secondary`；细节 `text-text-tertiary`；重试按钮 `Button variant="secondary"` + `RotateCw` 图标。
+
+**三态对照（硬性：视觉 / 文案 / 动作三分）**
+
+| 维度 | 失败态（`LoadFailed`） | 空态 | 加载态（Skeleton） |
+| :-- | :-- | :-- | :-- |
+| **视觉** | 语义色 `danger` 描边 + 警示图形 + `role="alert"` | 中性 `warm-gray` / `text-secondary` + 轻插画，**无** `role` | 骨架块 + 微光动效（§5.4） |
+| **文案** | 「加载失败 / 网络或服务异常，请重试」—— 说清「**发生了什么 + 能不能重试**」 | 「**还没有内容 + 如何产生内容**」（如「还没有收藏，去逛逛→」）；**严禁**用「暂无数据」冒充失败，反之亦然 | 不写字（或仅 `aria-busy`） |
+| **动作** | **重试**（`onRetry`），可选附一个出口；`onRetry` 缺省时**不显示**按钮 | **前往 / 创建**类 CTA（去逛逛、去登录、去发布），**不给**重试（空不是错，重试拿不到东西） | 无 |
+
+**硬性规约**
+
+1. **失败态与空态必须视觉 / 文案 / 动作三分**：不得共用一个组件、一套文案、一种色调。把失败渲染成空态 = 把可恢复故障伪装成「本来就没有」，直接抹掉用户的重试动机。
+2. **`packages/ui` 保持纯展示**：路由 / 取数语义只允许出现在应用层封装（`LoadFailedState` 及各平台自己的包装），否则共享组件会被某一宿主绑死。
+3. **降级文案不得写成「服务不可用」**：只读展示类 fail-open 时用「暂时无法获取」（[09-constraints §三·八·2](../collaboration/09-constraints.md)）；本组件默认文案「网络或服务暂时不可用」是**失败态**口径，两者不要混用。
+4. **重试必须幂等**：`retrying` 期间按钮不可再触发；写类页面先禁用按钮再发起，避免重复写。
+5. **可访问性**：`role="alert"` 必留（异步出现能被朗读），重试按钮必须是可键盘触发的真 `<button>`；同一区域不得因重试循环反复播报。
 ---
 
 ## 五、动效规范

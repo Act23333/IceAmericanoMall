@@ -441,6 +441,43 @@ wallet-service    :: domain/repository/CurrencyRepository.java
 
 **命名决策已建档**：新增 `adr/056-wire-naming-snake-case.md`（三类载体、例外清单、大厂依据、守卫、未覆盖项），并登记入 `adr/README.md` 与根 `CLAUDE.md`/`AGENTS.md`（区间 001–056，56 文件 = 56 索引条目）。**此前 ADR 001–055 中无任何一篇记录该约定。**
 
+### 字段级一致性：从「真空」到「有闸」（2026-10-18，C2 批次登记）
+
+**两条审计发现（此前未登记，本次按代码与门禁脚本复核）**：
+
+| # | 发现 | 证据 | 处置 |
+| :-- | :-- | :-- | :-- |
+| ① | **字段级一致性此前是真空**：仓库有 6 道机械闸，但它们只查**路径**（`check-frontend-api-paths.mjs` / `crosscheck-api-paths.mjs`）、**错误码**（`check-error-codes.mjs`）、**查询参数**（`check-query-param-naming.mjs`）、**端点漂移**（`extract-endpoints.mjs`）与**标识字段的类型 / 路径变量 / 编码出口**（`check-id-invariants.sh` 检查 1–6）—— **没有任何一道看「字段名/键名」的一致性** | [ADR-064](../adr/064-spu-name-wire-key-unification.md) §背景 2（逐闸列出检查面）+ `check-id-invariants.sh` 检查 7 注释块 | 已补第 7 道闸（见下节） |
+| ② | **线上键缺陷在多数测试里不可见**：全仓 MockMvc 测试**绝大多数走 `standaloneSetup`**（Spring 上下文与 `spring.jackson.property-naming-strategy` **不加载**），报文里看到的只是 Java 字段名；`@WebMvcTest` 用例极少 ⇒ 「后端叫 `spuName`、线上键却没渲染成 `spu_name`」这类缺陷在常规单测里**不会红** | 现有测试树（`standaloneSetup` 广泛使用）；对照：断言线上键的用例**必须显式**装配 `new ObjectMapper().setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)` | 已按此口径补专门断言：`SpuNameWireKeyTest`（item / search 各一份）、`SpuDetailWireShapeTest`、`IdWireRoundTripTest`（往返）、`InternalItemSpuControllerTest` |
+
+**第 7 道门禁（`check-id-invariants.sh` 检查 7）—— SPU 名称字段线上键恒为 `spu_name`**
+
+| 断言 | 内容 |
+| :-- | :-- |
+| A 命中面 | 线格式面（`adapter/{response,request}` + `ia-api` `dto`）内，「文件名或其中嵌套类型名含 `Spu`」的类 = SPU 名载体 |
+| B 旧键禁令 | 载体类内不得再出现 `name` / `productName`（POJO 与 record 组件两种形态都抓；同行显式钉名 `spu_name` 例外）—— **真正的坑是两个键并存**，故 B 是负向断言 |
+| C 清单齐全 | 10 个必检载体逐个点名（`SpuVO`/`RecommendSpuVO`/`NoteDetailVO`/`SpuSearchVO`/`SpuVectorUpsert{CO,Req}`/`SpuDetailCO`/`SpuSearchItemCO`/`CreateSpuReq`/`UpdateSpuReq`），文件缺失或未声明 `spuName` 即失败 |
+| D 白名单陈旧即失败 | 唯一例外 `HistoryVO.productName` + `@JsonProperty("product_name")` 必须仍成立，被改名/删注解即红 |
+| E 例外不得扩散 | 除 `HistoryVO` 外任何 `@JsonProperty("product_name")` 一律失败 |
+| **F 命中面自证** | **载体类数 = 0 即失败** —— 防「零匹配却报 `[OK]`」的假绿（同检查 4/5 的自证纪律）；`[OK]` 后的自证行会打印命中数与「点名核对 10 个必检载体 / 白名单例外 1 条」 |
+
+**两组变异验证方式**（证明门禁有捕获力，非空转 —— 与 [ADR-062](../adr/062-external-identifier-and-addressing.md) §B5、[ADR-063](../adr/063-external-channel-number-separation.md) §守卫 4 同一纪律）：
+
+| # | 变异手法 | 期望 |
+| :-- | :-- | :-- |
+| ① | 把任一载体（如 `SpuVO`）的名字字段改回 `name` → 跑门禁 | 断言 **B** 报红并点名「文件:行」 |
+| ② | 删掉某必检载体的 `spuName` 声明（或把载体文件改名到不再匹配 `*Spu*`）→ 跑门禁 | 断言 **C** 或 **F** 报红 |
+
+> 两组都要跑「改回即红」**和**「恢复即绿」；只跑一半会分别漏掉假红与假绿。**本批（C2 文档批次）未执行变异**（`Implementation/**` 不含本批写权）。
+
+**纪律：字段改名必须两端同 PR + 配置跨模块往返断言**
+
+1. **两端同 PR**：字段改名必须在**同一个 PR** 内改完「发送端 + 接收端」—— 后端 VO/CO/DTO 与前端 TS 类型/读取点同批（[ADR-064](../adr/064-spu-name-wire-key-unification.md) §决策 1/6）。分开提交时两侧**各自都「合规」**（编译过、静态扫描过），而 Feign 解码只会**静默落 `null`**，不抛错。
+2. **跨模块往返断言**：每次改报文名必须配一条「**发送端报文 → 接收端解码**」的往返用例，当前样板是 `IdWireRoundTripTest` 的 **`SpuVO ⇄ SpuDetailCO`**：`SpuVO` 渲染出的 JSON 必须**含顶层键 `spu_name`**（且**不含 `name`**），喂给 `SpuDetailCO` 后 `spuName` 解码结果**必须非空**。
+   > 为什么必须是**顶层键**断言而不是「键集包含」：`SkuVO` 早就有 `spu_name`，只断言「键集里有」会掩盖 `SpuVO` 自身漏改。
+3. **不要用前端兼容读**（`p.spu_name ?? p.name`）「修」这类问题：它把缺陷搬进前端并**永久化双键**，旧键永不删除、新缺陷永不暴露，同时让「字段级一致性」失去可断言性（ADR-064 备选方案 C / D 均被否决）。
+4. **禁止顺手统一**：唯一登记例外 `HistoryVO.product_name` 是**故意的反向标记**（契约 §1.9④），门禁 D 项让该例外**必须持续成立**。
+
 
 ---
 

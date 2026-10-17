@@ -69,6 +69,49 @@ mvn clean install -DskipTests
 # 预期: BUILD SUCCESS, 18/18 模块
 ```
 
+### 2.4 后端静态门禁（**7 道**，提交前跑一次；CI 在编译前强制）
+
+```bash
+# 全量门禁（任一道红即阻断；脚本以自身位置推导仓库根，任意 cwd 可跑）
+bash Implementation/back-end/scripts/check-id-invariants.sh
+# 预期末行: [OK] ID 不变量门禁通过（…）；随后的「命中面自证」行会打印各检查的命中数
+```
+
+| # | 闸 | 检查面 |
+| :-- | :-- | :-- |
+| 1 | `check-id-invariants.sh` 检查 1–3 | UUID 生成点唯一出口 / BINARY(16) 参数化查询 / SQL 字面量禁令 |
+| 2 | 同脚本 检查 4 | 线格式**标识**字段的**类型**（`spuId` 等必须 `String`） |
+| 3 | 同脚本 检查 5–6 | 外部路径变量口径（`@PathVariable` 必须 `String` + 显式命名）/ 适配层无解析出口 |
+| 4 | `check-frontend-api-paths.mjs` · `crosscheck-api-paths.mjs` | **路径**漂移 |
+| 5 | `check-error-codes.mjs` | **错误码**一致 |
+| 6 | `check-query-param-naming.mjs` | **查询参数**命名 |
+| **7** | 同脚本 **检查 7** | **SPU 名称字段的线上键恒为 `spu_name`**（2026-10-18 批次「甲b」，[ADR-064](../adr/064-spu-name-wire-key-unification.md) §决策 5；契约 §1.8④） |
+
+> **第 7 道闸是第一条「字段级」闸**。在它之前，1–6 只看**路径 / 错误码 / 查询参数 / 端点漂移**与**标识字段的类型**，**没有任何一道看「字段名/键名」的一致性** —— 于是「后端改名、前端没跟」（Jackson `SNAKE_CASE` 忽略未知键 → 字段静默落 `null`/`undefined`）在 CI 上**完全不可见**：编译通过、单测通过、路径对得上、错误码对得上，线上只是「某块空白」。
+
+#### 检查 7 的命中面自证（**零命中 = 失败，不是通过**）
+
+| 断言 | 内容 |
+| :-- | :-- |
+| A 命中面 | 线格式面（`adapter/{response,request}` + `ia-api` `dto`）内，「**文件名或其中嵌套类型名含 `Spu`**」的类 = SPU 名载体 |
+| B 旧键禁令 | 载体类内**不得**再出现名字字段 `name` / `productName`（`private String name;` 与 record 组件 `String name,` 两种形态都抓；同一行显式钉名 `spu_name` 视为合规） |
+| C 清单齐全 | 10 个必检载体**逐个点名**（文件缺失或未声明 `spuName` 即失败）—— 只扫「已出现的字段」发现不了「某载体整段被删/改名」 |
+| D 白名单陈旧即失败 | 唯一例外 `HistoryVO.productName` + `@JsonProperty("product_name")` 必须**仍然成立**；被改名/删注解即红 |
+| E 例外不得扩散 | 除 `HistoryVO` 外任何 `@JsonProperty("product_name")` 一律失败 |
+| **F 命中面自证** | **载体类数为 0 即失败**（防「零匹配却报 `[OK]`」的假绿，与检查 4/5 的自证纪律同源） |
+
+`[OK]` 之后的自证行会打印每道检查的命中数（含「SPU 名称键检查 **N 个载体类** / 点名核对 10 个必检载体 / 白名单例外 1 条」）。**其中任一为 0 即说明门禁自身失效（`find` 基准或命名基准写错）**，此时 `[OK]` 不得作为合规依据。
+
+#### 检查 7 的两组变异验证（证明门禁有捕获力，不是空转）
+
+| # | 变异手法 | 期望 |
+| :-- | :-- | :-- |
+| ① | **旧键残留**：把任一载体（如 `SpuVO`）的名字字段改回 `name` → 跑门禁 | 断言 **B** 报红，并**点名「文件:行」**列出该载体 |
+| ② | **载体缺声明 / 命中面失效**：删掉某必检载体的 `spuName` 声明（或把载体文件改名到不再匹配 `*Spu*`）→ 跑门禁 | 断言 **C**（未声明 `spuName`）或断言 **F**（载体类数 = 0）报红 |
+
+> **纪律**：两组都要跑「改回即红」**和**「恢复即绿」。只跑前者会漏掉假红（如白名单写成通配导致恢复后仍红），只跑后者无法证明门禁真看得见缺陷。
+> ⚠️ **本批（C2 文档批次）未执行**这两组变异 —— `Implementation/**` 不在本批写权内；落地实测记录见 [ADR-064](../adr/064-spu-name-wire-key-unification.md) 与对应交付报告。
+
 ---
 
 ## 三、第一层：基础设施验证 (< 1 min)
@@ -788,6 +831,7 @@ pnpm --filter @icedmall/miniprogram dev:weapp
 |------|------|------|------|
 | 基础设施 | `docker compose ps` | 10s | 每次 |
 | 编译 | `mvn clean install -DskipTests` | 1min | 每次代码变更 |
+| 静态门禁 | `bash Implementation/back-end/scripts/check-id-invariants.sh`（+ 路径/错误码/查询参数三个脚本，见 §2.4） | 5s | 每次提交前 |
 | 单元测试 | `mvn test -pl '!user-service'` | 3min | 每次 PR |
 | 启动服务 | `mvn -pl gateway-service spring-boot:run` (等4个) | 30s | 需要时 |
 | API 冒烟 | `test/smoke-test.sh` | 1min | 部署前 |

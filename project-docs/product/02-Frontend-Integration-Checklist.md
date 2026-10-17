@@ -1,6 +1,6 @@
 # 前端对接清单（V5.14-V5.18 增量）
 
-> 最后更新: 2026-10-15 | 版本: V1.1
+> 最后更新: 2026-10-18 | 版本: V1.2
 >
 > 归属域: product | Owner: product-manager | 更新触发条件: 联调范围/契约变更时
 >
@@ -87,6 +87,22 @@
 
 登录（密码/短信/邮箱/微信网页 + `mini/login`）、商品/搜索（含 SE5 联想、SE6 facets、P27 相似、P2/P1 促销标签）、购物车、订单全生命周期（T1-T5/T12/T13）、支付（PAY1-PAY5）、售后（T17-T19/AD17/AD47）、优惠券/秒杀/积分/签到/任务中心/活动中心、收藏/历史/笔记（P28-P34）、IM 客服（CH1-CH5，AI 自动转人工）、通知中心（U28-U32）。全部契约见 05 各节，**本轮零改动**。
 
+## 九、已知未修（**登记，不在排期**）—— 小程序端
+
+> **用户已裁决：小程序本轮完全排除**（2026-10-18；同口径见 [ADR-064](../adr/064-spu-name-wire-key-unification.md) §风险 R4）。本节**只做文档登记**：不派工、不改代码、不列入联调范围。登记目的有二 —— ① 避免后人把「小程序页面空白」当成新缺陷从头排查；② 避免有人误以为「它已随 B8 前端同步批次一起改好了」。
+
+| 项 | 现状（未修） | 后果（都是**静默**，不报错） |
+| :-- | :-- | :-- |
+| **SPU 名称键** | 小程序卡片仍读 **`name`**（`apps/miniprogram/src/components/product-card.tsx` 的入参类型写着 `name: string`） | 后端已统一为 **`spu_name`**，`name` 键不复存在 ⇒ Jackson `SNAKE_CASE` + `FAIL_ON_UNKNOWN_PROPERTIES=false` 下落 `undefined`：**商品名显示空白**（P1 列表 / P2 详情 / SE1 搜索均受影响） |
+| **商品资源段路径** | 仍打**旧路径**：`/api/item/product/page`（首页、市场）、`/api/item/product/{id}`（详情）、`/api/search/product`（搜索） | 后端资源段已改为 **`/api/item/spu/**`** 与 **`/api/search/spu`** ⇒ 上述调用**取不到数据**（空列表 / 空详情，页面不报错） |
+| **类目筛选参数** | 仍以 **`categoryId`** 作查询参数名（`pages/marketplace/index.tsx`） | 线上参数名是 **`category_id`** ⇒ Spring 绑定不到、**筛选条件被静默忽略**（返回未过滤结果，不报错）。与 ADR-063「缺陷前形态 3」同源 |
+
+**为什么不在本批修**：① 用户已明确本轮排除（范围纪律：避免顺手扩范围）；② 它不是「改一个字段名就好」—— 同时踩了**名称键 + 资源段 + 查询参数**三处口径，需要一轮独立的前端同步，且应在 [21-Frontend-Refactor-Readiness](../frontend/21-Frontend-Refactor-Readiness.md) 的准入条件满足后再做。
+
+**接手时的最小修复面**（供后续批次估算，**不是**本批任务）：`components/product-card.tsx`（`name` → `spu_name`）；`pages/{index,marketplace,product}/index.tsx`（`/api/item/product/**` → `/api/item/spu/**`）；`pages/search/index.tsx`（`/api/search/product` → `/api/search/spu`）；`pages/marketplace/index.tsx`（`categoryId` → `category_id`）。
+
+---
+
 ## 契约收紧注记（ADR-050 修订，2026-10-14）
 
 - **券业务码（管理端）**：创建券时 `couponId` 可省略（服务端生成 32-hex）；如填写必须为 32 位 hex 或 36 位连字符 UUID（统一归一 32-hex 存储），`CPN-001` 这类可读编码会被拒绝（`PARAM_ERROR`）。C 端领取/查询接口的 `couponId` 一律为 32-hex；非法值按「券不存在」处理。
@@ -99,5 +115,6 @@
 
 | 版本 | 日期 | 变更内容 |
 | :-- | :-- | :-- |
+| V1.2 | 2026-10-18 | 新增 §九「已知未修 —— 小程序端」：按用户裁决登记「名称键仍读 `name` / 仍打旧资源段 `/api/item/product/**`、`/api/search/product` / 查询参数仍用 `categoryId`」及其后果（商品名空白、取不到数据、筛选静默失效），明确**本轮完全排除**；正文其余各节未改 |
 | V1.1 | 2026-10-15 | 补齐元信息头（归属域 / Owner / 更新触发条件 / 版本）——由 ADR-053 归属 product-manager；正文各节未改（V5.14-V5.18 对接内容与契约收紧注记保持原样） |
 | V1.0 | 2026-10-06 | 初版：V5.14-V5.18 全部契约增量按页面场景组织（小程序登录/拼团/发票/知识图谱搭配/多币种展示/小程序支付拉起/分享小程序码）＋多币种共享换算测试向量 ＋ ADR-050 契约收紧注记 |
