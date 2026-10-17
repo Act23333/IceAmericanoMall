@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
-import org.icedamericanomall.common.exception.DBException;
 import org.icedamericanomall.user.adapter.request.AddressReq;
 import org.icedamericanomall.user.adapter.response.AddressResp;
 import org.icedamericanomall.user.domain.model.address.Address;
@@ -42,11 +41,18 @@ public class AddressManager {
         addressRepository.insert(address);
     }
 
-    /** 查询地址详情（**不校验归属**，仅供集群内部 Feign 快照使用 —— 见 {@code /internal/address/{id}}）。 */
+    /**
+     * 查询地址详情（**不校验归属**，仅供集群内部 Feign 快照使用 —— 见 {@code /internal/address/{id}}）。
+     *
+     * <p><b>错误码归位（批次 ①）</b>：地址不存在曾借 {@code USER_NOT_FOUND(1102, "地址不存在")} ——
+     * 用一个「用户」码承载「地址」资源，调用方无法按码分辨实体。
+     * 现改为 {@link ErrorCode#NO_RESOURCE_FOUND}（1103 / HTTP 404，同为 not-found 家族），
+     * <b>不新增</b> {@code ADDRESS_NOT_FOUND}：新增码会破坏前后端 99:99 逐条对齐门禁。
+     */
     public AddressResp getById(Long id) {
         return addressRepository.findById(id)
                 .map(AddressResp::from)
-                .orElseThrow(() -> new BizException(ErrorCode.USER_NOT_FOUND, "地址不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.NO_RESOURCE_FOUND, "地址不存在"));
     }
 
     /**
@@ -59,32 +65,45 @@ public class AddressManager {
         return AddressResp.from(loadOwned(userId, id));
     }
 
-    /** 修改地址（先验归属，再按 {userId, id} 更新）。 */
+    /**
+     * 修改地址（先验归属，再按 {userId, id} 更新）。
+     *
+     * <p><b>0 行 ≠ 服务器错误（批次 ①，三个写方法同口径）</b>：{@code loadOwned} 已取到该行，
+     * 故「按 {userId, id} 更新影响 0 行」只可能有一个原因 ——
+     * <b>并发删除</b>（进方法时还在、落更新时已被另一请求删掉）。这属「资源不存在」，
+     * 此前被承载成 {@code DBException(INTERNAL_ERROR)}（<b>500</b>），把一次正常的并发收敛
+     * 报成了服务端故障（会误触告警、且前端只能提示「服务异常」）。
+     * 现按 {@code 09-constraints.md} §三·六 归位为 <b>404 + {@code NO_RESOURCE_FOUND}</b>。
+     *
+     * <p><b>为什么不走幂等 200</b>：更新/删除的目标已消失，若回 200 等于告诉客户端
+     * 「你的修改生效了」—— 用户刷新后地址仍在（或更糟：默认地址被清掉却没设新的）。
+     * 只有<b>纯读</b>场景才适合 fail-open；写路径的存在性失败必须可见。
+     */
     @Transactional(rollbackFor = Exception.class)
     public void updateAddress(Long userId, Long id, AddressReq req) {
         Address existing = loadOwned(userId, id);
         merge(existing, req);
         if (addressRepository.updateByUserIdAndId(existing) <= 0) {
-            throw new DBException(ErrorCode.INTERNAL_ERROR, "地址修改失败！");
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "地址不存在");
         }
     }
 
-    /** 设为默认地址（先清旧默认，再标记新默认，同一事务）。 */
+    /** 设为默认地址（先清旧默认，再标记新默认，同一事务）；0 行口径同 {@link #updateAddress}。 */
     @Transactional(rollbackFor = Exception.class)
     public void setDefault(Long userId, Long id) {
         loadOwned(userId, id);
         addressRepository.clearDefault(userId);
         if (addressRepository.markDefault(userId, id) <= 0) {
-            throw new DBException(ErrorCode.INTERNAL_ERROR, "地址设置默认失败！");
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "地址不存在");
         }
     }
 
-    /** 删除地址（先验归属，再按 {userId, id} 删除）。 */
+    /** 删除地址（先验归属，再按 {userId, id} 删除）；0 行口径同 {@link #updateAddress}。 */
     @Transactional(rollbackFor = Exception.class)
     public void deleteAddress(Long userId, Long id) {
         loadOwned(userId, id);
         if (addressRepository.deleteByUserIdAndId(userId, id) <= 0) {
-            throw new DBException(ErrorCode.INTERNAL_ERROR, "地址删除失败！");
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "地址不存在");
         }
     }
 

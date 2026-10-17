@@ -113,9 +113,10 @@ class ShopManagerTest {
      * 断言 {@code assertEquals(ErrorCode.SHOP_NOT_FOUND, ...)} 会通过 —— 本用例正是把
      * 「两种语义共用一个码」钉死的哨兵：拆分前它<b>必然</b>红（拿到的是 3015）。
      *
-     * <p><b>状态码口径</b>：本批<b>只拆语义不改状态码</b>（{@code 3015} 仍是 200，由批次 ① 归位 404）；
-     * 因此这里断言的是<b>类别</b>而非具体数字 —— {@code ErrorCategory.of(code)} 由
-     * {@code ErrorCode.httpStatus} <b>派生</b>（不手填 category），{@code RULE} 即「200 + 业务码」。
+     * <p><b>状态码口径</b>：批次 ③ 只拆语义不改状态码；<b>批次 ① 已把 {@code 3015} 归位为 404</b>
+     * —— 正因如此，本用例断言的是<b>类别</b>而非具体数字：{@code ErrorCategory.of(code)} 由
+     * {@code ErrorCode.httpStatus} <b>派生</b>（不手填 category），{@code RULE} 即「200 + 业务码」，
+     * 而 3015 现已派生为 {@code CLIENT}（404）。两者若被合流，这条断言立刻红。
      */
     @Test
     @DisplayName("公开店铺页 — 店铺存在但状态非正常（审核中/冻结）→ RULE 拒绝（200 + 业务码），不是 SHOP_NOT_FOUND")

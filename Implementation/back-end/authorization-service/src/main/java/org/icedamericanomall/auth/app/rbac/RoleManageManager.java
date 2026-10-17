@@ -55,11 +55,19 @@ public class RoleManageManager {
         return role;
     }
 
-    /** 更新角色名称/描述。 */
+    /**
+     * 更新角色名称/描述。
+     *
+     * <p><b>错误语义（批次 ①「not-found 归位」）</b>：受影响行数为 0 = <b>角色不存在</b>
+     * （{@code sys_role} 无 {@code is_system} 条件，故不存在其它 0 行原因）→
+     * {@link ErrorCode#NO_RESOURCE_FOUND}（1103 / <b>HTTP 404</b>）。
+     * 改造前借用 {@code BUSINESS_EXECUTION_EXCEPTION}（3000 / 200），把「资源不存在」
+     * 伪装成了「业务规则拒绝」，前端拿不到可区分的存在性信号。
+     */
     public void updateRole(Long id, String name, String description) {
         int rows = roleRepository.updateRole(id, name, description);
         if (rows <= 0) {
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "角色不存在");
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "角色不存在");
         }
         log.info("角色更新成功: id={}", id);
     }
@@ -69,12 +77,41 @@ public class RoleManageManager {
      *
      * <p>删除会级联清空 sys_user_role 中该角色的行 —— 受影响用户集合必须在删除<b>前</b>取，
      * 删除后逐个失效权限缓存（否则被删角色的权限会残留到 TTL 到期）。
+     *
+     * <p><b>单义拆分（批次 ①，逐条阅读）</b>：删除 SQL 带 {@code is_system = 0}，故
+     * 「受影响行数 = 0」此前同时承载两种语义。现按 {@code 09-constraints.md} §三·六 拆开：
+     * <table border="1">
+     *   <caption>两种语义 → 两种承载</caption>
+     *   <tr><th>语义</th><th>抛出</th><th>HTTP</th></tr>
+     *   <tr>
+     *     <td><b>角色不存在</b>（查不到该 id）</td>
+     *     <td>{@link ErrorCode#NO_RESOURCE_FOUND}（1103）</td>
+     *     <td><b>404</b>（资源不存在）</td>
+     *   </tr>
+     *   <tr>
+     *     <td><b>内置角色不可删</b>（角色存在、{@code is_system = 1}）</td>
+     *     <td>{@link ErrorCode#BUSINESS_EXECUTION_EXCEPTION}（3000）</td>
+     *     <td><b>200</b>（业务规则拒绝：资源存在、请求合法、规则不允许）</td>
+     *   </tr>
+     * </table>
+     * 「内置不可删」<b>不</b>改成 4xx：角色确实存在，用 404 会让运营把「系统保护」误读成「角色被删了」。
+     *
+     * @throws BizException 角色不存在（NO_RESOURCE_FOUND / 404）或系统内置角色（3000 / 200）
      */
     public void deleteRole(Long id) {
+        Role role = roleRepository.findById(id);
+        if (role == null) {
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "角色不存在");
+        }
+        if (Boolean.TRUE.equals(role.getIsSystem())) {
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "系统内置角色不可删除");
+        }
         Set<Long> affectedUserIds = new HashSet<>(roleRepository.findUserIdsByRoleId(id));
         int rows = roleRepository.deleteRole(id);
         if (rows <= 0) {
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "角色不存在或为系统内置角色不可删除");
+            // 前置校验已排除「不存在」与「内置」：此处只剩并发（他人刚删掉）——
+            // 目标确实已不存在，按 not-found 口径应答，绝不冒称「内置不可删」。
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "角色不存在");
         }
         permissionCacheEvictor.evictUsers(affectedUserIds);
         log.info("角色删除成功: id={}, 受影响用户数={}", id, affectedUserIds.size());

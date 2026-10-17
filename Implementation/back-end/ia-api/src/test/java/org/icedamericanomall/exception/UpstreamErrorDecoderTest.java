@@ -174,4 +174,40 @@ class UpstreamErrorDecoderTest {
                 .contains("category=CLIENT").contains("retryable=false")
                 .contains("traceId=trace-down-1");
     }
+
+    // ==================== 批次 ①：内部端点 not-found 码归位 404 后的 Feign 侧语义 ====================
+
+    /**
+     * 批次 ① 把 11 个 not-found 业务码（3009/3015/3016/…）的 HTTP 状态由 200 改为 404。
+     *
+     * <p><b>本用例锁死的两件事</b>：
+     * <ol>
+     *   <li><b>原样透传</b>：{@code /internal/**} 的 404 错误体（{@code GlobalExceptionHandler} 产出的
+     *       {@code ErrorInfo}）经解码器后，<b>业务码与文案一字不改</b> —— 调用方看到的是
+     *       「SKU 不存在」，而不是本域的 {@code SYSTEM_BUSY}「系统繁忙」；</li>
+     *   <li><b>category = CLIENT</b>（不可重试）：这是 §三·八·1 的判据；若这里退化成
+     *       {@code TRANSIENT}，调用方会对一个确定性失败反复重试，或把它当服务故障告警。</li>
+     * </ol>
+     * <p><b>为什么这条以前不成立</b>：改造前 {@code 3016} 配 200，内部端点返回
+     * 「<b>HTTP 200 + ErrorInfo</b>」—— 2xx 根本不进 {@code ErrorDecoder}，调用方要么把
+     * 「SKU 不存在」当成功，要么在反序列化成声明返回类型时炸出一个与语义无关的异常。
+     */
+    @Test
+    @DisplayName("★ 内部端点 404（SKU 不存在 3016）→ UpstreamException(CLIENT)，业务码/文案原样透传，绝不是 SYSTEM_BUSY")
+    void shouldPassthroughInternal404_withoutBecomingSystemBusy() {
+        UpstreamException ex = decode(404, INTERNAL_404_SKU);
+
+        assertThat(ex.getCode()).isEqualTo(3016);
+        assertThat(ex.getMsg()).isEqualTo("SKU不存在");
+        assertThat(ex.getCategory()).isEqualTo(ErrorCategory.CLIENT);
+        assertThat(ex.isRetryable()).isFalse();
+        assertThat(ex.getUpstreamStatus()).isEqualTo(404);
+        // 反向：不得被翻译成本域的「系统繁忙」
+        assertThat(ex.getCode()).isNotEqualTo(ErrorCode.SYSTEM_BUSY.getCode());
+        assertThat(ex.getMsg()).doesNotContain("系统繁忙").doesNotContain("暂不可用");
+    }
+
+    /** 与本仓 {@code GlobalExceptionHandler#rawInternalResponse} 产出的报文逐字同形。 */
+    private static final String INTERNAL_404_SKU = "{\"code\":3016,\"msg\":\"SKU不存在\","
+            + "\"category\":\"CLIENT\",\"retryable\":false,\"traceId\":\"trace-int-3016\"}";
 }

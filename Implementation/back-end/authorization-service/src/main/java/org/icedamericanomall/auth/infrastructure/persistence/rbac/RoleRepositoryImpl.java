@@ -35,6 +35,12 @@ public class RoleRepositoryImpl implements RoleRepository {
     }
 
     @Override
+    public Role findById(Long id) {
+        RolePO po = roleMapper.selectRoleById(id);
+        return po == null ? null : toRole(po);
+    }
+
+    @Override
     public Role insertRole(String name, String code, String description) {
         RolePO role = new RolePO();
         role.setName(name);

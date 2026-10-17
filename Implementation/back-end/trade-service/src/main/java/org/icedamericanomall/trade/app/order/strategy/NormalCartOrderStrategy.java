@@ -66,7 +66,7 @@ public class NormalCartOrderStrategy implements OrderCreateStrategy {
         Long sellerId = null;
         for (CartItemCO cartItem : cartItems) {
             SkuCO sku = skuMap.get(cartItem.getSkuId());
-            if (sku == null) throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
+            if (sku == null) throw new BizException(ErrorCode.NO_RESOURCE_FOUND,
                     "SKU不存在: " + cartItem.getSkuId());
             if (StockTypeEnum.requiresStockCheck(sku.getStockType())) {
                 if (sku.getStock() < cartItem.getQuantity()) {

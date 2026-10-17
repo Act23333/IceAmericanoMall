@@ -149,12 +149,17 @@ class GroupBuyOrderStrategyTest {
     }
 
     @Test
-    @DisplayName("validate — SKU 不存在：拒绝下单")
+    @DisplayName("validate — SKU 不存在：拒绝下单，且是 1103 / 404（不再是 3000 / 200）")
     void shouldReject_whenSkuMissing() {
         when(groupBuyClient.validate(any(GroupBuyValidateCO.class))).thenReturn(validateResult(null));
         when(skuClient.getSkuListByIds(List.of(SKU_BUSINESS_ID))).thenReturn(List.of());
 
-        assertThrows(BizException.class, () -> strategy.validate(ctx(null)));
+        BizException ex = assertThrows(BizException.class, () -> strategy.validate(ctx(null)));
+        // 批次 ①「not-found 归位」：改前抛 3000（HTTP 200），本断言改前两条都红
+        assertEquals(ErrorCode.NO_RESOURCE_FOUND, ex.getErrorCode(),
+                "SKU 不存在是资源不存在，必须 1103");
+        assertEquals(404, ex.getErrorCode().getHttpStatus().value(),
+                "not-found 语义必须真 404（09-constraints §三·六）");
         verify(addressClient, never()).getAddress(anyLong());
     }
 

@@ -35,7 +35,8 @@ public class FlashSaleOrderStrategy implements OrderCreateStrategy {
         // 从 item-service 获取 SKU 详情（商品名、规格、图片等快照数据）
         List<SkuCO> skuList = skuClient.getSkuListByIds(List.of(ctx.getSkuId()));
         if (skuList == null || skuList.isEmpty())
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "SKU不存在");
+            // 资源不存在 = 真 404（批次 ①）：改造前借用 3000（200 信封）
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "SKU不存在");
 
         SkuCO sku = skuList.get(0);
         // 秒杀不限库存（Redis 已预扣），不校验 stock

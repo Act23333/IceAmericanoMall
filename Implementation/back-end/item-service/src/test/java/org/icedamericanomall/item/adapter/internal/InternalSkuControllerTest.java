@@ -39,9 +39,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *       <b>不是</b> 1101。</li>
  * </ol>
  *
- * <p><b>为何第 2 条不断言 HTTP 状态码</b>：{@code 3016} 的 {@code HttpStatus} 本批<b>刻意不动</b>
- * （仍是 200，按用户裁决的顺序「先拆语义、再改状态码」）；把它钉成 200 会让批次 ①（归位 404）
- * 无谓地红。本批要钉的是<b>码与语义的一一对应</b>，状态码归位归 ①。
+ * <p><b>为何第 2 条现在断言 HTTP 状态码</b>：批次 ③ 时 {@code 3016} 的 {@code HttpStatus} 刻意不动
+ * （仍是 200，按用户裁决的顺序「先拆语义、再改状态码」）；<b>批次 ① 已完成归位</b>
+ * （{@code 3016} → 404），故本用例同步改严：断言 <b>404 + code 3016 + category=CLIENT</b>。
+ * 改前（200 + ErrorInfo）会红 —— 这正是本批要锁死的偏离。
  *
  * <p><b>内部面承载</b>：{@code /internal/**} 不包 {@code Result}，错误体是
  * {@code ErrorInfo}（{@code code/msg/category/retryable/traceId}，ADR-004 + 09 §三·八·3），
@@ -97,7 +98,7 @@ class InternalSkuControllerTest {
     }
 
     @Test
-    @DisplayName("形态合法但 SKU 不存在 → 3016（不是 1101），HTTP 状态码本批不动（归位由批次 ①）")
+    @DisplayName("形态合法但 SKU 不存在 → 404 + 3016 + category=CLIENT（批次 ① 归位；改前是 200）")
     void shouldReturnSkuNotFound_whenSkuAbsent() throws Exception {
         org.mockito.Mockito.doThrow(new BizException(ErrorCode.SKU_NOT_FOUND))
                 .when(skuManager).deductStock(SKU_ID_ABSENT, 1);
@@ -105,9 +106,13 @@ class InternalSkuControllerTest {
         mockMvc.perform(MockMvcRequestBuilders.post("/internal/item/sku/deduct")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(deductBody(SKU_ID_ABSENT)))
+                .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(ErrorCode.SKU_NOT_FOUND.getCode()))
                 .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.not(
-                        ErrorCode.PARAM_ERROR.getCode())));
+                        ErrorCode.PARAM_ERROR.getCode())))
+                // 内部面 404 → CLIENT：Feign 侧原样透传「SKU 不存在」，不得改写为 SYSTEM_BUSY
+                .andExpect(jsonPath("$.category").value(ErrorCategory.CLIENT.name()))
+                .andExpect(jsonPath("$.retryable").value(false));
     }
 
     @Test

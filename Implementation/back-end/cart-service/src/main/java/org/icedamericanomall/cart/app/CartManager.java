@@ -67,7 +67,7 @@ import java.util.Objects;
  *   <tr>
  *     <td><b>SKU 不存在</b>（形态合法的业务键解析不到）</td>
  *     <td>{@link ErrorCode#SKU_NOT_FOUND}（3016）</td>
- *     <td>200（批次 ① 归位为 404 + 1103）</td>
+ *     <td><b>404</b>（批次 ① 已归位；业务码仍是 3016，不与 1103 合并）</td>
  *     <td><b>资源不存在</b></td>
  *   </tr>
  * </table>
@@ -75,7 +75,7 @@ import java.util.Objects;
  * {@code IdGenerator#requireWire} fail-fast，ADR-062 §决策 7「编解码唯一出口 + 形态非法 400」），
  * 本类保留<b>同口径的第二道防线</b>：拼错一个 hex 字符绝不能静默降级成「SKU 不存在」
  * 或「幂等空操作」—— 那会把排查成本全部转嫁给调用方。{@code 3016} 的 {@code HttpStatus}
- * 本批<b>刻意不动</b>（先拆语义、再改状态码），归位由批次 ① 执行。
+ * 已由批次 ① 归位为 404（先拆语义、再改状态码，两步分别执行）。
  */
 @Slf4j
 @Component

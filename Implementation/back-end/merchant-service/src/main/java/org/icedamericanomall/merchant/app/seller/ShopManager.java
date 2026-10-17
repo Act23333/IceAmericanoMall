@@ -45,7 +45,7 @@ import java.util.Objects;
  *   <tr>
  *     <td><b>店铺不存在</b>（含遗留 {@code sellerId} 口径解析不到店铺）</td>
  *     <td>{@link ErrorCode#SHOP_NOT_FOUND}（3015）</td>
- *     <td>200（批次 ① 归位为 404 + 1103）</td>
+ *     <td><b>404</b>（批次 ① 已归位；业务码仍是 3015，不与 1103 合并）</td>
  *     <td>资源不存在</td>
  *   </tr>
  *   <tr>
@@ -61,8 +61,8 @@ import java.util.Objects;
  *     <td><b>无权限</b> —— 不用 not-found 掩盖（无「反枚举」取舍，见 {@link #loadOwnedShop}）</td>
  *   </tr>
  * </table>
- * <p>{@code 3015} 的 {@code HttpStatus} 本批<b>刻意不动</b>（先拆语义、再改状态码，
- * 顺序反了会把刚拆出去的两种语义一起变成 404），归位由批次 ① 执行。
+ * <p>{@code 3015} 的 {@code HttpStatus} 已由批次 ① 归位为 {@code 404}（先拆语义、再改状态码，
+ * 顺序反了会把刚拆出去的两种语义一起变成 404）。
  */
 @Slf4j
 @Component

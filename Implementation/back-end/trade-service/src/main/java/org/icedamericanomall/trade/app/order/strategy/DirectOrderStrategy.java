@@ -38,7 +38,8 @@ public class DirectOrderStrategy implements OrderCreateStrategy {
     public void validate(OrderCreateContext ctx) {
         List<SkuCO> skuList = skuClient.getSkuListByIds(List.of(ctx.getSkuId()));
         if (skuList == null || skuList.isEmpty())
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "SKU不存在");
+            // 资源不存在 = 真 404（批次 ①）：改造前借用 3000（200 信封），与「业务规则拒绝」混同
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "SKU不存在");
 
         SkuCO sku = skuList.get(0);
         if (StockTypeEnum.requiresStockCheck(sku.getStockType())) {

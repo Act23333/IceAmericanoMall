@@ -21,6 +21,19 @@ public interface RoleRepository {
     /** 全部角色（后台下拉/列表）。 */
     List<Role> findAllRoles();
 
+    /**
+     * 按角色 ID 取角色（{@code null} 表示不存在）。
+     *
+     * <p><b>存在的理由（批次 ①「拆双义错误码」）</b>：{@code deleteRole} 的 SQL 带
+     * {@code is_system = 0}，因此「受影响行数 = 0」同时覆盖两件事 ——
+     * <b>角色不存在</b>（资源不存在 → 404）与<b>内置角色不可删</b>（业务规则拒绝 → 200 + 3000）。
+     * 要在应用层把两者拆开，就必须能在执行删除<b>前</b>判定角色是否存在。
+     *
+     * @param id 角色技术主键
+     * @return 角色读模型；不存在返回 {@code null}
+     */
+    Role findById(Long id);
+
     /** 新建角色（返回含生成主键的角色）。 */
     Role insertRole(String name, String code, String description);
 

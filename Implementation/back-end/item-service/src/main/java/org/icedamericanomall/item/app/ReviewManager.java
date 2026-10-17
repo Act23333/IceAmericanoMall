@@ -232,12 +232,18 @@ public class ReviewManager {
      *
      * <p><b>事务纪律（硬约束：Feign 严禁进事务）</b>：通知经 {@link #runAfterCommit}
      * 移到事务提交后发送（回滚即不发送）；通知本身 fail-open，不阻断回复主流程。
+     *
+     * <p><b>错误语义（批次 ①「not-found 归位」）</b>：取不到评价 =
+     * <b>资源不存在</b> → {@link ErrorCode#NO_RESOURCE_FOUND}（1103 / HTTP 404）。
+     * 改造前借用 {@code BUSINESS_EXECUTION_EXCEPTION}（3000 / 200），与紧随其后的
+     * 「已回复过该评价」（真·业务规则拒绝，仍是 3000 / 200）挤在同一状态码里，
+     * 调用方无法区分「评价没了」与「评价已回复」。
      */
     @Transactional(rollbackFor = Exception.class)
     public void replyToReview(Long sellerId, Long reviewId, String content) {
         Review review = reviewRepository.findById(reviewId);
         if (review == null) {
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "评价不存在");
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "评价不存在");
         }
         Spu spu = spuRepository.findById(review.getSpuId());
         if (spu == null || !spu.getSellerId().equals(sellerId)) {

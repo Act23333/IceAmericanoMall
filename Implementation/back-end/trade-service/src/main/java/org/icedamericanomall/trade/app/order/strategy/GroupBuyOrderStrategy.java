@@ -113,7 +113,8 @@ public class GroupBuyOrderStrategy implements OrderCreateStrategy {
     private SkuCO loadSku(String skuId) {
         List<SkuCO> skuList = skuClient.getSkuListByIds(List.of(skuId));
         if (skuList == null || skuList.isEmpty()) {
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, "SKU不存在");
+            // 资源不存在 = 真 404（批次 ①）：改造前借用 3000（200 信封）
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "SKU不存在");
         }
         return skuList.get(0);
     }

@@ -109,4 +109,33 @@ class CartControllerTest {
                 .patch("/api/cart/item/1122334455/selected").param("selected", "true")));
         verify(cartManager, never()).selectItem(any(), any(), any());
     }
+
+    // ==================== 批次 ①：形态合法但 SKU 不存在 → 404 / 3016 ====================
+
+    /**
+     * 拆分守卫的<b>另一半</b>（批次 ① 状态码归位）：业务键形态合法、库里却没有这个 SKU。
+     *
+     * <p><b>改前必失败</b>：改造前 {@code SKU_NOT_FOUND(3016)} 配 200，加购一个不存在的 SKU
+     * 返回 <b>HTTP 200 + body code 3016</b>；现返回 <b>404</b>。
+     *
+     * <p><b>与上一条互斥且必须同时成立</b>：拼错的键 → 400/1101（请求写错了）；
+     * 拼对但不存在 → 404/3016（资源没有了）。两者一旦合流，客户端排查成本会全部转嫁给用户。
+     */
+    @Test
+    @DisplayName("C2 加购 — 形态合法但 SKU 不存在 → 404 + 3016（不是 400、也不是 200）")
+    void shouldReturn404_whenAddSkuAbsent() throws Exception {
+        org.mockito.Mockito.doThrow(new org.icedamericanomall.common.exception.BizException(
+                        ErrorCode.SKU_NOT_FOUND))
+                .when(cartManager).addItem(any(), any());
+
+        mockMvc.perform(MockMvcRequestBuilders.post("/api/cart/item")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sku_id\":\"deadbeefdeadbeefdeadbeefdeadbeef\",\"quantity\":1}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SKU_NOT_FOUND.getCode()))
+                .andExpect(jsonPath("$.msg").value("SKU不存在"))
+                // 信封结构不变：仍是 Result(code/msg/data)，不是内部面的 ErrorInfo
+                .andExpect(jsonPath("$.category").doesNotExist())
+                .andExpect(jsonPath("$.retryable").doesNotExist());
+    }
 }

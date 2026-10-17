@@ -51,13 +51,13 @@ import java.util.stream.Collectors;
  *   <tr>
  *     <td><b>SKU 不存在</b>（形态合法但解析不到 / 行已删）</td>
  *     <td>{@link ErrorCode#SKU_NOT_FOUND}（3016）</td>
- *     <td>200（批次 ① 归位为 404 + 1103）</td>
+ *     <td><b>404</b>（批次 ① 已归位；业务码仍是 3016）</td>
  *     <td><b>资源不存在</b></td>
  *   </tr>
  * </table>
  * <p>形态校验的主责在适配层（{@code InternalSkuController#deductStock} 经
  * {@code IdGenerator#requireWire} fail-fast，ADR-062 §决策 7），本类保留同口径的第二道防线。
- * {@code 3016} 的 {@code HttpStatus} 本批<b>刻意不动</b>（先拆语义、再改状态码），归位由批次 ① 执行。
+ * {@code 3016} 的 {@code HttpStatus} 已由批次 ① 归位为 404（先拆语义、再改状态码）。
  */
 @Slf4j
 @Component

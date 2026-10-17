@@ -313,6 +313,28 @@ class ReviewManagerTest {
         assertThrows(BizException.class, () -> reviewManager.replyToReview(100L, 5L, "回复"));
     }
 
+    /**
+     * 批次 ①「not-found 归位」—— 评价不存在必须是 {@code NO_RESOURCE_FOUND}(1103 / 404)。
+     *
+     * <p><b>改前必失败</b>：改造前本分支抛 {@code BUSINESS_EXECUTION_EXCEPTION}(3000 / HTTP 200)，
+     * 与紧随其后的「已回复过该评价」（真·业务规则拒绝）挤在同一状态码；
+     * 本用例断言 1103 与 404 两个维度，即改造前两条断言都红。
+     */
+    @Test
+    @DisplayName("replyToReview — 评价不存在 → NO_RESOURCE_FOUND(1103) 且 HTTP 404（不是 3000/200）")
+    void shouldThrowNoResourceFound_whenReviewMissing() {
+        when(reviewRepository.findById(5L)).thenReturn(null);
+
+        BizException ex = assertThrows(BizException.class,
+                () -> reviewManager.replyToReview(100L, 5L, "回复"));
+        assertEquals(ErrorCode.NO_RESOURCE_FOUND, ex.getErrorCode(),
+                "资源不存在必须用 1103，不得借用 3000（那会把「评价没了」与「评价已回复」混同）");
+        assertEquals(404, ex.getErrorCode().getHttpStatus().value(),
+                "not-found 语义必须真 404（09 §三·六）");
+        // 反向：同方法内的「已回复」仍是业务规则拒绝（200 信封），两者不得合流
+        assertNotEquals(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, ex.getErrorCode());
+    }
+
     // ==================== appendReview ====================
 
     @Test

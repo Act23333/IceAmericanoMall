@@ -103,4 +103,26 @@ class FreightTemplateControllerTest {
 
         verify(freightTemplateManager).delete(9L, 5L);
     }
+
+    /**
+     * 批次 ① 状态码归位：{@code FREIGHT_TEMPLATE_NOT_FOUND(3041)} 由 200 改为 <b>404</b>。
+     *
+     * <p><b>改前必失败</b>：删除一个不存在（或不属于本店）的模板，改造前返回
+     * <b>HTTP 200 + body code 3041</b>；现返回 404，且业务码仍是 3041
+     * （前端靠它提示「运费模板不存在」，而 1103/1101 分别是「静态资源」「参数错」）。
+     */
+    @Test
+    @DisplayName("FT4 delete — 模板不存在/非本店 → 404 + 3041（不再是 200）")
+    void shouldReturn404_whenTemplateMissingOnDelete() throws Exception {
+        UserContext.setUser(UserInfo.builder().userId(5L).build());
+        org.mockito.Mockito.doThrow(new org.icedamericanomall.common.exception.BizException(
+                        org.icedamericanomall.common.enums.ErrorCode.FREIGHT_TEMPLATE_NOT_FOUND,
+                        "运费模板不存在"))
+                .when(freightTemplateManager).delete(9L, 5L);
+
+        mockMvc.perform(MockMvcRequestBuilders.delete("/api/item/freight-template/9"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(3041))
+                .andExpect(jsonPath("$.msg").value("运费模板不存在"));
+    }
 }

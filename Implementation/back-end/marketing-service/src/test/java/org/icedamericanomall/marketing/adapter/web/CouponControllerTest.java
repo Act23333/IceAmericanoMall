@@ -52,6 +52,8 @@ class CouponControllerTest {
     void setUp() {
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new CouponController(couponClaimManager, couponUsageManager, couponAdminManager))
+                // 批次 ①：领券「券不存在」要断言 404，需要全局处理器在场（standalone 不自动装配）
+                .setControllerAdvice(new org.icedamericanomall.common.aspect.GlobalExceptionHandler())
                 .build();
         UserContext.setUser(UserInfo.builder().userId(USER_ID).build());
     }
@@ -74,5 +76,25 @@ class CouponControllerTest {
                 .andExpect(jsonPath("$.data.expired").value(3));
 
         verify(couponUsageManager).countMyCoupons(eq(USER_ID));
+    }
+
+    /**
+     * 批次 ① 状态码归位：{@code COUPON_NOT_FOUND(3019)} 由 200 改为 <b>404</b>。
+     *
+     * <p><b>改前必失败</b>：抢一个不存在的券，改造前返回 <b>HTTP 200 + body code 3019</b>
+     * （前端只有解 body 才知道失败）；现返回 404，业务码仍 3019（≠1103「静态资源」）。
+     */
+    @Test
+    @DisplayName("grab — 券不存在 → 404 + 3019（不再是 200）")
+    void shouldReturn404_whenCouponMissingOnGrab() throws Exception {
+        when(couponClaimManager.claimWithGrab(eq(USER_ID), eq("C-NOT-EXIST")))
+                .thenThrow(new org.icedamericanomall.common.exception.BizException(
+                        org.icedamericanomall.common.enums.ErrorCode.COUPON_NOT_FOUND));
+
+        mockMvc.perform(MockMvcRequestBuilders.post("/api/coupon/grab")
+                        .param("coupon_id", "C-NOT-EXIST"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(3019))
+                .andExpect(jsonPath("$.msg").value("优惠券不存在"));
     }
 }

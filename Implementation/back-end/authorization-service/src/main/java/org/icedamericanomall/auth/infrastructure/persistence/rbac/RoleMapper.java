@@ -17,6 +17,10 @@ public interface RoleMapper {
     @Select("SELECT id, name, code, description, status, is_system FROM sys_role ORDER BY id")
     List<RolePO> selectAllRoles();
 
+    /** 按主键取单条（批次 ①：删除前判定「不存在 vs 内置不可删」）。 */
+    @Select("SELECT id, name, code, description, status, is_system FROM sys_role WHERE id = #{id}")
+    RolePO selectRoleById(@Param("id") Long id);
+
     @Insert("INSERT INTO sys_role (name, code, description, status, is_system, create_time, update_time) " +
             "VALUES (#{name}, #{code}, #{description}, 1, 0, NOW(), NOW())")
     @Options(useGeneratedKeys = true, keyProperty = "id")
