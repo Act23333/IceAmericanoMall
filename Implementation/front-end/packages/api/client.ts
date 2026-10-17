@@ -116,6 +116,31 @@ export class ApiError extends Error {
   constructor(public code: number, message: string) { super(message); this.name = 'ApiError'; }
 }
 
+/**
+ * 401 **不**代表「令牌过期」的端点 —— 认证端点自身的 401 是「凭证不正确」（登录失败）。
+ *
+ * 为什么必须排除（2026-10-18 批次 ④）：登录失败的 HTTP 状态由 200 改为 **401**，
+ * 若仍走下面的「401 → 刷新令牌 → 重试」被动兜底，会把**一次输错密码**变成：
+ * ① 多发一次 `/api/auth/refresh`（无 refresh token → 直接失败）；
+ * ② 触发 `handleRefreshFailure()` 清空本地凭证并广播 `auth:logout`；
+ * ③ 布局层 `AuthLogoutListener` 据此 `router.replace('/auth/login?redirect=...')` ——
+ *    登录页被无谓地重新导航，刚设好的错误文案可能被冲掉，观感是「密码输错 → 页面闪一下」。
+ * 认证端点的 401 是**业务结果**，不是掉线，故不参与刷新与重放。
+ */
+const AUTH_ENDPOINTS_WITHOUT_REFRESH: readonly string[] = [
+  '/api/auth/web/login',
+  '/api/auth/register',
+  '/api/auth/reset-password',
+  '/api/auth/web/wechat/login',
+  '/api/auth/wechat/mini/login',
+  '/api/auth/refresh',
+];
+
+/** 该 401 是否应该尝试刷新令牌并重放（认证端点的 401 一律不重试）。 */
+function shouldAttemptRefresh(path: string): boolean {
+  return !AUTH_ENDPOINTS_WITHOUT_REFRESH.some((authPath) => path.startsWith(authPath));
+}
+
 function request(path: string, options?: RequestInit, token?: string): Promise<Response> {
   return fetch(`${BASE_URL}${path}`, {
     ...options,
@@ -132,8 +157,8 @@ export async function apiClient<T>(path: string, options?: RequestInit): Promise
   const opts = options ? { ...options } : undefined;
   let res = await request(path, opts, getAccessToken());
 
-  // 被动兜底：401 → 互斥刷新 → 重试
-  if (res.status === 401) {
+  // 被动兜底：401 → 互斥刷新 → 重试（认证端点除外，见 AUTH_ENDPOINTS_WITHOUT_REFRESH）
+  if (res.status === 401 && shouldAttemptRefresh(path)) {
     const newToken = await tryRefresh();
     if (newToken) {
       res = await request(path, opts, newToken);

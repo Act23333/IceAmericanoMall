@@ -2,8 +2,10 @@ package org.icedamericanomall.config;
 
 import feign.Logger;
 import feign.RequestInterceptor;
+import feign.codec.ErrorDecoder;
 import org.icedamericanomall.common.constant.SecurityHeaders;
 import org.icedamericanomall.common.security.UserContext;
+import org.icedamericanomall.exception.UpstreamErrorDecoder;
 import org.icedamericanomall.fallback.AddressClientFallback;
 import org.icedamericanomall.fallback.AfterSaleClientFallback;
 import org.icedamericanomall.fallback.AuthContextClientFallback;
@@ -34,10 +36,12 @@ import org.springframework.core.env.Environment;
  * {@code @EnableFeignClients(basePackages = "org.icedamericanomall.client", defaultConfiguration = DefaultFeignConfig.class)}；
  * 也可在单个 {@code @FeignClient(configuration = DefaultFeignConfig.class)} 上声明。
  *
- * <p>包路径约定：ia-api 只使用 {@code org.icedamericanomall.client / dto / fallback / config}
- * 四个规范包，<b>不得</b>出现与服务实现同名的子包（如 {@code org.icedamericanomall.auth.*}）——
+ * <p>包路径约定：ia-api 只使用 {@code org.icedamericanomall.client / dto / fallback / config /
+ * exception} 五个规范包，<b>不得</b>出现与服务实现同名的子包（如 {@code org.icedamericanomall.auth.*}）——
  * 曾经因该配置类落在 {@code org.icedamericanomall.auth.config}，与 authorization-service 的
  * 基础包形成「拆分包（split package）」，导致组件扫描与 jar 边界混乱，V5.1 已迁回本包。
+ * （{@code exception} 包是 2026-10-18 批次 ⑤ 新增：{@code UpstreamException} +
+ * {@code UpstreamErrorDecoder} —— 跨服务错误的唯一载体与唯一解码器，仍属「契约侧」，故留在 ia-api。）
  *
  * <p>注意：本类<b>不加</b> {@code @Configuration}/{@code @Component}。ia-api 是被业务服务
  * 以 jar 方式引入的契约模块，其包不在业务服务的组件扫描范围内；配置类需由
@@ -105,6 +109,31 @@ public class DefaultFeignConfig {
             }
         }
         return DEFAULT_LOGGING_LEVEL;
+    }
+
+    /**
+     * Feign 全局错误解码器 —— 把下游非 2xx 响应类型化成 {@link org.icedamericanomall.exception.UpstreamException}
+     * （业务码 / 类别 / 可重试性 / traceId / 原始状态码）。
+     *
+     * <p><b>为什么注册在这里</b>：这是 ia-api 唯一的共享 Feign 配置类（19 个 fallback 与日志级别
+     * 都登记在此），且各服务以 {@code defaultConfiguration = DefaultFeignConfig.class} 或客户端级
+     * {@code configuration} 挂载它 —— 挂上就能拿到本解码器，不需要每个服务各写一份。
+     *
+     * <p><b>它不改变既有降级行为</b>（本批已核对）：19 个 fallback 工厂都只用 {@code cause} 打日志、
+     * 然后抛本域异常，<b>没有任何一处</b> {@code instanceof FeignException} 或读
+     * {@code FeignException#status()}（全仓 {@code FeignException} 零代码引用），故把异常类型从
+     * {@code FeignException} 换成 {@code UpstreamException} 对它们是透明的。唯一按语义分支的是
+     * {@code SpuDetailClientFallback}（本批随 §三·八·1 改为「CLIENT 透传」，见其类注释）。
+     *
+     * <p><b>与熔断的关系</b>：开启 {@code spring.cloud.openfeign.circuitbreaker.enabled=true} 的服务
+     * （含 ai-service）里，本解码器抛出的异常同样会被记入熔断器失败计数并触发 fallback ——
+     * 语义正确：4xx 也确实是「这次调用没成功」，只是不该被改写成 {@code SYSTEM_BUSY}。
+     *
+     * @return 共享的上游错误解码器
+     */
+    @Bean
+    public ErrorDecoder upstreamErrorDecoder() {
+        return new UpstreamErrorDecoder();
     }
 
     // ==================== Feign 降级工厂（全部 19 个 Client，逐个显式登记） ====================

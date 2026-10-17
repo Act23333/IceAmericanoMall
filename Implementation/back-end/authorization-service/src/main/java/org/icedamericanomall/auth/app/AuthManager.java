@@ -138,7 +138,7 @@ public class AuthManager {
         //    不消费验证码、不发起跨服务建档（user_auth 本地表可判，无需 Feign）。
         //    「存在但无凭证」（仅用过验证码登录的老用户）不拦截，走注册=补齐密码的合法路径。
         if (userAuthRepository.findByIdentityHash(IdentityTypeEnum.PHONE, BlindIndexUtil.hmac(phone))
-                .map(auth -> auth.getCredential() != null && !auth.getCredential().isBlank())
+                .map(UserAuth::hasPasswordCredential)
                 .orElse(false)) {
             throw new BizException(ErrorCode.PHONE_ALREADY_REGISTERED, "该手机号已注册，请直接登录或使用验证码登录");
         }

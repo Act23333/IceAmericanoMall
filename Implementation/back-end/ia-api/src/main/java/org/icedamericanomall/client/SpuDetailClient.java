@@ -23,8 +23,16 @@ import org.springframework.web.bind.annotation.PathVariable;
  * Jackson {@code SNAKE_CASE} 会<b>忽略未知键</b>，只改一侧时另一侧<b>静默落 {@code null}</b>
  * （不报错、只是 AI 工具拿不到商品名），故两者必须在同一 PR 内改完。
  *
- * <p><b>降级语义：fail-closed</b>（抛 {@code BizException}）。虽然商品详情是展示型数据，
- * 但调用方 {@code SpuDetailTool} 会把「取不到」解释为「商品不存在」，降级返回 null 会污染业务语义。
+ * <p><b>降级语义：4xx 透传 / 其余 fail-closed</b>（2026-10-18 批次 ⑤ 按
+ * {@code collaboration/09-constraints.md} §三·八·1 订正）。商品详情虽是展示型数据，但调用方
+ * {@code SpuDetailTool} 会把「取不到」解释为业务事实「商品不存在」，故降级返回 {@code null}
+ * 会污染业务语义（属本包 ② 判别型）；而把下游 <b>404 商品不存在</b>改写成
+ * {@code SYSTEM_BUSY「服务不可用」}则污染方向相反、后果更糟 —— 业务事实被说成服务故障。
+ * 故最终口径为：
+ * <ul>
+ *   <li>{@code category == CLIENT}（4xx）→ <b>原样抛 {@code UpstreamException}</b>（保留业务码/文案）；</li>
+ *   <li>5xx / 429 / 超时 / 熔断 → {@code BizException(SYSTEM_BUSY, "商品详情暂时无法获取…")}。</li>
+ * </ul>
  * 详见 {@link SpuDetailClientFallback}。
  *
  * <p><b>寻址口径（ADR-062 §决策 2/3）</b>：路径变量是 <b>SPU 业务键 32-hex {@code String spuId}</b>
@@ -44,7 +52,9 @@ public interface SpuDetailClient {
      * 获取商品详情（内部面，裸 CO、无 {@code Result} 信封）。
      *
      * @param spuId SPU 业务键（32-hex，{@code spu.spu_id}）
-     * @return 商品详情；商品不存在时下游返回 404（Feign 抛错 → 降级工厂按 fail-closed 处理）
+     * @return 商品详情；商品不存在时下游返回 404 {@code NO_RESOURCE_FOUND(1103)}，
+     *         经 {@code UpstreamErrorDecoder} → {@code UpstreamException(category=CLIENT)}
+     *         原样透传（<b>不</b>改写为 {@code SYSTEM_BUSY}）
      */
     @GetMapping("/{spuId}")
     SpuDetailCO getSpuDetail(@PathVariable String spuId);

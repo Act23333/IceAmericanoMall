@@ -49,6 +49,21 @@
  * 「购物车为空，无法下单」——用户明明有商品，故障却伪装成了业务事实，属于典型的
  * <b>错误信息污染</b>。此类一律按 ② 处理。
  *
+ * <h2>2.1 横向铁律：4xx 透传，只有 5xx/超时/熔断才降级（§三·八·1）</h2>
+ * 上述三分类回答「返回什么」，但<b>不回答</b>「下游明确说了业务失败时该不该改写」。按
+ * {@code collaboration/09-constraints.md} §三·八·1：下游 <b>4xx + 已知 code 必须原样透传</b>，
+ * 只有 5xx / 超时 / 熔断才允许改写成本域的 {@code SYSTEM_BUSY}。降级工厂拿到的 {@code cause}
+ * 里若有 {@code org.icedamericanomall.exception.UpstreamException} 且 {@code category == CLIENT}，
+ * <b>必须原样抛出它</b>（保留下游业务码/文案），不得改成 {@code SYSTEM_BUSY}——
+ * 反例正是 {@code SpuDetailClient}：把下游 404「商品不存在」说成「商品服务暂不可用」。
+ * 另外 §三·八·2 要求「只读展示类 fail-open 时的文案不得写成『服务不可用』」，
+ * 要说「<b>暂时无法获取</b>」。
+ *
+ * <p><b>迁移状态（2026-10-18 批次 ⑤）</b>：{@code SpuDetailClientFallback} 已按上述铁律落地
+ * （4xx 透传 / 其余降级）。其余 18 个工厂仍是无条件 {@code SYSTEM_BUSY} 的旧口径 ——
+ * 对它们的调用链（写/资金/库存为主）当前语义正确（fail-closed），故本批<b>未</b>扩大改动面；
+ * 待各自出现「下游 4xx 被改写成故障」的实测案例时按同一模式迁移。
+ *
  * <h2>3. 统一实现约定</h2>
  * <ul>
  *   <li>实现 {@link org.springframework.cloud.openfeign.FallbackFactory}（而非
@@ -77,7 +92,8 @@
  *   <tr><td>createOrder</td><td>③ 命令</td><td>抛 BizException</td></tr>
  *   <tr><td>SkuClient</td><td>getSkuListByIds</td><td>② 判别型</td><td>抛 BizException</td></tr>
  *   <tr><td>SkuClient</td><td>deductStock / restoreStock</td><td>③ 命令</td><td>抛 BizException</td></tr>
- *   <tr><td>SpuDetailClient</td><td>getSpuDetail</td><td>② 判别型</td><td>抛 BizException</td></tr>
+ *   <tr><td>SpuDetailClient</td><td>getSpuDetail</td><td>② 判别型</td>
+ *       <td><b>4xx 透传 UpstreamException</b> / 5xx·超时·熔断 → 抛 BizException(SYSTEM_BUSY)</td></tr>
  *   <tr><td>SearchClient</td><td>searchSpus</td><td>① 展示型</td><td>非成功 Result（data=null）</td></tr>
  *   <tr><td>UserProfileClient</td><td>getBrowseHistory / getFavorites</td><td>① 展示型</td><td>Result.ok(空列表)</td></tr>
  *   <tr><td>NotificationClient</td><td>sendSms / sendEmail / sendInAppMessage</td><td>③ 命令</td><td>抛 BizException</td></tr>

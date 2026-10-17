@@ -16,7 +16,23 @@ public enum ErrorCode {
     FREQUENT_ERROR(1014, "操作过于频繁", HttpStatus.TOO_MANY_REQUESTS),
     ILLEGAL_REQUEST(1015, "非法请求", HttpStatus.BAD_REQUEST),
     CAPTCHA_REQUIRED(1016, "人机验证失败", HttpStatus.FORBIDDEN),
-    ACCOUNT_FROZEN(1017, "用户账号异常", HttpStatus.FORBIDDEN),
+    /**
+     * 账号被冻结 / 极高风险阻断 —— <b>登录链路已不再抛本码（2026-10-18 批次 ④）</b>。
+     *
+     * <p><b>为何退役</b>：本码原配 {@code 403}，而「密码错误」原配 {@code 200}、「账号不存在」原配
+     * {@code 404} —— 三者状态码互不相同，攻击者<b>只看状态码</b>即可枚举「某账号是否存在 / 是否被冻结」。
+     * 现按 {@code collaboration/09-constraints.md} §三·六「未认证 → 401」把登录失败收敛为
+     * <b>唯一出口 {@link #PASSWORD_ERROR}（3007 / 401 / 中性文案）</b>，本码随之退役并纠正状态码
+     * —— 即便将来有人误用，也只会得到 401，不会退化成「可区分的 403」。
+     *
+     * <p><b>对用户的「冻结」提示</b>只能走登录<b>成功</b>后的一次性提示或站内信，<b>不得</b>在登录失败
+     * 响应里区分（否则「冻结 → 中性化」白做）。当前枚举中零生产引用（{@code AccountFreezeHandler}
+     * 已改抛 3007），保留仅为兼容历史文档/契约引用。
+     *
+     * @deprecated 登录失败一律抛 {@link #PASSWORD_ERROR}（3007 / HTTP 401 + 中性文案）
+     */
+    @Deprecated(since = "batch-4-login-disclosure")
+    ACCOUNT_FROZEN(1017, "用户账号异常", HttpStatus.UNAUTHORIZED),
 
     // 参数/资源类错误 (HTTP 状态码用 400/404)
     PARAM_ERROR(1101, "参数错误", HttpStatus.BAD_REQUEST),
@@ -24,6 +40,9 @@ public enum ErrorCode {
     NO_RESOURCE_FOUND(1103, "静态资源不存在", HttpStatus.NOT_FOUND),
 
     // 业务逻辑错误 (HTTP 状态码统一用 200)
+    //   例外（2026-10-18 批次 ④，按 09-constraints.md §三·六「未认证 → 401」）：
+    //   3007 PASSWORD_ERROR / 3008 USER_STATUS_ABNORMAL 为 401 —— 登录失败若用 200 承载，
+    //   「200 vs 404」本身就是账号是否存在／是否被冻结的枚举信道。
     BUSINESS_EXECUTION_EXCEPTION(3000, "业务执行异常", HttpStatus.OK),
     CAPTCHA_ERROR(3001, "验证码错误", HttpStatus.OK),
     CAPTCHA_EXPIRED(3002, "验证码已过期", HttpStatus.OK),
@@ -31,8 +50,35 @@ public enum ErrorCode {
     USERNAME_ALREADY_TAKEN(3004, "用户名已被占用", HttpStatus.OK),
     BALANCE_INSUFFICIENT(3005, "余额不足", HttpStatus.OK),
     USER_ALREADY_EXISTS(3006, "用户已存在", HttpStatus.OK),
-    PASSWORD_ERROR(3007, "登录密码错误", HttpStatus.OK),
-    USER_STATUS_ABNORMAL(3008, "用户状态异常", HttpStatus.OK),
+    /**
+     * 登录失败 —— <b>全部失败原因的唯一对外出口</b>（2026-10-18 批次 ④，抗账号枚举）。
+     *
+     * <p>承载四类原因，<b>对外完全一致</b>：账号不存在 / 密码错误 / 账号状态不可登录（解绑、锁定）/
+     * 极高风险阻断（原 {@link #ACCOUNT_FROZEN}）。原因细分只进服务端日志（{@code LoginFailureReason}），
+     * 不进 HTTP 状态码、不进业务码、不进文案。
+     *
+     * <p><b>状态码为什么是 401</b>：见 {@code collaboration/09-constraints.md} §三·六
+     * 「未认证 → 401」。此前本码配 {@code 200}、{@code USER_NOT_FOUND} 配 {@code 404}、
+     * {@code ACCOUNT_FROZEN} 配 {@code 403} —— 状态码本身就构成「账号是否存在」的枚举信道。
+     *
+     * <p><b>文案为什么是中性</b>：{@code ErrorCode.message} 会在调用方未给自定义文案时成为对外
+     * {@code Result.msg}，因此它自身也必须中性（调用方<b>不得</b>再传「账号不存在」「密码错误」
+     * 这类可区分的自定义文案）。
+     */
+    PASSWORD_ERROR(3007, "账号或密码不正确", HttpStatus.UNAUTHORIZED),
+    /**
+     * 账号状态异常（解绑 / 锁定）—— <b>登录链路禁止使用</b>（2026-10-18 批次 ④）。
+     *
+     * <p>原配 {@code HttpStatus.OK}（200）：被冻结的账号登录失败返回 200 + 3008，而「账号不存在」
+     * 返回 404 —— 状态码差异即可枚举账号。现按 {@code 09-constraints.md} §三·六 纠正为
+     * {@code 401}（<b>安全默认</b>：即便遗漏调用也不会退化成 200），并把登录链路的抛出点改为
+     * {@link #PASSWORD_ERROR}（唯一出口）。
+     *
+     * <p>本码在<b>非登录域</b>仍在使用（user-service {@code User#assertActive}、{@code UserStatusEnum#of}），
+     * 故不整体 {@code @Deprecated}；但登录链路（authorization-service 登录策略 / 风控处置）
+     * <b>不得</b>再抛本码，否则「账号存在但不可用」会与「账号不存在」可区分。
+     */
+    USER_STATUS_ABNORMAL(3008, "用户状态异常", HttpStatus.UNAUTHORIZED),
     // 交易/订单/商品通用错误 (3009-3029)
     ORDER_NOT_FOUND(3009, "订单不存在", HttpStatus.OK),
     ORDER_STATUS_INVALID(3010, "当前订单状态不支持此操作", HttpStatus.OK),

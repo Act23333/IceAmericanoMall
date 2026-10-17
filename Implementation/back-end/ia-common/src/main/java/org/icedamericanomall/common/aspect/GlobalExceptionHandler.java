@@ -2,11 +2,14 @@ package org.icedamericanomall.common.aspect;
 
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.api.ErrorInfo;
 import org.icedamericanomall.common.api.Result;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.icedamericanomall.common.exception.*;
+import org.icedamericanomall.common.filter.TraceIdFilter;
 import org.icedamericanomall.common.utils.WebUtils;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -20,8 +23,6 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type.SERVLET;
@@ -33,9 +34,10 @@ import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebA
  * <p>两个关键约定：
  * <ul>
  *   <li>{@code /internal/**} 路径的业务异常<b>不包装 {@code Result}</b>，而是直接用
- *       {@code ErrorCode} 的 HTTP 状态码应答（body 为极简 {@code {"code","msg"}} JSON）—— 见
- *       {@link #processResponse(CommonException)}。内部接口由 Feign 调用，调用方需要的是
- *       「真实 HTTP 状态码」而不是 {@code Result} 信封。
+ *       {@code ErrorCode} 的 HTTP 状态码应答（body 为 {@link ErrorInfo}：
+ *       {@code code / msg / category / retryable / traceId}）—— 见
+ *       {@link #rawInternalResponse(CommonException)}。内部接口由 Feign 调用，调用方需要的是
+ *       「真实 HTTP 状态码」+「足以判定处置的字段」，而不是 {@code Result} 信封。
  *       <p><b>V5.3 修正（P1 缺陷）</b>：此前实现是在 {@code @ExceptionHandler} 里
  *       {@code throw e;} 想「原样抛出」，但 {@code HandlerExceptionResolver} 捕获异常后
  *       <b>不会二次解析</b>新抛出的异常，最终由容器兜底成 HTTP 500 —— 一切内部
@@ -47,6 +49,14 @@ import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebA
  *       Redis 硬依赖 —— 无 Redis 的服务即使不看异常处理逻辑也会因缺少该 Bean 而启动失败。
  *       删除该死字段后，全局异常处理在任意类路径下都可独立存活。</li>
  * </ul>
+ *
+ * <p><b>2026-10-18 批次 ⑤（错误体类型化）</b>：内部错误体由原来的极简
+ * {@code {"code","msg"}} 扩为 {@link ErrorInfo}（新增 {@code category / retryable / traceId}）。
+ * 这是<b>向后兼容</b>的字段追加：生产环境 Jackson 的
+ * {@code FAIL_ON_UNKNOWN_PROPERTIES=false}（Spring Boot 默认），存量按 {@code code}/{@code msg}
+ * 解析的调用方不受影响。依据 {@code collaboration/09-constraints.md} §三·八·3。
+ * <b>对外 {@code /api/**} 的响应一个字节都没变</b> —— 仍是 {@link Result}，
+ * 见 {@link #processResponse(CommonException)}。
  *
  * @ClassName: CommonExceptionAdvice
  * @Description: TODO
@@ -61,14 +71,8 @@ import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebA
 @ConditionalOnWebApplication(type = SERVLET)
 public class GlobalExceptionHandler {
 
-    /** 内部接口路径标识 —— 命中即按「裸状态码」应答（见类注释）。 */
+    /** 内部接口路径标识 —— 命中即按「裸状态码 + {@link ErrorInfo}」应答（见类注释）。 */
     private static final String INTERNAL_PATH_SEGMENT = "/internal/";
-
-    /** 内部接口极简错误体字段：业务码。 */
-    private static final String FIELD_CODE = "code";
-
-    /** 内部接口极简错误体字段：提示信息。 */
-    private static final String FIELD_MSG = "msg";
 
     /**
      * 处理自定义异常
@@ -239,11 +243,15 @@ public class GlobalExceptionHandler {
     /**
      * 异常 → 响应：外部接口包装为 {@code Result}，内部接口（{@code /internal/**}）只回真实状态码。
      *
-     * <p>内部接口之所以仍带一个极简 JSON body（而非空 body）：{@code ErrorCode} 中大量业务码
+     * <p>内部接口之所以仍带一个 JSON body（而非空 body）：{@code ErrorCode} 中大量业务码
      * （3000-3039「业务逻辑错误」）的 HTTP 状态本身就是 200，若 body 为空，Feign 调用方会拿到
      * 一个「2xx 且无内容」的响应 —— 既无法反序列化到声明的返回类型，也彻底丢失失败原因。
-     * 这里刻意<b>不使用</b> {@code Result} 类（不构成信封契约），只暴露两个最小字段，
-     * 让调用方既能按 HTTP 状态码判定失败，也能读到业务码与提示。
+     * 这里刻意<b>不使用</b> {@code Result} 类（不构成信封契约），body 为 {@link ErrorInfo}：
+     * 业务码 + 提示 + 处置类别 + 可重试性 + traceId，让调用方既能按 HTTP 状态码判定失败，
+     * 也能按 {@code category} 判定<b>怎么处置</b>（{@code 09-constraints} §三·八·3）。
+     *
+     * <p><b>外部接口这一支一个字都没改</b>：仍返回 {@code Result.error(code, msg, data)}，
+     * 前端契约（键集合与取值）与改动前逐字一致。
      */
     private Object processResponse(CommonException e) {
         if (isInternalRequest()) {
@@ -265,15 +273,30 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 内部接口错误响应：HTTP 状态码取自 {@code ErrorCode}，body 为极简 {@code {"code","msg"}}。
+     * 内部接口错误响应：HTTP 状态码取自 {@code ErrorCode}，body 为 {@link ErrorInfo}。
      *
      * <p>不含 {@code data}（payload），避免把可能带 PII 的内部数据回传给调用方日志。
+     * {@code category} / {@code retryable} 一律<b>派生</b>（{@link ErrorInfo#of}），不手填 —— 手填
+     * 必然在某处与状态码矛盾，而调用方会照着矛盾的那一半做决策。
      */
-    private static ResponseEntity<Map<String, Object>> rawInternalResponse(CommonException e) {
-        ErrorCode errorCode = e.getErrorCode();
-        Map<String, Object> body = new LinkedHashMap<>(2);
-        body.put(FIELD_CODE, errorCode.getCode());
-        body.put(FIELD_MSG, e.getDisplayMessage());
-        return ResponseEntity.status(errorCode.getHttpStatus()).body(body);
+    private static ResponseEntity<ErrorInfo> rawInternalResponse(CommonException e) {
+        ErrorInfo body = ErrorInfo.of(e.getErrorCode(), e.getDisplayMessage(), currentTraceId());
+        return ResponseEntity.status(e.getErrorCode().getHttpStatus()).body(body);
+    }
+
+    /**
+     * 读取当前请求的 traceId —— 复用网关 {@code X-Trace-Id} → {@code TraceIdFilter} → MDC 这条
+     * <b>现成链路</b>（不引入 micrometer-tracing / skywalking：那是跨切面改造，与本口径无关）。
+     *
+     * <p>取不到（异步线程、无 MDC 上下文、过滤器未装配）一律 {@code null} ——
+     * <b>绝不</b>抛异常、<b>绝不</b>因为「追踪号缺失」把一次业务失败升级成 500。
+     */
+    private static String currentTraceId() {
+        try {
+            return MDC.get(TraceIdFilter.TRACE_ID);
+        } catch (RuntimeException ex) {
+            // MDC 实现异常（如上下文未装配）不得影响错误响应本身
+            return null;
+        }
     }
 }

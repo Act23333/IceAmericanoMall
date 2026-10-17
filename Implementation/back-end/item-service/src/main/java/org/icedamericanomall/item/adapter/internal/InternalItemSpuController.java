@@ -27,8 +27,12 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p><b>承载层纪律（ADR-004）</b>：本方法返回<b>裸 {@code SpuDetailCO}</b>，<b>不包
  * {@code Result}</b>；失败时由 {@code GlobalExceptionHandler} 透出<b>真 HTTP 状态码 +
- * 极简 {@code {"code","msg"}}</b> —— 业务键形态非法 → 400 {@code PARAM_ERROR(1101)}；
- * 商品不存在/已删除 → 404 {@code NO_RESOURCE_FOUND(1103)}。
+ * 类型化错误体 {@code ErrorInfo}</b>（{@code code / msg / category / retryable / traceId}，
+ * 2026-10-18 批次 ⑤ 起；此前只有 {@code code} + {@code msg}）——
+ * 业务键形态非法 → 400 {@code PARAM_ERROR(1101)}；
+ * 商品不存在/已删除 → 404 {@code NO_RESOURCE_FOUND(1103)}，{@code category=CLIENT}，
+ * 调用方据此<b>原样透传</b>「商品不存在」，不得改写为 {@code SYSTEM_BUSY}
+ * （{@code collaboration/09-constraints.md} §三·八·1）。
  */
 @Slf4j
 @RestController

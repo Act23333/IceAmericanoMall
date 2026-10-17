@@ -42,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.util.ArrayList;
@@ -80,6 +81,9 @@ class RegisterThenPasswordLoginTest {
     private static final String PHONE = "13800138000";
     private static final String PASSWORD = "Aa123456!";
     private static final Long USER_ID = 100L;
+
+    /** 中性失败文案（对外唯一文案，不得区分「账号不存在 / 密码错 / 状态不可登录」） */
+    private static final String NEUTRAL_MESSAGE = "账号或密码不正确";
 
     @Mock
     private UserAccountGateway userAccountGateway;
@@ -162,7 +166,53 @@ class RegisterThenPasswordLoginTest {
         BizException exception = assertThrows(BizException.class,
                 () -> loginStrategy.login(passwordSpec(PHONE, "wrong-password")));
 
-        assertEquals(ErrorCode.PASSWORD_ERROR, exception.getErrorCode());
+        // 改严（批次 ④）：原来只断言业务码；现在连 HTTP 状态码与文案一起锁死（401 + 中性文案）
+        assertNeutralLoginFailure(exception);
+    }
+
+    /**
+     * 时序防护 —— 账号不存在时也必须做一次真实的 BCrypt 假比对。
+     *
+     * <p>本用例用<b>真实</b>的 {@code BCryptPasswordEncoder}（不是 mock），因此它同时证明：
+     * <ol>
+     *   <li>假比对确实执行了完整 BCrypt 计算（耗时与真实比对同量级）；</li>
+     *   <li>比对对象是 {@link PasswordLoginStrategy#DUMMY_PASSWORD_HASH}，而不是任何库内哈希。</li>
+     * </ol>
+     * 修复前该路径直接抛 {@code USER_NOT_FOUND}，<b>零次</b>哈希比对（本用例断言 1 次 → 必失败）。
+     */
+    @Test
+    @DisplayName("账号不存在 — 走一次 dummy BCrypt 比对，且对外与密码错完全同形（401/3007/中性文案）")
+    void shouldDummyVerifyAndFailNeutral_whenAccountNotFound() {
+        CountingPasswordVerifier counting = new CountingPasswordVerifier(passwordVerifier);
+        PasswordLoginStrategy loginStrategy = new PasswordLoginStrategy(userAuthRepository, counting);
+
+        BizException exception = assertThrows(BizException.class,
+                () -> loginStrategy.login(passwordSpec("13900139000", PASSWORD)));
+
+        assertNeutralLoginFailure(exception);
+        assertEquals(1, counting.matchesCalls, "账号不存在也必须消耗一次 BCrypt 计算（否则响应时间可枚举账号）");
+        assertEquals(PasswordLoginStrategy.DUMMY_PASSWORD_HASH, counting.lastEncodedPassword,
+                "假比对必须针对预置的合法 BCrypt 哈希（非法形态会被跳过计算，时间差原地复发）");
+    }
+
+    /**
+     * 账号状态不可登录 —— 与密码错完全同形。
+     *
+     * <p>修复前：注册后的凭证行被置为 UNBOUND 时，密码正确会抛
+     * {@code USER_STATUS_ABNORMAL(3008) / HTTP 200 / "账号状态异常"}，与密码错的 3007 可区分。
+     */
+    @Test
+    @DisplayName("账号已解绑 — 密码正确也按登录失败统一出口拒绝（401/3007/中性文案）")
+    void shouldFailNeutral_whenAccountNotActive() {
+        stubProvisioningAndToken();
+        authManager.register(registerCommand());
+        userAuthRepository.markStatusOfOnlyRow(UserAuthStatusEnum.UNBOUND);
+
+        PasswordLoginStrategy loginStrategy = new PasswordLoginStrategy(userAuthRepository, passwordVerifier);
+        BizException exception = assertThrows(BizException.class,
+                () -> loginStrategy.login(passwordSpec(PHONE, PASSWORD)));
+
+        assertNeutralLoginFailure(exception);
     }
 
     @Test
@@ -221,10 +271,22 @@ class RegisterThenPasswordLoginTest {
     // ==================== 脚手架 ====================
 
     private void stubProvisioningAndToken() {
-        // 注册用例显式建档（带用户名）与凭证建档内部回查（不带昵称）共用同一幂等网关
+        // 注册用例显式建档（含用户名）与凭证建档内部回查（不含昵称）共用同一幂等网关
         when(userAccountGateway.getOrCreateUserId(eq(PHONE), eq(IdentityTypeEnum.PHONE), any())).thenReturn(USER_ID);
         when(loginTokenService.createLoginResponse(any(TokenGenerateParam.class)))
                 .thenReturn(new TokenPair(USER_ID, "access-token", "refresh-token", 1800L));
+    }
+
+    /**
+     * 断言「中性登录失败」：401 + 3007 + 统一文案（批次 ④ 的对外口径，逐字段锁死）。
+     *
+     * @param exception 登录抛出的业务异常
+     */
+    private void assertNeutralLoginFailure(BizException exception) {
+        assertEquals(ErrorCode.PASSWORD_ERROR, exception.getErrorCode(), "登录失败必须收敛到唯一业务码 3007");
+        assertEquals(HttpStatus.UNAUTHORIZED, exception.getErrorCode().getHttpStatus(),
+                "登录失败必须 401；200/403/404 之间的差异本身就是账号存在性的枚举信道");
+        assertEquals(NEUTRAL_MESSAGE, exception.getDisplayMessage(), "对外文案必须中性，不得区分失败原因");
     }
 
     private RegisterCommand registerCommand() {
@@ -241,6 +303,35 @@ class RegisterThenPasswordLoginTest {
     private LoginSpec passwordSpec(String phone, String password) {
         return new LoginSpec(IdentityTypeEnum.PHONE, phone, CredentialTypeEnum.PASSWORD, password,
                 PlatformEnum.WEB, "dev-1", "127.0.0.1", "JUnit", java.util.Map.of());
+    }
+
+    /**
+     * 计数用密码校验替身 —— 包住<b>真实</b>的 BCrypt 实现，只记录「被比对了几次、比对了哪段哈希」。
+     *
+     * <p>用于证明 dummy verify 真的执行了完整 BCrypt 计算（而非被跳过），
+     * 同时不引入 mock 对真实哈希比较语义的污染。
+     */
+    private static class CountingPasswordVerifier implements PasswordVerifier {
+
+        private final PasswordVerifier delegate;
+        private int matchesCalls;
+        private String lastEncodedPassword;
+
+        private CountingPasswordVerifier(PasswordVerifier delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public boolean matches(CharSequence rawPassword, String encodedPassword) {
+            matchesCalls++;
+            lastEncodedPassword = encodedPassword;
+            return delegate.matches(rawPassword, encodedPassword);
+        }
+
+        @Override
+        public String encode(CharSequence rawPassword) {
+            return delegate.encode(rawPassword);
+        }
     }
 
     /**
@@ -321,6 +412,11 @@ class RegisterThenPasswordLoginTest {
 
         int size() {
             return rows.size();
+        }
+
+        /** 把唯一一行凭证的状态改为指定值（模拟「密码正确但账号已解绑/锁定」）。 */
+        void markStatusOfOnlyRow(UserAuthStatusEnum status) {
+            rows.get(0).setStatus(status);
         }
 
         private static boolean sameType(UserAuth row, UserAuth other) {

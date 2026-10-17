@@ -11,7 +11,13 @@
  * 前端必须按 body 内 `code` 分流，不能只看 `res.ok`（`apiClient` 已实现这一点：
  * `body.code !== 200` 时抛 `ApiError`）。
  *
- * ⚠️ **例外：1xxx 的 HTTP 状态是有意义的**（`ErrorCode` 枚举第二参已定死状态码）。
+ * ⚠️ **例外一：登录失败是 401，不是 200**（2026-10-18 批次 ④，抗账号枚举）。
+ *   `3007 PASSWORD_ERROR`（登录失败唯一对外码）与 `3008 USER_STATUS_ABNORMAL` 的 HTTP 状态
+ *   由 200 纠正为 **401**：登录失败若用 200 承载，它与「账号不存在」的 404 之间的差异
+ *   就是账号枚举信道。故「登录失败」判定必须同时认 **HTTP 401** 与 **code 3007**
+ *   （见 `isLoginFailure()` / `getLoginFailureMessage()`），且**文案恒定中性**。
+ *
+ * ⚠️ **例外二：1xxx 的 HTTP 状态是有意义的**（`ErrorCode` 枚举第二参已定死状态码）。
  *   其中 **`NO_RESOURCE_FOUND(1103)` = 真 HTTP 404** —— 自 2026-10-18 B8 起，SPU 详情
  *   `GET /api/item/spu/{spuId}`（P2）与 P38 短码端点**不再**用「200 信封 + 业务码」承载
  *   「商品不存在」，改为真 404。故「商品不存在」判定必须同时认 **HTTP 404**（见
@@ -19,7 +25,7 @@
  *
  * ── 码段划分 ──────────────────────────────────────────────────
  *   1xxx  系统 / 认证 / 参数（HTTP 状态有意义：401/403/429/400/404）
- *   3xxx  业务逻辑（HTTP 200）
+ *   3xxx  业务逻辑（HTTP 200；**登录失败 3007/3008 为 401，见例外一**）
  *   31xx  AI 专项
  *   4xxx  第三方接口（按厂商分段）
  *   5xxx  加解密工具
@@ -172,6 +178,16 @@ export const ERROR_CODE = {
 
 export type ErrorCodeValue = (typeof ERROR_CODE)[keyof typeof ERROR_CODE];
 
+/**
+ * 登录失败的**唯一**中性文案（2026-10-18 批次 ④，抗账号枚举）。
+ *
+ * 后端把「账号不存在 / 密码错 / 账号状态不可登录 / 风控冻结」四类原因收敛为同一响应
+ * （HTTP `401` + `code 3007` + 中性 `msg`），前端**不得**再按 `code` 分支提示
+ * 「该账号不存在」「密码错误」「账号被冻结」——任一可区分文案都是账号枚举信号。
+ * 因此 `3007 / 3008 / 1017` 共用本常量，登录页也统一用它（见 `getLoginFailureMessage`）。
+ */
+export const LOGIN_FAILED_MESSAGE = '账号或密码不正确';
+
 /** 错误码 → 用户可读中文消息（文案与后端 `ErrorCode.message` 对齐，可按体验微调）。 */
 const ERROR_MAP: Record<number, string> = {
   // ---- 系统级 ----
@@ -185,7 +201,9 @@ const ERROR_MAP: Record<number, string> = {
   [ERROR_CODE.FREQUENT_ERROR]: '操作过于频繁，请稍后再试',
   [ERROR_CODE.ILLEGAL_REQUEST]: '非法请求',
   [ERROR_CODE.CAPTCHA_REQUIRED]: '需要完成人机验证',
-  [ERROR_CODE.ACCOUNT_FROZEN]: '账号状态异常，请联系客服',
+  // ⚠ 1017 自 2026-10-18（批次 ④）起已退役：登录链路改抛 3007（见下），本码零生产引用。
+  //   文案与 3007 同口径，防止误用时再次暴露「账号被冻结」这一可区分信号。
+  [ERROR_CODE.ACCOUNT_FROZEN]: LOGIN_FAILED_MESSAGE,
 
   // ---- 参数 / 资源 ----
   [ERROR_CODE.PARAM_ERROR]: '请检查填写内容是否正确',
@@ -200,8 +218,10 @@ const ERROR_MAP: Record<number, string> = {
   [ERROR_CODE.USERNAME_ALREADY_TAKEN]: '该用户名已被占用',
   [ERROR_CODE.BALANCE_INSUFFICIENT]: '账户余额不足，请更换支付方式',
   [ERROR_CODE.USER_ALREADY_EXISTS]: '请勿重复提交',
-  [ERROR_CODE.PASSWORD_ERROR]: '密码错误，请重试',
-  [ERROR_CODE.USER_STATUS_ABNORMAL]: '账号状态异常，请联系客服',
+  // ⚠ 3007 / 3008 同为「登录失败」对外口径（2026-10-18 批次 ④）：文案必须中性且一致 ——
+  //   不得区分「账号不存在 / 密码错 / 账号被冻结」，否则任意一处文案差异都会变成账号枚举信号。
+  [ERROR_CODE.PASSWORD_ERROR]: LOGIN_FAILED_MESSAGE,
+  [ERROR_CODE.USER_STATUS_ABNORMAL]: LOGIN_FAILED_MESSAGE,
 
   // ---- 业务：交易 / 订单 / 商品 ----
   [ERROR_CODE.ORDER_NOT_FOUND]: '订单不存在',
@@ -359,6 +379,47 @@ export function isThirdPartyError(code?: number): boolean {
 }
 
 /**
+ * 「登录失败」判定 —— 后端登录链路的失败口径（2026-10-18 批次 ④）。
+ *
+ * 认四种形态，覆盖「body 带 code」与「body 缺失只剩 HTTP 状态」两种到达方式：
+ *   1. **`401`（HTTP 状态）** —— `ApiError.code` 取 `body.code || res.status`，若中间层剥掉 body
+ *      就会落到 401；`3007` 的 HTTP 状态已由 200 改为 401；
+ *   2. **`3007`** —— 登录失败的唯一对外业务码；
+ *   3. **`3008` / `1017`** —— 存量报文兼容（后端已分别改为「仅非登录域使用」/ 退役）；
+ *   4. **`1102`** —— 最老报文的兼容（修复前「账号不存在」返回 `1102 / 404`）。**只为登录表单
+ *      兜底**：若上游/中间层仍吐旧形态，登录页也绝不能显示「用户不存在」。
+ *
+ * ⚠ 不要用它判断「未登录」（那是 `1011 / 1012`，见 `isAuthError`）：登录**表单**的 401 意味着
+ * 「凭证不正确」，而带 token 的普通请求 401 意味着「令牌失效」，两者处置完全不同。
+ *
+ * @param err 任意 `{ code?, message? }`（`ApiError` / `ServerFetchError` 均满足）
+ */
+export function isLoginFailure(err?: { code?: number } | null): boolean {
+  const code = err?.code;
+  return (
+    code === 401 ||
+    code === ERROR_CODE.PASSWORD_ERROR ||
+    code === ERROR_CODE.USER_STATUS_ABNORMAL ||
+    code === ERROR_CODE.ACCOUNT_FROZEN ||
+    code === ERROR_CODE.USER_NOT_FOUND
+  );
+}
+
+/**
+ * 登录失败时的用户提示 —— **恒定中性**，绝不区分失败原因。
+ *
+ * 只在「登录表单提交 / 微信登录」这类**认证请求**的失败分支使用；
+ * 其它场景的错误提示继续走 `getUserMessage`。
+ *
+ * @param err 登录请求抛出的错误
+ * @returns 中性文案（`LOGIN_FAILED_MESSAGE`）；非登录失败类错误回落 `getUserMessage`
+ */
+export function getLoginFailureMessage(err?: { code?: number; message?: string } | null): string {
+  if (isLoginFailure(err)) return LOGIN_FAILED_MESSAGE;
+  return getUserMessage(err ?? {});
+}
+
+/**
  * 将 `ApiError` 转为用户可读消息。
  *
  * 优先级（既有语义，保持不变）：
@@ -374,7 +435,7 @@ export function getUserMessage(err: { code?: number; message?: string }): string
   if (mapped) return mapped;
   // 纯 HTTP 404（P2 新语义的回落形态）—— 不是网络问题，别给「检查连接」的误导文案
   if (isNotFound(err)) return '请求的资源不存在，可能已被删除';
-  // 后端返回的 msg 优先 (如 "登录密码错误" 等动态消息)
+  // 后端返回的 msg 优先 (如 "验证码错误次数过多，请稍后重试" 等动态消息)
   if (err.message && !/^HTTP\s\d{3}$/.test(err.message)) return err.message;
   return '网络异常，请检查连接后重试';
 }

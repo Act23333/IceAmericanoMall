@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, GlassCard } from '@icedmall/ui';
 import { login } from '@icedmall/auth';
 import { useAuthStore } from '@icedmall/auth';
-import { apiClient, sendVerificationCode, getUserMessage, type LoginResp } from '@icedmall/api';
+import { apiClient, sendVerificationCode, getUserMessage, getLoginFailureMessage, type LoginResp } from '@icedmall/api';
 import { phoneSchema, passwordSchema, smsCodeSchema } from '@icedmall/utils';
 import Link from 'next/link';
 
@@ -72,7 +72,8 @@ export default function LoginPage() {
       setUser({ userId: String(result.user_id ?? ''), username: '微信用户' });
       goAfterLogin('/marketplace');
     } catch (err: unknown) {
-      setError(getUserMessage(err as { code?: number; message?: string }));
+      // 登录失败一律中性文案（不得区分「账号不存在 / 密码错 / 账号被冻结」，防账号枚举）
+      setError(getLoginFailureMessage(err as { code?: number; message?: string }));
     } finally { setLoading(false); }
   };
 
@@ -113,7 +114,11 @@ export default function LoginPage() {
       });
       goAfterLogin('/marketplace');
     } catch (err: unknown) {
-      setError(getUserMessage(err as { code?: number; message?: string }));
+      // ── 登录失败文案：一律中性 ──────────────────────────────────────────
+      // 后端把「账号不存在 / 密码错 / 账号状态不可登录 / 被风控冻结」收敛为同一响应
+      // （HTTP 401 + code 3007 + 中性 msg），前端**不得**按 code 分支提示
+      // 「该账号不存在」「密码错误」「账号被冻结」—— 任一可区分文案都会变成账号枚举信号。
+      setError(getLoginFailureMessage(err as { code?: number; message?: string }));
       // 连续失败3次 → 冷却10秒 (UX限流, 非安全边界)
       const newFails = failCount + 1;
       setFailCount(newFails);

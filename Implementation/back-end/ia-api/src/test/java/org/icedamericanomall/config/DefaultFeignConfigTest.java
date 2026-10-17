@@ -1,6 +1,8 @@
 package org.icedamericanomall.config;
 
 import feign.Logger;
+import feign.codec.ErrorDecoder;
+import org.icedamericanomall.exception.UpstreamErrorDecoder;
 import org.icedamericanomall.fallback.AddressClientFallback;
 import org.icedamericanomall.fallback.AfterSaleClientFallback;
 import org.icedamericanomall.fallback.AuthContextClientFallback;
@@ -92,5 +94,23 @@ class DefaultFeignConfigTest {
     void shouldFallBackToBasic_whenLevelInvalid() {
         runner.withPropertyValues("feign.logging.level=VERBOSE")
                 .run(context -> assertThat(context.getBean(Logger.Level.class)).isEqualTo(Logger.Level.BASIC));
+    }
+
+    /**
+     * 批次 ⑤：错误解码器必须登记在<b>同一个</b>共享配置类里。
+     *
+     * <p><b>为什么用「恰一个」而不是「存在」断言</b>：{@code ErrorDecoder} 是客户端级全局配置，
+     * 一个 Feign 上下文里出现两个实现会在装配期抛 {@code NoUniqueBeanDefinitionException}
+     * （或更糟：非确定性选一个）。{@code FeignClientsConfiguration} 的默认实现带
+     * {@code @ConditionalOnMissingBean}，本 Bean 先注册即可安全取代它 —— 这条断言把这个前提锁住。
+     */
+    @Test
+    @DisplayName("错误解码器 — 恰好一个 ErrorDecoder，且为 UpstreamErrorDecoder（覆盖 Feign 默认实现）")
+    void shouldRegisterSingleUpstreamErrorDecoder() {
+        runner.run(context -> {
+            assertThat(context.getStartupFailure()).isNull();
+            assertThat(context).hasSingleBean(ErrorDecoder.class);
+            assertThat(context.getBean(ErrorDecoder.class)).isInstanceOf(UpstreamErrorDecoder.class);
+        });
     }
 }

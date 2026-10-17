@@ -59,4 +59,34 @@ class ErrorCodeTest {
         assertEquals(3042, ErrorCode.CART_ITEM_LIMIT_EXCEEDED.getCode());
         assertEquals(HttpStatus.OK, ErrorCode.CART_ITEM_LIMIT_EXCEEDED.getHttpStatus());
     }
+
+    /**
+     * 登录失败口径（2026-10-18 批次 ④，抗账号枚举）。
+     *
+     * <p><b>锁死的缺陷（修复前会失败）</b>：{@code PASSWORD_ERROR} 原配 {@code HttpStatus.OK}（200）、
+     * {@code USER_STATUS_ABNORMAL} 原配 200、{@code ACCOUNT_FROZEN} 原配 403，而「账号不存在」走
+     * {@code USER_NOT_FOUND(1102) / 404} —— <b>只看状态码</b>即可枚举「某账号是否存在 / 是否被冻结」。
+     */
+    @Test
+    @DisplayName("登录失败 — 3007/3008/1017 一律 401，且 3007 的默认文案中性（不得区分原因）")
+    @SuppressWarnings("deprecation")
+    void shouldCarryLoginFailureAs401() {
+        assertEquals(HttpStatus.UNAUTHORIZED, ErrorCode.PASSWORD_ERROR.getHttpStatus(),
+                "登录失败必须 401（09-constraints §三·六「未认证 → 401」）");
+        assertEquals(HttpStatus.UNAUTHORIZED, ErrorCode.USER_STATUS_ABNORMAL.getHttpStatus(),
+                "状态不可登录也是登录失败，不得用 200 与「账号不存在」的 404 形成差异");
+        assertEquals(HttpStatus.UNAUTHORIZED, ErrorCode.ACCOUNT_FROZEN.getHttpStatus(),
+                "风控冻结已退役到 3007；遗留枚举也不得退化成可区分的 403");
+
+        assertEquals("账号或密码不正确", ErrorCode.PASSWORD_ERROR.getMessage(),
+                "默认文案必须中性：调用方漏传自定义文案时不得泄漏「账号不存在 / 密码错 / 被冻结」");
+    }
+
+    @Test
+    @DisplayName("登录以外的「用户不存在」不受影响 — USER_NOT_FOUND 仍是 404（不得全局改口径）")
+    void shouldKeepUserNotFoundAs404OutsideLoginPath() {
+        assertEquals(1102, ErrorCode.USER_NOT_FOUND.getCode());
+        assertEquals(HttpStatus.NOT_FOUND, ErrorCode.USER_NOT_FOUND.getHttpStatus(),
+                "USER_NOT_FOUND 仍被重置密码/商家/会员等非登录场景使用，只有登录链路改为 3007/401");
+    }
 }

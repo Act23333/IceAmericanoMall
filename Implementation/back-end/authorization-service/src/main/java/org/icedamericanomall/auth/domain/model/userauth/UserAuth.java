@@ -4,9 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 import org.icedamericanomall.auth.domain.enums.UserAuthStatusEnum;
 import org.icedamericanomall.auth.domain.port.PasswordVerifier;
-import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
-import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.model.EncryptedIdentifier;
 
 import java.time.LocalDateTime;
@@ -64,6 +62,18 @@ public class UserAuth {
     }
 
     /**
+     * 是否已设置密码凭证（验证码 / 微信登录创建的凭证行没有 credential）。
+     *
+     * <p>登录策略据此决定是否要做 dummy verify：<b>没有可比对哈希时也必须消耗一次哈希成本</b>，
+     * 否则「凭证行存在但无密码」会以明显更快的响应被识别出来。
+     *
+     * @return true 表示存在非空密码哈希
+     */
+    public boolean hasPasswordCredential() {
+        return credential != null && !credential.isBlank();
+    }
+
+    /**
      * 校验明文密码。
      *
      * @param rawPassword      用户提交的明文密码
@@ -71,19 +81,25 @@ public class UserAuth {
      * @return true 表示密码正确
      */
     public boolean verifyPassword(String rawPassword, PasswordVerifier passwordVerifier) {
-        if (credential == null || credential.isBlank()) {
+        if (!hasPasswordCredential()) {
             return false;
         }
         return passwordVerifier.matches(rawPassword, credential);
     }
 
     /**
-     * 断言账号处于可登录状态，否则抛出业务异常。
+     * 是否处于可登录状态（纯查询，不抛异常）。
+     *
+     * <p><b>为什么不提供「断言可登录并抛状态异常」的方法</b>（2026-10-18 批次 ④）：原
+     * {@code assertActive()} 抛 {@code USER_STATUS_ABNORMAL(3008)} 且 HTTP 200，
+     * 而「账号不存在」抛 {@code USER_NOT_FOUND(1102)} 且 HTTP 404 —— 状态码差异可枚举账号。
+     * 「失败如何对外表达」属<b>披露策略</b>，必须由唯一的策略持有者（登录策略）决定，
+     * 聚合只回答「是否可登录」这个问题。
+     *
+     * @return true 表示状态为 {@link UserAuthStatusEnum#ACTIVE}
      */
-    public void assertActive() {
-        if (status != UserAuthStatusEnum.ACTIVE) {
-            throw new BizException(ErrorCode.USER_STATUS_ABNORMAL, "账号状态异常");
-        }
+    public boolean isActive() {
+        return UserAuthStatusEnum.isActive(status);
     }
 
     /** 记录一次成功登录 */

@@ -134,7 +134,7 @@ public class UserAuthProvisioner {
      * @throws BizException 标识已注册（PHONE_ALREADY_REGISTERED）
      */
     private UserAuth attachCredentialOrReject(UserAuth existing, String encodedCredential) {
-        if (existing.getCredential() != null && !existing.getCredential().isBlank()) {
+        if (existing.hasPasswordCredential()) {
             throw new BizException(ErrorCode.PHONE_ALREADY_REGISTERED, "该手机号已注册");
         }
         existing.updatePassword(encodedCredential);
