@@ -4,6 +4,7 @@ import feign.Logger;
 import feign.RequestInterceptor;
 import feign.codec.ErrorDecoder;
 import org.icedamericanomall.common.constant.SecurityHeaders;
+import org.icedamericanomall.common.filter.TraceIdFilter;
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.exception.UpstreamErrorDecoder;
 import org.icedamericanomall.fallback.AddressClientFallback;
@@ -26,6 +27,7 @@ import org.icedamericanomall.fallback.UserClientFallback;
 import org.icedamericanomall.fallback.UserProfileClientFallback;
 import org.icedamericanomall.fallback.ItemSearchClientFallback;
 import org.icedamericanomall.fallback.VerificationClientFallback;
+import org.slf4j.MDC;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.Environment;
 
@@ -73,8 +75,24 @@ public class DefaultFeignConfig {
     private static final Logger.Level DEFAULT_LOGGING_LEVEL = Logger.Level.BASIC;
 
     /**
-     * 透传当前登录用户标识：下游服务通过 {@code X-User-Id} 头重建 UserContext。
-     * 无登录上下文（内部任务/定时任务）时不注入。
+     * 透传「当前登录用户 + 全链路 traceId」两个头。
+     *
+     * <p><b>① {@code X-User-Id}</b>：下游服务通过该头重建 UserContext。
+     * 无登录上下文（内部任务/定时任务）时<b>不注入</b>。
+     *
+     * <p><b>② {@code X-Trace-Id}</b>（2026-10-18 批次 ⑤b）：把本服务的 MDC traceId 透传给下游。
+     * <b>为什么必须透传</b>：服务端错误体的 {@code traceId} 字段取自
+     * 「网关 {@code X-Trace-Id} → {@code TraceIdFilter} → MDC」这条现成链路
+     * （见 {@code GlobalExceptionHandler#currentTraceId()}）。若 Feign 出站不带该头，
+     * 每一跳都会由下游 {@code TraceIdFilter} <b>另生成一个新 UUID</b>——
+     * 于是「调用方拿到的 {@code traceId}」与「下游日志里的 {@code traceId}」是两个值，
+     * 错误体里的 {@code traceId} 就退化成「无法回捞日志的随机串」，§三·八·3 要求的
+     * 「错误体必须足以判定处置」在追踪维度上失效。
+     *
+     * <p><b>取值口径与容错</b>：只读 {@link TraceIdFilter#TRACE_ID} 这个既有 MDC 键
+     * （<b>复用</b>常量，不写字面量 —— 键名漂移会静默失效）；取不到 / 空白 / MDC 实现异常
+     * 一律<b>不注入</b>，<b>绝不</b>因追踪号缺失让一次正常调用失败。
+     * 头名复用 {@link SecurityHeaders#X_TRACE_ID}（与网关、{@code TraceIdFilter} 同一来源）。
      */
     @Bean
     public RequestInterceptor requestInterceptor() {
@@ -83,7 +101,30 @@ public class DefaultFeignConfig {
             if (userInfo != null) {
                 requestTemplate.header(SecurityHeaders.X_USER_ID, String.valueOf(userInfo.userId()));
             }
+            String traceId = currentTraceId();
+            if (traceId != null) {
+                requestTemplate.header(SecurityHeaders.X_TRACE_ID, traceId);
+            }
         };
+    }
+
+    /**
+     * 读取本线程 MDC 里的 traceId。
+     *
+     * <p>取不到一律 {@code null}：异步线程 / 定时任务 / 未装配过滤器时 MDC 为空，
+     * 这是<b>正常</b>状态，不是故障 —— 因此只跳过注入，不抛异常、不回落成随机 UUID
+     * （随机值会让「调用方以为自己在追这条链」变成假线索；下游自己生成就是它自己的链路）。
+     *
+     * @return 非空白 traceId，或 {@code null}
+     */
+    private static String currentTraceId() {
+        try {
+            String traceId = MDC.get(TraceIdFilter.TRACE_ID);
+            return traceId == null || traceId.isBlank() ? null : traceId;
+        } catch (RuntimeException ex) {
+            // MDC 实现异常（如上下文未装配）不得影响 Feign 调用本身
+            return null;
+        }
     }
 
     /**

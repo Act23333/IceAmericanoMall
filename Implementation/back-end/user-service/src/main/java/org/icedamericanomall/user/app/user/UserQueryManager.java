@@ -29,7 +29,15 @@ public class UserQueryManager {
     /**
      * 查询用户信息。
      *
-     * @throws BizException 用户不存在（USER_NOT_FOUND）/ 已冻结（USER_STATUS_ABNORMAL）
+     * <p>冻结用户在此<b>被拒绝</b>（{@code User#assertActive}）：用户已认证、只是无权 →
+     * HTTP <b>403 {@code FORBIDDEN}</b>（{@code 09-constraints} §三·六）。批次 ⑤b 之前该路径返回
+     * 401（{@code USER_STATUS_ABNORMAL}），前端据此清凭证跳登录页 —— 冻结用户「登录成功 →
+     * 立刻被登出」，既进不去也退不出登录页。
+     *
+     * @param userId 用户技术主键
+     * @return 用户信息
+     * @throws BizException 用户不存在（{@code USER_NOT_FOUND} / 404）
+     * @throws org.icedamericanomall.common.exception.ForbiddenException 账号已冻结（403）
      */
     public UserInfoResp getByUserId(Long userId) {
         User user = userRepository.findById(userId)

@@ -93,6 +93,20 @@ public class UpstreamErrorDecoder implements ErrorDecoder {
     /**
      * 报文 → 错误体（解析失败即按未知降级）。
      *
+     * <p><b>类别判定走唯一入口</b> {@link UpstreamFailures#classify(Integer, Throwable)}
+     * （本解码器在此路径上没有 {@code Throwable}，故传 {@code null}）—— 与降级工厂共用同一判据，
+     * 避免「解码器一套、降级一套」。判定顺序为<b>异常类型 → HTTP 状态码 → 500 才是 BUG</b>；
+     * 这里只可能走状态码那一段：4xx → {@code CLIENT}、2xx → {@code RULE}、
+     * 200-信封以外的基础设施 5xx → {@code TRANSIENT}、<b>500 且无任何异常线索 → {@code BUG}</b>
+     * （批次 ⑤b 起「一律 BUG」与「一律 TRANSIENT」两个方向都被判据钉死，见
+     * {@code UpstreamFailuresTest}）。
+     *
+     * <p><b>注意与本类 {@link #degraded(int)} 的区别（刻意保留两套口径，不是重复）</b>：
+     * 能解析出 {@code code} 的报文说明「下游确实按契约回了错误体」，此时状态码是可信线索；
+     * 而解析不出报文（空体 / HTML 错误页 / 非 JSON）连「这个 500 是不是本服务的语义」都不确定
+     * （可能是网关/负载均衡插入的 500），故按<b>未知</b>处理 → {@code TRANSIENT}。结论：
+     * 「已知的 500 → BUG」，「不知所以然的 500 → TRANSIENT」。
+     *
      * @param body   下游响应体（可为 {@code null}）
      * @param status 下游 HTTP 状态码
      * @return 错误体（永不为 {@code null}）
@@ -103,7 +117,7 @@ public class UpstreamErrorDecoder implements ErrorDecoder {
             return degraded(status);
         }
         ErrorCategory category = parseCategory(root)
-                .orElseGet(() -> ErrorCategory.ofStatus(status));
+                .orElseGet(() -> UpstreamFailures.classify(status, null));
         return ErrorInfo.of(
                 root.get(FIELD_CODE).asInt(),
                 firstNonBlank(text(root, FIELD_MSG), text(root, FIELD_MESSAGE),

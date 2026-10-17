@@ -4,6 +4,7 @@ import org.springframework.http.HttpStatus;
 
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -58,6 +59,19 @@ import java.util.Set;
  * 「我们代码有 bug」，有的表示「上游第三方出状况」）。这种情况只能按 {@code ErrorCode}
  * 逐条点名，且每一条都必须写清「为何不能靠状态码判定」—— 见
  * {@link #STATUS_AMBIGUOUS_OVERRIDES}。覆盖表刻意保持极短：它是例外，不是第二套映射。
+ * <b>它受启动期自检约束</b>（{@link #validateOverrides}）：键必须是真实 {@code ErrorCode}、
+ * 值不得与该码状态码的派生结果相同、条目数不得超过 {@link #MAX_OVERRIDES} —— 违反即
+ * {@code IllegalStateException} 让应用<b>启动失败</b>，而不是静默失效。
+ *
+ * <p><b>判定顺序（钉死，2026-10-18 批次 ⑤b）</b>：<b>异常类型 → HTTP 状态码 → 500 才是 BUG</b>。
+ *
+ * <p><b>为什么「异常类型」要排在状态码之前</b>：熔断打开、连接失败、读超时、线程池/信号量耗尽
+ * 在 Feign 侧<b>根本不产生 HTTP 响应</b>（没有状态码可看），它们只以异常形式出现在降级路径上
+ * （{@code RetryableException} / {@code ConnectException} / {@code CallNotPermittedException} …）。
+ * 若只看状态码，这些调用会被兜底成「未知」甚至「BUG」——「BUG 不可重试」直接堵死重试，
+ * 把一次上游抖动升级成一次值班事故。故先按 {@link #of(Throwable)} 判类型，命中即
+ * {@link #TRANSIENT}；只有类型判不出结论时，才回落到状态码派生（{@link #ofStatus(int)}）；
+ * 状态码 500 且无任何异常线索，才判 {@link #BUG}。
  */
 public enum ErrorCategory {
 
@@ -94,6 +108,68 @@ public enum ErrorCategory {
             HttpStatus.GATEWAY_TIMEOUT.value());
 
     /**
+     * 覆盖表条目数<b>上限</b>（启动期强制，见 {@link #validateOverrides}）。
+     *
+     * <p>为什么要有上限：覆盖表是「状态码语义不足」的例外清单，<b>不是</b>第二套映射。
+     * 一旦条目越攒越多，说明真正的信号是「派生逻辑不适用了，该改派生」——继续加表只会让
+     * 「同一语义」分散到 99 个枚举项的逐条手填上，必然漂移。上限取 5（当前用 3 条）：
+     * 留 2 格给「第三方故障」这类真实例外，越界即报错，逼着讨论派生规则本身。
+     */
+    static final int MAX_OVERRIDES = 5;
+
+    /**
+     * 视为「<b>暂时性故障</b>」的异常类型全名 —— 命中即 {@link #TRANSIENT}（可重试）。
+     *
+     * <p><b>输入口径</b>：这些是<b>没有 HTTP 响应</b>的故障形态（连接、超时、熔断、池耗尽）：
+     * <table border="1">
+     *   <caption>逐条判据</caption>
+     *   <tr><th>类型</th><th>何时出现</th><th>为何是 TRANSIENT</th></tr>
+     *   <tr><td>{@code feign.RetryableException}</td>
+     *       <td>Feign 传输层失败（通常包装 ConnectException / SocketTimeoutException）</td>
+     *       <td>对端没连上 / 没按时回 → 重试有机会成功</td></tr>
+     *   <tr><td>{@code java.net.ConnectException}</td><td>TCP 连接被拒 / 不可达</td>
+     *       <td>实例重启、扩缩容窗口 → 换一个实例即可</td></tr>
+     *   <tr><td>{@code java.net.SocketTimeoutException}</td><td>读/连接超时</td>
+     *       <td>对端慢但可能不坏 → 退避重试</td></tr>
+     *   <tr><td>{@code java.io.IOException}</td><td><b>网络类</b> IO 故障（连接重置、流被关闭等）</td>
+     *       <td>在 Feign 调用路径上 IO 异常只可能来自传输层</td></tr>
+     *   <tr><td>{@code java.util.concurrent.TimeoutException}</td><td>异步等待超时（Resilience4j/CompletableFuture）</td>
+     *       <td>同上：对端慢，非契约错误</td></tr>
+     *   <tr><td>{@code java.util.concurrent.RejectedExecutionException}</td><td>线程池/执行器耗尽</td>
+     *       <td>过载而非代码缺陷，退避后恢复</td></tr>
+     *   <tr><td>{@code io.github.resilience4j.circuitbreaker.CallNotPermittedException}</td>
+     *       <td><b>熔断打开</b></td><td>熔断本身就是「暂时别打」，恢复后自动放行</td></tr>
+     *   <tr><td>{@code io.github.resilience4j.bulkhead.BulkheadFullException}</td>
+     *       <td>隔舱（并发数）耗尽</td><td>过载 → 退避</td></tr>
+     *   <tr><td>{@code com.alibaba.csp.sentinel.slots.block.BlockException}</td>
+     *       <td>Sentinel 流控/降级阻断（trade-service 使用）</td><td>限流 → 退避</td></tr>
+     * </table>
+     *
+     * <p><b>为什么按「类型全名」而不是 {@code instanceof}</b>：本类是 {@code ia-common}（共享内核），
+     * 它<b>不声明</b> Feign / Resilience4j / Sentinel 依赖 —— 若为分类而引入这三个依赖，
+     * 等于让「每个服务」都被迫携带全部容错库（gateway 用 Sentinel、其余用 Resilience4j、
+     * 贸易域两者皆有）。按全名比对（沿<b>父类链</b>逐级比对，故子类自动命中）在缺失该类时
+     * 自然不命中，<b>不引入编译期耦合</b>，也与 Spring 自身处理可选集成的做法一致。
+     * 代价是「改名即失效」—— 因此本表是全仓唯一实现，且有回归测试直接构造<b>真实库类</b>来锁死：
+     * {@code ErrorCategoryTest}（{@code ia-common}，JDK 网络类）与
+     * {@code UpstreamFailuresTest}（{@code ia-api}，真实 {@code feign.RetryableException} 与
+     * resilience4j {@code CallNotPermittedException}）。
+     */
+    private static final Set<String> TRANSIENT_TYPE_NAMES = Set.of(
+            "feign.RetryableException",
+            "java.net.ConnectException",
+            "java.net.SocketTimeoutException",
+            "java.io.IOException",
+            "java.util.concurrent.TimeoutException",
+            "java.util.concurrent.RejectedExecutionException",
+            "io.github.resilience4j.circuitbreaker.CallNotPermittedException",
+            "io.github.resilience4j.bulkhead.BulkheadFullException",
+            "com.alibaba.csp.sentinel.slots.block.BlockException");
+
+    /** 异常链回溯上限 —— 防畸形/自引用链把降级路径拖成死循环。 */
+    private static final int MAX_CAUSE_DEPTH = 16;
+
+    /**
      * <b>状态码语义不足</b>的显式覆盖表（{@code ErrorCode} → 真实类别）。
      *
      * <p>规则：<b>只有</b>「HTTP 状态码相同、但责任方不同」的少数错误码才允许进表，
@@ -106,6 +182,21 @@ public enum ErrorCategory {
      * 值班事故。这类错误重试有机会成功，故归 {@link #TRANSIENT}。
      */
     private static final Map<ErrorCode, ErrorCategory> STATUS_AMBIGUOUS_OVERRIDES = buildOverrides();
+
+    /**
+     * <b>启动期自检</b> —— 覆盖表一旦配错就<b>启动失败</b>，绝不静默失效。
+     *
+     * <p>为什么必须是静态初始化块 + 抛异常，而不是「打个 warn 日志」：覆盖表的作用是
+     * 「纠正状态码的误判」，若某条覆盖无效（值 = 派生结果）或不合法，运行时表现是
+     * <b>静默回到错误判据</b>（如第三方 500 又被判成 BUG → 拦截重试 + 误告警），
+     * 而这种偏差只在生产故障时才暴露。启动即失败是唯一能让问题在部署前被看见的方式。
+     *
+     * <p>校验内容见 {@link #validateOverrides(Map)}；位置必须在
+     * {@link #STATUS_AMBIGUOUS_OVERRIDES} 声明<b>之后</b>（静态初始化按文本顺序执行）。
+     */
+    static {
+        validateOverrides(STATUS_AMBIGUOUS_OVERRIDES);
+    }
 
     /** {@code retryable} 的唯一派生口径：只有暂时性故障可重试。 */
     public boolean isRetryable() {
@@ -169,7 +260,152 @@ public enum ErrorCategory {
         return TRANSIENT;
     }
 
-    /** 构建覆盖表（保持极短：只收「状态码相同但责任方不同」的错误码）。 */
+    // ==================== 异常类型优先（2026-10-18 批次 ⑤b） ====================
+
+    /**
+     * 按<b>异常类型</b>判定类别（异常类型优先判定）。
+     *
+     * <p>只回答「这个异常本身是不是暂时性故障」。命中 {@link #TRANSIENT_TYPE_NAMES}
+     * 中任一类型（沿父类链、沿 {@code cause} 链递归解包、带防环）→ {@link #TRANSIENT}；
+     * 否则按「未知」处理（{@link #TRANSIENT}，与 {@code UpstreamErrorDecoder} 的未知口径一致）。
+     *
+     * <p><b>注意分层</b>：本方法只认<b>类型</b>。若手上已有「已类型化的上游错误体」
+     * （{@code ia-api} 的 {@code UpstreamException} 携带了下游类别），应先采信它 ——
+     * 该路径由 {@code ia-api} 的 {@code UpstreamFailures#classify} 收口（{@code ia-common}
+     * 不能反向依赖 {@code ia-api}）。
+     *
+     * @param cause 触发失败的异常（可为 {@code null}）
+     * @return 处置类别，永不为 {@code null}
+     */
+    public static ErrorCategory of(Throwable cause) {
+        return of(null, cause);
+    }
+
+    /**
+     * <b>统一判定入口</b>：<b>异常类型 → HTTP 状态码 → 500 才是 BUG</b>。
+     *
+     * <p>顺序不可调换的理由与三类输入各自的作用见类注释。三条分支：
+     * <ol>
+     *   <li>{@link #isTransientCause(Throwable)} 命中 → {@link #TRANSIENT}
+     *       （连接失败 / 超时 / 熔断打开 / 池耗尽：这些<b>没有 HTTP 响应</b>，看状态码永远看不出来）；</li>
+     *   <li>否则有状态码线索 → {@link #ofStatus(int)} 派生（408/429/5xx-infra → TRANSIENT，
+     *       4xx → CLIENT，2xx → RULE，<b>500 才是 BUG</b>）；</li>
+     *   <li>两者都没有（既无类型线索也无状态码）→ {@link #TRANSIENT}：未知按可重试处理，
+     *       <b>绝不当成功</b>，也不冒充「代码缺陷」制造误告警。</li>
+     * </ol>
+     *
+     * @param httpStatus 下游 HTTP 状态码；无响应（连接层失败 / 熔断 / 超时）时传 {@code null}
+     * @param cause      触发失败的异常（可为 {@code null}）
+     * @return 处置类别，永不为 {@code null}
+     */
+    public static ErrorCategory of(Integer httpStatus, Throwable cause) {
+        if (isTransientCause(cause)) {
+            return TRANSIENT;
+        }
+        return httpStatus == null ? TRANSIENT : ofStatus(httpStatus);
+    }
+
+    /**
+     * 异常链中是否出现「暂时性故障」类型的异常。
+     *
+     * <p><b>必须递归解 cause 链</b>：Feign / Resilience4j / 装饰器（重试、隔舱、熔断）会层层
+     * 包装，只看第一层会漏掉真正的故障类型（{@code RuntimeException("decorator", CallNotPermittedException)}
+     * 是常态而非例外）。同时<b>防环</b>：用身份集合去重 + 深度上限，自引用或互相引用的畸形链
+     * 直接停下（返回 {@code false}，交给状态码派生），绝不在降级路径上死循环。
+     *
+     * @param cause 任意异常（可为 {@code null}）
+     * @return {@code true} 表示链上出现连接/超时/熔断/池耗尽类异常
+     */
+    public static boolean isTransientCause(Throwable cause) {
+        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        Throwable current = cause;
+        for (int depth = 0; current != null && depth < MAX_CAUSE_DEPTH; depth++) {
+            if (!visited.add(current)) {
+                return false; // 环：链已回到访问过的节点，停止（不得死循环）
+            }
+            if (matchesTransientType(current.getClass())) {
+                return true;
+            }
+            Throwable next = current.getCause();
+            if (next == current) {
+                return false; // 自引用
+            }
+            current = next;
+        }
+        return false;
+    }
+
+    /**
+     * 覆盖表自检（启动期由静态初始化块调用）。
+     *
+     * <p>三条约束，任一违反即 {@link IllegalStateException}：
+     * <ol>
+     *   <li><b>键必须是真实存在的 {@code ErrorCode}</b>（映射键类型已保证枚举性，此处挡住
+     *       {@code null} 键 —— 反射/手工构造的表最容易引入这种「永远匹配不上」的条目）；</li>
+     *   <li><b>值不得与该码 {@code HttpStatus} 的派生结果相同</b> —— 相同意味着这条覆盖
+     *       <b>什么也没纠正</b>：它只会让读者误以为「这里有特殊处理」，实际判据仍是状态码
+     *       （典型的配置错误：加了表却解决了别的问题）；</li>
+     *   <li><b>条目数不得超过 {@link #MAX_OVERRIDES}</b> —— 超限说明派生逻辑该改，
+     *       而不是继续加表。</li>
+     * </ol>
+     *
+     * <p>刻意<b>不做</b>的事：不查「键是否属于某个白名单包」、不校验值与 {@code retryable} 的一致性
+     * （后者由 {@link #isRetryable()} 单向派生，不存在不一致的可能）。
+     *
+     * @param overrides 待校验的覆盖表
+     * @throws IllegalStateException 任一约束不成立
+     */
+    static void validateOverrides(Map<ErrorCode, ErrorCategory> overrides) {
+        if (overrides == null) {
+            throw new IllegalStateException("ErrorCategory 覆盖表为空(null)：启动自检失败");
+        }
+        if (overrides.size() > MAX_OVERRIDES) {
+            throw new IllegalStateException("ErrorCategory 覆盖表条目数 " + overrides.size()
+                    + " 超过上限 " + MAX_OVERRIDES
+                    + "：条目越多说明状态码派生逻辑越不适用，应改派生，而不是继续加表");
+        }
+        for (Map.Entry<ErrorCode, ErrorCategory> entry : overrides.entrySet()) {
+            ErrorCode code = entry.getKey();
+            ErrorCategory overridden = entry.getValue();
+            if (code == null) {
+                throw new IllegalStateException("ErrorCategory 覆盖表存在 null 键：键必须是真实存在的 ErrorCode");
+            }
+            if (overridden == null) {
+                throw new IllegalStateException("ErrorCategory 覆盖表 " + code.name() + " 未给出类别");
+            }
+            ErrorCategory derived = deriveByStatus(code);
+            if (overridden == derived) {
+                throw new IllegalStateException("ErrorCategory 覆盖表 " + code.name() + "=" + overridden.name()
+                        + " 与该码 HTTP 状态码的派生结果相同 —— 该条覆盖无意义（配置错误），"
+                        + "请删除它或修正取值");
+            }
+        }
+    }
+
+    /** 只按状态码派生（<b>不查覆盖表</b>）—— 供启动自检使用，避免自引用。 */
+    private static ErrorCategory deriveByStatus(ErrorCode code) {
+        HttpStatus status = code.getHttpStatus();
+        return status == null ? TRANSIENT : ofStatus(status.value());
+    }
+
+    /** 沿 {@code type} 的父类链比对 {@link #TRANSIENT_TYPE_NAMES}（子类自动命中父类型名）。 */
+    private static boolean matchesTransientType(Class<?> type) {
+        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+            if (TRANSIENT_TYPE_NAMES.contains(current.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 构建覆盖表（保持极短：只收「状态码相同但责任方不同」的错误码）。
+     *
+     * <p><b>返回值会被启动期自检</b>（静态初始化块 → {@link #validateOverrides(Map)}）：
+     * 值与该码状态码派生结果相同的条目、{@code null} 键、条目数超过 {@link #MAX_OVERRIDES}
+     * 都会让应用<b>启动失败</b>。新增条目时不必在这里手写校验，但必须能回答
+     * 「{@link ErrorCode#getHttpStatus()} 为什么不足以判定」。
+     */
     private static Map<ErrorCode, ErrorCategory> buildOverrides() {
         EnumMap<ErrorCode, ErrorCategory> overrides = new EnumMap<>(ErrorCode.class);
 

@@ -34,7 +34,24 @@ public enum UserStatusEnum {
         return description;
     }
 
-    /** 从状态码还原；非法值抛业务异常（管理后台入参校验）。 */
+    /**
+     * 从状态码还原；<b>非法值 = 参数非法</b>，抛 {@code PARAM_ERROR(1101) / HTTP 400}
+     * （管理后台入参校验）。
+     *
+     * <p><b>语义订正（2026-10-18 批次 ⑤b）</b>：此前抛
+     * {@code USER_STATUS_ABNORMAL(3008)} —— 该码的状态码已被调成 {@code 401}（为满足登录链路的
+     * 「未认证 → 401」），于是<b>与鉴权毫无关系</b>的一次「status 传了 99」被回成 401：
+     * 前端据此清凭证并跳登录页，把一个后台表单填错变成了「用户被登出」。
+     * 按 {@code collaboration/09-constraints.md} §三·六：<b>参数非法 → 400</b>；
+     * {@code USER_STATUS_ABNORMAL} 只表示「账号状态异常」，<b>不得</b>用于鉴权失败或入参校验。
+     *
+     * <p>文案保持不变（{@code 账户状态错误}）：本次只订正 HTTP 状态码与业务码，
+     * 不改变对外的可读提示，也不改变「0=禁用 / 1=正常」的取值口径。
+     *
+     * @param value 状态码（0=禁用，1=正常）
+     * @return 对应枚举
+     * @throws BadRequestException 取值不是 0/1（400 {@code PARAM_ERROR}）
+     */
     public static UserStatusEnum of(int value) {
         if (value == 0) {
             return FROZEN;
@@ -42,7 +59,7 @@ public enum UserStatusEnum {
         if (value == 1) {
             return NORMAL;
         }
-        throw new BadRequestException(ErrorCode.USER_STATUS_ABNORMAL, "账户状态错误");
+        throw new BadRequestException(ErrorCode.PARAM_ERROR, "账户状态错误");
     }
 
     /** 从状态码还原（null 安全，供持久化转换使用）。 */

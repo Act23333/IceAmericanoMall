@@ -79,7 +79,9 @@ public class UserAdminManager {
     }
 
     /**
-     * 管理后台：启用/禁用用户（status 见 UserStatusEnum；非法值抛 USER_STATUS_ABNORMAL）。
+     * 管理后台：启用/禁用用户（status 见 {@link UserStatusEnum}；<b>非法值抛
+     * {@code PARAM_ERROR(1101)} / 400</b> —— 参数非法，不是鉴权失败，见
+     * {@link UserStatusEnum#of(int)} 的语义订正说明）。
      *
      * <p>本地「状态变更 + 审计留痕」在同一个 {@link TransactionTemplate} 事务内提交
      * （ADR-032 管道二：不允许「改了状态却没留痕」）；随后的用户级吊销是 Feign 调用，

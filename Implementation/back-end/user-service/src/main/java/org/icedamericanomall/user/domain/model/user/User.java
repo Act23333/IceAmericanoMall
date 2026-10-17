@@ -6,6 +6,7 @@ import lombok.Data;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.common.exception.ForbiddenException;
 import org.icedamericanomall.common.model.EncryptedIdentifier;
 import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.user.domain.enums.GenderEnum;
@@ -123,10 +124,22 @@ public class User {
         return status == UserStatusEnum.FROZEN;
     }
 
-    /** 断言账号处于可登录 / 可访问状态，否则抛业务异常（禁用用户不能登录）。 */
+    /**
+     * 断言账号处于可访问状态，否则抛业务异常（禁用用户不能访问自己的资料）。
+     *
+     * <p><b>为什么是 403 而不是 401（2026-10-18 批次 ⑤b）</b>：本断言只在<b>已认证</b>路径上使用
+     * （{@code GET /api/user/info}：网关已验过 token 并注入 {@code X-User-Id}）。按
+     * {@code collaboration/09-constraints.md} §三·六「未认证 → 401，已认证但无权 → 403」，
+     * 「用户存在、已认证，但状态是冻结 → 无权访问」属<b>无权</b>。此前抛
+     * {@code USER_STATUS_ABNORMAL(3008)} 而该码的状态码为 401（为登录链路的「未认证」口径而改），
+     * 于是冻结用户访问自己的资料时前端会<b>清凭证并跳登录页</b> —— 用户被反复踢回登录，
+     * 却永远登不进去（登录能成功、登录后又 401），形成死循环。403 让前端走「无权限」提示分支。
+     *
+     * @throws ForbiddenException 账号已被冻结（HTTP 403 {@code FORBIDDEN}）
+     */
     public void assertActive() {
         if (status == UserStatusEnum.FROZEN) {
-            throw new BizException(ErrorCode.USER_STATUS_ABNORMAL);
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "账户已被冻结");
         }
     }
 

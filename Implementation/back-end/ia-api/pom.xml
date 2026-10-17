@@ -49,5 +49,27 @@
             <artifactId>ia-common</artifactId>
             <scope>provided</scope>
         </dependency>
+        <!-- 测试专用：{@link TraceIdPropagationChainTest} 要在进程内复现「下游服务」的两跳链路
+             （TraceIdFilter 读 X-Trace-Id 写 MDC → GlobalExceptionHandler 出 ErrorInfo），
+             故测试期需要 servlet API 与 spring-webmvc（ia-common 里两者都是 provided，不传递）。
+             test 作用域，不传递。 -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webmvc</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- 测试专用：熔断器「打开」异常的真实类（io.github.resilience4j.circuitbreaker.CallNotPermittedException）。
+             errorCategory 的异常类型判定按「类型名比对」实现（ia-common 不声明 resilience4j 依赖，
+             见 ErrorCategory 类注释），故此处只用于证明「真实库类能被命中」—— test 作用域，不传递。 -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

@@ -2,10 +2,12 @@ package org.icedamericanomall.fallback;
 
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.SpuDetailClient;
+import org.icedamericanomall.common.enums.ErrorCategory;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.SpuDetailCO;
 import org.icedamericanomall.exception.UpstreamException;
+import org.icedamericanomall.exception.UpstreamFailures;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;
 
@@ -53,17 +55,23 @@ public class SpuDetailClientFallback implements FallbackFactory<SpuDetailClient>
 
             @Override
             public SpuDetailCO getSpuDetail(String spuId) {
+                // 类别判定走唯一入口（与 UpstreamErrorDecoder 同一判据）：异常类型（连接/超时/熔断）
+                // → 已类型化错误体 → 状态码 → 500 才是 BUG。
+                // 此前这里只判 upstream.isClientError()：能工作，但「连接失败/熔断打开」这类没有
+                // 响应体的故障只是靠「不是 CLIENT 就降级」间接落到正确分支 —— 判据靠排除法，
+                // 说不清为什么；换成统一入口后，两条路径（解码 / 降级）不可能得出两个结论。
+                ErrorCategory category = UpstreamFailures.classify(cause);
                 UpstreamException upstream = UpstreamException.findIn(cause);
-                if (upstream != null && upstream.isClientError()) {
+                if (upstream != null && category == ErrorCategory.CLIENT) {
                     // ★ 透传：下游说「不存在/参数错」，这就是业务事实，原样往上抛（含原始 code/文案）
                     log.warn("商品详情服务降级(透传): 下游业务失败 spuId={}, upstreamStatus={}, code={}, category={}, msg={}",
                             spuId, upstream.getUpstreamStatus(), upstream.getCode(),
-                            upstream.getCategory(), upstream.getMsg());
+                            category, upstream.getMsg());
                     throw upstream;
                 }
-                log.error("商品详情服务降级: 暂时无法获取（5xx/超时/熔断；禁止降级为 null，"
+                log.error("商品详情服务降级: 暂时无法获取（category={}；5xx/超时/熔断/代码缺陷；禁止降级为 null，"
                         + "AI 工具会误判为「商品不存在」）spuId={}, cause={}",
-                        spuId, cause == null ? "unknown" : cause.toString(), cause);
+                        category, spuId, cause == null ? "unknown" : cause.toString(), cause);
                 throw new BizException(ErrorCode.SYSTEM_BUSY, DEGRADED_MESSAGE);
             }
         };

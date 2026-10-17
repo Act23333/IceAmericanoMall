@@ -1,7 +1,11 @@
 package org.icedamericanomall.config;
 
 import feign.Logger;
+import feign.RequestInterceptor;
+import feign.RequestTemplate;
 import feign.codec.ErrorDecoder;
+import org.icedamericanomall.common.constant.SecurityHeaders;
+import org.icedamericanomall.common.filter.TraceIdFilter;
 import org.icedamericanomall.exception.UpstreamErrorDecoder;
 import org.icedamericanomall.fallback.AddressClientFallback;
 import org.icedamericanomall.fallback.AfterSaleClientFallback;
@@ -25,6 +29,7 @@ import org.icedamericanomall.fallback.UserProfileClientFallback;
 import org.icedamericanomall.fallback.VerificationClientFallback;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.cloud.openfeign.FallbackFactory;
 
@@ -112,5 +117,62 @@ class DefaultFeignConfigTest {
             assertThat(context).hasSingleBean(ErrorDecoder.class);
             assertThat(context.getBean(ErrorDecoder.class)).isInstanceOf(UpstreamErrorDecoder.class);
         });
+    }
+
+    // ==================== ① X-Trace-Id 透传（批次 ⑤b）====================
+
+    /**
+     * ★ 批次 ⑤b 的验收核心之一：Feign 出站必须带上本线程 MDC 里的 traceId。
+     *
+     * <p><b>锁死的缺陷（去掉注入那行即红）</b>：只注入 {@code X-User-Id} 时，下游的
+     * {@code TraceIdFilter} 会为每跳<b>另生成 UUID</b> —— 于是下游 {@code /internal/**} 错误体里的
+     * {@code traceId} 与调用方 MDC 里的<b>不是同一个值</b>，跨服务回捞日志直接失效
+     * （{@code 09-constraints} §三·八·3 要求错误体足以定位问题）。
+     */
+    @Test
+    @DisplayName("X-Trace-Id 透传 — MDC 有值时注入该头（值一字不改）")
+    void shouldInjectTraceIdHeader_whenMdcHasValue() {
+        MDC.put(TraceIdFilter.TRACE_ID, "trace-out-1");
+        try {
+            RequestTemplate template = applyInterceptor();
+
+            assertThat(template.headers().get(SecurityHeaders.X_TRACE_ID))
+                    .containsExactly("trace-out-1");
+        } finally {
+            MDC.remove(TraceIdFilter.TRACE_ID);
+        }
+    }
+
+    @Test
+    @DisplayName("X-Trace-Id 透传 — MDC 无值（异步/定时任务）时不注入、不抛异常、不造假值")
+    void shouldNotInjectTraceIdHeader_whenMdcAbsent() {
+        MDC.remove(TraceIdFilter.TRACE_ID);
+
+        RequestTemplate template = applyInterceptor(); // 不得抛异常
+
+        assertThat(template.headers()).doesNotContainKey(SecurityHeaders.X_TRACE_ID);
+    }
+
+    @Test
+    @DisplayName("X-Trace-Id 透传 — MDC 值为空白时视为缺失（不得把空串当作追踪号发给下游）")
+    void shouldNotInjectBlankTraceId() {
+        MDC.put(TraceIdFilter.TRACE_ID, "   ");
+        try {
+            RequestTemplate template = applyInterceptor();
+
+            assertThat(template.headers()).doesNotContainKey(SecurityHeaders.X_TRACE_ID);
+        } finally {
+            MDC.remove(TraceIdFilter.TRACE_ID);
+        }
+    }
+
+    /** 用配置类里<b>真实</b>注册的拦截器 Bean 处理一个空的请求模板。 */
+    private static RequestTemplate applyInterceptor() {
+        RequestInterceptor interceptor = new DefaultFeignConfig().requestInterceptor();
+        RequestTemplate template = new RequestTemplate();
+        template.method("GET");
+        template.target("http://item-service/internal/item/spu/0f1e2d3c4b5a69788796a5b4c3d2e1f0");
+        interceptor.apply(template);
+        return template;
     }
 }

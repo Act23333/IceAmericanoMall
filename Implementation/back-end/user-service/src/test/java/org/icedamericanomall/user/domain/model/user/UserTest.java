@@ -7,17 +7,20 @@ import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.enums.IdentityTypeEnum;
 import org.icedamericanomall.common.exception.BadRequestException;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.common.exception.ForbiddenException;
 import org.icedamericanomall.common.utils.crypto.AesGcmUtil;
 import org.icedamericanomall.common.utils.crypto.BlindIndexUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 
 import java.time.LocalDate;
 import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -67,12 +70,22 @@ class UserTest {
     }
 
     @Test
-    @DisplayName("assertActive — 冻结用户抛 USER_STATUS_ABNORMAL")
+    @DisplayName("assertActive — 冻结用户抛 403 FORBIDDEN（已认证但无权，不是 401）")
     void shouldThrow_whenFrozen() {
         User user = User.create(IdentityTypeEnum.PHONE, "13800138000");
         user.disable();
-        BizException e = assertThrows(BizException.class, user::assertActive);
-        assertEquals(ErrorCode.USER_STATUS_ABNORMAL, e.getErrorCode());
+
+        // ★ 批次 ⑤b 语义变更（改严）：返回码 401 → 403。
+        // 被告在「已认证」路径上（网关已验 token），冻结属「无权」而非「未认证」
+        // （09-constraints §三·六）。401 会让前端清凭证跳登录页 → 冻结用户
+        // 「登录成功 → 立刻被登出」的死循环。这里同时锁死「不是 401」「不是 3008」。
+        ForbiddenException e = assertThrows(ForbiddenException.class, user::assertActive);
+        assertEquals(ErrorCode.FORBIDDEN, e.getErrorCode());
+        assertEquals(HttpStatus.FORBIDDEN, e.getErrorCode().getHttpStatus(),
+                "已认证但无权 → 403；401 会让前端清凭证并跳登录页");
+        assertNotEquals(ErrorCode.USER_STATUS_ABNORMAL, e.getErrorCode(),
+                "不得复用 401 语义的 3008（否则冻结用户永远退不出登录页）");
+        assertEquals("账户已被冻结", e.getDisplayMessage());
     }
 
     // ==================== 资料变更 ====================
@@ -181,13 +194,21 @@ class UserTest {
     }
 
     @Test
-    @DisplayName("UserStatusEnum — 状态码映射与非法值拒绝")
+    @DisplayName("UserStatusEnum — 状态码映射与非法值拒绝（非法值 = 400 PARAM_ERROR，不是鉴权失败）")
     void shouldMapStatusCodes() {
         assertEquals(1, UserStatusEnum.NORMAL.getCode(), "正常状态码应为 1");
         assertEquals(0, UserStatusEnum.FROZEN.getCode(), "禁用状态码应为 0");
         assertEquals(2, UserStatusEnum.values().length);
         assertEquals(UserStatusEnum.NORMAL, UserStatusEnum.fromCode(1));
         assertNull(UserStatusEnum.fromCode(null));
-        assertThrows(BadRequestException.class, () -> UserStatusEnum.of(99));
+
+        // ★ 批次 ⑤b 语义变更（改严）：管理端传了非法 status 是「参数非法」→ 400 PARAM_ERROR(1101)。
+        // 此前抛 USER_STATUS_ABNORMAL(3008)，而该码状态码是 401 —— 一次表单填错会把管理员踢出登录。
+        // 这里同时锁死业务码与 HTTP 状态码，防止「改回 3008」或「只改码不改状态码」两种回退。
+        BadRequestException invalid = assertThrows(BadRequestException.class, () -> UserStatusEnum.of(99));
+        assertEquals(ErrorCode.PARAM_ERROR, invalid.getErrorCode(), "非法状态值是参数错误，不是鉴权失败");
+        assertEquals(HttpStatus.BAD_REQUEST, invalid.getErrorCode().getHttpStatus(),
+                "参数非法必须是 400；401 会让前端清凭证跳登录页");
+        assertEquals("账户状态错误", invalid.getDisplayMessage(), "文案保持不变（只订正状态码与业务码）");
     }
 }

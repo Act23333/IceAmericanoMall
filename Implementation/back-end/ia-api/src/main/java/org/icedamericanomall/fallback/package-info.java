@@ -64,6 +64,25 @@
  * 对它们的调用链（写/资金/库存为主）当前语义正确（fail-closed），故本批<b>未</b>扩大改动面；
  * 待各自出现「下游 4xx 被改写成故障」的实测案例时按同一模式迁移。
  *
+ * <h2>2.2 类别判定的唯一入口（2026-10-18 批次 ⑤b）</h2>
+ * 「这条 {@code cause} 属于 CLIENT / RULE / TRANSIENT / BUG」<b>只允许问一个地方</b>：
+ * {@code org.icedamericanomall.exception.UpstreamFailures#classify}。它与
+ * {@code UpstreamErrorDecoder} 共用同一判据，顺序钉死为
+ * <b>异常类型 → HTTP 状态码 → 500 才是 BUG</b>：
+ * <ul>
+ *   <li><b>异常类型优先</b>：{@code feign.RetryableException} / {@code ConnectException} /
+ *       {@code SocketTimeoutException} / {@code IOException} / {@code TimeoutException} /
+ *       resilience4j {@code CallNotPermittedException}（熔断打开）/ {@code BulkheadFullException} /
+ *       Sentinel {@code BlockException} → {@code TRANSIENT}。这一类<b>没有 HTTP 响应</b>，
+ *       只看状态码永远判不出来，且一旦被误判成 {@code BUG} 就<b>不可重试</b>；</li>
+ *   <li><b>已类型化的 {@code UpstreamException}</b> 携带下游类别时原样采信（4xx 透传的基础）；</li>
+ *   <li><b>状态码</b>：4xx → {@code CLIENT}、2xx → {@code RULE}、408/429/5xx-infra →
+ *       {@code TRANSIENT}、<b>500 且无异常线索 → {@code BUG}</b>。</li>
+ * </ul>
+ * <b>禁止</b>在降级工厂里自己 {@code instanceof} 判断异常类型、或手写一份状态码映射 ——
+ * 那正是「解码器一套、降级一套」的来源：同一枚故障会被两个结论（如解码器说 TRANSIENT、
+ * 降级工厂说 BUG）左右调用方的重试决策。
+ *
  * <h2>3. 统一实现约定</h2>
  * <ul>
  *   <li>实现 {@link org.springframework.cloud.openfeign.FallbackFactory}（而非

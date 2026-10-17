@@ -1,16 +1,20 @@
 package org.icedamericanomall.fallback;
 
 import feign.Response;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import org.icedamericanomall.client.SpuDetailClient;
 import org.icedamericanomall.common.enums.ErrorCategory;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.exception.UpstreamErrorDecoder;
 import org.icedamericanomall.exception.UpstreamException;
+import org.icedamericanomall.exception.UpstreamFailures;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
@@ -146,6 +150,47 @@ class SpuDetailClientFallbackTest {
                 .isInstanceOf(BizException.class)
                 .satisfies(thrown -> assertThat(((BizException) thrown).getErrorCode())
                         .isEqualTo(ErrorCode.SYSTEM_BUSY));
+    }
+
+    /**
+     * ★ 批次 ⑤b：<b>熔断打开</b>在 Feign 侧没有响应体，只有异常。
+     *
+     * <p><b>锁死的缺陷（修复前这条断言无从表达）</b>：降级工厂此前只判
+     * {@code upstream.isClientError()}，「熔断打开判 TRANSIENT」只是靠「不是 CLIENT 就降级」
+     * 的排除法<b>顺带</b>成立 —— 判据本身说不清。改用统一入口
+     * （{@link org.icedamericanomall.exception.UpstreamFailures#classify}）后，
+     * 「熔断 → TRANSIENT 且可重试」是被<b>显式</b>判定的，同时降级仍是 fail-closed
+     * （展示型数据不许伪装成「成功但没数据」）。
+     */
+    @Test
+    @DisplayName("熔断打开（CallNotPermittedException）→ 判 TRANSIENT + 可重试，且仍 fail-closed 降级")
+    void shouldDegrade_whenCircuitBreakerOpen() {
+        CallNotPermittedException circuitOpen = CallNotPermittedException
+                .createCallNotPermittedException(CircuitBreaker.ofDefaults("spuDetail"));
+
+        assertThat(UpstreamFailures.classify(circuitOpen)).isEqualTo(ErrorCategory.TRANSIENT);
+        // ★ 判别性断言：按状态码 500 派生会是 BUG（不可重试）—— 熔断必须赢，否则重试被堵死
+        assertThat(UpstreamFailures.classify(500, circuitOpen)).isEqualTo(ErrorCategory.TRANSIENT);
+        assertThat(UpstreamFailures.classify(circuitOpen).isRetryable()).isTrue();
+
+        SpuDetailClient client = degradedClient(new RuntimeException("circuit-breaker decorator", circuitOpen));
+
+        assertThatThrownBy(() -> client.getSpuDetail(SPU_ID))
+                .isInstanceOf(BizException.class)
+                .isNotInstanceOf(UpstreamException.class)
+                .hasMessageContaining("暂时无法获取");
+    }
+
+    @Test
+    @DisplayName("连接失败（ConnectException，无响应体）→ 判 TRANSIENT，降级文案仍是「暂时无法获取」")
+    void shouldDegrade_whenConnectRefused() {
+        ConnectException refused = new ConnectException("Connection refused");
+
+        assertThat(UpstreamFailures.classify(refused)).isEqualTo(ErrorCategory.TRANSIENT);
+
+        assertThatThrownBy(() -> degradedClient(refused).getSpuDetail(SPU_ID))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("暂时无法获取");
     }
 
     @Test

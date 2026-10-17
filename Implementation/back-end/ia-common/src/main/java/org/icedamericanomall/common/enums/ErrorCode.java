@@ -74,9 +74,19 @@ public enum ErrorCode {
      * {@code 401}（<b>安全默认</b>：即便遗漏调用也不会退化成 200），并把登录链路的抛出点改为
      * {@link #PASSWORD_ERROR}（唯一出口）。
      *
-     * <p>本码在<b>非登录域</b>仍在使用（user-service {@code User#assertActive}、{@code UserStatusEnum#of}），
-     * 故不整体 {@code @Deprecated}；但登录链路（authorization-service 登录策略 / 风控处置）
-     * <b>不得</b>再抛本码，否则「账号存在但不可用」会与「账号不存在」可区分。
+     * <p><b>使用边界（批次 ⑤b 收紧，逐字阅读）</b>：
+     * <ul>
+     *   <li>本码<b>仅限非登录域</b>的「账号状态异常」语义；<b>登录链路（authorization-service 登录策略
+     *       / 风控处置）一律抛 {@link #PASSWORD_ERROR}</b>，否则「账号存在但不可用」会与「账号不存在」可区分。</li>
+     *   <li><b>不得用于鉴权失败</b>：它在 HTTP 层是 {@code 401}（「未认证」语义）。已认证用户
+     *       「状态异常 → 无权访问」属<b>403</b>（抛 {@link #FORBIDDEN}），参数非法属
+     *       <b>400</b>（抛 {@link #PARAM_ERROR}）；错用本码会把一次普通的业务拒绝变成
+     *       「清凭证 + 跳登录页」，冻结用户因此陷入「登录成功 → 立刻被登出」的死循环。</li>
+     *   <li>当前<b>零生产引用</b>：2026-10-18 批次 ⑤b 已把两个非登录调用点分别改为
+     *       {@code PARAM_ERROR(1101)}（user-service {@code UserStatusEnum#of} 管理端非法状态值）
+     *       与 {@code FORBIDDEN(1013)}（{@code User#assertActive} 冻结用户访问用户资料）。
+     *       保留本码仅为兼容契约/历史文档引用，<b>新增代码不应再抛它</b>。</li>
+     * </ul>
      */
     USER_STATUS_ABNORMAL(3008, "用户状态异常", HttpStatus.UNAUTHORIZED),
     // 交易/订单/商品通用错误 (3009-3029)
