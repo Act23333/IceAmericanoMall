@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>路径 {@code /internal/balance} 与迁出前完全一致，调用方（pay-service 余额扣款/退款）
  * 只感知服务名变化，契约零改动。{@code /internal/**} 不包装 {@code Result}，
- * 业务异常以原始 HTTP 状态 + 极简 {@code {"code","msg"}} 透出（ADR-004）。
+ * 业务异常以原始 HTTP 状态 + 类型化错误体 {@code ErrorInfo}
+ * （{@code code / msg / category / retryable / traceId}）透出（ADR-004）。
  *
  * <pre>
  * POST /internal/balance/deduct   余额扣款（原路径，查询参数口径，保持不变）

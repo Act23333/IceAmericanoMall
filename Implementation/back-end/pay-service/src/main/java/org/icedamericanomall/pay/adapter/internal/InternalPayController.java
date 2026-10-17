@@ -16,7 +16,8 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>控制器只做参数接收 + 调 Manager；Domain → CO 装配由 Manager 内聚完成，本类不持有转换器。
  *
  * <p>{@code /internal/**} 不包装 {@code Result}：成功返回原始 {@link RefundResultCO}，
- * 业务异常以原始 HTTP 状态 + 极简 {@code {"code","msg"}} 透出（ADR-004）。
+ * 业务异常以原始 HTTP 状态 + 类型化错误体 {@code ErrorInfo}
+ * （{@code code / msg / category / retryable / traceId}）透出（ADR-004）。
  *
  * <p><b>幂等</b>：同 {@code afterSaleId} 重复请求不创建新退款单，返回既有退款单
  * （{@code refund_order.uk_after_sale} 兜底）。

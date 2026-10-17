@@ -15,8 +15,8 @@ import java.util.List;
  * 运费模板内部端点（I43 {@code POST /internal/item/freight-template/query}，F2 运费模型）
  * —— 仅集群内 Feign 调用（trade-service 下单计价）。
  *
- * <p>{@code /internal/**} 不包装 {@code Result}，业务异常以原始 HTTP 状态 + 极简
- * {@code {"code","msg"}} 透出（ADR-004）。
+ * <p>{@code /internal/**} 不包装 {@code Result}，业务异常以原始 HTTP 状态 + 类型化错误体
+ * {@code ErrorInfo}（{@code code / msg / category / retryable / traceId}）透出（ADR-004）。
  *
  * <p><b>返回口径</b>：仅该商家<b>启用</b>模板；并<b>兜底补入</b>商家默认模板
  * （最早创建的启用模板，{@code isDefault=true}），供调用方完成「未绑定/绑定已停用 → 回落默认」

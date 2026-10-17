@@ -16,8 +16,8 @@ import java.util.List;
  * 促销活动内部端点（I44 {@code POST /internal/promotion/query}，F5 促销引擎，V5.8）
  * —— 仅集群内 Feign 调用（trade-service 价格计算中心，ia-api {@code PromotionClient}）。
  *
- * <p>{@code /internal/**} 不包装 {@code Result}，业务异常以原始 HTTP 状态 + 极简
- * {@code {"code","msg"}} 透出（ADR-004）。
+ * <p>{@code /internal/**} 不包装 {@code Result}，业务异常以原始 HTTP 状态 + 类型化错误体
+ * {@code ErrorInfo}（{@code code / msg / category / retryable / traceId}）透出（ADR-004）。
  *
  * <p><b>降级口径（ADR-043）</b>：返回值被调用方解释为业务事实「该店铺有/没有生效促销」，
  * 静默空集合 = 故障伪装成无促销；故调用方降级为 fail-closed（{@code PromotionClientFallback}

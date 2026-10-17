@@ -14,8 +14,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 任务完成内部端点（I49 {@code POST /internal/task/complete}，F9 每日任务体系，V5.10）
  * —— 仅集群内 Feign 调用（ia-api {@code TaskClient}：trade 确认收货 / item 评价落库旁路触发）。
  *
- * <p>{@code /internal/**} 不包装 {@code Result}，业务异常以原始 HTTP 状态 + 极简
- * {@code {"code","msg"}} 透出（ADR-004）。
+ * <p>{@code /internal/**} 不包装 {@code Result}，业务异常以原始 HTTP 状态 + 类型化错误体
+ * {@code ErrorInfo}（{@code code / msg / category / retryable / traceId}）透出（ADR-004）。
  *
  * <p><b>降级口径（ADR-047）</b>：幂等回落不出业务异常——重复/停用/任务不存在一律
  * {@code completed=false}；调用方本就是事务外 fail-open 旁路（TaskClientFallback

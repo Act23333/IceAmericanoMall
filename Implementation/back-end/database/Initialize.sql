@@ -1,19 +1,24 @@
 -- =====================================================================
--- IceAmericanoMall — 数据库【全量最新快照】建库脚本（Initialize.sql）
+-- IceAmericanoMall — 数据库【全量唯一结构真相源】建库脚本（Initialize.sql）
 -- =====================================================================
 --
--- 【文件语义】（定稿，改动前必读）
---   (a) 本文件是**全量最新快照**：新装库只需执行本文件即可得到与全部迁移依次
---       执行后**完全相同**的终态 schema + 种子数据。不要再在新建库上执行
---       migrations/ 下的脚本（会对已存在的列/表重复操作而报错）。
---   (b) migrations/ 是**历史库的逐版升级路径**：仅用于把已存在的旧库按版本顺序
---       升级到最新终态。两条路径必须指向同一终态；若修改任一侧，必须同步另一侧。
---   (c) 升级顺序要求：按版本号升序逐个执行（文件名前缀即版本号），完整顺序为
---       V1.1.0 → V1.1.1 → V1.1.2 → V1.1.3 → V1.2.0 → V1.2.1 → V1.2.2 → V2.0 →
---       V2.1 → V2.2 → V2.5.0 → V2.5.1 → V3.0 → V3.2 → V3.3 → V3.4 → V3.5 →
---       V3.7 → V4.0 → V4.1 → V4.3 → V5.0.0 → V5.0.1 → V5.0.2 → V5.1 → V5.2 →
---       V5.3 → V5.4 → V5.5 → V5.6 → V5.7 → V5.8。中断重跑前请先确认目标对象是否已创建/修改（多数 DDL 非幂等）。
---       ※ 2026-10-05 起：库无存量数据，迁移文件机制废除（ADR-045）——结构变更直接修改本文件，本版本链仅作演进存档。
+-- 【文件语义】（定稿，改动前必读；口径依据 ADR-045，2026-10-05）
+--   (a) 本文件是数据库结构的**唯一真相源**：新装库只需执行本文件**一次**，即得到
+--       完整终态结构 + 种子数据 —— 装库一次到位，不存在「先快照、再补迁移」两段式路径。
+--   (b) **迁移机制已废除**：`database/migrations/` 目录**已不存在**（ADR-045：库内无存量
+--       数据，逐版升级路径的前提不成立）。不要再找版本迁移脚本，也不要新增迁移文件。
+--       本文件中出现的 V1.1.0 → V5.17 字样只是**区块标注**（某段结构由哪个版本引入），
+--       既不是文件路径，也不构成执行顺序。
+--   (c) **结构变更直接修改本文件**：加表 / 加列 / 改索引与约束 / 调 seed 一律在本文件落地。
+--       库内无存量数据 ⇒「改本文件 + 删库重建」与「写 ALTER」等价，无需数据保全流程。
+--   (d) **复跑（重建）语义**：本文件按「先全删、再全建」实现幂等重建（见「一、删除所有
+--       表」区块）。在已有本项目的库上重跑 = **清空数据后重建**，这是刻意设计而非意外；
+--       因此**每张表都必须在「一」区块有一条对应的 `DROP TABLE IF EXISTS`**。
+--   (e) **新增表时必须同时补 DROP**：在文件末尾追加建表语句的同时，必须在「一」区块补同名
+--       `DROP TABLE IF EXISTS`。漏补 → 在已有库上复跑时于该表的建表处失败（V5.8–V5.17
+--       期间追加的 17 张表曾漏补，2026-10-18 批次 C3 补齐）。
+--   (f) 建表语句**刻意不加 `IF NOT EXISTS`**：幂等性由「DROP + CREATE」保证。加上它会让
+--       「结构变更后重建」静默跳过该表、留下旧结构 —— 与「全量重建」语义冲突。
 --
 -- 【设计说明】（大厂规范约定，代码/文档需与此保持一致）
 --   1) 软删除策略：当前**未启用** MyBatis-Plus `@TableLogic`，也没有统一的
@@ -24,7 +29,7 @@
 --        cart（购物车条目）、favorite（取消收藏）、address（用户主动删除）。
 --      订单及支付/物流/售后/结算等**事实数据禁止物理删除**，仅通过状态机推进
 --        （orders.status：待付款→待发货→待收货→已完成/已取消→待评价）。
---   2) 跨服务外键（FK）为**单库过渡设计**：当前 48 张表同处一个 schema（V5.5 资金线新增
+--   2) 跨服务外键（FK）为**单库过渡设计**：当前全部表同处一个 schema（V5.5 资金线新增
 --      refund_order / wallet_transaction / reconciliation_batch / reconciliation_detail；
 --      V5.6 履约线新增 freight_template）
 --      （icedamericano_mall），保留 FK 以保障存量数据完整性。微服务化（分库）后
@@ -98,6 +103,27 @@ DROP TABLE IF EXISTS `sys_role_permission`;
 DROP TABLE IF EXISTS `sys_user_role`;
 DROP TABLE IF EXISTS `sys_permission`;
 DROP TABLE IF EXISTS `sys_role`;
+-- V5.8–V5.17 期间追加在文件末尾（「九、种子数据」之后）的表，此前只有建表语句、没有对应
+-- DROP，导致在已有库上复跑时于首条缺 DROP 的表处失败（2026-10-18 批次 C3 补齐）。
+-- 组内顺序沿用本区块「子表在前」的风格；这 17 张彼此之间、以及与其余表之间均无 FK 约束
+-- （既不声明 FK，也不被任何 FK 引用），故顺序不影响执行结果 —— 本节已 `SET FOREIGN_KEY_CHECKS = 0`。
+DROP TABLE IF EXISTS `member_growth_log`;
+DROP TABLE IF EXISTS `task_record`;
+DROP TABLE IF EXISTS `task_def`;
+DROP TABLE IF EXISTS `shop_decoration`;
+DROP TABLE IF EXISTS `note_like`;
+DROP TABLE IF EXISTS `note_spu`;
+DROP TABLE IF EXISTS `note`;
+DROP TABLE IF EXISTS `group_team_member`;
+DROP TABLE IF EXISTS `group_team`;
+DROP TABLE IF EXISTS `group_buy_activity`;
+DROP TABLE IF EXISTS `invoice`;
+DROP TABLE IF EXISTS `invoice_title`;
+DROP TABLE IF EXISTS `pairing_rule`;
+DROP TABLE IF EXISTS `exchange_rate`;
+DROP TABLE IF EXISTS `currency`;
+DROP TABLE IF EXISTS `promotion`;
+DROP TABLE IF EXISTS `member_level_rule`;
 
 -- =====================================================================
 -- 二、核心业务表（初始基线 11 表 + V5.4 shop + V5.6 freight_template，已合并各版本 ALTER 的终态列）
@@ -219,7 +245,7 @@ CREATE TABLE `category` (
 
 -- ---------------------------------------------------------------
 -- freight_template（运费模板）— 归属 item-service 商品域（V5.6 履约线 F2）
---   与 migrations/V5.6__freight_template_and_package_split.sql 逐列一致
+--   V5.6 引入的结构（ADR-045 后无迁移文件，版本号仅作区块标注）
 --   seller_id 口径 = 商家 user_id（ADR-019 Phase A）；同商家内模板名唯一
 --   fee / free_threshold 单位分；charge_mode=1 固定运费（Phase 1 唯一值）
 --   默认模板 = 该商家最早创建的启用模板（WHERE seller_id=? AND status=1 ORDER BY id ASC LIMIT 1）
@@ -871,7 +897,7 @@ CREATE TABLE `notification` (
     `sender_id` BIGINT DEFAULT NULL COMMENT '发送者用户ID (NULL=系统)',
     `sender_name` VARCHAR(100) DEFAULT NULL COMMENT '发送者名称 (用户名或店铺名)',
     `sender_avatar` VARCHAR(255) DEFAULT NULL COMMENT '发送者头像',
-    `type` VARCHAR(32) NOT NULL COMMENT '通知类型: LIKE/REPLY/APPEND/FOLLOW/ORDER/SYSTEM',
+    `type` VARCHAR(32) NOT NULL COMMENT '通知类型：取值域见各生产方常量（item/merchant/trade/pay 四服务）；**不要在本注释维护清单**（曾因照抄本注释导致前端 4 个标签页恒空）',
     `title` VARCHAR(200) NOT NULL COMMENT '通知标题',
     `content` VARCHAR(500) DEFAULT NULL COMMENT '通知摘要',
     `link_url` VARCHAR(500) DEFAULT NULL COMMENT '跳转链接',
@@ -933,7 +959,7 @@ CREATE TABLE `wallet_account` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='钱包账户';
 
 -- =====================================================================
--- 八之四、资金线 P0（V5.5，与 migrations/V5.5__refund_wallet_tx_and_reconciliation.sql 逐列一致）
+-- 八之四、资金线 P0（V5.5 引入；ADR-045 后无迁移文件，版本号仅作区块标注）
 --   F1 买家退款资金流：refund_order（pay-service） + wallet_transaction（wallet-service）
 --   F4 渠道对账：reconciliation_batch / reconciliation_detail（pay-service）
 --   规格：project-docs/backend/04-Data-Model.md §十二 12.1 / 12.4
@@ -1019,7 +1045,7 @@ CREATE TABLE `reconciliation_detail` (
 
 -- =====================================================================
 -- 九、种子数据（RBAC + 管理员）
---   与 migrations/V3.0__add_rbac_tables.sql 的种子集合**完全一致**（权威定义）
+--   种子集合以本文件为**权威定义**（V3.0 为引入版本标注；ADR-045 后无迁移文件）
 --   幂等：重复执行不因主键 / 唯一键冲突失败
 --   注: VALUES() 在 MySQL 8.0.20+ 标记为 deprecated（仍可用）
 -- =====================================================================
@@ -1094,7 +1120,7 @@ ON DUPLICATE KEY UPDATE `role_id` = 4;
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- =====================================================================
--- V5.8 促销引擎 + 会员等级（F5/F6，ADR-043/044；与 migrations/V5.8__promotion_and_member_level.sql 逐字一致）
+-- V5.8 促销引擎 + 会员等级（F5/F6，ADR-043/044；V5.8 引入，ADR-045 后无迁移文件）
 -- =====================================================================
 
 CREATE TABLE `promotion` (

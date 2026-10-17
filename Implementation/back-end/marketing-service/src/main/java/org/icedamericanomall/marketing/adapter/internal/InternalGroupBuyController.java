@@ -16,8 +16,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 拼团参团联动内部端点（I52/I53 {@code /internal/group-buy}，V5.14，ADR-049）
  * —— 仅集群内 Feign 调用（trade-service，ia-api {@code GroupBuyClient}）。
  *
- * <p>{@code /internal/**} 不包装 {@code Result}，业务异常以原始 HTTP 状态 + 极简
- * {@code {"code","msg"}} 透出（ADR-004）。
+ * <p>{@code /internal/**} 不包装 {@code Result}，业务异常以原始 HTTP 状态 + 类型化错误体
+ * {@code ErrorInfo}（{@code code / msg / category / retryable / traceId}）透出（ADR-004）。
  *
  * <p><b>降级口径</b>：两者均 fail-closed（{@code GroupBuyClientFallback} 抛
  * {@code SYSTEM_BUSY}）——I52 拼团价是计价业务事实，I53 参团失败由 trade 走

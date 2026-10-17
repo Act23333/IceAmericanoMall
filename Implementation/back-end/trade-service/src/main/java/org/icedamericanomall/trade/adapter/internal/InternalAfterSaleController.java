@@ -11,8 +11,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 售后内部端点（I42 {@code PUT /internal/trade/after-sale/{id}/refunded}）—— 仅集群内 Feign 调用
  * （ia-api {@code AfterSaleClient}，调用方 pay-service 退款成功后回写）。
  *
- * <p>{@code /internal/**} 不包装 {@code Result}，业务异常以原始 HTTP 状态 + 极简
- * {@code {"code","msg"}} 透出（ADR-004）。
+ * <p>{@code /internal/**} 不包装 {@code Result}，业务异常以原始 HTTP 状态 + 类型化错误体
+ * {@code ErrorInfo}（{@code code / msg / category / retryable / traceId}）透出（ADR-004）。
  *
  * <p><b>语义</b>：售后单 {@code APPROVED(2) → REFUNDED(5)} 条件迁移，激活此前为死状态的
  * {@code REFUNDED}。状态不匹配（已迁移 / 非 APPROVED）时为<b>幂等空操作成功返回</b>，
