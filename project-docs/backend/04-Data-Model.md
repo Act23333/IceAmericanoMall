@@ -9,6 +9,7 @@
 > 最后更新: 2026-10-03（**P0 四项落地同步（V5.5/V5.6 已建，ADR-035/036/037）**：§十二 12.1–12.4 状态由"规划"收敛为"已建"——退款资金流（refund_order/wallet_transaction，F1）、渠道对账（reconciliation_batch/detail，F4）、运费模型（freight_template + spu/orders 增量，F2）、拆单发货（order_logistics 主键与包裹改造 + order_item.package_no，F3）均已落库【**历史注记**：原文此处记为"随 `V5.5__…` / `V5.6__…` 迁移落库"——迁移机制已于 2026-10-05 废除（ADR-045），这些结构现全部直接位于 `Initialize.sql`，不存迁移文件】；金额不变式定稿 **V2：`payAmount = totalAmount − discountAmount + postFee`**；§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 规划标注同步收敛；§3.11「主键约定偏差」注记**清除**（代理主键 id 已补，ADR-037）；§12.3 纠错删除「order_id 转 UNIQUE uk_order_id」自相矛盾表述（实现为**普通外键 + uk_order_package**，未建单列唯一键）。此前——V5.6 规格先行：新增 §十二 四组 P0 规划表——refund_order/wallet_transaction/reconciliation_batch/reconciliation_detail（**V5.5 资金线**）、freight_template 及 spu/orders/order_logistics/order_item 变更（**V5.6 履约线**），§3.5/§3.7/§3.8/§3.10/§3.11/§7.3/§7.6 补规划增量标注，金额不变式变更为 `payAmount = totalAmount − discountAmount + postFee`；规划表均未建库，以"🆕 V5.6 规划"标注，实现落库后本注记同步收敛。此前：数据库整治 + 1:N 拆分同步：seller 瘦身/shop 表（V5.4，ADR-019）、spu/review 实际列修正、after_sale/order_logistics 补注、Initialize.sql 全量快照语义；遗留风险清零批次：`auth:blacklist:{jti}` 契约键注记（ADR-027）、`operation_log` 写入方恢复（ADR-032 管道二）、`merchant_knowledge_base.embedding_id` 口径 `es:{knowledgeId}`）
 > **2026-10-16（SPU 词汇统一，ADR-059 落地批次，后端 `578fac27`）**：库表重命名同步 —— 表 `product`→`spu`、`product_view_log`→`spu_view_log`、`note_product`→`note_spu`；列 `product_id`→`spu_id`（`spu.spu_id` 业务键 `BINARY(16)`；`sku.spu_id` / `review.spu_id` / `favorite.spu_id` / `spu_view_log.spu_id` / `flash_sale.spu_id` / `note_spu.spu_id` / `group_buy_activity.spu_id` 为技术外键）、`product_ids`→`spu_ids`（`home_config`）、`hot_product_ids`→`hot_spu_ids`（`shop_decoration`）；索引/外键/唯一键 `uk_product_id`→`uk_spu_id`、`idx_product_id`→`idx_spu_id`、`idx_product`→`idx_spu`、`uk_user_product`→`uk_user_spu`、`uk_note_product`→`uk_note_spu`、`fk_sku_product`→`fk_sku_spu`、`fk_view_log_product`→`fk_view_log_spu`、`fk_product_seller`→`fk_spu_seller`、`fk_product_category`→`fk_spu_category`、`fk_product_freight_template`→`fk_spu_freight_template`（§3.5/§3.6、§七 7.1/7.2/7.7/7.8、§五、§十一、§十二同步；表数 62 不变）。**§11.2 原记 `idx_product_time` 有误**，实测 `spu_view_log` 为 `uk_user_spu(user_id, spu_id)` + `idx_user_time(user_id, view_time)`，本批次一并更正。**刻意保留**：展示名 `product_name`/`product_image`、ES 索引名 `products`、`conversation_id` 的 `product_{productId}` 格式（客户端自造，ADR-050）。线格式契约同步见 [05 §4](../contract/05-API-Specification.md)。
 > **2026-10-16（历史注记词汇同步小批，`product`→`spu`）**：上一段（2026-10-03「最后更新」历史注记）中的表名旧词 `product/orders/…`、`product/review 实际列修正` 已按 [ADR-059](../adr/059-spu-sku-vocabulary-disambiguation.md) 词汇口径一并改为 `spu/orders/…`、`spu/review 实际列修正` —— 该段的**事实内容与结论未动**，仅统一词汇，避免历史注记成为旧表名的埋伏源。本文档头仍保留 `product` 旧词的两处为**合法保留**：①下一段（2026-10-16 SPU 词汇统一批次）的「改前→改后」映射记录；②**代码标识符/展示名的刻意保留清单**——展示名 `product_name`/`product_image`、ES 索引名 `products`、`conversation_id` 的 `product_{productId}` 格式（ADR-059「刻意保留」清单）。
+> **2026-10-18（B6 批次：对外渠道号与内部业务键分离，[ADR-063](../adr/063-external-channel-number-separation.md)，代码 `256abbf3`）**：①`pay_order` 新增 `channel_trade_no VARCHAR(32)` + `uk_channel_trade_no` —— **对外渠道号**（渠道 `out_trade_no` 的唯一取值来源；20 位随机 hex / 80 bit 熵 / 无时间序 / 跨重试稳定 / 余额渠道为 `NULL`）；②`refund_order` 新增 `out_refund_no VARCHAR(64)` + `uk_out_refund_no` —— **对外退款项号**（渠道 `out_refund_no` 的唯一取值来源，与内部 `refund_no` 分离）；**同时明确 `channel_refund_no` 仍是「渠道退款单号（微信 `refund_id`，回调回填）」，不承载对外退款项号**（两列语义相反：一为「我方发出」、一为「渠道回填」，不可互相顶替）；③`reconciliation_detail` 新增 `channel_trade_no`（比对键）且 `pay_order_no` **放开 `NULL`**（「渠道有本地无」的明细没有本地支付单，不得伪造）；④同步订正 §12.1 `refund_order` 的 `after_sale_id`（ADR-049 起**可空**）与 `biz_ref`（ADR-049 新增，既有文档缺失）。两列均按 ADR-050「**外部格式列保留 VARCHAR**」口径（`channel_*` / 非业务标识），不进 `BINARY(16)` 转换面。
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/变更表结构时必须同步
 
 ---
@@ -153,7 +154,7 @@ user ───1:N─── address
        │            │
        │            └──1:N─── refund_order（退款单，V5.5 已建；经 after_sale_id 关联售后单，1 售后单 : 1 退款单）
        │
-       └──(对账，无外键) reconciliation_batch/detail（V5.5 已建，按 pay_order_no 比对）
+       └──(对账，无外键) reconciliation_batch/detail（V5.5 已建，按 `channel_trade_no`（对外渠道号）比对，ADR-063）
        
 cart ───N:1─── user
 cart ───N:1─── sku
@@ -402,7 +403,8 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 |------|------|------|------|
 | id | BIGINT | PK | 技术主键 |
 | biz_order_no | BINARY(16) | NOT NULL | 业务订单号（关联 orders.order_no，UUIDv7 原始字节，ADR-050） |
-| pay_order_no | BINARY(16) | UNIQUE, NOT NULL | 支付单号（UUIDv7 原始字节，ADR-050） |
+| pay_order_no | BINARY(16) | UNIQUE, NOT NULL | 支付单号（UUIDv7 原始字节，ADR-050；**纯内部口径，不下发任何渠道**） |
+| channel_trade_no | VARCHAR(32) | UNIQUE (`uk_channel_trade_no`), NULL | **对外渠道号**（渠道 `out_trade_no` 的唯一取值来源，[ADR-063](../adr/063-external-channel-number-separation.md)）：20 位随机 hex（80 bit 熵、无时间序、`IdGenerator.randomHex`）、**跨重试稳定**（复用待支付单不重新生成）、**余额渠道为 NULL**（本地闭环不对外发起）；**发起 / 回调 / 对账一律按本列寻址**，不得等于 `biz_order_no` / `pay_order_no` |
 | biz_user_id | BIGINT | FK → user.id, NULL | 用户 |
 | pay_channel_code | VARCHAR(20) | NOT NULL | 支付渠道代码 |
 | amount | INT | NOT NULL | 支付金额（分） |
@@ -419,6 +421,7 @@ user ───1:1─── seller (merchant-service 商家域, 2026-10 第六轮
 
 > **幂等口径（2026-10 补注）**：支付成功处理走**条件更新**——`markSuccessIfPending(payOrderNo)` 仅在 `status=待支付` 时置成功（`UPDATE ... WHERE pay_order_no = ? AND status = ?`），条件未命中返回 false（重复回调 / 超时取消后的回调不重复处理，与 `pay_order_no` 唯一约束互为兜底）。
 > **退款关联（V5.5 已建，[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)）**：本表同域子表 `refund_order`（退款单，`pay_order_no` 关联；三通道原路退回，`uk_after_sale` 一售后单一次退款幂等锚点）——见 §十二 12.1；同域对账两表 `reconciliation_batch` / `reconciliation_detail`（四态差异只记录不调账，§十二 12.4）。
+> **渠道号唯一寻址（2026-10-18，[ADR-063](../adr/063-external-channel-number-separation.md)）**：**发起 / 回调 / 对账三条链路一律按 `channel_trade_no` 寻址**（`PayOrderRepository#getByChannelTradeNo`），**不保留「按 `biz_order_no`/`pay_order_no` 兜底查」的第二口径**——第二口径会让双键混用复发。条件更新的 `WHERE` 仍用内部键（`markSuccessIfPending(payOrderNo)`），那是**服务内并发控制**，与「对外寻址」是两件事。
 
 ### 3.11 order_logistics（订单物流表）
 
@@ -509,7 +512,7 @@ public void createOrder(OrderDTO dto) {
 - `orders` → `order_item`：一对多组合（CASCADE）
 - `orders` ↔ `pay_order`：通过 `order_no` 关联（非外键约束）
 - `orders` ↔ `order_logistics`：一对多（V5.6 已建——按 `package_no` 区分包裹，代理主键 `id` + `uk_order_package`，见 §十二 12.3）
-- `pay_order` → `refund_order`（V5.5 已建）：通过 `pay_order_no` 关联；`refund_order.after_sale_id` UNIQUE（一售后单一次退款，见 §十二 12.1）
+- `pay_order` → `refund_order`（V5.5 已建）：通过 `pay_order_no` 关联；`refund_order.after_sale_id` UNIQUE 且**可空**（一售后单一次退款，无售后场景如拼团为 NULL），幂等锚点自 ADR-049 起泛化为 `biz_ref` UNIQUE（`AS:{afterSaleId}` / `GB:{orderNo}`）；渠道侧寻址走 `out_refund_no`（ADR-063，见 §十二 12.1）
 - `cart` → `user` + `sku`：多对一
 
 ---
@@ -1015,22 +1018,26 @@ public void createOrder(OrderDTO dto) {
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
-| refund_no | BINARY(16) | UNIQUE (`uk_refund_no`), NOT NULL | 退款单号（业务唯一键，UUIDv7 原始字节；对外与幂等重试的定位键，ADR-050） |
+| refund_no | BINARY(16) | UNIQUE (`uk_refund_no`), NOT NULL | 退款单号（**内部**业务唯一键，UUIDv7 原始字节；管理端重试 AD43 与运维排查的定位键，ADR-050）——**不下发任何渠道** |
+| out_refund_no | VARCHAR(64) | UNIQUE (`uk_out_refund_no`), NULL | **对外退款项号**（渠道 `out_refund_no` 的唯一取值来源，[ADR-063](../adr/063-external-channel-number-separation.md)）：20 位随机 hex（80 bit 熵、无时间序）、跨重试稳定；渠道退款回调 / 退款单查询 / 账单核对**一律按本列寻址**，**不得等于 `refund_no`** |
 | order_no | BINARY(16) | NOT NULL | 关联订单号（`orders.order_no` 复制，UUIDv7 原始字节，ADR-050） |
 | pay_order_no | BINARY(16) | NOT NULL | 关联支付单号（`pay_order.pay_order_no` 复制，UUIDv7 原始字节，ADR-050） |
-| after_sale_id | BIGINT | NOT NULL, UNIQUE (`uk_after_sale`) | 关联售后单（`after_sale.id`）——**一售后单一次退款**，唯一约束天然幂等：同 `afterSaleId` 重复请求返回既有退款单 |
+| after_sale_id | BIGINT | NULL, UNIQUE (`uk_after_sale`) | 关联售后单（`after_sale.id`）——**一售后单一次退款**，唯一约束天然幂等：同 `afterSaleId` 重复请求返回既有退款单；**无售后场景（拼团 I55）为 NULL**（ADR-049 起可空，多 NULL 不冲突） |
+| biz_ref | VARCHAR(64) | UNIQUE (`uk_biz_ref`), NOT NULL | 统一幂等业务键（ADR-049）：售后 = `AS:{afterSaleId}`、拼团 = `GB:{orderNo}` —— 幂等锚点从「仅售后」泛化为「任意退款原因」 |
 | user_id | BIGINT | NOT NULL | 买家用户ID |
 | channel | VARCHAR(16) | NOT NULL | 退款渠道：`WECHAT` / `ALIPAY` / `BALANCE`（与原支付渠道一致，原路退回） |
 | refund_amount | INT | NOT NULL | 退款金额（分）；申请时已校验 ≤ 订单实付 `payAmount`（`PARAM_ERROR(1101)`） |
 | status | TINYINT | NOT NULL, DEFAULT 0 | 0-处理中，1-成功，2-失败（失败可经管理端重试） |
-| channel_refund_no | VARCHAR(64) | NULL | 渠道退款单号（微信 `refund_id` 等，回调回填） |
+| channel_refund_no | VARCHAR(64) | NULL | **渠道退款单号**（微信 `refund_id` 等，**渠道回填**）——⚠ **不承载对外退款项号**：对外退款项号是 `out_refund_no`（我方发出）。二者生命周期相反（先出后回），共用一个列会让回调写 `refund_id` 时**覆盖**对外号 → 重试复用不上同号（渠道幂等失效）、退款查询查不到（悬挂补偿卡死）；命名冲突的完整推理见 [ADR-063](../adr/063-external-channel-number-separation.md) §决策 6 |
 | fail_reason | VARCHAR(255) | NULL | 失败原因（渠道返回或系统错误摘要，不含敏感细节） |
 | create_time | DATETIME | NOT NULL | 创建时间 |
 | update_time | DATETIME | NOT NULL | 更新时间 |
 
-索引：`uk_refund_no(refund_no)`、`uk_after_sale(after_sale_id)`、`idx_order_no(order_no)`（按订单查退款）
+索引：`uk_refund_no(refund_no)`、`uk_out_refund_no(out_refund_no)`（渠道号寻址）、`uk_after_sale(after_sale_id)`、`uk_biz_ref(biz_ref)`、`idx_order_no(order_no)`（按订单查退款）
 
 > **状态口径**：退款**处理中/失败**时售后单停留 `APPROVED(2)`（可重试）；仅**成功**回写售后单 `REFUNDED(5)`（trade 经 `PUT /internal/trade/after-sale/{id}/refunded`，**来源 `APPROVED(2) | RETURNED(4)` 条件迁移**，0 行=幂等空操作）。余额渠道：本地同步入账（`wallet_transaction` 幂等）；微信/支付宝渠道：异步回调确认（微信退款回调复用 ADR-033 验签+AES-GCM 解密口径与 ADR-029 裸 JSON 应答协议）。
+
+> **三个号互不替代（2026-10-18，[ADR-063](../adr/063-external-channel-number-separation.md)）**：`refund_no`（**内部**定位：AD43 重试 / 运维排查）≠ `out_refund_no`（**对外**退款项号：渠道 `out_refund_no`、渠道侧幂等键、回调/查询/账单寻址）≠ `channel_refund_no`（**渠道回填**的 `refund_id`）。退款请求里 `out_trade_no` 取**原交易的对外渠道号** `pay_order.channel_trade_no`（**不是** `pay_order_no`），`out_refund_no` 取本行 `out_refund_no`（`RefundManager#requestChannel`）。术语三条见 `backend/03-Domain-Model.md` §六。
 
 **`wallet_transaction`** — 钱包流水（**归属 wallet-service**；余额每笔变动留痕，V5.5 新建，wallet 首次具备流水能力）
 
@@ -1129,7 +1136,8 @@ public void createOrder(OrderDTO dto) {
 |------|------|------|------|
 | id | BIGINT | PK, AUTO_INCREMENT | 技术主键 |
 | batch_id | BIGINT | FK → reconciliation_batch.id, NOT NULL | 所属批次 |
-| pay_order_no | BINARY(16) | NOT NULL | 本地支付单号（比对键，UUIDv7 原始字节，ADR-050） |
+| pay_order_no | BINARY(16) | **NULL** | 本地支付单号（**内部定位用**；「渠道有本地无」的差异行**没有**本地支付单 → 为 NULL，**不得伪造**，UUIDv7 原始字节，ADR-050/063） |
+| channel_trade_no | VARCHAR(32) | NULL | **对外渠道号**（**比对键**，= `pay_order.channel_trade_no`）：渠道账单的「商户订单号」列即本列，故四态比对按它匹配；两侧都有时回填，仅渠道有时也回填（[ADR-063](../adr/063-external-channel-number-separation.md) §决策 5） |
 | channel_txn_id | VARCHAR(64) | NULL | 渠道交易号（渠道账单有则回填） |
 | channel_amount | INT | NULL | 渠道账单金额（分；渠道无此单为 NULL） |
 | local_amount | INT | NULL | 本地金额（分；本地无此单为 NULL） |
@@ -1140,6 +1148,7 @@ public void createOrder(OrderDTO dto) {
 索引：`idx_batch_result(batch_id, result)`（管理端按差异类型筛选）
 
 > **Phase 1 口径**：差异仅**落库记录供管理端查看**（§4.13.14 AD44-AD46），**不自动调账**；日终任务由 XXL-Job 触发（dev 默认关闭），渠道账单下载经 ia-integration（Phase 1 mock 返回样例账单）。**重复执行同日对账幂等**：同 `(bill_date, channel)` 先删旧批次与明细再重写（`uk_date_channel` 兜底并发重复触发）。
+> **比对键口径（2026-10-18，[ADR-063](../adr/063-external-channel-number-separation.md)）**：四态比对**一律按 `channel_trade_no`**（渠道账单的「商户订单号」列 = 我方发起时发给渠道的 `out_trade_no`）；`pay_order_no` 只是**内部定位用**的附带列，且「渠道有本地无」的行**恒为 NULL —— 不伪造本地单号**（伪造会让管理端去追一个不存在的支付单）。
 
 ### 12.5 F13 拼团（V5.14，[ADR-049](../adr/049-group-buy-full-loop.md)，schema 直改 Initialize.sql）
 

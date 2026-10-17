@@ -2,6 +2,7 @@
 
 > 本文档定义编码过程中必须遵守的硬性约束，以及常见错误模式的纠正方式。
 > 编码前必读，Code Review 时逐条对照。
+> **2026-10-18（B6 批次）**：§三·五 新增两条硬约束 —— 「**对外渠道号与内部业务键不得共用 / 混用**」与「**对外单号类用 `IdGenerator.randomHex`、凭据类用 `secureToken`、对外单号禁 UUIDv7**」（依据 [ADR-063](../adr/063-external-channel-number-separation.md)，代码 `256abbf3`）。
 > 归属域: collaboration | Owner: doc-engineer | 更新触发条件: 新增硬约束时（须有 ADR 或主 agent 依据）
 
 ---
@@ -240,6 +241,8 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 | 新表默认 | 新表业务标识列默认 `BINARY(16)` + `IdGenerator.nextId()`；运维 SQL 需 `HEX(col)` / `UNHEX('...')` 包裹；种子数据业务 ID 用 32-hex 定值 + `UNHEX()` |
 | 验证码场景隔离 | 验证码 issue/verify 的 `scene` **必填且两侧一致**（REGISTER / LOGIN / RESET_PASSWORD，ADR-051）：场景参与 Redis Key（`sms:code:{scene}:{target}`）与重发限流/失败计数隔离，跨场景验证码互不可用；scene 编码契约 `[A-Z][A-Z0-9_]{0,31}`（非法即 PARAM_INVALID）；目标**全局日配额** `sms:daily:{target}`（跨场景共享，默认 10 条/日，ADR-051 修订）；注册接口对「已注册（带密码凭证）」手机号**前置快拒绝**（不消费验证码，`PHONE_ALREADY_REGISTERED`） |
 | 双表示禁直连 | 复合/多格式 VARCHAR 列仍承载业务 ID 的 hex 字符串形态（如 `wallet_transaction.biz_no` 内含订单号/退款单号；`refund_order.biz_ref` 内嵌 `GB:{orderNo}`）——与对应 `BINARY(16)` 列**跨表 SQL JOIN/比较会静默不匹配**；需要跨表示匹配时，在同一表示层进行（应用层 String，或 SQL 内显式 `HEX()`/`UNHEX()` 转换，ADR-050；`transaction_no` 已转 BINARY，不再属此列） |
+| **对外渠道号与内部业务键不得共用 / 混用**（[ADR-063](../adr/063-external-channel-number-separation.md)，2026-10-18） | **对外渠道号**（`pay_order.channel_trade_no` / `refund_order.out_refund_no`）与**内部业务键**（`orders.order_no` / `pay_order.pay_order_no` / `refund_order.refund_no`）是**两类标识**：前者进渠道协议、可被渠道/对账单/客服工单反复外传，后者只在本服务内定位。硬约束：① **一列一语义**，不得让同一列既载「我方发出的号」又载「渠道回填的号」（`channel_refund_no` = 渠道 `refund_id`，**不承载**对外退款项号）；② **发起 / 回调 / 对账一律按渠道号唯一寻址**，❌ **不得保留「按内部键兜底查」的第二口径**（第二口径让双键混用复发，接缝处必然再次分叉）；③ 退款 API 的 `out_trade_no` = **原交易的对外渠道号**，不是 `pay_order_no`；④ 对账「渠道有本地无」的明细 **不伪造**本地单号（`pay_order_no` 为 NULL）。**新增资金链路用例必须断言「发起侧外发值 = 渠道号 ≠ 内部键」与「回调携带内部键必须查不到」**——缺陷前形态正是测试按错误键喂数据再按错误键放行 |
+| **对外单号类与凭据类的生成入口分离**（[ADR-063](../adr/063-external-channel-number-separation.md)，2026-10-18） | `IdGenerator` 三入口**按用途锁定**：内部业务键 → `nextId()`（UUIDv7，有时间序）；**凭据 → `secureToken()`**（256 bit，refreshToken / JWT jti）；**对外渠道单号 → `randomHex(len)`**（长度可控的纯随机，`out_trade_no`/`out_refund_no` 取 20 位 = 80 bit）。**❌ 对外单号禁用 UUIDv7**：① 前 48 位是毫秒时间戳，对外号会流经渠道/对账文件/工单，可**反推下单时刻做流量画像**；② v7 固定 32-hex，与微信 `out_trade_no` 上限 32 **零余量**（任何前缀/拼接即超限，见 `PaymentClient.MAX_OUT_TRADE_NO_LENGTH`）。凭据与对外单号也**不得共用一个入口**（凭据缩短即降熵、单号取 64 位即超渠道上限） |
 | 编解码异常口径 | 业务错误一律 ia-common 异常；**编解码不变量违例**（如 `IdGenerator.toBytes` 收到非 hex 输入、`toHexString` 收到非 16 字节）属编程错误，用 `IllegalArgumentException` **fail-fast**（仓储/PO 映射路径的入参在领域内必然合法，出现即缺陷）；外部输入查询入口用 `toBytesOrNull` 落空为「未命中」，不得放大为异常 |
 | ID 不变量 CI 门禁 | `bash Implementation/back-end/scripts/check-id-invariants.sh`（UUID 生成唯一出口 / 包装器 byte[] 参数 / SQL 字面量禁令，ADR-050/051）——CI 编译前强制运行，本地提交前应复跑；修改 `product`/`sku` 表结构或 item 检索端点契约（`/internal/item/search/**`）时必须联动评审 search-service 消费面（ADR-052：直读已于 2026-10-14 退出，schema 联动义务转为端点契约评审） |
 

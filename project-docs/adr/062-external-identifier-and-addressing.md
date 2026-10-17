@@ -2,14 +2,18 @@
 
 ## 状态
 
-**已裁决（2026-10-17，批次 B4）** —— 契约与决策记录已落定；**代码（B5）与前端（B6）尚未落码**。
+**已裁决（2026-10-17，批次 B4）** —— 契约与决策记录已落定；**代码已落码（2026-10-17，批次 B5）**，前端（B6）未落码。
 本 ADR 是 [ADR-058](./058-vo-identifier-semantics.md)（VO 标识语义）、[ADR-059](./059-spu-sku-vocabulary-disambiguation.md)（SPU/SKU 词汇消歧）、
 [ADR-061](./061-order-item-business-key-snapshot-and-price-compare.md)（线格式标识类型维度）的**第三条腿**：
 前两条定「标识用什么形态」，本条定「**对外怎么寻址**」—— URL 资源段用哪个词、路径变量叫什么名、技术键允许出现在哪里、编解码在哪里实现。
 
-**本批唯一写入面 = 文档**：`project-docs/contract/05-API-Specification.md`（§1.9 新增 + §四 全量改名 + §十二 挂账）、本 ADR、`adr/README.md`、根 `CLAUDE.md`/`AGENTS.md` 的 ADR 区间。
-**零代码改动**（`Implementation/**` 未触碰），故 `extract-endpoints.mjs` 现报 **matched 272 / codeOnly 15 / docOnly 58**（B4 前 287 / 0 / 43）——
-三项差值全部是同一批 15 条端点的「契约新路径 ↔ 代码旧路径」；B5 落码后应回到 287 / 0 / 43。
+> **B5 落码结果（一句话）**：契约侧 27 处改名、15 条端点路径、18 处路径变量口径全部落码，
+> `extract-endpoints.mjs` 由 **272 / 15 / 58** 回到 **287 / 0 / 43**（`check-section7.mjs` 由 121/22/2 回到 **130 / 13 / 2**）；
+> 四类守卫（§守卫 1–4）全部实现并可变异捕获。落地细节与残余风险变化见文末 **§B5 实施记录**。
+
+> **（以下为 B4 当时状态，历史记录，勿据此判现状）** 本批唯一写入面 = 文档：`project-docs/contract/05-API-Specification.md`（§1.9 新增 + §四 全量改名 + §十二 挂账）、本 ADR、`adr/README.md`、根 `CLAUDE.md`/`AGENTS.md` 的 ADR 区间。
+> 零代码改动（`Implementation/**` 未触碰），故当时 `extract-endpoints.mjs` 报 **matched 272 / codeOnly 15 / docOnly 58**（B4 前 287 / 0 / 43）——
+> 三项差值全部是同一批 15 条端点的「契约新路径 ↔ 代码旧路径」；**B5 落码后已回到 287 / 0 / 43（见文末 §B5 实施记录）**。
 
 > ⚠ **授权边界说明（登记用）**：按 [ADR-053](./053-doc-ownership-by-nature-and-two-layer-standards.md) 的分权，决策类 ADR 归该域决策者（本条属后端/契约口径，正常归 java-architect）。
 > 本条由 **doc-engineer 在批次 B4 的显式指令下代笔**（主 agent 派单已授权 `project-docs/**` 写入），**裁决内容由用户（项目方）拍定**，非作者自行判断。
@@ -222,10 +226,10 @@ JavaScript 的 `Number` 是 IEEE 754 双精度浮点，**整数安全区上限 `
 
 | # | 守卫 | 断言与落点 | 现状 |
 | :- | :-- | :-- | :-- |
-| 1 | **外部 `@PathVariable` 不得为技术键 / 数字** | 扫描 `adapter/**/Controller.java`：凡路径模板命中 SPU/SKU 实体语义者，`@PathVariable` 类型**必须**为 `String` 且变量名**显式**（`spuId`/`skuId`/`orderNo`…，**不得**为 `id`）。落点：`scripts/check-id-invariants.sh` 新增「检查 5」 | ⏳ **未实现**（本批只写定契约） |
-| 2 | **线格式不得出现数字型 id 字段** | 在既有「检查 4」（字段名 → 类型必须 `String`/`List<String>`）之外，**反向**扫 `adapter/{response,request}` + `ia-api/dto`：字段名含 `spuId`/`skuId`/`…No` 但类型为 `Long`/`Integer`/基本类型即失败（= 检查 4 的补集，防止改名绕过） | ✅ 检查 4 已生效；**补集未实现** |
-| 3 | **往返性质测试**：`parse(render(x)) == x` | 对**每个含 id 的 DTO/VO** 断言往返等价；实现形态建议：参数化测试遍历 `adapter/{response,request}` + `ia-api/dto` 的 id 字段，用 `IdGenerator.nextId()` 造 32-hex、序列化→反序列化→比对。**失败即哨兵**（24 点全绿示例见下） | ⏳ **未实现** |
-| 4 | **业务键 ↔ 技术键解析只许在服务内** | 断言：解析调用点（`IdGenerator.toBytes`/`toBytesOrNull`）**不得**出现在 `adapter/` 包；只能出现在 `infrastructure/persistence/`（与既有「检查 2/3」同面）；且必须走**唯一索引**（`uk_spu_id`/`uk_sku_id`），不得全表扫描 | ⏳ **未实现** |
+| 1 | **外部 `@PathVariable` 不得为技术键 / 数字** | 扫描 `adapter/**/Controller.java`：凡路径模板命中 SPU/SKU 实体语义者，`@PathVariable` 类型**必须**为 `String` 且变量名**显式**（`spuId`/`skuId`/`orderNo`…，**不得**为 `id`）。落点：`scripts/check-id-invariants.sh` 新增「检查 5」 | ✅ **已实现（B5）**：命中面 = 路径段 `spu(s)`/`sku(s)` 或占位符 `{spuId\|skuId\|productId}`；断言类型为 `String` + 名为 `spuId/skuId/spuIds/skuIds` + 路径不得残留 `{id}`；自证「扫到 0 个 Controller 即失败」；实测 **89 个 Controller / 13 个路径变量**，变异（改回 `Long`）即红 |
+| 2 | **线格式不得出现数字型 id 字段** | 在既有「检查 4」（字段名 → 类型必须 `String`/`List<String>`）之外，**反向**扫 `adapter/{response,request}` + `ia-api/dto`：字段名含 `spuId`/`skuId`/`…No` 但类型为 `Long`/`Integer`/基本类型即失败（= 检查 4 的补集，防止改名绕过） | ✅ **已实现（B5）**：检查 4 的命中面扩为 `spuId(s)`/`skuId(s)`/**`productId(s)`（旧词改名绕过面）**/单号族 `…No(s)`；白名单收敛为 3 处 `packageNo`（包裹序号，`Integer` 正当）且**陈旧即失败**；原三项白名单（`RecommendSpuVO.spuId`、`ShopDecoration{VO,Req}.hotSpuIds`）已随收口**删除** |
+| 3 | **往返性质测试**：`parse(render(x)) == x` | 对**每个含 id 的 DTO/VO** 断言往返等价；实现形态建议：参数化测试遍历 `adapter/{response,request}` + `ia-api/dto` 的 id 字段，用 `IdGenerator.nextId()` 造 32-hex、序列化→反序列化→比对。**失败即哨兵** | ✅ **已实现（B5）**：`architecture-tests` `IdWireRoundTripTest`（URLClassLoader 装载各模块 `target/classes`，SNAKE_CASE 渲染 + 断言「必为 JSON 字符串」+ 反序列化逐字段比对）；实测命中 **66 个类 / 93 个字段**（源文件 68 个），命中面为 0 即失败 |
+| 4 | **业务键 ↔ 技术键解析只许在服务内** | 断言：解析调用点（`IdGenerator.toBytes`/`toBytesOrNull`）**不得**出现在 `adapter/` 包；只能出现在 `infrastructure/persistence/`（与既有「检查 2/3」同面）；且必须走**唯一索引**（`uk_spu_id`/`uk_sku_id`），不得全表扫描 | ✅ **已实现（B5）**：`scripts/check-id-invariants.sh` 新增「检查 6」断言 `IdGenerator.{toBytes,toBytesOrNull,toHexString,parseWire}` 不出现在任何 `adapter/` 目录（适配层只许 `IdGenerator.requireWire` 做形态校验）；实测 **24 个 adapter 目录**，命中面 0 即失败 |
 
 > **守卫 3 的补充口径**：`check-id-invariants.sh` 现有 4 项检查是**静态**的；本条的往返性质是**行为**约束，
 > 静态扫描表达不了，必须落**测试**。建议落在 `architecture-tests`（已有 ArchUnit 门禁，19 模块）或各服务 `adapter` 测试包内。
@@ -263,13 +267,76 @@ JavaScript 的 `Number` 是 IEEE 754 双精度浮点，**整数安全区上限 `
 
 | # | 残余风险 | 触发条件 | 后果 | 收敛方向 |
 | :- | :-- | :-- | :-- | :-- |
-| E1 | **P37 `scene` 长度约束** | 微信 `wxacode.getUnlimited` 的 `scene` 上限 **32 可见字符**；现实现 `scene = "p=" + 技术键`（短），按本条改为 32-hex 业务键后为 **34 字符 → 超限** | 生成失败（fail-loud）或**截断后回链错商品**（后者不可接受） | **必须显式决策**：(a) `scene` 保技术键并登记为「本规则唯一例外」；(b) 短码/短链映射；(c) 截断 —— **不可接受**。**未裁决前不得据契约直接改 `SpuShareManager`** |
-| E2 | **统计行与内部 CO 的 `productName` 键名** | S11/AD14 返回 `Map` 字面键 `"productName"`（camelCase）；`CartItemCO.productName`（I16） | 与 ADR-056（snake_case）与 ADR-061（`spu_name`）双重不符；前端需按方言解析 | B5 一并收口为 `spu_name`（**BREAKING**）；`HistoryVO.product_name` **例外保留**（`@JsonProperty` 显式钉名） |
-| E3 | **`RecommendSpuVO.spuId` 仍为 `Long`** | P27/P35 卡内 `spu_id` 实测技术键（ID 门禁白名单项） | 前端若按契约当 32-hex 消费则**回链失败** | B5 改 `String`；**改后必须同步删除门禁白名单项**（否则报「白名单陈旧」）|
-| E4 | **`ShopDecoration{VO,Req}.hotSpuIds` 仍为 `List<Long>`** | merchant 域不持有 SPU 业务键（ADR-048 §决策 4：库列保持 `BIGINT`） | 写侧与读侧必须同型同义，否则半侧收口更糟 | 收口需**改 DB 列形态 + 新增解析能力**——**须另立批次的显式决策**，不在 B5 默认范围 |
-| E5 | **`KgEdgeUpsertCO.srcId`（`Long`）** | 不在 ID 门禁命中面（字段名不含 `spuId`） | 内部契约遗留技术键 | 随 KG 域批次收口 |
-| E7 | **`SpuDetailClient` 走公开契约 + 技术键入参** | `ia-api` `client/SpuDetailClient.java`：`@FeignClient(path = "/api/item/product")` + `@GetMapping("/{id}") Result<SpuDetailCO> getSpuDetail(@PathVariable Long id)`，调用方 `ai-service` `FeignSpuDetailAdapter`（**活链路，非死代码**） | ① 它是**服务间调用却走公开契约**（应走 `/internal/**`，ADR-004；其 javadoc 已自认「已知偏差（待迁移）」）；② 路径变量是**技术键 `Long`**，直接违反本条 §决策 3「凡跨出服务边界一律业务键」 —— 是本批新确立的口径下**最严重的一处现存违规** | **B5 最小改动**：`path` → `/api/item/spu`、`@PathVariable Long id` → `@PathVariable String spuId`（业务键 + 形态校验）；**根治**（迁 `/internal/**`）会**新增端点 → `codeOnly` +1**，按本条 §决策 4 的纪律属**显式决策**，须单独立项而非顺带做 |
-| E6 | **跨文档引用未同步** | 其他 `project-docs/` 文档仍引用旧路径字面量（12 个文件、35 处） | 文档间自相矛盾，读者按旧路径编码 | 按分权经主 agent 派单，与 B5/B6 同批同步（清单见契约 §十二 12.2 新增行）|
+| E1 | **P37 `scene` 长度约束** | 微信 `wxacode.getUnlimited` 的 `scene` 上限 **32 可见字符**；现实现 `scene = "p=" + 技术键`（短），按本条改为 32-hex 业务键后为 **34 字符 → 超限** | 生成失败（fail-loud）或**截断后回链错商品**（后者不可接受） | ⏳ **仍开放（B5 按寄存形态处置并显式登记）**：B5 保留 `scene`/objectKey 走**技术键**（零行为回归、长度不超限），并在 `SpuShareManager` 类注释与交付报告登记为本规则的**唯一例外**；**不做短码映射**（属小程序承载层设计，须单独立项）、**不截断**。待裁决：(a) 现状（保技术键并登记）；(b) 短码/短链（推荐，需新批次）；(c) 截断（**不可接受**）。旁证：小程序前端当前**零处**解析该 `scene`（仅登录用 `scene`），故暂无观测影响 |
+| E2 | **统计行与内部 CO 的 `productName` 键名** | S11/AD14 返回 `Map` 字面键 `"productName"`（camelCase）；`CartItemCO.productName`（I16） | 与 ADR-056（snake_case）与 ADR-061（`spu_name`）双重不符；前端需按方言解析 | ✅ **已闭合（B5）**：`SellerDashboardManager.KEY_SPU_NAME` / `AdminManager.topSpus` 字面键、`CartItemCO` 字段全部收口为 `spu_name`（**BREAKING**）；`HistoryVO.product_name` 仍为例外保留（`@JsonProperty` 显式钉名） |
+| E3 | **`RecommendSpuVO.spuId` 仍为 `Long`** | P27/P35 卡内 `spu_id` 实测技术键（ID 门禁白名单项） | 前端若按契约当 32-hex 消费则**回链失败** | ✅ **已闭合（B5）**：`RecommendSpuVO.spuId` 改 `String` 业务键（`SpuManager#toRecommendVO` / `KgPairingManager#toCard` 同批改），路径变量同型同义；**门禁白名单项已同步删除**（否则报「白名单陈旧」） |
+| E4 | **`ShopDecoration{VO,Req}.hotSpuIds` 仍为 `List<Long>`** | merchant 域不持有 SPU 业务键（ADR-048 §决策 4：库列保持 `BIGINT`） | 写侧与读侧必须同型同义，否则半侧收口更糟 | ✅ **已闭合（B5，用户裁决「继续」）**：`List<Long>` → `List<String>` 业务键（**写读同批收口**，含领域工厂/仓储 JSON 列/PO 注释/`Initialize.sql` 列语义），形态校验走 `IdGenerator.requireWire`（非法即 400）；**不做跨域存在性校验**（ADR-048 Phase 1 + ADR-057「业务判断不得同库直读」）。详见 §B5 实施记录「DB 列改型取舍」 |
+| E5 | **`KgEdgeUpsertCO.srcId`（`Long`）** | 不在 ID 门禁命中面（字段名不含 `spuId`） | 内部契约遗留技术键 | 随 KG 域批次收口（**未做**） |
+| E7 | **`SpuDetailClient` 走公开契约 + 技术键入参** | `ia-api` `client/SpuDetailClient.java`：`@FeignClient(path = "/api/item/product")` + `@GetMapping("/{id}") Result<SpuDetailCO> getSpuDetail(@PathVariable Long id)`，调用方 `ai-service` `FeignSpuDetailAdapter`（**活链路，非死代码**） | ① 它是**服务间调用却走公开契约**（应走 `/internal/**`，ADR-004）；② 路径变量是**技术键 `Long`**，违反本条 §决策 3 | 🟡 **部分收敛（B5 最小改动）**：`path` → `/api/item/spu`、`@PathVariable Long id` → `@PathVariable String spuId`（并随之下沉 `SpuDetailPort`/`SpuDetailTool`/降级工厂为业务键）；**根治（迁 `/internal/**`）仍待单独立项** —— 会**新增端点 → `codeOnly` +1**，按 §决策 4 属显式决策 |
+| E6 | **跨文档引用未同步** | 其他 `project-docs/` 文档仍引用旧路径字面量（12 个文件、35 处） | 文档间自相矛盾，读者按旧路径编码 | ⏳ **仍开放**（B5 无 `project-docs/` 除 `adr/` 外写权，按分权经主 agent 派单同步） |
+
+## B5 实施记录（2026-10-17，代码落码批）
+
+> 本段是**实施证据**（谁在哪个文件落了什么码、门禁数字与变异验证），不是新决策；
+> 决策口径仍以上文 §决策 1–7 为准。
+
+### 1. 编解码唯一出口（§决策 1/7：B5 的**第一件事**）
+
+`ia-common` `common/utils/IdGenerator` 在既有 `nextId/toBytes/toHexString/toBytesOrNull/secureToken`
+之上收敛出**语义命名**的三个门面方法（实现复用既有内核，零行为变化）：
+
+| 方法 | 语义 | 使用面 |
+| :-- | :-- | :-- |
+| `toWire(byte[])` | 出方向：`BINARY(16)` → 32-hex | 持久化/领域层出口（可检索的「线格式出口」名） |
+| `parseWire(String)` | 入方向（严格）：线格式 → `byte[]` | 只许服务内（仓储/领域） |
+| `requireWire(String field, String wire)` | 适配层入参**形态校验唯一口**：合法 → 归一化 32-hex；非法 → `PARAM_ERROR(1101)`/**HTTP 400** fail-fast | 所有外部路径变量/入参 |
+| `isWire(String)` | 形态判定（不抛） | 防御性分支 |
+
+同时**收严 `toBytesOrNull` 的语义边界**（javadoc 显式写定）：宽松语义**只许内部防御**
+（未命中归一 / 已校验后的二次解析），**不得作为线格式入口** —— 门禁「检查 6」把这条钉成机械约束。
+
+### 2. 落码面（文件级）
+
+| # | 决策条款 | 落码文件（要点） |
+| :- | :-- | :-- |
+| 1 | §决策 2 表 A（27 处入口） | `item-service` `SpuController`（类级 `/api/item/spu`）、`ReviewController`（`/spu/{spuId}` ×3）、`InternalItemSearchController`（`/detail/{spuId}`）；`search-service` `SearchController`（`/spu`）、`InternalSearchController`（`/vector/spu/{upsert,similar}`）；`gateway-service` `SecurityConfig` javadoc + 3 个测试夹具（路由通配，**零白名单改动**） |
+| 2 | §决策 2 表 A #21（Feign） | `ia-api` `SpuVectorClient`（`path=/internal/search/vector/spu`）、`ItemSearchClient`（`/detail/{spuId}`）、**`SpuDetailClient`**（`path=/api/item/spu` + `String spuId`；连带 `SpuDetailClientFallback`、`ai-service` `SpuDetailPort`/`FeignSpuDetailAdapter`/`SpuDetailTool` 收业务键） |
+| 3 | §决策 2 表 C（路径变量） | 18 处路径变量：`SpuController` 7、`ReviewController` 3（类型 `Long`→`String`；`/{id}/reply\|append\|like` **保持 `Long`**：评价行主键）、`InternalItemSearchController` 1、`CartController` 2（B2 已合规，本次纳入门禁面）；`user-service` `HistoryController` `{id}`→**`{historyId}`**（足迹行主键勘误，类型保持 `Long`）；**下游 Manager 同步改型**：`SpuManager.{getSpuDetail,listSkus,similarSpus,updateSpu,updateSpuStatus}`、`ReviewManager.{pageBySpu,pageBySpuFiltered,reviewSummary}`、`KgPairingManager.pairing`、`SpuShareManager.getWxaCode` |
+| 4 | §决策 3（解析只许服务内） | 新增 `SpuRepository.findByBusinessId(String)`（走 `uk_spu_id`；`SpuMapper.selectByBusinessId`）；`ReviewManager#spuTechnicalIdOrNull`（读路径 fail-open）、`SpuManager`（详情 fail-loud / 列表与推荐 fail-open）、`KgPairingManager`（fail-open 空态） |
+| 5 | §决策 4（删双形态） | `ItemSearchQueryManager#detail` 只按业务键解析；`isTechnicalKey` 分支删除；**连带退役**再无调用方的技术键查询 `SpuRepository.findSearchCardById` + `SpuMapper.selectSearchCardById`（H2 用例同步合并到业务键变体，`publishTime` 断言保留） |
+| 6 | §决策 3（E4 收口） | `merchant-service`：`ShopDecoration{VO,Req}.hotSpuIds` → `List<String>`、领域工厂 `normalizeHotSpuIds` 走 `requireWire`、`ShopDecorationRepositoryImpl` JSON 列统一 `List<String>`、`ShopDecorationPO` 注释、`Initialize.sql` `hot_spu_ids` 列**语义改型**（物理仍 `VARCHAR(1000)`，容量核算见下） |
+| 7 | E2 线格式键名 | `trade-service` `SellerDashboardManager.KEY_SPU_NAME`/`AdminManager.topSpus` 字面键 → `spu_name`；`ia-api` `CartItemCO.productName` → `spuName`（线上名 `spu_name`），`cart-service` `CartConverter` 忽略项跟改 |
+| 8 | 测试夹具 | `item` `SpuControllerWxaCodeTest`（+新增 400 fail-fast 用例）、`SpuManagerTest`、`ReviewManagerTest`（+新增「未知业务键 → 空页」用例）、`KgPairingManagerTest`、`SpuShareManagerTest`、`ItemSearchQueryManagerTest`、`SpuSearchMapperH2Test`；`search` `InternalSearchControllerTest`；`merchant` 3 个装修测试；`gateway` 3 个测试；`cart` `CartConverterContractTest` |
+
+### 3. DB 列改型取舍（E4，写读同型同义）
+
+**列物理形态不变**（`hot_spu_ids VARCHAR(1000)`，JSON 文本），**改的是列的语义**（注释 + 存储元素类型）：
+
+- **容量核算**：≤8 个业务键 ×(32 字符 + 2 引号 + 1 分隔) ≈ **274 字节 ≤ 1000** → 无需扩容；
+- **为何不改 `BINARY(16)` 或 JSON 类型**：该列是「列表 JSON 文本」，`banners` 同列族；改类型需要 `TypeHandler` + 迁移，而 ADR-045 已定「库无存量数据、结构直接改快照」——**收益为零、风险更高**；
+- **为何不做跨域存在性校验**：① ADR-048 Phase 1 明示「不校验归属/存在性，展示端过滤」；② 补校验须读商品数据，而同库直读他域表做**业务判断**被 ADR-057 明令禁止（只允许展示读模型），走 Feign 又受「调 Feign 的 Manager 不得 `@Transactional`」硬约束并需**新增端点**（§决策 4：新端点属显式决策）。
+  → 因此本批只做**形态校验（32-hex，非法即 400 fail-fast）+ 原样存取**：写侧与读侧**同型同义**，不留半侧收口。
+
+### 4. 门禁数字与变异验证
+
+| 门禁 | B4 后（本批前） | B5 后 | 判据 |
+| :-- | :-- | :-- | :-- |
+| `extract-endpoints.mjs` | matched 272 / codeOnly 15 / docOnly 58 | **287 / 0 / 43** | 核心收敛判据，回到 B4 前基线 |
+| `check-section7.mjs` | 存在 121 / 不存在 22 / 方法不符 2 | **130 / 13 / 2** | 同上 |
+| `check-id-invariants.sh` | `[OK]`（4 项检查；路径变量与适配层面未覆盖） | `[OK]`（**6 项检查**，含新增检查 5/6 + 两条命中面自证 + 白名单陈旧自证） | 见 §守卫 1/4 |
+| `IdWireRoundTripTest` | 不存在 | ✅ 命中 66 类 / 93 字段 | 见 §守卫 3 |
+
+**变异验证（证明门禁有捕获力，非空转）**：把外部 `@PathVariable` 改回 `Long` → 检查 5 报红（列出文件:行 + 路径 + 类型）；
+把 `RecommendSpuVO.spuId` 改回 `Long` → `IdWireRoundTripTest` 报红（渲染为 JSON 数字）；
+在某 `adapter/` 写入 `IdGenerator.toBytesOrNull(...)` → 检查 6 报红。三者恢复后均回绿（原样输出见 B5 交付报告）。
+
+### 5. P37 `scene`（E1）在本批的处置与登记位置
+
+- **代码登记**：`item-service` `SpuShareManager` 类 javadoc「⚠ P37 `scene` 与业务键寻址的冲突（本批显式登记，未裁决，不静默截断）」+ `SCENE_PREFIX` 常量注释 + `generateAndUpload` 行内注释；
+- **实现形态**：`scene = "p=" + 技术键` 与 objectKey 继续走技术键（**零行为回归、长度不超限**），
+  入参侧则已是业务键并做形态校验 —— 即「入参收业务键、承载层字段暂存技术键」的**寄存形态**；
+- **为何不选其它**：短码/短链属小程序承载层设计（须单独立项），截断会指向错商品（**不可接受**）；
+- **旁证**：小程序前端当前**零处**解析该 `scene`（仅登录用 `scene`），故本冲突暂无观测影响；一旦前端按 `scene` 回链，必须先落地短码方案。
 
 ## 日期
 

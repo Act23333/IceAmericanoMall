@@ -179,6 +179,19 @@ ADR-062 是决策记录，承担「历史字形」的存证职责。）
 在 B5 合并前，§四 中已改名的端点**照契约调用会 404**；`extract-endpoints.mjs` 的 `matched` 会下降、
 `codeOnly` 会上升 —— **原因即此（契约先行），不是新增缺陷**（数字见文件头与 §十二 12.2）。
 
+**⑥ 渠道号不进对外报文（🆕 2026-10-18，[ADR-063](../adr/063-external-channel-number-separation.md)）**
+
+**渠道号（对外渠道单号）只存在于服务内部与渠道协议，不出现在任何支付 / 退款对外报文。**
+`pay_order.channel_trade_no`（渠道 `out_trade_no`）与 `refund_order.out_refund_no`（渠道 `out_refund_no`）
+是我方发给渠道的**寻址键**，报文侧**不得**透出：`PayOrderVO` / `RefundVO` 及一切买家 / 商家可见的 VO 均无此字段
+（`RefundVO` 里的 `channel_refund_no` 是**渠道回填的 `refund_id`**，与对外退款项号不是同一个号 ——
+三条术语「对外渠道号 / 对外退款项号 / 渠道退款单号」互不替代，见 `backend/03-Domain-Model.md` §六）。
+
+> **唯一例外（已登记）**：管理端对账差异明细 **AD45 的 `ReconciliationDetailVO` 新增 `channel_trade_no`**
+> —— 该字段就是**与渠道账单的比对键**，「渠道有本地无」的差异行更是**没有** `pay_order_no` 可供追查，
+> 不给渠道号则管理端无法定位。此为例外而非口径松动：**运维视图可见、业务报文不可见**。
+> AD45 仅**新增字段**，端点数量不变（端点对账仍 **287 / 0 / 43**）。
+
 ---
 
 ## 二、错误码体系
@@ -2783,8 +2796,8 @@ data: [DONE]
 // ReconciliationBatchVO (✅ V5.6——对账批次，AD44/AD46；AD46 返回 List<ReconciliationBatchVO>，ADR-036)
 { "id":1, "bill_date":"2026-10-02", "channel":"WECHAT", "status":1, "channel_total":1520000, "local_total":1520000, "create_time":"..." }
 
-// ReconciliationDetailVO (✅ V5.6——差异明细，result: 1-匹配/2-渠道有本地无/3-本地有渠道无/4-金额不一致，AD45)
-{ "id":100, "batch_id":1, "pay_order_no":"pay-...", "channel_txn_id":"42000023...", "channel_amount":9900, "local_amount":12800, "result":4, "create_time":"..." }
+// ReconciliationDetailVO (✅ V5.6——差异明细，result: 1-匹配/2-渠道有本地无/3-本地有渠道无/4-金额不一致，AD45；✅ 2026-10-18 仅新增 channel_trade_no——对外渠道号/比对键，ADR-063)
+{ "id":100, "batch_id":1, "pay_order_no":"pay-...", "channel_trade_no":"9f3ac1e07b2d4c6a8e15", "channel_txn_id":"42000023...", "channel_amount":9900, "local_amount":12800, "result":4, "create_time":"..." }
 
 // FreightTemplateVO (✅ V5.6——运费模板，FT1-FT4；charge_mode Phase 1 恒 1-固定运费；free_threshold 0=不参与满额包邮)
 { "id":1, "template_no":"0c9d8b7a-...", "template_name":"全场满99包邮", "charge_mode":1, "fee":800, "free_threshold":9900, "status":1, "create_time":"..." }
