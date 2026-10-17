@@ -76,6 +76,16 @@ export interface CartModel {
   source: CartSource;
   /** 已登录但服务端不可达 → 已降级读本地（**离线可用，非静默**）。 */
   degraded: boolean;
+  /**
+   * 服务端购物车查询**失败**（已登录 + `isError`）。
+   * 与「购物车确实为空」是两件事：前者必须渲染失败态 + 重试，后者才是空态。
+   * 旧实现只暴露 `isLoading`，失败时页面显示「购物车是空的」——把加载失败说成没有数据。
+   */
+  isError: boolean;
+  /** 失败原因（供失败态展示技术细节）。 */
+  error: unknown;
+  /** 重试服务端购物车查询（失败态按钮用）。 */
+  retry: () => void;
   isLoading: boolean;
   selectedLines: CartLine[];
   selectedCount: number;
@@ -380,6 +390,10 @@ export function useCartModel(): CartModel {
     lines,
     source: useServer ? 'server' : 'local',
     degraded,
+    // 真实失败（不是「服务端购物车为空」）—— 页面据此渲染失败态而非空态
+    isError: loggedIn && serverQuery.isError,
+    error: serverQuery.error,
+    retry: () => { void serverQuery.refetch(); },
     // 未登录不发请求 ⇒ 不是「加载中」
     isLoading: loggedIn && serverQuery.isLoading,
     selectedLines,

@@ -3,24 +3,57 @@
 import { useParams } from 'next/navigation';
 import { useOrder, useCancelOrder, useConfirmOrder } from '@icedmall/api';
 import { Button, GlassCard, PriceDisplay } from '@icedmall/ui';
-import { formatPrice, ORDER_STATUS_TEXT } from '@icedmall/utils';
+import { formatPrice, ORDER_STATUS_CODE, orderStatusColorClass, orderStatusText } from '@icedmall/utils';
 import { OrderItemRow } from '@/app/components/order-item-row';
+import { LoadFailedState } from '@/app/components/load-failed-state';
 import Link from 'next/link';
 
+/**
+ * 订单详情 — `/api/trade/order/{orderNo}`。
+ *
+ * ── 2026-10 B10 变更 ────────────────────────────────────────────
+ * 1. **状态文案**：旧 `ORDER_STATUS_TEXT[order.status] ?? order.status` 是「数字下标索引
+ *    枚举名键表」⇒ 恒 `undefined` ⇒ 显示裸数字。现统一走 `orderStatusText()`
+ *    （键域 = 后端 `OrderStatusEnum` 数字码；表外取值显示 `状态 7`，不静默变空）。
+ * 2. **状态判定**魔数 `order.status === 1 / 3 / 4` → `ORDER_STATUS_CODE.*`。
+ * 3. **失败态**：旧实现只有 `isLoading` 与「订单未找到」两条分支 ⇒ 请求失败（网关不可达 /
+ *    5xx / 401）会落到「订单未找到」，把**加载失败**说成**订单不存在**。现拆三支：
+ *    失败（可重试）/ 不存在 / 正常。
+ */
 export default function OrderDetailPage() {
   const params = useParams();
   const orderNo = params.orderNo as string;
-  const { data: order, isLoading } = useOrder(orderNo);
+  const { data: order, isLoading, isError, error, isFetching, refetch } = useOrder(orderNo);
   const cancelOrder = useCancelOrder();
   const confirmOrder = useConfirmOrder();
 
   if (isLoading) {
     return <div className="mx-auto max-w-2xl px-4 pt-24 pb-20"><div className="h-64 rounded-2xl bg-warm-100 animate-glass-shimmer" /></div>;
   }
+
+  // 失败 ≠ 不存在：失败必须可重试，且文案不得说「未找到」
+  if (isError) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 pt-24 pb-20">
+        <LoadFailedState
+          title="订单详情加载失败"
+          description="没能获取到该订单（不是「订单不存在」）。请重试，或返回列表。"
+          detail={error instanceof Error ? error.message : undefined}
+          onRetry={() => { void refetch(); }}
+          retrying={isFetching}
+        />
+        <div className="mt-4 text-center">
+          <Link href="/shop/orders" className="text-sm text-accent-green hover:underline">返回订单列表</Link>
+        </div>
+      </div>
+    );
+  }
+
   if (!order) {
     return (
       <div className="text-center pt-24 pb-20">
         <div className="text-6xl">🔍</div><h2 className="mt-4 text-lg text-ink-black">订单未找到</h2>
+        <p className="mt-2 text-sm text-warm-600">该订单不存在，或不属于当前账号。</p>
         <Link href="/shop/orders" className="mt-4 inline-block text-sm text-accent-green">返回订单列表</Link>
       </div>
     );
@@ -30,8 +63,8 @@ export default function OrderDetailPage() {
     <div className="mx-auto max-w-2xl px-4 pt-24 pb-20">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-light text-ink-black">订单详情</h1>
-        <span className="text-xs px-2 py-0.5 rounded-full bg-accent-green/10 text-accent-green-dark">
-          {ORDER_STATUS_TEXT[order.status] ?? order.status}
+        <span className={`text-xs px-2 py-0.5 rounded-full ${orderStatusColorClass(order.status)}`}>
+          {orderStatusText(order.status)}
         </span>
       </div>
 
@@ -71,7 +104,7 @@ export default function OrderDetailPage() {
 
       {/* 操作 */}
       <div className="flex gap-3">
-        {order.status === 1 && (
+        {order.status === ORDER_STATUS_CODE.PENDING_PAYMENT && (
           <>
             <Link href={`/shop/pay/${order.order_no}`} className="flex-1">
               <Button variant="primary" size="md" className="w-full">去支付</Button>
@@ -79,10 +112,10 @@ export default function OrderDetailPage() {
             <Button variant="secondary" size="md" onClick={() => cancelOrder.mutate(order.order_no)}>取消订单</Button>
           </>
         )}
-        {order.status === 3 && (
+        {order.status === ORDER_STATUS_CODE.PENDING_RECEIPT && (
           <Button variant="primary" size="md" onClick={() => confirmOrder.mutate(order.order_no)}>确认收货</Button>
         )}
-        {order.status === 4 && (
+        {order.status === ORDER_STATUS_CODE.COMPLETED && (
           <Link href={`/shop/after-sale?orderNo=${order.order_no}`} className="flex-1">
             <Button variant="secondary" size="md" className="w-full">申请售后</Button>
           </Link>

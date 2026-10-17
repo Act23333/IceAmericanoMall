@@ -44,12 +44,23 @@ export default function FlashSalePage() {
   const handleBuy = useCallback(
     async (flashId: number) => {
       setBuyError(null);
-      const addressId = prompt('请输入收货地址ID (演示: 输入数字ID)');
-      if (!addressId) return;
+      const addressInput = prompt('请输入收货地址ID (演示: 输入数字ID)');
+      if (!addressInput) return;
+      /*
+        数值转换定性（2026-10 B10 第 7 项）：`address_id` 在后端是技术主键 `Long`
+        （`address.id`，非 32-hex 业务键），故此处 `Number()` 合法；
+        但旧实现没有防护 —— 非数字输入会得 `NaN`，`JSON.stringify` 把 `NaN` 变成 `null`
+        再发给后端，报错信息对用户毫无意义。故先校验，非法就地提示、不发请求。
+      */
+      const addressId = Number(addressInput);
+      if (!Number.isFinite(addressId) || addressId <= 0) {
+        setBuyError('收货地址 ID 必须是正整数');
+        return;
+      }
       try {
         // 响应 `FlashBuyVO` = { success, order_no, flash_id, flash_price, spu_id, remaining_stock }
         // （B3：`product_id` → `spu_id`）
-        const result = await flashBuy.mutateAsync({ flashId, addressId: Number(addressId) });
+        const result = await flashBuy.mutateAsync({ flashId, addressId });
         if (result?.order_no) {
           router.push(`/shop/pay/${result.order_no}`);
         }

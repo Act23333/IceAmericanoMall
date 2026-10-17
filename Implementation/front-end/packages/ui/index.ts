@@ -15,6 +15,8 @@ export { cn } from './lib/utils';
 export { Button } from './components/button';
 export { GlassCard } from './components/glass-card';
 export { PriceDisplay } from './components/price-display';
+// 四态之「失败态」—— 与空态视觉/文案可分且带重试（前端规范 §2.3）
+export { LoadFailed } from './components/load-failed';
 
 // 业务组件
 export { ProductCard } from './components/product-card';

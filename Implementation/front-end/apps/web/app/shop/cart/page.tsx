@@ -6,6 +6,7 @@ import { spuHref } from '@icedmall/utils';
 import { Trash2, Minus, Plus, ShoppingBag } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
+import { LoadFailedState } from '@/app/components/load-failed-state';
 
 /**
  * 购物车页 — Client Component
@@ -26,6 +27,7 @@ import { useState } from 'react';
 export default function CartPage() {
   const {
     lines, source, degraded, isLoading,
+    isError, error: serverError, retry,
     remove, setQuantity, toggleSelect, selectAll, deselectAll, clear,
     selectedLines, allSelected, selectedTotalCents, selectedCount,
   } = useCartModel();
@@ -73,8 +75,23 @@ export default function CartPage() {
         </div>
       )}
 
-      {/* ── 空购物车 ── */}
-      {!isLoading && lines.length === 0 && (
+      {/*
+        ── 失败态 ──
+        条件里带 `lines.length === 0`：若本机还有离线购物车行，走下方「降级离线模式」提示，
+        不为一个后端故障把用户本机可见的数据藏起来。只有**没有任何行可展示**时，
+        才必须把「服务端购物车加载失败」和「购物车是空的」分清（旧实现二者都渲染空态）。
+      */}
+      {!isLoading && isError && lines.length === 0 && (
+        <LoadFailedState
+          title="购物车加载失败"
+          description="服务端购物车暂时取不到（不是「购物车是空的」）。请重试。"
+          detail={serverError instanceof Error ? serverError.message : undefined}
+          onRetry={retry}
+        />
+      )}
+
+      {/* ── 空购物车（只有"确实没有数据"才走这里）── */}
+      {!isLoading && !isError && lines.length === 0 && (
         <GlassCard className="p-16 text-center">
           <ShoppingBag className="mx-auto h-12 w-12 text-warm-300" />
           <h2 className="mt-4 text-lg font-medium text-ink-black">购物车是空的</h2>

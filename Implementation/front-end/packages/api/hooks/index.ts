@@ -30,8 +30,8 @@ export {
   COUPON_SCOPE_PRODUCT,
 } from './use-coupons';
 export type { CheckoutCoupon } from './use-coupons';
-export { useProductReviews, useCreateReview } from './use-reviews';
-export type { ReviewFilter } from './use-reviews';
+export { useProductReviews, useCreateReview, REVIEW_SORT, REVIEW_SORT_VALUES } from './use-reviews';
+export type { ReviewFilter, ReviewSort } from './use-reviews';
 export { useFlashSales, useFlashBuy } from './use-flash-sale';
 export { useMyAfterSales, useCreateAfterSale } from './use-after-sale';
 export { sendVerificationCode, useSendVerificationCode } from './use-verification';

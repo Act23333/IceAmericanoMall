@@ -7,6 +7,7 @@ import { GlassCard, Button } from '@icedmall/ui';
 import { formatPrice, spuHref } from '@icedmall/utils';
 import { Search, Trash2, Clock } from 'lucide-react';
 import Link from 'next/link';
+import { LoadFailedState } from '@/app/components/load-failed-state';
 
 /**
  * 浏览足迹 —— 直接使用契约类型 `HistoryVO`（多词键名由后端 `@JsonProperty` 固定为 snake_case）。
@@ -64,7 +65,7 @@ export default function HistoryPage() {
   const [keyword, setKeyword] = useState('');
   const [searchInput, setSearchInput] = useState('');
 
-  const { data, isLoading } = useQuery<PageData>({
+  const { data, isLoading, isError, error, isFetching, refetch } = useQuery<PageData>({
     queryKey: ['history', page, keyword],
     queryFn: () => {
       const p = new URLSearchParams({ page: String(page), size: '20' });
@@ -126,8 +127,19 @@ export default function HistoryPage() {
         </div>
       )}
 
+      {/* 失败态先于空态判定（旧实现：请求失败被渲染成「暂无浏览足迹」，B10 修复）*/}
+      {isError && (
+        <LoadFailedState
+          title="足迹加载失败"
+          description="没能获取到浏览记录（不是「没有足迹」）。请重试。"
+          detail={error instanceof Error ? error.message : undefined}
+          onRetry={() => { void refetch(); }}
+          retrying={isFetching}
+        />
+      )}
+
       {/* Empty */}
-      {!isLoading && records.length === 0 && (
+      {!isLoading && !isError && records.length === 0 && (
         <div className="text-center py-20">
           <div className="text-6xl select-none">👣</div>
           <p className="mt-4 text-text-secondary">
@@ -140,7 +152,7 @@ export default function HistoryPage() {
       )}
 
       {/* 日期分组列表 */}
-      {groups.map((group) => (
+      {!isError && groups.map((group) => (
         <div key={group.label} className="mb-6">
           <h2 className="text-sm font-medium text-text-secondary mb-3">{group.label}</h2>
           <div className="space-y-2">

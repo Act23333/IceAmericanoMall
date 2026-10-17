@@ -17,10 +17,35 @@ import { apiClient, type PageResult, type ReviewVO, type ReviewCreateReq } from 
  * 曾误判为「裸 POJO 属性绑定、不受命名策略管辖」而发送 camelCase `hasMedia` →
  * 后端按未知属性静默忽略、「只看带图」筛选永不生效且不报错（2026-10-15 修复）。
  */
+/**
+ * 评价列表排序方式 —— **逐值镜像后端** `item-service/domain/enums/ReviewSortEnum.java`
+ * （`NEWEST("newest")` / `HIGHEST("highest")` / `LOWEST("lowest")`）。
+ *
+ * ⚠️ 曾经的线上缺陷：页面写了 `sort=oldest` —— 后端**没有这个取值**。更糟的是它不是
+ * 报错而是**静默**：`ReviewSortEnum.fromCode()` 对未知码回退 `NEWEST` ⇒ 用户点「最早」
+ * 得到的是「最新」，且无任何提示。故此处用**字面量联合类型**把非法值变成编译期错误，
+ * 并在发送前再做一次运行期白名单校验（防未经类型的 JS 调用方）。
+ *
+ * 「按时间正序（最旧优先）」属**后端能力缺口**（`ReviewSortEnum` 无该取值、
+ * `ReviewFilterReq.sort` 注释也仅列 newest/highest/lowest），前端**不得**私自定义编码。
+ */
+export const REVIEW_SORT = {
+  NEWEST: 'newest',
+  HIGHEST: 'highest',
+  LOWEST: 'lowest',
+} as const;
+
+/** 合法的排序码联合类型（`'newest' | 'highest' | 'lowest'`）。 */
+export type ReviewSort = (typeof REVIEW_SORT)[keyof typeof REVIEW_SORT];
+
+/** 合法排序码清单（运行期白名单）。 */
+export const REVIEW_SORT_VALUES: readonly ReviewSort[] = Object.values(REVIEW_SORT);
+
 export interface ReviewFilter {
   rating?: number;
   hasMedia?: boolean;
-  sort?: string;
+  /** 排序码；只接受 `ReviewSort`（`oldest` 之类的非法码在编译期即被拒）。 */
+  sort?: ReviewSort;
 }
 
 /**
@@ -33,7 +58,8 @@ export function useProductReviews(spuId: string, filter: ReviewFilter = {}, page
   const params = new URLSearchParams({ page: String(page), size: String(size) });
   if (filter.rating) params.set('rating', String(filter.rating));
   if (filter.hasMedia) params.set('has_media', 'true');
-  if (filter.sort) params.set('sort', filter.sort);
+  // 运行期白名单：非法排序码**不发送**（宁可用后端默认 newest，也不发一个后端会静默回退的码）
+  if (filter.sort && REVIEW_SORT_VALUES.includes(filter.sort)) params.set('sort', filter.sort);
 
   return useQuery<PageResult<ReviewVO>>({
     queryKey: ['reviews', spuId, filter, page],

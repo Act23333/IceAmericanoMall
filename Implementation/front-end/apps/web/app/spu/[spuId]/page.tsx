@@ -113,6 +113,9 @@ export default async function SpuDetailPage({ params }: Props) {
     // ⇒ 恒 `undefined` ⇒ 自我排除从未生效（多推一排「你自己」）。
     relatedProducts = related?.records?.filter((p) => p.spu_id !== product.spu_id) ?? [];
   } catch {
+    // **次级区块的显式降级**（2026-10 B10 判定）：推荐位失败即整块隐身 —— 它不宣称任何
+    // 「暂无」语义（空数据时也不渲染该区块），故不会把「失败」说成「没有」。
+    // 商品本体（主数据）的失败另走 `error.tsx`（可重试），二者不得混为一谈。
     relatedProducts = [];
   }
 

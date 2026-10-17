@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { useProductReviews } from '@icedmall/api';
+import { useProductReviews, REVIEW_SORT, type ReviewSort } from '@icedmall/api';
 import { GlassCard } from '@icedmall/ui';
 import { timeAgo } from '@icedmall/utils';
 import { Heart, MessageSquare, Star, Image } from 'lucide-react';
+import { LoadFailedState } from '@/app/components/load-failed-state';
 
 const RATINGS = [
   { label: '全部', value: undefined },
@@ -12,9 +13,26 @@ const RATINGS = [
   { label: '中评', value: 3 },
   { label: '差评', value: 1 },
 ];
-const SORTS = [
-  { label: '最新', value: 'newest' },
-  { label: '最早', value: 'oldest' },
+
+/**
+ * 排序选项 —— **只列后端真的接受的取值**。
+ *
+ * 真源：item-service `domain/enums/ReviewSortEnum.java`
+ * （`NEWEST("newest")` / `HIGHEST("highest")` / `LOWEST("lowest")`；
+ * `ReviewFilterReq.sort` javadoc 同口径，缺省 `newest`）。
+ *
+ * ⚠️ 2026-10 B10 修复：旧实现在这里多给了一个 `{ label: '最早', value: 'oldest' }`，
+ * 而后端**没有** `oldest` —— 更糟的是它不报错也不为空：`ReviewSortEnum.fromCode()`
+ * 对未知码**静默回退 `NEWEST`** ⇒ 用户点「最早」看到的是「最新」，无任何提示。
+ *
+ * 「按时间正序（最旧优先）」属**后端能力缺口**（枚举里没有该取值），已在交付说明中登记；
+ * 前端**不得**私自定义 `oldest` 之类的编码 —— 编了也只会被后端静默吞掉。
+ * 取值本身由 `ReviewSort` 联合类型约束（非法码在**编译期**即被拒）。
+ */
+const SORTS: readonly { label: string; value: ReviewSort }[] = [
+  { label: '最新', value: REVIEW_SORT.NEWEST },
+  { label: '评分最高', value: REVIEW_SORT.HIGHEST },
+  { label: '评分最低', value: REVIEW_SORT.LOWEST },
 ];
 
 /**
@@ -30,9 +48,9 @@ const SORTS = [
 export function ReviewsSection({ spuId }: { spuId: string }) {
   const [rating, setRating] = useState<number | undefined>();
   const [hasMedia, setHasMedia] = useState(false);
-  const [sort, setSort] = useState('newest');
+  const [sort, setSort] = useState<ReviewSort>(REVIEW_SORT.NEWEST);
 
-  const { data, isLoading } = useProductReviews(spuId, { rating, hasMedia: hasMedia || undefined, sort });
+  const { data, isLoading, isError, error, isFetching, refetch } = useProductReviews(spuId, { rating, hasMedia: hasMedia || undefined, sort });
 
   const handleLike = async (reviewId: number) => {
     try {
@@ -107,7 +125,7 @@ export function ReviewsSection({ spuId }: { spuId: string }) {
       </div>
 
       {/* Loading */}
-      {isLoading && (
+      {isLoading && !isError && (
         <div className="space-y-3">
           {[1, 2].map((i) => (
             <div key={i} className="h-24 rounded-xl bg-warm-gray-100 animate-pulse" />
@@ -115,14 +133,26 @@ export function ReviewsSection({ spuId }: { spuId: string }) {
         </div>
       )}
 
+      {/* 失败态（区块级）—— 旧实现请求失败会落到「暂无评价」，与"确实没人评价"不可分辨 */}
+      {isError && (
+        <LoadFailedState
+          compact
+          title="评价加载失败"
+          description="没能获取到评价列表（不是「暂无评价」）。请重试。"
+          detail={error instanceof Error ? error.message : undefined}
+          onRetry={() => { void refetch(); }}
+          retrying={isFetching}
+        />
+      )}
+
       {/* Empty */}
-      {(data?.records?.length ?? 0) === 0 && (
+      {!isError && (data?.records?.length ?? 0) === 0 && (
         <p className="text-sm text-text-tertiary text-center py-12">暂无评价</p>
       )}
 
       {/* Review list */}
       <div className="space-y-4">
-        {data?.records?.map((r) => (
+        {!isError && data?.records?.map((r) => (
           <GlassCard key={r.id} className="p-4" blur="sm">
             <div className="flex items-center gap-2 mb-2">
               <span className="flex items-center gap-0.5 text-amber text-xs">

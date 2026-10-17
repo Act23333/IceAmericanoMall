@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { ProductCard, SearchBar } from '@icedmall/ui';
 import { spuHref } from '@icedmall/utils';
 import type { PageResult, ProductSearchVO, ProductVO, CategoryVO } from '@icedmall/api';
+import { LoadFailedState } from '@/app/components/load-failed-state';
 
 const API = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -85,12 +86,32 @@ export default function SearchPage() {
   const [hotKeywords, setHotKeywords] = useState<string[]>([]);
   const [recommend, setRecommend] = useState<ProductVO[]>([]);
   const [loading, setLoading] = useState(false);
+  /** 搜索结果失败原因（与「没有找到商品」严格区分 —— 旧实现把两者都渲染成空态）。 */
+  const [resultError, setResultError] = useState<string | null>(null);
+  /** 推荐位失败原因（首页商品流失败不能静默隐身）。 */
+  const [recommendError, setRecommendError] = useState<string | null>(null);
+  const [recommendLoading, setRecommendLoading] = useState(false);
+
+  const loadRecommend = () => {
+    setRecommendLoading(true);
+    setRecommendError(null);
+    fetch(`${API}/api/item/spu/page?sort=sales&order=desc&size=8`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.code === 200) setRecommend(j.data?.records || []);
+        else setRecommendError(j.msg || `接口返回 ${j.code}`);
+      })
+      .catch((e: unknown) => setRecommendError(e instanceof Error ? e.message : '网络异常'))
+      .finally(() => setRecommendLoading(false));
+  };
 
   // 初始加载：热门词 + 推荐商品 + 分类 (仅一次)
   useEffect(() => {
+    // 热门词 / 分类栏是**次级装饰区块**（2026-10 B10 判定）：失败即隐身，不宣称「暂无」，
+    // 因此不会把「失败」说成「没有」。会宣称"没有"语义的两处（搜索结果、推荐商品）
+    // 已各自带失败态 + 重试，见下方 `resultError` / `recommendError`。
     fetch(`${API}/api/search/hot?limit=8`).then((r) => r.json()).then((j) => setHotKeywords(j.data || [])).catch(() => {});
-    fetch(`${API}/api/item/spu/page?sort=sales&order=desc&size=8`)
-      .then((r) => r.json()).then((j) => setRecommend(j.data?.records || [])).catch(() => {});
+    loadRecommend();
     fetch(`${API}/api/item/category/tree`).then((r) => r.json()).then((j) => setCategories(j.data || [])).catch(() => {});
   }, []);
 
@@ -105,6 +126,7 @@ export default function SearchPage() {
     setCategoryId(catId);
     setPage(pg);
     setLoading(true);
+    setResultError(null);
 
     // 后端 `SearchPageReq` 经 `@QueryModel` 绑定（Jackson + 全局 SNAKE_CASE）→ 线上名 `category_id`
     // （契约 §SE1）；camelCase `categoryId` 会被静默忽略 → 搜索结果页的品类筛选整体失效。
@@ -118,10 +140,18 @@ export default function SearchPage() {
     fetch(`${API}/api/search/spu?${sp.toString()}`)
       .then((r) => r.json())
       .then((j) => {
-        if (j.code === 200) setData(j.data);
-        else setData({ records: [], total: 0, size: 20, current: 1, pages: 0 });
+        if (j.code === 200) {
+          setData(j.data);
+        } else {
+          // ⚠️ 不得回落成 `{records: []}` —— 那会把「失败」伪装成「没有找到商品」
+          setData(null);
+          setResultError(j.msg || `接口返回 ${j.code}`);
+        }
       })
-      .catch(() => setData({ records: [], total: 0, size: 20, current: 1, pages: 0 }))
+      .catch((e: unknown) => {
+        setData(null);
+        setResultError(e instanceof Error ? e.message : '网络异常');
+      })
       .finally(() => setLoading(false));
 
     // URL 同步 —— 本页路由自身的 query（应用内标识符，保持 camelCase；非后端线上名，勿混为一谈）
@@ -166,8 +196,18 @@ export default function SearchPage() {
           </div>
         )}
 
-        {/* 推荐商品 */}
-        {recommend.length > 0 && (
+        {/* 推荐商品 —— 失败必须可见（旧实现 `.catch(() => {})` ⇒ 整块凭空消失）*/}
+        {recommendError && (
+          <LoadFailedState
+            compact
+            title="推荐商品加载失败"
+            description="没能获取到推荐商品（不是「没有推荐」）。"
+            detail={recommendError}
+            onRetry={loadRecommend}
+            retrying={recommendLoading}
+          />
+        )}
+        {!recommendError && recommend.length > 0 && (
           <div>
             <h3 className="text-xs tracking-wider text-warm-400 mb-4 font-medium">✨ 为你推荐</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -210,7 +250,7 @@ export default function SearchPage() {
       )}
 
       {/* 结果计数 */}
-      {data && <p className="text-sm text-warm-600 mb-4">"{keyword}" — 共 {data.total} 件商品</p>}
+      {data && !resultError && <p className="text-sm text-warm-600 mb-4">"{keyword}" — 共 {data.total} 件商品</p>}
 
       {/* Loading */}
       {loading && (
@@ -219,8 +259,18 @@ export default function SearchPage() {
         </div>
       )}
 
+      {/* 失败态 —— 与「没有找到商品」严格区分，并给重试 */}
+      {!loading && resultError && (
+        <LoadFailedState
+          title="搜索失败"
+          description="没能取到搜索结果（不是「没有找到商品」）。请重试。"
+          detail={resultError}
+          onRetry={() => doSearch(keyword, categoryId, page)}
+        />
+      )}
+
       {/* Results */}
-      {!loading && data && data.records.length > 0 && (
+      {!loading && !resultError && data && data.records.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {data.records.map((p) => (
             <div key={p.id} className="relative">
@@ -236,8 +286,8 @@ export default function SearchPage() {
         </div>
       )}
 
-      {/* Empty */}
-      {!loading && data && data.records.length === 0 && (
+      {/* Empty（只有"确实没有数据"才走这里）*/}
+      {!loading && !resultError && data && data.records.length === 0 && (
         <div className="text-center py-20">
           <div className="text-6xl select-none">🍃</div>
           <h2 className="mt-4 text-lg font-medium text-ink-black">没有找到 &quot;{keyword}&quot; 相关商品</h2>

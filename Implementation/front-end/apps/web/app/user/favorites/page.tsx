@@ -6,6 +6,7 @@ import { apiClient, type PageResult, type FavoriteVO } from '@icedmall/api';
 import { GlassCard } from '@icedmall/ui';
 import { formatPrice, spuHref } from '@icedmall/utils';
 import Link from 'next/link';
+import { LoadFailedState } from '@/app/components/load-failed-state';
 
 /**
  * `FavoriteVO` = { id, user_id, **spu_id**, **spu_name**, main_image, price, status, create_time }
@@ -34,7 +35,7 @@ export default function FavoritesPage() {
   const [page] = useState(1);
   const qc = useQueryClient();
 
-  const { data, isLoading } = useQuery<PageResult<FavoriteVO>>({
+  const { data, isLoading, isError, error, isFetching, refetch } = useQuery<PageResult<FavoriteVO>>({
     queryKey: ['favorites', page],
     queryFn: () => apiClient<PageResult<FavoriteVO>>(`/api/user/favorite?page=${page}&size=12`),
   });
@@ -59,7 +60,21 @@ export default function FavoritesPage() {
         </p>
       )}
 
-      {isLoading ? (
+      {/*
+        失败态先于空态判定 —— 旧实现只判 `isLoading` 与 `records.length`，
+        请求失败会被渲染成「暂无收藏」，与「确实没有收藏」不可分辨（B10 修复）。
+      */}
+      {isError && (
+        <LoadFailedState
+          title="收藏加载失败"
+          description="没能获取到收藏列表（不是「没有收藏」）。请重试。"
+          detail={error instanceof Error ? error.message : undefined}
+          onRetry={() => { void refetch(); }}
+          retrying={isFetching}
+        />
+      )}
+
+      {!isError && (isLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[1,2,3,4].map(i => <div key={i} className="aspect-square rounded-2xl bg-warm-100 animate-glass-shimmer" />)}
         </div>
@@ -127,7 +142,7 @@ export default function FavoritesPage() {
             );
           })}
         </div>
-      )}
+      ))}
     </div>
   );
 }
