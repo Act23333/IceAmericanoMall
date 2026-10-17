@@ -24,8 +24,8 @@ public class RecommendSpuVO implements Serializable {
     /** SPU 业务键（32-hex，{@code spu.spu_id}；前端回链 {@code GET /api/item/spu/{spuId}} 直接用）。 */
     private String spuId;
 
-    /** 商品名称。 */
-    private String name;
+    /** SPU 名 —— 线上键 {@code spu_name}（契约 §1.8④；P27 相似卡 / P35 搭配卡共用本卡）。 */
+    private String spuName;
 
     /** 主图。 */
     private String mainImage;

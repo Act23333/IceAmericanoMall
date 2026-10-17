@@ -1,6 +1,7 @@
 package org.icedamericanomall.arch;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
@@ -163,6 +164,57 @@ class IdWireRoundTripTest {
         }
         assertTrue(checkedClasses > 0 && checkedFields > 0,
                 "往返检查命中 " + checkedClasses + " 个类 / " + checkedFields + " 个字段 —— 命中面为 0 即门禁自身失效");
+    }
+
+    // ──────────────── 「两端同一次改动」护栏（契约 §1.8④） ────────────────
+
+    /**
+     * {@code SpuVO} ⇄ {@code SpuDetailCO} 往返守卫 —— <b>{@code spuName} 必须非空</b>。
+     *
+     * <p><b>为什么单独一条</b>：这两个类分别在 item-service 与 ia-api（跨模块、跨服务边界），
+     * 一个改名另一个不改时，<b>编译期毫无征兆</b>、静态扫描也各有命中面互不相干 ——
+     * 只有「把 item 侧的报文喂给契约侧的接收端」才能暴露：Jackson {@code SNAKE_CASE}
+     * 忽略未知键 + 本仓 Spring Boot 默认 {@code FAIL_ON_UNKNOWN_PROPERTIES=false}，
+     * 于是 {@code spu_name} 无声落成 {@code null}（AI 工具会显示「商品名: null」）。
+     * 本测试就是 2026-10-18「甲b」把两侧改名<b>钉在同一次改动</b>上的护栏。
+     *
+     * <p>两侧都通过 {@code target/classes} 的 URLClassLoader 装载（本模块刻意不依赖业务模块），
+     * 与 {@link #everyWireIdFieldShouldRoundTrip()} 同一装载面。
+     */
+    @Test
+    @DisplayName("SpuVO → SpuDetailCO 往返：spu_name 线上键两端同源，spuName 解码后必须非空")
+    void spuNameShouldSurviveBetweenItemDetailAndContract() throws Exception {
+        List<Path> classDirs = classDirectories();
+        assertTrue(!classDirs.isEmpty(),
+                "未发现任何模块的 target/classes —— 门禁自身失效（本测试须在全量构建后运行）");
+        URL[] urls = classDirs.stream().map(IdWireRoundTripTest::toUrl).toArray(URL[]::new);
+        URLClassLoader loader = new URLClassLoader(urls, IdWireRoundTripTest.class.getClassLoader());
+
+        Class<?> spuVoType = Class.forName("org.icedamericanomall.item.adapter.response.SpuVO", true, loader);
+        Class<?> coType = Class.forName("org.icedamericanomall.dto.SpuDetailCO", true, loader);
+
+        String spuName = "手工陶瓷茶杯";
+        Object spuVo = spuVoType.getDeclaredConstructor().newInstance();
+        spuVoType.getMethod("setSpuId", String.class).invoke(spuVo, "0f1e2d3c4b5a69788796a5b4c3d2e1f0");
+        spuVoType.getMethod("setSpuName", String.class).invoke(spuVo, spuName);
+
+        // 与生产同口径：SNAKE_CASE + 忽略未知键（Spring Boot 默认 FAIL_ON_UNKNOWN_PROPERTIES=false，
+        // 正是「单侧改名静默落 null」的成因，故必须原样复现而不是顺手收紧）。
+        ObjectMapper mapper = new ObjectMapper()
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+                .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        mapper.findAndRegisterModules();
+
+        String json = mapper.writeValueAsString(spuVo);
+        assertTrue(mapper.readTree(json).has("spu_name"),
+                "SpuVO 渲染结果缺少线上键 spu_name（契约 §1.8④）：" + json);
+
+        Object co = mapper.readValue(json, coType);
+        Object decoded = coType.getMethod("spuName").invoke(co);
+        org.junit.jupiter.api.Assertions.assertNotNull(decoded,
+                "SpuDetailCO.spuName 解码为 null —— 说明两侧名称键不同批（甲b 硬约束：同一 PR 内改完）：" + json);
+        assertEquals(spuName, decoded);
     }
 
     // ──────────────── 往返核心 ────────────────

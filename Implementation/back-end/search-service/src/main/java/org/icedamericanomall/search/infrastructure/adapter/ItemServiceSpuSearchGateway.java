@@ -97,7 +97,7 @@ public class ItemServiceSpuSearchGateway implements SpuSearchGateway {
     }
 
     private static SpuSearchHit toHit(SpuSearchItemCO item) {
-        return new SpuSearchHit(item.getId(), item.getSpuId(), item.getCategoryId(), item.getName(),
+        return new SpuSearchHit(item.getId(), item.getSpuId(), item.getCategoryId(), item.getSpuName(),
                 item.getDescription(), item.getBrand(), item.getMainImage(), item.getMinPrice(), item.getSoldCount());
     }
 }

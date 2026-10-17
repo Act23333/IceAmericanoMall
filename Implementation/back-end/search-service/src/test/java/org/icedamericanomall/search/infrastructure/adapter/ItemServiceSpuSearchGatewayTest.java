@@ -45,7 +45,7 @@ class ItemServiceSpuSearchGatewayTest {
         co.setId(id);
         co.setSpuId("bbbbbbbb00007000800000000000000" + id);
         co.setCategoryId(10L);
-        co.setName("无线蓝牙耳机" + id);
+        co.setSpuName("无线蓝牙耳机" + id);
         co.setDescription("主动降噪");
         co.setBrand("SoundMax");
         co.setMainImage("img");

@@ -50,14 +50,14 @@ export function ProductScroll({ products }: { products: ProductVO[] }) {
               <>
                 {/* 图片 */}
                 <div className="aspect-square rounded-xl overflow-hidden bg-warm-100">
-                  <img src={p.main_image} alt={p.name}
+                  <img src={p.main_image} alt={p.spu_name}
                     className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
                     loading="lazy" decoding="async" />
                 </div>
                 {/* 文案 */}
                 <div className="flex flex-col justify-center">
                   <p className="text-xs text-warm-400 uppercase tracking-widest">{p.brand || '冰美精选'}</p>
-                  <h3 className="mt-2 text-xl md:text-2xl font-light text-ink-black leading-snug">{p.name}</h3>
+                  <h3 className="mt-2 text-xl md:text-2xl font-light text-ink-black leading-snug">{p.spu_name}</h3>
                   <p className="mt-3 text-sm text-warm-600 line-clamp-2 leading-relaxed">{p.description}</p>
                   <div className="mt-4 flex items-baseline gap-3">
                     <span className="text-lg text-accent-green font-medium">

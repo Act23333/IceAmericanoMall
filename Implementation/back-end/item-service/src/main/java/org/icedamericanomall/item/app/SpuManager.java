@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.SpuVectorClient;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.dto.SpuDetailCO;
 import org.icedamericanomall.dto.SpuVectorHitCO;
 import org.icedamericanomall.item.adapter.assembler.SpuConverter;
 import org.icedamericanomall.item.adapter.assembler.SkuConverter;
@@ -149,6 +150,28 @@ public class SpuManager {
         return getSpuDetail(spuBusinessId);
     }
 
+    /**
+     * 商品详情 —— <b>内部契约出口</b>（I70 {@code GET /internal/item/spu/{spuId}}，契约 §4.14.5.2）。
+     *
+     * <p><b>不另建第二套装配</b>：直调 {@link #getSpuDetail(String)}（P2 唯一装配源：聚合装载、
+     * SKU 列表、最低价、促销标签），随后只做一次<b>纯投影</b>（{@code SpuVO} → {@code SpuDetailCO}）。
+     * 契约对 P38 写过的同一条纪律在此同样适用 —— 两套装配一定会漂移，
+     * 而「公开 P2 / 内部 I70 / 短码 P38」三者必须同源同形。
+     *
+     * <p><b>字段面</b>：{@code SpuDetailCO} 是 P2 装配结果的子集（不含 {@code skus} /
+     * {@code min_price} / {@code promotions} / {@code freight_template_id} / {@code comment_count}）；
+     * 其 {@code images} / {@code attributes} 两个历史列<b>不由 P2 装配携带</b>，故恒为
+     * {@code null} —— 与迁移前「经 Feign 读公开 P2 并解码成 {@code SpuDetailCO}」逐字段一致
+     * （那时同样取不到这两个字段），本批不借机新查一次库，避免与 P2 装配分叉。
+     *
+     * @param spuId SPU <b>业务键</b>（32-hex；形态校验在适配层）
+     * @return 商品详情契约对象（内部面不包 {@code Result} 信封，ADR-004）
+     * @throws BizException 商品不存在 / 已删除（{@code NO_RESOURCE_FOUND} → 真 404）
+     */
+    public SpuDetailCO getSpuDetailCO(String spuId) {
+        return spuConverter.toDetailCO(getSpuDetail(spuId));
+    }
+
     /** 商品发布（F2：绑定模板归属校验；SKU 经聚合工厂归一热销元数据）。 */
     @Transactional(rollbackFor = Exception.class)
     public void createSpu(Long sellerId, CreateSpuReq req) {
@@ -156,7 +179,7 @@ public class SpuManager {
             freightTemplateManager.requireBindable(sellerId, req.getFreightTemplateId());
         }
         Spu spu = Spu.publish(sellerId, req.getCategoryId(), req.getFreightTemplateId(),
-                req.getName(), req.getMainImage(), req.getDescription(), req.getBrand());
+                req.getSpuName(), req.getMainImage(), req.getDescription(), req.getBrand());
         spu.setSoldCount(0);
         spu.setCommentCount(0);
         spu.setStatus(SpuStatusEnum.ON_SHELF.getCode());
@@ -269,7 +292,7 @@ public class SpuManager {
             freightTemplateManager.requireBindable(sellerId, req.getFreightTemplateId());
         }
         Long spuTechnicalId = spu.getId();
-        spuRepository.updateEditable(spuTechnicalId, req.getName(), req.getMainImage(),
+        spuRepository.updateEditable(spuTechnicalId, req.getSpuName(), req.getMainImage(),
                 req.getDescription(), req.getBrand(), req.getCategoryId(), req.getFreightTemplateId());
 
         // 向量摄取钩子（ADR-046）：PATCH 后重读合并态（null 字段保留原值），无活动事务 → 直接旁路发送
@@ -439,7 +462,7 @@ public class SpuManager {
     private RecommendSpuVO toRecommendVO(Spu spu, Integer minPrice) {
         RecommendSpuVO vo = new RecommendSpuVO();
         vo.setSpuId(spu.getSpuId());
-        vo.setName(spu.getName());
+        vo.setSpuName(spu.getName());
         vo.setMainImage(spu.getMainImage());
         vo.setPrice(minPrice);
         vo.setSoldCount(spu.getSoldCount());

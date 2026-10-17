@@ -66,7 +66,7 @@ public class SpuVectorManager {
             return 0;
         }
         float[] vector = embeddingGateway.embed(
-                SpuVectorTextBuilder.build(co.getName(), co.getDescription(), co.getBrand()));
+                SpuVectorTextBuilder.build(co.getSpuName(), co.getDescription(), co.getBrand()));
         spuSearchGateway.upsertVectorDoc(toVectorDoc(co, vector));
         log.info("商品向量已写入: spuId={}", co.getSpuId());
         return 1;
@@ -111,7 +111,7 @@ public class SpuVectorManager {
         for (int i = 0; i < vector.length; i++) {
             embedding[i] = vector[i];
         }
-        return new SpuVectorDoc(co.getSpuId(), co.getName(), co.getDescription(), co.getBrand(),
+        return new SpuVectorDoc(co.getSpuId(), co.getSpuName(), co.getDescription(), co.getBrand(),
                 co.getCategoryId(), co.getMainImage(), co.getPrice(), co.getSoldCount(), embedding);
     }
 

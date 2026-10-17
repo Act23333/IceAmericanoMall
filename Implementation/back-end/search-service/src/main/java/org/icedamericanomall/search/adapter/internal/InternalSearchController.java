@@ -218,7 +218,7 @@ public class InternalSearchController {
     private static SpuVectorUpsertCO toCO(SpuVectorUpsertReq req) {
         SpuVectorUpsertCO co = new SpuVectorUpsertCO();
         co.setSpuId(req.spuId());
-        co.setName(req.name());
+        co.setSpuName(req.spuName());
         co.setDescription(req.description());
         co.setBrand(req.brand());
         co.setCategoryId(req.categoryId());

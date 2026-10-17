@@ -100,7 +100,7 @@ class InternalSearchControllerTest {
 
         Map<String, Object> body = new HashMap<>();
         body.put("spuId", SPU_ID);
-        body.put("name", "无线蓝牙耳机");
+        body.put("spuName", "无线蓝牙耳机");
         body.put("description", "主动降噪");
         body.put("price", 12900);
         mockMvc.perform(post(UPSERT_URL).contentType("application/json")
@@ -110,7 +110,7 @@ class InternalSearchControllerTest {
         ArgumentCaptor<SpuVectorUpsertCO> captor = ArgumentCaptor.forClass(SpuVectorUpsertCO.class);
         verify(spuVectorManager).upsert(captor.capture());
         assertEquals(SPU_ID, captor.getValue().getSpuId());
-        assertEquals("无线蓝牙耳机", captor.getValue().getName());
+        assertEquals("无线蓝牙耳机", captor.getValue().getSpuName());
         assertEquals("主动降噪", captor.getValue().getDescription());
         assertEquals(12900, captor.getValue().getPrice());
     }
@@ -120,7 +120,7 @@ class InternalSearchControllerTest {
     void shouldReturnZero_whenUpsertAndVectorUnavailable() throws Exception {
         Map<String, Object> body = new HashMap<>();
         body.put("spuId", SPU_ID);
-        body.put("name", "无线蓝牙耳机");
+        body.put("spuName", "无线蓝牙耳机");
 
         mockMvc.perform(post(UPSERT_URL).contentType("application/json")
                         .content(objectMapper.writeValueAsString(body)))
@@ -139,7 +139,7 @@ class InternalSearchControllerTest {
     }
 
     @Test
-    @DisplayName("I47 摄取 — 缺 name → 400")
+    @DisplayName("I47 摄取 — 缺 spuName → 400")
     void shouldReturn400_whenUpsertMissingName() throws Exception {
         mockMvc.perform(post(UPSERT_URL).contentType("application/json")
                         .content("{\"spuId\":9}"))

@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ADR-050/051/061/062 不变量门禁（CI 与本地均可运行）
+# ADR-050/051/061/062 + 契约 §1.8④ 不变量门禁（CI 与本地均可运行）
 #
 # 背景：业务 ID 的存储边界规则（BINARY(16) + IdGenerator + toBytes 参数）与
 # 「对外标识/寻址口径」（业务键单形态、路径变量显式、编解码唯一出口）属
 # 「文档约定 + 人工评审」型约束，mock 单测无法覆盖。本脚本把最关键的几条
 # 固化为机械检查，防止后续会话/多人协作再次漂移（2026-10-10 CR 结论；
 # 检查 4/5/6 为 ADR-061 §守卫与 ADR-062 §守卫 的落点）。
+#
+# 检查 7（2026-10-18「甲b」新增）= 契约 §1.8④「SPU 名称字段线上键一律 spu_name」：
+#   补的是既有 6 道闸的真空 —— 它们只查路径 / 错误码 / 查询参数 / 端点漂移与
+#   **标识**字段类型，**没有一道看名称字段**，于是「后端改名、前端没跟」
+#   （Jackson SNAKE_CASE 忽略未知键 → 静默 null，页面空白不报错）在 CI 上不可见。
 #
 # 用法：仓库根执行  bash Implementation/back-end/scripts/check-id-invariants.sh
 # CI：.github/workflows/ci.yml 在编译前调用；退出码非 0 即构建失败。
@@ -285,8 +290,158 @@ if [ -n "$hits6" ]; then
 fi
 
 
+# =============================================================================
+# 检查 7：SPU 名称字段的线上键必须是 spu_name（契约 §1.8④，2026-10-18 用户裁决「甲」）
+#
+# ── 为什么需要这一道（本批发现的真空）─────────────────────────────────
+# 上一批（甲a）把「凡报文中表示某个 SPU 名字的字段，线上键一律 spu_name」写进了契约，
+# 而当时仓库里**没有一道闸看字段级一致性**：检查 1-3 管 UUID/SQL 字面量、检查 4 管
+# **标识**字段的类型、检查 5 管路径变量、检查 6 管编码出口；`check-frontend-api-paths.mjs`
+# / `check-error-codes.mjs` / `check-query-param-naming.mjs` / `crosscheck-api-paths.mjs`
+# 只管**路径 / 错误码 / 查询参数 / 端点漂移**。于是「后端改名、前端没跟」或反之
+# （Jackson SNAKE_CASE 忽略未知键 → 字段静默落 null/undefined，页面空白而不报错）
+# 在 CI 上是**完全不可见**的 —— 本检查就是补这个真空。
+#
+# ── 断言 ────────────────────────────────────────────────────────────
+# A. 「SPU 载体」判定：命中面内**文件名**或**其中的嵌套类型名**含 `Spu` 的类
+#    （SpuVO / RecommendSpuVO / NoteDetailVO 的 SpuSummaryVO / SpuSearchVO /
+#     SpuDetailCO / SpuSearchItemCO / SpuVectorUpsert{CO,Req} / CreateSpuReq / UpdateSpuReq …）。
+#    非 SPU 实体的 `name`（CategoryVO / CouponVO / PromotionTagVO / RoleVO / CurrencyVO /
+#    SearchFacetsVO.brands[] …）不在命中面 —— 契约 §1.8④「不改清单」要求它们**一字不动**，
+#    本检查因此不做「凡 name 皆禁」的粗暴规则（那才会制造歧义）。
+# B. 载体类内**不得**再出现名字字段 `name` / `productName`（POJO 形态 `private String name;`、
+#    record 形态 `String name,` / `String name)`）—— 除非该行以 `spu_name` 显式钉名。
+#    只断言「有 spuName」不够：真正的坑是**两个键并存**。
+# C. 上一条的载体清单必须**齐全**（10 个报文载体逐个点名）—— 只查「已出现的字段」无法发现
+#    「有人把某个载体整段删了/改了名」，故清单本身也要被断言（文件缺失 = 失败）。
+# D. 白名单（唯一例外）：`HistoryVO.productName` + `@JsonProperty("product_name")`
+#    （契约 §1.9④ 登记的唯一保留旧键）。**白名单项陈旧即失败** —— 若该字段被改名/删注解，
+#    本检查直接红，逼人要么恢复例外、要么删掉白名单项，不允许「豁免悄悄失效」。
+# E. 白名单之外的任何 `@JsonProperty("product_name")` 一律失败（防「再登记一个旧键」）。
+# =============================================================================
+
+# C：必须存在的「SPU 名载体」报文类（逐条点名；缺失即失败，见断言 C）
+REQUIRED_SPU_NAME_CARRIERS='SpuVO.java RecommendSpuVO.java NoteDetailVO.java SpuSearchVO.java
+SpuVectorUpsertReq.java SpuDetailCO.java SpuSearchItemCO.java SpuVectorUpsertCO.java
+CreateSpuReq.java UpdateSpuReq.java'
+
+# D：白名单（唯一例外）—— 文件名 + 字段名 + 钉名注解，三者同时成立才放行
+NAME_EXCEPTION_FILE='HistoryVO.java'
+NAME_EXCEPTION_FIELD='productName'
+NAME_EXCEPTION_ANNOTATION='@JsonProperty("product_name")'
+
+SPU_CARRIER_FILES=()
+carrier7=0
+name_hits7=""
+
+for d in "${FORMAT_DIRS[@]}"; do
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    base=$(basename "$f")
+
+    is_carrier=0
+    case "$base" in
+      *Spu*) is_carrier=1 ;;
+    esac
+    # 嵌套类型名含 Spu（如 NoteDetailVO 内嵌 SpuSummaryVO）—— 该文件整体按载体检查
+    if [ "$is_carrier" -eq 0 ] \
+      && grep -qE '(^|[[:space:]])(public[[:space:]]+)?(static[[:space:]]+)?(final[[:space:]]+)?(class|record|interface)[[:space:]]+[A-Za-z0-9_]*Spu' "$f" 2>/dev/null; then
+      is_carrier=1
+    fi
+    [ "$is_carrier" -eq 0 ] && continue
+
+    carrier7=$((carrier7 + 1))
+    SPU_CARRIER_FILES+=("$f")
+
+    # B：载体内的名字字段（POJO 声明 / record 组件 / 以旧键显式钉名）
+    matches=$(grep -nE 'private[[:space:]]+(static[[:space:]]+)?(final[[:space:]]+)?String[[:space:]]+(name|productName)[[:space:]]*;|(^|[^A-Za-z0-9_])String[[:space:]]+(name|productName)[[:space:]]*[,)]|@JsonProperty\("(name|product_name)"\)' "$f" 2>/dev/null \
+      | grep -vE ':[0-9]+:[[:space:]]*(\*|//|/\*)' || true)
+    # 允许「同一行显式钉名为 spu_name」的写法（等价合规形态）
+    if [ -n "$matches" ]; then
+      matches=$(printf '%s\n' "$matches" | grep -v 'spu_name' || true)
+    fi
+    if [ -n "$matches" ]; then
+      name_hits7="${name_hits7}${f}: ${matches}"$'\n'
+    fi
+  done < <(find "$d" -type f -name '*.java' 2>/dev/null)
+done
+
+# 自证：一个 SPU 载体都没扫到 → 门禁自身失效（路径/命中面错误），不得据 [OK] 判定合规
+if [ "$carrier7" -eq 0 ]; then
+  echo "[FAIL] §1.8④：SPU 名称字段检查的命中面为 0 个载体类 —— 门禁自身失效（find 基准/命名基准错误），不得据 [OK] 判定合规。"
+  fail=1
+fi
+
+# C：逐条核对「必须存在的载体」并断言其声明 spuName
+missing7=""
+checked7=0
+for want in $REQUIRED_SPU_NAME_CARRIERS; do
+  found=""
+  for f in "${SPU_CARRIER_FILES[@]:-}"; do
+    [ -z "$f" ] && continue
+    if [ "$(basename "$f")" = "$want" ]; then
+      found="$f"
+      break
+    fi
+  done
+  if [ -z "$found" ]; then
+    missing7="${missing7}  - ${want}：命中面内未找到该载体类（文件被改名/删除？请同步本清单）"$'\n'
+    continue
+  fi
+  checked7=$((checked7 + 1))
+  if ! grep -qE '(private[[:space:]]+(static[[:space:]]+)?(final[[:space:]]+)?String[[:space:]]+spuName[[:space:]]*;)|((^|[^A-Za-z0-9_])String[[:space:]]+spuName[[:space:]]*[,)])' "$found" 2>/dev/null; then
+    missing7="${missing7}  - ${found}：未声明 spuName 字段（线上键必须渲染为 spu_name）"$'\n'
+  fi
+done
+
+if [ -n "$missing7" ]; then
+  echo "[FAIL] §1.8④：以下「SPU 名载体」缺失或未声明 spuName（契约：凡报文中表示某个 SPU 名字的字段，键名一律 spu_name）："
+  printf '%s' "$missing7"
+  fail=1
+fi
+
+if [ -n "$name_hits7" ]; then
+  echo "[FAIL] §1.8④：以下 SPU 载体仍用旧名称键（name / product_name）—— 线上键必须是 spu_name（同一实体只许一个名字；旧键残留会让前端按任一键取值时在另一侧静默 undefined）："
+  printf '%s' "$name_hits7"
+  fail=1
+fi
+
+# D：白名单项必须仍然成立（陈旧即失败）
+exception_ok=0
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  [ "$(basename "$f")" = "$NAME_EXCEPTION_FILE" ] || continue
+  if grep -qE "private[[:space:]]+String[[:space:]]+${NAME_EXCEPTION_FIELD}[[:space:]]*;" "$f" 2>/dev/null \
+    && grep -qF "${NAME_EXCEPTION_ANNOTATION}" "$f" 2>/dev/null; then
+    exception_ok=1
+  fi
+done < <(for d in "${FORMAT_DIRS[@]}"; do find "$d" -type f -name '*.java' 2>/dev/null; done)
+
+if [ "$exception_ok" -ne 1 ]; then
+  echo "[FAIL] §1.8④：白名单项已陈旧或失实 —— 命中面内已不存在「${NAME_EXCEPTION_FILE} 的 ${NAME_EXCEPTION_FIELD} 以 ${NAME_EXCEPTION_ANNOTATION} 钉名」这一登记例外。"
+  echo "       处置：若该例外确实已取消（改为 spu_name），请从本脚本删除该白名单项；若只是改名，请恢复字段与注解。"
+  fail=1
+fi
+
+# E：白名单之外不得再出现 product_name 钉名（防「再登记一个旧键」）
+hits7_pin=""
+for d in "${FORMAT_DIRS[@]}"; do
+  m=$(grep -rnF '@JsonProperty("product_name")' --include='*.java' "$d" 2>/dev/null \
+    | grep -vE ':[0-9]+:[[:space:]]*(\*|//|/\*)' \
+    | grep -v "/${NAME_EXCEPTION_FILE}:" || true)
+  if [ -n "$m" ]; then
+    hits7_pin="${hits7_pin}${m}"$'\n'
+  fi
+done
+if [ -n "$hits7_pin" ]; then
+  echo "[FAIL] §1.8④：以下位置把名字字段钉成了旧键 product_name —— 该旧键是**唯一**登记例外（${NAME_EXCEPTION_FILE}），不得扩散："
+  printf '%s' "$hits7_pin"
+  fail=1
+fi
+
+
 if [ "$fail" -eq 0 ]; then
-  echo "[OK] ID 不变量门禁通过（ADR-050/051/061/062：生成唯一出口 / 查询参数 byte[] / SQL 字面量禁令 / 线格式标识类型 / 外部路径变量口径 / 适配层无解析调用）"
-  echo "     命中面自证：线格式类型检查 ${SCANNED_DIRS} 个目录 + 路径变量检查 ${SCANNED_CTRL} 个 Controller（其中 SPU/SKU 路径方法内 ${checked5} 个路径变量，承载位别名 ${carrierAlias5} 个）+ 适配层编码出口检查 ${SCANNED_ADAPTERS} 个 adapter 目录（任一为 0 即失败）"
+  echo "[OK] ID 不变量门禁通过（ADR-050/051/061/062 + 契约 §1.8④：生成唯一出口 / 查询参数 byte[] / SQL 字面量禁令 / 线格式标识类型 / 外部路径变量口径 / 适配层无解析调用 / SPU 名称键 spu_name）"
+  echo "     命中面自证：线格式类型检查 ${SCANNED_DIRS} 个目录 + 路径变量检查 ${SCANNED_CTRL} 个 Controller（其中 SPU/SKU 路径方法内 ${checked5} 个路径变量，承载位别名 ${carrierAlias5} 个）+ 适配层编码出口检查 ${SCANNED_ADAPTERS} 个 adapter 目录 + SPU 名称键检查 ${carrier7} 个载体类（点名核对 ${checked7} 个必检载体，白名单例外 1 条）—— 任一为 0 即失败"
 fi
 exit "$fail"

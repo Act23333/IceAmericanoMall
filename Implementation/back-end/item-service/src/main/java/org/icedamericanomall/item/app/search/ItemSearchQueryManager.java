@@ -93,7 +93,7 @@ public class ItemSearchQueryManager {
         co.setId(card.id());
         co.setSpuId(card.spuId());
         co.setCategoryId(card.categoryId());
-        co.setName(card.name());
+        co.setSpuName(card.name());
         co.setDescription(card.description());
         co.setBrand(card.brand());
         co.setMainImage(card.mainImage());

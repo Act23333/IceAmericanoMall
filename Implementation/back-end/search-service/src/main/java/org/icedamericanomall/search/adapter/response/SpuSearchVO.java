@@ -21,7 +21,8 @@ public class SpuSearchVO implements Serializable {
     private Long id;
     private String spuId;
     private Long categoryId;
-    private String name;
+    /** SPU 名 —— 线上键 {@code spu_name}（契约 §1.8④；SE1 与 I28 同形，原 {@code name}）。 */
+    private String spuName;
     private String description;
     private String brand;
     private String mainImage;

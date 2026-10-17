@@ -14,7 +14,9 @@ import java.io.Serializable;
  * 非技术主键；本服务在文档落库边界解析技术键（publishTime 回填取数用）。
  *
  * @param spuId   SPU 业务键（32-hex，幂等键）
- * @param name        商品名（向量化文本主来源）
+ * @param spuName   SPU 名（向量化文本主来源；线上键 {@code spu_name}，契约 §1.8④ ——
+ *                  与发送侧 {@code SpuVectorUpsertCO.spuName} <b>同批改名</b>：
+ *                  一侧不改则 {@code @NotBlank} 直接 400，故两者必须同 PR）
  * @param description 商品描述（向量化文本）
  * @param brand       品牌（可选拼入向量化文本）
  * @param categoryId  分类ID
@@ -24,7 +26,7 @@ import java.io.Serializable;
  */
 public record SpuVectorUpsertReq(
         @NotBlank(message = "spuId 不能为空") String spuId,
-        @NotBlank(message = "name 不能为空") String name,
+        @NotBlank(message = "spuName 不能为空") String spuName,
         String description,
         String brand,
         Long categoryId,

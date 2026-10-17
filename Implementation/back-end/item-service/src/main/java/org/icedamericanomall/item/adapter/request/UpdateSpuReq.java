@@ -11,7 +11,12 @@ public class UpdateSpuReq implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
-    private String name;
+    /**
+     * SPU 名 —— 请求体键 {@code spu_name}（P4 商家编辑；契约 §1.8④）。
+     * <p><b>O2 裁决（2026-10-18）：写侧与读出侧同批收口</b>（原 {@code name}）；
+     * 局部更新语义：{@code null} = 本次不改名。
+     */
+    private String spuName;
     private String mainImage;
     private String description;
     private String brand;

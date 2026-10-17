@@ -71,7 +71,7 @@ public class SpuRecommendManager {
     private SpuVectorUpsertCO buildUpsertCO(Spu spu, Integer minPrice) {
         SpuVectorUpsertCO co = new SpuVectorUpsertCO();
         co.setSpuId(spu.getSpuId());
-        co.setName(spu.getName());
+        co.setSpuName(spu.getName());
         co.setDescription(spu.getDescription());
         co.setBrand(spu.getBrand());
         co.setCategoryId(spu.getCategoryId());

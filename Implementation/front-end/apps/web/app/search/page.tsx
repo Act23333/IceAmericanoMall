@@ -278,7 +278,7 @@ export default function SearchPage() {
               <ProductCard product={p} href={spuHref(p.spu_id) ?? undefined} />
               {keyword && (
                 <p className="mt-1 text-xs text-warm-500 px-1 truncate">
-                  <HighlightName name={p.name} keyword={keyword} />
+                  <HighlightName name={p.spu_name} keyword={keyword} />
                 </p>
               )}
             </div>

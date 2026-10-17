@@ -11,6 +11,11 @@ import org.springframework.stereotype.Component;
  * V3.0.2: @Tool — 商品详情查询，供 Search/Compare Subagent 使用。
  * <p>
  * 仅依赖领域端口 {@link SpuDetailPort}，Feign 调用在基础设施层（防腐层）。
+ *
+ * <p><b>承载层变更对本工具不可见（2026-10-18「甲b」，契约 §4.14.5.2 I70）</b>：
+ * 数据来源已由公开 P2 迁到内部面 {@code GET /internal/item/spu/{spuId}}（裸 CO、无
+ * {@code Result} 信封），但本类只与端口打交道 —— 渲染文本用的 {@code name} 是领域对象
+ * {@code SpuDetailInfo} 的字段（不进任何报文，§1.8④ 不改清单），故工具层零改动。
  */
 @Slf4j
 @Component

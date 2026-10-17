@@ -67,7 +67,7 @@ class SpuVectorManagerTest {
     private SpuVectorUpsertCO co(String name, String description, String brand) {
         SpuVectorUpsertCO co = new SpuVectorUpsertCO();
         co.setSpuId(SPU_ID);
-        co.setName(name);
+        co.setSpuName(name);
         co.setDescription(description);
         co.setBrand(brand);
         co.setCategoryId(1L);

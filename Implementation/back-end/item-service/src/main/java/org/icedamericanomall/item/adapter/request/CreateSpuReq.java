@@ -18,8 +18,15 @@ public class CreateSpuReq implements Serializable {
     @NotNull(message = "类目ID不能为空")
     private Long categoryId;
 
+    /**
+     * SPU 名 —— 请求体键 <b>{@code spu_name}</b>（P3 商品发布；契约 §1.8④）。
+     *
+     * <p><b>O2 裁决（2026-10-18）：写侧一并收口</b>（原 {@code name}）。理由：同一实体只许一个名字 ——
+     * 留着写侧 {@code name} 会形成「读出侧 {@code spu_name} / 写侧 {@code name}」的第三种口径，
+     * 下一个照 §1.8④ 强读法的人必然改错一侧。实测前端零调用 P3/P4，BREAKING 面仅商家端。
+     */
     @NotBlank(message = "商品名称不能为空")
-    private String name;
+    private String spuName;
 
     private String mainImage;
     private String description;

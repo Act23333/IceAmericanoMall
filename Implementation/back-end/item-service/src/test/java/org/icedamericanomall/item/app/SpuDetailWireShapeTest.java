@@ -45,6 +45,10 @@ import static org.mockito.Mockito.when;
  *
  * <p><b>命名策略对齐生产</b>：{@code application.yml} 声明 {@code SNAKE_CASE}，
  * 故这里用同一策略建 {@link ObjectMapper}，否则断言的是「Java 字段名」而不是「线上键名」。
+ *
+ * <p><b>2026-10-18「甲b」追加</b>：本类同时承担 §1.8④「SPU 名线上键一律 {@code spu_name}」的
+ * 线格式守卫（{@link #shouldExposeSpuNameKeyOnly()}）—— 顶层键必须是 {@code spu_name}
+ * 且<b>不得残留</b> {@code name}，见 {@code SpuNameWireKeyTest} 的成因说明。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("SpuVO 线格式守卫 —— P38 与 P2 逐字段同形 / 短码不进报文")
@@ -98,8 +102,14 @@ class SpuDetailWireShapeTest {
                 shortCodeResolver);
     }
 
-    /** 同一商品（在售，含两个 SKU）的读模型桩。 */
+    /** 同一商品（在售，含两个 SKU）的读模型桩 —— 含短码解析（P38 用）。 */
     private void stubSameSpu() {
+        stubDetailOnly();
+        when(shortCodeResolver.resolve(SHORT_CODE)).thenReturn(SPU_BUSINESS_ID);
+    }
+
+    /** 只桩 P2 详情所需的两次查询（短码解析不桩 —— Mockito 严格模式不容许多余桩）。 */
+    private void stubDetailOnly() {
         Spu spu = Spu.builder()
                 .id(SPU_TECHNICAL_ID).spuId(SPU_BUSINESS_ID).shortCode(SHORT_CODE)
                 .sellerId(5L).categoryId(1L).name("手工陶瓷茶杯").mainImage("https://cdn/x.jpg")
@@ -111,7 +121,6 @@ class SpuDetailWireShapeTest {
         when(skuRepository.findBySpuId(SPU_TECHNICAL_ID)).thenReturn(List.of(
                 Sku.builder().id(11L).spuId(SPU_TECHNICAL_ID).spec("白瓷").price(12900).status(1).build(),
                 Sku.builder().id(12L).spuId(SPU_TECHNICAL_ID).spec("青瓷").price(15900).status(1).build()));
-        when(shortCodeResolver.resolve(SHORT_CODE)).thenReturn(SPU_BUSINESS_ID);
     }
 
     @Test
@@ -141,6 +150,22 @@ class SpuDetailWireShapeTest {
                 "短码一旦进报文就升格为对外标识（§1.9⑧ 硬约束）: " + keys);
         assertFalse(keys.contains("short_code"));
         assertFalse(keys.contains("shortCode"));
+    }
+
+    @Test
+    @DisplayName("SPU 名线上键（§1.8④）：顶层键含 spu_name、且不含同名旧键 name")
+    void shouldExposeSpuNameKeyOnly() throws Exception {
+        stubDetailOnly();
+
+        JsonNode p2 = objectMapper.readTree(
+                objectMapper.writeValueAsString(spuManager.getSpuDetail(SPU_BUSINESS_ID)));
+
+        // 断言顶层（SpuVO 自身），不是嵌套 skus —— SkuVO 早就有 spu_name，
+        // 若只断言「键集含 spu_name」，SpuVO 漏改也会被 skus 掩盖成假绿。
+        assertEquals("手工陶瓷茶杯", p2.get("spu_name").asText(),
+                "SpuVO 的名称键必须渲染为 spu_name（契约 §1.8④）");
+        assertFalse(p2.has("name"),
+                "同名旧键不得残留（前端按 name 读会在另一侧静默 undefined）: " + keySet(p2));
     }
 
     @Test

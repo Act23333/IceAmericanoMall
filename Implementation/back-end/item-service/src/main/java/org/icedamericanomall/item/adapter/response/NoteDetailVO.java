@@ -48,7 +48,8 @@ public class NoteDetailVO implements Serializable {
         /** SPU 业务键（32-hex，{@code spu.spu_id}；ADR-058 §1 / ADR-061 §决策 2）。 */
         private String spuId;
 
-        private String name;
+        /** SPU 名 —— 线上键 {@code spu_name}（契约 §1.8④；原 {@code name}）。 */
+        private String spuName;
 
         private String mainImage;
 

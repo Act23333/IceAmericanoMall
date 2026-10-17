@@ -66,7 +66,7 @@ class SpuRecommendManagerTest {
         // ADR-061 §决策 2：I47 幂等键是 SPU 业务键（spu.spu_id 生成的 32-hex），不是技术键
         assertEquals(spu.getSpuId(), co.getSpuId());
         assertNotEquals("1", co.getSpuId(), "摄取幂等键不得退回技术键");
-        assertEquals("手机", co.getName());
+        assertEquals("手机", co.getSpuName());
         assertEquals("旗舰", co.getDescription());
         assertEquals("品牌A", co.getBrand());
         assertEquals(10L, co.getCategoryId());

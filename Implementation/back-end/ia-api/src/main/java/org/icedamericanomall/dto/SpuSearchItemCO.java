@@ -27,8 +27,8 @@ public class SpuSearchItemCO implements Serializable {
     /** 分类ID */
     private Long categoryId;
 
-    /** 商品名 */
-    private String name;
+    /** SPU 名（线上键 {@code spu_name}，契约 §1.8④；I62/I64/I65 同一形状，原 {@code name}） */
+    private String spuName;
 
     /** 描述 */
     private String description;

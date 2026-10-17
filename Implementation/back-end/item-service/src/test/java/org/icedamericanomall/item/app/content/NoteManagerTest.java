@@ -325,7 +325,7 @@ class NoteManagerTest {
         assertEquals(1, vo.getSpus().size());
         NoteDetailVO.SpuSummaryVO summary = vo.getSpus().get(0);
         assertEquals(bizOf(10L), summary.getSpuId(), "线格式必须是 32-hex 业务键，不得出技术键");
-        assertEquals("商品10", summary.getName());
+        assertEquals("商品10", summary.getSpuName());
         assertEquals(1250, summary.getMinPrice());
         verify(skuManager).getMinPriceMapBySpuIds(List.of(10L));
     }

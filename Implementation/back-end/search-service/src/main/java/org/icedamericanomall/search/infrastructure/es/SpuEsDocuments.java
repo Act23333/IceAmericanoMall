@@ -28,7 +28,7 @@ final class SpuEsDocuments {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("id", p.getId());
         doc.put("spuId", p.getSpuId());
-        doc.put("name", p.getName());
+        doc.put("name", p.getSpuName());
         doc.put("description", p.getDescription());
         doc.put("brand", p.getBrand());
         doc.put("categoryId", p.getCategoryId());

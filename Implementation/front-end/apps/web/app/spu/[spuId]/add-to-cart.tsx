@@ -75,7 +75,7 @@ export function AddToCart({ product }: AddToCartProps) {
       await add({
         skuId: sku.skuId,
         spuId: product.spu_id ?? null,
-        spuName: product.name,
+        spuName: product.spu_name,
         spec: sku.spec,
         image: sku.image || product.main_image || '',
         price: sku.price,

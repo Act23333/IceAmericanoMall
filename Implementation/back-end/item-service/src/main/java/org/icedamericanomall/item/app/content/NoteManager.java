@@ -288,7 +288,7 @@ public class NoteManager {
     private static NoteDetailVO.SpuSummaryVO toSummary(Spu spu, Integer minPrice, String spuBusinessId) {
         NoteDetailVO.SpuSummaryVO vo = new NoteDetailVO.SpuSummaryVO();
         vo.setSpuId(spuBusinessId);
-        vo.setName(spu.getName());
+        vo.setSpuName(spu.getName());
         vo.setMainImage(spu.getMainImage());
         vo.setMinPrice(minPrice);
         return vo;

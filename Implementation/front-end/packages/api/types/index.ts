@@ -279,11 +279,15 @@ export interface CategoryVO {
  * ⇒ `spu_id` **现在可以直接寻址详情页**（`/spu/{spu_id}` / `GET /api/item/spu/{spu_id}`）。
  * `id` 保留为资源行主键（§1.8 例外条款，仅作渲染 key / 比对自身），与寻址无关。
  *
- * ⚠️ **名称/主图键名（勿「顺手统一」）**：本 VO 的商品名线上键是 **`name`**（不是 `spu_name`）、
- * 主图是 **`main_image`** —— 依据后端 `item-service/.../adapter/response/SpuVO.java`
- * `private String name; private String mainImage;`（无 `@JsonProperty` 改写）。
- * `spu_name` 只出现在**需要回填 SPU 名的旁路 VO**（`SkuVO` / `CartItemVO` / `FavoriteVO` /
- * `FlashSaleVO` / `OrderItemVO` 等），与 `SpuVO` 不同类，不得互相套用。
+ * ⚠️ **名称键名（2026-10-18「甲b」，契约 §1.8④）**：本 VO 的商品名线上键是 **`spu_name`**
+ * （后端 `SpuVO.spuName` 经全局 `SNAKE_CASE` 渲染），主图是 **`main_image`**。
+ *
+ * > 历史教义已作废（勿再引用）：本段曾断言「商品名线上键是 `name`、不是 `spu_name`」。
+ * > 裁决「甲」把**凡报文中表示某个 SPU 名字的键**统一为 `spu_name` —— 因为裁决前同一概念
+ * > 有两个线上键（`SpuVO` 用 `name`，回填旁路 VO 用 `spu_name`），前端按任一键取值都会在
+ * > 另一侧**静默变 `undefined`**（不报错、只是显示空白），本会话多数「数据不显示」缺陷即此成因。
+ * > 唯一保留的旧键是 `HistoryVO.product_name`（契约 §1.9④ 登记的例外，勿顺手统一）。
+ * > 非 SPU 实体的 `name`（`CategoryVO` / `CouponVO` / `PromotionTagVO` / `RoleVO` …）**一律不动**。
  */
 export interface ProductVO {
   /** 资源行主键（技术键）。§1.8 例外条款 —— **仅**作渲染 key / 自身比对，不用于寻址。 */
@@ -292,8 +296,8 @@ export interface ProductVO {
   spu_id: string;
   seller_id: number;
   category_id: number;
-  /** SPU 名称（线上键为 `name`，见上方说明 —— **不是** `spu_name`）。 */
-  name: string;
+  /** SPU 名 —— 线上键 `spu_name`（契约 §1.8④；后端 `SpuVO.spuName`）。 */
+  spu_name: string;
   main_image: string;
   description: string;
   brand: string;
@@ -345,6 +349,9 @@ export interface SkuVO {
  * ⚠️ 名字里带 `product` 的**非 SPU 段**不属本口径、照旧保留（实测均在 trade-service）：
  * `/api/trade/seller/dashboard/product-stats`（`SellerDashboardController`）、
  * `/api/trade/admin/stats/top-products`（`AdminOrderController`）。
+ * ⚠️ **名称键（2026-10-18「甲b」，契约 §1.8④）**：SPU 名线上键为 **`spu_name`**
+ * （后端字段 `SpuSearchVO.spuName`）—— 与 `ProductVO`、`SkuVO`、`CartItemVO` 等**同一个键**，
+ * 前端不必为「搜索页 / 详情页」维护两套取值（那正是静默 `undefined` 的来源）。
  */
 export interface ProductSearchVO {
   /** 资源行主键（技术键，§1.8 例外）。 */
@@ -352,7 +359,8 @@ export interface ProductSearchVO {
   /** SPU 业务键（32-hex）。 */
   spu_id: string;
   category_id: number;
-  name: string;
+  /** SPU 名 —— 线上键 `spu_name`（契约 §1.8④；后端 `SpuSearchVO.spuName`）。 */
+  spu_name: string;
   description: string;
   brand: string;
   main_image: string;

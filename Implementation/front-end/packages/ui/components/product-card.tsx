@@ -24,7 +24,14 @@ export interface ProductCardData {
   id: number;
   /** SPU 业务键（32-hex）；回填缺失时为 null/undefined → 调用方不渲染链接。 */
   spu_id?: string | null;
-  name: string;
+  /**
+   * SPU 名 —— 线上键 **`spu_name`**（契约 §1.8④，2026-10-18「甲b」）。
+   *
+   * ★ 该键在三种来源上**同一个名字**：`ProductVO`（列表/详情）、`ProductSearchVO`（搜索）、
+   *   `RecommendSpuVO`（相似/搭配卡）—— 故本卡片只需读一处。历史坑：旧实现读 `name`，
+   *   与旁路 VO 的 `spu_name` 并存，前端按任一键取值都会在另一侧静默 `undefined`。
+   */
+  spu_name: string;
   main_image?: string | null;
   description?: string | null;
   brand?: string | null;
@@ -66,12 +73,12 @@ function CardContent({ product, variant = 'default' }: Omit<ProductCardProps, 'h
   return (
     <>
       <div className={cn('overflow-hidden bg-warm-100', variant === 'horizontal' ? 'w-1/3 shrink-0' : 'aspect-square w-full')}>
-        <img src={product.main_image ?? ''} alt={product.name}
+        <img src={product.main_image ?? ''} alt={product.spu_name}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           loading="lazy" decoding="async" />
       </div>
       <div className={cn('p-4', variant === 'horizontal' && 'flex flex-col justify-center flex-1')}>
-        <h3 className="text-sm font-medium text-ink-black line-clamp-2 leading-snug">{product.name}</h3>
+        <h3 className="text-sm font-medium text-ink-black line-clamp-2 leading-snug">{product.spu_name}</h3>
         {product.description && <p className="mt-1 text-xs text-warm-600 line-clamp-1">{product.description}</p>}
         <div className="mt-2 flex items-baseline gap-2">
           <span className="text-base font-semibold text-ink-black">¥{formatPrice(displayPriceCents(product))}</span>

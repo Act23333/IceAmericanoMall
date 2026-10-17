@@ -280,12 +280,12 @@ public class EsSpuSearchGateway implements SpuSearchGateway {
     /** 单商品向量化（fail-open）：失败记 WARN 返回 null（写入无向量文档），不中断整批。 */
     private float[] embedQuietly(SpuSearchItemCO spu) {
         String text = SpuVectorTextBuilder.build(
-                spu.getName(), spu.getDescription(), spu.getBrand());
+                spu.getSpuName(), spu.getDescription(), spu.getBrand());
         try {
             return embeddingGateway.embed(text);
         } catch (Exception e) {
             log.warn("商品向量生成失败（本次重建该商品无向量）: spuId={}, name={}, 原因: {}",
-                    spu.getId(), spu.getName(), e.getMessage());
+                    spu.getId(), spu.getSpuName(), e.getMessage());
             return null;
         }
     }

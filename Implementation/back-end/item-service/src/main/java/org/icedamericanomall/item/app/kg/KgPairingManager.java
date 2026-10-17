@@ -165,7 +165,7 @@ public class KgPairingManager {
     private RecommendSpuVO toCard(Spu spu, Integer minPrice) {
         RecommendSpuVO vo = new RecommendSpuVO();
         vo.setSpuId(spu.getSpuId());
-        vo.setName(spu.getName());
+        vo.setSpuName(spu.getName());
         vo.setMainImage(spu.getMainImage());
         vo.setPrice(minPrice);
         vo.setSoldCount(spu.getSoldCount());

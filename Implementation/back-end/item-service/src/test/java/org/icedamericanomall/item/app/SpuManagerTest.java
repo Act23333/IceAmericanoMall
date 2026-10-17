@@ -127,7 +127,7 @@ class SpuManagerTest {
     private CreateSpuReq createReq() {
         CreateSpuReq req = new CreateSpuReq();
         req.setCategoryId(10L);
-        req.setName("手机");
+        req.setSpuName("手机");
         req.setMainImage("img.jpg");
         req.setDescription("旗舰");
         req.setBrand("品牌A");
@@ -164,7 +164,7 @@ class SpuManagerTest {
 
         SpuVO vo = spuManager.getSpuDetail(businessKey(1L));
 
-        assertEquals("手机", vo.getName());
+        assertEquals("手机", vo.getSpuName());
         assertEquals(599900, vo.getMinPrice());
         assertEquals(1, vo.getSkus().size());
     }
@@ -209,7 +209,7 @@ class SpuManagerTest {
 
         SpuVO vo = spuManager.getSpuDetail(businessKey(1L));
 
-        assertEquals("手机", vo.getName());
+        assertEquals("手机", vo.getSpuName());
         assertNotNull(vo.getPromotions());
         assertTrue(vo.getPromotions().isEmpty());
     }
@@ -248,7 +248,7 @@ class SpuManagerTest {
         // ADR-061 §决策 2：I47 幂等键是 SPU 业务键（spu.spu_id 生成的 32-hex），不是技术键 1L
         assertEquals(saved.getSpuId(), co.getSpuId());
         assertNotEquals(saved.getId().toString(), co.getSpuId(), "摄取幂等键不得退回技术键");
-        assertEquals("手机", co.getName());
+        assertEquals("手机", co.getSpuName());
         assertEquals("旗舰", co.getDescription());
         assertEquals("品牌A", co.getBrand());
         assertEquals(10L, co.getCategoryId());
@@ -321,7 +321,7 @@ class SpuManagerTest {
         when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
 
         UpdateSpuReq req = new UpdateSpuReq();
-        req.setName("新款手机");
+        req.setSpuName("新款手机");
         req.setFreightTemplateId(5L);
         spuManager.updateSpu(businessKey(1L), 100L, req);
 
@@ -343,7 +343,7 @@ class SpuManagerTest {
                 Sku.builder().id(9L).spuId(1L).price(1200).status(1).build()));
 
         UpdateSpuReq req = new UpdateSpuReq();
-        req.setName("新款手机");
+        req.setSpuName("新款手机");
         req.setCategoryId(20L);
         spuManager.updateSpu(businessKey(1L), 100L, req);
 
@@ -353,7 +353,7 @@ class SpuManagerTest {
         // ADR-061 §决策 2：I47 幂等键是 SPU 业务键（spu.spu_id 生成的 32-hex），不是技术键 1L
         assertEquals(after.getSpuId(), co.getSpuId());
         assertNotEquals("1", co.getSpuId(), "摄取幂等键不得退回技术键");
-        assertEquals("新款手机", co.getName());
+        assertEquals("新款手机", co.getSpuName());
         assertEquals("旗舰", co.getDescription());
         assertEquals("品牌A", co.getBrand());
         assertEquals(20L, co.getCategoryId());
@@ -444,7 +444,7 @@ class SpuManagerTest {
         assertEquals(businessKey(3L), result.get(1).getSpuId());
         assertEquals(500, result.get(0).getPrice());
         assertEquals(11, result.get(0).getSoldCount());
-        assertEquals("手机", result.get(0).getName());
+        assertEquals("手机", result.get(0).getSpuName());
     }
 
     @Test
@@ -554,7 +554,7 @@ class SpuManagerTest {
         SpuVO first = spuManager.pageSpus(null, null, "手机", null, null, 1, 10)
                 .getRecords().get(0);
 
-        assertEquals("手机", first.getName());
+        assertEquals("手机", first.getSpuName());
         assertEquals(599900, first.getMinPrice());
     }
 
@@ -609,7 +609,7 @@ class SpuManagerTest {
         SpuVO vo = spuManager.getSpuDetailByCode(SHORT_CODE);
 
         // 与 P2 同一装配：若另建第二套逻辑，这里必然缺字段
-        assertEquals("手机", vo.getName());
+        assertEquals("手机", vo.getSpuName());
         assertEquals(599900, vo.getMinPrice());
         assertEquals(1, vo.getSkus().size());
     }

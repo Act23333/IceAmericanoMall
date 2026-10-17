@@ -125,7 +125,7 @@ class EsSpuSearchGatewayTest {
         // 32-hex 业务键（技术键参与构值，保证「不同技术键 → 不同业务键」；
         // 长度必须是 32 —— 少于/多于都不是合法 BINARY(16) 的 hex 形态，ADR-050）
         co.setSpuId(String.format("%032x", 0xB0000000L + id));
-        co.setName("无线蓝牙耳机" + id);
+        co.setSpuName("无线蓝牙耳机" + id);
         co.setDescription("主动降噪 头戴式");
         co.setBrand("SoundMax");
         co.setCategoryId(1L);
@@ -259,6 +259,9 @@ class EsSpuSearchGatewayTest {
         Map<String, Object> doc = SpuEsDocuments.toDocMap(item(1L), null);
 
         assertFalse(doc.containsKey("embedding"));
+        // ES 索引字段名 `name` **有意不变**（契约 §1.8④「不改清单」：索引字段不是报文键，
+        // 改名会孤立既有索引与 reindex 产物、收益为零）。收口的只是**VO 映射**：
+        // SpuSearchItemCO.spuName → 本 doc map 的 `name` 键（见 SpuEsDocuments.toDocMap）。
         assertEquals("无线蓝牙耳机1", doc.get("name"));
     }
 

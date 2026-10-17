@@ -29,9 +29,9 @@ public class SpuVectorUpsertCO implements Serializable {
     @NotBlank
     private String spuId;
 
-    /** 商品名称（向量化文本主来源） */
+    /** SPU 名（向量化文本主来源；线上键 {@code spu_name}，契约 §1.8④ / I47 入参，原 {@code name}） */
     @NotBlank
-    private String name;
+    private String spuName;
 
     /** 商品描述（向量化文本） */
     private String description;

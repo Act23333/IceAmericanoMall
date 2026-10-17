@@ -15,7 +15,16 @@ public class SpuVO implements Serializable {
     private String spuId;
     private Long sellerId;
     private Long categoryId;
-    private String name;
+    /**
+     * SPU 名 —— 线上键 <b>{@code spu_name}</b>（契约 §1.8④，2026-10-18 裁决「甲」）。
+     *
+     * <p>本字段原名 {@code name}（线上键也是 {@code name}），与 {@code SkuVO} / {@code CartItemVO} /
+     * {@code FavoriteVO} / {@code FlashSaleVO} / {@code OrderItemVO} 的 {@code spu_name} 形成
+     * 「同一实体两个线上键」：前端按任一键取值都会在另一侧<b>静默变 {@code undefined}</b>
+     * （不报错、只是显示空白）。故统一为语义自明的 {@code spu_name}，并由
+     * {@code scripts/check-id-invariants.sh} 检查 7 机械守卫。
+     */
+    private String spuName;
     private String mainImage;
     private String description;
     private String brand;

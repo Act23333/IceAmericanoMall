@@ -63,10 +63,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   try {
     const product = await getProduct(spuId);
     return {
-      title: product.name,
-      description: product.description || `${product.name} — 冰美商城精选好物`,
+      title: product.spu_name,
+      description: product.description || `${product.spu_name} — 冰美商城精选好物`,
       openGraph: {
-        title: product.name,
+        title: product.spu_name,
         description: product.description || '',
         images: product.main_image ? [product.main_image] : [],
       },
@@ -126,7 +126,7 @@ export default async function SpuDetailPage({ params }: Props) {
       {/* ── 主内容: 图片 + 信息 ── */}
       <div className="grid gap-10 md:grid-cols-2">
         {/* 左: 图片 */}
-        <ImageGallery images={images} alt={product.name} />
+        <ImageGallery images={images} alt={product.spu_name} />
 
         {/* 右: 商品信息 */}
         <div>
@@ -134,7 +134,7 @@ export default async function SpuDetailPage({ params }: Props) {
             <p className="text-xs tracking-[0.2em] text-accent-gold uppercase">{product.brand}</p>
           )}
           <h1 className="mt-2 text-2xl md:text-3xl font-light text-ink-black leading-tight">
-            {product.name}
+            {product.spu_name}
           </h1>
           {product.description && (
             <p className="mt-4 text-sm text-warm-600 leading-relaxed">{product.description}</p>
