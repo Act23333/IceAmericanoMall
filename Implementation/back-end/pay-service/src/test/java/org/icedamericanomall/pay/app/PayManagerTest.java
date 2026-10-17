@@ -15,6 +15,7 @@ import org.icedamericanomall.integration.payment.WechatCallbackResult;
 import org.icedamericanomall.pay.domain.enums.PayChannelEnum;
 import org.icedamericanomall.pay.domain.enums.PayStatusEnum;
 import org.icedamericanomall.pay.domain.enums.PayTypeEnum;
+import org.icedamericanomall.pay.domain.repository.InvoiceLinkCompensationRepository;
 import org.icedamericanomall.pay.domain.repository.PayOrderRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -95,7 +96,8 @@ class PayManagerTest {
     void setUp() {
         // 真实触达协作器（ADR-042）：锁死「条件置成功 → 买家触达」全链路到 NotificationClient
         payManager = new PayManager(payOrderService, payOrderConverter, orderClient, channelRouter,
-                new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService));
+                new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService,
+                        mock(InvoiceLinkCompensationRepository.class)));
     }
 
     @BeforeEach
@@ -363,8 +365,8 @@ class PayManagerTest {
     }
 
     @Test
-    @DisplayName("handleWechatCallback — 渠道号查不到支付单：抛 ORDER_NOT_FOUND 触发渠道重推")
-    void shouldThrowOrderNotFound_whenPayOrderMissing() {
+    @DisplayName("handleWechatCallback — 渠道号查不到支付单：抛 NO_RESOURCE_FOUND(1103)/404 触发渠道重推")
+    void shouldThrowNoResourceFound_whenPayOrderMissing() {
         when(channelRouter.parseWechatCallback(anyMap(), anyString()))
                 .thenReturn(wechatResult("ctn-not-exist", true, "SUCCESS"));
         when(payOrderService.getByChannelTradeNo("ctn-not-exist")).thenReturn(null);
@@ -372,7 +374,9 @@ class PayManagerTest {
         BizException ex = assertThrows(BizException.class,
                 () -> payManager.handleWechatCallback(Map.of(), "body"));
 
-        assertEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode());
+        // U11：查的是「支付单」不是「订单」，码名必须与实体对齐（1103/404，与 3009 同状态码，调用方零感知）
+        assertEquals(ErrorCode.NO_RESOURCE_FOUND, ex.getErrorCode());
+        assertNotEquals(ErrorCode.ORDER_NOT_FOUND, ex.getErrorCode());
         verify(orderClient, never()).updateOrderStatus(anyString(), anyInt());
     }
 

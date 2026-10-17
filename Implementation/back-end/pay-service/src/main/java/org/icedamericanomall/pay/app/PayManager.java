@@ -219,7 +219,7 @@ public class PayManager {
      * 处理微信支付回调（微信 v3：裸 JSON + {@code resource} 密文）。
      *
      * <p><b>时序</b>：通道适配层整包解析（验签 + AES-GCM 解密 + 提取，见 ADR-033）→ 非成功终态则
-     * 仅告警并返回（<b>不改支付单状态</b>）→ <b>按对外渠道号</b>查单（不存在抛 {@code ORDER_NOT_FOUND}）→
+     * 仅告警并返回（<b>不改支付单状态</b>）→ <b>按对外渠道号</b>查单（不存在抛 {@code NO_RESOURCE_FOUND}）→
      * 条件置成功（仅 {@code PENDING_PAY} 命中才通知订单待发货；未命中视为重复通知，静默返回）。
      *
      * <p><b>非成功终态（{@code CLOSED} / {@code PAYERROR} / {@code REVOKED} 等）为何不改状态</b>：
@@ -230,7 +230,7 @@ public class PayManager {
      * @param headers HTTP 请求头（微信签名头 {@code Wechatpay-*}）
      * @param rawBody 回调原始报文体
      * @throws BizException {@code ILLEGAL_REQUEST} 解析失败（控制器转 500 触发渠道重推）/
-     *                      {@code ORDER_NOT_FOUND} 支付单不存在
+     *                      {@code NO_RESOURCE_FOUND} 支付单不存在
      */
     public void handleWechatCallback(Map<String, String> headers, String rawBody) {
         WechatCallbackResult result = channelRouter.parseWechatCallback(headers, rawBody);
@@ -250,7 +250,7 @@ public class PayManager {
      * （当前仅 Mock），故此处保持既有「条件置成功」语义，不额外增加终态分支。
      *
      * @param params 支付宝异步通知表单参数
-     * @throws BizException {@code ILLEGAL_REQUEST} 验签失败 / {@code ORDER_NOT_FOUND} 支付单不存在
+     * @throws BizException {@code ILLEGAL_REQUEST} 验签失败 / {@code NO_RESOURCE_FOUND} 支付单不存在
      */
     public void handleAlipayCallback(Map<String, String> params) {
         if (!channelRouter.verifyAlipayCallback(params)) {
@@ -265,17 +265,23 @@ public class PayManager {
      * 回调确认收款：<b>按对外渠道号</b>查单 → 条件置成功 → 命中才通知订单。并发/重复回调安全
      * （仅受影响行数=1 的调用会推进订单状态）。
      *
+     * <p><b>错误承载（批次 R2 同口径）</b>：按渠道号查不到支付单 = <b>资源不存在</b>，抛
+     * {@code NO_RESOURCE_FOUND(1103)} / HTTP 404。此前抛 {@code ORDER_NOT_FOUND(3009)} 属<b>语义错位</b>
+     * —— 那个码名说的是「订单」，而这里查的实体是<b>支付单</b>；1103 与 3009 同为 404、
+     * {@code ErrorCategory} 同为 {@code CLIENT}，故调用方（渠道、前端）<b>零感知</b>，
+     * 只是把码名与实体对齐（与 I40/AD43/PAY6/I55 的处理一致）。
+     *
      * @param channelTradeNo  渠道回传的 {@code out_trade_no}（= 本地 {@code channel_trade_no}）
      * @param channelState    渠道交易状态串（落 {@code result_code} 供排障）
      * @param channelTxnId    渠道交易号（微信 {@code transaction_id}，仅日志）
-     * @throws BizException {@code ORDER_NOT_FOUND} 渠道号查不到支付单
+     * @throws BizException {@code NO_RESOURCE_FOUND} 渠道号查不到支付单
      */
     private void confirmPaid(String channelTradeNo, String channelState, String channelTxnId) {
         PayOrder payOrder = payOrderService.getByChannelTradeNo(channelTradeNo);
         if (payOrder == null) {
             log.error("支付单不存在（按对外渠道号查无）: channelTradeNo={}, channelState={}, channelTxnId={}",
                     channelTradeNo, channelState, channelTxnId);
-            throw new BizException(ErrorCode.ORDER_NOT_FOUND, "支付单不存在");
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "支付单不存在");
         }
         if (!payOrderService.markSuccessIfPending(payOrder.getPayOrderNo(), channelState)) {
             log.info("支付回调重复（支付单非待支付状态），忽略: payOrderNo={}, channelState={}",

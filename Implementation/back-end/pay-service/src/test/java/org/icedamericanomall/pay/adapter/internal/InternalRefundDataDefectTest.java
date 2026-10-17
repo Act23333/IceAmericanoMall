@@ -12,6 +12,7 @@ import org.icedamericanomall.pay.app.PayEventNotifier;
 import org.icedamericanomall.pay.app.PaymentChannelRouter;
 import org.icedamericanomall.pay.app.RefundManager;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
+import org.icedamericanomall.pay.domain.repository.InvoiceLinkCompensationRepository;
 import org.icedamericanomall.pay.domain.repository.PayOrderRepository;
 import org.icedamericanomall.pay.domain.repository.RefundOrderRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -89,6 +90,7 @@ class InternalRefundDataDefectTest {
     @Mock AfterSaleClient afterSaleClient;
     @Mock NotificationClient notificationClient;
     @Mock TradeInvoiceClient tradeInvoiceClient;
+    @Mock InvoiceLinkCompensationRepository invoiceLinkCompensationRepository;
 
     private MockMvc mockMvc;
 
@@ -96,7 +98,8 @@ class InternalRefundDataDefectTest {
     void setUp() {
         RefundManager refundManager = new RefundManager(refundOrderService, payOrderService, channelRouter,
                 balanceClient, new RefundConverterImpl(),
-                new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService));
+                new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService,
+                        invoiceLinkCompensationRepository));
         OrderRefundManager orderRefundManager = new OrderRefundManager(refundOrderService, payOrderService,
                 refundManager, new RefundConverterImpl());
         mockMvc = MockMvcBuilders.standaloneSetup(

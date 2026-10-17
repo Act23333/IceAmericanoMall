@@ -14,6 +14,7 @@ import org.icedamericanomall.pay.adapter.assembler.RefundConverterImpl;
 import org.icedamericanomall.pay.domain.enums.PayChannelEnum;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
 import org.icedamericanomall.pay.domain.model.refundorder.RefundOrder;
+import org.icedamericanomall.pay.domain.repository.InvoiceLinkCompensationRepository;
 import org.icedamericanomall.pay.domain.repository.PayOrderRepository;
 import org.icedamericanomall.pay.domain.repository.RefundOrderRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -69,6 +70,7 @@ class RefundResumeManagerTest {
     @Mock AfterSaleClient afterSaleClient;
     @Mock NotificationClient notificationClient;
     @Mock TradeInvoiceClient tradeInvoiceClient;
+    @Mock InvoiceLinkCompensationRepository invoiceLinkCompensationRepository;
 
     private RefundResumeManager resumeManager;
 
@@ -76,7 +78,8 @@ class RefundResumeManagerTest {
     void setUp() {
         RefundManager refundManager = new RefundManager(refundOrderService, payOrderService, channelRouter,
                 balanceClient, new RefundConverterImpl(),
-                new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService));
+                new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService,
+                        invoiceLinkCompensationRepository));
         resumeManager = new RefundResumeManager(refundOrderService, payOrderService, channelRouter, refundManager);
     }
 

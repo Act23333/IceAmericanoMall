@@ -20,6 +20,7 @@ import org.icedamericanomall.pay.adapter.response.RefundVO;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
 import org.icedamericanomall.pay.domain.model.refundorder.RefundOrder;
 import org.icedamericanomall.pay.domain.enums.RefundStatusEnum;
+import org.icedamericanomall.pay.domain.repository.InvoiceLinkCompensationRepository;
 import org.icedamericanomall.pay.domain.repository.PayOrderRepository;
 import org.icedamericanomall.pay.domain.repository.RefundOrderRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -78,6 +79,7 @@ class RefundManagerTest {
     @Mock AfterSaleClient afterSaleClient;
     @Mock NotificationClient notificationClient;
     @Mock TradeInvoiceClient tradeInvoiceClient;
+    @Mock InvoiceLinkCompensationRepository invoiceLinkCompensationRepository;
 
     private RefundManager refundManager;
 
@@ -85,7 +87,8 @@ class RefundManagerTest {
     void setUp() {
         refundManager = new RefundManager(refundOrderService, payOrderService, channelRouter,
                 balanceClient, new RefundConverterImpl(),
-                new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService));
+                new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService,
+                        invoiceLinkCompensationRepository));
     }
 
     private RefundCreateCO request() {

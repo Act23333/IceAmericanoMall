@@ -102,5 +102,12 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
         </dependency>
+        <!-- H2 内存库：仅测试用，为 invoice_link_compensation 的「唯一键幂等」提供真实数据库约束
+             （版本由父 pom 的 h2.version 管理；usage 同 cart-service / user-service 的 H2 测试） -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

@@ -15,6 +15,7 @@ import org.icedamericanomall.pay.domain.enums.PayChannelEnum;
 import org.icedamericanomall.pay.domain.enums.PayStatusEnum;
 import org.icedamericanomall.pay.domain.enums.PayTypeEnum;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
+import org.icedamericanomall.pay.domain.repository.InvoiceLinkCompensationRepository;
 import org.icedamericanomall.pay.support.InMemoryPayOrderRepository;
 import org.icedamericanomall.pay.support.RecordingPaymentClient;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,7 +82,7 @@ class PayChannelTradeNoFlowTest {
 
         payManager = new PayManager(payOrderRepository, new PayOrderConverterImpl(), orderClient, router,
                 new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient,
-                        payOrderRepository));
+                        payOrderRepository, mock(InvoiceLinkCompensationRepository.class)));
 
         OrderSummaryCO summary = new OrderSummaryCO();
         summary.setOrderNo(ORDER_NO);
@@ -166,13 +167,14 @@ class PayChannelTradeNoFlowTest {
         wechatClient.callbackOutTradeNo = ORDER_NO;
         BizException byOrderNo = assertThrows(BizException.class,
                 () -> payManager.handleWechatCallback(Map.of(), "{}"));
-        assertEquals(ErrorCode.ORDER_NOT_FOUND, byOrderNo.getErrorCode());
+        // U11：查的是支付单，资源不存在统一 NO_RESOURCE_FOUND(1103)/404（不是 3009「订单不存在」）
+        assertEquals(ErrorCode.NO_RESOURCE_FOUND, byOrderNo.getErrorCode());
 
         // ② 另一种历史混用：把 pay_order_no 当 out_trade_no
         wechatClient.callbackOutTradeNo = persisted.getPayOrderNo();
         BizException byPayOrderNo = assertThrows(BizException.class,
                 () -> payManager.handleWechatCallback(Map.of(), "{}"));
-        assertEquals(ErrorCode.ORDER_NOT_FOUND, byPayOrderNo.getErrorCode());
+        assertEquals(ErrorCode.NO_RESOURCE_FOUND, byPayOrderNo.getErrorCode());
 
         // 两次都不得推进支付单，也不得通知订单
         assertEquals(PayStatusEnum.PENDING_PAY.getCode(),

@@ -5,12 +5,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.AfterSaleClient;
 import org.icedamericanomall.client.NotificationClient;
 import org.icedamericanomall.client.TradeInvoiceClient;
+import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
 import org.icedamericanomall.dto.InvoicePartialRefundCO;
 import org.icedamericanomall.dto.InvoiceVoidCO;
+import org.icedamericanomall.pay.domain.enums.InvoiceLinkKindEnum;
 import org.icedamericanomall.pay.domain.enums.PayChannelEnum;
+import org.icedamericanomall.pay.domain.model.invoicelink.InvoiceLinkCompensation;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
 import org.icedamericanomall.pay.domain.model.refundorder.RefundOrder;
+import org.icedamericanomall.pay.domain.repository.InvoiceLinkCompensationRepository;
 import org.icedamericanomall.pay.domain.repository.PayOrderRepository;
 import org.springframework.stereotype.Component;
 
@@ -23,7 +27,8 @@ import org.springframework.stereotype.Component;
  * 样板（发送失败仅 log.warn，不重试、不回滚，绝不影响支付/退款主流程）；退款成功路径同时承接
  * 自 {@code RefundManager} 整体迁入的 I42 售后单回写（先 I42 回写、后买家触达，各自独立 try/catch），
  * 以及退款成功发票联动（PRD D4：退款金额 = 支付单全额 → I56 通知 trade 冲红/作废；
- * 部分退款 → I60 置 partial_refund_flag=1 待人工处理，US-INV-8）。
+ * 部分退款 → I60 置 partial_refund_flag=1 待人工处理，US-INV-8）。发票联动失败时落
+ * {@code invoice_link_compensation}（PENDING）补偿记录，让「静默丢失」变成「可补偿」。
  *
  * <p><b>事务纪律</b>：两个触发点（{@code PayManager#confirmPaid} / {@code payByBalance} 与
  * {@code RefundManager#markSuccessAndNotify} / {@code confirmRefunded}）均无本地事务包裹——
@@ -48,6 +53,7 @@ public class PayEventNotifier {
     private final AfterSaleClient afterSaleClient;
     private final TradeInvoiceClient tradeInvoiceClient;
     private final PayOrderRepository payOrderService;
+    private final InvoiceLinkCompensationRepository invoiceLinkCompensationRepository;
 
     /**
      * 支付成功买家触达（ADR-042）—— 站内信携带订单号 + 实付金额。
@@ -130,10 +136,18 @@ public class PayEventNotifier {
      *       管理端"部分退款待人工处理"筛选人工收敛，Phase 2 再按金额精确部分红字）。</li>
      * </ul>
      *
-     * <p><b>fail-open 双保险</b>：{@code TradeInvoiceClientFallback} 已兜一层降级告警，此处再捕获
-     * 任何异常仅 log.warn，绝不影响退款落账主流程（与 I42 回写同口径，两条分支同享该防御）。
+     * <p><b>降级三态（不是单层告警）</b>：{@code TradeInvoiceClientFallback} 已改为
+     * 「4xx 透传 / 其余抛 {@code BizException(SYSTEM_BUSY)}」——联动失败会<b>抛出来</b>，
+     * 不再静默。此处的 {@code catch} 是第二道闸，做两件事：
+     * <ol>
+     *   <li>退款主流程继续 fail-open（<b>退款优先</b>，PRD D4 口径不变）——异常绝不外溢；</li>
+     *   <li>落一条 {@code invoice_link_compensation}（{@code PENDING}，{@code kind} 记明是 I56 全额冲红
+     *       还是 I60 部分置标），把「静默丢失」升级为「可补偿」：后续由重试任务/管理端人工收敛。</li>
+     * </ol>
+     * 补偿记录本身的落库失败同样被吞掉并打 error —— 写不进补偿表也绝不能影响退款落账。
      */
     private void triggerInvoiceLinkage(RefundOrder refundOrder) {
+        InvoiceLinkKindEnum kind = null;
         try {
             if (isBlank(refundOrder.getOrderNo()) || isBlank(refundOrder.getBizRef())) {
                 log.warn("[refund-invoice][skip] 订单号或幂等业务键缺失，发票联动跳过: refundNo={}",
@@ -147,11 +161,13 @@ public class PayEventNotifier {
                 return;
             }
             if (refundOrder.getRefundAmount().intValue() == payOrder.getAmount().intValue()) {
+                kind = InvoiceLinkKindEnum.VOID;
                 tradeInvoiceClient.voidOnFullRefund(
                         new InvoiceVoidCO(refundOrder.getOrderNo(), refundOrder.getBizRef()));
                 log.info("[refund-invoice][triggered] 全额退款已联动发票冲红/作废（I56）: orderNo={}, sceneRef={}",
                         refundOrder.getOrderNo(), refundOrder.getBizRef());
             } else {
+                kind = InvoiceLinkKindEnum.PARTIAL;
                 tradeInvoiceClient.markPartialRefund(
                         new InvoicePartialRefundCO(refundOrder.getOrderNo(), refundOrder.getBizRef()));
                 log.info("[refund-invoice][triggered] 部分退款已联动发票置标待人工处理（I60）: orderNo={}, sceneRef={}, refundAmount={}, paidAmount={}",
@@ -159,9 +175,59 @@ public class PayEventNotifier {
                         refundOrder.getRefundAmount(), payOrder.getAmount());
             }
         } catch (Exception e) {
-            log.warn("[refund-invoice][fail-open] 发票联动失败（不阻断退款主流程，管理端人工收敛）: refundNo={}, orderNo={}",
+            log.warn("[refund-invoice][fail-open] 发票联动失败（不阻断退款主流程，落补偿记录待收敛）: refundNo={}, orderNo={}",
                     refundOrder.getRefundNo(), refundOrder.getOrderNo(), e);
+            recordCompensation(refundOrder, kind, e);
         }
+    }
+
+    /**
+     * 落一条发票联动补偿记录（{@code PENDING}，幂等锚点 = {@code order_no + scene_ref + kind}）。
+     *
+     * <p><b>两层防御</b>：{@code kind == null} 表示联动的前置步骤（查支付单/判全额）就失败了，
+     * 无法判定该补哪一类联动 —— 此时不写库（{@code kind} 是 NOT NULL 的幂等锚点之一），
+     * 只打 warn 交人工核查。写库本身再包一层 {@code try/catch}：补偿表不可用也绝不外溢。
+     *
+     * @param refundOrder 退款单聚合（提供 orderNo / bizRef）
+     * @param kind        本次尝试的补偿类型；{@code null} 表示未能判定
+     * @param cause       联动失败原因（摘要落 {@code last_error}）
+     */
+    private void recordCompensation(RefundOrder refundOrder, InvoiceLinkKindEnum kind, Exception cause) {
+        if (kind == null) {
+            log.warn("[refund-invoice][compensation][skip] 未能判定补偿类型（联动前置步骤失败），需人工核查: "
+                    + "refundNo={}, orderNo={}", refundOrder.getRefundNo(), refundOrder.getOrderNo());
+            return;
+        }
+        try {
+            boolean created = invoiceLinkCompensationRepository.createPending(
+                    InvoiceLinkCompensation.newPending(refundOrder.getOrderNo(), refundOrder.getBizRef(),
+                            kind, describe(cause)));
+            if (created) {
+                log.warn("[refund-invoice][compensation][created] 已落补偿记录（PENDING，待重试/人工收敛）: "
+                                + "orderNo={}, sceneRef={}, kind={}",
+                        refundOrder.getOrderNo(), refundOrder.getBizRef(), kind.getCode());
+            }
+        } catch (Exception e) {
+            log.error("[refund-invoice][compensation][lost] 补偿记录落库失败（不阻断退款主流程，需人工核查）: "
+                            + "refundNo={}, orderNo={}, sceneRef={}, kind={}",
+                    refundOrder.getRefundNo(), refundOrder.getOrderNo(), refundOrder.getBizRef(),
+                    kind.getCode(), e);
+        }
+    }
+
+    /**
+     * 失败原因摘要（落 {@code last_error}，≤500 字符由聚合截断）—— 业务异常带上错误码，
+     * 便于「SYSTEM_BUSY 超时」与「数据缺陷」在补偿表里可直接区分。
+     */
+    private static String describe(Exception cause) {
+        if (cause == null) {
+            return null;
+        }
+        String prefix = cause.getClass().getSimpleName();
+        if (cause instanceof BizException bizException && bizException.getErrorCode() != null) {
+            prefix = prefix + "[" + bizException.getErrorCode().name() + "]";
+        }
+        return cause.getMessage() == null ? prefix : prefix + ": " + cause.getMessage();
     }
 
     /** 统一发送（fail-open）：任何异常仅告警，不外溢。 */

@@ -3,11 +3,17 @@ package org.icedamericanomall.pay.app;
 import org.icedamericanomall.client.AfterSaleClient;
 import org.icedamericanomall.client.NotificationClient;
 import org.icedamericanomall.client.TradeInvoiceClient;
+import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.InAppMessageSendReqCO;
 import org.icedamericanomall.dto.InvoicePartialRefundCO;
 import org.icedamericanomall.dto.InvoiceVoidCO;
+import org.icedamericanomall.pay.domain.enums.InvoiceLinkCompensationStatusEnum;
+import org.icedamericanomall.pay.domain.enums.InvoiceLinkKindEnum;
+import org.icedamericanomall.pay.domain.model.invoicelink.InvoiceLinkCompensation;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
 import org.icedamericanomall.pay.domain.model.refundorder.RefundOrder;
+import org.icedamericanomall.pay.domain.repository.InvoiceLinkCompensationRepository;
 import org.icedamericanomall.pay.domain.repository.PayOrderRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,14 +23,17 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -35,7 +44,9 @@ import static org.mockito.Mockito.when;
  * <p>覆盖：支付成功 / 退款成功两事件的站内信字段口径（type/recipient/content/linkUrl）、
  * 退款成功「先 I42 回写、后买家触达」顺序、fail-open（Notification/AfterSale 客户端异常不外溢）、
  * 收件人缺失跳过不发送；退款成功发票联动（PRD D4 / US-INV-8）：全额退款触发 I56 且参数正确
- * （orderNo/sceneRef）、部分退款触发 I60 置标且不触发 I56、联动异常不外溢、支付单缺失跳过。
+ * （orderNo/sceneRef）、部分退款触发 I60 置标且不触发 I56、联动异常不外溢、支付单缺失跳过；
+ * 联动失败<b>落补偿记录</b>（{@code invoice_link_compensation}，PENDING）：kind=VOID/PARTIAL 二分、
+ * 锚点（orderNo/sceneRef）正确、重复触发幂等、补偿落库本身失败也不外溢。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("PayEventNotifier 事件副作用协作器单元测试（ADR-042 + I56）")
@@ -52,12 +63,14 @@ class PayEventNotifierTest {
     @Mock private AfterSaleClient afterSaleClient;
     @Mock private TradeInvoiceClient tradeInvoiceClient;
     @Mock private PayOrderRepository payOrderService;
+    @Mock private InvoiceLinkCompensationRepository invoiceLinkCompensationRepository;
 
     private PayEventNotifier notifier;
 
     @BeforeEach
     void setUp() {
-        notifier = new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService);
+        notifier = new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient, payOrderService,
+                invoiceLinkCompensationRepository);
     }
 
     private PayOrder payOrder(Long buyerId, Integer amount) {
@@ -249,12 +262,116 @@ class PayEventNotifierTest {
     }
 
     @Test
-    @DisplayName("支付单缺失 — 无法判定全额/部分，跳过联动（fail-open，两分支均不触发）")
+    @DisplayName("支付单缺失 — 无法判定全额/部分，跳过联动（fail-open，两分支均不触发，也不落补偿：跳过 ≠ 失败）")
     void shouldSkipInvoiceLinkage_whenPayOrderMissing() {
         when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(null);
 
         notifier.onRefundSuccess(settledRefundOrder(AMOUNT));
 
         verifyNoInteractions(tradeInvoiceClient);
+        verifyNoInteractions(invoiceLinkCompensationRepository);
+    }
+
+    // ==================== 联动失败 → 落补偿记录（invoice_link_compensation，PENDING） ====================
+
+    @Test
+    @DisplayName("全额退款联动抛 SYSTEM_BUSY — 落补偿：kind=VOID(1)、status=PENDING(0)、orderNo/sceneRef 正确")
+    void shouldRecordVoidCompensation_whenInvoiceVoidThrowsSystemBusy() {
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder(BUYER_ID, AMOUNT));
+        doThrow(new BizException(ErrorCode.SYSTEM_BUSY, "trade-service 不可用"))
+                .when(tradeInvoiceClient).voidOnFullRefund(any(InvoiceVoidCO.class));
+        when(invoiceLinkCompensationRepository.createPending(any(InvoiceLinkCompensation.class))).thenReturn(true);
+
+        notifier.onRefundSuccess(settledRefundOrder(AMOUNT));
+
+        ArgumentCaptor<InvoiceLinkCompensation> captor =
+                ArgumentCaptor.forClass(InvoiceLinkCompensation.class);
+        verify(invoiceLinkCompensationRepository).createPending(captor.capture());
+        InvoiceLinkCompensation record = captor.getValue();
+        assertEquals(InvoiceLinkKindEnum.VOID.getCode(), record.getKind(), "全额退款分支的补偿类型必须是 VOID(1)");
+        assertEquals(InvoiceLinkCompensationStatusEnum.PENDING.getCode(), record.getStatus(), "落库初态必须是 PENDING(0)");
+        assertEquals(ORDER_NO, record.getOrderNo(), "补偿锚点的 orderNo 必须与退款单一致");
+        assertEquals(SCENE_REF, record.getSceneRef(), "补偿锚点的 sceneRef 必须 = refund_order.biz_ref");
+        assertEquals(0, record.getRetryCount(), "首次落库重试次数必须为 0");
+        assertNotNull(record.getNextRetryAt(), "next_retry_at 必须写入（调度器就绪后即刻可拾取）");
+        assertTrue(record.getLastError().contains("SYSTEM_BUSY"),
+                "last_error 须带错误码便于区分超时/数据缺陷: " + record.getLastError());
+        // 补偿记录不影响原主流程的两个前置副作用
+        verify(afterSaleClient).markRefunded(AFTER_SALE_ID);
+        verify(notificationClient).sendInAppMessage(any(InAppMessageSendReqCO.class));
+    }
+
+    @Test
+    @DisplayName("部分退款联动失败 — 落补偿：kind=PARTIAL(2)，sceneRef 同口径，不误记为 VOID")
+    void shouldRecordPartialCompensation_whenPartialRefundThrows() {
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder(BUYER_ID, AMOUNT));
+        doThrow(new BizException(ErrorCode.SYSTEM_BUSY, "trade-service 不可用"))
+                .when(tradeInvoiceClient).markPartialRefund(any(InvoicePartialRefundCO.class));
+        when(invoiceLinkCompensationRepository.createPending(any(InvoiceLinkCompensation.class))).thenReturn(true);
+
+        notifier.onRefundSuccess(settledRefundOrder(AMOUNT - 100));
+
+        ArgumentCaptor<InvoiceLinkCompensation> captor =
+                ArgumentCaptor.forClass(InvoiceLinkCompensation.class);
+        verify(invoiceLinkCompensationRepository).createPending(captor.capture());
+        assertEquals(InvoiceLinkKindEnum.PARTIAL.getCode(), captor.getValue().getKind(),
+                "部分退款分支的补偿类型必须是 PARTIAL(2)");
+        assertEquals(SCENE_REF, captor.getValue().getSceneRef());
+        assertEquals(ORDER_NO, captor.getValue().getOrderNo());
+        verify(tradeInvoiceClient, never()).voidOnFullRefund(any(InvoiceVoidCO.class));
+    }
+
+    @Test
+    @DisplayName("同一 (order_no,scene_ref,kind) 重复触发 — 幂等命中不外抛，两次锚点完全一致（DB 唯一键只留一行）")
+    void shouldStayIdempotent_whenSameCompensationTriggeredTwice() {
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder(BUYER_ID, AMOUNT));
+        doThrow(new BizException(ErrorCode.SYSTEM_BUSY, "trade-service 不可用"))
+                .when(tradeInvoiceClient).voidOnFullRefund(any(InvoiceVoidCO.class));
+        // 第一次新建（true），第二次撞 uk_order_scene_kind 归一为幂等命中（false）
+        when(invoiceLinkCompensationRepository.createPending(any(InvoiceLinkCompensation.class)))
+                .thenReturn(true, false);
+
+        assertDoesNotThrow(() -> notifier.onRefundSuccess(settledRefundOrder(AMOUNT)));
+        assertDoesNotThrow(() -> notifier.onRefundSuccess(settledRefundOrder(AMOUNT)));
+
+        ArgumentCaptor<InvoiceLinkCompensation> captor =
+                ArgumentCaptor.forClass(InvoiceLinkCompensation.class);
+        verify(invoiceLinkCompensationRepository, times(2)).createPending(captor.capture());
+        InvoiceLinkCompensation first = captor.getAllValues().get(0);
+        InvoiceLinkCompensation second = captor.getAllValues().get(1);
+        assertEquals(first.getOrderNo(), second.getOrderNo());
+        assertEquals(first.getSceneRef(), second.getSceneRef());
+        assertEquals(first.getKind(), second.getKind());
+    }
+
+    @Test
+    @DisplayName("补偿记录落库本身失败 — 不再外抛，退款主流程（I42 回写 + 买家触达）不受影响")
+    void shouldNotPropagate_whenCompensationPersistenceFails() {
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder(BUYER_ID, AMOUNT));
+        doThrow(new BizException(ErrorCode.SYSTEM_BUSY, "trade-service 不可用"))
+                .when(tradeInvoiceClient).voidOnFullRefund(any(InvoiceVoidCO.class));
+        when(invoiceLinkCompensationRepository.createPending(any(InvoiceLinkCompensation.class)))
+                .thenThrow(new DataAccessResourceFailureException("invoice_link_compensation 不可用"));
+
+        assertDoesNotThrow(() -> notifier.onRefundSuccess(settledRefundOrder(AMOUNT)));
+
+        verify(afterSaleClient).markRefunded(AFTER_SALE_ID);
+        verify(notificationClient).sendInAppMessage(any(InAppMessageSendReqCO.class));
+    }
+
+    @Test
+    @DisplayName("补偿摘要 — cause 无 message 时 lastError 退化为异常类型名，绝不给空串/空指针")
+    void shouldFallbackToTypeName_whenCauseHasNoMessage() {
+        when(payOrderService.getByPayOrderNo(PAY_ORDER_NO)).thenReturn(payOrder(BUYER_ID, AMOUNT));
+        doThrow(new IllegalStateException())
+                .when(tradeInvoiceClient).voidOnFullRefund(any(InvoiceVoidCO.class));
+        when(invoiceLinkCompensationRepository.createPending(any(InvoiceLinkCompensation.class))).thenReturn(true);
+
+        notifier.onRefundSuccess(settledRefundOrder(AMOUNT));
+
+        ArgumentCaptor<InvoiceLinkCompensation> captor =
+                ArgumentCaptor.forClass(InvoiceLinkCompensation.class);
+        verify(invoiceLinkCompensationRepository).createPending(captor.capture());
+        assertEquals("IllegalStateException", captor.getValue().getLastError());
     }
 }

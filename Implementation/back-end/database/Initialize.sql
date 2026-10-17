@@ -124,6 +124,8 @@ DROP TABLE IF EXISTS `exchange_rate`;
 DROP TABLE IF EXISTS `currency`;
 DROP TABLE IF EXISTS `promotion`;
 DROP TABLE IF EXISTS `member_level_rule`;
+-- 发票联动补偿（I56/I60 联动失败的承载表）—— 同样追加在「九、种子数据」之后，故 DROP 补在此处
+DROP TABLE IF EXISTS `invoice_link_compensation`;
 
 -- =====================================================================
 -- 二、核心业务表（初始基线 11 表 + V5.4 shop + V5.6 freight_template，已合并各版本 ALTER 的终态列）
@@ -1507,3 +1509,26 @@ INSERT IGNORE INTO `exchange_rate` (`code`, `rate_scaled`, `source`, `effect_tim
     ('KRW', 190000000, 'MANUAL', NOW(), '初始占位汇率，接入汇率 API 后日更覆盖（O9）'),
     ('GBP', 110800,    'MANUAL', NOW(), '初始占位汇率，接入汇率 API 后日更覆盖（O9）'),
     ('HKD', 1095000,   'MANUAL', NOW(), '初始占位汇率，接入汇率 API 后日更覆盖（O9）');
+
+-- =====================================================================
+-- 发票联动补偿（I56 全额退款冲红 / I60 部分退款置标 —— 联动失败的承载表）
+-- 由 pay-service 在发票联动失败时落一条 PENDING 记录（「静默丢失」升级为「可补偿」）；
+-- 调度器就绪后按 (status, next_retry_at) 拾取重试，或由管理端人工收敛。
+-- schema 直改本文件，无迁移文件（ADR-045）。
+-- =====================================================================
+
+-- 发票联动补偿记录（pay-service 域；幂等锚点 = order_no + scene_ref + kind）
+    CREATE TABLE `invoice_link_compensation` (
+    `id`            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `order_no`      BINARY(16)   NOT NULL COMMENT '关联订单号（orders.order_no 复制，UUIDv7 原始字节，ADR-050；与 refund_order.order_no 同口径）',
+    `scene_ref`     VARCHAR(64)  NOT NULL COMMENT '联动场景号（= refund_order.biz_ref：售后 AS:{afterSaleId}、拼团 GB:{orderNo}，ADR-049）',
+    `kind`          TINYINT      NOT NULL COMMENT '补偿类型：1=VOID 全额退款冲红/作废（I56） 2=PARTIAL 部分退款置标待人工处理（I60）',
+    `status`        TINYINT      NOT NULL DEFAULT 0 COMMENT '状态：0=PENDING 待补偿 1=DONE 已补偿 2=FAILED_PERMANENT 永久失败（重试耗尽/人工终止）',
+    `retry_count`   INT          NOT NULL DEFAULT 0 COMMENT '已重试次数（调度器每次拾取重试 +1）',
+    `next_retry_at` DATETIME     NULL COMMENT '下次可拾取时间（落库即当前时间——调度器就绪后即刻可拾取；重试失败按退避推迟）',
+    `last_error`    VARCHAR(500) NULL COMMENT '最近一次失败原因摘要（异常类型 + 消息，不含敏感细节；超长截断至 500）',
+    `create_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_order_scene_kind` (`order_no`, `scene_ref`, `kind`),
+    KEY `idx_status_next_retry` (`status`, `next_retry_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='发票联动补偿记录（I56 全额冲红 / I60 部分退款置标的联动失败承载，PENDING 待重试或人工收敛）';

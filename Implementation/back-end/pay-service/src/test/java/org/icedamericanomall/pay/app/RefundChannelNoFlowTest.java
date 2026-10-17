@@ -12,6 +12,7 @@ import org.icedamericanomall.pay.adapter.assembler.RefundConverterImpl;
 import org.icedamericanomall.pay.domain.enums.PayTypeEnum;
 import org.icedamericanomall.pay.domain.enums.RefundStatusEnum;
 import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
+import org.icedamericanomall.pay.domain.repository.InvoiceLinkCompensationRepository;
 import org.icedamericanomall.pay.domain.model.refundorder.RefundOrder;
 import org.icedamericanomall.pay.support.InMemoryPayOrderRepository;
 import org.icedamericanomall.pay.support.InMemoryRefundOrderRepository;
@@ -71,7 +72,7 @@ class RefundChannelNoFlowTest {
                 mock(AlipayPaymentClient.class), mock(BalanceClient.class));
 
         PayEventNotifier notifier = new PayEventNotifier(notificationClient, afterSaleClient,
-                tradeInvoiceClient, payOrderRepository);
+                tradeInvoiceClient, payOrderRepository, mock(InvoiceLinkCompensationRepository.class));
         refundManager = new RefundManager(refundOrderRepository, payOrderRepository, router,
                 mock(BalanceClient.class), new RefundConverterImpl(), notifier);
 

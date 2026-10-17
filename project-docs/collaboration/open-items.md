@@ -2,16 +2,16 @@
 
 > **用途**：跨会话的工作交底。不是规格文档，不需要进规格索引。
 > **维护规则**：任何一批工作落地后，同步更新本文件的「已完成 / 待办 / 已知未修 / 验证边界」四段。
-> **最后更新**：2026-10-18（批次 U1 派单时）
+> **最后更新**：2026-10-18（F 批收口：双门禁 + 发票联动补偿表 + U11）
 
 ## 0. 当前实测基线
 
 | 指标 | 值 | 唯一校验口 |
 |---|---|---|
-| 测试 | **2235 / 0 failures / 0 errors / 1 skipped** | `mvn -f Implementation/back-end/pom.xml clean test` |
+| 测试 | **2254 / 0 failures / 0 errors / 1 skipped** | `mvn -f Implementation/back-end/pom.xml clean test` |
 | 端点对账 | **matched 289 / codeOnly 0 / docOnly 43** | `node Implementation/back-end/scripts/extract-endpoints.mjs` |
 | 错误码 | **99** | `node Implementation/front-end/scripts/check-error-codes.mjs` |
-| 表 | **62** | `sync-doc-counts.mjs --list-tables` |
+| 表 | **63** | `sync-doc-counts.mjs --list-tables` |
 | 模块 | **19** | 根 `pom.xml` |
 | ADR | **001–065** | `project-docs/adr/README.md` |
 | 根文档计数 | 由脚本生成 | `sync-doc-counts.mjs --check --strict-tests`（已接入 CI `build` job） |
@@ -70,51 +70,41 @@
 - 14 条新用例，4 条直接读 `INFORMATION_SCHEMA.TABLE_CONSTRAINTS` 断言键集 + 列序 + 列类型；**三条变异验证**（删 `uk_phone_hash`/`uk_spu_id`/`uk_user_sku` → 各 3 例红，含 `expected:1 but was:2`，即生产"双账号/双购物车行"的等价物）
 - 9 处"缺列导致键无处可挂"按口径豁免并逐条说明（7 个 spu 表无 `short_code` 列、2 个 sku 表无 `sku_id` 列）
 
+### 1.10 F 批收口：让「4xx 透传」被机械强制（批次 F·收口）
+- **两只门禁（本批核心，回答「下一个工厂凭什么不回退」）**
+  - **结构层** `architecture-tests/.../FallbackCategoryGuardTest`：规则「`org.icedamericanomall.fallback..` 下类名含 `Fallback` 的类，**只要依赖 `BizException`（= 会抛错），就必须依赖 `UpstreamFailures`**」。豁免表**当前为空**且实现为「陈旧即失败」（登记项必须仍真实存在且仍在违规）。
+    - **实测坑（必记）**：本包的 `throw` 全写在 `create()` 返回的**匿名内部类**里，字节码落在 `XxxFallback$1.class`；只查外层类的直接依赖会得到**零命中 ⇒ 恒真空规则**（`javap -c SkuClientFallback.class | grep -c BizException` = **0**）。故判定按「外层类 + 其 `类名$*` 嵌套类」合并，并加两条**反空断言**（选中的工厂非空；触发前置条件的工厂非空）。
+  - **语义层** `ia-api/.../FallbackDegradeContractTest`：扫描 `target/classes` **自动发现**全部工厂（不维护类名清单），逐个方法验证两件事 —— ① `CLIENT` cause 下**不得**出现 `BizException`（4xx 必须透传 `UpstreamException`）；② `TRANSIENT` cause 下按**人工处置表**执行（`THROWS` 必须抛 `SYSTEM_BUSY` / `RETURNS` 必须不抛）。处置表**刻意不用「有没有 import BizException」自动推导**——那会让 M2 变异自动变绿。新工厂未登记即红、陈旧条目即红。
+- **M1 / M2 变异（本批实测，非推断）**：把 `OrderClientFallback` 改回无条件 `SYSTEM_BUSY` → **语义面 + 结构面同时红**；把 `RefundClientFallback` 的 `throw` 改成 `return null`（fail-closed→fail-open）→ **语义面红**（`shouldFollowDispositionTable_whenDownstreamUnavailable`）。两次均按 md5 复原并复跑全绿。
+- **`TradeInvoiceClientFallback` 静默 → 抛出**：`void` 的静默返回让调用方无法区分「联动成功/丢失」，会打出假的「已联动冲红」日志。改为 `classify` + 4xx 透传 + 其余抛 `SYSTEM_BUSY`；调用点 `PayEventNotifier#triggerInvoiceLinkage` 本就 `try/catch`（**退款优先不变**），`catch` 内落补偿记录。
+- **补偿承载（新增第 63 张表）**：`invoice_link_compensation`（`order_no` BINARY(16) / `scene_ref`=biz_ref / `kind` 1=VOID(I56) 2=PARTIAL(I60) / `status` 0=PENDING 1=DONE 2=FAILED_PERMANENT / `retry_count` / `next_retry_at` / `last_error`；`uk_order_scene_kind` + `idx_status_next_retry`）。pay-service 按四层落：`domain/model/invoicelink` 聚合 + `domain/enums` + `domain/repository` 端口 + `infrastructure/persistence`（PO/Mapper/Impl，`INSERT` 捕 `DuplicateKeyException` 归一为幂等命中）。写入再包一层 `try/catch`（补偿表挂了也绝不外溢到退款）。
+- **U11**：`PayManager#confirmPaid` 的「支付单不存在」`ORDER_NOT_FOUND(3009)` → `NO_RESOURCE_FOUND(1103)`（同 404 / CLIENT，零感知）；另两处「订单不存在」保留 3009。
+- **`package-info` 重写**：**删掉整张「逐 Client 语义速查表」**（正是「注释复写会漂的清单」这类事故源），改为指向两只门禁；修正「仅 authorization-service 开启熔断」这个错事实（实为 authorization/user/merchant/verification/marketing/ai/pay/logistics + search(ADR-052)，trade 走 Sentinel）。
+- **教训（补进 §5）**：**「量到的」和「读到的」会互相打架** —— 本轮开工时按会话交接单读到「16/30 已改、14 个未改」，实际并行会话已在 10 分钟内改完并提交，凭旧清单动手就会重复劳动/覆盖别人的工作。开工第一件事应是 `git log --oneline -5` + `git status`，而不是相信交接单。
+
 ---
 
 ## 2. 待办
 
 ### 2.1 在跑
-（当前无 agent 在跑 —— 连续 6 个子 agent 失败，已停止派单，改为人工推进）
+（当前无 agent 在跑）
 
-#### F 批现状（**未完成，未提交，勿当作已完成**）
-- **16 / 30 个 fallback 已改**（工作区未提交、**零验证**：没跑构建、没有测试、没有 ArchUnit 守卫）
-- 已改的 16 个：`Address / AfterSale / AuthContext / Balance / Cart / Coupon / Currency / FreightTemplate / GroupBuy / GroupBuyTeam / ItemSearch / Kg / KnowledgeVector / Logistics / Member / NoteVector`（+ 原有的 `SpuDetail`）
-- **14 个未改**：`Notification / Order / OrderRefund / Points / Promotion / Refund / Search / Sku / SpuVector / Task / TradeInvoice / User / UserProfile / Verification`
-- **16 个里 4 个 fail-open（无 throw）**：`Kg / KnowledgeVector / Member / NoteVector`；其余 12 个 fail-closed 抛 `SYSTEM_BUSY`（503/TRANSIENT/可重试）
-- **U11 未做**：`PayManager` 仍 9 处 `ORDER_NOT_FOUND`
-
-#### 剩余 14 个的**实测形态**（2026-10-18 逐个读源码所得，省去重新摸索）
-| 文件 | 行数 | 现状 | 判断 |
-|---|---|---|---|
-| `VerificationClientFallback` | 61 | 已返回 `fail(SERVICE_UNAVAILABLE)` | ✅ **本来就是 fail-closed**（不是缺陷）；仅缺 `CLIENT` 透传——但需先确认 verification-service 对"验证码错"是回 4xx 还是 200+ResultCode，**不要凭猜改** |
-| `UserClientFallback` | 31 | `getOrCreateUser` 返回 **`null`** | ❌ **真缺陷**：建档 fail-open，调用方可能 NPE/重复建档 → 应 fail-closed |
-| `PointsClientFallback` | 18 | `addPoints` 返回 **`0L`** | ⚠️ 需核实调用方语义：`0` 若被当成"已发放 0 积分"即**静默成功** |
-| `TradeInvoiceClientFallback` | 38 | 两个 `void` 静默成功 | ⚠️ javadoc 写明「管理端筛选人工收敛，PRD D4 已知风险」→ **刻意的取舍**，改 fail-closed 会改变发布链路行为，需裁决 |
-| `TaskClientFallback` | 34 | `TaskCompleteResultCO(false,0)` | ✅ 显式失败对象，合理 |
-| `SpuVectorClientFallback` | 46 | 哨兵 `-1` + 空列表，可由 reindex 补齐 | ✅ 合理 |
-| `UserProfileClientFallback` | 49 | 空列表（纯展示） | ✅ 合理 |
-| `Notification` / `Order` / `OrderRefund` / `Promotion` / `Refund` / `Search` / `Sku` | 33–69 | 均已有 `SYSTEM_BUSY`，缺的是 `category == CLIENT → throw upstream` 的透传分流 | 待改（机械） |
-
-#### 续做 F 的必读要点（省去重新摸索）
-1. **真实 API（我踩过坑）**：`UpstreamFailures.classify(Throwable)` 返回 **`ErrorCategory`**（不是 ErrorInfo）；
-   `UpstreamException.findIn(cause)` 返回可空；fail-closed 承载是 **`ErrorCode.SYSTEM_BUSY`**（不是 `BUSINESS_EXECUTION_EXCEPTION`——后者是 200/RULE/不可重试，曾误用在 `BalanceClientFallback`，已修）
-2. **统一形态**：`create()` 里取 `category` + `upstream`；每个方法内 `category == CLIENT && upstream != null` → `throw upstream`（透传）；否则 fail-open 返回降级值 + warn，或 fail-closed 抛 `SYSTEM_BUSY` + 私有 `DEGRADED_MESSAGE`
-3. **14 个的决策**（已判定，实现时核实调用方）：`Notification`/`Points`/`SpuVector`/`Task`/`UserProfile` → fail-open；
-   `Order`/`OrderRefund`/`Promotion`/`Refund`/`TradeInvoice`/`User` → fail-closed；
-   `Search` → CLIENT 透传 + 其余降级「搜索暂时不可用」（现为无条件 SYSTEM_BUSY）；
-   `Sku` → **写 fail-closed / 读可 fail-open**；
-   **`Verification` → fail-closed，安全关键（fail-open = 绕过验证），理由必须写进 javadoc**
-4. **验证未做**：M1（改回无条件 SYSTEM_BUSY 必须红）、M2（fail-closed 改成 fail-open 必须红）、
-   ArchUnit 守卫（扫 `*Fallback` 的 `create` 必须引用 `UpstreamFailures`）+ **守卫自身的变异**（塞一个绕过的必须红）、U11、一次干净全量
-5. **教训**：不要给子 agent 一个"读 17 个参照文件"的派单（上下文必爆）；**模板必须逐字取自已验证代码**
+#### F 批：**已收口**（工厂改造由并行会话提交 `2d93730b`；门禁与补偿由本批补齐，见 §1.10）
+- 30 个降级工厂**全部**按 `category` 分流。**不要再重新定级**——定级已进各自类注释 + 语义门禁的处置表。
+- 上一轮**唯一的真实教训**保留在此（细节已进代码/注释/`package-info`，不必再摸索）：
+  1. `UpstreamFailures.classify(Throwable)` 返回 **`ErrorCategory`**（不是 `ErrorInfo`）；`UpstreamException.findIn(cause)` 可空；
+     fail-closed 承载是 **`ErrorCode.SYSTEM_BUSY`**（503/TRANSIENT/重试），**不是** `BUSINESS_EXECUTION_EXCEPTION`（3000 / **200** / RULE / 不可重试）。
+  2. **不要给子 agent 派「先读 17 个参照文件」的活**（上下文必爆）。本批验证有效的派单形态：
+     「事实（已实测的数字/路径/API）+ 逐字模板 + 允许改的文件白名单 + 精确构建命令 + 要求贴原始输出」，
+     并让两个 agent 各占**互不重叠**的文件集（pay-service+database / ia-api 测试+architecture-tests）。
 
 ### 2.2 排队（按既定顺序）
 | 序 | 批 | 内容 |
 |---|---|---|
-| 1 | **F** | 18 个 fallback 接 `classify`（4xx 透传 / 5xx 才降级）|
+| ~~—~~ | ~~**F**~~ | ✅ **已完成**（30 工厂分流 + 双门禁 + 发票联动补偿表 + U11 + `package-info` 重写，见 §1.10）|
+| 1 | **补偿重试** | `invoice_link_compensation` 已被写入（PENDING），但**没有消费者**：需 `@Scheduled` 扫 `status=0 AND next_retry_at<=now()` → 重调 Feign → 成功置 DONE / 失败退避加 `retry_count`。本批只落了「表 + 写入」|
 | 2 | **H** | 小程序**仅文档**（用户已裁决：本轮完全排除代码）|
-| 3 | **D** | `RefundManager` 拆类（311→314 行，**改动前已超「类 ≤300 行」硬约束**）—— **先出测量报告**再决定"拆"还是"登记技术债" |
+| 3 | **D** | `RefundManager` 拆类（314 行，**改动前已超「类 ≤300 行」硬约束**）—— **先出测量报告**再决定"拆"还是"登记技术债"；⚠ `PayManager` 现 **344 行**同样超限 |
 | 4 | **Web 角色端开发** | seller / admin 两个 app（现状：各 1 个"开发中"占位页，后端已有 **65 admin / 30 seller** 端点）。用户定的优先级：**Web 各角色平台先补完**。S0（基座）曾被取消，需重启 |
 
 ### 2.3 审计交回、待排期
@@ -126,9 +116,9 @@
 | **U5** | 2 处缺索引（`sys_user_role.role_id` 非前导、`refund_order(status,create_time)`）+ 7 处冗余索引 + 6 处疑似死索引 | 低优先，**不建议现在删** |
 | **U6** | `invoice_title.uk_user_default` 与软删共存（软删行占默认位）；当前 `clearDefaultByUserId` 不带 `deleted=0` **恰好**没踩坑——"对的但是偶然的" | 记 ADR |
 | **U7** | `database/seed-data.js` 与 `Initialize.sql` 新种子**冲突**（它也写 `USERNAME/'admin'`，口令 `Dev123456`，命中同一唯一键；且仍是 ADR-050 前的非 hex 业务 ID）→ 退役或重写 | 待裁决 |
-| **U8** | `docker-compose.yml:46` 注释仍写「48 表终态」（实为 62）| 低 |
+| **U8** | `docker-compose.yml:46` 注释仍写「48 表终态」（实为 **63**）| 低 |
 | **U9** | 通知 `type` **无枚举化真源**（4 个服务各持私有常量，10 个值）→ 建议收口为 `ia-api` 共享枚举 | 架构，需立项 |
-| **U11** | **PAY2/PAY3 支付回调仍用 `3009`**（渠道号查不到支付单）—— R2 未改（属回调面），已登记契约 §12.2 ⑩；改则同为 404、调用方零感知 | 待裁决 |
+| ~~**U11**~~ | ✅ **已改（本批）**：`confirmPaid` 的「**支付单**不存在」用错成 `ORDER_NOT_FOUND(3009，「订单不存在」)` → 改 `NO_RESOURCE_FOUND(1103)`（同为 404 / CLIENT，调用方零感知，与 R2 的 I40/AD43/PAY6/I55 同口径）。`initiatePayment` / `initiateJsapiPayment` 的「订单不存在」**保留 3009**（语义正确） | 已完成 |
 | **U12** | **7 个 spu 表无 `short_code` 列、2 个 sku 表无 `sku_id` 列** ⇒ 这些 H2 表无法补唯一键（U1 豁免）。若日后参与写入用例，必须补列+补键 | 低（目前只读）|
 | **U13** | `FavoriteSpuBriefQueryImplH2Test` 的 `spu_id` 约束是**匿名**（H2 自动名），键在但名与生产 `uk_spu_id` 不同 | 低 |
 | **U10** | 契约 §二 覆盖率数字（98/40/58 → 实测 99/52）—— **A/B/C/E 批的 E 项就是删这些数字** | 在 R2 批内 |
@@ -140,7 +130,10 @@
 | 项 | 后果 |
 |---|---|
 | **小程序 17 个文件** | 仍读 `name`、仍打 `/api/item/product/**`、`categoryId` 静默失效 ⇒ **商品名显示空白**；用户已裁决本轮排除，只登记（见 `product/02` §九）|
-| **18 个 fallback 工厂** 仍是无条件 `SYSTEM_BUSY` | 只有 `SpuDetailClient` 修好了 4xx 透传 |
+| **发票联动补偿没有消费者** | `invoice_link_compensation` 已能落 PENDING 行，但**无调度器/重试者** ⇒ 目前只能人工按 SQL 收敛（§2.2 第 1 项）|
+| **联动前置步骤失败不可补偿** | 失败发生在「查支付单 / 比金额」时 `kind` 尚未判定，而 `kind` 是 NOT NULL 幂等锚点 ⇒ 只 warn 不落库（`recordCompensation` 已注释说明）|
+| **13 个方法在 4xx 下不透传** | 属既定豁免（纯旁路 fail-open / 事务已成功后的回写 / verification 用 200+结果码承载）。它们不抛错，故语义门禁只要求「不得改写成 BizException」；**这是设计选择，不是缺陷**，理由在各自类注释 |
+| **门禁的变异样本靠运行期 javac** | `FallbackCategoryGuardTest` 的变异样本放在 `architecture-tests/src/test/resources`，测试时用 `Compiler API` 现场编译（因为该模块刻意不依赖业务模块）。脆点是依赖 JDK 而非 JRE；若要简化，可给该模块加 `ia-common` test 依赖后移回 `src/test/java` |
 | `KgEdgeUpsertCO.srcId: Long` | 最后一个内部契约技术键（ADR-062 §E5）|
 | 评价缺「最旧优先」枚举 | 后端无该值；前端已删非法码 `oldest`（该码会被 `fromCode()` **静默回退 newest**）|
 | 通知缺多值/分组 `type` 筛选 | 前端逐值取数后合并（正确但多请求）|
@@ -155,9 +148,11 @@
 
 | 维度 | 状态 |
 |---|---|
-| 后端逻辑/编译 | ✅ 2217 测试全绿（**必须 JDK 21**）|
+| 后端逻辑/编译 | ✅ **2254 测试全绿**（0 failures / 0 errors / 1 skipped，20 模块 BUILD SUCCESS，2026-10-18 本批实测；**必须 JDK 21**）|
+| 降级透传门禁 | ✅ **两层面均做过变异验证**（M1 改回无条件 `SYSTEM_BUSY` → 语义+结构同时红；M2 fail-closed→fail-open → 语义红；复原后全绿）|
 | 契约 ⇄ 代码 | ✅ 端点对账 289/0/43 + `check-section7` |
-| 建库脚本 | ✅ **真库实跑**（MySQL 8.0.36，0 错误、62 表、幂等）|
+| 建库脚本 | ✅ 真库实跑（MySQL 8.0.36，0 错误、**62 表**、幂等）—— ⚠ **新增第 63 张表后未再真库实跑**，只有 H2 与静态核对 |
+| 根文档计数 | ✅ `sync-doc-counts.mjs --write` 已跑：2254 测试 / 63 表，内部复检 0 处残留差异 |
 | **运行态** | ❌ **未验证**。Nacos(8848) / Redis(6379) 均**不可达**，15 个服务起不来 ⇒ **登录链路、网关路由、Feign 调用、限流全程无运行态证据** |
 | **前端构建** | ❌ 未跑 `pnpm build`（环境约束）。仅 `tsc --noEmit` + 4 条静态脚本 |
 | **真实第三方** | ❌ 未验（微信支付/支付宝/短信/Geocoding 均为 mock 或未实测）|
@@ -167,7 +162,14 @@
 
 ### 环境事实
 - **JDK**：必须 `JAVA_HOME=/c/Users/18279/.jdks/ms-21.0.10`。**JDK 25 下 JaCoCo 0.8.12 无法 instrument Mockito mock，全仓必红**（曾把它误判为"并发损坏"）。
-- **MySQL**：本机 8.0.36 可用（凭据由用户提供，**不落仓库**）。`iam_smoke` 库已按 `Initialize.sql` 建好 62 表，可直接用于 DDL 核对。
+- **Maven 不在 PATH 上**（本轮实测，省得下次再找）：`/e/maven/apache-maven-3.9.7/bin`，本地仓库 `/e/maven/myRepository`。可用的最小命令：
+  ```bash
+  export JAVA_HOME=/c/Users/18279/.jdks/ms-21.0.10
+  export PATH=$JAVA_HOME/bin:/e/maven/apache-maven-3.9.7/bin:$PATH
+  cd Implementation/back-end && mvn -o -pl <module> test      # -o 离线；不要动根目录 clean 去和并行会话抢
+  ```
+- **注意 shell 归属**：后台任务若用 `pwsh` 里的 `bash`，可能命中 WSL 的 bash（`/c/...` 在 WSL 下不存在，整条脚本静默全败）。跑 `.sh` 要么用 `ops_bash`（Git Bash），要么显式调 `C:\Program Files\Git\bin\bash.exe`。
+- **MySQL**：本机 8.0.36 可用（凭据由用户提供，**不落仓库**）。`iam_smoke` 库已按 `Initialize.sql` 建好 62 表（**本轮新增第 63 张 `invoice_link_compensation` 后需重建**才能核对）。
 - `icedamericano_mall` 现存 **11 张旧名空表**（`order`/`product` 不在新脚本 DROP 清单内，就地重建会残留这 2 张）。
 
 ---
@@ -203,3 +205,13 @@
 4. **不再静默**：fallback 降级时**落一条补偿记录**（而不是只打日志），这是白名单要求的「有补偿记录」
 
 **注意**：`voidOnFullRefund` 与 `markPartialRefund` 的补偿语义不同 —— 前者要**新建承载**，后者**已有 flag**，不要重复造。
+
+### 实施状态（2026-10-18 本批落地）
+| 项 | 状态 | 落点 |
+|---|---|---|
+| 2. 可补偿的**承载**（新表） | ✅ 已建 | `Initialize.sql` 第 63 表 `invoice_link_compensation`（62→63，DROP 清单同增，双向零差集 63/63）|
+| 4. **不再静默**（落补偿记录） | ✅ 已接 | `PayEventNotifier#recordCompensation`（`kind` 判定后才落；写库再包一层 try/catch）|
+| 3. 自动重试（`@Scheduled`） | ⬜ **未做** | 表已有 `status/retry_count/next_retry_at` 就绪；缺消费者 ⇒ 见 §2.2 第 1 项 |
+| 1. 可观测（Micrometer Counter） | ⬜ **未做** | 改判：`pay-service` 的 pom **没有** micrometer/actuator（只有 gateway / ia-common / notification 有），原「依赖已在，零新增」**不成立**。当前可观测性是「ERROR/WARN 日志 + 补偿表行」，指标留到重试批次一并加 |
+
+⚠️ 改判记录：§6 原文假设「`kind` 可在 fallback 内落库」——**不成立**，ia-api 无持久化能力。最终形态是「fallback 抛 → 调用侧（pay-service，有持久化）落库」，即把「静默」升级为「**可观测 + 可补偿**」而不是在契约层造端口。
