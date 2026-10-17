@@ -11,6 +11,7 @@ import org.icedamericanomall.cart.app.dto.SkuView;
 import org.icedamericanomall.cart.app.port.CartSkuViewQuery;
 import org.icedamericanomall.cart.domain.model.cart.CartItem;
 import org.icedamericanomall.cart.domain.repository.CartRepository;
+import org.icedamericanomall.common.constant.CsvIdLimits;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.CartItemCO;
@@ -131,6 +132,8 @@ public class CartManager {
             cartRepository.incrementQuantity(existing.get().getId(), req.getQuantity());
             return;
         }
+        // 条目数闸门（批次 B7b）：只在「要新增一行」时校验 —— 给已有项加数量不增加条目数
+        requireCartCapacity(userId);
         try {
             cartRepository.save(CartItem.create(userId, skuTechnicalId, req.getQuantity()));
         } catch (DuplicateKeyException e) {
@@ -141,6 +144,31 @@ public class CartManager {
             }
             log.info("并发加购命中唯一键，转为增量合并: userId={}, skuId={}", userId, req.getSkuId());
             cartRepository.incrementQuantity(concurrent.get().getId(), req.getQuantity());
+        }
+    }
+
+    /**
+     * 购物车条目数闸门：{@code count} 达到 {@link CsvIdLimits#MAX_CART_ITEMS} 即拒绝新增。
+     *
+     * <p><b>承载口径（ADR-063 §决策 7 表 #6，批次 B7b）</b>：这个 200 不是性能上限，是
+     * <b>下单请求体预算</b> —— 业务键化后 200 项 × 32-hex ≈ 6.4 KB（技术键时代 ≈ 1.2 KB），
+     * 网关 / Feign / Sentinel 的 body 预算按业务键形态重算。判据是「请求体」，<b>不得</b>
+     * 借用列宽（15）或 URL（4）的判据。
+     *
+     * <p><b>失败语义：业务规则拒绝（200 + body code），不是 4xx</b>：资源存在、请求合法，
+     * 只是规则不允许再加一条 —— 按 {@code 09-constraints.md} §三·六 属「业务规则拒绝」，
+     * 故抛 {@code CART_ITEM_LIMIT_EXCEEDED(3042)} 走 200 信封，与「资源不存在」的 404 区分开。
+     *
+     * @param userId 用户 ID
+     * @throws BizException 条目数已达上限（{@code CART_ITEM_LIMIT_EXCEEDED}）
+     */
+    private void requireCartCapacity(Long userId) {
+        long current = cartRepository.countByUserId(userId);
+        if (current >= CsvIdLimits.MAX_CART_ITEMS) {
+            log.info("购物车条目数已达上限，拒绝新增: userId={}, current={}, max={}",
+                    userId, current, CsvIdLimits.MAX_CART_ITEMS);
+            throw new BizException(ErrorCode.CART_ITEM_LIMIT_EXCEEDED,
+                    "购物车最多 " + CsvIdLimits.MAX_CART_ITEMS + " 项，请先清理再加购");
         }
     }
 

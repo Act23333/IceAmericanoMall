@@ -1,7 +1,9 @@
 package org.icedamericanomall.trade.adapter.request;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
+import org.icedamericanomall.common.constant.CsvIdLimits;
 
 import java.io.Serializable;
 import java.util.List;
@@ -38,6 +40,13 @@ public class ShipOrderReq implements Serializable {
      * <b>SKU 业务键</b> 32-hex 消费 —— 与 {@code OrderItemVO.sku_id} 同型同义，
      * 商家端从订单明细直接勾选即可（无需技术键）。订单项自 ADR-061 起即以业务键存储，
      * 故本字段与 {@code order_item.sku_id} 直接可比。
+     *
+     * <p><b>条数上限（批次 B7b，ADR-063 §决策 7 表 #6）</b>：{@code @Size(max = MAX_ORDER_ITEM_IDS)}
+     * 即 {@code MAX_CART_ITEMS}(200) —— 判据是<b>请求体预算</b>（200 项 × 32-hex ≈ 6.4 KB），
+     * <b>不得</b>借用列宽（15）或 URL（4）的判据。订单明细的来源是购物车/直购，
+     * 明细数超过购物车条目上限即意味着绕过了加购闸门，属非法请求（400 PARAM_ERROR）。
      */
+    @Size(max = CsvIdLimits.MAX_ORDER_ITEM_IDS,
+            message = "发货明细不能超过" + CsvIdLimits.MAX_ORDER_ITEM_IDS + "项")
     private List<String> skuIds;
 }

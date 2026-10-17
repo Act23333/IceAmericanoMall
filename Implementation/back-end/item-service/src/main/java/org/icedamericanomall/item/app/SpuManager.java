@@ -17,9 +17,11 @@ import org.icedamericanomall.item.adapter.response.SkuVO;
 import org.icedamericanomall.item.domain.enums.SpuStatusEnum;
 import org.icedamericanomall.item.domain.model.spu.Spu;
 import org.icedamericanomall.item.domain.model.sku.Sku;
+import org.icedamericanomall.item.domain.port.ShortCodeResolver;
 import org.icedamericanomall.item.domain.repository.SpuRepository;
 import org.icedamericanomall.item.domain.repository.SkuRepository;
 import org.icedamericanomall.item.app.kg.KgEdgeIngestManager;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +54,14 @@ public class SpuManager {
     /** 相似推荐单次上限（P27 契约：≤20 归一）。 */
     private static final int MAX_SIMILAR_SIZE = 20;
 
+    /**
+     * 短码唯一键冲突的最大尝试次数（含首次）—— ADR-063 §决策 8.3「有界重试 ≤3 次，仍冲突硬失败」。
+     */
+    private static final int SHORT_CODE_MAX_ATTEMPTS = 3;
+
+    /** 短码唯一索引名（用于从 DB 冲突消息中识别「这次冲突是不是短码」）。 */
+    private static final String SHORT_CODE_UNIQUE_KEY = "uk_short_code";
+
     private final SpuRepository spuRepository;
     private final SkuRepository skuRepository;
     private final SpuConverter spuConverter;
@@ -62,6 +72,8 @@ public class SpuManager {
     private final SpuRecommendManager spuRecommendManager;
     private final SpuPromotionManager spuPromotionManager;
     private final KgEdgeIngestManager kgEdgeIngestManager;
+    /** 短码解析端口（L1 本地 / L2 Redis / L3 DB 三级缓存；ADR-063 §决策 8）。 */
+    private final ShortCodeResolver shortCodeResolver;
 
     /** 商品分页（在售）：sort=price 走最低价排序 SQL，否则销量/广告优先；行级回填促销角标（P1 V5.13）。 */
     public IPage<SpuVO> pageSpus(Long sellerId, Long categoryId, String keyword,
@@ -91,7 +103,7 @@ public class SpuManager {
     public SpuVO getSpuDetail(String spuId) {
         Spu spu = spuRepository.findByBusinessId(spuId);
         if (spu == null || SpuStatusEnum.DELETED.getCode() == spu.getStatus()) {
-            throw new BizException(ErrorCode.PRODUCT_NOT_FOUND);
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND);
         }
         SpuVO vo = spuConverter.toVO(spu);
         List<Sku> skus = skuRepository.findBySpuId(spu.getId());
@@ -102,6 +114,39 @@ public class SpuManager {
         vo.setMinPrice(minPriceOf(skus));
         vo.setPromotions(spuPromotionManager.tagsFor(spu.getSellerId()));
         return vo;
+    }
+
+    /**
+     * 商品详情（<b>按短码</b>，P38 {@code GET /api/item/spu/by-code/{code}}，ADR-063 §决策 7/8）。
+     *
+     * <p><b>短码只是寻址别名，不是标识</b>：这里把它换成 <b>SPU 业务键</b>，然后<b>完整复用</b>
+     * {@link #getSpuDetail(String)} —— 不允许为 P38 另建第二套装配逻辑（两套装配一定会漂移，
+     * 而契约要求 P38 与 P2 的 {@code SpuVO} <b>逐字段同形</b>）。
+     *
+     * <p><b>解析走三级缓存端口</b>（{@link ShortCodeResolver}）：L1 本地 → L2 Redis → L3 DB，
+     * 三道防线（负缓存 / single-flight / Redis 故障回落 DB）在适配器内实现，
+     * 应用层只关心「有没有」。
+     *
+     * <p><b>失败语义与 P2 完全一致</b>（契约 §4.4.1 失败语义表）：
+     * <ul>
+     *   <li>短码不存在 / 从未分配 → {@code NO_RESOURCE_FOUND(1103)} → <b>真 HTTP 404</b>；</li>
+     *   <li>短码存在但商品已软删（{@code status=3}） → 同上 404（短码仍算已占用，不回收）；</li>
+     *   <li>短码存在但商品已下架（{@code status=2}） → <b>200 + SpuVO</b>（{@code status} 如实回给
+     *       落地页，由它渲染「已下架」态）—— 落地页必须能区分「码废了」与「暂时下架」。</li>
+     * </ul>
+     *
+     * @param shortCode 短码（8–10 位小写 hex；形态校验在适配层 {@code ShortCode#require}，
+     *                  非法即 400 而非 404）
+     * @return 与 P2 同形的商品详情
+     * @throws BizException 短码不存在 / 商品已删除（{@code NO_RESOURCE_FOUND}）
+     */
+    public SpuVO getSpuDetailByCode(String shortCode) {
+        String spuBusinessId = shortCodeResolver.resolve(shortCode);
+        if (spuBusinessId == null) {
+            // 与 P2 同一出口：1103 + 真 404（不是 200 信封；落地页需要真 404 落到宿主错误页）
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND);
+        }
+        return getSpuDetail(spuBusinessId);
     }
 
     /** 商品发布（F2：绑定模板归属校验；SKU 经聚合工厂归一热销元数据）。 */
@@ -116,7 +161,8 @@ public class SpuManager {
         spu.setCommentCount(0);
         spu.setStatus(SpuStatusEnum.ON_SHELF.getCode());
         spu.setPublishTime(LocalDateTime.now());
-        Spu saved = spuRepository.save(spu);
+        // 短码在 publish 已定稿（ADR-063 §决策 8.2）；唯一键冲突时按「有界重试 ≤3 次」换号重试
+        Spu saved = saveWithShortCodeRetry(spu);
 
         for (CreateSpuReq.SkuReq skuReq : req.getSkus()) {
             Sku sku = Sku.create(spu.getId(), skuReq.getSpec(), skuReq.getPrice(),
@@ -134,6 +180,49 @@ public class SpuManager {
     }
 
     /**
+     * 落库并处理<b>短码唯一键冲突</b>（ADR-063 §决策 8.3：有界重试 ≤ {@value #SHORT_CODE_MAX_ATTEMPTS} 次，
+     * 仍冲突即硬失败）。
+     *
+     * <p><b>为什么这里允许重试，而「对外渠道号」只许硬失败</b>：短码在<b>发布之前</b>生成 ——
+     * 此刻没有任何物料 / 小程序码引用它，换号<b>无外部可见后果</b>；而渠道号一旦外发就变成
+     * 渠道侧幂等键，换号等于让渠道看到两笔交易，只能硬失败。两者口径不同不是不一致。
+     *
+     * <p><b>共同禁令</b>：碰撞后<b>禁止回落派生值</b>（截取业务键 / 加时间戳 / 自增序号）——
+     * 派生值会退化为可枚举、可预测，等于把承载位重新绑回业务键。
+     *
+     * <p><b>只对短码冲突重试</b>：{@code spu} 表另有 {@code uk_spu_id}，业务键是 UUIDv7 全新生成，
+     * 撞键即属异常而非可重试冲突 —— 靠 DB 错误消息里的索引名区分（MySQL 会带上
+     * {@code for key 'spu.uk_short_code'}），避免把真正的数据异常套成 3 次无意义重试。
+     */
+    private Spu saveWithShortCodeRetry(Spu spu) {
+        for (int attempt = 1; attempt <= SHORT_CODE_MAX_ATTEMPTS; attempt++) {
+            try {
+                return spuRepository.save(spu);
+            } catch (DuplicateKeyException e) {
+                if (!isShortCodeCollision(e) || attempt == SHORT_CODE_MAX_ATTEMPTS) {
+                    if (isShortCodeCollision(e)) {
+                        log.error("短码分配连续冲突 {} 次，硬失败（不回落到派生值）: spuId={}",
+                                SHORT_CODE_MAX_ATTEMPTS, spu.getSpuId());
+                        throw new BizException(ErrorCode.INTERNAL_ERROR, "商品发布失败，请重试");
+                    }
+                    throw e;
+                }
+                log.warn("短码唯一键冲突，换号重试: attempt={}/{}, spuId={}",
+                        attempt, SHORT_CODE_MAX_ATTEMPTS, spu.getSpuId());
+                spu.assignNewShortCode();
+            }
+        }
+        // 不可达（循环内已穷尽返回或抛出）；保留以满足编译器的确定返回值
+        throw new BizException(ErrorCode.INTERNAL_ERROR, "商品发布失败，请重试");
+    }
+
+    /** 唯一键冲突是否来自 {@code uk_short_code}（MySQL 错误消息含索引名）。 */
+    private static boolean isShortCodeCollision(DuplicateKeyException e) {
+        String message = e.getMessage();
+        return message != null && message.contains(SHORT_CODE_UNIQUE_KEY);
+    }
+
+    /**
      * 上下架/删除状态变更（**越权防护**：商家仅限自有商品，管理员放行）。
      *
      * <p>为何必须校验：{@code PUT /api/item/spu/{spuId}/status} 的 path 只带商品标识，
@@ -148,7 +237,8 @@ public class SpuManager {
     public void updateSpuStatus(String spuId, Long operatorId, boolean isAdmin, Integer status) {
         Spu spu = spuRepository.findByBusinessId(spuId);
         if (spu == null) {
-            throw new BizException(ErrorCode.PRODUCT_NOT_FOUND);
+            // 资源不存在 → 1103 + 真 404（09 §三·六 四类划分：不是「业务规则拒绝」，不给 200 信封）
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND);
         }
         if (!isAdmin && !spu.isOwnedBy(operatorId)) {
             throw new BizException(ErrorCode.FORBIDDEN, "无权操作该商品");
@@ -169,7 +259,8 @@ public class SpuManager {
     public void updateSpu(String spuId, Long sellerId, UpdateSpuReq req) {
         Spu spu = spuRepository.findByBusinessId(spuId);
         if (spu == null) {
-            throw new BizException(ErrorCode.PRODUCT_NOT_FOUND);
+            // 同上：编辑一个不存在的商品 = 资源不存在（1103 / 404），不是业务规则拒绝
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND);
         }
         if (!spu.getSellerId().equals(sellerId)) {
             throw new BizException(ErrorCode.FORBIDDEN, "无权修改该商品");

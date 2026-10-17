@@ -9,6 +9,7 @@ import org.icedamericanomall.integration.payment.ChannelRefundQueryResult;
 import org.icedamericanomall.integration.payment.ChannelRefundResult;
 import org.icedamericanomall.integration.payment.JsapiPayResult;
 import org.icedamericanomall.integration.payment.PaymentClient;
+import org.icedamericanomall.integration.payment.RefundReason;
 import org.icedamericanomall.integration.payment.WechatCallbackResult;
 import org.icedamericanomall.integration.payment.WechatRefundCallbackResult;
 import org.icedamericanomall.common.enums.ErrorCode;
@@ -111,20 +112,28 @@ public class PaymentChannelRouter {
     /**
      * 按渠道发起退款（F1 原路退回）。余额渠道不在此路由（由 RefundManager 走 I41 余额入账路径）。
      *
+     * <p><b>{@code reason} 消毒（ADR-063 §决策 7 表 #5，批次 B7b）</b>：退款原因是<b>人读摘要</b>，
+     * 会随渠道账单与工单外泄，因此<b>不得携带任何单号</b>。本方法是全链路唯一的渠道出口，
+     * 故消毒也收在这里（{@link RefundReason#channelText(String, String...)}）：
+     * 文本含本次的 {@code channel_trade_no} / {@code out_refund_no}、或含任意 32-hex / 20 位渠道号
+     * → 整句回落枚举文案 {@code "退款"}；否则按 <b>code point</b> 截断到
+     * {@link PaymentClient#MAX_REFUND_REASON_LENGTH}（80，取微信/支付宝较严者）。
+     *
      * @param channel      支付渠道
      * @param channelTradeNo 原支付单的<b>对外渠道交易号</b>（渠道用它定位原交易，不是 {@code pay_order_no}）
      * @param outRefundNo  对外退款项号（渠道幂等键，重试复用同号；不是内部 {@code refund_no}）
      * @param refundAmount 本次退款金额（分）
      * @param orderAmount  原支付单金额（分，渠道协议要求）
-     * @param reason       退款原因摘要（可空）
+     * @param reason       退款原因摘要（可空；本方法消毒后再外发）
      * @return 渠道受理结果
      * @throws BizException 渠道拒绝 / 调用失败
      */
     public ChannelRefundResult refund(PayChannelEnum channel, String channelTradeNo, String outRefundNo,
                                       int refundAmount, int orderAmount, String reason) {
+        String safeReason = RefundReason.channelText(reason, channelTradeNo, outRefundNo);
         return switch (channel) {
-            case WECHAT -> wechatClient.refund(channelTradeNo, outRefundNo, refundAmount, orderAmount, reason);
-            case ALIPAY -> alipayClient.refund(channelTradeNo, outRefundNo, refundAmount, orderAmount, reason);
+            case WECHAT -> wechatClient.refund(channelTradeNo, outRefundNo, refundAmount, orderAmount, safeReason);
+            case ALIPAY -> alipayClient.refund(channelTradeNo, outRefundNo, refundAmount, orderAmount, safeReason);
             case BALANCE -> throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
                     "余额退款请走 I41 余额入账路径");
         };

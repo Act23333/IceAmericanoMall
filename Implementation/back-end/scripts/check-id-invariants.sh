@@ -180,6 +180,15 @@ SPU_SKU_PLACEHOLDER_RE='\{(spuId|spuIds|skuId|skuIds|productId|productIds)\}'
 EXPLICIT_NAME_RE='^(spuId|skuId|spuIds|skuIds)$'
 LEGACY_PLACEHOLDER_RE='\{(id|ids)\}'
 
+# ── 承载位别名例外（2026-10-18，批次 B7b；ADR-063 §决策 7 表 #2 / §决策 8）─────────────
+# P38 `GET /api/item/spu/by-code/{code}` 的路径变量是**短码**：它是 SPU 的「对外寻址别名」，
+# 不是实体标识（契约 §1.9⑧：不得用于业务判断、不得替代 spu_id、不得进任何 VO）。
+# 因此变量名**不能**叫 spuId（那会谎称它表达实体身份），正确名字恰是 code。
+# 例外被压到最窄，三条同时满足才放行：
+#   ① 路径含字面段 /by-code/；② 变量名恰为 code；③ 类型仍必须 String（技术键是数字类型，仍在上面失败）。
+BY_CODE_SEGMENT='/by-code/'
+carrierAlias5=0
+
 hits5=""
 checked5=0
 for f in $CONTROLLER_FILES; do
@@ -218,8 +227,13 @@ for f in $CONTROLLER_FILES; do
 "
     fi
     if ! printf '%s' "$varName" | grep -qE "$EXPLICIT_NAME_RE"; then
-      hits5="${hits5}${f}:${ln} — 路径 \`${combined}\` 的路径变量名 \`${varName}\` 未显式表达实体（应为 spuId/skuId/spuIds/skuIds）
+      if printf '%s' "$combined" | grep -q "$BY_CODE_SEGMENT" && [ "$varName" = "code" ]; then
+        # 承载位别名（短码）：名字必须表达「这不是实体」—— 见上方例外说明
+        carrierAlias5=$((carrierAlias5 + 1))
+      else
+        hits5="${hits5}${f}:${ln} — 路径 \`${combined}\` 的路径变量名 \`${varName}\` 未显式表达实体（应为 spuId/skuId/spuIds/skuIds；承载位别名仅 /by-code/ 段允许 code）
 "
+      fi
     fi
     if printf '%s' "$combined" | grep -qE "$LEGACY_PLACEHOLDER_RE"; then
       hits5="${hits5}${f}:${ln} — 路径 \`${combined}\` 仍含退役占位符 {id}/{ids}（SPU/SKU 资源段内一律显式命名）
@@ -273,6 +287,6 @@ fi
 
 if [ "$fail" -eq 0 ]; then
   echo "[OK] ID 不变量门禁通过（ADR-050/051/061/062：生成唯一出口 / 查询参数 byte[] / SQL 字面量禁令 / 线格式标识类型 / 外部路径变量口径 / 适配层无解析调用）"
-  echo "     命中面自证：线格式类型检查 ${SCANNED_DIRS} 个目录 + 路径变量检查 ${SCANNED_CTRL} 个 Controller（其中 SPU/SKU 路径方法内 ${checked5} 个路径变量）+ 适配层编码出口检查 ${SCANNED_ADAPTERS} 个 adapter 目录（任一为 0 即失败）"
+  echo "     命中面自证：线格式类型检查 ${SCANNED_DIRS} 个目录 + 路径变量检查 ${SCANNED_CTRL} 个 Controller（其中 SPU/SKU 路径方法内 ${checked5} 个路径变量，承载位别名 ${carrierAlias5} 个）+ 适配层编码出口检查 ${SCANNED_ADAPTERS} 个 adapter 目录（任一为 0 即失败）"
 fi
 exit "$fail"

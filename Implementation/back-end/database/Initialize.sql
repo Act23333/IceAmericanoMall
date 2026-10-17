@@ -247,6 +247,7 @@ CREATE TABLE `freight_template` (
 CREATE TABLE `spu` (
                            `id` BIGINT AUTO_INCREMENT COMMENT '技术主键',
                            `spu_id` BINARY(16) NOT NULL COMMENT '业务商品编号（UUIDv7 原始字节，ADR-050）',
+                           `short_code` VARCHAR(16) NOT NULL COMMENT '对外寻址短码（10 位小写 hex，ADR-063 §决策 8）：小程序码 scene="p="+短码，落地页经 P38 换回 SPU；非实体标识、不进任何 VO、不过期、永不复用（软删保留占位）',
                            `seller_id` BIGINT NOT NULL COMMENT '所属商家ID',
                            `category_id` BIGINT NOT NULL COMMENT '所属类目ID',
                            `freight_template_id` BIGINT DEFAULT NULL COMMENT '绑定运费模板ID（V5.6，NULL=回落商家默认模板；模板删除经 ON DELETE SET NULL 回落）',
@@ -269,6 +270,7 @@ CREATE TABLE `spu` (
                            `update_time` DATETIME NOT NULL COMMENT '更新时间',
                            PRIMARY KEY (`id`),
                            UNIQUE KEY `uk_spu_id` (`spu_id`),
+                           UNIQUE KEY `uk_short_code` (`short_code`),
                            KEY `idx_seller_id` (`seller_id`),
                            KEY `idx_category_id` (`category_id`),
                            KEY `idx_status` (`status`),
@@ -621,7 +623,7 @@ CREATE TABLE `home_config` (
     `slot` VARCHAR(30) NOT NULL COMMENT '位置标识(banner/hot/new/sale)',
     `type` TINYINT NOT NULL COMMENT '1=商品组, 2=广告图, 3=活动链接',
     `title` VARCHAR(100) COMMENT '标题',
-    `spu_ids` VARCHAR(500) COMMENT '商品ID列表，逗号分隔',
+    `spu_ids` VARCHAR(500) COMMENT '商品列表 CSV：**SPU 业务键 32-hex**，逗号分隔；容量上限 15 项（15×32+14=494，列宽 500 倒推，ADR-063 §决策 7 表 #3）；写侧形态校验+上限+去重，读侧单项非法 fail-open 过滤',
     `image` VARCHAR(255) COMMENT '图片URL',
     `link_url` VARCHAR(255) COMMENT '跳转链接',
     `sort_order` INT NOT NULL DEFAULT 0 COMMENT '排序',
@@ -777,7 +779,7 @@ CREATE TABLE `withdrawal` (
 CREATE TABLE `ai_conversation`
 (
     `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `conversation_id` BINARY(16)  NOT NULL UNIQUE COMMENT '会话业务ID（服务端生成 32-hex，UUIDv7 原始字节；表当前无代码接入，ADR-050 修订）',
+    `conversation_id` BINARY(16)  NOT NULL UNIQUE COMMENT '会话业务ID（服务端生成 32-hex，UUIDv7 原始字节；表当前无代码接入，ADR-050 修订）。⚠ 与 chat_message.conversation_id（VARCHAR(36)，内容派生 sha256 前 32 hex）是**两套口径**，同名不同型不同算法，不得互相查（ADR-063 §决策 7 表 #4）',
     `user_id`         BIGINT       NOT NULL COMMENT '用户ID',
     `agent_type`      VARCHAR(20)  NOT NULL COMMENT 'Agent类型: SHOPPING / CUSTOMER_SERVICE',
     `title`           VARCHAR(100) DEFAULT NULL COMMENT '会话标题（首条用户消息截断）',
@@ -812,7 +814,7 @@ CREATE TABLE `chat_message`
 (
     `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
     `message_id`      BINARY(16)  NOT NULL UNIQUE COMMENT '消息业务ID（UUIDv7 原始字节，ADR-050）',
-    `conversation_id` VARCHAR(36)  NOT NULL COMMENT '会话ID (buyer_{buyerId}_seller_{sellerId}_product_{productId})',
+    `conversation_id` VARCHAR(36)  NOT NULL COMMENT '会话键：内容派生值 sha256("<buyerId>|<sellerId>|<spuId>") 前 32 位小写 hex（服务端唯一派生点 ConversationId；ADR-063 §决策 7 表 #4）。与 ai_conversation.conversation_id BINARY(16) 是两套口径，勿混',
     `sender_id`       BIGINT       NOT NULL COMMENT '发送者用户ID',
     `sender_role`     VARCHAR(10)  NOT NULL COMMENT 'BUYER / SELLER / AI',
     `receiver_id`     BIGINT       NOT NULL COMMENT '接收者用户ID',

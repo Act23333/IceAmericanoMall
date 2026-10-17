@@ -20,6 +20,14 @@ public class SpuPO implements Serializable {
     /** 业务商品编号（BINARY(16) ↔ byte[]；hex 形态仅在领域层，ADR-050） */
     private byte[] spuId;
 
+    /**
+     * 短码（对外寻址别名，{@code VARCHAR(16) NOT NULL} + {@code uk_short_code}；ADR-063 §决策 8）。
+     *
+     * <p>DB 列<b>直接存 hex 字符串</b>（不是 {@code BINARY}）：短码不是业务键、无 16 字节语义，
+     * 且要能被运维直接肉眼核对「纸上那串码在库里哪一行」。
+     */
+    private String shortCode;
+
     private Long sellerId;
 
     private Long categoryId;

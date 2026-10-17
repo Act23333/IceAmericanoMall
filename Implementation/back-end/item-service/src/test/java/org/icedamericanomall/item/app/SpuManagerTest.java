@@ -25,9 +25,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -65,6 +67,9 @@ class SpuManagerTest {
     @Mock
     private org.icedamericanomall.item.app.kg.KgEdgeIngestManager kgEdgeIngestManager;
 
+    @Mock
+    private org.icedamericanomall.item.domain.port.ShortCodeResolver shortCodeResolver;
+
     private SpuManager spuManager;
 
     @BeforeEach
@@ -89,7 +94,7 @@ class SpuManagerTest {
                     }
                 }),
                 spuVectorClient, new SpuRecommendManager(spuVectorClient),
-                new SpuPromotionManager(promotionClient), kgEdgeIngestManager);
+                new SpuPromotionManager(promotionClient), kgEdgeIngestManager, shortCodeResolver);
     }
 
     @AfterEach
@@ -165,12 +170,12 @@ class SpuManagerTest {
     }
 
     @Test
-    @DisplayName("getSpuDetail — 不存在 → PRODUCT_NOT_FOUND")
+    @DisplayName("getSpuDetail — 不存在 → NO_RESOURCE_FOUND(1103 / HTTP 404，不是 200 信封)")
     void shouldThrowNotFound_whenSpuMissing() {
         when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(null);
 
         BizException ex = assertThrows(BizException.class, () -> spuManager.getSpuDetail(businessKey(1L)));
-        assertEquals(ErrorCode.PRODUCT_NOT_FOUND, ex.getErrorCode());
+        assertEquals(ErrorCode.NO_RESOURCE_FOUND, ex.getErrorCode());
     }
 
     @Test
@@ -369,13 +374,13 @@ class SpuManagerTest {
     }
 
     @Test
-    @DisplayName("updateSpuStatus — 不存在 → PRODUCT_NOT_FOUND")
+    @DisplayName("updateSpuStatus — 不存在 → NO_RESOURCE_FOUND(1103 / HTTP 404)")
     void shouldThrowNotFound_whenStatusChangeOnMissing() {
         when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(null);
 
         BizException ex = assertThrows(BizException.class,
                 () -> spuManager.updateSpuStatus(businessKey(1L), 100L, false, SpuStatusEnum.OFF_SHELF.getCode()));
-        assertEquals(ErrorCode.PRODUCT_NOT_FOUND, ex.getErrorCode());
+        assertEquals(ErrorCode.NO_RESOURCE_FOUND, ex.getErrorCode());
     }
 
     @Test
@@ -586,5 +591,132 @@ class SpuManagerTest {
         verify(spuRepository).pageOrderByMinPrice(1, 10, null, null, "手机", "ASC");
         verify(spuRepository, never())
                 .pageOnSale(any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    // ==================== P38 短码解析（B7b，ADR-063 §决策 8） ====================
+
+    /** 短码桩（10 位小写 hex，形态合法）。 */
+    private static final String SHORT_CODE = "8f3a1c9d20";
+
+    @Test
+    @DisplayName("getSpuDetailByCode — 短码解析出业务键 → 复用既有详情装配（同形返回）")
+    void shouldReuseDetailAssembly_whenShortCodeResolved() {
+        when(shortCodeResolver.resolve(SHORT_CODE)).thenReturn(businessKey(1L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(spuWithId(100L, 1L));
+        when(skuRepository.findBySpuId(1L)).thenReturn(List.of(
+                Sku.builder().id(1L).spuId(1L).price(599900).status(1).build()));
+
+        SpuVO vo = spuManager.getSpuDetailByCode(SHORT_CODE);
+
+        // 与 P2 同一装配：若另建第二套逻辑，这里必然缺字段
+        assertEquals("手机", vo.getName());
+        assertEquals(599900, vo.getMinPrice());
+        assertEquals(1, vo.getSkus().size());
+    }
+
+    @Test
+    @DisplayName("getSpuDetailByCode — 短码不存在（含从未分配）→ NO_RESOURCE_FOUND(1103 / 404)")
+    void shouldThrow404_whenShortCodeUnknown() {
+        when(shortCodeResolver.resolve(SHORT_CODE)).thenReturn(null);
+
+        BizException ex = assertThrows(BizException.class,
+                () -> spuManager.getSpuDetailByCode(SHORT_CODE));
+
+        assertEquals(ErrorCode.NO_RESOURCE_FOUND, ex.getErrorCode());
+        assertEquals(404, ErrorCode.NO_RESOURCE_FOUND.getHttpStatus().value());
+        // 短码解析不到时绝不再查一次业务键（避免把「码废了」放大成两次库往返）
+        verify(spuRepository, never()).findByBusinessId(anyString());
+    }
+
+    @Test
+    @DisplayName("getSpuDetailByCode — 商品已下架（status=2）→ 200 + SpuVO（status 如实回给落地页）")
+    void shouldReturnOffShelfDetail_whenShortCodeResolvesToOffShelfSpu() {
+        Spu offShelf = spuWithId(100L, 1L);
+        offShelf.setStatus(SpuStatusEnum.OFF_SHELF.getCode());
+        when(shortCodeResolver.resolve(SHORT_CODE)).thenReturn(businessKey(1L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(offShelf);
+        when(skuRepository.findBySpuId(1L)).thenReturn(List.of());
+
+        SpuVO vo = spuManager.getSpuDetailByCode(SHORT_CODE);
+
+        assertEquals(SpuStatusEnum.OFF_SHELF.getCode(), vo.getStatus());
+    }
+
+    @Test
+    @DisplayName("getSpuDetailByCode — 商品已软删（status=3）→ 404（短码仍算已占用，不回收）")
+    void shouldThrow404_whenShortCodeResolvesToDeletedSpu() {
+        Spu deleted = spuWithId(100L, 1L);
+        deleted.setStatus(SpuStatusEnum.DELETED.getCode());
+        when(shortCodeResolver.resolve(SHORT_CODE)).thenReturn(businessKey(1L));
+        when(spuRepository.findByBusinessId(businessKey(1L))).thenReturn(deleted);
+
+        BizException ex = assertThrows(BizException.class,
+                () -> spuManager.getSpuDetailByCode(SHORT_CODE));
+
+        assertEquals(ErrorCode.NO_RESOURCE_FOUND, ex.getErrorCode());
+    }
+
+    // ==================== 短码发号与冲突重试（ADR-063 §决策 8.2/8.3） ====================
+
+    @Test
+    @DisplayName("createSpu — 短码在 publish 定稿：落库聚合已带合法 10 位短码（禁止懒生成）")
+    void shouldAssignShortCode_whenPublishing() {
+        when(spuRepository.save(any(Spu.class))).thenReturn(spuWithId(100L, 1L));
+
+        spuManager.createSpu(100L, createReq());
+
+        ArgumentCaptor<Spu> captor = ArgumentCaptor.forClass(Spu.class);
+        verify(spuRepository).save(captor.capture());
+        assertNotNull(captor.getValue().getShortCode());
+        assertEquals(10, captor.getValue().getShortCode().length());
+        assertTrue(captor.getValue().getShortCode().matches("^[0-9a-f]{10}$"));
+    }
+
+    @Test
+    @DisplayName("createSpu — 短码唯一键冲突 → 换号重试（≤3 次）后成功，每次换的是新随机值")
+    void shouldRetryWithNewShortCode_whenUniqueKeyCollides() {
+        // 记录「每次 save 时聚合上的短码」——必须按调用时刻取值：聚合是可变的，
+        // ArgumentCaptor 只会拿到同一个实例的最终状态（全部相同，断言会失真）
+        List<String> attemptedCodes = new ArrayList<>();
+        when(spuRepository.save(any(Spu.class))).thenAnswer(invocation -> {
+            Spu attempted = invocation.getArgument(0);
+            attemptedCodes.add(attempted.getShortCode());
+            if (attemptedCodes.size() < 3) {
+                throw new DuplicateKeyException("Duplicate entry 'x' for key 'spu.uk_short_code'");
+            }
+            attempted.setId(1L);
+            return attempted;
+        });
+
+        spuManager.createSpu(100L, createReq());
+
+        assertEquals(3, attemptedCodes.size());
+        assertNotEquals(attemptedCodes.get(0), attemptedCodes.get(1),
+                "重试必须换新随机短码（不得沿用冲突值）");
+        assertNotEquals(attemptedCodes.get(1), attemptedCodes.get(2));
+        attemptedCodes.forEach(code -> assertTrue(code.matches("^[0-9a-f]{10}$"), code));
+    }
+
+    @Test
+    @DisplayName("createSpu — 短码连续冲突 3 次 → 硬失败 500，不回落派生值、不多试第 4 次")
+    void shouldFailLoud_whenShortCodeCollisionPersists() {
+        when(spuRepository.save(any(Spu.class)))
+                .thenThrow(new DuplicateKeyException("Duplicate entry 'x' for key 'spu.uk_short_code'"));
+
+        BizException ex = assertThrows(BizException.class, () -> spuManager.createSpu(100L, createReq()));
+
+        assertEquals(ErrorCode.INTERNAL_ERROR, ex.getErrorCode());
+        verify(spuRepository, times(3)).save(any(Spu.class));
+    }
+
+    @Test
+    @DisplayName("createSpu — 冲突来自 uk_spu_id（非短码）→ 原样抛出，不套 3 次无意义重试")
+    void shouldRethrow_whenOtherUniqueKeyCollides() {
+        when(spuRepository.save(any(Spu.class)))
+                .thenThrow(new DuplicateKeyException("Duplicate entry 'x' for key 'spu.uk_spu_id'"));
+
+        assertThrows(DuplicateKeyException.class, () -> spuManager.createSpu(100L, createReq()));
+
+        verify(spuRepository, times(1)).save(any(Spu.class));
     }
 }

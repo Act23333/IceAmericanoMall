@@ -41,7 +41,9 @@ public class FavoriteManager {
      * 保持技术键不动，解析走 {@code spu.spu_id} 唯一索引，性能与按技术键等价）。
      *
      * @param spuId SPU 业务键（32-hex）
-     * @throws BizException 商品不存在（业务键无对应行或格式非法）→ {@code PRODUCT_NOT_FOUND}
+     * @throws BizException 商品不存在（业务键无对应行或格式非法）→ {@code NO_RESOURCE_FOUND}
+     *                      （<b>1103 / HTTP 404</b>：URL 指向的商品根本没有，属「资源不存在」，
+     *                      不是「业务规则拒绝」；2026-10-18 批次 B7b 按 09 §三·六 四类划分纠正）
      */
     @Transactional(rollbackFor = Exception.class)
     public void add(Long userId, String spuId) {
@@ -80,13 +82,14 @@ public class FavoriteManager {
      *
      * <p>与列表回填共用同一读模型端口 —— 隔离点在端口之后，将来换内部批量端点时本类零改动。
      *
-     * @throws BizException 业务键格式非法或商品行不存在（不伪造、不静默吞掉）
+     * @throws BizException 业务键格式非法或商品行不存在（不伪造、不静默吞掉）→
+     *                      {@code NO_RESOURCE_FOUND(1103)} / HTTP 404
      */
     private Long resolveSpuTechnicalId(String spuBusinessId) {
         Map<String, SpuBriefView> found = favoriteSpuBriefQuery.findByBusinessIds(List.of(spuBusinessId));
         SpuBriefView brief = found == null ? null : found.get(spuBusinessId);
         if (brief == null || brief.spuId() == null) {
-            throw new BizException(ErrorCode.PRODUCT_NOT_FOUND);
+            throw new BizException(ErrorCode.NO_RESOURCE_FOUND);
         }
         return brief.spuId();
     }

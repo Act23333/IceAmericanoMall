@@ -32,6 +32,33 @@ public interface PaymentClient {
     int MAX_OUT_TRADE_NO_LENGTH = 32;
 
     /**
+     * 退款原因摘要（{@code reason}）的<b>渠道协议长度上限</b> —— 取微信 / 支付宝中<b>较严</b>者：
+     * 微信 v3「申请退款」的 {@code reason} 上限为 <b>80 字符</b>，支付宝「统一收单交易退款」
+     * 的 {@code refund_reason} 上限为 <b>256 字符</b>，故取 <b>80</b>。
+     *
+     * <p><b>按字符数（code point）而不是字节数</b>：中文 / emoji 在 UTF-8 里 2–4 字节，
+     * 按字节截断会把一个字符劈成半个（渠道侧直接拒单或显示乱码）。
+     *
+     * <p><b>这不是身份字段</b>：{@code reason} 只是人读摘要，会随<b>渠道账单与工单外泄</b>；
+     * 因此<b>禁止把任何单号</b>（{@code order_no} / {@code pay_order_no} / {@code refund_no} /
+     * {@code out_refund_no}）塞进去 —— 被截断后会变成「半截单号」，比没有单号更误导。
+     * 落点：{@link RefundReason#channelText(String, String...)} 负责消毒 + 截断，
+     * 调用方（{@code PaymentChannelRouter}）是唯一出口。
+     *
+     * <p><b>渠道文档</b>：
+     * <ul>
+     *   <li>微信支付 API v3「申请退款」{@code reason}（条件必填，最大 80 字符）——
+     *       <a href="https://pay.weixin.qq.com/wiki/doc/apiv3/apis/chapter3_4_9.shtml">pay.weixin.qq.com/wiki/doc/apiv3/apis/chapter3_4_9.shtml</a></li>
+     *   <li>支付宝「统一收单交易退款」（{@code alipay.trade.refund}）{@code refund_reason}（≤256 字符）——
+     *       <a href="https://opendocs.alipay.com/open/02ekfk">opendocs.alipay.com/open/02ekfk</a></li>
+     * </ul>
+     *
+     * <p><b>⚠ 若渠道调整该上限，必须同步此值</b>（并同步 {@code RefundReason} 的截断单测）——
+     * 超限时渠道直接拒单，退款会悬挂在「处理中」，属资金链路事故。
+     */
+    int MAX_REFUND_REASON_LENGTH = 80;
+
+    /**
      * 发起支付，返回二维码链接 / 支付链接。
      *
      * @param outTradeNo 对外渠道交易号（微信 {@code out_trade_no}）—— <b>不是</b>内部

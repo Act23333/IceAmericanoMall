@@ -30,6 +30,13 @@ public class CartRepositoryImpl implements CartRepository {
     }
 
     @Override
+    public long countByUserId(Long userId) {
+        Long count = cartMapper.selectCount(new LambdaQueryWrapper<CartPO>()
+                .eq(CartPO::getUserId, userId));
+        return count == null ? 0L : count;
+    }
+
+    @Override
     public List<CartItem> findSelectedByUserId(Long userId) {
         return cartMapper.selectList(new LambdaQueryWrapper<CartPO>()
                         .eq(CartPO::getUserId, userId)

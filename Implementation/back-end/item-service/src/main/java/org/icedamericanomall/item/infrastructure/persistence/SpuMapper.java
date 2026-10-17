@@ -109,6 +109,16 @@ public interface SpuMapper extends BaseMapper<SpuPO> {
     SpuPO selectByBusinessId(@Param("spuId") byte[] spuId);
 
     /**
+     * 按<b>短码</b>载入整行（{@code spu.short_code}，走 {@code uk_short_code} 唯一索引）。
+     *
+     * <p><b>不过滤 {@code status}</b>：短码永不复用（软删保留占位），故「已删除」的商品
+     * 也必须能被查出 —— 由应用层按 P2 同一口径判 404/200，而不是让 SQL 提前吃掉这一行
+     * （否则「码还在、商品删了」会被误认为「码从未分配」，与 ADR-063 §决策 8.4 冲突）。
+     */
+    @Select("SELECT p.* FROM spu p WHERE p.short_code = #{shortCode}")
+    SpuPO selectByShortCode(@Param("shortCode") String shortCode);
+
+    /**
      * 业务键批量解析：{@code spu.spu_id}（BINARY(16)）→ 技术主键。
      *
      * <p>供相似推荐按 I48 命中的 <b>业务键</b>批量取技术键（单条 SQL 走 {@code spu_id}

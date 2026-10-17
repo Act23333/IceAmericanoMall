@@ -7,6 +7,7 @@ import org.icedamericanomall.ai.app.dto.ChatConversationDTO;
 import org.icedamericanomall.ai.app.dto.ChatMessageDTO;
 import org.icedamericanomall.ai.domain.model.conversation.ChatMessage;
 import org.icedamericanomall.ai.domain.model.conversation.ConversationDetail;
+import org.icedamericanomall.ai.domain.model.conversation.ConversationId;
 import org.icedamericanomall.ai.domain.model.conversation.ConversationSummary;
 import org.icedamericanomall.ai.domain.model.conversation.MessageInfo;
 import org.icedamericanomall.ai.domain.port.AgentMemoryPort;
@@ -70,13 +71,19 @@ public class ChatMessageManager {
     /**
      * 发送消息：落库 → 缓存最近列表 → 未读计数 +1。
      *
+     * <p><b>会话键归一（ADR-063 §决策 7 表 #4，批次 B7b）</b>：入参 {@code conversationId} 在
+     * <b>本方法</b>统一过 {@link ConversationId#normalize(String)} —— 这是全服务<b>唯一的派生点</b>：
+     * 旧形态 57 字符复合串在这里被重算成 32 位内容派生值（{@code VARCHAR(36)} 装得下），
+     * 已归一的值幂等通过。绝不在适配层或前端再拼一套（两套映射 = 两处可漂移的编码表）。
+     *
      * @param command 发送命令（发送者身份已由 STOMP 会话解析，非客户端报文）
      * @return 落库后的消息（应用层 DTO，供适配层转 STOMP 广播负载）
      */
     public ChatMessageDTO sendMessage(SendChatMessageCommand command) {
+        String conversationId = ConversationId.normalize(command.conversationId());
         ChatMessage message = new ChatMessage();
         message.setMessageId(IdGenerator.nextId());
-        message.setConversationId(command.conversationId());
+        message.setConversationId(conversationId);
         message.setSenderId(command.senderId());
         message.setSenderRole(command.senderRole());
         message.setReceiverId(command.receiverId());
@@ -87,8 +94,8 @@ public class ChatMessageManager {
         ChatMessage saved = chatMessageRepository.save(message);
 
         ChatMessageDTO dto = toDTO(saved);
-        chatMessageCache.cacheRecent(command.conversationId(), dto);
-        chatMessageCache.incrementUnread(command.receiverId(), command.conversationId());
+        chatMessageCache.cacheRecent(conversationId, dto);
+        chatMessageCache.incrementUnread(command.receiverId(), conversationId);
         return dto;
     }
 

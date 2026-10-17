@@ -45,6 +45,22 @@ public interface SpuRepository {
      */
     Spu findByBusinessId(String spuBusinessId);
 
+    /**
+     * 按<b>短码</b>载入聚合（{@code spu.short_code}，走 {@code uk_short_code} 等值查）。
+     *
+     * <p><b>这是「短码 → SPU」在数据面的唯一出口</b>（P38 落地页的高频只读入口；
+     * 调用方是三级缓存适配器 {@code ShortCodeResolutionAdapter} 的 L3 层）。
+     * 与 {@link #findByBusinessId} 的差别只在寻址键：短码是<b>承载层别名</b>，
+     * 不是实体标识（ADR-063 §决策 8），故本方法<b>不得</b>被用于任何业务判断。
+     *
+     * <p><b>不过滤状态</b>：短码与商品同生命周期、永不回收 —— 商品下架/软删时短码仍算
+     * 「已占用」，返回整行让应用层按 P2 同一口径决定「404 已删除」还是「200 + status 已下架」。
+     * 非法/不存在的短码返回 {@code null}（不放大成 500）。
+     *
+     * @param shortCode 短码（8–10 位小写 hex）；{@code null}/形态非法 → {@code null}
+     */
+    Spu findByShortCode(String shortCode);
+
     /** 批量按 ID 载入。 */
     List<Spu> findAllByIds(List<Long> ids);
 

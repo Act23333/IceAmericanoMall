@@ -10,6 +10,7 @@ import org.icedamericanomall.cart.app.dto.SkuView;
 import org.icedamericanomall.cart.app.port.CartSkuViewQuery;
 import org.icedamericanomall.cart.domain.model.cart.CartItem;
 import org.icedamericanomall.cart.domain.repository.CartRepository;
+import org.icedamericanomall.common.constant.CsvIdLimits;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.junit.jupiter.api.BeforeEach;
@@ -320,5 +321,64 @@ class CartManagerTest {
 
         assertEquals(1, cos.size());
         assertEquals(SKU_ID_A, cos.get(0).getSkuId(), "I14 出参必须是业务键（trade 侧据此查 I13）");
+    }
+
+    // ==================== 条目数闸门（B7b，ADR-063 §决策 7 表 #6） ====================
+
+    @Test
+    @DisplayName("加购 — 条目数已达 MAX_CART_ITEMS(200) → 业务规则拒绝（3042），不落库")
+    void shouldReject_whenCartCapacityReached() {
+        when(cartSkuViewQuery.findBySkuBusinessIds(List.of(SKU_ID_A)))
+                .thenReturn(byBusiness(view(SKU_PK_A, SKU_ID_A, 1000)));
+        when(cartRepository.findByUserIdAndSkuId(USER_ID, SKU_PK_A))
+                .thenReturn(java.util.Optional.empty());
+        when(cartRepository.countByUserId(USER_ID)).thenReturn((long) CsvIdLimits.MAX_CART_ITEMS);
+
+        CartAddReq req = new CartAddReq();
+        req.setSkuId(SKU_ID_A);
+        req.setQuantity(1);
+
+        BizException ex = assertThrows(BizException.class, () -> cartManager.addItem(USER_ID, req));
+
+        assertEquals(ErrorCode.CART_ITEM_LIMIT_EXCEEDED, ex.getErrorCode());
+        // 业务规则拒绝 ≠ 资源不存在：必须走 200 信封（09 §三·六 四类划分）
+        assertEquals(200, ErrorCode.CART_ITEM_LIMIT_EXCEEDED.getHttpStatus().value());
+        verify(cartRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("加购 — 条目数 199（未达上限）→ 正常新增（边界不是 199）")
+    void shouldAllow_whenJustBelowCapacity() {
+        when(cartSkuViewQuery.findBySkuBusinessIds(List.of(SKU_ID_A)))
+                .thenReturn(byBusiness(view(SKU_PK_A, SKU_ID_A, 1000)));
+        when(cartRepository.findByUserIdAndSkuId(USER_ID, SKU_PK_A))
+                .thenReturn(java.util.Optional.empty());
+        when(cartRepository.countByUserId(USER_ID))
+                .thenReturn((long) CsvIdLimits.MAX_CART_ITEMS - 1);
+
+        CartAddReq req = new CartAddReq();
+        req.setSkuId(SKU_ID_A);
+        req.setQuantity(1);
+        cartManager.addItem(USER_ID, req);
+
+        verify(cartRepository).save(any());
+    }
+
+    @Test
+    @DisplayName("加购 — 同 SKU 已在车中（只加数量）→ 不查条目数（不增加行数，无需闸门）")
+    void shouldSkipCapacityCheck_whenSameSkuExists() {
+        CartItem existing = item(SKU_PK_A, 2, true);
+        when(cartSkuViewQuery.findBySkuBusinessIds(List.of(SKU_ID_A)))
+                .thenReturn(byBusiness(view(SKU_PK_A, SKU_ID_A, 1000)));
+        when(cartRepository.findByUserIdAndSkuId(USER_ID, SKU_PK_A))
+                .thenReturn(java.util.Optional.of(existing));
+
+        CartAddReq req = new CartAddReq();
+        req.setSkuId(SKU_ID_A);
+        req.setQuantity(1);
+        cartManager.addItem(USER_ID, req);
+
+        verify(cartRepository, never()).countByUserId(anyLong());
+        verify(cartRepository).incrementQuantity(existing.getId(), 1);
     }
 }

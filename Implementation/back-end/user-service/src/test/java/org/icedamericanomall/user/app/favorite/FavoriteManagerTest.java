@@ -148,6 +148,25 @@ class FavoriteManagerTest {
         assertNull(page.getRecords().get(0).getSpuName());
     }
 
+    /**
+     * P2 错误承载纠正（2026-10-18，批次 B7b）—— 收藏一个不存在的商品属「资源不存在」，
+     * 按 {@code collaboration/09-constraints.md} §三·六 必须 <b>404 + 1103</b>，
+     * 不得继续用 200 信封 + 3xxx 业务码（那是「业务规则拒绝」的承载）。
+     */
+    @Test
+    @DisplayName("收藏 — 商品不存在（业务键无对应行）→ NO_RESOURCE_FOUND(1103 / 404)，且不写库")
+    void shouldThrowNoResourceFound_whenSpuAbsent() {
+        when(favoriteSpuBriefQuery.findByBusinessIds(List.of(SPU_BUSINESS_ID))).thenReturn(Map.of());
+
+        org.icedamericanomall.common.exception.BizException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                org.icedamericanomall.common.exception.BizException.class,
+                () -> favoriteManager.add(USER_ID, SPU_BUSINESS_ID));
+
+        assertEquals(org.icedamericanomall.common.enums.ErrorCode.NO_RESOURCE_FOUND, ex.getErrorCode());
+        assertEquals(404, ex.getErrorCode().getHttpStatus().value());
+        verify(favoriteRepository, never()).addIfAbsent(any());
+    }
+
     private Favorite favorite(Long id, Long spuId) {
         return Favorite.builder()
                 .id(id)

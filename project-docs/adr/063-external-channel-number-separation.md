@@ -285,6 +285,25 @@ when(payOrderService.getByPayOrderNo("PAY-1")).thenReturn(paid);
 - **不得进任何 VO / DTO**（含 `SpuVO`、`WxaCodeVO`、`SpuSearchVO`）—— 一旦进报文，客户端会把它当实体标识缓存 / 回链，**别名就升格成标识**，§1.9⑧ 的禁令随之失效。
 - 日志可用（非 PII、无反向解析能力），但**不得**与 `spu_id` 写成「同义」。
 
+#### 8.7 B7b 落码对照表（实现事实，2026-10-18）
+
+> 本节只登记**代码事实**（文件:落点 → 验收断言），口径仍以 §决策 7/8 与契约 §1.9⑦/⑧ 为准。
+
+| # | 承载位 | 落点（文件） | 验收断言（测试名） |
+| :- | :-- | :-- | :-- |
+| 1 | 短码发号 | `spu` 聚合工厂 `Spu#publish`（`ShortCode.newCode()` = `IdGenerator.randomHex(10)`）；冲突有界重试 ≤3 在 `SpuManager#saveWithShortCodeRetry`，只认 `uk_short_code` 冲突，其余唯一键原样抛出 | `shouldAssignShortCode_whenPublishing` / `shouldRetryWithNewShortCode_whenUniqueKeyCollides` / `shouldFailLoud_whenShortCodeCollisionPersists` / `shouldRethrow_whenOtherUniqueKeyCollides` |
+| 2 | 短码存储 | `database/Initialize.sql`：`spu.short_code VARCHAR(16) NOT NULL` + `UNIQUE KEY uk_short_code`（ADR-045 直改快照，无迁移） | `SpuShortCodeRepositoryImplH2Test`（等值查命中 / 软删仍可查 / 重复插入被唯一约束拦下） |
+| 3 | 短码解析 | 端口 `domain/port/ShortCodeResolver`；实现 `infrastructure/adapter/ShortCodeResolutionAdapter`（L1 Caffeine 10k·10min / L2 Redis `item:shortcode:{code}`→业务键·7d / L3 DB；负缓存 45s；`get(key,loader)` single-flight；Redis 异常 fail-open 到 DB，DB 异常 500 且不写负缓存）+ 四类命中计数 | `shouldResolveFromDb_whenBothCachesEmpty` / `shouldFallBackToDb_whenRedisThrows` / `shouldNegativeCache_whenShortCodeUnknown` / `shouldLoadOnce_whenConcurrentMisses` / `shouldFailLoudWhenDbDown` |
+| 4 | P38 端点 | `SpuController#detailByCode`（`GET /by-code/{code}`，变量名 `code` —— 承载位别名，不谎称实体）+ `SpuManager#getSpuDetailByCode`（短码→业务键→**复用** `getSpuDetail`） | `SpuControllerByCodeTest`（200/404/400）+ `SpuDetailWireShapeTest`（P2↔P38 逐字段同形） |
+| 5 | `scene` / objectKey | `app/share/SpuShareManager`：`scene = "p=" + 短码`；`objectKey = wxa-code/v1/product/{sha256(scene\|page)[0:16]}.png`（`v1/` 仅为将来换算法留位 —— 项目未发布过 ⇒ **无存量对象、无需灰度/清理**） | `SpuShareManagerTest#shouldKeepSceneWithinWechatLimit` / `#shouldDeriveObjectKeyFromContent` / `#shouldBeStableForSameContent` |
+| 6 | `home_config.spu_ids` | 值对象 `domain/model/home/SpuIdCsv`（写侧 `requireWire`+≤15+去重 fail-closed；读侧单项非法 fail-open 过滤）+ `HomeConfigManager` 两侧收口 | `SpuIdCsvTest`（8 例）+ `HomeConfigManagerTest`（6 例） |
+| 7 | `conversation_id` | `domain/model/conversation/ConversationId`（`sha256(buyerId\|sellerId\|spuId)[0:32]`，唯一派生点 = `ChatMessageManager#sendMessage` 归一） | `ConversationIdTest`（含「32 ≤ 36」与「旧复合串超宽」反证）+ `ChatMessageManagerTest#shouldNormalizeLegacyConversationId_whenSending` |
+| 8 | 退款 `reason` | `PaymentClient.MAX_REFUND_REASON_LENGTH = 80`（取微信 80 / 支付宝 256 的较严者）+ `RefundReason`（枚举文案优先 / 含单号整句回落 / 按 code point 截断）+ 唯一出口 `PaymentChannelRouter#refund` | `RefundReasonTest`（9 例，含 emoji 代理对不被劈开）+ `RefundReasonWireGuardTest`（站在渠道接缝上断言真实外发值无单号） |
+| 9 | `MAX_CSV_IDS` 常量族 | `ia-common` `common/constant/CsvIdLimits`（列宽 15 / URL 4 / body 200 / 购物车 200）；消费方：`home_config` 写侧、`cart` 加购闸门（`CART_ITEM_LIMIT_EXCEEDED(3042)`，业务规则拒绝 = 200 信封）、`ShipOrderReq.skuIds` 的 `@Size` | `SpuIdCsvTest` / `CartManagerTest#shouldReject_whenCartCapacityReached` |
+| 10 | P2 错误承载纠正 | `PRODUCT_NOT_FOUND(3011)` 全仓调用点 → `NO_RESOURCE_FOUND(1103)`：item（详情 / 上下架 / 编辑 / `assertVisible`）、user（收藏加/删）；枚举 `HttpStatus.OK → NOT_FOUND` 并标 `@Deprecated` | `SpuManagerTest#shouldThrow404_whenSpuMissing` 等（断言 `NO_RESOURCE_FOUND` 且 `HttpStatus = 404`） |
+
+> **B7b 未覆盖项（诚实登记）**：① `ai_conversation.conversation_id` 是 `BINARY(16)`（UUIDv7）而 `chat_message.conversation_id` 是内容派生 `VARCHAR(36)` —— **两套口径并存是有意选择**（前者「表当前无代码接入」），本批只在两侧列注释里写死「勿混」，**没有**统一算法；② `MAX_COMPARE_SPU_IDS`（P24）与 C9 的消费方**代码尚不存在**，该值仅常量 + 单测；③ 短码解析的**跨实例**防击穿未加分布式互斥（单实例内由 Caffeine per-key 串行化保证；跨实例靠负缓存 + L2 收敛，注册为已知取舍）。
+
 ## 守卫（防复发）
 
 | # | 守卫 | 断言 / 落点 | 现状 |
@@ -293,8 +312,8 @@ when(payOrderService.getByPayOrderNo("PAY-1")).thenReturn(paid);
 | 2 | **发起侧传给渠道的号 ≠ 内部 `order_no` / `pay_order_no`** | 记录型渠道客户端（`RecordingPaymentClient`）断言**实际外发**的 `outTradeNo` 与 `payOrder.getChannelTradeNo()` 相等，且 ≠ 内部两键；`PayChannelTradeNoFlowTest`（6 例）覆盖 | ✅ 已实现 |
 | 3 | **回调携带内部键 → 必须查不到** | 用内部 `order_no` / `pay_order_no` 作为回调 `out_trade_no` → 断言 `ORDER_NOT_FOUND`（即「两键已彻底分离」的反证）；`PayChannelTradeNoFlowTest`。退款侧同构：`RefundChannelNoFlowTest`（4 例） | ✅ 已实现 |
 | 4 | **变异可捕获**（证明守卫非空转） | 已实测两轮：① 回调改回按 `pay_order_no` 查 → **8 例红**；② 退款回调改回按 `refund_no` 查 → **8 例红**；恢复后全绿。**新增渠道号相关路径必须沿用「生产工厂生成号 + 记录型客户端断言外发」的写法，禁止硬编码号再桩查询** | ✅ 变异已验证 |
-| 5 | **短码不得进报文 / 不得用于业务判断**（B7a 新增） | 断言 `SpuVO` / `WxaCodeVO` / `SpuSearchVO` 的线格式键集合**不含** `short_code`；断言 P38 与 P2 对同一商品的响应**逐字段同形**（`diff` 为空） | ⏳ 待 B7b（契约 §1.9⑧ 已写定，代码未落） |
-| 6 | **承载位容量预算**（B7a 新增） | `scene` 长度断言 `≤ 32`（`p=` + 短码 = 12）；`chat_message.conversation_id` 长度断言 `≤ 36`；`home_config.spu_ids` 条数断言 `≤ 15` 且 CSV 总长 `≤ 500` | ⏳ 待 B7b（常量族 `MAX_CSV_IDS*` 落 `ia-common` 后加成单测） |
+| 5 | **短码不得进报文 / 不得用于业务判断**（B7a 新增） | 断言 `SpuVO` / `WxaCodeVO` / `SpuSearchVO` 的线格式键集合**不含** `short_code`；断言 P38 与 P2 对同一商品的响应**逐字段同形**（`diff` 为空） | ✅ **已实现（B7b）**：`SpuDetailWireShapeTest`（同形 + 键集不含 short_code，序列化接缝上断言）+ `ShortCodePayloadGuardTest`（扫 adapter/response·request + ia-api dto 全量源码，声明即红；含「命中面文件数为 0 即失败」自证） |
+| 6 | **承载位容量预算**（B7a 新增） | `scene` 长度断言 `≤ 32`（`p=` + 短码 = 12）；`chat_message.conversation_id` 长度断言 `≤ 36`；`home_config.spu_ids` 条数断言 `≤ 15` 且 CSV 总长 `≤ 500` | ✅ **已实现（B7b）**：常量族落 `ia-common` `common/constant/CsvIdLimits`（15 / 4 / 200 / 200，三条判据不互借）；断言落 `ShortCodeTest`（scene 12 ≤ 32，并反证业务键 34 超限）、`ConversationIdTest`（32 ≤ 36，并反证旧复合串超宽）、`SpuIdCsvTest`（15 项 = 494 ≤ 500、16 项 = 527 溢出） |
 
 > **守卫 4 的真正含义**：本次缺陷能被四类守卫抓住，唯一原因是**测试不再自行编造两侧数据** ——
 > 号由生产工厂（`PayOrder#newChannelTradeNo`）生成，渠道侧由 `RecordingPaymentClient` 记录**真实外发值**，
@@ -336,13 +355,13 @@ when(payOrderService.getByPayOrderNo("PAY-1")).thenReturn(paid);
 | **R2** | **渠道号碰撞** | 两条记录生成同一 20 位 hex | 依赖 `UNIQUE KEY uk_channel_trade_no` / `uk_out_refund_no` **硬失败**（插入异常），不做静默重试 | 概率 2⁻⁸⁰ 量级；接受硬失败（重试由上层人工/重放流程处理），**不引入「碰撞后自动换号」的隐藏分支** |
 | **R3** | **超时后重新发起会换新渠道号** | 支付单超时取消（`PayTimeoutJob`）后用户重新下单支付 | 渠道侧会看到同一业务订单的两个商户单号 | **既有策略**：旧单已被条件取消（`PENDING→TIMEOUT_CANCEL`），新单是另一笔支付单；由**对账**兜底（本地有渠道无 / 渠道有本地无 均可见）。**不改**「复用已取消单」的口径 |
 | **R4** | **`out_refund_no` 只对本渠道幂等** | 跨渠道（微信 → 支付宝）退款 | 渠道侧幂等键不通 | 退款按**原支付渠道**原路退回（ADR-035），跨渠道退款不在范围内 |
-| **R5** | **承载层规则尚未全量落码** | `scene` / objectKey / 短链仍为寄存形态（技术键） | 与 ADR-062 §后果 E1 同一笔账 | **B7a 已裁决方案并写定契约**（本文 §决策 8 + 契约 §1.9⑦/⑧ + 新增 P38）；**代码落码待 B7b**（清单见契约 §十二 12.2 的 B7a 新增行） |
+| **R5** | **承载层规则尚未全量落码** | `scene` / objectKey / 短链仍为寄存形态（技术键） | 与 ADR-062 §后果 E1 同一笔账 | ✅ **已收敛（B7b 落码）**：`scene` = `p=<短码>`、objectKey = `wxa-code/v1/product/{sha256(scene\|page)[0:16]}.png`、`home_config.spu_ids` 写侧校验/读侧 fail-open、`conversation_id` 内容派生、退款 `reason` 消毒、`MAX_CSV_IDS` 常量族 + `short_code` 列**均已落码**；残余项见 §B7b 落码对照表 |
 | **R6** | **前缀预算未强制执行** | 若将来加值前缀而不解耦承载层 | 三处承载位确定超限（§决策 7 表） | 已登记为硬约束（`09-constraints.md`）；**加前缀必须与承载解耦同批** |
 | **R7** | **「一 SPU 一短码」方案不支持按渠道分发 / 召回** | 需要「按短码统计扫码来源」或「物料泄露需整体作废 / 轮换」时（§决策 8.1） | 需迁出独立映射表（`spu.short_code` → `spu_short_code`）并补灰度 | 触发器量化前**不预付复杂度**；届时按 ADR-045 直改快照（库无存量数据，迁移成本 = 一次 DDL + 回填脚本） |
 
 ## 日期
 
-2026-10-18（文档定稿，批次 B6）；2026-10-18（**批次 B7a：§决策 7 落点裁决 + §决策 8 短码方案 + 契约 §1.9⑦/⑧ 与新增 P38**）；代码落码 2026-10-17（`256abbf3`）、**承载层代码落码待 B7b**（尚未）
+2026-10-18（文档定稿，批次 B6）；2026-10-18（**批次 B7a：§决策 7 落点裁决 + §决策 8 短码方案 + 契约 §1.9⑦/⑧ 与新增 P38**）；代码落码 2026-10-17（`256abbf3`）、**承载层与短码落码 2026-10-18（批次 B7b，见 §决策 8.7 落码对照表）**
 
 ## 参考
 
@@ -365,6 +384,16 @@ when(payOrderService.getByPayOrderNo("PAY-1")).thenReturn(paid);
     `domain/repository/SpuRepository#findByBusinessId`（短码查询将新增 `findByShortCode`）
   - 🆕 `ia-common`：`common/utils/IdGenerator.java`（`:91` `MIN_RANDOM_HEX_LEN=8`；`randomHex(int)` 8–64 位 ⇒ 短码取 10 位合法）
   - 🆕 表结构现状（承载位容量，B7a 实测 `Initialize.sql`）：`spu`（`uk_spu_id`；**无**短码列 ⇒ B7b 新增 `short_code VARCHAR(16) NOT NULL` + `uk_short_code`）、`home_config.spu_ids VARCHAR(500)`、`chat_message.conversation_id VARCHAR(36)`、`ai_conversation.conversation_id BINARY(16)`（**两套口径并存**，§决策 7 表下方与契约 §1.9⑦-4）
+  - 🆕 **B7b 落码实测（2026-10-18）**：
+    - `item-service`：`domain/model/spu/ShortCode.java`（发号/形态/容量）、`domain/model/spu/Spu#publish`（短码定稿）与 `#assignNewShortCode`（发布前换号）、`domain/port/ShortCodeResolver.java` + `domain/enums/ShortCodeHitSource.java`、`infrastructure/adapter/ShortCodeResolutionAdapter.java`（三级缓存）、`infrastructure/persistence/{SpuMapper#selectByShortCode,SpuRepositoryImpl#findByShortCode,SpuPO.shortCode}`、`app/SpuManager#{getSpuDetailByCode,saveWithShortCodeRetry}`、`adapter/web/SpuController#detailByCode`、`app/share/SpuShareManager#sceneOf/objectKeyOf`、`domain/model/home/SpuIdCsv.java` + `app/HomeConfigManager`（写/读两侧）
+    - `ia-common`：`common/constant/CsvIdLimits.java`（15/4/200/200）、`common/utils/crypto/Sha256Util.java`（内容派生唯一出口）、`enums/ErrorCode`（`PRODUCT_NOT_FOUND` 状态纠正为 404 + `@Deprecated`；新增 `CART_ITEM_LIMIT_EXCEEDED(3042)`）
+    - `ia-integration`：`payment/PaymentClient#MAX_REFUND_REASON_LENGTH = 80`、`payment/RefundReason.java`（消毒 + code point 截断）
+    - `pay-service`：`app/PaymentChannelRouter#refund`（`reason` 唯一消毒出口）
+    - `ai-service`：`domain/model/conversation/ConversationId.java` + `app/chat/ChatMessageManager#sendMessage`（唯一派生点）
+    - `cart-service`：`app/CartManager#requireCartCapacity` + `CartRepository#countByUserId`
+    - `trade-service`：`adapter/request/ShipOrderReq#skuIds` 的 `@Size(max = MAX_ORDER_ITEM_IDS)`
+    - DB：`database/Initialize.sql`（`spu.short_code` + `uk_short_code`；`home_config.spu_ids` 与 `chat_message/ai_conversation.conversation_id` 注释钉死口径）
+    - 门禁：`scripts/check-id-invariants.sh` 检查 5 新增**承载位别名例外**（仅 `/by-code/` 段 + 仅 `code` 名 + 类型仍须 `String`），并统计到自证输出
 
 - **契约**：`contract/05-API-Specification.md` §1.9（渠道号不出现在支付/退款报文）、§4.13.14（AD44/AD45）、§8.6（`ReconciliationDetailVO` 样例）；🆕 **§1.9⑥/⑦/⑧（承载层六项 + 短码口径）、§4.4.1 **P38**、§七 7.1（小程序码落地页映射）、§十二 12.2（B7a 新增挂账行）**
 - **ADR**：[ADR-002](./002-dual-primary-key-and-money.md)（双主键 + 金额用分 + 订单快照）、

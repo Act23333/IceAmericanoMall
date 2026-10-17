@@ -17,6 +17,17 @@ public interface CartRepository {
     /** 用户全部购物车项（按加入时间倒序）。 */
     List<CartItem> findByUserIdOrderByCreateTimeDesc(Long userId);
 
+    /**
+     * 用户购物车条目数（<b>加购闸门</b>用，批次 B7b）—— 上限口径见
+     * {@code common.constant.CsvIdLimits#MAX_CART_ITEMS}（按「下单请求体预算」倒推，不是性能上限）。
+     *
+     * <p>只数行数，不取数据：加购是高频写，闸门不能顺带把整个购物车读出来。
+     *
+     * @param userId 用户 ID
+     * @return 条目数（无行 → 0）
+     */
+    long countByUserId(Long userId);
+
     /** 用户已选中的购物车项（下单取数）。 */
     List<CartItem> findSelectedByUserId(Long userId);
 

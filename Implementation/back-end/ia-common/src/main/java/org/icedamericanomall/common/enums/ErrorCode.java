@@ -36,7 +36,24 @@ public enum ErrorCode {
     // 交易/订单/商品通用错误 (3009-3029)
     ORDER_NOT_FOUND(3009, "订单不存在", HttpStatus.OK),
     ORDER_STATUS_INVALID(3010, "当前订单状态不支持此操作", HttpStatus.OK),
-    PRODUCT_NOT_FOUND(3011, "商品不存在", HttpStatus.OK),
+    /**
+     * 商品不存在 —— <b>已被 {@link #NO_RESOURCE_FOUND}（1103 / HTTP 404）取代，禁止新增使用</b>。
+     *
+     * <p><b>状态码订正（2026-10-18，批次 B7b）</b>：原 {@code HttpStatus.OK} 属
+     * 「用 200 信封承载 not-found」的偏离。按 {@code collaboration/09-constraints.md}
+     * §三·六「错误承载的四类划分」：<b>资源不存在 = 真 404 + {@code NO_RESOURCE_FOUND(1103)}</b>；
+     * 只有<b>业务规则拒绝</b>（资源存在、请求合法但规则不允许）才用 200 + body code。
+     * 故本枚举的 {@code HttpStatus} 按该表纠正为 {@code NOT_FOUND}（{@code 09 §三·六}
+     * 末条：「以本表为准修改该枚举的 status，不要在新代码里绕过枚举手写状态码」）。
+     *
+     * <p><b>为何保留而不删除</b>：契约 §二 与历史文档仍引用该码；保留但把状态纠正后，
+     * 即使有遗漏调用也不会退化成「200 + 查不到」，属安全默认。新增代码一律抛
+     * {@link #NO_RESOURCE_FOUND}。
+     *
+     * @deprecated 资源不存在统一抛 {@link #NO_RESOURCE_FOUND}（1103 / HTTP 404）；本项仅为兼容存量引用保留
+     */
+    @Deprecated(since = "B7b")
+    PRODUCT_NOT_FOUND(3011, "商品不存在", HttpStatus.NOT_FOUND),
     STOCK_INSUFFICIENT(3012, "库存不足", HttpStatus.OK),
     CART_EMPTY(3013, "购物车为空", HttpStatus.OK),
     CROSS_STORE_FORBIDDEN(3014, "暂不支持跨店下单", HttpStatus.OK),
@@ -65,6 +82,14 @@ public enum ErrorCode {
     REFUND_STATUS_INVALID(3039, "退款状态不支持此操作", HttpStatus.OK),
     FREIGHT_TEMPLATE_NAME_EXISTS(3040, "运费模板名称已存在", HttpStatus.OK),
     FREIGHT_TEMPLATE_NOT_FOUND(3041, "运费模板不存在", HttpStatus.OK),
+    /**
+     * 购物车条目数达上限（B7b 新增）—— <b>业务规则拒绝</b>：资源存在、请求合法，
+     * 只是条目数不允许再增，故按 09 §三·六 用 200 + body code（不是 4xx）。
+     *
+     * <p>上限值集中在 {@code common.constant.CsvIdLimits#MAX_CART_ITEMS}
+     * （按「下单请求体预算」这条判据倒推，不按历史习惯值）。
+     */
+    CART_ITEM_LIMIT_EXCEEDED(3042, "购物车条目数已达上限", HttpStatus.OK),
 
     // AI 服务错误 (3100-3199)
     AI_SERVICE_UNAVAILABLE(3100, "AI 服务未启用或 API Key 未配置", HttpStatus.SERVICE_UNAVAILABLE),

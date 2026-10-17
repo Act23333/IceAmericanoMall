@@ -18,6 +18,7 @@ import org.icedamericanomall.item.adapter.response.WxaCodeVO;
 import org.icedamericanomall.item.app.SpuManager;
 import org.icedamericanomall.item.app.kg.KgPairingManager;
 import org.icedamericanomall.item.app.share.SpuShareManager;
+import org.icedamericanomall.item.domain.model.spu.ShortCode;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -27,6 +28,7 @@ import java.util.List;
  *
  * GET   /api/item/spu/page      — 游客/用户/VIP/SVIP 浏览商品列表
  * GET   /api/item/spu/{spuId}      — 商品详情（含完整 SKU）
+ * GET   /api/item/spu/by-code/{code} — 商品详情（按<b>短码</b>，P38；小程序码落地页入口）
  * GET   /api/item/spu/{spuId}/skus  — SKU列表
  * GET   /api/item/spu/{spuId}/similar — 相似商品推荐（P27，向量）
  * GET   /api/item/spu/{spuId}/pairing — 搭配推荐卡（P35，知识图谱）
@@ -66,6 +68,31 @@ public class SpuController {
         return Result.ok(spuManager.getSpuDetail(requireSpuId(spuId)));
     }
 
+    /**
+     * 商品详情 —— <b>按短码</b>（P38 {@code GET /api/item/spu/by-code/{code}}，V5.21 / 批次 B7b）。
+     *
+     * <p><b>为什么需要它</b>：小程序码 {@code scene} 只有 32 可见字符预算，而
+     * {@code "p=" + 32-hex 业务键} = 34 字符（已超限 2），{@code scene} 里因此只能放<b>短码</b>；
+     * 落地页用本端点把短码换回 {@code SpuVO}（与 P2 {@code GET /{spuId}} <b>逐字段同形</b>），
+     * 再按返回的 {@code spu_id} 继续正常调用（详情/评价/相似等）。
+     * <b>本端点是「短码 → 业务键」的唯一入口</b>，不做别名转发。
+     *
+     * <p><b>路由无歧义</b>：{@code by-code} 是<b>字面段</b>，Spring 的字面段优先级高于变量段，
+     * 故 {@code GET /api/item/spu/by-code/8f3a1c9d20} 不会被 {@code /{spuId}} 吞掉；
+     * 网关与 {@code SecurityConfig} 的 {@code /api/item/**} 通配已覆盖，<b>零网关改动</b>。
+     *
+     * <p><b>失败语义（契约 §4.4.1）</b>：短码形态非法 → 400 {@code PARAM_ERROR(1101)}
+     * fail-fast（拼错的物料码应得「参数不对」，不是「商品不存在」）；短码不存在 / 商品已删除
+     * → 404 {@code NO_RESOURCE_FOUND(1103)}；商品已下架 → 200 + {@code SpuVO}（含 {@code status}）。
+     *
+     * @param code 短码（8–10 位小写 hex —— <b>非业务键、非技术键</b>，故变量名为 {@code code}
+     *             而不是 {@code spuId}：这串码不表达实体身份，只是一个承载位别名）
+     */
+    @GetMapping("/by-code/{code}")
+    public Result<SpuVO> detailByCode(@PathVariable String code) {
+        return Result.ok(spuManager.getSpuDetailByCode(ShortCode.require(code)));
+    }
+
     /** SKU 列表（对外返回 VO，不泄漏 DO） */
     @GetMapping("/{spuId}/skus")
     public Result<List<SkuVO>> getSkuList(@PathVariable String spuId) {
@@ -97,10 +124,10 @@ public class SpuController {
      * MinIO 已有缓存直返 URL，否则调微信 {@code wxacode.getUnlimited} 生成并上传。
      * 商品不存在/不在售 → 1103；微信侧失败 fail-loud 透出。
      *
-     * <p><b>P37 {@code scene} 长度冲突（未裁决，显式登记）</b>：微信 {@code scene} 上限 32
-     * 可见字符，而 32-hex 业务键加 {@code p=} 前缀为 34 字符 → 超限；本批（ADR-062 落码批）
-     * 不引入短码/短链映射（属承载层设计），也<b>不做截断</b>（截断会指向错商品）。
-     * 现实现细节与登记见 {@code SpuShareManager}。
+     * <p><b>{@code scene} 长度冲突已裁决（2026-10-18，B7b）</b>：微信 {@code scene} 上限 32
+     * 可见字符，而 32-hex 业务键加 {@code p=} 前缀为 34 字符 → 超限。现 {@code scene} 存
+     * <b>短码</b>（{@code p=<10 位 hex>} = 12 字符），落地页用 {@link #detailByCode(String)}（P38）
+     * 换回 SPU。口径见 ADR-063 §决策 7/8 与契约 §1.9⑦-1/⑧。
      */
     @GetMapping("/{spuId}/wxa-code")
     public Result<WxaCodeVO> wxaCode(@PathVariable String spuId) {

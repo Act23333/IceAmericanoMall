@@ -5,6 +5,7 @@ import org.icedamericanomall.ai.app.dto.ChatConversationDTO;
 import org.icedamericanomall.ai.app.dto.ChatMessageDTO;
 import org.icedamericanomall.ai.domain.model.conversation.ChatMessage;
 import org.icedamericanomall.ai.domain.model.conversation.ConversationDetail;
+import org.icedamericanomall.ai.domain.model.conversation.ConversationId;
 import org.icedamericanomall.ai.domain.model.conversation.ConversationSummary;
 import org.icedamericanomall.ai.domain.port.AgentMemoryPort;
 import org.icedamericanomall.ai.domain.port.ChatMessageCache;
@@ -115,6 +116,30 @@ class ChatMessageManagerTest {
         assertEquals(0, captor.getValue().getIsRead(), "新消息默认未读");
         assertNotNull(captor.getValue().getCreateTime());
         verify(chatMessageCache).incrementUnread(2L, "c-1");
+    }
+
+    @Test
+    @DisplayName("发送消息 — 旧复合串会话键 → 落库前归一为 32 位内容派生值（唯一派生点，装得进 VARCHAR(36)）")
+    void shouldNormalizeLegacyConversationId_whenSending() {
+        SendChatMessageCommand command = new SendChatMessageCommand(
+                "buyer_1_seller_2_product_0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+                1L, ChatPrincipal.SENDER_ROLE_BUYER, 2L, "hello", null);
+        when(chatMessageRepository.save(any(ChatMessage.class))).thenAnswer(invocation -> {
+            ChatMessage saving = invocation.getArgument(0);
+            saving.setId(1L);
+            return saving;
+        });
+
+        ChatMessageDTO dto = manager.sendMessage(command);
+
+        ArgumentCaptor<ChatMessage> captor = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository).save(captor.capture());
+        String stored = captor.getValue().getConversationId();
+        assertEquals(ConversationId.derive(1L, 2L, "0f1e2d3c4b5a69788796a5b4c3d2e1f0"), stored);
+        assertEquals(ConversationId.LENGTH, stored.length(), "派生值必须装得进 VARCHAR(36)");
+        assertEquals(stored, dto.getConversationId());
+        // 缓存侧必须用同一归一值，否则未读数会落在另一个键上（静默丢未读）
+        verify(chatMessageCache).incrementUnread(2L, stored);
     }
 
     @Test

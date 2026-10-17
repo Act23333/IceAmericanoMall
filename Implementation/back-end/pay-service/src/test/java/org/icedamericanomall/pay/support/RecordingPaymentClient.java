@@ -32,6 +32,8 @@ public class RecordingPaymentClient implements PaymentClient {
     public String lastRefundOutRefundNo;
     /** 最近一次退款查询收到的 {@code out_refund_no}。 */
     public String lastQueryOutRefundNo;
+    /** 最近一次退款收到的 {@code reason}（退款原因摘要 —— 人读字段，<b>不得含任何单号</b>）。 */
+    public String lastRefundReason;
 
     /** 支付回调回放：携带的 {@code out_trade_no}。 */
     public String callbackOutTradeNo;
@@ -74,6 +76,7 @@ public class RecordingPaymentClient implements PaymentClient {
                                       String reason) {
         this.lastRefundOutTradeNo = outTradeNo;
         this.lastRefundOutRefundNo = outRefundNo;
+        this.lastRefundReason = reason;
         return refundResult;
     }
 

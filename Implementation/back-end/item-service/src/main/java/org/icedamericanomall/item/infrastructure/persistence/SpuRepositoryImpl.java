@@ -11,6 +11,7 @@ import org.icedamericanomall.item.domain.model.PageResult;
 import org.icedamericanomall.item.domain.model.spu.Spu;
 import org.icedamericanomall.item.domain.model.spu.SpuSearchCard;
 import org.icedamericanomall.item.domain.model.spu.SpuSearchCriteria;
+import org.icedamericanomall.item.domain.model.spu.ShortCode;
 import org.icedamericanomall.item.domain.repository.SpuRepository;
 import org.springframework.stereotype.Repository;
 
@@ -108,6 +109,22 @@ public class SpuRepositoryImpl implements SpuRepository {
             return null;
         }
         SpuPO po = spuMapper.selectByBusinessId(businessId);
+        return po == null ? null : toDomain(po);
+    }
+
+    /**
+     * 按短码载入聚合（{@code uk_short_code} 等值查；ADR-063 §决策 8）。
+     *
+     * <p>入参先做形态过滤（内部防御）：短码列是 {@code utf8mb4_unicode_ci}，把任意垃圾串
+     * 直接丢进等值查询既无意义又多一次往返 —— 形态非法直接「未命中」。
+     * 不过滤 {@code status}（短码永不复用，删除态仍算已占用，见接口 javadoc）。
+     */
+    @Override
+    public Spu findByShortCode(String shortCode) {
+        if (!ShortCode.isValid(shortCode)) {
+            return null;
+        }
+        SpuPO po = spuMapper.selectByShortCode(shortCode);
         return po == null ? null : toDomain(po);
     }
 
@@ -299,7 +316,8 @@ public class SpuRepositoryImpl implements SpuRepository {
 
     static Spu toDomain(SpuPO po) {
         return Spu.builder()
-                .id(po.getId()).spuId(IdGenerator.toHexString(po.getSpuId())).sellerId(po.getSellerId())
+                .id(po.getId()).spuId(IdGenerator.toHexString(po.getSpuId())).shortCode(po.getShortCode())
+                .sellerId(po.getSellerId())
                 .categoryId(po.getCategoryId()).freightTemplateId(po.getFreightTemplateId())
                 .name(po.getName()).mainImage(po.getMainImage()).images(po.getImages())
                 .videoUrl(po.getVideoUrl()).attributes(po.getAttributes())
@@ -316,6 +334,7 @@ public class SpuRepositoryImpl implements SpuRepository {
         SpuPO po = new SpuPO();
         po.setId(spu.getId());
         po.setSpuId(IdGenerator.toBytes(spu.getSpuId()));
+        po.setShortCode(spu.getShortCode());
         po.setSellerId(spu.getSellerId());
         po.setCategoryId(spu.getCategoryId());
         po.setFreightTemplateId(spu.getFreightTemplateId());
