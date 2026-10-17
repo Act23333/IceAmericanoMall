@@ -389,3 +389,28 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 3. 新增端点一律按本表选承载；存量端点如发现同型偏离，按同一口径纠正并在契约登记。
 
 **注意**：`ErrorCode` 中若某枚举的 `HttpStatus` 与上表冲突（如 `PRODUCT_NOT_FOUND` 原配 `HttpStatus.OK`），**以本表为准**修改该枚举的 status，不要在新代码里"绕过枚举"手写状态码。
+
+## 三·七 响应信封与「单值响应」（2026-10-18 立：**收窄 `T` 的形态，不放宽信封**）
+
+**对外响应一律 `Result<T>` 信封 —— 信封原则不因本条放宽。**
+
+| | 允许 / 禁止 |
+| :-- | :-- |
+| **`T` 允许** | `XxxVO` · `List<XxxVO>` · `IPage<XxxVO>` · `Void` · **单一标量或同质集合**（`Integer` / `Long` / `Boolean` / `String` / `List<String>` / `List<Long>`） |
+| **`T` 禁止** | `Map` · `List<Map>` · `Object` · `List<?>` |
+
+**说明**：`/internal/**` 的「无信封」仅由 ADR-004 规定，**不因本条扩大**。
+
+**入参同批口径**：除「简单类型且参数少（≤2 个）」外，一律用 `XxxReq`；**≥3 个散装 `@RequestParam`/`@PathVariable` 必须聚合为 `XxxReq`**（query 场景用 `@QueryModel`）。
+**例外（须在契约登记出处）**：渠道回调（ADR-029：微信/支付宝报文形态由渠道规定）· JWKS（RFC 7517）· SSE 流式 · 二进制下载 · `/internal/**` 裸 CO（ADR-004）。
+
+## 三·八 跨服务错误传递铁律（2026-10-18 立）
+
+1. **透传优先**：下游 **4xx + 已知 `code` 必须原样透传**；**只有 5xx / 超时 / 熔断**才允许改写成本域的 `SYSTEM_BUSY`。
+   > 反例（本仓已发生）：`SpuDetailClient` 把下游 404（商品不存在）降级成 `SYSTEM_BUSY("商品服务暂不可用")`，导致「商品不存在」被说成「服务故障」。
+2. **fallback 只许降级，不许吞错**。
+   - 只读展示类：可 fail-open，但降级文案必须是「**暂时无法获取/比对**」，**不得写成「服务不可用」**；
+   - 写 / 资金 / 库存：**fail-closed**，**绝不** fallback 成「成功」。
+3. **错误体必须足以判定处置**：内部错误体应含 `code` + `category`（`CLIENT` / `RULE` / `TRANSIENT` / `BUG`）+ `retryable` + `traceId`；调用方**不得仅凭状态码猜测语义**。
+4. **`/internal/**` 不得用 `void`/标量承载"可能失败"的操作**：失败必须以**非 2xx** 表达，否则调用方无法感知（ADR-004 §修订末段已登记该风险）。
+5. **状态码是被观测面**：熔断（resilience4j/Sentinel）、重试、指标、告警**都以 HTTP 状态码为键** —— 用 200 承载错误会让熔断器**永不触发**、成功率指标**虚高**。这是"错误必须用真状态码"的运维理由，不是风格偏好。
