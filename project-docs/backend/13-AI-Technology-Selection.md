@@ -1214,7 +1214,7 @@ AI 响应 → 用户反馈 (👍/👎 + 可选文字反馈)
     configuration = DefaultFeignConfig.class  // 自动注入 X-User-Id
 )
 public interface SearchClient {
-    @GetMapping("/api/search/product")
+    @GetMapping("/api/search/spu")
     Result<Page<ProductSearchVO>> search(
         @RequestParam("keyword") String keyword,
         @RequestParam("size") int size
@@ -1248,7 +1248,7 @@ public class SearchTool {
 
 | 现有服务 | AI 场景角色 | 调用接口 | 调用方式 |
 |---------|-----------|---------|---------|
-| `search-service` | 商品搜索 Tool | `GET /api/search/product` | Feign (V2.5) / RestTemplate (V2.0) |
+| `search-service` | 商品搜索 Tool | `GET /api/search/spu` | Feign (V2.5) / RestTemplate (V2.0) |
 | `item-service` | 商品详情/SKU查询 Tool | `GET /internal/item/product/{id}` | Feign |
 | `trade-service` | 订单查询 Tool | `GET /api/trade/order/{orderNo}` | Feign (V2.5) / RestTemplate (V2.0) |
 | `user-service` | 用户身份、地址查询 | `GET /internal/user/{id}` | Feign |

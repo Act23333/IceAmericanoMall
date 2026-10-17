@@ -287,22 +287,21 @@ const GardenScene = dynamic(() => import('./_scenes/GardenScene'), {
 | P3.3 | Footer | 品牌信息 + 链接 + 社交媒体 + 版权 | — |
 | P3.4 | Hero Banner | 轮播 Banner（Swiper/Embla） | `GET /api/home/config` |
 | P3.5 | 分类入口 | 水平滚动分类图标 | `GET /api/item/category/tree` |
-| P3.6 | 精选推荐 | 横向滚动 ProductCard 列表 | `GET /api/item/product/page?sort=sales` |
-| P3.7 | 新品上市 | 2×4 商品网格 | `GET /api/item/product/page?sort=newest` |
+| P3.6 | 精选推荐 | 横向滚动 ProductCard 列表 | `GET /api/item/spu/page?sort=sales` |
+| P3.7 | 新品上市 | 2×4 商品网格 | `GET /api/item/spu/page?sort=newest` |
 | P3.8 | 活动专区 | 秒杀 + 领券入口卡片 | `GET /api/flash`, `GET /api/coupon/template` |
 | P3.9 | ProductCard 组件 | 带 hover 效果的商品卡片 | — |
 | P3.10 | ProductGrid 组件 | 响应式商品网格 | — |
 | P3.11 | ProductHorizontalScroll 组件 | 横向滚动容器 + 箭头导航 | — |
 
-> ⚠️ 上表 API 列为**设计意图**。已知其中至少 `/api/item/product/page`、`/api/coupon/available/filter` 等与后端实际不符
-> （8 组死路径全表见 [21 §三../21-Frontend-Refactor-Readiness.md)）。**落地时逐个以 `contract/05` 校正。**
+> ⚠️ 上表 API 列为**设计意图**。**商品 / 评价 / 搜索段的旧路径已按 B4 契约 + B5 代码 + B8 前端同步**（`/api/item/spu/**`、`/api/item/review/spu/**`、`/api/search/spu`）；但仍存在后端无对应的死路径（如 `/api/coupon/available/filter`，全表见 [21 §三](../21-Frontend-Refactor-Readiness.md)）。**落地时逐个以 `contract/05` 校正。**
 
 #### 4.3.2 搜索
 
 | # | 任务 | 产出 | API |
 |---|------|------|-----|
 | P3.12 | SearchBar 组件 | 搜索框 + 焦点展开 + 建议下拉 | `GET /api/search/suggest` |
-| P3.13 | 搜索页 | 搜索结果列表 + 筛选面板 | `GET /api/search/product` |
+| P3.13 | 搜索页 | 搜索结果列表 + 筛选面板 | `GET /api/search/spu` |
 | P3.14 | SearchFilter 组件 | 分类/价格/品牌/排序筛选 | — |
 | P3.15 | HotKeywords 组件 | 热门搜索标签云 | `GET /api/search/hot` |
 | P3.16 | SearchHistory 组件 | 搜索历史（localStorage + API） | 见 contract/05 |
@@ -312,14 +311,14 @@ const GardenScene = dynamic(() => import('./_scenes/GardenScene'), {
 | # | 任务 | 产出 | API |
 |---|------|------|-----|
 | P3.17 | 商品图片轮播 | 多图滑动 + 缩略图导航 + 点击放大（Lightbox） | — |
-| P3.18 | 商品信息区 | 名称/价格/标签/优惠券提示 | `GET /api/item/product/{id}/detail` |
-| P3.19 | SkuSelector 组件 | 多维度规格选择（颜色/尺寸） | `GET /api/item/product/{id}/skus` |
+| P3.18 | 商品信息区 | 名称/价格/标签/优惠券提示 | `GET /api/item/spu/{spuId}/detail` |
+| P3.19 | SkuSelector 组件 | 多维度规格选择（颜色/尺寸） | `GET /api/item/spu/{spuId}/skus` |
 | P3.20 | QuantityStepper 组件 | 数量加减（min 1, max stock） | — |
 | P3.21 | 店铺卡片 | 店铺信息 + 关注 + 进店 | `GET /api/shop/{sellerId}` |
 | P3.22 | 商品详情 Tab | 图文详情 / 规格参数 | — |
-| P3.23 | 评价摘要 | 评分分布 + 标签 | `GET /api/item/review/product/{id}/summary` |
-| P3.24 | 评价列表 | 筛选 + 分页 | `GET /api/item/review/product/{id}/filter` |
-| P3.25 | 推荐商品 | "看了又看"横向滚动 | `GET /api/item/product/page` |
+| P3.23 | 评价摘要 | 评分分布 + 标签 | `GET /api/item/review/spu/{spuId}/summary` |
+| P3.24 | 评价列表 | 筛选 + 分页 | `GET /api/item/review/spu/{spuId}/filter` |
+| P3.25 | 推荐商品 | "看了又看"横向滚动 | `GET /api/item/spu/page` |
 | P3.26 | 加购 / 立即购买 | 按钮交互 + Toast 反馈 | `POST /api/cart/item`，跳转结算 |
 
 #### 4.3.4 购物车

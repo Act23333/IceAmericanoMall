@@ -117,7 +117,7 @@
 - 4 个 admin 控制器补 `@PreAuthorize`（12 个端点当前无鉴权）。
 - 跨服务线格式收敛：统一命名策略或给 `InAppMessageSendReqCO` 等加显式 `@JsonProperty`（否则站内信收不到，且前端字段命名无法统一生成）。
 - 定人机验证契约方向（扁平 vs 嵌套 + snake_case），否则风控开启后登录死循环。
-- 补 `GET /api/user/address/{id}` 归属校验、`PUT /api/item/product/{id}/status` 的 sellerId 校验、`/api/item/category` 写操作的管理员校验。
+- 补 `GET /api/user/address/{id}` 归属校验、`PUT /api/item/spu/{spuId}/status` 的 sellerId 校验、`/api/item/category` 写操作的管理员校验。
 - 完成判据：管理端 12 个端点经网关可访问且非管理员被拒（403）；站内信可端到端收到一条。
 
 > 阶段 0a 与 0b 完成前，阶段 1 生成的客户端**无法通过联调验证**——会分不清「前端接错」还是「后端不可达」。
@@ -134,9 +134,9 @@
 
 ### 阶段 3：按页面迁移（业务链路优先）
 建议顺序（对应契约 §七 前端页面映射）：
-1. 首页/市场（`GET /api/home/config`、`/api/item/product/page`、`/api/item/category/tree`）
-2. 商品详情 + 评价（`/api/item/product/{id}`、`/api/item/review/product/{id}*`）
-3. 搜索（`/api/search/{product,facets,hot,suggest}`）
+1. 首页/市场（`GET /api/home/config`、`/api/item/spu/page`、`/api/item/category/tree`）
+2. 商品详情 + 评价（`/api/item/spu/{spuId}`、`/api/item/review/spu/{spuId}*`）
+3. 搜索（`/api/search/{spu,facets,hot,suggest}`）
 4. 购物车 → 结算 → 下单（`/api/cart*`、`/api/coupon/available`、`/api/trade/order`）
 5. 支付（`/api/pay/order/{orderNo}`、`/api/pay/order/{orderNo}/status`、`/api/pay/wechat/jsapi`）
 6. 订单/物流/售后/发票（`/api/trade/order*`、`/api/after-sale*`、`/api/logistics/{orderNo}`、`/api/invoice*`）

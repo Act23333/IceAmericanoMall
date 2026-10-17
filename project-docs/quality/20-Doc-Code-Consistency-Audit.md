@@ -283,7 +283,7 @@ wallet-service    :: domain/repository/CurrencyRepository.java
 | C2-5 | 🔴 blocker | `fix-code` | **人机验证参数口径与实现不符 → 开启风控后登录死循环 1016**：契约写扁平 `lotNumber/captchaOutput/passToken/genTime`，代码只认**嵌套** `captchaParams` Map；`captchaParams` 在契约全文 **0 次出现** | 契约 :240/:277-279/:324 均为扁平；`grep -c captchaParams 05-API-Specification.md` → 0；`BaseLoginReq` 仅 `captchaProvider` + `Map captchaParams`；`CaptchaVerifyParam.of()` 空 Map 返回 null → `RiskAssessment.captchaVerified=false` → `CaptchaHandler` 抛 1016。**附带**：authorization-service 亦为 SNAKE_CASE，实际线字段名为 `captcha_provider`/`captcha_params`，而契约 A1 请求体写的是 camelCase（`identityType`/`credentialType`/`deviceId`）——**第二层漂移** |
 | C2-6 | 🟠 major | `fix-doc` | **契约 §5.3 STOMP 目的地写错**：契约 `/app/chat.send` + 消息体 `ChatMessage`；代码 `@MessageMapping("/chat-send")` → `/app/chat-send`，body 为 `ChatSendReq` | 契约 :2293-2295 vs `ChatMessageController.java:53`。按契约实现 IM 发消息必然失败 |
 | C2-7 | 🟠 major | `fix-code` | **`PUT /api/user/address/update/{id}` 强制 body 携带 `id`**：`AddressReq.id` 标了 `groups = UpdateGroup.class` + `@NotNull`，而 id 由 path 提供 → 按契约（body 不含 id）实现必 400 | `AddressReq.java:13-14`、`AddressController.java:54-57`、`GlobalExceptionHandler` 映射为 1101。现有前端 `use-address.ts:27-28` 正是从 body 剔除 id → 稳定 400 |
-| C2-8 | 🟠 major | `fix-code` | **两处越权写**：`PUT /api/item/product/{id}/status`（上下架/删除他人商品，无 sellerId 校验）、`/api/item/category` CRUD（无管理员校验，P11 为物理删除） | `ProductController.java:113-117` + `ProductManager.updateProductStatus` 签名无 sellerId（对比 `updateProduct` 有归属断言）；`CategoryController.java:14-40` 全类无 `@PreAuthorize`。契约 :622 P5 标 🏪、:686-688 P9-P11 标 🔑；`09-constraints.md:256` 明列「商家只能操作自己的商品」 |
+| C2-8 | 🟠 major | `fix-code` | **两处越权写**：`PUT /api/item/spu/{spuId}/status`（上下架/删除他人商品，无 sellerId 校验）、`/api/item/category` CRUD（无管理员校验，P11 为物理删除） | `ProductController.java:113-117` + `ProductManager.updateProductStatus` 签名无 sellerId（对比 `updateProduct` 有归属断言）；`CategoryController.java:14-40` 全类无 `@PreAuthorize`。契约 :622 P5 标 🏪、:686-688 P9-P11 标 🔑；`09-constraints.md:256` 明列「商家只能操作自己的商品」 |
 | C2-9 | 🟠 major | `fix-code` | **Feign 声明落空**：ia-api `CouponClient.batchGet` 指向 `/internal/coupon/batch`，服务端 `InternalCouponController` **0 个 batch 方法** → 404 → 被 fallback 吞掉 → 多券叠加校验静默跳过 | `CouponClient.java` `@GetMapping("/batch")`；`grep batch InternalCouponController.java` → 0 |
 | C2-10 | 🟠 major | `discuss` | **类目枚举/取值口径漂移**：契约 P5 写 `status: 1上架/0下架`，代码与库表为 `1上架/2下架/3删除`（无 0） | 契约 :622 同行；`ProductStatusEnum.java:16-18`；`Initialize.sql:266` 列注释 |
 
@@ -341,7 +341,7 @@ wallet-service    :: domain/repository/CurrencyRepository.java
 | 6 | 🔴 blocker | `fix-doc` | 契约 §4 缺失 | 补录 `POST /api/verification/codes`（A10/U5 的活替身） |
 | 7 | 🔴 blocker | `fix-doc` | 契约 §4 端点表 + §七 | 33 条 `⚪ 计划中` **保留**在端点表内但**显式分区/加状态列**（契约=规格，不移出）；§七 的 9 条计划项加 `⚪` 标注；头部计数按状态拆分为「已实现/计划中」 |
 | 8 | 🔴 blocker | `fix-doc` | 契约 :3 | 头部「内部 57 个」与「内部 39+」矛盾，改为实测三元组 |
-| 9 | 🟠 major | `fix-code` | 商品/类目控制器（§C2-8） | `PUT /api/item/product/{id}/status` 补 sellerId 归属校验；`/api/item/category` 写操作补管理员校验 |
+| 9 | 🟠 major | `fix-code` | 商品/类目控制器（§C2-8） | `PUT /api/item/spu/{spuId}/status` 补 sellerId 归属校验；`/api/item/category` 写操作补管理员校验 |
 | 10 | 🟠 major | `fix-code` | ia-api `CouponClient`（§C2-9） | `/internal/coupon/batch` 服务端缺失 → 补实现或移除声明（当前被 fallback 静默吞掉） |
 | 11 | 🟠 major | `fix-code` | `AddressReq`（§C2-7） | `PUT /api/user/address/update/{id}` 的 body 强制 `id` → 改为 path 优先或去掉 `UpdateGroup` 的 `@NotNull` |
 | 12 | 🟠 major | `fix-doc` | 契约 §六 | 补 6 个缺失路由前缀、更正 `/api/invoice/**` 与 `/ws/**` 目标服务、删 `/oauth2/**` 与 `/user/**`、显式化路由顺序 |

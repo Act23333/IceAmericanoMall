@@ -246,7 +246,7 @@
 | 页面跳转串联 | ✅ V3.5 | 详情页→店铺/客服/购物车 导航 |
 
 **技术方案**：
-- **详情页数据聚合**: `GET /api/item/product/{id}/detail` 一次返回完整数据（商品+SKU+店铺+评论摘要+优惠券）
+- **详情页数据聚合**: `GET /api/item/spu/{spuId}/detail` 一次返回完整数据（商品+SKU+店铺+评论摘要+优惠券）
 - **多维度SKU**: `sku_spec_dimension`(维度名)/`sku_spec_option`(选项值) 表 + `spec_json` 字段
 - **原价/到手价**: sku 增加 `original_price`，详情页显示"¥到手价 ~~¥原价~~"
 - **立即购买**: `POST /api/trade/order/direct { skuId, quantity, addressId, couponId? }` 跳过购物车
@@ -1462,7 +1462,7 @@ Feature: 越权防护
 
 | # | 方法 | 路径 | 认证 | 请求 | 响应 | 说明 |
 | - | ---- | ---- | ---- | ---- | ---- | ---- |
-| P35 | GET | `/api/item/product/{productId}/pairing` | 🌐（随 `/api/item/**` GET 匿名白名单先例） | Query: `limit`(默认 6, ≤10) | `PairingCardVO { source: KG\|FALLBACK\|NONE, items: List<ProductCardVO> }` | 搭配推荐卡——item 组装（图为主/向量兜底），恒过滤在售、排除自身、fail-open 空列表；`source` 字段是否保留由契约定稿裁决 |
+| P35 | GET | `/api/item/spu/{spuId}/pairing` | 🌐（随 `/api/item/**` GET 匿名白名单先例） | Query: `limit`(默认 6, ≤10) | `PairingCardVO { source: KG\|FALLBACK\|NONE, items: List<ProductCardVO> }` | 搭配推荐卡——item 组装（图为主/向量兜底），恒过滤在售、排除自身、fail-open 空列表；`source` 字段是否保留由契约定稿裁决 |
 
 **管理端（AD61-63，建议落 item-service）**
 
@@ -1472,7 +1472,7 @@ Feature: 越权防护
 | AD62 | POST | `/api/admin/kg/rule` | 🔑 | `PairingRuleReq { srcCategoryId(必填), dstCategoryId(必填), weight?(默认 0), remark? }` | 创建（唯一约束防重 + 类目存在性校验；`@OperationLog`） |
 | AD63 | PUT | `/api/admin/kg/rule/{id}` | 🔑 | null-safe 局部更新（weight / remark / status 启停） | 编辑（对齐 AD51-53 null-safe 先例；`@OperationLog`） |
 
-**网关注记**：`/api/admin/kg/**` 需新增路由至 item-service（**须先于 `/api/admin/**` 兜底声明**——ADR-035/036 先例，否则落 user-service 兜底）；`/api/item/product/{id}/pairing` 随既有 `/api/item/**` 路由与 GET 匿名白名单，零网关改动。
+**网关注记**：`/api/admin/kg/**` 需新增路由至 item-service（**须先于 `/api/admin/**` 兜底声明**——ADR-035/036 先例，否则落 user-service 兜底）；`/api/item/spu/{spuId}/pairing` 随既有 `/api/item/**` 路由与 GET 匿名白名单，零网关改动。
 
 **Phase 2 端点方向（仅方向，不定稿）**：ai-service `KgContextRetriever`/`KgSearchTool` 经 ia-api Feign 复用 I58；抽取摄取复用 I57（`source=EXTRACTED` + confidence/reviewStatus 字段扩展）；如问答需批量上下文组装再议 `GET /internal/search/kg/context`。
 

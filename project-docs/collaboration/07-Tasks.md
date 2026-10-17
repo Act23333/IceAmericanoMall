@@ -251,18 +251,18 @@ Scenario: 接口限流
 ```gherkin
 Scenario: 商家发布商品
   Given 商家已登录
-  When POST /api/item/product with {name, categoryId, mainImage, description, skus[]}
+  When POST /api/item/spu with {name, categoryId, mainImage, description, skus[]}
   Then 创建商品 (SPU) 及关联 SKU
   And 商品初始状态为"下架"
 
 Scenario: 用户浏览商品列表
   Given 无需登录
-  When GET /api/item/product/page?page=1&size=20&sort=soldCount,desc&categoryId=1
+  When GET /api/item/spu/page?page=1&size=20&sort=soldCount,desc&categoryId=1
   Then 返回分页商品列表（仅上架商品）
   And 按销量降序排列
 
 Scenario: 查看商品详情
-  When GET /api/item/product/{id}
+  When GET /api/item/spu/{spuId}
   Then 返回商品基本信息 + SKU 列表（含价格/库存/规格）
   And 只返回可售状态 SKU
 ```
@@ -273,7 +273,7 @@ Scenario: 查看商品详情
 - **已完成**:
   - [x] ES 全文检索（ElasticsearchOperations）
   - [x] DB LIKE 降级方案（@ConditionalOnProperty 自动切换）
-  - [x] GET /api/search/product（关键词+类目筛选+分页）
+  - [x] GET /api/search/spu（关键词+类目筛选+分页）
   - [x] GET /api/search/hot（热门关键词）
   - [x] POST /internal/search/reindex（索引重建）
 - **依赖**: T2.1
@@ -651,7 +651,7 @@ Scenario: 查看商品详情
 > **大厂对标**: 京东详情页（多图+规格参数+SKU维度选择+店铺卡片+到手价+立即购买+评论晒图+关注店铺）。
 
 - **商品卡片增强**: ProductSearchVO 增加 shopName/shopLogo/ratingSold/viewCount 字段
-- **详情页数据聚合**: `GET /api/item/product/{id}/detail` 一次返回(商品+店铺+SKU+参数+评论摘要+优惠券)
+- **详情页数据聚合**: `GET /api/item/spu/{spuId}/detail` 一次返回(商品+店铺+SKU+参数+评论摘要+优惠券)
 - **多图+视频**: product 表增加 images(JSON) + video_url
 - **规格参数表**: product 表 attributes(JSON) → 京东标准 K-V 参数表
 - **结构化SKU**: `sku_spec_dimension`/`sku_spec_option` 表 + spec_json 替换 spec 字符串
@@ -659,7 +659,7 @@ Scenario: 查看商品详情
 - **立即购买**: `POST /api/trade/order/direct { skuId, quantity, addressId }`
 - **关注商家**: Redis Set 关注关系（`shop:followers:{sellerId}` / `user:follow:shops:{userId}`，2026-10 第六轮归 merchant-service；无 MySQL 表）+ `/api/shop/follow/{sellerId}`
 - **评论增强**: media_urls(JSON)替代 images 字符串，增加 helpful_count，筛选端点
-- **评论摘要**: 均分+星级分布+总评数，`GET /api/item/review/product/{id}/summary`
+- **评论摘要**: 均分+星级分布+总评数，`GET /api/item/review/spu/{spuId}/summary`
 - **购物车分组**: `GET /api/cart/grouped` 按 seller 分组
 - **店铺公开页**: `GET /api/shop/{sellerId}` + `GET /api/shop/{sellerId}/products`
 
@@ -737,7 +737,7 @@ Scenario: 查看商品详情
 
 > **2026-10-05 治理变更（数据库结构演进口径，[ADR-045](../adr/045-db-snapshot-single-source.md)）**：用户裁决库无存量数据——`database/migrations/` 目录（V1.1.0→V5.8 共 32 个迁移文件）删除，**`Initialize.sql` 为唯一结构真相源**，此后结构变更直接修改快照、不再产生迁移文件；AGENTS/CLAUDE/02-Architecture/04-Data-Model/14-Service-Config-Guide/docker-compose 注释同步清理；历史 ADR 中的迁移文件路径为存档记录不回写。
 
-> **2026-10-05 交付记录（P2 第一批：F7 商品向量推荐，[ADR-046](../adr/046-product-vector-recommendation.md) + 05 规格 V5.9.0 契约先行）**：①**search-service**——`ProductVectorManager`（条件装配，单向量不分块：name+description 拼接 → EmbeddingGateway → 幂等覆盖写 products 索引）+ I47 `POST /internal/search/vector/product/upsert`（未启用返回 0 / Feign 降级哨兵 -1）+ I48 `GET /internal/search/vector/product/similar`（自身向量 kNN 排除自身，id+score）；`ProductSearchGateway` 扩 `upsertVectorDoc`/`findVectorById`，`products` 索引 mapping 升级 knn+dense_vector（`ProductVectorMapping`）；**reindex 修复**——重建改走 ProductVectorMapping 并逐商品补向量（单商品 embed 失败降级为无向量文档不中断整批），消除「reindex 冲掉 kNN mapping」的隐患；②**item-service**——P27 `GET /api/item/product/{id}/similar`（命中 id 批量查本地库组装新鲜在售商品卡，恒过滤在售/剔除自身/按相似度降序）+ 摄取钩子（`ProductRecommendManager` 协作器，afterCommit 注册——事务回滚不摄取、哨兵/异常仅 log 主流程零感知，对齐触达接线先例）；③ia-api `ProductVectorClient`（fail-open）/`ProductVectorUpsertCO`/`ProductVectorHitCO`；MySQL 零 schema 变更（向量在 ES）。降级定类：推荐纯旁路全链路 fail-open（与 I43/I44 fail-closed 刻意不同）。测试全量通过（计数以主控构建校准）。遗留：冷启动推荐位可空（存量商品靠 reindex 或编辑触发摄取）、「看了又看」共现统计/多路召回 Phase 2。
+> **2026-10-05 交付记录（P2 第一批：F7 商品向量推荐，[ADR-046](../adr/046-product-vector-recommendation.md) + 05 规格 V5.9.0 契约先行）**：①**search-service**——`ProductVectorManager`（条件装配，单向量不分块：name+description 拼接 → EmbeddingGateway → 幂等覆盖写 products 索引）+ I47 `POST /internal/search/vector/product/upsert`（未启用返回 0 / Feign 降级哨兵 -1）+ I48 `GET /internal/search/vector/product/similar`（自身向量 kNN 排除自身，id+score）；`ProductSearchGateway` 扩 `upsertVectorDoc`/`findVectorById`，`products` 索引 mapping 升级 knn+dense_vector（`ProductVectorMapping`）；**reindex 修复**——重建改走 ProductVectorMapping 并逐商品补向量（单商品 embed 失败降级为无向量文档不中断整批），消除「reindex 冲掉 kNN mapping」的隐患；②**item-service**——P27 `GET /api/item/product/{id}/similar`（**该写法为交付时点原文，未改写**：改前 `/api/item/product/{id}/similar` → 改后 `/api/item/spu/{spuId}/similar`，B4 契约 / B5 代码 / B8 前端）（命中 id 批量查本地库组装新鲜在售商品卡，恒过滤在售/剔除自身/按相似度降序）+ 摄取钩子（`ProductRecommendManager` 协作器，afterCommit 注册——事务回滚不摄取、哨兵/异常仅 log 主流程零感知，对齐触达接线先例）；③ia-api `ProductVectorClient`（fail-open）/`ProductVectorUpsertCO`/`ProductVectorHitCO`；MySQL 零 schema 变更（向量在 ES）。降级定类：推荐纯旁路全链路 fail-open（与 I43/I44 fail-closed 刻意不同）。测试全量通过（计数以主控构建校准）。遗留：冷启动推荐位可空（存量商品靠 reindex 或编辑触发摄取）、「看了又看」共现统计/多路召回 Phase 2。
 
 > **2026-10-05 交付记录（P2 第二批：F8 搜索 facet / F9 每日任务体系，[ADR-047](../adr/047-daily-task-system.md) + 05 规格 V5.10.0 契约先行）**：①**F8 搜索 facet 与过滤补齐**——SE1 声明未实现的 `brand/minPrice/maxPrice/sort` 过滤补齐（ES 链 filter+sort、`ProductDocument` 新增 `publishTime`（epoch millis）+ mapping/reindex/I47 回填同口径、DB 链 HAVING 子查询同口径过滤；`EsProductSearchGateway` 296→270 行，查询装配下沉 `ProductSearchRequestBuilder`、文档转换下沉 `ProductEsDocuments`）；新增 SE6 `GET /api/search/facets`（品牌 terms size20 + 固定五档价格聚合，独立端点零破坏，聚合异常降级空对象，DB 链恒空对象）；②**F9 每日任务体系**——`task_def`（表驱动，seed DAILY_ORDER +20 / DAILY_REVIEW +10，按 ADR-045 口径直接入 Initialize.sql 快照）+ `task_record`（`uk_user_task_date` 每日幂等锚点）+ `TaskManager`（完成与 `PointsManager.addPoints` type=3 同一本地事务，DuplicateKey 幂等回落不外抛）+ M14 任务中心 + I49 触发口；接线：trade 确认收货 → DAILY_ORDER（事务外旁路）、item 评价落库 → DAILY_REVIEW（afterCommit，Feign 严格出事务）；ia-api `TaskClient` fail-open。测试全量通过（计数以主控构建校准）。遗留：管理端任务 CRUD/新手与周期任务类型/动态价格分档/搜索联想（SE5）roadmap 挂账。
 
@@ -757,7 +757,7 @@ Scenario: 查看商品详情
 
 > **2026-10-06 交付记录（P3 第四批：F16 多币种 Phase 1 展示换算 + 订单快照锁汇，完整 PRD（01-PRD §十七）评审定稿（O1 核心裁决采纳 D1-B 折中，裁决记录 §17.2.0）后规格先行（05 V5.17.0）+ 开发）**：①**范围闸住**——D1 采纳 B 折中：展示换算 + 订单快照锁汇，资金链路（支付/退款/钱包/对账/发票）**全程 CNY 分零改动**（NFR 硬验收第 1 条：无 BigDecimal/浮点新增、不变式 V2 逐字）；A 全链路结算四维全红，立项条件清单固化为 Phase 2 触发器。②**数据面（wallet）**——`currency`/`exchange_rate` 两表（定点整数 `rate_scaled` BIGINT 10⁻⁶ 刻度，一行一币 upsert 不做历史版本化）+ P36 币种列表（🌐 仅启用、60s 缓存）+ I61 当前汇率（未启用 1103/降级哨兵 -1）+ AD66-68 维护（分页/人工修正 source=MANUAL/启停，`@OperationLog`）+ 定时拉取 Job（开关 `currency.rate.pull.enabled` 默认 false、失败保上次值 + 告警；解析边界 BigDecimal 读入即转定点后弃用）；**I61 线格式钉名**：wallet 全局 SNAKE_CASE 经 Jackson mixin 钉 `rateScaled` camelCase（BalanceRefundCO 先例）。③**快照接线（trade）**——T1/T6/T27 请求增量可选 `displayCurrency` + `OrderDisplaySnapshotService` fail-open 单点决策（CNY 直通/哨兵 -1/异常 → 两列 NULL 订单照常创建，事务外、Saga validate 后 buildOrder 前）+ `orders.display_currency/display_rate` 快照落列 + OrderVO `displayCurrency/displayRateScaled` 回显（聚合/PO/转换器/三 Req/三 Req 测试与 H2 DDL 全链路适配）。④**展示换算在前端执行**（D7-A，后端契约零换算），定点整数公式与共享测试向量随 16-Frontend-Product-Design 定稿；免责文案常驻（O10 法务审校）。schema 60→62 表。测试全量通过（计数以主控构建校准）。挂账：Phase 2 多币种结算（§17.8 量化触发器 ≥2 项 + 硬性项）、汇率缓冲系数（O3）、偏好落 user 域（O5）。
 
-> **2026-10-06 交付记录（小程序后端增量批，05 契约 V5.18.0 契约先行；AGENTS ⚪ 口径修正——mini-program 后端接口全量共享、无需完整 PRD 重述）**：①**PAY7 `POST /api/pay/wechat/jsapi`**——小程序内拉起支付：JSAPI 下单（`payer.openid` 与商户下单 appid 同源）→ SDK `prepayWithRequestPayment` 返回带签名拉起参数集（appId/timeStamp/nonceStr/packageVal/signType/paySign）直传 `wx.requestPayment`；**顺带修复既有缺陷**——WechatPayProperties 补 `app-id` 配置、Native 下单补 `setAppid`（此前 PrepayRequest 缺 appid，真实环境 Native 下单亦会失败）；payType=MINI(3)。②**P37 `GET /api/item/product/{id}/wxa-code`**——商品分享小程序码：复用 `wechat.mini` 配置 stable_token（内存缓存至余量 300s）→ `wxacode.getUnlimited`（scene=`p={id}`，32 字符限制守卫）→ MinIO 缓存直返 30 分钟预签名 URL；fail-loud 定类（显式功能端点，非旁路）。③**pay_type 注释修正**——Initialize.sql/04 与 `PayTypeEnum`（1-h5/2-公众号(JSAPI)/3-小程序(MINI)/4-扫码/5-余额）对齐。**前端对接清单**产出：`product/02-Frontend-Integration-Checklist.md`（V5.14-V5.18 全部契约增量按场景组织 + 多币种共享换算测试向量 + PAY7 `wx.requestPayment` 对接口径）。测试全量通过（计数以主控构建校准）。挂账：真实商户证书联调（JSAPI/小程序码实机验证）、`RealWechatMiniClient` 注入缺失隐患另开修复任务。
+> **2026-10-06 交付记录（小程序后端增量批，05 契约 V5.18.0 契约先行；AGENTS ⚪ 口径修正——mini-program 后端接口全量共享、无需完整 PRD 重述）**：①**PAY7 `POST /api/pay/wechat/jsapi`**——小程序内拉起支付：JSAPI 下单（`payer.openid` 与商户下单 appid 同源）→ SDK `prepayWithRequestPayment` 返回带签名拉起参数集（appId/timeStamp/nonceStr/packageVal/signType/paySign）直传 `wx.requestPayment`；**顺带修复既有缺陷**——WechatPayProperties 补 `app-id` 配置、Native 下单补 `setAppid`（此前 PrepayRequest 缺 appid，真实环境 Native 下单亦会失败）；payType=MINI(3)。②**P37 `GET /api/item/product/{id}/wxa-code`**（**该写法为交付时点原文，未改写**：改前 `/api/item/product/{id}/wxa-code` → 改后 `/api/item/spu/{spuId}/wxa-code`，B4 契约 / B5 代码 / B8 前端）——商品分享小程序码：复用 `wechat.mini` 配置 stable_token（内存缓存至余量 300s）→ `wxacode.getUnlimited`（scene=`p={id}`，32 字符限制守卫）→ MinIO 缓存直返 30 分钟预签名 URL；fail-loud 定类（显式功能端点，非旁路）。③**pay_type 注释修正**——Initialize.sql/04 与 `PayTypeEnum`（1-h5/2-公众号(JSAPI)/3-小程序(MINI)/4-扫码/5-余额）对齐。**前端对接清单**产出：`product/02-Frontend-Integration-Checklist.md`（V5.14-V5.18 全部契约增量按场景组织 + 多币种共享换算测试向量 + PAY7 `wx.requestPayment` 对接口径）。测试全量通过（计数以主控构建校准）。挂账：真实商户证书联调（JSAPI/小程序码实机验证）、`RealWechatMiniClient` 注入缺失隐患另开修复任务。
 
 ### 版本完成状态
 

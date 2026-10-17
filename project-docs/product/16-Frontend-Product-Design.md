@@ -891,9 +891,9 @@ interface AiStore {
 // packages/api/hooks/
 
 // 商品
-useProducts(filters: ProductFilters)       // GET /api/item/product/page
-useProduct(id: number)                      // GET /api/item/product/{id}
-useProductDetail(id: number)               // GET /api/item/product/{id}/detail
+useProducts(filters: ProductFilters)       // GET /api/item/spu/page
+useProduct(id: number)                      // GET /api/item/spu/{spuId}
+useProductDetail(id: number)               // GET /api/item/spu/{spuId}/detail
 
 // 购物车
 useCart()                                   // GET /api/cart
@@ -910,7 +910,7 @@ usePayOrder(orderNo: string)               // POST /api/pay/order/{orderNo}
 usePayStatus(orderNo: string)              // GET /api/pay/order/{orderNo}/status
 
 // 搜索
-useSearch(keyword: string)                 // GET /api/search/product
+useSearch(keyword: string)                 // GET /api/search/spu
 useHotKeywords()                            // GET /api/search/hot
 useSearchSuggestions(keyword: string)      // GET /api/search/suggest
 
@@ -1044,7 +1044,7 @@ useConversations()                          // GET /api/ai/conversations
 | 4 | **首屏锚点** | `/` 品牌主页（沉浸式品牌体验）→ 「进入商城」再进商城（§1.3 / §4.1） | tab 首项 `pages/index/index`，直出商城视角（热销商品流），**无品牌主页** | 品牌体验是**Web 专属步骤**；小程序首屏目标是转化效率 |
 | 5 | **登录方式** | 账号密码 / 短信 / 邮箱 / 微信网页授权（§2.1 `/auth/*`） | **微信授权为主**（`Taro.login()` → code 换令牌，[AGENTS ⚪ 节](../../AGENTS.md)：`POST /api/auth/wechat/mini/login`），账号密码/短信为备选 | 认证**语义**一致、**入口**不同；token 存储介质按平台能力选（小程序无 `document.cookie`，用 `Taro.setStorageSync`） |
 | 6 | **支付发起** | 支付页 `/pay/[orderNo]`：微信 Native 扫码 + 余额（§4.1 主转化路径） | 支付页 `pages/pay/index.tsx`：**小程序内拉起**（PAY7 `wx.requestPayment`，见 [02-Frontend-Integration-Checklist](02-Frontend-Integration-Checklist.md) §六） | 两条通道共用同一支付单与回调链路（[05](../contract/05-API-Specification.md) §4.7 PAY1/PAY7） |
-| 7 | **分享与拉新** | 复制链接 / 分享 URL | **商品分享小程序码**（P37 `/api/item/product/{id}/wxa-code`，落地页 `pages/product/index`） | 分享载体差异属 IA 差异；分享目标的**落地页**必须在两端等价 |
+| 7 | **分享与拉新** | 复制链接 / 分享 URL | **商品分享小程序码**（P37 `/api/item/spu/{spuId}/wxa-code`，落地页 `pages/product/index`） | 分享载体差异属 IA 差异；分享目标的**落地页**必须在两端等价 |
 | 8 | **设置类偏好** | localStorage（如多币种展示偏好，[02-Frontend-Integration-Checklist](02-Frontend-Integration-Checklist.md) §五） | 小程序 storage（无 localStorage）；未配置时回落到**系统语言推断** | 偏好**语义**一致，存储介质按平台替换 |
 | 9 | **消息触达** | 站内信中心 + WebSocket 实时会话（§2.1 `/user/notifications`、`/chat`） | 个人中心承载消息入口（未读计数），读/已读走同一站内信契约 | 站内信是**三端共用**的触达底座（[05](../contract/05-API-Specification.md) §4.2.9）；系统级推送未立项（见 §11.5 待确认 3） |
 

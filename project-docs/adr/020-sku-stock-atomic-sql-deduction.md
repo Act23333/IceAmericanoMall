@@ -56,7 +56,7 @@ if (!updated) throw ...;
 - `AGENTS.md` 中"Optimistic locking：`orders` 和 `sku` 表使用 `version` 列 + `@Version`"的表述对 `sku` 已不再成立（`orders` 不变），需由 doc-engineer 同步（本 ADR 记录该偏差）。
 - 停售 SKU 的扣减失败文案为"库存不足"（3012）而非"商品已停售"，若前端需要区分文案，需新增错误码。
 - `ProductMapper.selectPageOrderByMinPrice`（**`ProductMapper` 现名 `SpuMapper`**，ADR-059）使用 `ORDER BY s.min_price ${orderDirection}`，方向值必须在 Java 侧白名单为 `ASC`/`DESC` 后才可拼接；新增调用方须遵守同一约束。
-- 列表页不再返回 `skus`（改为 `minPrice`），依赖旧字段的前端需改用 `GET /api/item/product/{id}` 取完整 SKU。
+- 列表页不再返回 `skus`（改为 `minPrice`），依赖旧字段的前端需改用 `GET /api/item/product/{id}` 取完整 SKU（**路径为决策期写法**：改前 `/api/item/product/{id}` → 改后 `/api/item/spu/{spuId}`，[ADR-062](./062-external-identifier-and-addressing.md) B4 契约 / B5 代码；本 ADR 正文不改写）。
 
 ## 日期
 

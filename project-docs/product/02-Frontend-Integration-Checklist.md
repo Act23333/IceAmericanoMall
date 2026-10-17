@@ -44,7 +44,7 @@
 
 | 场景 | 端点 | 要点 |
 |---|---|---|
-| 商品详情搭配卡 | `P35 GET /api/item/product/{id}/pairing`（🌐，`limit` 缺省 6 ≤ 10） | 响应 `PairingCardVO { source: KG\|FALLBACK\|NONE, items: List<ProductCardVO> }`；`source=KG` 图关系命中（可展示"搭配推荐"）、`FALLBACK` 向量相似（可展示"猜你喜欢"）、`NONE` 空列表不渲染；与 P27 相似卡**同页共存**（位次随 16-Frontend 设计） |
+| 商品详情搭配卡 | `P35 GET /api/item/spu/{spuId}/pairing`（🌐，`limit` 缺省 6 ≤ 10） | 响应 `PairingCardVO { source: KG\|FALLBACK\|NONE, items: List<ProductCardVO> }`；`source=KG` 图关系命中（可展示"搭配推荐"）、`FALLBACK` 向量相似（可展示"猜你喜欢"）、`NONE` 空列表不渲染；与 P27 相似卡**同页共存**（位次随 16-Frontend 设计） |
 | 管理端治理 | `AD61-65 /api/admin/kg` | 规则分页/创建/编辑（启停即时生效）/**AD65 邻居核查视图**（depth ≤ 2，>2 → 400）+ AD64 全量重建 |
 
 ## 五、多币种展示（V5.17）
@@ -81,7 +81,7 @@
 
 | 场景 | 端点 | 要点 |
 |---|---|---|
-| 商品分享码 | `P37 GET /api/item/product/{id}/wxa-code`（🌐） | 返回 `WxaCodeVO { url }`（30 分钟预签名 URL）；scene=`p={productId}`，落地页 `pages/product/detail/index`；MinIO 缓存（同商品复用）；商品不存在/下架 → 404 |
+| 商品分享码 | `P37 GET /api/item/spu/{spuId}/wxa-code`（🌐） | 返回 `WxaCodeVO { url }`（30 分钟预签名 URL）；scene=`p={productId}`，落地页 `pages/product/detail/index`；MinIO 缓存（同商品复用）；商品不存在/下架 → 404 |
 
 ## 八、既有高频契约（零改动提醒）
 

@@ -249,7 +249,7 @@ SPU 实体化后其名字列/线上名统一为 `spu_name`（列名与 JSON 键�
 | 3–4 | `ReviewCreateReq.spuId` / `.skuId` | **`Long` → `String`** | §决策 2；写路径同库只读解析（`spu_id` / `sku_id` 唯一索引），**解析不到 → `PARAM_ERROR` fail-fast**（不静默落指向不存在商品的评价） |
 | 5 | `NoteDetailVO.spus[].spuId` | **`Long` → `String`** | §决策 2；`NoteManager` 同批一次反向解析（新增 `SpuRepository.businessIdMapByTechnicalIds`，`spu` 主键 IN） |
 | 6 | `NotePublishReq.spuIds` | **`List<Long>` → `List<String>`** | §决策 2；整批解析 + **完备性守卫**（解析不到的键 → 400，**不静默丢弃**） |
-| 7 | `RecommendSpuVO.spuId` | **白名单保留 `Long`** | 与商品详情路径变量 `GET /api/item/product/{id}` **同口径**（P27 卡 / P35 搭配卡回链走同一路径）—— §后果 R1 已登记为「有意的口径并存」；收口须与路径变量同批（本批未获授权） |
+| 7 | `RecommendSpuVO.spuId` | **白名单保留 `Long`** | 与商品详情路径变量 `GET /api/item/spu/{spuId}` **同口径**（P27 卡 / P35 搭配卡回链走同一路径；该路径于 [ADR-062](./062-external-identifier-and-addressing.md) B4/B5 改名 —— 改前 `GET /api/item/product/{id}` → 改后 `GET /api/item/spu/{spuId}`）—— §后果 R1 已登记为「有意的口径并存」；收口须与路径变量同批（本批未获授权） |
 | 8–9 | `ShopDecorationVO.hotSpuIds` / `ShopDecorationReq.hotSpuIds` | **白名单保留 `List<Long>`** | 该字段是 **`spu.id` 寻址**且**展示端过滤失效/非在售**；ADR-048 §决策 4 明确登记 `shop_decoration.hot_spu_ids` **内部外键保持 `BIGINT`**；merchant 域**不持有也不解析** SPU 业务键（跨域校验留 Phase 2），收口需**改 DB 列形态 + 新增解析端点**（违反「不新增端点」硬约束）。写侧与读侧**必须同型同义**，故一并保留 |
 
 **8.3 零 DB 改动（A 案）**：本批全部走「**线格式收业务键、库内保持技术键**」——
@@ -263,8 +263,8 @@ SPU 实体化后其名字列/线上名统一为 `spu_name`（列名与 JSON 键�
 **8.5 仍未收口（不得据此宣称「全量收口」）**：`RecommendSpuVO.spuId`、
 `ShopDecoration{VO,Req}.hotSpuIds`（白名单，见 R1/R8 与 §8.2 #7–#9）、
 `KgEdgeUpsertCO.srcId`（不在命中面）、**对外路径变量**（R1，含 `ReviewController` 的
-`/api/item/review/product/{spuId}` —— 由此形成「`ReviewVO.spuId` 是业务键、该端点入参仍是技术键」
-的并存口径，属 R1 待裁决）。
+`/api/item/review/spu/{spuId}` —— 由此形成「`ReviewVO.spuId` 是业务键、该端点入参仍是技术键」
+**的并存口径；该并存已随 R1 收口（B4 契约 / B5 代码）消除**）。
 
 ## 备选方案
 
@@ -300,7 +300,7 @@ SPU 实体化后其名字列/线上名统一为 `spu_name`（列名与 JSON 键�
 
 | # | 残余风险 | 触发条件 | 后果 | 收敛方向 |
 | --- | --- | --- | --- | --- |
-| R1 | **路径变量未收口**（🔄 **B2 后仍遗留，且新增一条并存口径**） | 路径变量 `{id}`/`{spuId}`/`{skuId}`/`{productId}` 仍为技术键（`GET /api/item/product/{id}`、`DELETE /api/cart/item/{skuId}`、`GET /api/item/review/product/{spuId}` 等） | 「同一实体在路径与报文中两种形态」—— 客户端拿到 `CartItemVO.sku_id`（业务键）后**无法**用它调 `DELETE /api/cart/item/{skuId}`（该路径收技术键）；`SkuVO.spu_id` 同理无法直接用于 `GET /api/item/product/{id}` | ADR-058 §1 的**字面范围**只约束 VO/DTO 字段，未含路径变量，故本 ADR 不单方面扩大；**已登记 §十二 12.2 待裁决**：建议后续批次把「标识 SPU/SKU 实体」的路径/查询变量一并收口为业务键（影响面须先测算并随 BREAKING 批次发布）。<br>**B2 实施补注**：① C4/C5/C10（`/api/cart/item/{skuId}` 系列）**已随本批按业务键收口**（与 `CartItemVO.sku_id` 必须同型同义）；② **`RecommendSpuVO.spuId` 明确保持技术键**（`Long`）—— 其寻址口径与商品详情路径变量 `GET /api/item/product/{id}` **一致**（P27 相似商品卡回链走同一路径），故**不随本批收口**，属**有意的口径并存**而非遗漏；③ 其余路径变量（`{id}` / `{productId}`）与 `ReviewVO` / `ReviewCreateReq` / `NoteDetailVO.spus[]` / `NotePublishReq.spuIds` 的标识类型**仍未收口**（见 R7 / R8）。 |
+| R1 | **路径变量未收口**（✅ **已收口：B4 契约 / B5 代码 `4b999310` / B8 前端 `995a4593`**） | 路径变量 `{id}`/`{spuId}`/`{skuId}`/`{productId}` 仍为技术键（`GET /api/item/product/{id}`、`DELETE /api/cart/item/{skuId}`、`GET /api/item/review/product/{spuId}` 等） | 「同一实体在路径与报文中两种形态」—— 客户端拿到 `CartItemVO.sku_id`（业务键）后**无法**用它调 `DELETE /api/cart/item/{skuId}`（该路径收技术键）；`SkuVO.spu_id` 同理无法直接用于 `GET /api/item/product/{id}` | ✅ **已收口**：本列只更新状态，**上文触发条件/后果列保留决策期事实不改写**。收口形态 —— ① SPU 资源段改名并去掉变量段歧义：改前 `GET /api/item/product/{id}` → 改后 `GET /api/item/spu/{spuId}`、改前 `GET /api/item/review/product/{spuId}` → 改后 `GET /api/item/review/spu/{spuId}`；② 路径变量一律业务键 32-hex `String` 且**变量名显式**（`{spuId}`/`{skuId}`，`{id}` 在 SPU/SKU 资源段内全部退役）；③ `DELETE /api/cart/item/{skuId}` 的 `skuId` 为业务键（与 `CartItemVO.sku_id` 同型同义）；④ `RecommendSpuVO.spuId` 已随 B5 改 `String` 业务键，「并存口径」理由消失（见 §8.2 #7）。详见 [ADR-062](./062-external-identifier-and-addressing.md) §决策 2/3。 |
 | R2 | **`/internal/**` 内部契约收口**（✅ **B2 已收口**） | 已收口：`SpuVectorHitCO.spuId` / `SpuVectorUpsertCO.spuId` **由 `Long` 改型为 `String` 业务键**（32-hex）；同批一并收口 `SpuVectorClient.similar(spu_id)`、`SpuVectorUpsertReq.spuId`、`SpuVectorDoc.spuId`、`SpuSearchGateway.findVectorById`、`InternalSearchController` 的 `spu_id` 查询参数，以及 `SkuCO.spuId`（→ `String`）与 `ItemSearchClient.detail(id)`（`Long` → `String`）。**唯一保留技术键的是 ES 文档 `_id` / `id`** —— 与 reindex、I28 商品命中 `id` **同源**（`spuId` 列另写业务键） | 内部 DTO 亦属 ADR-058 §1「任何 VO/DTO」的字面范围；不一致会在「trade 传给 I22 的 `spu_ids`」处显形（见 R3） | **已消解**（本 ADR §决策 2 落码）。**未采纳** B1.5 的「先增字段」过渡建议 —— 改为直接改型（库无存量数据 ADR-045，且该批已是一次性 BREAKING）。**顺带修出两处实现错**：① `SpuRecommendManager` 曾以**技术键**作 I47 幂等键（业务键收口后即跨服务语义错），现改 `spu.getSpuId()`，并加「缺业务键 → 跳过摄取 + WARN」守卫；② search-service 测试夹具的业务键常量只有 31 位 hex（非法线格式），已改严格 32 位。**仍遗留**：`KgEdgeUpsertCO.srcId`（`Long`，不在本批门禁命中面）、I13/I14/I15 入参形态（见 R8） |
 | R3 | **券适用范围取值语义与 ADR-058 冲突**（✅ **B2 已修复**） | 契约 §4.10.1 记 `scope_type=3` 的 `scope_values` 装「spu 业务标识」；实测 `PricingService.buildSpuIds` 取 `SkuCO.spuId`（`Long` 技术键）拼接后经 I22 传入，`coupon.scope_values` 存的实为 `spu.id` 技术键字符串 | 客户端按 `scope_values` 与商品业务键做预过滤**永不命中**（与 ADR-058 记录的 join 缺陷同型）；服务端 `CouponScope.accepts` 两侧同为技术键，**校验本身仍正确**（故非资损，属功能失效） | **已随 R2 收口统一为业务键而消解**。**B2 实施事实**：`PricingService.buildSpuIds` 现取 `CartItemSnapshot.spuId`（**业务键 32-hex**，原取 `SkuCO.spuId` 技术键）拼接 CSV，与线格式 `spu_id`、与客户端 `scope_values` 预过滤**同型同义** —— **客户端券范围预过滤恢复可用**（原为技术键串，**永不命中**）。服务端 `CouponScope.accepts` 仍做同型字符串比较，**校验语义不变**（故该缺陷自始非资损）。 |
 | R4 | `merchant_reply_template.content` 的 `{product_name}` 占位符 | ✅ **B2 已顺手改**（该功能端点 CH6-CH8 `/api/seller/templates` **仍未实现**） | 模板变量名残留旧词 | **已落地**：`Initialize.sql` 注释改为 `变量: {buyer_name},{spu_name},{order_no}`（属 SQL 注释，端点未实现故**不构成线上契约变更**） |

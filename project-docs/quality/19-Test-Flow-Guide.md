@@ -232,7 +232,7 @@ curl -X PATCH http://localhost:8080/api/user/profile \
 
 ```bash
 # 6. 商品列表 (公开，无需 Token)
-curl -s "http://localhost:8080/api/item/product/page?page=1&size=10" | python3 -m json.tool
+curl -s "http://localhost:8080/api/item/spu/page?page=1&size=10" | python3 -m json.tool
 # 预期: records 数组
 
 # 7. 分类树
@@ -411,12 +411,12 @@ assert_ok() {
 echo "=== 冒烟测试开始 ==="
 
 # 公开端点
-assert_ok "商品列表" 200 "$(curl -s "$BASE/api/item/product/page?page=1&size=10")" "records"
+assert_ok "商品列表" 200 "$(curl -s "$BASE/api/item/spu/page?page=1&size=10")" "records"
 assert_ok "分类树"   200 "$(curl -s "$BASE/api/item/category")" "id"
 assert_ok "健康检查" 200 "$(curl -s "$BASE/actuator/health")" "UP"
 
 # 搜索 (需先启动 search-service)
-assert_ok "商品搜索" 200 "$(curl -s "$BASE/api/search/product?keyword=test&size=5")" "records"
+assert_ok "商品搜索" 200 "$(curl -s "$BASE/api/search/spu?keyword=test&size=5")" "records"
 assert_ok "热词"     200 "$(curl -s "$BASE/api/search/hot?limit=10")" "data"
 
 # 支付回调（ADR-029：应答为渠道协议裸 JSON，非平台 Result 信封）
@@ -524,7 +524,7 @@ assertTrue(result.isPassing());  // faithfulness>=90 && relevance>=85 && recall>
 
 ```bash
 # 使用 wrk 压测公开端点
-wrk -t4 -c100 -d30s http://localhost:8080/api/item/product/page?page=1&size=20
+wrk -t4 -c100 -d30s http://localhost:8080/api/item/spu/page?page=1&size=20
 # 预期: P99 < 500ms, QPS > 1000
 
 # AI 端点 (需要 Token + API Key)
