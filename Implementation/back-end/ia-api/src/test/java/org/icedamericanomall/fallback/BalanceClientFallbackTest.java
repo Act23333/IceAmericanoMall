@@ -28,7 +28,7 @@ class BalanceClientFallbackTest {
     void shouldThrow_whenDeductAndServiceDown() {
         BizException ex = assertThrows(BizException.class, () -> client.deductBalance(100L, 5000));
 
-        assertEquals(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, ex.getErrorCode());
+        assertEquals(ErrorCode.SYSTEM_BUSY, ex.getErrorCode());
     }
 
     @Test
@@ -42,6 +42,6 @@ class BalanceClientFallbackTest {
 
         BizException ex = assertThrows(BizException.class, () -> client.refund(request));
 
-        assertEquals(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, ex.getErrorCode());
+        assertEquals(ErrorCode.SYSTEM_BUSY, ex.getErrorCode());
     }
 }
