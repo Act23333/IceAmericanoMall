@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient, type FlashSaleVO } from '@icedmall/api';
-import { formatPrice } from '@icedmall/utils';
+import { formatPrice, spuHref } from '@icedmall/utils';
 import { Zap } from 'lucide-react';
 
 /**
@@ -17,8 +17,12 @@ import { Zap } from 'lucide-react';
  * 商品字段 `spu_name` / `main_image` / `original_price` 由后端读时回填（fail-open → null）。
  *
  * ⚠️ B3 字段收口（ADR-061）：`product_id` → `spu_id`、`product_name` → `spu_name`、
- *   `product_image` → `main_image`。秒杀卡**不做商品页深链**（SPU 业务键无法寻址仍收技术键的
- *   `/product/{id}`，契约 §十二 12.2 R1）；入口保留「查看全部」→ `/marketplace/flash`。
+ *   `product_image` → `main_image`。
+ *
+ * ✅ B8（2026-10-18）**秒杀卡回链商品页恢复**：P2 路径变量已改为 SPU 业务键
+ *   （契约 §P2 / ADR-062 §决策 3）⇒ `spu_id` 可直接跳 `/spu/{spu_id}`。
+ *   缺 `spu_id`（回填 fail-open）时 `spuHref()` 返回 null ⇒ 该卡**不渲染链接**
+ *   （仍是完整可读的展示卡），绝不出现 `/spu/undefined`。
  */
 export function FlashSaleBanner() {
   const { data } = useQuery<FlashSaleVO[]>({
@@ -47,18 +51,17 @@ export function FlashSaleBanner() {
           {data.slice(0, 4).map((fs) => {
             // 后端已给已售进度（分母 = 秒杀总库存）；null（老数据/降级）按 0 展示
             const progress = fs.progress_percent ?? 0;
-            return (
-              <div
-                key={fs.id}
-                className="group rounded-xl bg-white/70 backdrop-blur-sm border border-white/40 p-3"
-              >
+            // 回链 `/spu/{spu_id}`；缺业务键 → null ⇒ 不渲染链接（卡片照常展示）
+            const href = spuHref(fs.spu_id);
+            const card = (
+              <>
                 <div className="mb-2 h-20 w-full overflow-hidden rounded-lg bg-warm-100">
                   {fs.main_image ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={fs.main_image}
                       alt={fs.spu_name ?? ''}
-                      className="h-full w-full object-cover"
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                       loading="lazy"
                       decoding="async"
                     />
@@ -85,6 +88,17 @@ export function FlashSaleBanner() {
                   />
                 </div>
                 <p className="text-xs text-text-tertiary mt-1">已抢 {progress}%</p>
+              </>
+            );
+            const cardClass =
+              'group block rounded-xl bg-white/70 backdrop-blur-sm border border-white/40 p-3';
+            return href ? (
+              <Link key={fs.id} href={href} className={cardClass} aria-label={`查看 ${fs.spu_name ?? '限时秒杀商品'} 详情`}>
+                {card}
+              </Link>
+            ) : (
+              <div key={fs.id} className={cardClass}>
+                {card}
               </div>
             );
           })}

@@ -3,13 +3,19 @@
  *
  * 单一事实来源:
  *   Implementation/back-end/ia-common/src/main/java/org/icedamericanomall/common/enums/ErrorCode.java
- *   （共 98 个码；本文件与之逐条对齐，码值与文案同源）
+ *   （共 99 个码；本文件与之逐条对齐，码值与文案同源）
  * 契约参考: project-docs/contract/05-API-Specification.md §二（错误码体系）
  *
  * ── 报文约定 ──────────────────────────────────────────────────
- * 业务码 3000-3041 的 HTTP 状态为 **200**，即「业务失败 ≠ 传输失败」；
+ * 业务码 3000-3042 的 HTTP 状态为 **200**，即「业务失败 ≠ 传输失败」；
  * 前端必须按 body 内 `code` 分流，不能只看 `res.ok`（`apiClient` 已实现这一点：
  * `body.code !== 200` 时抛 `ApiError`）。
+ *
+ * ⚠️ **例外：1xxx 的 HTTP 状态是有意义的**（`ErrorCode` 枚举第二参已定死状态码）。
+ *   其中 **`NO_RESOURCE_FOUND(1103)` = 真 HTTP 404** —— 自 2026-10-18 B8 起，SPU 详情
+ *   `GET /api/item/spu/{spuId}`（P2）与 P38 短码端点**不再**用「200 信封 + 业务码」承载
+ *   「商品不存在」，改为真 404。故「商品不存在」判定必须同时认 **HTTP 404**（见
+ *   `isNotFound()`），只按 `body.code` 分流会把这类响应当成通用传输错误。
  *
  * ── 码段划分 ──────────────────────────────────────────────────
  *   1xxx  系统 / 认证 / 参数（HTTP 状态有意义：401/403/429/400/404）
@@ -54,6 +60,16 @@ export const ERROR_CODE = {
   // ---- 业务：交易 / 订单 / 商品 (3009-3019) ----
   ORDER_NOT_FOUND: 3009,
   ORDER_STATUS_INVALID: 3010,
+  /**
+   * ⚠️ **已废弃（后端 javadoc 标 `@deprecated`）**：SPU 不存在**不再用本码** ——
+   * 自 2026-10-18（后端 `265543d6`，B8）起 P2 / P38 统一抛
+   * `NO_RESOURCE_FOUND(1103)` + **真 HTTP 404**。
+   *
+   * 保留枚举项的原因：① 后端 `ErrorCode` 枚举仍在（仅兼容存量引用，禁止新增使用），
+   * 本文件与之逐条对齐才能通过 `scripts/check-error-codes.mjs`；② 判定侧走
+   * `isNotFound()`（**1103 与 3011 并轨**），旧报文若仍以 200+3011 出现也照常识别为「不存在」。
+   * 前端**不得**在新代码里把它当作「商品不存在」的判据 —— 用 `isNotFound()`。
+   */
   PRODUCT_NOT_FOUND: 3011,
   STOCK_INSUFFICIENT: 3012,
   CART_EMPTY: 3013,
@@ -71,7 +87,7 @@ export const ERROR_CODE = {
   FLASH_SALE_LIMIT_EXCEEDED: 3023,
   FLASH_SALE_FAILED: 3024,
 
-  // ---- 业务：售后 / 申请 / 通知 / 评价 / 运费 (3030-3041) ----
+  // ---- 业务：售后 / 申请 / 通知 / 评价 / 运费 (3030-3042) ----
   APPLICATION_EXISTS: 3030,
   AFTER_SALE_EXISTS: 3031,
   APPLICATION_NOT_FOUND: 3032,
@@ -84,6 +100,8 @@ export const ERROR_CODE = {
   REFUND_STATUS_INVALID: 3039,
   FREIGHT_TEMPLATE_NAME_EXISTS: 3040,
   FREIGHT_TEMPLATE_NOT_FOUND: 3041,
+  /** 购物车条目数上限（C2 `POST /api/cart/item`；HTTP 200 信封）。B8 补齐（后端枚举已有，前端漏登记）。 */
+  CART_ITEM_LIMIT_EXCEEDED: 3042,
 
   // ---- AI 专项 (3100-3104) ----
   AI_SERVICE_UNAVAILABLE: 3100,
@@ -218,6 +236,7 @@ const ERROR_MAP: Record<number, string> = {
   [ERROR_CODE.REFUND_STATUS_INVALID]: '当前退款状态不允许该操作',
   [ERROR_CODE.FREIGHT_TEMPLATE_NAME_EXISTS]: '运费模板名称已存在',
   [ERROR_CODE.FREIGHT_TEMPLATE_NOT_FOUND]: '运费模板不存在',
+  [ERROR_CODE.CART_ITEM_LIMIT_EXCEEDED]: '购物车条目数已达上限，请先清理再添加',
 
   // ---- AI 专项 ----
   [ERROR_CODE.AI_SERVICE_UNAVAILABLE]: 'AI 助手暂不可用，请稍后再试',
@@ -315,6 +334,25 @@ export function isParamError(code?: number): boolean {
   return code === ERROR_CODE.PARAM_ERROR;
 }
 
+/**
+ * 「资源不存在」判定 —— **1103 与 3011 并轨**（见 `PRODUCT_NOT_FOUND` 处的说明）。
+ *
+ * 为什么不只看 `code`：自 2026-10-18 B8 起 SPU 详情（P2）/ 短码（P38）的「不存在」
+ * 是 **真 HTTP 404**，`ApiError.code` 取的是 `body.code || res.status` —— 若网关/中间层
+ * 在 404 上不带 body（或 body 无 `code`），落到前端的就是 `code = 404`（HTTP 状态）。
+ * 三态都认：「404」= HTTP 状态，「1103」= 新语义业务码，「3011」= 存量报文兼容。
+ *
+ * @param err 任意 `{ code?, message? }`（`ApiError` / `ServerFetchError` 均满足）
+ */
+export function isNotFound(err?: { code?: number } | null): boolean {
+  const code = err?.code;
+  return (
+    code === 404 ||
+    code === ERROR_CODE.NO_RESOURCE_FOUND ||
+    code === ERROR_CODE.PRODUCT_NOT_FOUND // 存量兼容（后端已 deprecated，P2 不再使用）
+  );
+}
+
 /** 第三方渠道可用性问题（可提示「更换支付方式 / 稍后重试」）：4xxx 全段。 */
 export function isThirdPartyError(code?: number): boolean {
   return code !== undefined && code >= 4000 && code < 5000;
@@ -324,14 +362,18 @@ export function isThirdPartyError(code?: number): boolean {
  * 将 `ApiError` 转为用户可读消息。
  *
  * 优先级（既有语义，保持不变）：
- *   1. `ERROR_MAP[code]` —— 已知业务码的稳定中文文案（覆盖 98 个码全集）
- *   2. `err.message` —— 后端 `Result.msg`（更具体的动态消息，如「验证码错误次数过多，请稍后重试」）；
+ *   1. `ERROR_MAP[code]` —— 已知业务码的稳定中文文案（覆盖 99 个码全集）
+ *   2. **`isNotFound()`** —— 纯 HTTP 404（body 无 `code`，`ApiError.code = 404`）没有
+ *      `ERROR_MAP` 条目，落到这里给「资源不存在」而不是「网络异常」
+ *   3. `err.message` —— 后端 `Result.msg`（更具体的动态消息，如「验证码错误次数过多，请稍后重试」）；
  *      形如 `HTTP 500` 的占位消息不采用
- *   3. 兜底「网络异常，请检查连接后重试」
+ *   4. 兜底「网络异常，请检查连接后重试」
  */
 export function getUserMessage(err: { code?: number; message?: string }): string {
   const mapped = err.code !== undefined ? ERROR_MAP[err.code] : undefined;
   if (mapped) return mapped;
+  // 纯 HTTP 404（P2 新语义的回落形态）—— 不是网络问题，别给「检查连接」的误导文案
+  if (isNotFound(err)) return '请求的资源不存在，可能已被删除';
   // 后端返回的 msg 优先 (如 "登录密码错误" 等动态消息)
   if (err.message && !/^HTTP\s\d{3}$/.test(err.message)) return err.message;
   return '网络异常，请检查连接后重试';

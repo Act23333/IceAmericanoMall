@@ -8,3 +8,5 @@ export * from './format';
 export * from './coupon-face';
 export * from './validate';
 export * from './constants';
+// SPU 详情回链的唯一构造出口（`spuHref` / `hasSpuKey`）—— 缺失业务键时返回 null，不渲染空链接
+export * from './spu-link';

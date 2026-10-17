@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFlashSales, useFlashBuy } from '@icedmall/api';
 import { Button, GlassCard } from '@icedmall/ui';
-import { formatPrice } from '@icedmall/utils';
+import { formatPrice, spuHref } from '@icedmall/utils';
 import { Zap, Clock, ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
 
@@ -22,10 +22,11 @@ import Link from 'next/link';
  *   `product_name` → **`spu_name`**、`product_image` → **`main_image`**
  *   （主图名 B2 裁决统一为 `main_image`，`spu_image` / `product_image` 均已废弃）。
  *
- * ⚠️ 秒杀卡**不做商品页深链**：`FlashSaleVO` 只带 SPU **业务键**，而
- *   `GET /api/item/product/{id}` 的路径变量仍是**技术键 `Long`**（契约 §十二 12.2 R1 未收口），
- *   业务键无法寻址 ⇒ 旧 `href={`/product/${fs.product_id}`}` 实为 `/product/undefined`。
- *   本页保留真正可用的动作（`POST /api/flash/buy?flash_id=&address_id=`，按 `flash_id` 寻址）。
+ * ✅ 秒杀卡回链商品页（2026-10-18 B8 **恢复**）：P2 详情路径变量已改为 **SPU 业务键**
+ *   （契约 §P2、ADR-062 §决策 3）⇒ `spu_id` 可直接跳 `/spu/{spu_id}`。
+ *   B3 期「业务键无法寻址 ⇒ 不做深链」的限制已解除。缺 `spu_id`（回填 fail-open）时
+ *   `spuHref()` 返回 null ⇒ 图/标题不可点（不渲染空链接）；抢购按钮始终按 `flash_id` 寻址，
+ *   与商品页链接互不影响。
  */
 export default function FlashSalePage() {
   const router = useRouter();
@@ -117,6 +118,24 @@ export default function FlashSalePage() {
           const stockProgress = fs.progress_percent ?? 0;
           // 剩余量 = 总库存 − 已售（后端 FlashSale.remainingStock() 同口径；stock 是总量而非余量）
           const remainingStock = Math.max(0, (fs.stock ?? 0) - (fs.sold_count ?? 0));
+          // 回链 `/spu/{spu_id}`（B8 恢复；缺业务键 → null ⇒ 图/标题不渲染链接）
+          const spuLink = spuHref(fs.spu_id);
+          const imageBlock = (
+            <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-warm-gray-100">
+              {fs.main_image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={fs.main_image}
+                  alt={fs.spu_name ?? ''}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-3xl select-none">⚡</div>
+              )}
+            </div>
+          );
 
           const h = Math.floor(remaining / 3600000);
           const m = Math.floor((remaining % 3600000) / 60000);
@@ -140,25 +159,24 @@ export default function FlashSalePage() {
 
               {/* 商品信息 */}
               <div className="flex gap-4 p-4">
-                <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-warm-gray-100">
-                  {fs.main_image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={fs.main_image}
-                      alt={fs.spu_name ?? ''}
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-3xl select-none">⚡</div>
-                  )}
-                </div>
+                {spuLink ? (
+                  <Link href={spuLink} aria-label={`查看 ${fs.spu_name ?? '秒杀商品'} 详情`}>
+                    {imageBlock}
+                  </Link>
+                ) : (
+                  imageBlock
+                )}
                 <div className="flex-1 min-w-0">
                   {/* `spu_name` 由后端读时回填；缺失（SKU 已删除/降级）时回落中性文案 —— 不显示任何 id */}
-                  <h3 className="text-sm font-medium text-ink-black line-clamp-2">
-                    {fs.spu_name ?? '秒杀商品'}
-                  </h3>
+                  {spuLink ? (
+                    <Link href={spuLink} className="text-sm font-medium text-ink-black line-clamp-2 hover:underline">
+                      {fs.spu_name ?? '秒杀商品'}
+                    </Link>
+                  ) : (
+                    <h3 className="text-sm font-medium text-ink-black line-clamp-2">
+                      {fs.spu_name ?? '秒杀商品'}
+                    </h3>
+                  )}
                   <div className="mt-1.5 flex items-baseline gap-2">
                     <span className="text-lg font-bold text-amber price">
                       ¥{formatPrice(fs.flash_price ?? 0)}

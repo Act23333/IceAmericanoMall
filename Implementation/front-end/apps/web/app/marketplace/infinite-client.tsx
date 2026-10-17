@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiClient, type PageResult, type ProductVO } from '@icedmall/api';
 import { ProductCard } from '@icedmall/ui';
+import { spuHref } from '@icedmall/utils';
 
 interface Props {
   categoryId?: number;
@@ -41,7 +42,7 @@ export function MarketplaceInfinite({ categoryId, sort, initialProducts, initial
       // 后端 `SpuPageReq` 经 `@QueryModel` 绑定（Jackson + 全局 SNAKE_CASE）→ 线上名 `category_id`
       // （契约 §P1）；camelCase `categoryId` 被静默忽略 → 无限滚动翻页会丢失品类筛选。
       if (categoryId) sp.set('category_id', String(categoryId));
-      const result = await apiClient<PageResult<ProductVO>>(`/api/item/product/page?${sp.toString()}`);
+      const result = await apiClient<PageResult<ProductVO>>(`/api/item/spu/page?${sp.toString()}`);
       setProducts((prev) => [...prev, ...result.records]);
       setPage(nextPage);
       setHasMore(nextPage < result.pages);
@@ -64,7 +65,8 @@ export function MarketplaceInfinite({ categoryId, sort, initialProducts, initial
     <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {products.map((p) => (
-          <ProductCard key={p.id} product={p} href={`/product/${p.id}`} />
+          // 回链 `/spu/{spu_id}`（业务键，B8 恢复）；`spuHref` 返回 null ⇒ 不渲染链接
+          <ProductCard key={p.id} product={p} href={spuHref(p.spu_id) ?? undefined} />
         ))}
       </div>
       <div ref={sentinelRef} className="h-4 mt-4" />

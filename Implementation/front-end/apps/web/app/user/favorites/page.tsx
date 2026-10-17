@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, type PageResult, type FavoriteVO } from '@icedmall/api';
 import { GlassCard } from '@icedmall/ui';
-import { formatPrice } from '@icedmall/utils';
+import { formatPrice, spuHref } from '@icedmall/utils';
 import Link from 'next/link';
 
 /**
@@ -17,13 +17,18 @@ import Link from 'next/link';
  *   - `price` 为**整数分** → 展示层 `/100`（`formatPrice`）；
  *   - `status`：1=上架 2=下架 3=删除 → 非上架态渲染失效样式；null（回填缺失）不判失效。
  *
- * ⚠️ **回链商品详情的限制（契约 §十二 12.2 R1 待裁决，非本批可解）**：
- * `FavoriteVO` 只带 **SPU 业务键**，而商品详情 `GET /api/item/product/{id}` 的路径变量
- * **仍是技术键 `Long`**（R1 未收口）。业务键无法寻址该路径 ⇒ 旧代码
- * `href={`/product/${fav.product_id}`}` 实际渲染为 `/product/undefined`（且改名为 `spu_id`
- * 后若照抄会得到 `/product/<32hex>` → 后端 400）。
- * 故本页**不再伪造商品页深链**，改为卡片内直接渲染（不跳转），并在交付报告登记 R1 依赖。
- * 不显示任何 id 占位符（业务键亦不当作商品名展示）。
+ * ⚠️ **回链商品详情（2026-10-18 B8 恢复）**：
+ * B3 期 `FavoriteVO` 只带 SPU **业务键**，而 P2 详情路径变量当时是**技术键 `Long`**
+ * ⇒ 业务键无法寻址，深链被移除（旧 `href={`/product/${fav.product_id}`}` 实为
+ * `/product/undefined`）。现后端把路径变量改为**业务键 32-hex**
+ * （契约 §P2 / ADR-062 §决策 3）⇒ 可跳 `/spu/{spu_id}`，本页**恢复跳转**。
+ *
+ * 恢复的**防线**（不得退化）：
+ *   - `spu_id` 缺失（读时回填 fail-open / 商品行已消失）→ `spuHref()` 返回 `null` ⇒
+ *     **整块不渲染链接**（渲染为不可点容器），绝不出现 `/spu/undefined`；
+ *   - `status = 3`（已删除）→ 同样不跳（后端对已删除 SPU 返回 404，跳过去只会得到
+ *     一个 404 页；卡片本身已有「商品已删除」失效样式）；
+ *   - 不显示任何 id 占位符（业务键亦不当作商品名展示）。
  */
 export default function FavoritesPage() {
   const [page] = useState(1);
@@ -66,38 +71,49 @@ export default function FavoritesPage() {
             // 1=上架 2=下架 3=删除；null = 回填缺失（fail-open）→ 不判失效，照常展示
             const invalid = fav.status === 2 || fav.status === 3;
             const invalidText = fav.status === 3 ? '商品已删除' : '商品已下架';
+            // 回链 `/spu/{spu_id}`：业务键缺失 或 商品已删除(3) → null（**不渲染链接**）
+            const href = fav.status === 3 ? null : spuHref(fav.spu_id);
+            const body = (
+              <>
+                <div className="relative aspect-square overflow-hidden rounded-xl bg-warm-100">
+                  {fav.main_image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={fav.main_image}
+                      alt={fav.spu_name ?? ''}
+                      className={`h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 ${
+                        invalid ? 'opacity-50 grayscale' : ''
+                      }`}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-4xl">📦</div>
+                  )}
+                  {invalid && (
+                    <span className="absolute inset-x-0 bottom-0 bg-ink-black/60 py-1 text-xs text-white">
+                      {invalidText}
+                    </span>
+                  )}
+                </div>
+                {/* `spu_name` 为 null（商品已删除 / 读模型降级）时回落中性文案 —— 不回退显示任何 id */}
+                <p className={`mt-3 text-sm truncate ${invalid ? 'text-warm-400' : 'text-ink-black'}`}>
+                  {fav.spu_name ?? '商品信息暂不可用'}
+                </p>
+                <p className={`mt-1 text-sm font-medium price ${invalid ? 'text-warm-400 line-through' : 'text-ink-black'}`}>
+                  {fav.price != null ? `¥${formatPrice(fav.price)}` : '价格待更新'}
+                </p>
+              </>
+            );
             return (
               <GlassCard key={fav.id} className="relative group p-3 text-center" blur="sm">
-                <div className="block">
-                  <div className="relative aspect-square overflow-hidden rounded-xl bg-warm-100">
-                    {fav.main_image ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={fav.main_image}
-                        alt={fav.spu_name ?? ''}
-                        className={`h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 ${
-                          invalid ? 'opacity-50 grayscale' : ''
-                        }`}
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-4xl">📦</div>
-                    )}
-                    {invalid && (
-                      <span className="absolute inset-x-0 bottom-0 bg-ink-black/60 py-1 text-xs text-white">
-                        {invalidText}
-                      </span>
-                    )}
-                  </div>
-                  {/* `spu_name` 为 null（商品已删除 / 读模型降级）时回落中性文案 —— 不回退显示任何 id */}
-                  <p className={`mt-3 text-sm truncate ${invalid ? 'text-warm-400' : 'text-ink-black'}`}>
-                    {fav.spu_name ?? '商品信息暂不可用'}
-                  </p>
-                  <p className={`mt-1 text-sm font-medium price ${invalid ? 'text-warm-400 line-through' : 'text-ink-black'}`}>
-                    {fav.price != null ? `¥${formatPrice(fav.price)}` : '价格待更新'}
-                  </p>
-                </div>
+                {href ? (
+                  <Link href={href} className="block" aria-label={`查看 ${fav.spu_name ?? '该商品'} 详情`}>
+                    {body}
+                  </Link>
+                ) : (
+                  <div className="block">{body}</div>
+                )}
                 <button
                   onClick={(e) => { e.stopPropagation(); removeMutation.mutate(fav.spu_id); }}
                   disabled={removeMutation.isPending}

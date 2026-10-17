@@ -39,7 +39,7 @@
  *    契约 Query 列三方交叉断言）。
  *
  * ⚠️ **边界显式转换**：唯一允许「后端字段 → 前端 camelCase 域模型」的映射点是
- *    `apps/web/app/product/[id]/add-to-cart.tsx`（SkuVO → 本地 cart-store.CartItem）。
+ *    `apps/web/app/spu/[spuId]/add-to-cart.tsx`（SkuVO → 本地 cart-store.CartItem）。
  *    本地购物车是前端自有域模型（Zustand + localStorage），不属于报文，故保持 camelCase。
  */
 
@@ -206,6 +206,9 @@ export interface AddressReq {
  * ⚠️ **BREAKING（B3，ADR-061）**：字段名 `product_id` / `product_name` → `spu_id` / `spu_name`，
  * 且 `spu_id` 由 `number` 改 **32-hex `String`**（后端 `FavoriteVO.spuId: String`）。
  * 旧名在报文里**不存在** ⇒ 读到的恒 `undefined`（静默失效，无报错）。
+ *
+ * ✅ **B8（2026-10-18）回链恢复**：P2 路径变量已改为 SPU 业务键 ⇒ `spu_id` 可**直接**
+ * 寻址 `/spu/{spu_id}`（B3 期「业务键不可寻址」的限制已解除）。缺 `spu_id` 时**不得**渲染空链接。
  */
 export interface FavoriteVO {
   id: number;
@@ -231,6 +234,10 @@ export interface FavoriteVO {
  * （B1 批次的 14 处 `spu_name` 清单**不含**足迹端点，B2 未获授权改键名，
  * 见 `user-service/adapter/response/HistoryVO.java` javadoc 与契约 §十二 12.2【① 命名收口】）。
  * 因此本端点的线上键就是 `product_name` —— 改成 `spu_name` 会让足迹商品名整体变 `undefined`。
+ *
+ * ✅ **B8（2026-10-18）回链恢复**：`spu_id` 现可**直接**寻址 `/spu/{spu_id}`
+ * （P2 路径变量已由技术键改为业务键）。⚠️ 但**名称键仍是 `product_name`**（见上）——
+ * 回链恢复**不等于**可以顺手把它改成 `spu_name`。
  */
 export interface HistoryVO {
   id: number;
@@ -262,20 +269,30 @@ export interface CategoryVO {
 }
 
 /**
- * `GET /api/item/product/*` 响应 `SpuVO`（契约 §P1/P2；标识口径 §1.8）。
+ * `GET /api/item/spu/*` 响应 `SpuVO`（契约 §P1/P2；标识口径 §1.8；资源段 §1.9）。
  *
  * ⚠️ **BREAKING（B3，ADR-061）**：`product_id` → **`spu_id`**（32-hex `String`）。
  * 旧名在报文里不存在 ⇒ 恒 `undefined`（静默失效）。
- * `id` 是**资源行主键**（§1.8 明确登记的例外），仅供路由/渲染 key，
- * 也是 `GET /api/item/product/{id}` 路径变量与 P27 相似商品卡的取值口径。
+ *
+ * ⚠️ **B8（2026-10-18，ADR-062）**：资源段 `/api/item/product/**` → `/api/item/spu/**`，
+ * 且**路径变量 `{spuId}` 已由技术键 `Long` 改为 SPU 业务键 32-hex `String`**
+ * ⇒ `spu_id` **现在可以直接寻址详情页**（`/spu/{spu_id}` / `GET /api/item/spu/{spu_id}`）。
+ * `id` 保留为资源行主键（§1.8 例外条款，仅作渲染 key / 比对自身），与寻址无关。
+ *
+ * ⚠️ **名称/主图键名（勿「顺手统一」）**：本 VO 的商品名线上键是 **`name`**（不是 `spu_name`）、
+ * 主图是 **`main_image`** —— 依据后端 `item-service/.../adapter/response/SpuVO.java`
+ * `private String name; private String mainImage;`（无 `@JsonProperty` 改写）。
+ * `spu_name` 只出现在**需要回填 SPU 名的旁路 VO**（`SkuVO` / `CartItemVO` / `FavoriteVO` /
+ * `FlashSaleVO` / `OrderItemVO` 等），与 `SpuVO` 不同类，不得互相套用。
  */
 export interface ProductVO {
-  /** 资源行主键（技术键）。§1.8 例外条款 —— 路由 `/product/{id}` 与详情端点路径变量取此值。 */
+  /** 资源行主键（技术键）。§1.8 例外条款 —— **仅**作渲染 key / 自身比对，不用于寻址。 */
   id: number;
-  /** SPU 业务键（32-hex）。 */
+  /** SPU 业务键（32-hex）。**路由 `/spu/{spuId}` 与 P2 详情端点路径变量取此值。** */
   spu_id: string;
   seller_id: number;
   category_id: number;
+  /** SPU 名称（线上键为 `name`，见上方说明 —— **不是** `spu_name`）。 */
   name: string;
   main_image: string;
   description: string;
@@ -322,8 +339,12 @@ export interface SkuVO {
 }
 
 /**
- * `GET /api/search/product` 响应 `SpuSearchVO`（注意 `price` = 最低 SKU 价，分）。
+ * `GET /api/search/spu` 响应 `SpuSearchVO`（注意 `price` = 最低 SKU 价，分）。
  * ⚠️ 后端**无** `ProductSearchVO` 类名，实现为 `SpuSearchVO`；线上键为 `spu_id`。
+ * 资源段 `search/spu`（2026-10-18 B8；旧 `search/product` 已废止）。
+ * ⚠️ 名字里带 `product` 的**非 SPU 段**不属本口径、照旧保留（实测均在 trade-service）：
+ * `/api/trade/seller/dashboard/product-stats`（`SellerDashboardController`）、
+ * `/api/trade/admin/stats/top-products`（`AdminOrderController`）。
  */
 export interface ProductSearchVO {
   /** 资源行主键（技术键，§1.8 例外）。 */
@@ -340,14 +361,16 @@ export interface ProductSearchVO {
 }
 
 /**
- * `GET /api/item/review/product/{spuId}(/filter)` 响应 `ReviewVO`。
+ * `GET /api/item/review/spu/{spuId}(/filter)` 响应 `ReviewVO`。
  *
  * ⚠️ **BREAKING（B3）**：`product_id` → **`spu_id`**；`spu_id` / `sku_id` 由 `number` 改
  * **32-hex `String`**（B2.5 收口，ADR-061 §8.2 处置 #1–#2）。
  * `spu_id` 为**业务键回填**（整页批量，fail-open）→ 解析未命中时为 `null`（**不回落到技术键**）。
  *
- * ⚠️ 路径变量口径：`/api/item/review/product/{spuId}` 的 `{spuId}` **仍是技术键 `Long`**
- * （契约 §十二 12.2 R1 待裁决）—— 与 `ReviewVO.spu_id`（业务键）**不是**同一形态，不得互相寻址。
+ * ⚠️ 路径变量口径（**2026-10-18 B8 已收口**）：`/api/item/review/spu/{spuId}` 的 `{spuId}`
+ * 现为 **32-hex 业务键 `String`**（`ReviewController` + `IdGenerator.requireWire`），
+ * 与 `ReviewVO.spu_id` **同型同义** —— 旧「资源段 `review/product/` + 技术键 `Long`」已废止
+ * （ADR-062 §决策 2/3）。故前端可把列表项的 `spu_id` 直接用于寻址。
  */
 export interface ReviewVO {
   id: number;
@@ -442,7 +465,7 @@ export interface CartVO {
 export interface CartItemVO {
   /** SKU 业务键（32-hex）。 */
   sku_id: string;
-  /** SPU 业务键（32-hex）；SKU 已删除/回填降级时为 null。 */
+  /** SPU 业务键（32-hex）；SKU 已删除/回填降级时为 null。可回链 `/spu/{spu_id}`（B8）。 */
   spu_id: string | null;
   /**
    * SPU 名称。2026-10-15 后端修正 `SkuCO` 四字段恒 null 的缺陷（spuName/sellerId/
@@ -524,7 +547,7 @@ export interface OrderItemVO {
   id: number;
   /** SKU 业务键（32-hex）。 */
   sku_id: string;
-  /** SPU 业务键（32-hex）—— 商品源头回链/比价的锚点。 */
+  /** SPU 业务键（32-hex）—— 商品源头回链（`/spu/{spu_id}`）与比价的锚点。 */
   spu_id: string;
   /** SPU 名**快照**（下单时点事实，绝不回查实时表）。 */
   spu_name: string;
@@ -702,7 +725,11 @@ export interface UserCouponVO {
  */
 export interface FlashSaleVO {
   id: number;
-  /** SPU 业务键（32-hex）。**不是**可寻址商品详情的 `id`（路径变量仍收技术键，§十二 12.2 R1）。 */
+  /**
+   * SPU 业务键（32-hex）。
+   * ⚠️ 2026-10-18 B8：P2 路径变量已改为业务键 ⇒ 本字段**现在可直接回链** `/spu/{spu_id}`。
+   * （B3 期因「路径变量为技术键」而登记为不可寻址，该限制已随 ADR-062 §决策 3 解除。）
+   */
   spu_id: string;
   /** SKU 业务键（32-hex）。 */
   sku_id?: string | null;

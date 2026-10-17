@@ -14,7 +14,9 @@ export function useSearch(keyword: string, categoryId?: number, page = 1, size =
 
   return useQuery<PageResult<ProductSearchVO>>({
     queryKey: [...queryKeys.products.lists(), 'search', keyword, categoryId, page],
-    queryFn: () => apiClient<PageResult<ProductSearchVO>>(`/api/search/product?${params.toString()}`),
+    // 资源段 `spu`（SE1，2026-10-18 B8）—— 旧 `/api/search/product` 已随 ADR-062 §决策 2 改名。
+    // 出参 `SpuSearchVO`（本仓 TS 名 `ProductSearchVO`，后端无该类名），`spu_id` 为 32-hex 业务键。
+    queryFn: () => apiClient<PageResult<ProductSearchVO>>(`/api/search/spu?${params.toString()}`),
     staleTime: 15 * 1000,
     enabled: true,
   });

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { apiClient, type PageResult, type HistoryVO } from '@icedmall/api';
 import { GlassCard, Button } from '@icedmall/ui';
-import { formatPrice } from '@icedmall/utils';
+import { formatPrice, spuHref } from '@icedmall/utils';
 import { Search, Trash2, Clock } from 'lucide-react';
 import Link from 'next/link';
 
@@ -17,10 +17,14 @@ import Link from 'next/link';
  *     `@JsonProperty("product_name")` 未随 B2 改名（B1 的 14 处 `spu_name` 清单不含足迹端点）。
  *     **不要**把它改成 `spu_name` —— 改了商品名会整体变 `undefined`。
  *
- * ⚠️ 回链商品详情的限制同收藏页：`HistoryVO` 只带 SPU **业务键**，而
- * `GET /api/item/product/{id}` 路径变量仍是**技术键 `Long`**（契约 §十二 12.2 R1 未收口）
- * ⇒ 旧代码 `href={`/product/${item.product_id}`}` 实为 `/product/undefined`。
- * 本页不再伪造深链（不显示任何 id）。
+ * ⚠️ **回链商品详情（2026-10-18 B8 恢复）**：B3 期 `HistoryVO` 只带 SPU 业务键，而当时
+ * P2 详情路径变量仍是技术键 `Long` ⇒ 旧代码 `href={`/product/${item.product_id}`}` 实为
+ * `/product/undefined`，深链被移除。现路径变量已改为**业务键 32-hex**（契约 §P2、
+ * ADR-062 §决策 3）⇒ 本页**恢复跳转** `/spu/{spu_id}`。
+ * 防线：`spu_id` 缺失时 `spuHref()` 返回 `null` ⇒ 该行渲染为不可点容器（不出现空链接）。
+ *
+ * 🚫 **严禁「顺手改名」**：上面那个 `product_name` 是契约登记的唯一例外，
+ * 改 `spu_name` 会让整页商品名变 `undefined`（后端 `@JsonProperty("product_name")` 钉死）。
  */
 type FootprintItem = HistoryVO;
 type PageData = PageResult<HistoryVO>;
@@ -140,16 +144,21 @@ export default function HistoryPage() {
         <div key={group.label} className="mb-6">
           <h2 className="text-sm font-medium text-text-secondary mb-3">{group.label}</h2>
           <div className="space-y-2">
-            {group.items.map((item) => (
-              <GlassCard key={item.id} className="flex items-center gap-3 p-3 group" blur="sm">
-                <div className="flex items-center gap-3 flex-1 min-w-0">
+            {group.items.map((item) => {
+              // 回链 `/spu/{spu_id}`（业务键）；缺 id → null ⇒ 该行不可点（不渲染空链接）
+              const href = spuHref(item.spu_id);
+              const main = (
+                <>
                   {item.main_image ? (
                     <img src={item.main_image} alt="" className="h-14 w-14 rounded-lg object-cover bg-warm-gray-100 shrink-0" />
                   ) : (
                     <div className="h-14 w-14 rounded-lg bg-warm-gray-100 shrink-0 flex items-center justify-center text-xl">📦</div>
                   )}
                   <div className="flex-1 min-w-0">
-                    {/* 线上键 `product_name`（本端点的唯一保留项，见文件头说明） */}
+                    {/*
+                      🚫 线上键 `product_name` —— 本端点**唯一**保留项（后端 `@JsonProperty` 钉名）。
+                      切勿改为 `spu_name`：改了商品名整体变 undefined（见文件头与 types/index.ts 说明）。
+                    */}
                     <p className="text-sm text-ink-black truncate">{item.product_name}</p>
                     <div className="flex items-center gap-3 mt-1">
                       <span className="text-sm font-medium text-ink-black">¥{formatPrice(item.price ?? 0)}</span>
@@ -159,17 +168,28 @@ export default function HistoryPage() {
                       </span>
                     </div>
                   </div>
-                </div>
-                <button
-                  onClick={() => deleteMutation.mutate(item.id)}
-                  className="p-2 text-text-tertiary hover:text-danger transition-colors shrink-0 opacity-0 group-hover:opacity-100"
-                  title="删除"
-                  aria-label="删除该条足迹"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </GlassCard>
-            ))}
+                </>
+              );
+              return (
+                <GlassCard key={item.id} className="flex items-center gap-3 p-3 group" blur="sm">
+                  {href ? (
+                    <Link href={href} className="flex items-center gap-3 flex-1 min-w-0" aria-label={`查看 ${item.product_name} 详情`}>
+                      {main}
+                    </Link>
+                  ) : (
+                    <div className="flex items-center gap-3 flex-1 min-w-0">{main}</div>
+                  )}
+                  <button
+                    onClick={() => deleteMutation.mutate(item.id)}
+                    className="p-2 text-text-tertiary hover:text-danger transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+                    title="删除"
+                    aria-label="删除该条足迹"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </GlassCard>
+              );
+            })}
           </div>
         </div>
       ))}

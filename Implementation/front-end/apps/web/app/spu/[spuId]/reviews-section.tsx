@@ -18,16 +18,21 @@ const SORTS = [
 ];
 
 /**
- * `spuTechnicalId` —— 后端 `GET /api/item/review/product/{spuId}` 的路径变量是**技术键 `Long`**
- * （契约 §十二 12.2 R1 未收口），与 `ReviewVO.spu_id`（32-hex 业务键）**不同型**。
- * 故形参刻意不叫 `spuId`，避免有人把业务键传进来。
+ * `spuId` —— **SPU 业务键 32-hex**（`SpuVO.spu_id` / `ReviewVO.spu_id` 同口径）。
+ *
+ * 2026-10-18 B8：评价端点资源段 `review/product/{spuId}` → **`review/spu/{spuId}`**，
+ * 且路径变量由技术键 `Long` 改为**业务键 `String`**
+ * （`ReviewController` + `IdGenerator.requireWire`；形态非法即 400）。
+ *
+ * ⚠️ 因此调用方**必须原样传 String**：旧实现于页面内写 `Number(id)`，
+ * 而 32-hex 过 `Number()` 得 `NaN` ⇒ 评价区整体失效（不报错、只显空态）。
  */
-export function ReviewsSection({ spuTechnicalId }: { spuTechnicalId: number }) {
+export function ReviewsSection({ spuId }: { spuId: string }) {
   const [rating, setRating] = useState<number | undefined>();
   const [hasMedia, setHasMedia] = useState(false);
   const [sort, setSort] = useState('newest');
 
-  const { data, isLoading } = useProductReviews(spuTechnicalId, { rating, hasMedia: hasMedia || undefined, sort });
+  const { data, isLoading } = useProductReviews(spuId, { rating, hasMedia: hasMedia || undefined, sort });
 
   const handleLike = async (reviewId: number) => {
     try {

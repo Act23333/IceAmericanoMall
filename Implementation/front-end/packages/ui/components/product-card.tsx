@@ -13,9 +13,17 @@ import { formatPrice } from '@icedmall/utils';
  * ★ 修复点：原实现只读 `skus?.[0]?.price` —— 列表页 / 搜索结果都不带 skus，
  *   导致价格恒显示 ¥0.00。现按 `skus → min_price → price` 依次回落。
  * 字段名一律 snake_case（对应线上 JSON 键名）。
+ *
+ * ⚠️ **`id` 与 `spu_id` 的分工（2026-10-18 B8，ADR-062 §决策 3）**：
+ *   - `id` 是**资源行主键**（技术键，§1.8 例外）—— 只作渲染 `key`；
+ *   - `spu_id` 是 **SPU 业务键 32-hex** —— 详情页 `/spu/{spu_id}` 的**唯一**寻址值。
+ *   卡片**自己不拼链接**（`href` 由调用方经 `spuHref()` 构造），避免「拿技术键拼深链」
+ *   这类静默故障在这里再长出来。
  */
 export interface ProductCardData {
   id: number;
+  /** SPU 业务键（32-hex）；回填缺失时为 null/undefined → 调用方不渲染链接。 */
+  spu_id?: string | null;
   name: string;
   main_image?: string | null;
   description?: string | null;

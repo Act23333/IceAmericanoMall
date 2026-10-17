@@ -1,6 +1,7 @@
 'use client';
 
-import { formatPrice } from '@icedmall/utils';
+import Link from 'next/link';
+import { formatPrice, spuHref } from '@icedmall/utils';
 import type { OrderItemVO } from '@icedmall/api';
 import { orderItemCompareHint, orderItemDisplayName } from './order-item-compare';
 
@@ -14,6 +15,13 @@ import { orderItemCompareHint, orderItemDisplayName } from './order-item-compare
  *
  * 快照字段（下单时点冻结，**绝不回查实时表**）：`spu_name` / `sku_spec` / `price` /
  * `quantity` / `image` —— 即使商品已下架或 SKU 已删除，这些值照常渲染。
+ *
+ * ── 回链商品页（2026-10-18 B8 恢复）─────────────────────────────
+ * `OrderItemVO.spu_id` 是 **SPU 业务键 32-hex**（ADR-061 §决策 1），P2 路径变量改为业务键后
+ * 可直接跳 `/spu/{spu_id}`。防线：
+ *   - `spu_id` 缺失 → `spuHref()` 返回 null ⇒ **图片与标题都不渲染链接**（不出现空链接）；
+ *   - 链接只是**上一层**：快照文案本身不受影响，商品/SKU 已删除时目标页给「商品不存在」，
+ *     但**本行照常显示快照**（「缺失 ≠ 事实」，ADR-061 §决策 3）。
  */
 export function OrderItemRow({
   item,
@@ -24,6 +32,8 @@ export function OrderItemRow({
 }) {
   const hint = orderItemCompareHint(item);
   const name = orderItemDisplayName(item);
+  // 回链 `/spu/{spu_id}`；缺失业务键 → null ⇒ 不渲染链接
+  const href = spuHref(item.spu_id);
 
   return (
     <div
@@ -39,7 +49,13 @@ export function OrderItemRow({
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-ink-black truncate">{name}</p>
+        {href ? (
+          <Link href={href} className="text-sm text-ink-black truncate hover:underline">
+            {name}
+          </Link>
+        ) : (
+          <p className="text-sm text-ink-black truncate">{name}</p>
+        )}
         <p className="text-xs text-warm-400">
           {item.sku_spec} x{item.quantity}
         </p>

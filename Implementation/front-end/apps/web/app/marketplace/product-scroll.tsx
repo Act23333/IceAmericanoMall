@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import type { ProductVO } from '@icedmall/api';
-import { formatPrice } from '@icedmall/utils';
+import { formatPrice, spuHref } from '@icedmall/utils';
 
 function useCarousel(total: number, intervalMs = 3000) {
   const [idx, setIdx] = useState(0);
@@ -40,33 +40,50 @@ export function ProductScroll({ products }: { products: ProductVO[] }) {
         onMouseLeave={() => setPaused(false)}>
         <div className="flex transition-transform duration-700 ease-in-out"
           style={{ transform: `translateX(-${idx * 100}%)` }}>
-          {products.map((p) => (
-            <Link key={p.id} href={`/product/${p.id}`} scroll={false}
-              className="shrink-0 w-full grid grid-cols-1 md:grid-cols-2 gap-6 p-6 md:p-10 no-underline group">
-              {/* 图片 */}
-              <div className="aspect-square rounded-xl overflow-hidden bg-warm-100">
-                <img src={p.main_image} alt={p.name}
-                  className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-                  loading="lazy" decoding="async" />
-              </div>
-              {/* 文案 */}
-              <div className="flex flex-col justify-center">
-                <p className="text-xs text-warm-400 uppercase tracking-widest">{p.brand || '冰美精选'}</p>
-                <h3 className="mt-2 text-xl md:text-2xl font-light text-ink-black leading-snug">{p.name}</h3>
-                <p className="mt-3 text-sm text-warm-600 line-clamp-2 leading-relaxed">{p.description}</p>
-                <div className="mt-4 flex items-baseline gap-3">
-                  <span className="text-lg text-accent-green font-medium">
-                    {/* 列表页 ProductVO 不装配 skus，展示价取 min_price（分） */}
-                    ¥{formatPrice(p.min_price ?? p.skus?.[0]?.price ?? 0)}
-                  </span>
-                  <span className="text-xs text-warm-400">已售 {p.sold_count}</span>
+          {products.map((p) => {
+            // 回链 `/spu/{spu_id}`（业务键，B8 恢复）。`spuHref` 缺失业务键时返回 null
+            // ⇒ 该卡降级为**不可点**的 div，绝不渲染 `/spu/undefined` 这类空链接。
+            const href = spuHref(p.spu_id);
+            const slideClass =
+              'shrink-0 w-full grid grid-cols-1 md:grid-cols-2 gap-6 p-6 md:p-10 no-underline group';
+            const slide = (
+              <>
+                {/* 图片 */}
+                <div className="aspect-square rounded-xl overflow-hidden bg-warm-100">
+                  <img src={p.main_image} alt={p.name}
+                    className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    loading="lazy" decoding="async" />
                 </div>
-                <span className="mt-4 inline-block text-sm text-accent-green group-hover:underline">
-                  查看详情 →
-                </span>
+                {/* 文案 */}
+                <div className="flex flex-col justify-center">
+                  <p className="text-xs text-warm-400 uppercase tracking-widest">{p.brand || '冰美精选'}</p>
+                  <h3 className="mt-2 text-xl md:text-2xl font-light text-ink-black leading-snug">{p.name}</h3>
+                  <p className="mt-3 text-sm text-warm-600 line-clamp-2 leading-relaxed">{p.description}</p>
+                  <div className="mt-4 flex items-baseline gap-3">
+                    <span className="text-lg text-accent-green font-medium">
+                      {/* 列表页 ProductVO 不装配 skus，展示价取 min_price（分） */}
+                      ¥{formatPrice(p.min_price ?? p.skus?.[0]?.price ?? 0)}
+                    </span>
+                    <span className="text-xs text-warm-400">已售 {p.sold_count}</span>
+                  </div>
+                  {href && (
+                    <span className="mt-4 inline-block text-sm text-accent-green group-hover:underline">
+                      查看详情 →
+                    </span>
+                  )}
+                </div>
+              </>
+            );
+            return href ? (
+              <Link key={p.id} href={href} scroll={false} className={slideClass}>
+                {slide}
+              </Link>
+            ) : (
+              <div key={p.id} className={slideClass}>
+                {slide}
               </div>
-            </Link>
-          ))}
+            );
+          })}
         </div>
       </div>
 

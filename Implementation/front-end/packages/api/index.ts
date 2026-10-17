@@ -15,5 +15,7 @@ export {
   isRateLimited,
   isParamError,
   isThirdPartyError,
+  /** 「资源不存在」判定（404 / `1103` / 存量 `3011` 并轨）—— SPU 详情 404 分支用它。 */
+  isNotFound,
 } from './error-codes';
-export { getProducts, getProduct, getCategories } from './server';
+export { getProducts, getProduct, getSpuByCode, getCategories, ServerFetchError } from './server';

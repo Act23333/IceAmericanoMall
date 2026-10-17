@@ -3,11 +3,17 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ProductCard, SearchBar } from '@icedmall/ui';
+import { spuHref } from '@icedmall/utils';
 import type { PageResult, ProductSearchVO, ProductVO, CategoryVO } from '@icedmall/api';
 
 const API = process.env.NEXT_PUBLIC_API_URL || '';
 
-/** `GET /api/search/product` 返回 `SearchPageVO<ProductSearchVO>`（信封字段与 IPage 同名）。 */
+/**
+ * `GET /api/search/spu` 返回 `SearchPageVO<ProductSearchVO>`（信封字段与 IPage 同名）。
+ * ⚠️ 资源段 `search/spu`（2026-10-18 B8）—— 旧 `search/product` 已随 ADR-062 §决策 2 废止。
+ * 名字里带 `product` 的**非 SPU 段**不属本口径、一律照旧（实测：`/api/trade/seller/dashboard/product-stats`、
+ * `/api/trade/admin/stats/top-products`）—— 别把它们一起改掉。
+ */
 type PageData = PageResult<ProductSearchVO>;
 
 /** 关键词高亮 — 将搜索词拆分为单个字符和词组，红色标出 */
@@ -83,7 +89,7 @@ export default function SearchPage() {
   // 初始加载：热门词 + 推荐商品 + 分类 (仅一次)
   useEffect(() => {
     fetch(`${API}/api/search/hot?limit=8`).then((r) => r.json()).then((j) => setHotKeywords(j.data || [])).catch(() => {});
-    fetch(`${API}/api/item/product/page?sort=sales&order=desc&size=8`)
+    fetch(`${API}/api/item/spu/page?sort=sales&order=desc&size=8`)
       .then((r) => r.json()).then((j) => setRecommend(j.data?.records || [])).catch(() => {});
     fetch(`${API}/api/item/category/tree`).then((r) => r.json()).then((j) => setCategories(j.data || [])).catch(() => {});
   }, []);
@@ -109,7 +115,7 @@ export default function SearchPage() {
     // 保存搜索历史
     if (kw) saveHistory(kw);
 
-    fetch(`${API}/api/search/product?${sp.toString()}`)
+    fetch(`${API}/api/search/spu?${sp.toString()}`)
       .then((r) => r.json())
       .then((j) => {
         if (j.code === 200) setData(j.data);
@@ -165,7 +171,10 @@ export default function SearchPage() {
           <div>
             <h3 className="text-xs tracking-wider text-warm-400 mb-4 font-medium">✨ 为你推荐</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {recommend.map((p) => (<ProductCard key={p.id} product={p} href={`/product/${p.id}`} />))}
+              {recommend.map((p) => (
+                // 回链 `/spu/{spu_id}`（业务键；缺 id 时 `spuHref` 返回 null ⇒ 不渲染链接）
+                <ProductCard key={p.id} product={p} href={spuHref(p.spu_id) ?? undefined} />
+              ))}
             </div>
           </div>
         )}
@@ -215,7 +224,8 @@ export default function SearchPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {data.records.map((p) => (
             <div key={p.id} className="relative">
-              <ProductCard product={p} href={`/product/${p.id}`} />
+              {/* 搜索结果 `SpuSearchVO` 带 `spu_id`（32-hex 业务键）→ 回链 `/spu/{spu_id}` */}
+              <ProductCard product={p} href={spuHref(p.spu_id) ?? undefined} />
               {keyword && (
                 <p className="mt-1 text-xs text-warm-500 px-1 truncate">
                   <HighlightName name={p.name} keyword={keyword} />

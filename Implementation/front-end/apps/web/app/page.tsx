@@ -15,16 +15,18 @@ export const revalidate = 3600;
 export const dynamic = 'force-static';
 
 import { getProducts } from '@icedmall/api';
+import type { ProductVO } from '@icedmall/api';
 import { HeroScene } from './components/hero-scene';
 import { BrandPhilosophy } from './components/brand-philosophy';
 import { CuratedShowcase } from './components/curated-showcase';
 import { CreatorSpace } from './components/creator-space';
 import { MarketplacePortal } from './components/marketplace-portal';
 import { ProductCard } from '@icedmall/ui';
+import { spuHref } from '@icedmall/utils';
 import Link from 'next/link';
 
 export default async function HomePage() {
-  let products: any[] = [];
+  let products: ProductVO[] = [];
   try {
     const res = await getProducts({ sort: 'sales', order: 'desc', size: 8 });
     products = res?.records ?? [];
@@ -43,10 +45,13 @@ export default async function HomePage() {
           <div className="mx-auto max-w-7xl px-4">
             <h2 className="text-2xl font-light text-ink-black text-center mb-10">🔥 热销推荐</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {products.map((p: any) => (
-                <Link key={p.id} href={`/product/${p.id}`}>
-                  <ProductCard product={p} variant="default" />
-                </Link>
+              {/*
+                回链 `/spu/{spu_id}`（业务键，B8 恢复）。不再用 `<Link>` 包一层 ——
+                `ProductCard` 自己接收 `href`；`spuHref()` 返回 null 时卡片退化为不可点，
+                避免出现 `/spu/undefined` 这类空链接（B3 踩过的坑）。
+              */}
+              {products.map((p) => (
+                <ProductCard key={p.id} product={p} variant="default" href={spuHref(p.spu_id) ?? undefined} />
               ))}
             </div>
             <div className="text-center mt-8">

@@ -15,7 +15,7 @@ interface ProductFilters {
 }
 
 /**
- * 分页商品列表
+ * 分页 SPU 列表 —— P1 `GET /api/item/spu/page`
  *
  * staleTime: 30s — 商品数据需要相对新鲜
  */
@@ -24,7 +24,7 @@ export function useProducts(filters: ProductFilters = {}) {
     queryKey: queryKeys.products.list(filters as Record<string, unknown>),
     queryFn: async () => {
       const params = new URLSearchParams();
-      // 后端 `/api/item/product/page` 以 `SpuPageReq` 经 **`@QueryModel`** 绑定 —— 该形参走
+      // 后端 `/api/item/spu/page` 以 `SpuPageReq` 经 **`@QueryModel`** 绑定 —— 该形参走
       // Jackson（全局 `property-naming-strategy: SNAKE_CASE`），**线上名一律 snake_case**
       // （契约 §P1：`category_id?` / `seller_id?`）。曾误判为「裸 POJO 属性绑定、不受命名策略
       // 管辖」而发送 camelCase `categoryId` → 后端按未知属性静默忽略、`categoryId` 恒 null，
@@ -35,7 +35,7 @@ export function useProducts(filters: ProductFilters = {}) {
       if (filters.order) params.set('order', filters.order);
       if (filters.page) params.set('page', String(filters.page));
       if (filters.size) params.set('size', String(filters.size));
-      return apiClient<PageResult<ProductVO>>(`/api/item/product/page?${params.toString()}`);
+      return apiClient<PageResult<ProductVO>>(`/api/item/spu/page?${params.toString()}`);
     },
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
@@ -43,20 +43,25 @@ export function useProducts(filters: ProductFilters = {}) {
 }
 
 /**
- * 单个商品详情
+ * 单个 SPU 详情 —— P2 `GET /api/item/spu/{spuId}`
  *
- * ⚠️ 形参是 `GET /api/item/product/{id}` 的**路径变量** —— 契约 §十二 12.2 R1 未收口，
- * 它仍是**技术键 `Long`**（路由 `/product/{id}` 取 `SpuVO.id`），**不是** `SpuVO.spu_id`
- * 的 32-hex 业务键。二者不同型、不可互传，故形参名保持 `productId`（技术键语义）而不叫 `spuId`。
+ * ⚠️ **形参是 SPU 业务键 32-hex `String`**（`SpuVO.spu_id`，契约 §P2 / §1.8）。
+ * 2026-10-18 B8 之前该路径变量是**技术键 `Long`**（契约 §十二 12.2 R1 未收口），
+ * 形参因此刻意叫 `productId` 以示「不同型、不可互传」；现在**路径变量已改为业务键**
+ * （后端 `SpuController#requireSpuId` → `IdGenerator.requireWire` 形态校验，非法即 400），
+ * 故形参随契约改名为 `spuId` —— 技术键 `SpuVO.id` 与它**不再有任何寻址关系**。
+ *
+ * 失败语义：不存在 / 已删除 → **HTTP 404 `NO_RESOURCE_FOUND(1103)`**
+ * （客户端 `apiClient` 抛 `ApiError(code=1103)`；`isNotFound()` 判定）。
  *
  * staleTime: 2分钟
  */
-export function useProduct(productId: string) {
+export function useProduct(spuId: string) {
   return useQuery<ProductVO>({
-    queryKey: queryKeys.products.detail(productId),
-    queryFn: () => apiClient<ProductVO>(`/api/item/product/${productId}`),
+    queryKey: queryKeys.products.detail(spuId),
+    queryFn: () => apiClient<ProductVO>(`/api/item/spu/${spuId}`),
     staleTime: 2 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
-    enabled: !!productId,
+    enabled: !!spuId,
   });
 }
