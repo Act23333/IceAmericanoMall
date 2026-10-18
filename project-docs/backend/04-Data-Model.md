@@ -13,6 +13,19 @@
 > **2026-10-18（B7a 批次：承载层解耦契约先行，[ADR-063](../adr/063-external-channel-number-separation.md) §决策 7/8）**：①`spu` 新增 **`short_code VARCHAR(16) NOT NULL` + `UNIQUE KEY uk_short_code`** —— SPU **短码**（10 位小写 hex / 40 bit 熵 / 无时间序 / 不复用业务键任何子串），唯一用途是写入小程序码 `scene`（`p=<短码>`）并由新增端点 **P38** `GET /api/item/spu/by-code/{code}` 换回 SPU；**不是实体标识**，不得进任何 VO，不得替代 `spu_id`。✅ **已收口（B7b，`265543d6`）**：`Initialize.sql` 已直改快照加列（`short_code VARCHAR(16) NOT NULL` + `UNIQUE KEY uk_short_code`；ADR-045：无迁移无回填，库无存量数据）。本条原记「本批只写文档、`Initialize.sql` 尚未加列」为 B7a 时点状态。②**承载位容量口径登记**（不新增列，但决定「一列能装多少业务键」）：`home_config.spu_ids VARCHAR(500)` ⇒ 按「33 字符/项」上限 **15 项**；`chat_message.conversation_id VARCHAR(36)` 与 `ai_conversation.conversation_id BINARY(16)` 是**两套并存口径**，✅ **已收口（B7b）**：`chat_message.conversation_id` 已对齐为内容派生 32-hex（`sha256(buyerId|sellerId|spuId)` 前 32 位，服务端唯一派生点 `ai` `ConversationId.derive`；复合串业务键化后为 57 字符，超限 21）。详见 [05 §1.9⑦/⑧](../contract/05-API-Specification.md)。
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/变更表结构时必须同步
 
+> **⚠️ 2026-10-18（U3 裁决：5 张死表已删除，本文相关小节降级为历史设计记录）**
+> 以下 5 张表在**代码中零引用**（全仓 `.java/.xml/.yml` 命中 = 0，仅本目录等设计文档提及），
+> 已从 `Implementation/back-end/database/Initialize.sql` **删除**（CREATE 块 + DROP 行同时移除）：
+> `seller_application`（商家入驻申请，已被 `seller` 取代）、`flash_order_log`（秒杀日志，
+> 幂等实际靠 Redis Lua + `orders.uk_order_no` —— 该表列注释自称「幂等+兜底」属**假承诺**）、
+> `merchant_reply_template`（客服快捷回复，从未实现）、`ai_message` / `ai_conversation`
+> （IM 历史，实际由 `chat_message` 承载）。
+>
+> **口径**：`Initialize.sql` 是**当前 schema 的唯一真源**；本文中涉及上述 5 表的逐列小节是
+> **历史设计记录**（保留供追溯设计意图，不代表现状），不得据以编码。表数以
+> `node Implementation/back-end/scripts/sync-doc-counts.mjs --list-tables` 为准。
+> 逐节清理（把这 5 处从正文删除）登记在 `collaboration/open-items.md` §2.3。
+
 ---
 
 ## 一、数据库设计约定

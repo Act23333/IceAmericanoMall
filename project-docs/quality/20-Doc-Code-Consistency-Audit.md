@@ -199,7 +199,7 @@
 
 ### B1. 🔴 `04-Data-Model.md` 仍描述已被废除的迁移机制，且表数声明错误
 
-**事实源**：`database/Initialize.sql` 实测 **62 张** `CREATE TABLE`；`database/` 目录实际只有 `Initialize.sql`、`seed-data.js`、`middleware/`——**`migrations/` 目录不存在**（ADR-045，2026-10-05 废除迁移机制）。
+**事实源**：`database/Initialize.sql` 是唯一结构真源（表数以 `node Implementation/back-end/scripts/sync-doc-counts.mjs --list-tables` 为准）；`database/` 目录实际只有 `Initialize.sql` 与 `middleware/`——**`migrations/` 目录不存在**（ADR-045，2026-10-05 废除迁移机制）。**`seed-data.js` 已于 2026-10-18 退役删除**（U7 裁决：它与 `Initialize.sql` 的种子写同一个 `USERNAME/'admin'` 唯一键、口令 `Dev123456`，且业务 ID 仍是 ADR-050 前的非 hex 形态；种子真源统一为 `Initialize.sql`）。同批 U3 还删除了 5 张零代码引用的死表（见 `04-Data-Model.md` 头部裁决注记）。。
 
 `04-Data-Model.md` 中的残留（全部 `fix-doc`）：
 

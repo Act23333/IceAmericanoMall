@@ -147,6 +147,32 @@ git log --oneline -10                                        # 谁改了什么�
   ① 单类 `-Dtest=X` ② 整模块 `-pl <module> test` ③ 关联模块 `-pl ia-api,architecture-tests test`
   ④ 全量 `mvn clean test`。第 ③ 入口正是本批发现 flaky 的地方。
 
+### 1.13 门禁可信度收尾 + 两个产品裁决（批次 I，2026-10-18）
+- **租约的适用边界写清（真实缺陷）**：首版租约 120s 的依据是「批 100 条 × 单笔 ~200ms ≈ 20s」——
+  **只看平均耗时，漏了降级态**。Feign 的 TimeLimiter 上限是 5s，下游全超时时单批最坏
+  = 批大小 × 5s ⇒ 租约在批处理没跑完时就过期，另一个执行者会把**仍在处理**的行认领走，
+  认领机制在最需要它的场景下失效。
+  - 现取值 `CLAIM_LEASE_SECONDS = BATCH_LIMIT × FEIGN_CALL_TIMEOUT_SECONDS × 1.2`，
+    并新增**接缝测试** `InvoiceLinkCompensationLeaseBoundaryTest`：**读 `application.yml` 的
+    `timeout-duration`** 交叉断言「租约 > 批大小 × 超时上限」「常量与 yml 未漂移」「租约 > 调度间隔」。
+    改 Feign 超时而不改租约 ⇒ 测试红。
+  - **时钟口径**：写入与比较**都用应用时钟**（`LocalDateTime.now()` 在 Java 侧算好传参，不用
+    `DATE_ADD(... INTERVAL ...)`，因 MySQL/H2 方言不一致）。同节点绝对自洽；跨节点依赖 NTP，
+    严重漂移（分钟级）时会出现一次并发重调，由下游幂等兜底。**租约 ≠ 分布式锁**，不承诺恰好一次。
+- **门禁降级改为判红**：`check-ledger-facts.sh` 原先「无 `grep -P` 就退回 `-E` 并打印警告」——
+  **门禁降级 = 门禁变弱**，而变弱的门禁比没有更危险（会给人「已检查」的错觉）。现在直接退出 1
+  并说明原因；`FORCE_ERE=1` 可复现该分支（供自证）。
+- **17 个超限类补统一 deadline**：「不许增长」是**冻结**，不是约束 —— 冻结久了就变遗产。
+  基线现在**每条都带 deadline**（17 个统一 `2026-12-31`；pay 的两个走 D 批轨道，取 `2026-11-15`）。
+  到期未拆则构建红；改期只能在**显式提交**里做并写明理由。
+- **U3 裁决：删除 5 张死表**（`seller_application` / `flash_order_log` / `merchant_reply_template` /
+  `ai_message` / `ai_conversation`）——代码引用实测为 0，其余提及全在设计文档。`flash_order_log`
+  的列注释自称「秒杀幂等+兜底」是**假承诺**（实际靠 Lua + `orders.uk_order_no`）。
+  `04-Data-Model` 头部已加裁决注记（那 5 处降级为历史设计记录），逐节删除登记为 U14；
+  `ConversationId` 里「两套口径并存」的 javadoc 同步改写（隐患随表消失）。
+- **U7 裁决：退役 `database/seed-data.js`** —— 它和 `Initialize.sql` 抢同一唯一键（`USERNAME/'admin'`），
+  业务 ID 还是 ADR-050 之前的非 hex 形态。种子真源统一为 `Initialize.sql`。
+
 ---
 
 ## 2. 待办
@@ -175,11 +201,12 @@ git log --oneline -10                                        # 谁改了什么�
 | 项 | 内容 | 需要谁 |
 |---|---|---|
 | **U2** | `Initialize.sql` 两处过时注释（「未启用 `@TableLogic`、无 `deleted` 列」但 `invoice_title.deleted`+`@TableLogic` 已落地；「每表以 BIGINT AUTO_INCREMENT 为主键」但 3 张关联表是双列 PK）；并给 **4 组同名不同型列**（`spu_id`/`sku_id`/`user_id`/`coupon_id`）标注键型 | 我可直接做 |
-| **U3** | **5 张死表**存废：`seller_application` / `flash_order_log` / `merchant_reply_template` / `ai_message` / `ai_conversation`（0 处 Java 引用）。⚠ `flash_order_log` 注释写"秒杀幂等+兜底"，**实际靠 Lua + `orders.uk_order_no`** | 产品决策 |
+| ~~**U3**~~ | ✅ **已裁决并执行（本批）**：5 张零代码引用的死表**已从 `Initialize.sql` 删除**（`seller_application` / `flash_order_log` / `merchant_reply_template` / `ai_message` / `ai_conversation`；CREATE 块与 DROP 行同步移除，双向零差集）。理由：`flash_order_log` 列注释自称「秒杀幂等+兜底」是**假承诺**（实际靠 Lua + `orders.uk_order_no`）；`ai_*` 已被 `chat_message` 取代；`seller_application` 已被 `seller` 取代。设计意图仍留在 ADR/04（已加裁决注记）| 已完成 |
+| **U14** | `[历史]` `04-Data-Model.md` 中这 5 张死表的**逐列小节**尚在正文（已加头部注记声明为历史设计记录）→ 逐节删除属文档清理，不影响代码 | 低（文档）|
 | **U4** | 60 行**只读**结构对账脚本（打印缺表/缺列/类型不符），**不进 CI、不阻塞提交** | 我可直接做 |
 | **U5** | 2 处缺索引（`sys_user_role.role_id` 非前导、`refund_order(status,create_time)`）+ 7 处冗余索引 + 6 处疑似死索引 | 低优先，**不建议现在删** |
 | **U6** | `invoice_title.uk_user_default` 与软删共存（软删行占默认位）；当前 `clearDefaultByUserId` 不带 `deleted=0` **恰好**没踩坑——"对的但是偶然的" | 记 ADR |
-| **U7** | `database/seed-data.js` 与 `Initialize.sql` 新种子**冲突**（它也写 `USERNAME/'admin'`，口令 `Dev123456`，命中同一唯一键；且仍是 ADR-050 前的非 hex 业务 ID）→ 退役或重写 | 待裁决 |
+| ~~**U7**~~ | ✅ **已裁决并执行（本批）**：`database/seed-data.js` **已退役删除** —— 它与 `Initialize.sql` 的种子写同一个 `USERNAME/'admin'` 唯一键、口令同为一个明文弱口令，且业务 ID 仍是 ADR-050 前的非 hex 形态 ⇒ 种子真源统一为 `Initialize.sql`。`20-Doc-Code-Consistency-Audit.md` 中「目录只有 Initialize.sql + seed-data.js + middleware」的事实已同步订正 | 已完成 |
 | **U8** | `docker-compose.yml:46` 注释仍写一个过时表数（以 `sync-doc-counts.mjs --list-tables` 为准）| 低 |
 | **U9** | 通知 `type` **无枚举化真源**（4 个服务各持私有常量，10 个值）→ 建议收口为 `ia-api` 共享枚举 | 架构，需立项 |
 | ~~**U11**~~ | ✅ **已改（本批）**：`confirmPaid` 的「**支付单**不存在」用错成 `ORDER_NOT_FOUND(3009，「订单不存在」)` → 改 `NO_RESOURCE_FOUND(1103)`（同为 404 / CLIENT，调用方零感知，与 R2 的 I40/AD43/PAY6/I55 同口径）。`initiatePayment` / `initiateJsapiPayment` 的「订单不存在」**保留 3009**（语义正确） | 已完成 |

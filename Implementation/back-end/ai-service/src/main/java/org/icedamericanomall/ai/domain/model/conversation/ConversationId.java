@@ -23,14 +23,13 @@ import java.util.regex.Pattern;
  * 「由调用方自造」，实测代码与前端都<b>没有</b>构造方（仅 javadoc 与测试桩出现），
  * 故本批显式把派生收到服务端，而不是继续留一个「谁都能拼」的字符串约定。
  *
- * <p><b>⚠ 两套口径并存（不得混用）</b>：
- * <ul>
- *   <li>{@code chat_message.conversation_id} —— {@code VARCHAR(36)}，<b>内容派生 32-hex</b>（本类）；</li>
- *   <li>{@code ai_conversation.conversation_id} —— {@code BINARY(16)}，<b>UUIDv7 原始字节</b>
- *       （{@code IdGenerator.nextId()}；该表当前无代码接入）。</li>
- * </ul>
- * 同名不同型、不同算法 —— 若只改一侧，IM 会话与 AI 会话会在同一个 {@code conversation_id}
- * 名下<b>互相查不到，且是静默的</b>。本类的 {@link #MAX_LENGTH} 断言的是 {@code chat_message} 的列宽。
+ * <p><b>会话键口径（唯一）</b>：{@code chat_message.conversation_id} —— {@code VARCHAR(36)}，
+ * <b>内容派生 32-hex</b>（本类），断言列宽见 {@link #MAX_LENGTH}。
+ *
+ * <p><b>已消除的「两套口径」隐患</b>：此前另有一张 {@code ai_conversation} 表用
+ * {@code conversation_id BINARY(16)}（UUIDv7 原始字节）承载同名不同型、不同算法的会话键，
+ * 且<b>零代码接入</b>。该表已于 2026-10-18（U3 裁决）从 {@code Initialize.sql} 删除 ——
+ * 同一名词两套算法的静默不兼容风险随之消失，不要再按「两套并存」写代码或注释。
  */
 public final class ConversationId {
 

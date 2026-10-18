@@ -65,30 +65,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class InvoiceLinkCompensationRetryManager {
 
-    /**
-     * 单轮最大处理条数：限制单轮 Feign 调用总耗时（按单笔 ~200ms 估算约 20s），远低于分钟级
-     * 调度间隔，避免任务重叠堆积；积压靠多轮滚动消化（到期时间升序，老单优先收敛）。
-     * 与 {@code RefundResumeManager#BATCH_LIMIT} 同口径。
-     */
-    static final int BATCH_LIMIT = 100;
+    /** 单轮最大处理条数 —— 取值与依据见 {@link InvoiceLinkCompensationLeasePolicy}。 */
+    static final int BATCH_LIMIT = InvoiceLinkCompensationLeasePolicy.BATCH_LIMIT;
 
     /**
-     * 认领租约时长（秒）—— 认领成功后，该行在这段时间内不会再被别的执行者认领。
-     *
-     * <p><b>为什么是 120 秒</b>（三条约束的交集）：
-     * <ol>
-     *   <li><b>必须 &gt; 单批最长处理时间</b>：{@link #BATCH_LIMIT}（100 条）× 单笔 ~200ms ≈ 20s，
-     *       留 6 倍余量吸收下游变慢 —— 租约短于处理时间会出现「自己还在重调，别人已接手」的并发重调，
-     *       认领就白做了；</li>
-     *   <li><b>应约为 {@code @Scheduled} 间隔（默认 60s）的 2 倍以上</b>：保证「上一轮还没跑完、
-     *       下一轮已触发」时不会把仍在处理的行抢走；</li>
-     *   <li><b>必须短到「崩溃后可尽快恢复」</b>：持有者进程崩溃后，该行最多等一个租约周期就重新可认领
-     *       （不需要回收任务）；拖到小时级等于事实停摆。</li>
-     * </ol>
-     * 时间盒本身就是回收机制 —— 到期即自动可认领，故这里取值是「安全余量 vs 恢复窗口」的权衡，
-     * 不是重试退避（退避由 {@link #backoffMinutes} 单独表达）。
+     * 认领租约时长（秒）—— 取值、以及「为什么必须按最坏批耗时而不是平均耗时估算」，
+     * 全部见 {@link InvoiceLinkCompensationLeasePolicy}（那里还写明了时钟口径与「租约 ≠ 分布式锁」的边界）。
      */
-    static final int CLAIM_LEASE_SECONDS = 120;
+    static final int CLAIM_LEASE_SECONDS = InvoiceLinkCompensationLeasePolicy.CLAIM_LEASE_SECONDS;
 
     /**
      * 最大重试次数：{@code retry_count + 1 >= MAX_RETRY} 即转 {@code FAILED_PERMANENT}。

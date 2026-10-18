@@ -74,14 +74,10 @@ DROP TABLE IF EXISTS `sku`;
 DROP TABLE IF EXISTS `spu`;
 DROP TABLE IF EXISTS `freight_template`;
 DROP TABLE IF EXISTS `category`;
-DROP TABLE IF EXISTS `merchant_reply_template`;
 DROP TABLE IF EXISTS `merchant_knowledge_base`;
 DROP TABLE IF EXISTS `chat_message`;
-DROP TABLE IF EXISTS `ai_message`;
-DROP TABLE IF EXISTS `ai_conversation`;
 DROP TABLE IF EXISTS `shop`;
 DROP TABLE IF EXISTS `seller`;
-DROP TABLE IF EXISTS `seller_application`;
 DROP TABLE IF EXISTS `address`;
 DROP TABLE IF EXISTS `user_auth`;
 DROP TABLE IF EXISTS `user`;
@@ -94,7 +90,6 @@ DROP TABLE IF EXISTS `coupon`;
 DROP TABLE IF EXISTS `settlement`;
 DROP TABLE IF EXISTS `withdrawal`;
 DROP TABLE IF EXISTS `after_sale`;
-DROP TABLE IF EXISTS `flash_order_log`;
 DROP TABLE IF EXISTS `flash_sale`;
 DROP TABLE IF EXISTS `home_config`;
 DROP TABLE IF EXISTS `operation_log`;
@@ -631,21 +626,6 @@ CREATE TABLE `flash_sale` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='秒杀活动';
 
 -- flash_order_log（秒杀订单事务日志，幂等+兜底）
-CREATE TABLE `flash_order_log`
-(
-    `id`          BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `order_no`    BINARY(16)  NOT NULL UNIQUE COMMENT '订单号（UUIDv7 原始字节，ADR-050）',
-    `flash_id`    BIGINT       NOT NULL COMMENT '秒杀活动ID',
-    `user_id`     BIGINT       NOT NULL COMMENT '用户ID',
-    `status`      TINYINT      DEFAULT 0 COMMENT '0=待处理, 1=已创建, 2=失败, 3=超时取消',
-    `retry_count` INT          DEFAULT 0 COMMENT '重试次数',
-    `error_msg`   VARCHAR(500) NULL COMMENT '失败原因',
-    `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX `idx_status_time` (`status`, `create_time`)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '秒杀订单事务日志(幂等+兜底)';
-
--- home_config（首页装修配置）
 CREATE TABLE `home_config` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
     `slot` VARCHAR(30) NOT NULL COMMENT '位置标识(banner/hot/new/sale)',
@@ -747,23 +727,6 @@ CREATE TABLE `after_sale` (
 -- seller_application（商家入驻申请）
 --   ⚠️ deprecated（2026-10 第六轮）：平行入驻流程已退役；现行入驻以 seller 表为准。
 --   表保留作数据备份，不做数据迁移。
-CREATE TABLE `seller_application` (
-    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `user_id` BIGINT NOT NULL COMMENT '申请用户ID',
-    `shop_name` VARCHAR(100) NOT NULL COMMENT '店铺名称',
-    `contact_phone` VARCHAR(20) NOT NULL COMMENT '联系电话',
-    `province` VARCHAR(50) COMMENT '省',
-    `city` VARCHAR(50) COMMENT '市',
-    `district` VARCHAR(50) COMMENT '区/县',
-    `detail_address` VARCHAR(200) COMMENT '详细地址',
-    `description` VARCHAR(500) COMMENT '商家描述',
-    `status` TINYINT NOT NULL DEFAULT 0 COMMENT '0=待审核, 1=通过, 2=拒绝',
-    `admin_remark` VARCHAR(500) COMMENT '审核备注',
-    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    KEY `idx_user_id` (`user_id`),
-    KEY `idx_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商家入驻申请（deprecated）';
 
 -- settlement（结算单）— trade-service 结算域
 CREATE TABLE `settlement` (
@@ -804,40 +767,6 @@ CREATE TABLE `withdrawal` (
 -- =====================================================================
 
 -- ai_conversation（AI 对话会话）
-CREATE TABLE `ai_conversation`
-(
-    `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `conversation_id` BINARY(16)  NOT NULL UNIQUE COMMENT '会话业务ID（服务端生成 32-hex，UUIDv7 原始字节；表当前无代码接入，ADR-050 修订）。⚠ 与 chat_message.conversation_id（VARCHAR(36)，内容派生 sha256 前 32 hex）是**两套口径**，同名不同型不同算法，不得互相查（ADR-063 §决策 7 表 #4）',
-    `user_id`         BIGINT       NOT NULL COMMENT '用户ID',
-    `agent_type`      VARCHAR(20)  NOT NULL COMMENT 'Agent类型: SHOPPING / CUSTOMER_SERVICE',
-    `title`           VARCHAR(100) DEFAULT NULL COMMENT '会话标题（首条用户消息截断）',
-    `message_count`   INT          DEFAULT 0 COMMENT '消息总数',
-    `status`          TINYINT      DEFAULT 1 COMMENT '1=活跃, 2=已归档, 3=已删除',
-    `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最后更新时间',
-    INDEX `idx_user_agent` (`user_id`, `agent_type`),
-    INDEX `idx_create_time` (`create_time`)
-) ENGINE = InnoDB
-  DEFAULT CHARSET = utf8mb4
-  COLLATE = utf8mb4_unicode_ci COMMENT ='AI 对话会话';
-
--- ai_message（AI 对话消息）
-CREATE TABLE `ai_message`
-(
-    `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `conversation_id` BINARY(16)  NOT NULL COMMENT '会话ID（= ai_conversation.conversation_id 复制；UUIDv7 原始字节，ADR-050 修订）',
-    `role`            VARCHAR(10)  NOT NULL COMMENT '角色: USER / ASSISTANT / SYSTEM / TOOL',
-    `content`         TEXT         NOT NULL COMMENT '消息内容',
-    `tool_calls`      JSON         DEFAULT NULL COMMENT 'Tool调用记录: [{toolName, input, output, latencyMs}]',
-    `token_count`     INT          DEFAULT NULL COMMENT 'Token消耗估算',
-    `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '消息时间',
-    INDEX `idx_conversation_id` (`conversation_id`),
-    CONSTRAINT `fk_message_conversation` FOREIGN KEY (`conversation_id`) REFERENCES `ai_conversation` (`conversation_id`) ON DELETE CASCADE
-) ENGINE = InnoDB
-  DEFAULT CHARSET = utf8mb4
-  COLLATE = utf8mb4_unicode_ci COMMENT ='AI 对话消息';
-
--- chat_message（买家-商家 IM 聊天消息）
 CREATE TABLE `chat_message`
 (
     `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -874,25 +803,6 @@ CREATE TABLE `merchant_knowledge_base`
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '商家AI知识库';
 
 -- merchant_reply_template（商家回复模板）
-CREATE TABLE `merchant_reply_template`
-(
-    `id`          BIGINT AUTO_INCREMENT PRIMARY KEY,
-    `seller_id`   BIGINT       NOT NULL COMMENT '商家ID',
-    `title`       VARCHAR(200) NOT NULL COMMENT '模板标题',
-    `content`     TEXT         NOT NULL COMMENT '模板内容(变量: {buyer_name},{spu_name},{order_no})',
-    `category`    VARCHAR(30)  NOT NULL COMMENT 'GREETING/FAQ/OFFLINE/ORDER',
-    `sort_order`  INT          DEFAULT 0 COMMENT '排序',
-    `status`      TINYINT      DEFAULT 1 COMMENT '1=启用, 0=禁用',
-    `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX `idx_seller_category` (`seller_id`, `category`)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '商家回复模板';
-
--- =====================================================================
--- 八、触达 / 资金 / 日志（V1.2 / V5.0 / V5.1 / V5.3）
--- =====================================================================
-
--- notification(消息通知中心) — notification-service 触达域
 CREATE TABLE `notification` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
     `recipient_id` BIGINT NOT NULL COMMENT '接收者用户ID',
