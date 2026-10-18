@@ -54,7 +54,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AdminEndpointAuthorizationGuardTest {
 
     /** 受管路径前缀（管理端、商家端）。 */
-    private static final String[] GUARDED_PREFIXES = {"/api/admin", "/api/seller"};
+    private static final String[] GUARDED_PREFIXES = {
+            "/api/admin", "/api/seller",
+            // 盲区补丁（批 3 实测发现）：管理端控制器不一定挂在 /api/admin 下 ——
+            // AdminOrderController 的路径是 /api/trade/admin，此前**从未被本门禁覆盖**。
+            // 教训：受管前缀不能按"看起来像管理端"猜，要按实际 RequestMapping 扫。
+            "/api/trade/admin"};
 
     /**
      * <b>平台级配置前缀</b>（Q8 裁决 2026-10-18 扩的）：挂在业务资源段下、但语义是"平台配置"的写端点。
@@ -71,7 +76,15 @@ class AdminEndpointAuthorizationGuardTest {
     private static final String[] PLATFORM_CONFIG_PREFIXES = {
             "/api/item/category", "/api/item/brand", "/api/item/attr"};
 
-    /** 写操作的映射注解（用于方法级覆盖计数）。 */
+    /**
+     * <b>允许方法级覆盖的管理端前缀</b>：同一个控制器里不同方法要**不同的位**，
+     * 因此不能类级（Spring 的类级与方法级是 <b>AND 而非覆盖</b>，类级 + 方法级会要求两个位都有）。
+     *
+     * <p>本组要求：{@code @PreAuthorize} 数 ≥ 全部映射方法数（管理端没有公开端点，不许漏）。
+     */
+    private static final String[] METHOD_LEVEL_ADMIN_PREFIXES = {"/api/trade/admin"};
+
+    /** 写操作的映射注解（用于平台配置前缀的方法级覆盖计数）。 */
     private static final String[] WRITE_MAPPINGS = {"@PostMapping", "@PutMapping", "@DeleteMapping", "@PatchMapping"};
 
     /** 反空断言下限：受管控制器数量的下限（谓词失效会掉到 0）。 */
@@ -195,6 +208,16 @@ class AdminEndpointAuthorizationGuardTest {
         String mapping = source.classMapping();
         if (mapping == null || EXEMPT.containsKey(source.simpleName())) {
             return false;
+        }
+        if (startsWithAny(mapping, METHOD_LEVEL_ADMIN_PREFIXES)) {
+            // 管理端方法级：注解数必须覆盖全部映射方法（无公开端点可豁免）
+            if (source.hasClassLevelPreAuthorize()) {
+                return false;
+            }
+            int annotations = source.count("@PreAuthorize");
+            int mappings = source.count("@GetMapping", "@PostMapping", "@PutMapping",
+                    "@DeleteMapping", "@PatchMapping");
+            return mappings > 0 && annotations < mappings;
         }
         if (startsWithAny(mapping, PLATFORM_CONFIG_PREFIXES)) {
             // 平台配置：允许方法级覆盖（类级注解会封掉公开读端点）

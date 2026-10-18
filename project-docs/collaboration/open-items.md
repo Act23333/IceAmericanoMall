@@ -508,6 +508,14 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
 **这是一条通用教训**：`preflight` 脚本的扫描面必须同时覆盖「注解」与「代码内 `hasPermi/hasPermission` 调用」，
 否则"注解归零"是假归零。脚本已加该模式（当前 0 处）。
 
+**批 8 待办（`setUserRole` 的第二道闸）**：`PUT /user/{id}/role` 已定挂 `rbac:admin`（能改角色 = 能造超管）。
+**另需一条代码断言**：授予 ADMIN 时要求**当前用户本身是 `ROLE_ADMIN`**，否则拒绝。
+- 今天是**冗余**的（`rbac:admin` 只有 ROLE_ADMIN 持有），但它防的是**未来的配置变更**：
+  一旦有人把 `rbac:admin` 授予别的角色，没有这条断言就等于"给他开了一道造超管的门"。
+- 落点应在 **Manager 层**（`UserAdminManager#setUserRole`），不是控制器 —— 控制器改挂注解时容易漏，
+  且未来若有第二个入口（批量导入/管理脚本）也走 Manager。
+- 配套：一条单测（非 ROLE_ADMIN 持 rbac:admin 时授予 ADMIN → 拒绝）+ 审计记录。
+
 **宣称边界（写死）**：端到端 403 用例跑通之前，只能说「单测 + 门禁通过」，
 **不得声称「RBAC 已符合大厂标准」**；`sys_permission.path` 仍是装饰，本批不接路径解析层；
 数据权限（行级）不在本批。

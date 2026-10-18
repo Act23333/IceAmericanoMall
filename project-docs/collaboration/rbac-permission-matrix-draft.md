@@ -388,6 +388,15 @@ Q3 裁决的是**权限位**拆三位（`seller:finance` / `seller:coupon` / `se
 若按控制器机械挂 `aftersale:write`，后果正是 Q2 要防的**"客服能退款"越权**。
 ⇒ `aftersale:write` 当前**无消费者**（保留给将来"不涉退款的售后状态操作"；若无则按 §7.1 停用）。
 
+**批 3 两个实测发现（都改变了做法）**：
+
+1. **类级 + 方法级在 Spring 里是 AND 不是覆盖** ⇒ "类级 `order:admin` 兜底 + `dashboard` 方法级例外"
+   **不可行**：那样 dashboard 会同时要求 `order:admin` **和** `dashboard:read`。
+   故 `AdminOrderController` 改为**全部方法级**：4 个订单域方法 `order:admin`、`GET /dashboard` `dashboard:read`。
+2. **它的路径是 `/api/trade/admin`，不在门禁受管前缀里** ⇒ 该控制器**从未被鉴权门禁覆盖**。
+   已补前缀并新增「允许方法级」规则（要求注解数 ≥ 全部映射方法数，管理端无公开端点可豁免）。
+   **教训**：受管前缀不能按"看起来像管理端"猜，要按实际 `RequestMapping` 扫。
+
 **批 3 确认（已装库必须迁移）**：种子 **8304f976 里落的位是 `order:write`**（不是 `order:admin`）。
 本次改名只动了 `Initialize.sql`，而那是**全新安装**脚本 ⇒ **已装库仍是 `order:write`**。
 若不迁移，代码注解找 `order:admin` 而库里没有该位 ⇒ **该位不存在 ⇒ 永久 403**。
@@ -460,6 +469,7 @@ SoD（职责分离：一个人不能既开票又作废）**另立项**：它需�
      |---|---|---|---|
      | 1 ✅ | `AdminCurrencyController` / `AdminHomeController` / `AdminKgController` | `currency:admin` / `home:admin` / `kg:admin` | 18 → 15 |
      | 2 ✅ | `AdminMerchantController` | `merchant:admin` | 15 → 14 |
+     | 3 ✅ | `AdminOrderController`（**全方法级**：4 个订单域 + `GET /dashboard`） | `order:admin` ×4 / `dashboard:read` ×1 | 14 → 13 |
      | 4 ⬜ | `AdminAfterSaleController`（**按方法**：GET list / PUT review / PUT confirm-return） | `aftersale:read` / `pay:admin` / `pay:admin` | — |
      | 8 ⬜ | `AdminLogController` / `AdminUserController` / `Role`+`Permission` | `audit:read` 类级 / **按方法** `user:read`+`user:write`+**`rbac:admin`** / `rbac:admin` | — |
      | 末 ⬜ | `AdminInvoiceController`（按方法：issue / void / red-flush） | `invoice:issue` / `invoice:void` / `invoice:void`（Q9） | — |

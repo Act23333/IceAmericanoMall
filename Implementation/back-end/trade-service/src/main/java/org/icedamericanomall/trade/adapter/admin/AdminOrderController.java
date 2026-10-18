@@ -27,7 +27,6 @@ import java.util.List;
  * 金额字段一律<b>整数分</b>（口径见各 VO 字段 javadoc）。
  */
 @RestController
-@PreAuthorize("@ss.hasPermi('user:admin')")
 @RequestMapping("/api/trade/admin")
 @RequiredArgsConstructor
 public class AdminOrderController {
@@ -36,6 +35,10 @@ public class AdminOrderController {
     private final OrderQueryManager orderQueryManager;
 
     /** 仪表盘：用户数、订单数、营收统计（营收为分）。 */
+    // Q10 裁决：仪表盘跨域（订单/用户/商品汇总）⇒ 按方法挂 dashboard:read，
+    // 且**不能**用类级 order:admin 兜底 —— Spring 的类级与方法级是 **AND 而非覆盖**，
+    // 两者同时存在会让本方法同时要求 order:admin + dashboard:read。
+    @PreAuthorize("@ss.hasPermi('dashboard:read')")
     @GetMapping("/dashboard")
     public Result<AdminDashboardVO> dashboard() {
         return Result.ok(adminManager.dashboard());
@@ -47,6 +50,7 @@ public class AdminOrderController {
      * <p>{@code keyword}/{@code start_date}/{@code end_date} 由后端筛选（A2 收口）：
      * 此前契约已声明、实现未接线 → 参数被静默忽略（运营筛选无效）。
      */
+    @PreAuthorize("@ss.hasPermi('order:admin')")
     @GetMapping("/orders/page")
     public Result<IPage<OrderVO>> pageAllOrders(@QueryModel OrderPageReq req) {
         return Result.ok(orderQueryManager.pageOrders(
@@ -55,18 +59,21 @@ public class AdminOrderController {
     }
 
     /** 近 N 天订单趋势（图表数据；每日 {@code revenue} 为分）。 */
+    @PreAuthorize("@ss.hasPermi('order:admin')")
     @GetMapping("/stats/trend")
     public Result<List<OrderTrendVO>> trend(@RequestParam(defaultValue = "30") int days) {
         return Result.ok(adminManager.orderTrend(days));
     }
 
     /** 销量 Top N 商品（V2.5 详细统计；{@code revenue} 为分）。 */
+    @PreAuthorize("@ss.hasPermi('order:admin')")
     @GetMapping("/stats/top-products")
     public Result<List<SpuStatVO>> topSpus(@RequestParam(defaultValue = "10") int limit) {
         return Result.ok(adminManager.topSpus(limit));
     }
 
     /** 指定日期区间分日销售额（V2.5 详细统计；每日 {@code revenue} 为分）。 */
+    @PreAuthorize("@ss.hasPermi('order:admin')")
     @GetMapping("/stats/sales")
     public Result<List<SalesByDateVO>> salesByDateRange(
             @RequestParam String from, @RequestParam String to) {
