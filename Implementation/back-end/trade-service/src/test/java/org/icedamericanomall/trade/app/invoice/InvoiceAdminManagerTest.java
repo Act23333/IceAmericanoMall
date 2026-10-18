@@ -161,6 +161,43 @@ class InvoiceAdminManagerTest {
     }
 
     @Test
+    @DisplayName("AD60 冲红 — **只作废不重开**：不得触达开票端口（裁决 A 的语义断言）")
+    void shouldNotOpenNewInvoice_whenRedFlush() {
+        when(invoiceRepository.findByInvoiceNo(INVOICE_NO)).thenReturn(issuedInvoice());
+        when(invoiceRepository.redFlushIfIssued(INVOICE_NO, "客户要求红冲")).thenReturn(1);
+
+        manager.redFlush(INVOICE_NO, "客户要求红冲");
+
+        // 冲红 = 把原票置为已冲红；**不生成红字票、不重开** ⇒ 开票端口一次都不该被调用
+        verifyNoInteractions(invoiceIssuePort);
+    }
+
+    @Test
+    @DisplayName("AD60 冲红 — 条件更新返回 0 行（并发状态变更）→ 拒绝，不触达")
+    void shouldReject_whenRedFlushConditionalUpdateReturnsZero() {
+        when(invoiceRepository.findByInvoiceNo(INVOICE_NO)).thenReturn(issuedInvoice());
+        // 读到的是"已开具"，但条件更新时状态已被别人改掉
+        when(invoiceRepository.redFlushIfIssued(INVOICE_NO, "并发")).thenReturn(0);
+
+        assertThrows(BizException.class, () -> manager.redFlush(INVOICE_NO, "并发"));
+
+        verify(tradeEventNotifier, never()).notifyInvoiceRedFlushed(any(Invoice.class), eq("并发"));
+    }
+
+    @Test
+    @DisplayName("AD60 冲红 — 非已开具（待开具）→ 合规守卫拒绝，且不尝试条件更新")
+    void shouldRejectWithoutConditionalUpdate_whenRedFlushPending() {
+        Invoice pending = pendingInvoice();
+        when(invoiceRepository.findByInvoiceNo(INVOICE_NO)).thenReturn(pending);
+
+        assertThrows(BizException.class, () -> manager.redFlush(INVOICE_NO, "未开具"));
+
+        verify(invoiceRepository, never()).redFlushIfIssued(any(), any());
+        verifyNoInteractions(invoiceIssuePort);
+        assertEquals(InvoiceStatusEnum.PENDING_ISSUE.getCode(), pending.getStatus(),
+                "被拒绝后原票状态不得变化");
+    }
+
     @DisplayName("AD60 冲红 — 已开具条件迁移命中并触达；已冲红重复触发 = 幂等空操作")
     void shouldRedFlushIssuedAndIdempotent_whenAlreadyRed() {
         when(invoiceRepository.findByInvoiceNo(INVOICE_NO)).thenReturn(issuedInvoice());

@@ -1010,7 +1010,9 @@ INSERT INTO `sys_permission` (`id`, `name`, `code`, `type`, `path`, `sort_order`
 -- Q10 裁决：仪表盘/统计独立成位（与 order:admin 分开 —— 看数据不等于能改订单）。
 (28, '看板数据',    'dashboard:read', 3, '/api/admin/dashboard/**',   31, 1),
 -- 批 8 裁决：审计日志查询独立成位（**不挂 user:read** —— 读审计不等于读用户资料）。
-(29, '审计日志查询','audit:read',     3, '/api/admin/log/**',         32, 1)
+(29, '审计日志查询','audit:read',     3, '/api/admin/log/**',         32, 1),
+-- Q1「每域两档」：发票域补读档（GET /page）。写档已拆 invoice:issue / invoice:void（Q2）。
+(30, '发票查询',    'invoice:read',   3, '/api/admin/invoice/**',     33, 1)
 ON DUPLICATE KEY UPDATE
     `name` = VALUES(`name`), `code` = VALUES(`code`), `type` = VALUES(`type`),
     `path` = VALUES(`path`), `sort_order` = VALUES(`sort_order`), `status` = VALUES(`status`);

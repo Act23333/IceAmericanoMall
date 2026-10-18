@@ -122,6 +122,16 @@ public class InvoiceAdminManager {
      * @param invoiceNo 发票申请号
      * @param reason    冲红原因（人工必填）
      * @throws BizException 发票不存在 / 仅已开具可冲红 / 并发状态变更
+     *
+     * <p><b>语义（2026-10-18 实测后改写，裁决 A）</b>：本方法<b>只把原票置为已冲红（RED_FLUSHED）</b>，
+     * 写 {@code red_reason} 追溯，并触达买家 —— <b>不重开新票、也不生成红字票记录</b>。
+     * 因此它是<b>单条条件更新</b>（{@code redFlushIfIssued}），天然原子，<b>不存在"作废成功、重开失败"的中间态</b>。
+     *
+     * <p>先前 Q9 裁决里"冲红 = 作废 + 重开"的表述与代码不符，已按实际行为改正；
+     * 权限位结论不变（仍挂 {@code invoice:void}）—— 理由改为「只做作废，{@code invoice:void} 已覆盖」。
+     *
+     * <p><b>登记（非缺陷定论）</b>：红字票是"系统外开具"还是"本系统应生成"尚待业务确认；
+     * {@code red_reason} 目前是自由文本，<b>不承载红字票号</b>，无法据此追溯红字票。
      */
     public void redFlush(String invoiceNo, String reason) {
         Invoice invoice = requireInvoice(invoiceNo);
