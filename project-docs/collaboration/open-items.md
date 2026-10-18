@@ -559,30 +559,20 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
 口径收定：**无保护 = ①写方法 + ②可能被重试 + ③无幂等键且无条件更新，三条同时满足**。
 静态只能判 ①③：②（MQ 重投 / Feign 重试 / job 重放 / 人工重放）**必须运行环境确认，不假装查完**。
 - 全景表：`--table`（module / class / method / 幂等键 / 条件更新 / 判定）；
-- **分档结果（`scripts/idempotency-tier.py`，2026-10-18 首次跑）**：① MQ/Feign 链路 **2 个**
-  （`UserAuthMapper.upsert`、`ShopDecorationMapper.upsert`）/ ② 定时 job **0 个** /
-  ③ 仅 HTTP/app 入口 **25 个**（RBAC 8 已确认非缺口，其余为点赞/评价计数、库存、发票、浏览记录）。
-- **★ 分档的已知局限（不假装守住）**：脚本只走**一跳**（mapper 方法 → 直接调用者），
-  **漏掉"经 app 层再由内部端点触发"的链路**。实证：`WalletAccountMapper.credit/deduct` 被判进 ③，
-  但真实入口是 wallet-service `POST /internal/balance/deduct`（`InternalWalletController` → `walletManager`）
-  ⇒ **实际属 ①**。修正：①档至少应含 wallet 的 `credit`/`deduct`；
-  脚本须改成**两跳**（mapper → app 方法 → 该方法的调用者层）才可信。
-  在改好之前**禁止**用"②档为 0"推出"没有重试风险"。
-- 缺口候选：`--gaps`。首次结果：**43 个写操作，27 个候选**；
-- 已知误报源：RBAC 写操作（管理员人工触发、无自动重试）⇒ ② 不成立，不是缺口；
-- 真正值得优先看的是**计数器类写操作**（`incrementLikeCount` / `decrementLikeCount` /
-  `increaseSoldCount` / `decreaseSoldCount` / `upsert`）—— 重复执行会**累计错值**，
-  且这类操作常出现在 MQ 消费链路里（② 大概率成立）。
-- **RBAC 8 个写操作已快速确认（② 不成立 + 约束保护）**：
-  `sys_role_permission` 主键是 `(role_id, permission_id)` ⇒ 批量授权重复插入**被主键挡住**；
-  写操作只在管理员 HTTP 请求里发生（`RoleManageManager` 的 for 循环在**同一事务**内），
-  无 MQ/job 重放路径 ⇒ 不构成缺口。
-- **`restoreStock` 调用点已有状态守卫（静态可查）**：`OrderLifecycleManager` 里只有
-  条件状态迁移**成功**（`cancelled` 为真）才走回补；`items.isEmpty()` 提前返回。
-  即"一次取消只还一次"由**调用方的条件更新结果**保证，不是靠库存侧幂等。
-  ⇒ 归类为 guarded，但**注意**：这依赖调用方纪律，库存侧本身没有幂等键（`restoreStock` 无 biz_ref）。
-- 注意：`SkuMapper.deductStock/restoreStock` 已由 ADR-020 的条件更新保护（`WHERE stock >= ?`，
-  0 行 = 失败），脚本已正确归类为 guarded —— 但 `restoreStock` 是否**幂等**（重复还库存）仍待人工确认。
+- **分档改为"从入口反向追"（推翻了一跳/两跳的深度启发式）**：
+  深数是**深度**指标，而我们要问的是**可达性**（"这个写能不能被一次自动重投触发"）——
+  深度 2 漏 3 跳、深度 3 乱连，都不回答原问题。
+  现法：**入口（Feign 可达的控制器方法 + MQ 监听方法）→ 同模块内按方法名调用边 BFS → mapper 写方法**，
+  端点映射**复用 `closure-audit.py`**（不维护第二份端点表，与契约门禁同源）。
+- **分档结果（2026-10-18）**：入口解析到 60 个；① 可达 **3 个** / ③ 不可达 **24 个**。
+  | 档 | 写操作 | 判断 |
+  |---|---|---|
+  | ① | `WalletAccountMapper.credit` / `deduct` | **动钱**，重复执行直接错账 —— 最高优先 |
+  | ① | `SkuMapper.decreaseSoldCount` | 销量计数，重复执行累计错值 |
+  | ③ | RBAC 8（人工触发 + 主键约束）、点赞/评价计数、发票、装饰 | ② 不成立，暂不列为缺口 |
+- **工具自身的防护**：入口数 < 40 直接 `[FAIL]` 退出（否则"入口没解析到 ⇒ 全部判不可达"是假绿）。
+- **已知近似（不假装精确）**：调用边按**方法名**在同模块内匹配，非类型解析 ⇒ 同名方法可能误连；
+  跨模块只能走 Feign/MQ，已在入口覆盖；深度上限 6。
 
 **跨服务契约闭环审计（2026-10-18，环境不可用时的静态替代）**：
 `Implementation/back-end/scripts/closure-audit.py` —— 把 ia-api 的 Feign 调用（62 个）与控制器提供端点（289 个）
