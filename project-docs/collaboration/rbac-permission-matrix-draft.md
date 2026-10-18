@@ -397,6 +397,23 @@ Q3 裁决的是**权限位**拆三位（`seller:finance` / `seller:coupon` / `se
    已补前缀并新增「允许方法级」规则（要求注解数 ≥ 全部映射方法数，管理端无公开端点可豁免）。
    **教训**：受管前缀不能按"看起来像管理端"猜，要按实际 `RequestMapping` 扫。
 
+**受管前缀覆盖表（2026-10-18 全量扫描，按实际 `RequestMapping` 而非名字猜）**：
+
+| 前缀 | 受管 | 说明 |
+|---|---|---|
+| `/api/admin/**` | ✅ | 主管理端 |
+| `/api/seller/**` | ✅ | 商家端 |
+| `/api/trade/admin/**` | ✅（新补） | **批 3 发现**：`AdminOrderController` 挂这里，此前从未被门禁覆盖 |
+| `/api/trade/seller/**` | ✅（新补） | **批 4 前扫描发现**：`SellerDashboardController` / `SellerOrderController` 同族盲区 |
+| `/api/item/category`、`/brand`、`/attr` | ✅（平台配置组，允许方法级） | Q8 |
+| `/internal/**` | ❌ 不需要 | 网关不路由，集群内 Feign 专用 |
+| 买家/公开资源段（`/api/trade/order`、`/api/after-sale`、`/api/item`、`/api/user/**`、`/api/cart`…） | ❌ 不该受管 | 只需登录态 + 数据归属过滤；挂权限位反而会误伤所有买家 |
+
+**判据**：`/internal/**` 与买家资源段**不是**漏，其余"含写操作且非公开"的控制器都应在表内。
+扫描脚本逻辑要按类级 `@RequestMapping` 实际值匹配，**不能按目录名或类名猜** ——
+`AdminOrderController` 的类名与目录都像管理端，却挂在 `/api/trade/admin`，
+正是"按名字猜"会漏的形态。
+
 **批 3 确认（已装库必须迁移）**：种子 **8304f976 里落的位是 `order:write`**（不是 `order:admin`）。
 本次改名只动了 `Initialize.sql`，而那是**全新安装**脚本 ⇒ **已装库仍是 `order:write`**。
 若不迁移，代码注解找 `order:admin` 而库里没有该位 ⇒ **该位不存在 ⇒ 永久 403**。
@@ -470,6 +487,7 @@ SoD（职责分离：一个人不能既开票又作废）**另立项**：它需�
      | 1 ✅ | `AdminCurrencyController` / `AdminHomeController` / `AdminKgController` | `currency:admin` / `home:admin` / `kg:admin` | 18 → 15 |
      | 2 ✅ | `AdminMerchantController` | `merchant:admin` | 15 → 14 |
      | 3 ✅ | `AdminOrderController`（**全方法级**：4 个订单域 + `GET /dashboard`） | `order:admin` ×4 / `dashboard:read` ×1 | 14 → 13 |
+     | 4 ✅ | `AdminAfterSaleController`（**按方法**：GET / PUT review / PUT confirm-return） | `aftersale:read` / `pay:admin` / `pay:admin` | 13 → 12 |
      | 4 ⬜ | `AdminAfterSaleController`（**按方法**：GET list / PUT review / PUT confirm-return） | `aftersale:read` / `pay:admin` / `pay:admin` | — |
      | 8 ⬜ | `AdminLogController` / `AdminUserController` / `Role`+`Permission` | `audit:read` 类级 / **按方法** `user:read`+`user:write`+**`rbac:admin`** / `rbac:admin` | — |
      | 末 ⬜ | `AdminInvoiceController`（按方法：issue / void / red-flush） | `invoice:issue` / `invoice:void` / `invoice:void`（Q9） | — |

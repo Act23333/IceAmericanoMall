@@ -59,7 +59,10 @@ class AdminEndpointAuthorizationGuardTest {
             // 盲区补丁（批 3 实测发现）：管理端控制器不一定挂在 /api/admin 下 ——
             // AdminOrderController 的路径是 /api/trade/admin，此前**从未被本门禁覆盖**。
             // 教训：受管前缀不能按"看起来像管理端"猜，要按实际 RequestMapping 扫。
-            "/api/trade/admin"};
+            "/api/trade/admin",
+            // 同族盲区（2026-10-18 全量扫描发现）：商家侧的贸易端控制器也挂在 /api/trade/seller 下，
+            // 不在 /api/seller 前缀内 ⇒ 同样从未被本门禁覆盖。
+            "/api/trade/seller"};
 
     /**
      * <b>平台级配置前缀</b>（Q8 裁决 2026-10-18 扩的）：挂在业务资源段下、但语义是"平台配置"的写端点。

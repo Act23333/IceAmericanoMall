@@ -30,7 +30,6 @@ import org.springframework.web.bind.annotation.*;
  * 产出单行 JSON 审计日志（logger {@code AUDIT}，经 ELK 采集，不落库）。
  */
 @RestController
-@PreAuthorize("@ss.hasPermi('user:admin')")
 @RequestMapping("/api/admin/after-sale")
 @RequiredArgsConstructor
 public class AdminAfterSaleController {
@@ -47,6 +46,10 @@ public class AdminAfterSaleController {
     private final AfterSaleManager afterSaleManager;
 
     /** 售后申请分页（query: status / page / size，属性绑定）。 */
+    // 5a 批 4：本控制器**必须按方法挂位**，不能类级 ——
+    //   查询看列表不该被要求有退款权，而两个写方法**同步触发退款**（RefundManager#triggerRefund
+    //   → refundClient.refund，Feign fail-closed），属资金动作 ⇒ 挂 pay:admin 而非 aftersale:write。
+    @PreAuthorize("@ss.hasPermi('aftersale:read')")
     @GetMapping
     public Result<IPage<AfterSaleVO>> list(@QueryModel AfterSalePageReq req) {
         return Result.ok(afterSaleManager.pageByStatus(req.getStatus(), req.getPage(), req.getSize()));
@@ -61,6 +64,8 @@ public class AdminAfterSaleController {
      */
     @OperationLog(module = MODULE_TRADE_AFTER_SALE, action = ACTION_REVIEW_AFTER_SALE,
             description = "售后审核", recordParams = true)
+    // 资金动作：type=2（仅退款）在审核同意时**同步**发起退款 ⇒ 挂 pay:admin（Q2 资金面独立）。
+    @PreAuthorize("@ss.hasPermi('pay:admin')")
     @PutMapping("/{id}/review")
     public Result<Void> review(@PathVariable Long id, @RequestParam Integer status,
                                @RequestParam(required = false) String remark) {
@@ -76,6 +81,8 @@ public class AdminAfterSaleController {
      */
     @OperationLog(module = MODULE_TRADE_AFTER_SALE, action = ACTION_CONFIRM_RETURN,
             description = "确认收到退货", recordParams = true)
+    // 资金动作：type=1（退货退款）在确认收到退货时**同步**发起退款 ⇒ 挂 pay:admin。
+    @PreAuthorize("@ss.hasPermi('pay:admin')")
     @PutMapping("/{id}/confirm-return")
     public Result<Void> confirmReturn(@PathVariable Long id,
                                      @RequestParam(required = false) String remark) {
