@@ -49,6 +49,8 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/admin/pay")
+// TODO(拆位, open-items §1.17): 权限位拆分后改为 @ss.hasPermi('pay:admin')；
+//   现在是过渡态：所有管理端共用一个 user:admin，资金/审核面尚未按域隔离。
 @PreAuthorize("@ss.hasPermi('user:admin')")
 @RequiredArgsConstructor
 public class AdminPayController {

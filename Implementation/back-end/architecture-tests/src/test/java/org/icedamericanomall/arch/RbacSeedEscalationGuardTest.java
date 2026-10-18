@@ -25,7 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p><b>为什么需要（真实的「一步之外」风险，不是洁癖）</b>：售后管理端点的唯一防线是
  * {@code @PreAuthorize("@ss.hasPermi('user:admin')")}，而 {@code hasPermi} 的判定是
- * 「{@code *:*:*} 通配 → {@code ROLE_ADMIN} 角色短路 → 否则查 permissions 集合」。
+ * 「{@code *:*:*} 通配（{@code rbac:admin} 除外）→ 否则精确匹配」。
+ * <b>注：{@code ROLE_ADMIN} 角色短路已于 2026-10-18 移除</b>（它让权限位对管理员完全失效），
+ * 管理员现在经 {@code *:*:*} 通配获得一切 —— 所以「管理员能做什么」同样由<b>种子</b>决定，
+ * 这让下面的守卫更有必要，而不是更没必要。
  * 也就是说：<b>商家能不能读/批别家的售后，完全取决于 {@code sys_role_permission} 里
  * 有没有那一行 {@code (ROLE_SELLER, user:admin)}</b>。
  *
@@ -49,6 +52,9 @@ class RbacSeedEscalationGuardTest {
 
     /** 管理端权限位 —— 售后/财务/日志等跨商家写操作都挂在它下面。 */
     static final String USER_ADMIN_PERM = "user:admin";
+
+    /** RBAC 管理位（Q6：只给超管、通配符显式排除、必须由种子显式授予）。 */
+    static final String RBAC_ADMIN_PERM = "rbac:admin";
 
     /** ROLE_ADMIN 的角色 ID（种子 {@code sys_role}）。 */
     static final long ROLE_ADMIN_ID = 4L;
@@ -94,6 +100,105 @@ class RbacSeedEscalationGuardTest {
         assertThat(seed.bindings())
                 .as("ROLE_ADMIN 必须绑定超级权限位（角色 ID %d ↔ 权限 ID %d）", ROLE_ADMIN_ID, superPermId)
                 .contains(new Binding(ROLE_ADMIN_ID, superPermId));
+    }
+
+    // ==================================================================================
+    // ①·二 rbac:admin —— 必须是「种子里的显式授予」，不是运行时的角色特判
+    // ==================================================================================
+
+    /**
+     * Q6 裁决的落地校验：{@code rbac:admin} 的能力必须<b>来自种子数据</b>，不能来自代码里的
+     * 「是管理员就放行」式特判。
+     *
+     * <p>为什么这条要和权限位拆批一起上：{@code rbac:admin} 是唯一「能改变授权本身」的位。
+     * 如果它靠运行时特判获得，那么「谁有权改 RBAC」就不再是可审计的数据，而是埋在代码里的隐式规则 ——
+     * 而本仓刚刚才因为这类隐式规则（ROLE_ADMIN 短路）踩过一次。
+     *
+     * <p>三条断言：
+     * <ol>
+     *   <li>若种子里有 {@code rbac:admin}，则<b>只有 ROLE_ADMIN 持有它</b>，且 ROLE_ADMIN <b>必须</b>持有；</li>
+     *   <li>{@code rbac:admin} 这个字面量<b>不得出现在任何 Java 主源码</b>（唯一例外是
+     *       {@code PermissionBits} 的通配排除表 —— 那是"拒绝"规则，不是"授予"规则）；</li>
+     *   <li>它也不得被任何 {@code @PreAuthorize} 引用，除非种子已就位（由
+     *       {@code PermissionBitReferenceGuardTest} 的硬失败方向兜住）。</li>
+     * </ol>
+     */
+    @Test
+    @DisplayName("Q6 — rbac:admin 只能由种子显式授予 ROLE_ADMIN，不得有运行时角色特判")
+    void shouldGrantRbacAdminThroughSeedDataOnly() {
+        RbacSeed seed = loadSeed();
+
+        // 断言②：字面量不得出现在主源码（唯一例外：PermissionBits 的排除表）
+        List<String> javaReferences = scanJavaMainSourcesFor("rbac:admin");
+        assertThat(javaReferences)
+                .as("rbac:admin 出现在 Java 主源码里（除 PermissionBits 的排除表）。"
+                        + "它必须只能来自 sys_role_permission 的显式授予 —— "
+                        + "运行时角色特判会让「谁有权改 RBAC」变成埋在代码里的隐式规则")
+                .allSatisfy(path -> assertThat(path).endsWith("PermissionBits.java"));
+        assertThat(javaReferences)
+                .as("扫描面为空：一个字面量都没扫到，说明这条断言是空转（PermissionBits 里本应有一处）")
+                .isNotEmpty();
+
+        // 断言①：种子里若已引入该位，则持有者必须恰好是 ROLE_ADMIN
+        Long rbacAdminId = seed.permissionsById().entrySet().stream()
+                .filter(e -> RBAC_ADMIN_PERM.equals(e.getValue()))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(null);
+        if (rbacAdminId == null) {
+            // 迁移尚未执行：当前合法。位引入后本分支自动失效，下面变成硬断言。
+            System.out.println("[rbac-seed][WARN] 种子里还没有 " + RBAC_ADMIN_PERM
+                    + " —— 拆位迁移（先种子）尚未执行；引入后本用例会强制「只挂 ROLE_ADMIN」");
+            return;
+        }
+
+        List<Long> holders = seed.bindings().stream()
+                .filter(binding -> binding.permissionId() == rbacAdminId)
+                .map(Binding::roleId)
+                .toList();
+        assertThat(holders)
+                .as("%s 必须显式授予 ROLE_ADMIN（角色 ID %d）—— 通配符不覆盖它，不授予就等于管理员也改不了 RBAC",
+                        RBAC_ADMIN_PERM, ROLE_ADMIN_ID)
+                .contains(ROLE_ADMIN_ID);
+        assertThat(holders)
+                .as("%s 只能给 ROLE_ADMIN —— 其他任何角色持有它都等于「可以给自己提权」", RBAC_ADMIN_PERM)
+                .containsOnly(ROLE_ADMIN_ID);
+    }
+
+    /**
+     * 扫 Java 主源码（{@code src/main/java}）<b>代码里</b>出现某字面量的文件路径。
+     *
+     * <p><b>必须先剥注释</b>：{@code PermissionService} 的注释里就写着「{@code rbac:admin} 排除」，
+     * 朴素的 {@code contains} 会把「文档提到」判成「代码特判」——假阳性。
+     * 这已是本仓第三次踩同一族坑（前两次：grep 扫 javadoc 里的 {@code @PreAuthorize}、
+     * knowledge-base 控制器的 {@code @PreAuthorize} 提及）。
+     * <b>凡是"扫描源码找语义"的门禁，一律先剥注释再判定。</b>
+     */
+    private static List<String> scanJavaMainSourcesFor(String literal) {
+        try (java.util.stream.Stream<Path> stream = Files.walk(Paths.get(".."))) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.toString().replace("\\", "/").contains("/src/main/java/"))
+                    .filter(path -> path.getFileName().toString().endsWith(".java"))
+                    .filter(path -> {
+                        try {
+                            String code = stripComments(Files.readString(path, StandardCharsets.UTF_8));
+                            return code.contains(literal);
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    })
+                    .map(path -> path.toString().replace("\\", "/"))
+                    .toList();
+        } catch (IOException e) {
+            throw new UncheckedIOException("扫描 Java 主源码失败", e);
+        }
+    }
+
+    /** 剥掉块注释与行注释（仅用于判定，不改原文件）。 */
+    private static String stripComments(String content) {
+        String noBlockComment = content.replaceAll("(?s)/\\*.*?\\*/", " ");
+        return noBlockComment.replaceAll("(?m)//.*$", " ");
     }
 
     // ==================================================================================

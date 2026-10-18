@@ -126,6 +126,10 @@
 
 ### 6.1 权限位全表（Q1：每域两档）
 
+**计数口径（别再用"25 个"那种说法）**：本表共 **24 行** = **存量保留 4**（`ai:chat`、`product:read`、
+`order:read`、`seller:admin`）+ **迁移新增 20**（`user:admin` 1→14、`seller:admin` 1→4、
+`rbac:admin` 1、`aftersale:read` 1）。`user:admin` 本身不在表内活位之列（迁移后 `status=0` 停用）。
+
 | 权限位 | 含义 | 有 admin 档？ | `*:*:*` 是否覆盖 |
 |---|---|---|---|
 | `ai:chat` | AI 对话/客服 | 否（单一能力位） | ✅ |
@@ -162,7 +166,7 @@
 |---|---|---|
 | `ROLE_USER` | `ai:chat`、`product:read`、`order:read` | 全是"自有数据"语义；公开端点本就无 `@PreAuthorize` |
 | `ROLE_VIP` | 同 `ROLE_USER` | 会员权益走等级规则（ADR-044），不走权限位 |
-| `ROLE_SELLER` | `ROLE_USER` 全集 + `product:write`、`seller:admin`、`seller:finance`、`seller:coupon`、`seller:knowledge`、`order:write` | 迁移时**一次性给全**（Q3「存量不失权」）；后续要拆细是"收窄"，需单独评审 |
+| `ROLE_SELLER` | `ROLE_USER` 全集 + `product:write`、`seller:admin`、`seller:finance`、`seller:coupon`、`seller:knowledge` | 迁移时**一次性给全**（Q3「存量不失权」）。<br>**刻意不给 `order:write`**：该位守的是 `/api/admin/order/**`（跨商家后台动作），商家发货走 `/api/seller/**` 由 `seller:admin` 覆盖 —— 把 admin 档位给商家就是"多给"，与 Q3「不失权」不是一回事（不失权指**原有能力**不减，不代表**新增**跨商家能力） |
 | `ROLE_ADMIN` | `*:*:*` + **`rbac:admin`（显式）** | 其余位经通配符获得；`rbac:admin` 通配符**不顶**（Q6） |
 
 **为什么管理员要显式列 `rbac:admin`**：它是唯一「能改变授权本身」的位。若通配符能顶，任何拿到超级位的账号
@@ -182,6 +186,18 @@
 | `ai:chat` / `order:read` / `product:read` | **保留原名** | 首次真正被 `@PreAuthorize` 消费 |
 | （新增） | `rbac:admin` | 只挂 `ROLE_ADMIN`，且**不**由通配符覆盖 |
 
+**停用机制只选一条（已定）**：`sys_permission.status = 0` **停用、不删行**。
+不选"物理删除"的理由：删了就无法回滚比对，也无法在出问题时一眼看出"这个位曾经存在、被谁用过"。
+代价是表里会有历史行 —— 由 `status` 区分，可接受。
+
+**扩权必须人工审**：迁移只允许"位变多、端点可达集不变或变大"。任何**收紧**（某角色失去某个位/某个端点
+从可达变不可达）都要在评审里逐个列出并说明是有意为之；**不允许**静默收紧（那是最难查的线上故障）。
+投影比对（§7.3-1）会给出不对称结果，评审就按它逐条签。
+
+**端到端用例不得依赖种子**：用例里的账号与权限必须在测试内**显式构造**（直接写 `user:perms:` 缓存或
+用测试专用账号 + 明确授予），<b>不得</b>假设"种子里的 ROLE_ADMIN/ROLE_SELLER 恰好是我要的形状" ——
+否则种子一改，测试就从"验证鉴权"退化成"验证种子"。同理，断言要打在<b>HTTP 状态码</b>上，不是错误文案。
+
 **旧位不删除、只停用**（`sys_permission.status = 0`）：便于回滚比对；注解改完后若有残留引用，
 `AdminEndpointAuthorizationGuardTest` 不会报（它只看"有没有注解"），所以**必须另加一条门禁/脚本**
 扫描「注解里出现的位是否都在 `sys_permission` 且 `status=1`」——列为执行批的必做项。
@@ -189,7 +205,7 @@
 ### 7.2 种子 SQL 草案（执行时才落盘，此处只审结构）
 
 ```sql
--- ① 新增位（id 从 7 起，保持既有 1–6 不动）
+-- ① 新增位（id 从 7 起，保持既有 1–6 不动）。共 20 行 = 14(user:admin) + 4(seller:admin) + rbac:admin + aftersale:read
 INSERT INTO sys_permission (id, name, code, type, path, sort_order, status) VALUES
   (7,  '用户查询',   'user:read',      3, '/api/admin/user/**',       10, 1),
   (8,  '用户变更',   'user:write',     3, '/api/admin/user/**',       11, 1),
@@ -209,7 +225,8 @@ INSERT INTO sys_permission (id, name, code, type, path, sort_order, status) VALU
   (22, '商品维护',   'product:write',  3, '/api/seller/**',           25, 1),
   (23, '商家结算',   'seller:finance', 3, '/api/seller/finance/**',   26, 1),
   (24, '商家券',     'seller:coupon',  3, '/api/seller/coupon/**',    27, 1),
-  (25, '商家知识库', 'seller:knowledge',3,'/api/seller/knowledge/**', 28, 1);
+  (25, '商家知识库', 'seller:knowledge',3,'/api/seller/knowledge/**', 28, 1),
+  (26, '售后查询',   'aftersale:read', 3, '/api/admin/after-sale/**', 29, 1);
 
 -- ② ROLE_ADMIN：显式加 rbac:admin（通配符不覆盖它）
 INSERT INTO sys_role_permission (role_id, permission_id)
@@ -249,8 +266,24 @@ UPDATE sys_permission SET status = 0 WHERE code IN ('user:admin');
 
 ---
 
+### 7.5 Q5 过渡态登记（拆位时必须改掉，不然就是"拆了位但没拆到这两处"）
+
+| 控制器 | 当前（过渡态） | 拆位后必须改为 |
+|---|---|---|
+| `AdminPayController` | `@ss.hasPermi('user:admin')` | `@ss.hasPermi('pay:admin')` |
+| `AdminMerchantController` | `@ss.hasPermi('user:admin')` | `@ss.hasPermi('merchant:admin')` |
+
+两处代码里已留 `TODO(拆位, open-items §1.17)` 注释，改注解时顺手删掉。
+**为什么单独登记**：这两个控制器是 Q5 才从"代码内 `assertAdmin()`"转成声明式的，
+它们的位是**沿用**旧开关，不是按域裁定的结果 —— 不登记就会在拆位时被当成"已经改好了"。
+
+---
+
 ## 8. 执行顺序（评审通过后，不跳步）
 
+0. ✅ **"位必须存在"门禁先行**（`PermissionBitReferenceGuardTest`）：引用必须存在 = 硬失败；
+   定义未引用 = WARN + 白名单；解析边界只认 `hasPermi` 单参，复杂表达式直接失败。
+   顺序口径写死为 **先种子 → 再注解 → 后删旧位**（理由见该门禁类注释）。
 1. ✅ 门禁先行（`AdminEndpointAuthorizationGuardTest` 在）
 2. ✅ Q5：4 个服务补 `spring-boot-starter-security` + 两个控制器转声明式 + 门禁转正
 3. ✅ Q6：`PermissionBits` 单点实现 + `rbac:admin` 通配符排除 + 两条路径共用
