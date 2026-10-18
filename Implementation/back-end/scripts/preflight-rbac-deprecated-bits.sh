@@ -47,12 +47,32 @@ for bit in "${BITS[@]}"; do
       || true)
 
   count=${#hits[@]}
-  if [[ $count -eq 0 ]]; then
-    echo "[OK]   $bit：注解引用 0 处，可以停用"
+  # ② **代码内调用**也要扫：`hasPermi("x")` / `hasPermission("x")` / `hasAnyPermi("x", ...)`。
+  #    只扫注解会漏掉「不挂注解、在方法体里判权」的写法（AdminPay/AdminMerchant 在被 Q5 改造前
+  #    正是这个形态）。当前这类调用应为 0 处，但**必须扫**——不能因为"现在是 0"就不设这道检查，
+  #    否则以后有人写了代码内判定，停用旧位时脚本会误报"可以停用"。
+  mapfile -t code_hits < <(
+    grep -rn --include=*.java \
+      -E "(hasPermi|hasPermission|hasAnyPermi|hasAnyPermission)\(\s*\"${bit}\"" \
+      "$ROOT"/*/src/main/java 2>/dev/null \
+      | grep -vE '^[^:]*:[0-9]+:[[:space:]]*\*' \
+      | grep -vE '^[^:]*:[0-9]+:[[:space:]]*//' \
+      || true)
+
+  code_count=${#code_hits[@]}
+  if [[ $code_count -gt 0 ]]; then
+    fail=1
+    echo "[BLOCK] $bit：代码内判权调用仍有 $code_count 处，**不允许停用**"
+    printf '        %s\n' "${code_hits[@]}"
+  fi
+
+  total=$((count + code_count))
+  if [[ $total -eq 0 ]]; then
+    echo "[OK]   $bit：注解引用 0 处 + 代码内判权 0 处，可以停用"
   else
     fail=1
-    echo "[BLOCK] $bit：仍有 $count 处注解引用，**不允许停用**"
-    printf '        %s\n' "${hits[@]}"
+    echo "[BLOCK] $bit：合计 $total 处引用（注解 $count + 代码内 $code_count），**不允许停用**"
+    [[ $count -gt 0 ]] && printf '        %s\n' "${hits[@]}"
   fi
 done
 

@@ -126,15 +126,16 @@
 
 ### 6.1 权限位全表（Q1：每域两档）
 
-**计数口径（别再用"25 个"那种说法）**：本表共 **24 行** = **存量保留 4**（`ai:chat`、`product:read`、
-`order:read`、`seller:admin`）+ **迁移新增 20**（`user:admin` 1→14、`seller:admin` 1→4、
-`rbac:admin` 1、`aftersale:read` 1）。`user:admin` 本身不在表内活位之列（迁移后 `status=0` 停用）。
+**计数口径（别再用"25 个"那种说法）**：本表共 **25 行** = **存量保留 4**（`ai:chat`、`product:read`、
+`order:read`、`seller:admin`）+ **迁移新增 21**（`user:admin` 1→14、`seller:admin` 1→4、
+`rbac:admin` 1、`aftersale:read` 1、`product:admin` 1）。`user:admin` 本身不在表内活位之列（迁移后 `status=0` 停用）。
 
 | 权限位 | 含义 | 有 admin 档？ | `*:*:*` 是否覆盖 |
 |---|---|---|---|
 | `ai:chat` | AI 对话/客服 | 否（单一能力位） | ✅ |
 | `product:read` | 商品浏览 | 否 | ✅ |
 | `product:write` | 商家维护自有商品 | 否（写即商家档） | ✅ |
+| `product:admin` | **平台级商品配置**（类目/品牌/属性）+ 管理员的商品干预 | **是**（Q8） | ✅ |
 | `order:read` | 订单查询（含自有） | 否 | ✅ |
 | `order:write` | 订单管理（发货/取消等后台动作） | **是** | ✅ |
 | `aftersale:read` | 售后查询 | 否 | ✅ |
@@ -232,7 +233,7 @@
 ### 7.2 种子 SQL 草案（执行时才落盘，此处只审结构）
 
 ```sql
--- ① 新增位（id 从 7 起，保持既有 1–6 不动）。共 20 行 = 14(user:admin) + 4(seller:admin) + rbac:admin + aftersale:read
+-- ① 新增位（id 从 7 起，保持既有 1–6 不动）。共 21 行 = 14(user:admin) + 4(seller:admin) + rbac:admin + aftersale:read + product:admin
 INSERT INTO sys_permission (id, name, code, type, path, sort_order, status) VALUES
   (7,  '用户查询',   'user:read',      3, '/api/admin/user/**',       10, 1),
   (8,  '用户变更',   'user:write',     3, '/api/admin/user/**',       11, 1),
@@ -253,7 +254,8 @@ INSERT INTO sys_permission (id, name, code, type, path, sort_order, status) VALU
   (23, '商家结算',   'seller:finance', 3, '/api/seller/finance/**',   26, 1),
   (24, '商家券',     'seller:coupon',  3, '/api/seller/coupon/**',    27, 1),
   (25, '商家知识库', 'seller:knowledge',3,'/api/seller/knowledge/**', 28, 1),
-  (26, '售后查询',   'aftersale:read', 3, '/api/admin/after-sale/**', 29, 1);
+  (26, '售后查询',   'aftersale:read', 3, '/api/admin/after-sale/**', 29, 1),
+  (27, '平台商品配置','product:admin', 3, '/api/item/category/**',    30, 1);
 
 -- ② ROLE_ADMIN：显式加 rbac:admin（通配符不覆盖它）
 INSERT INTO sys_role_permission (role_id, permission_id)
@@ -346,19 +348,32 @@ Q3 裁决的是**权限位**拆三位（`seller:finance` / `seller:coupon` / `se
 请裁决：**本批维持单一 `ROLE_SELLER`（推荐，符合 Q3「存量不失权」），员工角色另立项**？
 还是本批就拆角色（会引入商家子账号体系，工作量远大于拆位）？
 
-### 7.4c 待裁决（新，Q8）：类目管理的位归属 —— 它不在鉴权门禁的受管前缀内
+### 7.4c Q8 **已裁决（2026-10-18）**：类目挂 `product:admin`；门禁扩前缀分两步
 
 实测发现 `item-service/adapter/web/CategoryController`（`/api/item/category`）的
 `POST` / `PUT /{id}` / `DELETE /{id}` 三处**方法级**挂着 `user:admin`
 （类级会连带封掉公开的 `GET /tree`，所以只能方法级 —— 这个注释是对的）。
-两个问题：
+**裁决**：
 
-1. **它该挂什么位？** §6.1 没有类目位。候选：新增 `catalog:admin`、并入 `product:write`
-   （但那是商家位，语义不符）、并入 `kg:admin`（也不符）。**请裁决**。
-2. **它不在门禁的受管前缀里**（门禁只管 `/api/admin` 与 `/api/seller`）⇒
-   「新增类目端点忘了加注解」不会被任何门禁抓住。**建议**把受管前缀扩到
-   「**含写操作的非公开控制器**」，但那会一次性扫出更多既存缺口（需要先盘点），
-   故列为**独立一项**，不在拆位批里顺手做。
+1. **挂 `product:admin`**，定义为「**平台级商品配置（类目 / 品牌 / 属性）**」，**不新造 `category:admin`**。
+   与 `product:write` 的区别写进位表：write 是商家维护**自有**商品，admin 是平台维护**全局**配置。
+   已落地：种子新增 id 27；`CategoryController` 三个写方法由 `user:admin` 改挂 `product:admin`。
+2. **扩前缀分两步**：
+   - **本批**：门禁新增「平台级配置前缀」组（`/api/item/category`、`/brand`、`/attr`），
+     允许**方法级覆盖**（类级注解会封掉公开的 `GET /tree`）——规则：`@PreAuthorize` 数 ≥ 写方法数；
+     既存缺口进白名单并带截止日期；**新增写端点缺注解 = 硬失败**。
+   - **另立项**：逐条补既存缺口（把受管面扩到"所有含写操作的非公开控制器"会一次扫出更多，
+     需要先盘点再逐条补，不塞进拆位批）。
+   - 已知近似：方法级覆盖是**计数**不是逐方法绑定（可能把注解挂读方法上凑数），
+     更严需源码解析器 —— 已在门禁注释里写明，不假装守住了。
+
+### 7.4d 待裁决（新，Q9）：发票冲红该挂 `invoice:issue` 还是 `invoice:void`
+
+`AdminInvoiceController` 有三个写方法，Q2 已裁决拆出 `invoice:issue` / `invoice:void`，
+但 `PUT /{invoiceNo}/red-flush`（冲红：作废原票 + 重开）**同时具备两者语义**。
+请裁决：挂 `invoice:void`（作废为主）？还是要求同时持有两位（`hasAllPermi` —— 但本批门禁只认
+`hasPermi` 单参，需先扩门禁）？**默认建议**：挂 `invoice:void`，并在方法注释写明"冲红等于作废+重开，
+按作废授权"，避免引入双位要求而拖慢门禁。
 
 ### 7.5 Q5 过渡态登记（拆位时必须改掉，不然就是"拆了位但没拆到这两处"）
 
@@ -389,9 +404,13 @@ Q3 裁决的是**权限位**拆三位（`seller:finance` / `seller:coupon` / `se
    **进度计**：此刻 `PermissionBitReferenceGuardTest` 会打印 20 条「零消费」WARN，
    它们逐条对应待接线的位 —— 第 5 步做完，WARN 归零；这就是迁移进度表，不需要另做一份。
 5. ⬜ **逐控制器替换注解** —— **分两批，不许一起机械替换**：
-   - **5a 管理端（可机械替换）**：`/api/admin/**` 的控制器，位与域一一对应（§6.1），
-     替换是"把 `user:admin` 换成该域的位"，语义不变，可批量做。
-     每换完一批，看 `PermissionBitReferenceGuardTest` 的零消费 WARN 是否减少（那是进度计）。
+   - **5a 管理端**：位与域一一对应（§6.1），多数可类级批量替换。
+     **但已 grep 出唯一跨域控制器 —— `AdminInvoiceController`**：`issue` / `void` / `red-flush`
+     三个方法对应**不同的位**（`invoice:issue` / `invoice:void` / 冲红归属待定，见 Q9），
+     **必须按方法替换**。其余控制器域一致，可类级替换。
+   - **每批替换后必须跑 `verify-gates.sh full`**，不能只看零消费 WARN 的下降：
+     WARN 只反映"有没有被注解引用"，**不反映测试是否还在 mock 旧位**（mock 里写死
+     `"user:admin"` 会导致"注解换了、测试还绿、线上却换位"的假通过）。WARN 是进度计，不是验收。
    - **5b 商家端（逐端点人工确认，不按控制器机械替换）**：`/api/seller/**` 的位不是"把开关换名"，
      而是**逐个端点判定**：这个端点是"商家对自己数据"还是"商家对别家/平台数据"？归哪个位？
      own-data 由谁保证（现在靠 `UserContext.getUserId()` 过滤，不是靠权限位）。

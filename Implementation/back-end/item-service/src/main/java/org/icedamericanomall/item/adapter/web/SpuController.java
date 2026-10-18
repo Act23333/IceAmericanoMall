@@ -155,11 +155,19 @@ public class SpuController {
      *
      * <p>归属校验在 {@code SpuManager#updateSpuStatus} 内完成（同一越权防护出口）；
      * 本方法只负责从登录上下文取操作人身份与管理员标记。
+     *
+     * <p><b>权限位（Q8，2026-10-18）</b>：管理员标记改用 {@code product:admin}（平台级商品配置），
+     * 不再复用管理端总开关 {@code user:admin}。
+     * <b>为什么必须改</b>：这里是**代码内判权**，注解扫描看不见 —— 若只改注解就停用 {@code user:admin}，
+     * 管理员的上下架权限会**静默失效**（被当成非管理员，走归属校验后 403）。
+     * 这类"代码内判权"的依赖，只有把扫描面覆盖到 {@code hasPermission(...)} 调用才能抓到
+     * （见 {@code scripts/preflight-rbac-deprecated-bits.sh}）。
+     * 行为等价性：管理员经 {@code *:*:*} 覆盖 {@code product:admin}，非管理员两者都不持 ⇒ 判定结果不变。
      */
     @PutMapping("/{spuId}/status")
     public Result<Void> updateStatus(@PathVariable String spuId, @RequestParam Integer status) {
         spuManager.updateSpuStatus(requireSpuId(spuId), UserContext.getUserId(),
-                UserContext.hasPermission("user:admin"), status);
+                UserContext.hasPermission("product:admin"), status);
         return Result.ok();
     }
 

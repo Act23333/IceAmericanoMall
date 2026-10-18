@@ -61,10 +61,19 @@ check "非管理员持有 user:admin 的角色数" "0" \
 echo
 echo "=== 3. 拆位新增的位必须全部 status=1（数量下限防"整段没执行"）==="
 new_active=$(q "SELECT COUNT(*) FROM sys_permission WHERE id BETWEEN 7 AND 26 AND status=1")
-if [[ "${new_active:-0}" -ge 20 ]]; then
-  echo "[OK]   id 7–26 中 status=1 的位 = $new_active"
+# 精确校验：拆位批落库的位 = id 7..27（20 个域位 + product:admin）。
+# **新增位时必须同步改这两个边界值**，否则本校验会：放宽下限 → 漏检；写死上限 → 新位被当异常。
+# 之所以用精确等值而不是 `>= 20`：`>=` 无法区分"少落了 1 个"与"全落了"，
+# 而 INSERT 少落一行恰恰是静默失败的主要形态。
+RBAC_BIT_ID_MIN=7
+RBAC_BIT_ID_MAX=27
+RBAC_BIT_EXPECTED=21
+new_active=$(q "SELECT COUNT(*) FROM sys_permission WHERE id BETWEEN $RBAC_BIT_ID_MIN AND $RBAC_BIT_ID_MAX AND status=1")
+if [[ "${new_active:-0}" -eq "$RBAC_BIT_EXPECTED" ]]; then
+  echo "[OK]   id $RBAC_BIT_ID_MIN–$RBAC_BIT_ID_MAX 中 status=1 的位 = $new_active（精确期望 $RBAC_BIT_EXPECTED）"
 else
-  echo "[FAIL] id 7–26 中 status=1 的位 = ${new_active:-0}（应 ≥ 20）—— 种子迁移可能未执行完整"; fail=1
+  echo "[FAIL] id $RBAC_BIT_ID_MIN–$RBAC_BIT_ID_MAX 中 status=1 的位 = ${new_active:-0}，"
+  echo "       但期望恰为 $RBAC_BIT_EXPECTED —— 要么种子未执行完整，要么新增了位却没改本脚本的边界值/期望值"; fail=1
 fi
 
 echo

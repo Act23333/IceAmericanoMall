@@ -1001,7 +1001,10 @@ INSERT INTO `sys_permission` (`id`, `name`, `code`, `type`, `path`, `sort_order`
 (23, '商品维护',    'product:write',   3, '/api/seller/**',            26, 1),
 (24, '商家结算',    'seller:finance',  3, '/api/seller/finance/**',    27, 1),
 (25, '商家券',      'seller:coupon',   3, '/api/seller/coupon/**',     28, 1),
-(26, '商家知识库',  'seller:knowledge',3, '/api/seller/knowledge/**',  29, 1)
+(26, '商家知识库',  'seller:knowledge',3, '/api/seller/knowledge/**',  29, 1),
+-- Q8 裁决（2026-10-18）：平台级商品配置（类目/品牌/属性）单独一位，**不新造 category:admin**。
+-- 与 product:write 的区别：write 是"商家维护自有商品"，admin 是"平台维护全局配置"。
+(27, '平台商品配置','product:admin',  3, '/api/item/category/**',     30, 1)
 ON DUPLICATE KEY UPDATE
     `name` = VALUES(`name`), `code` = VALUES(`code`), `type` = VALUES(`type`),
     `path` = VALUES(`path`), `sort_order` = VALUES(`sort_order`), `status` = VALUES(`status`);

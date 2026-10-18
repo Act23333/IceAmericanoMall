@@ -56,6 +56,24 @@ class AdminEndpointAuthorizationGuardTest {
     /** 受管路径前缀（管理端、商家端）。 */
     private static final String[] GUARDED_PREFIXES = {"/api/admin", "/api/seller"};
 
+    /**
+     * <b>平台级配置前缀</b>（Q8 裁决 2026-10-18 扩的）：挂在业务资源段下、但语义是"平台配置"的写端点。
+     *
+     * <p>为什么单独一组：这些控制器里**同一个类既有公开读、又有平台写**
+     * （如 {@code /api/item/category} 的 {@code GET /tree} 是公开的），
+     * 所以<b>不能用类级注解</b>（会连带封掉公开读）。本组允许「方法级覆盖」：
+     * 要求 {@code @PreAuthorize} 出现次数 ≥ 写映射方法数。
+     *
+     * <p><b>已知近似</b>：这是<b>计数</b>而非"逐方法绑定"——理论上可能把注解挂在读方法上凑数。
+     * 逐方法绑定需要真正的源码解析器，本批不做；真要更严时先扩本门禁并补解析测试
+     * （与「看不懂就报错」同一条纪律：能力不足要说出来，不能假装守住了）。
+     */
+    private static final String[] PLATFORM_CONFIG_PREFIXES = {
+            "/api/item/category", "/api/item/brand", "/api/item/attr"};
+
+    /** 写操作的映射注解（用于方法级覆盖计数）。 */
+    private static final String[] WRITE_MAPPINGS = {"@PostMapping", "@PutMapping", "@DeleteMapping", "@PatchMapping"};
+
     /** 反空断言下限：受管控制器数量的下限（谓词失效会掉到 0）。 */
     private static final int MIN_GUARDED_CONTROLLERS = 15;
 
@@ -102,9 +120,10 @@ class AdminEndpointAuthorizationGuardTest {
             if (EXEMPT.containsKey(source.simpleName())) {
                 continue;
             }
-            if (!source.hasClassLevelPreAuthorize()) {
+            if (isViolation(source)) {
                 violations.add(source.relative()
-                        + "（映射 " + source.classMapping() + "）缺类级 @PreAuthorize");
+                        + "（映射 " + source.classMapping() + "）缺类级 @PreAuthorize"
+                        + "（平台配置前缀允许方法级覆盖：写方法数 > @PreAuthorize 数）");
             }
         }
         assertThat(violations)
@@ -171,12 +190,31 @@ class AdminEndpointAuthorizationGuardTest {
     // 判定逻辑（抽成可喂合成输入的函数 —— 否则没法自证）
     // ==================================================================================
 
-    /** 单条判定：受管路径 + 未豁免 + 无类级注解 ⇒ 违规。 */
+    /** 单条判定：受管路径 + 未豁免 + 未被允许的注解覆盖 ⇒ 违规。 */
     private static boolean isViolation(SourceFile source) {
-        return source.classMapping() != null
-                && startsWithGuardedPrefix(source.classMapping())
-                && !EXEMPT.containsKey(source.simpleName())
-                && !source.hasClassLevelPreAuthorize();
+        String mapping = source.classMapping();
+        if (mapping == null || EXEMPT.containsKey(source.simpleName())) {
+            return false;
+        }
+        if (startsWithAny(mapping, PLATFORM_CONFIG_PREFIXES)) {
+            // 平台配置：允许方法级覆盖（类级注解会封掉公开读端点）
+            if (source.hasClassLevelPreAuthorize()) {
+                return false;
+            }
+            int annotations = source.count("@PreAuthorize");
+            int writes = source.count(WRITE_MAPPINGS);
+            return writes > 0 && annotations < writes;
+        }
+        return startsWithGuardedPrefix(mapping) && !source.hasClassLevelPreAuthorize();
+    }
+
+    private static boolean startsWithAny(String mapping, String[] prefixes) {
+        for (String prefix : prefixes) {
+            if (mapping.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean startsWithGuardedPrefix(String mapping) {
@@ -244,6 +282,24 @@ class AdminEndpointAuthorizationGuardTest {
             int classIndex = cleaned.indexOf("public class");
             String header = classIndex > 0 ? cleaned.substring(0, classIndex) : "";
             return header.contains("@PreAuthorize");
+        }
+
+        /** 某标记出现次数（剥注释后计数）。 */
+        int count(String... markers) {
+            String cleaned = cleaned();
+            int total = 0;
+            for (String marker : markers) {
+                int from = 0;
+                while (true) {
+                    int index = cleaned.indexOf(marker, from);
+                    if (index < 0) {
+                        break;
+                    }
+                    total++;
+                    from = index + marker.length();
+                }
+            }
+            return total;
         }
 
         String relative() {
