@@ -250,6 +250,94 @@ class RbacSeedEscalationGuardTest {
     // ①·四 「扫描源码先剥注释」必须有自己的用例（被咬三次的规则不能只活在对话里）
     // ==================================================================================
 
+    /**
+     * 判定源码里是否存在对某字面量的**代码级**引用（不含注释、不含 {@code @PreAuthorize} 注解）。
+     *
+     * <p><b>剔除粒度是「整个注解节点」而不是「注解词」</b>：必须把 {@code @PreAuthorize("...")}
+     * 连同**参数里的字符串**一起剔除。只剔注解词、把参数留下，合法注解仍会被判红 —— 修复等于没做。
+     *
+     * <p><b>已知局限（不假装守住）</b>：这是**字面量**扫描。抓不到以下形态 ——
+     * 字符串拼接（把位名拆成两段相加）、{@code String.format}、从配置/DB 读、反射拼装。
+     * 静态扫描对"运行时拼出来的位名"无能为力；要覆盖只能靠运行时断言/审计
+     * （{@code setUserRole} 的第二层护栏就是那种兜底），而不是靠本守卫。
+     * 本条已登记 open-items，**不允许**因为"守卫绿了"就宣称"没有运行时特判"。
+     */
+    static boolean containsCodeReference(String source, String literal) {
+        String code = stripComments(source);
+        String stripped = removePreAuthorizeNodes(code);
+        return stripped.contains(literal);
+    }
+
+    /** 把每个 {@code @PreAuthorize(...)} 整节点（含参数）从源码里剔除，按括号配对处理嵌套。 */
+    private static String removePreAuthorizeNodes(String code) {
+        StringBuilder out = new StringBuilder();
+        int index = 0;
+        int markerLength = "@PreAuthorize".length();
+        char backslash = (char) 92;
+        while (true) {
+            int start = code.indexOf("@PreAuthorize", index);
+            if (start < 0) {
+                out.append(code, index, code.length());
+                return out.toString();
+            }
+            out.append(code, index, start);
+            int open = code.indexOf('(', start);
+            if (open < 0) {
+                index = start + markerLength;
+                continue;
+            }
+            int depth = 0;
+            boolean inString = false;
+            int cursor = open;
+            for (; cursor < code.length(); cursor++) {
+                char ch = code.charAt(cursor);
+                if (inString && ch == backslash) {
+                    cursor++;   // 跳过转义字符，避免把转义引号当成字符串结束
+                    continue;
+                }
+                if (ch == '"') {
+                    inString = !inString;
+                    continue;
+                }
+                if (inString) {
+                    continue;
+                }
+                if (ch == '(') {
+                    depth++;
+                } else if (ch == ')') {
+                    depth--;
+                    if (depth == 0) {
+                        break;
+                    }
+                }
+            }
+            index = Math.min(cursor + 1, code.length());
+        }
+    }
+
+    @Test
+    @DisplayName("★ 剔除粒度 — 合法 @PreAuthorize 注解不判红，运行时特判必须判红（含嵌套括号与代码内判权）")
+    void shouldDistinguishAnnotationFromRuntimeSpecialCase() {
+        String bit = RBAC_ADMIN_PERM;
+
+        assertThat(containsCodeReference("@PreAuthorize(\"@ss.hasPermi('" + bit + "')\")\nvoid m() { }", bit))
+                .as("合法注解被判红 = 只剔了注解词、留下了参数（修复没生效）")
+                .isFalse();
+        assertThat(containsCodeReference(
+                "@PreAuthorize(\"@ss.hasAnyPermi('" + bit + "','user:read')\")\nvoid m() { }", bit))
+                .as("嵌套括号没配对好，参数会留在代码里 → 合法注解又被判红")
+                .isFalse();
+        assertThat(containsCodeReference("if (admin) { grant(\"" + bit + "\"); }", bit))
+                .as("运行时特判抓不到 = 守卫形同虚设")
+                .isTrue();
+        assertThat(containsCodeReference("boolean a = UserContext.hasPermission(\"" + bit + "\");", bit))
+                .as("代码内判权必须被抓到（这是真实发生过的形态）")
+                .isTrue();
+        assertThat(containsCodeReference("// 参见 " + bit, bit))
+                .as("注释里的提及不算代码引用")
+                .isFalse();
+    }
+
     @Test
     @DisplayName("★ 剥离生效 — 注释里的字面量不得被当成代码引用，代码里的必须被识别")
     void shouldStripCommentsBeforeScanning() {
@@ -288,8 +376,7 @@ class RbacSeedEscalationGuardTest {
                             //（`hasPermission("rbac:admin")`、字符串常量、按角色直接授予），
                             // 而不是"某个端点需要该位"。注解引用由 PermissionBitReferenceGuardTest 管。
                             // 不加这一步会把 AdminUserController 的合法注解判成违规 —— 规则过粗也是 bug。
-                            String withoutAnnotations = code.replaceAll("@PreAuthorize\\([^)]*\\)", " ");
-                            return withoutAnnotations.contains(literal);
+                            return containsCodeReference(code, literal);
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
                         }

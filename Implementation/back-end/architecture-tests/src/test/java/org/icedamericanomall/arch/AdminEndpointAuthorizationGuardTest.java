@@ -166,6 +166,21 @@ class AdminEndpointAuthorizationGuardTest {
     // ==================================================================================
 
     @Test
+    @DisplayName("类名白名单 — 每条必须对应真实存在的控制器（改名/删类后条目必须删，否则红）")
+    void shouldFailWhenMethodLevelClassAllowanceIsStale() {
+        List<String> scanned = scanControllers().stream().map(SourceFile::simpleName).toList();
+
+        for (String allowed : METHOD_LEVEL_ADMIN_CLASSES) {
+            assertThat(scanned)
+                    .as("陈旧白名单：METHOD_LEVEL_ADMIN_CLASSES 里的 %s 在扫描面里不存在"
+                            + "（改名/删类/移包？）—— 请删除该条目。"
+                            + "否则门禁会对一个不存在的类'放行'，与 VOID_CLIENT_SILENT_ALLOWED 的陈旧即失败同一逻辑",
+                            allowed)
+                    .contains(allowed);
+        }
+    }
+
+    @Test
     @DisplayName("豁免表 — 每条必须仍存在且仍缺注解（已补注解 / 类已删除 都红）")
     void shouldFailWhenExemptionIsStale() {
         List<SourceFile> scanned = scanControllers();
