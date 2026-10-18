@@ -9,7 +9,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -25,51 +24,54 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <b>假支出流水</b>（有流水、没扣钱，账实不符）。这类缺陷是"钱会错"级别，却没有门禁，
  * 只能靠人眼；而人眼在本仓已经被证明会漏。
  *
- * <p><b>判定口径（三条同时满足才红）</b>：
+ * <p><b>判定口径（同一方法内）</b>：
  * <ol>
- *   <li><b>同一方法内</b>有 ≥2 个资金表写操作（不是整个类计数 —— 类计数会把
- *       "一个方法写一次、另一个方法写一次"误判成需要事务）；</li>
- *   <li>该方法<b>没有</b> {@code @Transactional}（方法级或类级都没有）；</li>
- *   <li>该方法<b>没有</b> Feign 调用 —— 含 Feign 的方法<b>本来就不允许</b>有事务
- *       （跨服务调用放在事务里会长时间持有连接、且远端失败无法本地回滚），
- *       这是<u>有原则的豁免</u>，不是白名单。</li>
+ *   <li>≥2 个资金写 + 无 {@code @Transactional} + <b>不含 Feign</b> ⇒ <b>红</b>（失败留半截账）；</li>
+ *   <li>≥2 个资金写 + <b>含 Feign</b> ⇒ <b>也红</b>（Feign 不能进事务，这种多写因此<b>无法</b>用事务保护，
+ *       必须人工登记豁免理由）。<b>静默豁免 = 看不见的例外</b>，与漏写注解同样危险；</li>
+ *   <li>1 个资金写 + 含 Feign ⇒ 通过（单语句自提交即原子）。</li>
  * </ol>
  *
- * <p><b>资金类按"调用的表"识别，不按包名</b>：只要写操作落在资金表
- * （{@code wallet_account} / {@code wallet_transaction} / {@code pay_order} /
- * {@code refund_order} / {@code reconciliation_batch}）上就算资金写，
- * 不看它在 wallet-service 还是 pay-service，也不看类名里有没有 Manager。
+ * <p><b>资金类按"调用的表/仓储"识别，不按包名</b>：显式清单 + <b>模式兜底</b>。
+ * 清单认"确定的"，模式认"像的"（结算/冻结/积分/流水），新增资金仓储不必改清单也能纳入；
+ * 另有断言"模式必须覆盖清单"，防止模式退化。
  *
- * <p><b>本门禁的边界（重要，别把它当"事务正确性"证明）</b>：
- * <ul>
- *   <li>只保证"注解写了"；<b>注解在 ≠ 事务生效</b> —— 自调用（{@code this.x()}）绕过 Spring 代理，
- *       本门禁防不住；</li>
- *   <li>不检查传播行为（{@code REQUIRES_NEW} 等）、只读标记、数据源是否正确；</li>
- *   <li>不检查"该事务该不该更细/该不该拆"——那是评审判断。</li>
- * </ul>
+ * <p><b>本门禁的边界（别把它当"事务正确性"证明）</b>：只保证"注解写了" ——
+ * <b>注解在 ≠ 事务生效</b>（自调用绕过 Spring 代理，本门禁防不住）；传播行为/只读/数据源也不查。
  * 实际生效仍需集成测试（真实事务管理器 + H2/Testcontainers），当前缺。
  */
-@DisplayName("资金写事务门禁 — 同一方法 ≥2 个资金写且无 @Transactional（且不含 Feign）必须红")
+@DisplayName("资金写事务门禁 — 同方法多资金写无事务必须红；含 Feign 的多写也必须登记，不许静默通过")
 class FundTransactionGuardTest {
 
     /** 资金表（按写入落点识别，与包名/类名无关）。 */
     private static final List<String> FUND_TABLES = List.of(
             "wallet_account", "wallet_transaction", "pay_order", "refund_order", "reconciliation_batch");
 
+    /** 模式兜底：覆盖清单之外"同类"的资金仓储（结算/冻结/积分/流水）。源码标识符多为小写开头，故忽略大小写。 */
+    private static final List<Pattern> FUND_IDENTIFIER_PATTERNS = List.of(
+            Pattern.compile("\\w*(Account|Transaction|PayOrder|RefundOrder|Reconciliation"
+                    + "|Settle\\w*|Settlement\\w*|Points\\w*|Freeze\\w*|Frozen\\w*|Flow\\w*)\\w*"
+                    + "(Repository|Mapper|Service|Client|Gateway|Port)\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\w*(Ledger|Settlement)\\w*(Repository|Service|Mapper)\\b",
+                    Pattern.CASE_INSENSITIVE));
+
     /** 资金写操作的方法名动词（仓储/服务层命名约定）。 */
     private static final Pattern WRITE_CALL = Pattern.compile(
-            "\\.(insert|save|update|delete|deduct|credit|mark|create|cancel|void|bind)\\w*\\s*\\(");
+            "\\.(insert|save|update|delete|deduct|credit|mark|create|cancel|void|bind|freeze|unfreeze)\\w*\\s*\\(");
 
-    /** Feign 调用痕迹：有它就不该有事务。 */
+    /** Feign 调用痕迹：有它就不该有事务（多写也就保护不了，只能登记）。 */
     private static final Pattern FEIGN_CALL = Pattern.compile("\\b\\w*(Client|Router)\\b\\.\\w+\\s*\\(");
 
-    /** 修饰符可选：包级私有方法（`void bad()`）同样是目标，漏掉它们门禁就形同虚设。 */
+    /** 修饰符可选：包级私有方法同样是目标，漏掉它们门禁就形同虚设。 */
     private static final Pattern METHOD = Pattern.compile(
             "\\b(?:(?:public|protected|private|static|final)\\s+)*[\\w<>\\[\\], ?]+\\s+(\\w+)\\s*\\([^)]*\\)\\s*\\{");
     private static final Pattern TRANSACTIONAL = Pattern.compile("@Transactional\\b");
 
+    /** 达到该本地资金写数就必须人工登记（含 Feign 时无法用事务保护）。 */
+    private static final int LOCAL_WRITES_UNDER_FEIGN_THRESHOLD = 2;
+
     @Test
-    @DisplayName("仓库主源码 — 每个方法都必须满足：资金写 ≥2 ⇒ 有 @Transactional（或含 Feign 而豁免）")
+    @DisplayName("仓库主源码 — 多资金写 ⇒ 有 @Transactional，或含 Feign 但已登记豁免")
     void shouldRequireTransactionForMultiFundWrites() throws IOException {
         List<String> violations = new ArrayList<>();
         for (Path file : mainSources()) {
@@ -79,23 +81,23 @@ class FundTransactionGuardTest {
             }
             boolean classLevelTx = TRANSACTIONAL.matcher(classHeader(source)).find();
             for (Method method : methods(source)) {
-                if (classLevelTx || method.transactional || method.body.contains("@Transactional")) {
+                if (classLevelTx || method.transactional) {
                     continue;
                 }
                 int fundWrites = countFundWrites(method.body);
-                if (fundWrites < 2) {
+                if (fundWrites < LOCAL_WRITES_UNDER_FEIGN_THRESHOLD) {
                     continue;
                 }
-                if (FEIGN_CALL.matcher(method.body).find()) {
-                    continue;   // 有原则的豁免：含 Feign 的方法不得开事务
-                }
+                boolean hasFeign = FEIGN_CALL.matcher(method.body).find();
                 violations.add(file.getFileName() + "#" + method.name + " 有 " + fundWrites
-                        + " 个资金写且无 @Transactional（失败会留下半截账）");
+                        + " 个资金写" + (hasFeign
+                        ? "且含 Feign：无法用事务保护，必须登记豁免理由"
+                        : "且无 @Transactional：失败会留下半截账"));
             }
         }
 
         assertThat(violations)
-                .as("资金多写必须同事务；要豁免就给方法加 Feign 调用（那是真实设计），不要加白名单")
+                .as("多资金写要么同事务、要么登记豁免；静默通过不允许（要豁免就登记进 open-items，不是加白名单）")
                 .isEmpty();
     }
 
@@ -125,22 +127,57 @@ class FundTransactionGuardTest {
     }
 
     @Test
-    @DisplayName("★ 用例3 — 两个资金写分散在不同方法（各一次）→ 通过；含 Feign → 豁免")
-    void shouldPass_whenWritesSplitOrFeignPresent() {
+    @DisplayName("★ 用例3 — 单写 + Feign 通过；含 Feign 的多写必须红（不许静默豁免）")
+    void shouldDistinguishFeignSingleWriteFromMultiWrite() {
+        String singleWriteWithFeign = sample("void c() {\n"
+                + "        channelRouter.deductBalance(userId, amount, bizRef);\n"
+                + "    }");
+        assertThat(violationsOf(singleWriteWithFeign))
+                .as("单写 + Feign：单语句自提交即原子，无需事务")
+                .isEmpty();
+
+        String multiWriteWithFeign = sample("void d() {\n"
+                + "        payOrderRepository.createPending(orderNo);\n"
+                + "        channelRouter.deductBalance(userId, amount, bizRef);\n"
+                + "        payOrderRepository.markBalancePaidIfPending(1L);\n"
+                + "    }");
+        assertThat(violationsOf(multiWriteWithFeign))
+                .as("含 Feign 的多写无法用事务保护 ⇒ 必须人工登记，不能静默通过")
+                .hasSize(1);
+    }
+
+    @Test
+    @DisplayName("★ 用例4 — 两个资金写分散在不同方法（各一次）→ 通过")
+    void shouldPass_whenWritesSplitAcrossMethods() {
         String split = sample("void a() { walletTransactionRepository.insert(tx); }\n"
                 + "    void b() { walletAccountRepository.deduct(userId, amount); }");
         assertThat(violationsOf(split))
                 .as("按方法判定而非按类：各写一次不需要事务")
                 .isEmpty();
+    }
 
-        String withFeign = sample("void c() {\n"
-                + "        payOrderService.createPending(orderNo);\n"
-                + "        channelRouter.deductBalance(userId, amount, bizRef);\n"
-                + "        payOrderService.markBalancePaidIfPending(1L);\n"
-                + "    }");
-        assertThat(violationsOf(withFeign))
-                .as("含 Feign 的方法不能有事务（跨服务调用持有连接、远端失败无法本地回滚）")
+    @Test
+    @DisplayName("★ 用例5 — 模式必须覆盖显式清单（模式退化会让新增资金表静默逃逸）")
+    void shouldCoverEveryExplicitFundTableByPattern() {
+        List<String> uncovered = FUND_TABLES.stream()
+                .filter(table -> FUND_IDENTIFIER_PATTERNS.stream()
+                        .noneMatch(pattern -> pattern.matcher(toCamel(table) + "Repository").find()))
+                .toList();
+
+        assertThat(uncovered)
+                .as("清单里有、模式认不出的资金表 ⇒ 只靠清单识别，新增同类表会漏。补模式或改命名")
                 .isEmpty();
+    }
+
+    @Test
+    @DisplayName("★ 用例6 — 模式兜底能认出新资金仓储（结算/冻结/积分/流水）")
+    void shouldRecognizeNewFundRepositoriesByPattern() {
+        for (String identifier : List.of("settlementRepository", "settleRuleService",
+                "pointsLedgerRepository", "walletFreezeRepository", "cashFlowRepository")) {
+            assertThat(touchesFundTable("class X { " + identifier + " f; }"))
+                    .as("%s 应被模式识别为资金仓储", identifier)
+                    .isTrue();
+        }
     }
 
     // ─────────────────────────── 纯函数（便于用例锁定） ───────────────────────────
@@ -156,8 +193,7 @@ class FundTransactionGuardTest {
             if (classLevelTx || method.transactional) {
                 continue;
             }
-            int fundWrites = countFundWrites(method.body);
-            if (fundWrites >= 2 && !FEIGN_CALL.matcher(method.body).find()) {
+            if (countFundWrites(method.body) >= LOCAL_WRITES_UNDER_FEIGN_THRESHOLD) {
                 out.add(method.name);
             }
         }
@@ -168,12 +204,15 @@ class FundTransactionGuardTest {
         return "@Service\nclass Sample {\n"
                 + "    private final WalletAccountRepository walletAccountRepository = null;\n"
                 + "    private final WalletTransactionRepository walletTransactionRepository = null;\n"
+                + "    private final PayOrderRepository payOrderRepository = null;\n"
+                + "    private final PaymentChannelRouter channelRouter = null;\n"
                 + "    " + body + "\n}\n";
     }
 
-    private static boolean touchesFundTable(String source) {
-        return FUND_TABLES.stream().anyMatch(table -> source.contains(table.replace('_', ' '))
-                || source.contains(toCamel(table)));
+    static boolean touchesFundTable(String source) {
+        boolean explicit = FUND_TABLES.stream().anyMatch(table -> source.contains(toCamel(table)));
+        boolean byPattern = FUND_IDENTIFIER_PATTERNS.stream().anyMatch(pattern -> pattern.matcher(source).find());
+        return explicit || byPattern;
     }
 
     private static String toCamel(String table) {
@@ -189,9 +228,9 @@ class FundTransactionGuardTest {
         int count = 0;
         Matcher matcher = WRITE_CALL.matcher(body);
         while (matcher.find()) {
-            String receiver = body.substring(Math.max(0, matcher.end() - 200), matcher.end());
-            boolean fundReceiver = FUND_TABLES.stream()
-                    .anyMatch(table -> receiver.toLowerCase().contains(toCamel(table).toLowerCase()));
+            String receiverWindow = body.substring(Math.max(0, matcher.end() - 200), matcher.end());
+            boolean fundReceiver = FUND_IDENTIFIER_PATTERNS.stream()
+                    .anyMatch(pattern -> pattern.matcher(receiverWindow).find());
             if (fundReceiver) {
                 count++;
             }
@@ -245,6 +284,4 @@ class FundTransactionGuardTest {
     }
 
     private record Method(String name, String body, boolean transactional) { }
-
-    private static final Map<String, String> UNUSED_PLACEHOLDER = Map.of();
 }
