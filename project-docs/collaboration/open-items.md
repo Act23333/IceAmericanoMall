@@ -548,6 +548,29 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
 > 否则该服务会从 `~/.m2` 拿到**旧版共享 jar**，出现"看起来是代码回归、其实是旧依赖"的假失败
 > （本批实际踩到一次：`AuthContextClientFallbackTest` 假红，装完即绿）。全量 reactor 不受影响。
 
+**跨服务契约闭环审计（2026-10-18，环境不可用时的静态替代）**：
+`Implementation/back-end/scripts/closure-audit.py` —— 把 ia-api 的 Feign 调用（62 个）与控制器提供端点（289 个）
+按 (HTTP 方法, 归一化路径) 精确比对。结果 **61/62 匹配，1 处断点**：
+
+| 断点 | 事实 | 为什么单测抓不到 |
+|---|---|---|
+| `SearchClient.searchSpus` → `GET /api/search/product` | search-service 只有 `GET /api/search/spu`（`SearchController`），**没有 `/product`** ⇒ 运行时必 404 | fallback 是 **fail-soft**（返回 data=null），调用方转成 `BizException(AI_SERVICE_UNAVAILABLE, "搜索服务暂不可用")` —— 表现为"搜索服务不可用"，与真实故障无法区分；2381 个单测全走 mock，永远发现不了 |
+| 影响面 | ai-service `FeignSearchAdapter` → `SearchTool`：**AI 助手的商品搜索一直不可用** | 属"静默降级掩盖真断点"的典型 |
+
+修复方向（待裁决，涉及 AI 工具行为，不自作主张）：把 `SearchClient` 的映射改为 `@GetMapping("/spu")`
+并补 `page` 参数（provider 用 `@QueryModel SearchPageReq`），响应仍按弱类型 `Result<Map>` 解析
+（`records` 键），与现有注释的"弱类型契约"设计一致。
+**另**：该客户端走的是**公开**路径 `/api/search`，集群内应走 `/internal/**`（ADR-004）——
+代码注释已登记该偏差，本批不改。
+
+**同一审计口径下的第二类结果：无 Feign 消费者的内部端点（4 个，需逐个确认是运维入口还是死接口）**：
+| 端点 | 判断要点 |
+|---|---|
+| `GET /internal/user/{id}` | 若无调用方，属死接口（用户域内部查询另有 `UserClient` 路径） |
+| `POST /internal/coupon/grant` | 可能是运营/脚本手动补券 —— **手动入口也算消费者**，但必须在文档写明入口方式 |
+| `POST /internal/search/reindex` | 运维手动重建索引，同上 |
+| `PUT /internal/logistics/{id}/status` | **最值得查**：若发货流程没调它，物流状态只能靠自身逻辑推进 |
+
 **数据权限（行级/租户隔离）标 P0 —— 本项是 RBAC 现状里最大的洞**：
 现状「商家只看自己数据」靠**每条查询自己带 `sellerId`/`userId`**，漏一处就是跨租户泄露，
 且**没有任何门禁能发现**（鉴权门禁只看"有没有位"，不看"查询有没有按归属过滤"）。
