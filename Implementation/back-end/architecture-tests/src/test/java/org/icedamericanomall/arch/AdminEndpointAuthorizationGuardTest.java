@@ -102,7 +102,11 @@ class AdminEndpointAuthorizationGuardTest {
             // 整类挂任一位都会错：挂 issue 让"只看列表"的人能开票，挂 void 则让开票员也能作废（破坏 SoD）。
             "/api/admin/invoice"};
 
-    /** 写操作的映射注解（用于平台配置前缀的方法级覆盖计数）。 */
+    /** 任意映射注解（逐方法覆盖判定用）。 */
+    private static final Pattern MAPPING_ANNOTATION =
+            Pattern.compile("@(?:Get|Post|Put|Delete|Patch)Mapping");
+
+    /** 写操作的映射注解（历史留存；判定已改用逐方法覆盖）。 */
     private static final String[] WRITE_MAPPINGS = {"@PostMapping", "@PutMapping", "@DeleteMapping", "@PatchMapping"};
 
     /** 反空断言下限：受管控制器数量的下限（谓词失效会掉到 0）。 */
@@ -184,6 +188,34 @@ class AdminEndpointAuthorizationGuardTest {
     }
 
     @Test
+    @DisplayName("★ 逐方法覆盖 — 纯类级控制器通过；有一个映射方法裸奔必须判红")
+    void shouldRequireEveryMappingCovered_notJustEnoughAnnotations() {
+        assertThat(sourceOf("SyntheticClassLevelController", "/api/admin/x", true).everyMappingCovered())
+                .as("纯类级控制器被计数法误判过（1 个注解 vs N 个方法），必须通过")
+                .isTrue();
+
+        String quote = String.valueOf((char) 34);
+        String covered = "  @PreAuthorize(" + quote + "@ss.hasPermi('user:read')" + quote
+                + ") @GetMapping(" + quote + "/a" + quote + ") void a() { } ";
+        String bare = "  @GetMapping(" + quote + "/b" + quote + ") void b() { } ";
+
+        // 注解挂在方法 A 上、方法 B 裸奔：计数法只看数量仍会通过，逐方法法必须抓住
+        String oneBare = "@RestController @RequestMapping(" + quote + "/api/admin/y" + quote
+                + ") public class S { " + covered + bare + " }";
+        assertThat(new SourceFile(Paths.get("S.java"), "S", oneBare).everyMappingCovered())
+                .as("有一个映射方法裸奔必须判红 —— 计数法在'注解都挂在别的方法上'时是瞎的")
+                .isFalse();
+
+        String writeCovered = "  @PreAuthorize(" + quote + "@ss.hasPermi('user:write')" + quote
+                + ") @PutMapping(" + quote + "/c" + quote + ") void c() { } ";
+        String allCovered = "@RestController @RequestMapping(" + quote + "/api/admin/z" + quote
+                + ") public class T { " + covered + writeCovered + " }";
+        assertThat(new SourceFile(Paths.get("T.java"), "T", allCovered).everyMappingCovered())
+                .as("每个方法都带注解时必须通过")
+                .isTrue();
+    }
+
+    @Test
     @DisplayName("豁免表 — 每条必须仍存在且仍缺注解（已补注解 / 类已删除 都红）")
     void shouldFailWhenExemptionIsStale() {
         List<SourceFile> scanned = scanControllers();
@@ -245,23 +277,14 @@ class AdminEndpointAuthorizationGuardTest {
         boolean methodLevelAllowed = startsWithAny(mapping, METHOD_LEVEL_ADMIN_PREFIXES)
                 || java.util.Arrays.asList(METHOD_LEVEL_ADMIN_CLASSES).contains(source.simpleName());
         if (methodLevelAllowed) {
-            // 管理端方法级：注解数必须覆盖全部映射方法（无公开端点可豁免）
-            if (source.hasClassLevelPreAuthorize()) {
-                return false;
-            }
-            int annotations = source.count("@PreAuthorize");
-            int mappings = source.count("@GetMapping", "@PostMapping", "@PutMapping",
-                    "@DeleteMapping", "@PatchMapping");
-            return mappings > 0 && annotations < mappings;
+            // 管理端方法级：**逐方法**检查（类级 OR 方法自身），不用计数
+            return !source.everyMappingCovered();
         }
         if (startsWithAny(mapping, PLATFORM_CONFIG_PREFIXES)) {
-            // 平台配置：允许方法级覆盖（类级注解会封掉公开读端点）
-            if (source.hasClassLevelPreAuthorize()) {
-                return false;
-            }
-            int annotations = source.count("@PreAuthorize");
-            int writes = source.count(WRITE_MAPPINGS);
-            return writes > 0 && annotations < writes;
+            // 平台配置：允许方法级覆盖（类级注解会封掉公开的读端点）。
+            // 逐方法判定 ⇒ 公开读方法可以裸奔、写方法必须各自带注解；
+            // **不再**用"注解数 ≥ 写方法数"的计数（计数无法区分"哪个方法裸奔"）。
+            return !source.everyWriteMappingCovered();
         }
         return startsWithGuardedPrefix(mapping) && !source.hasClassLevelPreAuthorize();
     }
@@ -340,6 +363,50 @@ class AdminEndpointAuthorizationGuardTest {
             int classIndex = cleaned.indexOf("public class");
             String header = classIndex > 0 ? cleaned.substring(0, classIndex) : "";
             return header.contains("@PreAuthorize");
+        }
+
+        /**
+         * <b>逐方法覆盖判定</b>：类级有注解，或**每一个映射方法自身**都带 {@code @PreAuthorize}。
+         *
+         * <p><b>为什么不用"注解数 ≥ 映射数"</b>（原实现，已被驳回）：
+         * 计数会把「纯类级控制器」误判为未覆盖（1 个注解 vs N 个方法），
+         * 也会把「注解全挂在读方法上、写方法裸奔」判成通过 —— 方向相反的两种错都能发生。
+         * 判定要落在**方法**上：每个映射注解之前的那一段（上一个映射之后 → 本映射）必须出现注解。
+         */
+        boolean everyMappingCovered() {
+            if (hasClassLevelPreAuthorize()) {
+                return true;
+            }
+            String cleaned = cleaned();
+            Matcher matcher = MAPPING_ANNOTATION.matcher(cleaned);
+            int previousEnd = 0;
+            while (matcher.find()) {
+                if (!cleaned.substring(previousEnd, matcher.start()).contains("@PreAuthorize")) {
+                    return false;
+                }
+                previousEnd = matcher.end();
+            }
+            return true;
+        }
+
+        /** 平台配置用：**写**方法逐个覆盖（公开读方法允许没有注解）。 */
+        boolean everyWriteMappingCovered() {
+            if (hasClassLevelPreAuthorize()) {
+                return true;
+            }
+            String cleaned = cleaned();
+            Matcher matcher = MAPPING_ANNOTATION.matcher(cleaned);
+            int previousEnd = 0;
+            while (matcher.find()) {
+                String annotation = cleaned.substring(matcher.start(), matcher.end());
+                boolean isWrite = !annotation.startsWith("@GetMapping");
+                String segment = cleaned.substring(previousEnd, matcher.start());
+                if (isWrite && !segment.contains("@PreAuthorize")) {
+                    return false;
+                }
+                previousEnd = matcher.end();
+            }
+            return true;
         }
 
         /** 某标记出现次数（剥注释后计数）。 */

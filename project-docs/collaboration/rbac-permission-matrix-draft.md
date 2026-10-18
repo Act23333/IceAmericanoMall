@@ -181,6 +181,14 @@
 > seller）**，然后才谈 `seller:aftersale` 位 —— **权限位不能绕过这个前置**：没有 seller 维度的表，
 > 给商家任何售后位都等于让他读/审批别家的售后（这正是 S0-pre 种子守卫拦的那件事）。
 
+**发票域的角色归属与 SoD（补表行）**：`invoice:read` 与 `invoice:issue` / `invoice:void` 均只由
+`ROLE_ADMIN` 经通配符获得（不单列给其他角色）。SoD 约定：**开票员持 `invoice:read` + `invoice:issue`，
+不持 `invoice:void`** ——
+- 能看发票列表（`invoice:read`）、能开票（`invoice:issue`）；
+- **不能作废/冲红**（`invoice:void`），作废动作归另一角色或管理员。
+该约束目前是**授权约定**（靠种植时不把 `invoice:void` 给开票员角色实现），**系统未强制**；
+要强制需引入"互斥位"模型（SoD 另立项，与 Q9 的 SoD 条同源）。
+
 **`aftersale:read` 给谁（审阅问题，此处给结论）**：**只由 `ROLE_ADMIN` 经通配符获得**，不给商家。
 理由是种子守卫 S0-pre 记录的那个事实：`after_sale` 表**没有 seller 维度**，管理端列表只按状态过滤 ——
 一旦给商家这个位，他读到的就是**别家的售后**。商家看自己的售后走 `/api/seller/**`（由 `seller:admin` 覆盖），
@@ -282,6 +290,16 @@ UPDATE sys_permission SET status = 0 WHERE code IN ('user:admin');
 ```
 
 ### 7.3 迁移后的「不失权」验证（必须做，不能靠肉眼）
+
+0b. ✅ **映射表已可生成**：`scripts/gen-permission-map.mjs`（零依赖，扫类级 `@RequestMapping` + 方法级映射 +
+就近 `@PreAuthorize`），输出 TSV（path / http_method / permission / controller / source）。
+**抽验 4 个控制器全部正确**（发票 4 方法、售后 3 方法、类目 3 写 1 公开读、订单 5 方法）。
+抽验本身抓出**两个真 bug**，都不是"看一眼就过"能发现的：
+- 只**往回**找注解 ⇒ 注解写在映射注解**之后**的控制器（`CategoryController`、`AdminAfterSaleController`）被误报未覆盖；
+- 模块级全局正则的 `lastIndex` 被上一次 `exec` 推进 ⇒ 后续 `matchAll` 从陈旧位置开始**漏扫**；
+- 修完又暴露第三个：取"整段最后一个注解"会把**下一个方法**的注解算进来（售后 GET 被误判成 `pay:admin`）
+  ⇒ 改为**就近**规则（先看映射之前取最后一个，没有再看之后取第一个）。
+**结论**：TSV 可信的前提是"抽验过"，不是"跑出来了"。
 
 0. **「位 → 端点」映射从哪来（定死，不手工维护）**：**由门禁/脚本在注解替换后生成** ——
    扫 `@PreAuthorize` 拿位、扫类级 `@RequestMapping` + 方法级 `@XxxMapping` 拿端点，产出
@@ -571,6 +589,8 @@ SoD（职责分离：一个人不能既开票又作废）**另立项**：它需�
     **末批合并 → E1 seed 校验 → E2 端到端 403 → E3 清 `user:perms:*` → 停用 `user:admin`（status=0） → 再跑一次 E2**
     最后那次 E2 **是停用动作的验收，不是重复执行**：它验证"停用后新位仍放行、旧位不再被引用"。
     缺最后一步 = 停用没有证据。
+    **任何一步红都不继续往下走**；**停用永远是最后一步**（在 E1/E2/E3 全绿之后）。
+    顺序不可调换：先停用再验证 = 拿生产状态做实验。
 9. ⬜ 前端入口隐藏（S0 之后；须支持通配符与 `rbac:admin` 排除，否则管理员菜单会消失/越权可见）
 
 ---
