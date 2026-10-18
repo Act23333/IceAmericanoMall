@@ -598,6 +598,34 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
   自调用（`this.x()`）绕过 Spring 代理，本门禁防不住；传播行为/只读/数据源也不检查。
   **实际生效待集成测试**（真实事务管理器 + H2/Testcontainers），当前缺。
 
+**资金事务门禁的两处盲区（下一批收窄，2026-10-18 登记）**：
+1. **含 Feign 的豁免是"静默通过"**：现在方法里出现 Feign 调用就直接放行，不留痕。
+   下一批改为：**命中原豁免即 `[FAIL]`，要求人工登记豁免理由**（登记进文档，不是加白名单）。
+   理由：静默豁免等于"看不见的例外"，和 `@Transactional` 漏写一样危险——只是它不会立刻错账。
+   **同时已核实第一个豁免者不是"已豁免"而是"本来就安全"**：
+   `PayManager#payByBalance` 的本地写走 `PayOrderRepositoryImpl`（该类 `@Transactional` 数量为 0），
+   但 `createPending`/`resetPending`/`markBalancePaidIfPending`/`cancelPending` **各只有 1 条写语句**
+   ⇒ 单语句自提交即原子，**不是"同方法多写无事务"**，与修复前的 `deduct`（同方法 2 写无事务）**不同级**。
+   其残留风险是另一件事：`markBalancePaidIfPending` 返回 false 时"钱已扣、单未置成功"只 `log.warn`（缺告警），
+   已在 `payOrderNo` 告警项里合并跟踪。
+2. **资金表清单硬编码**：`FUND_TABLES` 是五个字面量，新增资金表（如将来的 `settlement_*`）不会自动纳入。
+   下一批加**模式匹配兜底**（`*_account` / `*_transaction` / `pay_*` / `refund_*` / `*_batch` 等）
+   + **表数断言**（扫描到的资金表数量须 ≥ 当前清单长度，否则说明正则退化了）。
+
+**`recharge` 入口普查（2026-10-18，命令与范围写全）**：
+| 入口类型 | grep 范围与命令 | 结果 |
+|---|---|---|
+| MQ 消费者 | `grep -rn "recharge\|creditBalance" --include=*.java */src/main/java`，过滤 `messaging|Consumer|Listener` | **无** |
+| 支付/第三方回调 | `grep -rn "recharge(" --include=*.java pay-service/src/main/java wallet-service/src/main/java` | **无**（pay-service 不调充值） |
+| 定时任务 | `grep -rn "recharge\|WalletManager" --include=*.java */src/main/java/*/scheduler` | **无** |
+| 跨服务 Feign | `grep -rn "recharge" ia-api/src/main/java` | **无**（ia-api 无充值契约） |
+| 对外端点 | `grep -rn -B3 "recharge(" wallet-service/.../adapter/web/*.java` | **唯一入口**：`POST /api/wallet/recharge`（买家 HTTP） |
+
+**结论**：充值**只有买家 HTTP 入口**，无 MQ/回调/job/Feign ⇒ 维持"可接受但登记"（② 不成立）。
+**未覆盖范围（明说）**：① 前端/网关的重试与自动重发策略不在本仓（需前端与网关配置确认）；
+② 反向代理/负载均衡层的重试未查；③ 数据库层重放到不了（无 CDC）。
+⇒ 若将来接入支付回调或自动充值，**立即升级为真缺口**。
+
 **弱断言标注（`WalletManagerTest`）**：`余额不足` 用例**只验异常类型 + 流水曾插入**，
 **不验回滚**（单测里没有事务代理，"抛异常后流水不存在"无意义）；回滚属集成测试范畴。
 注解反射断言同样只到"注解在"这一层，边界已写在用例注释里。
