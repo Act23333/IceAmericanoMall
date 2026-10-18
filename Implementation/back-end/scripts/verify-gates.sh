@@ -59,6 +59,11 @@ fast_steps() {
   #           **凡属"代码正确性/安全边界"的必须留在 fast**，否则 fast 的绿不构成提交许可。
   # 代价实测很低：architecture-tests 是源码扫描 + 纯单测，秒级，不依赖其他模块编译。
   run "架构/安全门禁（architecture-tests 全部守卫）"       mvn $MVN_ARGS -q -f "$BE/pom.xml" -pl architecture-tests test
+  # ★ 2026-10-18 补：跨服务契约闭环（Feign 调用 ↔ 提供方端点）。
+  # 事故教训：ADR-062 把检索资源段 /product 改名 /spu，漏改 ia-api 的 SearchClient ⇒ 调用必 404，
+  # 但被 fail-soft 降级吞成"搜索服务暂不可用"，**2381 个单测全绿**。
+  # 该脚本自带**扫描面断言**（提供方 ≥280 / 消费方 ≥55）：扫描器坏掉时不会"0 个未匹配 = 假绿"。
+  run "跨服务契约闭环（Feign ↔ 提供方端点）"  bash "$BE/scripts/closure-audit.sh"
 }
 
 case "$MODE" in

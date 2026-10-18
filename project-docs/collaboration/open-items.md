@@ -557,19 +557,38 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
 | `SearchClient.searchSpus` → `GET /api/search/product` | search-service 只有 `GET /api/search/spu`（`SearchController`），**没有 `/product`** ⇒ 运行时必 404 | fallback 是 **fail-soft**（返回 data=null），调用方转成 `BizException(AI_SERVICE_UNAVAILABLE, "搜索服务暂不可用")` —— 表现为"搜索服务不可用"，与真实故障无法区分；2381 个单测全走 mock，永远发现不了 |
 | 影响面 | ai-service `FeignSearchAdapter` → `SearchTool`：**AI 助手的商品搜索一直不可用** | 属"静默降级掩盖真断点"的典型 |
 
-修复方向（待裁决，涉及 AI 工具行为，不自作主张）：把 `SearchClient` 的映射改为 `@GetMapping("/spu")`
-并补 `page` 参数（provider 用 `@QueryModel SearchPageReq`），响应仍按弱类型 `Result<Map>` 解析
-（`records` 键），与现有注释的"弱类型契约"设计一致。
-**另**：该客户端走的是**公开**路径 `/api/search`，集群内应走 `/internal/**`（ADR-004）——
-代码注释已登记该偏差，本批不改。
+**已修（2026-10-18）**：`SearchClient` 的映射改 `@GetMapping("/spu")`（`SearchPageReq` 全字段可选，
+只改路径最安全）。根因确认：**ADR-062 把检索资源段 `/product` 改名 `/spu` 时漏改了这个消费者** ——
+改名类决策必须连同"消费方清单"一起改，否则断点会被降级吞掉。
+修后 `closure-audit` **62/62 全匹配**。
+该客户端走**公开**路径 `/api/search`（集群内应走 `/internal/**`，ADR-004）——偏差保留，注释已登记。
 
-**同一审计口径下的第二类结果：无 Feign 消费者的内部端点（4 个，需逐个确认是运维入口还是死接口）**：
-| 端点 | 判断要点 |
-|---|---|
-| `GET /internal/user/{id}` | 若无调用方，属死接口（用户域内部查询另有 `UserClient` 路径） |
-| `POST /internal/coupon/grant` | 可能是运营/脚本手动补券 —— **手动入口也算消费者**，但必须在文档写明入口方式 |
-| `POST /internal/search/reindex` | 运维手动重建索引，同上 |
-| `PUT /internal/logistics/{id}/status` | **最值得查**：若发货流程没调它，物流状态只能靠自身逻辑推进 |
+**已升级为常驻门禁**：`scripts/closure-audit.sh`（探测 python3/python）接进 `verify-gates.sh` 的 fast 步骤。
+自带**扫描面断言**（提供方 ≥280 / 消费方 ≥55）：扫描器坏掉时是 `[FAIL] 扫描面异常缩小`，
+而不是"0 个未匹配"的假绿；缺解释器时 `exit 3` 并打印"这不是通过"。
+
+**4 个无 Feign 消费者的内部端点 —— 已按"文档有无"定性（2026-10-18）**：
+| 端点 | 文档线索 | 结论 |
+|---|---|---|
+| `GET /internal/user/{id}` | **零文档引用** | **待删**（删前确认无人工 curl；用户域内部查询走 `UserClient`） |
+| `POST /internal/coupon/grant` | **零文档引用** | **待删**（若要留作运营手动补券，必须写进运维文档并注明入口方式） |
+| `POST /internal/search/reindex` | **零文档引用** | **待删**（重建索引若确需手动入口，同样要写文档；否则用 job/CLI） |
+| `PUT /internal/logistics/{id}/status` | 零文档引用，但**不是孤儿** | **见下：业务闭环缺口** |
+
+**物流状态推进缺口（比"孤儿"严重）**：
+`LogisticsClient` **只有** `createLogistics` 一个方法；`PUT /internal/logistics/{id}/status`
+（`LogisticsManager#updateStatus`）在全仓**没有任何生产调用方**（只有控制器与单测）。
+⇒ 物流记录创建后状态**无法推进**：`PENDING→SHIPPED→DELIVERED↔RETURNED` 这台状态机在代码里存在，
+但**没有推动者** —— 买家确认收货、退货、发货部分包裹都不会回写物流状态。
+属**业务闭环缺口**（订单状态与物流记录脱节），不是死接口；修法需定"谁负责推进"（trade 在 ship/confirm 时回调？
+还是物流侧轮询承运商？）—— **需要业务裁决，不自行补**。
+
+**降级策略的配套要求（新增判据）**：
+**任何 fail-open / fail-soft 都必须同时具备①契约校验②降级触发率指标**，否则降级就是"静默失败"的另一种写法。
+本批实例：`SearchClient` 的 fail-soft 把"路径 404"显示成"搜索服务暂不可用"，
+**2381 个单测全绿、无人发现**——契约校验（`closure-audit`）已补上，
+但**降级触发率指标仍缺**：没有任何指标区分"下游真挂"与"我们调错了"。
+要求：降级路径必须打点（计数器 + 原因码），"我们调错了"应是独立原因码而不是笼统的"不可用"。
 
 **数据权限（行级/租户隔离）标 P0 —— 本项是 RBAC 现状里最大的洞**：
 现状「商家只看自己数据」靠**每条查询自己带 `sellerId`/`userId`**，漏一处就是跨租户泄露，

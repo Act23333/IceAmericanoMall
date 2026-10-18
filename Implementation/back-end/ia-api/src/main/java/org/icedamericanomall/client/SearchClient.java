@@ -46,13 +46,17 @@ public interface SearchClient {
     /**
      * 商品搜索（关键词 + 分页）。
      * <p>
-     * 对应 search-service SearchController.search()。
+     * 对应 search-service {@code SearchController#search}，路径段 {@code /spu}（检索对象是 SPU）。
+     *
+     * <p><b>2026-10-18 修正</b>：这里原本写 {@code /product}，而 ADR-062 把资源段改名为 {@code /spu}
+     * 时**漏改了这个消费者** ⇒ 调用必 404，被 fail-soft 降级掩盖成"搜索服务暂不可用"。
+     * 教训：改名类决策必须连同"消费方清单"一起改，否则断点会被降级吞掉。
      *
      * @param keyword  搜索关键词
      * @param size     返回条数（默认 5）
      * @return Result.data 为包含 "records" 列表的 Map
      */
-    @GetMapping("/product")
+    @GetMapping("/spu")
     Result<Map<String, Object>> searchSpus(
         @RequestParam("keyword") String keyword,
         @RequestParam(value = "size", defaultValue = "5") int size

@@ -79,6 +79,15 @@ def main():
     provider_keys = {(verb, path) for verb, path, _ in providers}
     missing = [row for row in consumers if (row[0], row[1]) not in provider_keys]
 
+    # 扫描面断言：防止"扫描器坏了 → 什么都没扫到 → 0 个未匹配 → 假绿"
+    MIN_PROVIDERS = 280
+    MIN_CONSUMERS = 55
+    if len(providers) < MIN_PROVIDERS or len(consumers) < MIN_CONSUMERS:
+        print('[FAIL] 扫描面异常缩小：提供方 %d（应 ≥%d）/ 消费方 %d（应 ≥%d）'
+              % (len(providers), MIN_PROVIDERS, len(consumers), MIN_CONSUMERS))
+        print('       多半是解析规则或目录结构变了 —— 先修扫描器，不要当成"没有断点"。')
+        return 2
+
     print('提供方端点 %d 个 / 消费方调用 %d 个' % (len(providers), len(consumers)))
     print('未匹配（运行时会 404）：%d 个' % len(missing))
     for verb, path, name in sorted(missing):
