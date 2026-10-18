@@ -459,3 +459,7 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 3. **错误体必须足以判定处置（已落码）**：`/internal/**` 的错误体是 **`ErrorInfo{code,msg,category,retryable,traceId}`** 五字段（`ia-common` `common/api/ErrorInfo`；`retryable = (category == TRANSIENT)` 由 `category` **单向派生**，下游报文若自相矛盾（如 `category=CLIENT,retryable=true`）由解码器按 `category` 重新派生）。`/api/**` **仍是** `Result{code,msg,data}` —— **对外信封零变化**。调用方**不得仅凭状态码猜测语义**。
 4. **`/internal/**` 不得用 `void`/标量承载"可能失败"的操作**：失败必须以**非 2xx** 表达，否则调用方无法感知（ADR-004 §修订末段已登记该风险）。
 5. **状态码是被观测面**：熔断（resilience4j/Sentinel）、重试、指标、告警**都以 HTTP 状态码为键** —— 用 200 承载错误会让熔断器**永不触发**、成功率指标**虚高**。这是"错误必须用真状态码"的运维理由，不是风格偏好。
+6. **补偿/重试的两条硬判据**（U17 落地时定，2026-10-18）：
+   - **确定性失败不得进重试队列**：下游 4xx（`CLIENT`，如参数非法/目标不存在）重放必然再次失败 —— 无条件重试等于**每轮重复同一次必然失败的调用**（死循环 + 日志洪泛）。必须落「永久失败」终结标记。
+   - **重放前必须重读当前状态**：补偿记录只说明「当时失败了」，不说明「现在还该做」。典型反例：禁用 → 吊销失败 → 管理员又启用 —— 照着台账直接重放会把**正常用户的登录态踢掉**。
+   - 推论：补偿的**判定条件只能按结构化列**（action / target / 时间），**禁止解析人读文案**（`detail`、日志、注释）来判；文案会改，判据不会。

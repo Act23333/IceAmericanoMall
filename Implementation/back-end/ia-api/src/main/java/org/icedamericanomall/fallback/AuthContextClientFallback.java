@@ -34,14 +34,19 @@ import java.util.Set;
  *       （{@code RoleTypeDerivation.fromRoleCodes(null)} → 留空），空 Map 只让该列留空。</li>
  *   <li>{@code setUserRole} —— <b>③ 命令</b>。授权变更静默丢失会让「已改角色」与 RBAC 五表
  *       不一致，必须 fail-closed（抛 {@code SYSTEM_BUSY}）。</li>
- *   <li>{@code revokeUserTokens} —— <b>best-effort（ADR-031）</b>。调用方
- *       {@code UserAdminManager#updateStatus} 在本地事务<b>提交之后</b>调用它，
- *       失败不得反向判定禁用失败；仅 WARN 告警后返回（吊销是登录态失效的加速器）。</li>
+ *   <li>{@code revokeUserTokens} —— <b>③ 命令（原 best-effort，U17 第二步改判）</b>。调用方
+ *       {@code UserAdminManager#updateStatus} 在本地事务<b>提交之后</b>调用它；静默失败会让
+ *       「账号已被禁用」与「旧令牌仍可登录」长期并存且无人感知，故改为<b>抛</b>
+ *       （4xx 透传 / 其余 {@code SYSTEM_BUSY}）。主流程仍不被阻断 —— 调用点自带 try/catch，
+ *       失败会落<b>终结记录</b>或留给对账 Job 重放（见 {@code open-items} U17）。</li>
  * </ul>
  */
 @Slf4j
 @Component
 public class AuthContextClientFallback implements FallbackFactory<AuthContextClient> {
+
+    /** 吊销失败（不可用类别）的降级文案 —— 「暂时无法执行」，<b>不得</b>写成「服务不可用」（§三·八·2）。 */
+    private static final String DEGRADED_REVOKE_MESSAGE = "令牌吊销暂时无法完成，请稍后重试";
 
     @Override
     public AuthContextClient create(Throwable cause) {
@@ -94,14 +99,18 @@ public class AuthContextClientFallback implements FallbackFactory<AuthContextCli
 
             @Override
             public void revokeUserTokens(TokenRevokeCO co) {
+                // U17 第二步（2026-10-18）：由「静默 fail-open」改为**抛** —— 静默会让一次禁用
+                // 生效后旧令牌继续可用，且调用方无法感知。调用点 UserAdminManager#updateStatus
+                // 已加防护（try/catch + 终结记录 + 对账 Job），主流程仍不被阻断。
                 if (category == ErrorCategory.CLIENT && upstream != null) {
                     log.warn("[auth-context][fallback][透传] revokeUserTokens 下游业务失败: userId={}, code={}, msg={}",
                             co == null ? null : co.getUserId(), upstream.getCode(), upstream.getMsg());
                     throw upstream;
                 }
-                // fail-open：禁用主流程不因吊销失败阻断，但必须告警（该用户令牌可能在认证域恢复前仍可用）
-                log.warn("[auth-context][fallback] 用户级令牌吊销未生效，需人工跟进: userId={}, category={}",
-                        co == null ? null : co.getUserId(), category);
+                log.error("[auth-context][fallback] 用户级令牌吊销未生效，需由 user-service 的对账补偿重放: "
+                                + "userId={}, category={}",
+                        co == null ? null : co.getUserId(), category, cause);
+                throw new BizException(ErrorCode.SYSTEM_BUSY, DEGRADED_REVOKE_MESSAGE);
             }
         };
     }

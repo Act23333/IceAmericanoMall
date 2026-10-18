@@ -328,10 +328,45 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
     （正确状态就是空集）。反空断言必须落在**扫描面**上（「扫到了几个 void 方法」），
     不能落在「违规集合」上。
 
-**U17 剩余（第二步，未做）**：
-- `revokeUserTokens`：先给 `UserAdminManager#updateStatus` 补调用点防护，再改抛（当前仅 WARN）。
-- 补偿消费者：选型已定（复用 `operation_log` 对账），三条前置见下方；**其中 `record` 增 `target` 未做**。
-- 前端兜底分支：见 U19。
+**U17 第二步（已完成，2026-10-18）—— 方案 A：五步一个 commit，不留空窗**
+
+- **① `record` 直接改签名（不加重载）**：`record(userId, module, action, target, content)`。
+  理由：只两处生产调用 + 两处测试，编译器能覆盖全部；**保留旧重载会留下一条 `target` 恒 NULL 的路径**，
+  而补偿对账正建在 `target` 上 —— 那是「新增可选参数」最典型的漏填形态。
+- **② 调用点防护**：`UserAdminManager#updateStatus` 在事务提交后调吊销，异常一律接住（不外溢成 5xx），
+  按类别分流（见下）。终结记录写失败也吞掉（只打 ERROR）：DB 抖动不得让一次已生效的禁用失败。
+- **③ 对账消费者**：`TokenRevokeReconcileManager` + `TokenRevokeReconcileJob`（`@Scheduled`，
+  默认 15 分钟）。**用 `@Scheduled` 而非 `@XxlJob`**：`xxl-job-core` 在 `ia-common` 里是 `optional`，
+  user-service 没引、也没有执行器配置 —— 为一个补偿任务新引调度框架不值得。
+- **④ fallback 改抛**：`AuthContextClientFallback#revokeUserTokens`（4xx 透传 / 其余 `SYSTEM_BUSY`）。
+- **⑤ 处置表 + 测试**：`METHOD_DISPOSITIONS` 新增该方法的 `THROWS`（工厂级仍 `RETURNS`，
+  `context` / `rolesByUserIds` 必须继续 fail-open —— 判据 8）。
+
+**四条锁定落成了什么**
+
+| 锁定 | 落地 |
+|---|---|
+| catch 区分 4xx / 不可用，**4xx 不进对账** | 4xx 写终结记录 `permanent-4xx`，对账永不重放（否则每轮重复同一次必然失败的调用） |
+| **对账排除已重新启用** | 重放前**重新读**用户当前状态；非 `FROZEN` 一律写 `skipped: re-enabled or missing` 后跳过（否则踢掉正常用户） |
+| record 与禁用的事务关系 | **同库**（user-service 单数据源）⇒ `record` 的 `@Transactional`(REQUIRED) 加入 `transactionTemplate` 的事务，**禁用审计与状态变更原子成立**，对账候选集不会有幻影 |
+| record 改签名还是加重载 | **改签名**（见 ①） |
+
+**终结标记的形态（只按列判定，禁止解析 `detail`）**：`DISABLE_USER` 与 `REVOKE_USER_TOKENS` 两个 action；
+三种终结理由（`ok` / `permanent-4xx` / `skipped: re-enabled or missing`）**共用同一个 action**，
+理由只写 `detail` 供人读、**不参与判定**。候选集 = 有 `DISABLE_USER` 且窗口内无同 `target` 的
+`REVOKE_USER_TOKENS`。**不建重试状态表**：补偿的全部状态已经在这张台账里（有终结记录 / 没有）。
+
+**时间窗与并发**：只重放 24 小时内的禁用，超出转人工（无状态重试的天然上限，避免「没承载就建表」）；
+**不加分布式锁**（沿用同仓 `RefundResumeJob` 形态）—— 多实例最多让同一用户被重放两次，而
+`revokeUserTokens` 是**单调推进令牌版本号**，重复调用安全。
+
+**变异实测**：
+- **M9** 去掉「已重新启用跳过」→ `shouldSkipAndRecord_whenUserReEnabled` 红（另两条连带 `UnnecessaryStubbing`）；
+- **M10** 4xx 不再判终结 → `shouldRecordPermanent_whenRevokeRejectedAsClientError` 红。
+两者均按 md5 复原。
+
+**仍未做**：窗口外（>24h）的失败没有自动收敛，需人工按 `operation_log` 里
+`DISABLE_USER` 无对应 `REVOKE_USER_TOKENS` 的记录排查；前端兜底分支见 U19。
 
 **第二步的空窗问题（已裁决：方案 A —— 同批上，不拆可独立合并的 commit）**
 

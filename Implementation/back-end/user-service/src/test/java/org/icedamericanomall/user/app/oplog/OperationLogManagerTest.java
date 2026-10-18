@@ -50,13 +50,14 @@ class OperationLogManagerTest {
                 .userId(ADMIN_ID).username("admin").clientIp("203.0.113.9").build());
 
         operationLogManager.record(ADMIN_ID, OperationAuditConstants.MODULE_USER,
-                OperationAuditConstants.ACTION_UPDATE_USER_STATUS, "targetUserId=7, status=FROZEN");
+                OperationAuditConstants.ACTION_UPDATE_USER_STATUS, "7", "targetUserId=7, status=FROZEN");
 
         OperationLog inserted = capturedSave();
         assertThat(inserted.getUserId()).isEqualTo(ADMIN_ID);
         assertThat(inserted.getUsername()).isEqualTo("admin");
         assertThat(inserted.getIp()).isEqualTo("203.0.113.9");
         assertThat(inserted.getAction()).isEqualTo("USER:UPDATE_USER_STATUS");
+        assertThat(inserted.getTarget()).as("补偿对账按 target 检索，必须落纯业务键").isEqualTo("7");
         assertThat(inserted.getDetail()).isEqualTo("targetUserId=7, status=FROZEN");
         assertThat(inserted.getCreateTime()).isNull();
     }
@@ -65,7 +66,7 @@ class OperationLogManagerTest {
     @DisplayName("落库 — 无登录态（系统/匿名）时 userId/username/ip 留空，不抛异常")
     void shouldInsertWithoutOperatorInfo_whenNoUserContext() {
         operationLogManager.record(null, OperationAuditConstants.MODULE_USER,
-                OperationAuditConstants.ACTION_SET_USER_ROLE, "targetUserId=7, roleType=2");
+                OperationAuditConstants.ACTION_SET_USER_ROLE, "7", "targetUserId=7, roleType=2");
 
         OperationLog inserted = capturedSave();
         assertThat(inserted.getUserId()).isNull();

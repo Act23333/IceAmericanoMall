@@ -17,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p><b>读</b>：管理后台分页查询 {@code operation_log} 表（{@code AdminLogController}）。
  *
  * <p><b>写（ADR-032 管道二）</b>：user 域自身的<b>管理操作</b>在成功路径上显式调用
- * {@link #record(Long, String, String, String)} 落库 —— 保住「管理端可查询的审计台账」这一既有能力。
+ * {@link #record(Long, String, String, String, String)} 落库 —— 保住「管理端可查询的审计台账」这一既有能力。
  * 刻意<b>不经 AOP 直写数据库</b>：一旦切面持有 Mapper，审计能力就会把共享内核反向耦合到各服务的
  * 持久化实现上（见 ADR-032 决策）。全平台其余服务的管理操作走管道一
  * （{@code @OperationLog} → ELK JSON 审计日志），<b>不落此表</b>。
@@ -35,9 +35,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Component
 @RequiredArgsConstructor
 public class OperationLogManager {
-
-    /** 模块与动作的分隔符（{@code MODULE:ACTION}）。 */
-    static final String MODULE_ACTION_SEPARATOR = ":";
 
     private final OperationLogRepository operationLogRepository;
 
@@ -63,16 +60,19 @@ public class OperationLogManager {
      * @param userId  操作人技术主键（用户维度检索用），可为 {@code null}（系统/匿名调用）
      * @param module  业务模块标识（如 {@code USER}），建议取常量
      * @param action  操作动作标识（如 {@code UPDATE_USER_STATUS}），建议取常量
+     * @param target  操作目标（<b>纯业务键字符串</b>，如目标用户技术主键 {@code "7"}）——
+     *                补偿对账按它检索；<b>不要</b>带键名前缀或塞复合编码，也不要放敏感值
      * @param content 操作摘要（动作 + 目标标识等非敏感信息），不得写入手机号/密文等敏感值
      * @throws org.springframework.dao.DataAccessException 审计写入失败（是否回滚由调用方事务语义决定）
      */
     @Transactional(rollbackFor = Exception.class)
-    public void record(Long userId, String module, String action, String content) {
+    public void record(Long userId, String module, String action, String target, String content) {
         UserInfo operator = UserContext.getUser();
         operationLogRepository.save(OperationLog.builder()
                 .userId(userId)
                 .username(operator == null ? null : operator.username())
-                .action(module + MODULE_ACTION_SEPARATOR + action)
+                .action(OperationAuditConstants.actionKey(module, action))
+                .target(target)
                 .detail(content)
                 .ip(operator == null ? null : operator.clientIp())
                 .build());

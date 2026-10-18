@@ -5,8 +5,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.AuthContextClient;
+import org.icedamericanomall.common.enums.ErrorCategory;
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.dto.TokenRevokeCO;
+import org.icedamericanomall.exception.UpstreamException;
 import org.icedamericanomall.user.adapter.response.UserInfoResp;
 import org.icedamericanomall.user.app.oplog.OperationAuditConstants;
 import org.icedamericanomall.user.app.oplog.OperationLogManager;
@@ -47,6 +49,11 @@ import java.util.stream.Collectors;
 @Component
 @RequiredArgsConstructor
 public class UserAdminManager {
+
+    /** 吊销终结理由（写进 {@code detail}，仅供人读；对账只按 action + target 判定）。 */
+    private static final String REVOKE_OK = "ok";
+    private static final String REVOKE_PERMANENT = "permanent-4xx";
+
 
     private final UserRepository userRepository;
     private final AuthContextClient authContextClient;
@@ -90,7 +97,8 @@ public class UserAdminManager {
      * <p>置为 {@link UserStatusEnum#FROZEN}（禁用/冻结）时，调用 authorization-service
      * 用户级吊销（ADR-031）：推进 {@code auth:tokenver:{userId}} + 拆除该用户全部 refresh 会话，
      * 使被禁用账号的已签发 access token 立即失效。启用（{@link UserStatusEnum#NORMAL}）不触发吊销。
-     * 吊销失败由 Feign 降级 fail-open 兜底，不阻断禁用主流程（仅告警）。
+     * 吊销失败<b>不阻断</b>禁用主流程：降级工厂已改为抛，调用点在此处接住并按
+     * 4xx（登记终结）/ 不可用（留待对账）分流，详见 {@link #revokeTokensAfterDisable(Long)}。
      *
      * @param id     目标用户技术主键
      * @param status 目标状态码（0=禁用，1=正常）
@@ -101,15 +109,65 @@ public class UserAdminManager {
 
         transactionTemplate.executeWithoutResult(tx -> {
             userRepository.updateStatusById(id, targetStatus);
+            // 审计与状态变更**同库同事务**：user-service 单数据源，record 的 @Transactional(REQUIRED)
+            // 会加入本事务 ⇒「有禁用审计」与「状态已是 FROZEN」原子成立，对账候选集不会有幻影。
+            // target 存纯业务键（"7"），禁用走独立 action（对账只按 action 判定，禁止解析 detail）。
             operationLogManager.record(UserContext.getUserId(), OperationAuditConstants.MODULE_USER,
-                    OperationAuditConstants.ACTION_UPDATE_USER_STATUS,
+                    targetStatus == UserStatusEnum.FROZEN
+                            ? OperationAuditConstants.ACTION_DISABLE_USER
+                            : OperationAuditConstants.ACTION_UPDATE_USER_STATUS,
+                    String.valueOf(id),
                     "targetUserId=" + id + ", status=" + targetStatus.name());
         });
 
         if (targetStatus == UserStatusEnum.FROZEN) {
-            authContextClient.revokeUserTokens(TokenRevokeCO.of(id));
-            log.info("[admin][user-disable] 已触发用户级令牌吊销: userId={}", id);
+            revokeTokensAfterDisable(id);
         }
+    }
+
+    /**
+     * 禁用<b>提交之后</b>吊销该用户全部令牌（ADR-031）。
+     *
+     * <p><b>为什么在这里吞掉异常</b>：本地状态已提交，异常外溢会让一次<b>已生效</b>的禁用对外报 5xx。
+     * 但「吞」不等于「静默」—— 两类失败留不同轨迹：
+     * <ul>
+     *   <li><b>4xx（CLIENT，确定性失败）</b>：重试必然重复失败 ⇒ 写<b>终结记录</b>，<b>永不进对账</b>；
+     *       否则对账会无限重放同一次必然失败的调用（死循环）。</li>
+     *   <li><b>不可用（TRANSIENT / BUG）</b>：<b>不写</b>终结记录 ⇒ 对账 Job 重放；
+     *       超出时间窗仍未成功则转人工（{@code TokenRevokeReconcileManager}）。</li>
+     * </ul>
+     * 记录写入本身失败也吞掉（只打 ERROR）：DB 抖动不得让一次已生效的禁用失败。
+     */
+    private void revokeTokensAfterDisable(Long id) {
+        try {
+            authContextClient.revokeUserTokens(TokenRevokeCO.of(id));
+            recordRevokeOutcome(id, REVOKE_OK);
+            log.info("[admin][user-disable] 已触发用户级令牌吊销: userId={}", id);
+        } catch (Exception e) {
+            boolean deterministic = isDeterministicFailure(e);
+            log.error("[admin][user-disable] 令牌吊销失败（{}）: userId={}",
+                    deterministic ? "4xx 确定性失败，登记终结、不再重试" : "不可用，留待对账重放", id, e);
+            if (deterministic) {
+                recordRevokeOutcome(id, REVOKE_PERMANENT);
+            }
+        }
+    }
+
+    /** 写吊销<b>终结</b>记录（ok / permanent-4xx）；写失败只打 ERROR，绝不影响已提交的禁用。 */
+    private void recordRevokeOutcome(Long id, String outcome) {
+        try {
+            operationLogManager.record(UserContext.getUserId(), OperationAuditConstants.MODULE_USER,
+                    OperationAuditConstants.ACTION_REVOKE_USER_TOKENS, String.valueOf(id), outcome);
+        } catch (Exception e) {
+            log.error("[admin][user-disable] 吊销终结记录写入失败（不影响禁用本身，但对账将重复尝试）: "
+                    + "userId={}, outcome={}", id, outcome, e);
+        }
+    }
+
+    /** 4xx（CLIENT）属确定性失败：重试必然重复失败 ⇒ 必须登记终结，不能进对账。 */
+    private static boolean isDeterministicFailure(Throwable e) {
+        UpstreamException upstream = UpstreamException.findIn(e);
+        return upstream != null && upstream.getCategory() == ErrorCategory.CLIENT;
     }
 
     /**
@@ -128,7 +186,7 @@ public class UserAdminManager {
     public void setUserRole(Long id, Integer roleType) {
         authContextClient.setUserRole(id, roleType);
         operationLogManager.record(UserContext.getUserId(), OperationAuditConstants.MODULE_USER,
-                OperationAuditConstants.ACTION_SET_USER_ROLE,
+                OperationAuditConstants.ACTION_SET_USER_ROLE, String.valueOf(id),
                 "targetUserId=" + id + ", roleType=" + roleType);
     }
 }

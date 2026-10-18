@@ -7,14 +7,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 /**
  * 授权上下文 Feign 降级语义单元测试（ADR-018 / ADR-031）。
  *
- * <p>用户级令牌吊销（{@code revokeUserTokens}）降级必须 <b>fail-open</b>：
- * 认证域不可用时管理端禁用主流程不得被阻断；与之相对，角色授予（{@code setUserRole}）
- * 维持原有 fail-closed（授权变更不允许静默丢失）。
+ * <p><b>U17 第二步改判</b>：用户级令牌吊销（{@code revokeUserTokens}）由 fail-open 改为<b>抛</b> ——
+ * 静默失败会让「账号已被禁用」与「旧令牌仍可登录」长期并存且无人感知。主流程仍不被阻断，
+ * 因为调用点 {@code UserAdminManager#updateStatus} 已加防护（4xx 登记终结 / 不可用留待对账重放）。
+ * 角色授予（{@code setUserRole}）维持 fail-closed（授权变更不允许静默丢失）。
  */
 @DisplayName("AuthContextClientFallback — 降级语义")
 class AuthContextClientFallbackTest {
@@ -23,15 +23,17 @@ class AuthContextClientFallbackTest {
             new AuthContextClientFallback().create(new IllegalStateException("authorization-service down"));
 
     @Test
-    @DisplayName("用户级令牌吊销降级 — fail-open：不抛异常（禁用主流程不因吊销失败阻断，仅告警）")
-    void shouldNotThrow_whenRevokeUserTokensDegraded() {
-        assertDoesNotThrow(() -> client.revokeUserTokens(TokenRevokeCO.of(7L)));
+    @DisplayName("★ 用户级令牌吊销降级 — U17 起改抛 SYSTEM_BUSY（不再静默：静默=账号已禁用但旧令牌仍可登录）")
+    void shouldThrowSystemBusy_whenRevokeUserTokensUnavailable() {
+        assertThatThrownBy(() -> client.revokeUserTokens(TokenRevokeCO.of(7L)))
+                .isInstanceOf(BizException.class);
     }
 
     @Test
-    @DisplayName("用户级令牌吊销降级 — 请求体为 null 亦不抛异常")
-    void shouldNotThrow_whenRevokeUserTokensWithNullBody() {
-        assertDoesNotThrow(() -> client.revokeUserTokens(null));
+    @DisplayName("用户级令牌吊销降级 — 请求体为 null 亦抛（不因缺参变成静默成功）")
+    void shouldThrowSystemBusy_whenRevokeUserTokensWithNullBody() {
+        assertThatThrownBy(() -> client.revokeUserTokens(null))
+                .isInstanceOf(BizException.class);
     }
 
     @Test

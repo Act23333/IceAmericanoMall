@@ -6,6 +6,7 @@ import org.icedamericanomall.user.domain.model.oplog.OperationLog;
 import org.icedamericanomall.user.domain.repository.OperationLogRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -36,6 +37,27 @@ public class OperationLogRepositoryImpl implements OperationLogRepository {
     @Override
     public void save(OperationLog log) {
         operationLogMapper.insert(toPO(log));
+    }
+
+    @Override
+    public List<OperationLog> findByActionSince(String action, LocalDateTime since, int limit) {
+        return operationLogMapper.selectList(new LambdaQueryWrapper<OperationLogPO>()
+                        .eq(OperationLogPO::getAction, action)
+                        .ge(OperationLogPO::getCreateTime, since)
+                        .orderByDesc(OperationLogPO::getCreateTime)
+                        .last("LIMIT " + limit))
+                .stream()
+                .map(OperationLogRepositoryImpl::toDomain)
+                .toList();
+    }
+
+    @Override
+    public boolean existsByActionAndTargetSince(String action, String target, LocalDateTime since) {
+        Long count = operationLogMapper.selectCount(new LambdaQueryWrapper<OperationLogPO>()
+                .eq(OperationLogPO::getAction, action)
+                .eq(OperationLogPO::getTarget, target)
+                .ge(OperationLogPO::getCreateTime, since));
+        return count != null && count > 0;
     }
 
     // ==================== PO <-> 领域模型 ====================

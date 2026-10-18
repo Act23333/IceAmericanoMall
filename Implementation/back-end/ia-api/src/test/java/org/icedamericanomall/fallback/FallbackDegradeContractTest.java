@@ -134,8 +134,11 @@ class FallbackDegradeContractTest {
      * 条目陈旧（类或方法已不存在）同样判红。
      */
     private static final Map<String, Disposition> METHOD_DISPOSITIONS = Map.of(
-            // 授权变更静默丢失 → 角色与 RBAC 五表不一致，必须 fail-closed；context / rolesByUserIds / revokeUserTokens 则 fail-open。
+            // 授权变更静默丢失 → 角色与 RBAC 五表不一致，必须 fail-closed；context / rolesByUserIds 则 fail-open。
             "AuthContextClientFallback#setUserRole", Disposition.THROWS,
+            // U17 第二步：吊销静默失败 = 「账号已禁用」与「旧令牌仍可登录」长期并存且无人感知。
+            // 改为抛；调用点 UserAdminManager#updateStatus 已加防护（终结记录 + 对账重放）。
+            "AuthContextClientFallback#revokeUserTokens", Disposition.THROWS,
             // reindex 全量数据源：空页会让索引被重建为 0 条文档，必须 fail-closed；searchPage / suggest / detail 是①展示型。
             "ItemSearchClientFallback#exportPage", Disposition.THROWS,
             // U17（2026-10-18）：清边的「静默空操作」让调用方以为清边成功，残留边会一直挂在图谱里。

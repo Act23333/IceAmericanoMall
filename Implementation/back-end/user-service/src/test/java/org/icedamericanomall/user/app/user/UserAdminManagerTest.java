@@ -1,10 +1,15 @@
 package org.icedamericanomall.user.app.user;
 
 import org.icedamericanomall.client.AuthContextClient;
+import org.icedamericanomall.common.api.ErrorInfo;
+import org.icedamericanomall.common.enums.ErrorCategory;
+import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.common.security.UserInfo;
 import org.icedamericanomall.common.exception.BadRequestException;
 import org.icedamericanomall.dto.TokenRevokeCO;
+import org.icedamericanomall.exception.UpstreamException;
 import org.icedamericanomall.user.app.oplog.OperationAuditConstants;
 import org.icedamericanomall.user.app.oplog.OperationLogManager;
 import org.icedamericanomall.user.domain.enums.UserStatusEnum;
@@ -23,9 +28,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.function.Consumer;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -76,7 +84,7 @@ class UserAdminManagerTest {
     }
 
     @Test
-    @DisplayName("禁用用户 — 先更新状态，再按 USER:UPDATE_USER_STATUS 留痕（含目标用户与目标状态）")
+    @DisplayName("禁用用户 — 先更新状态，再按 USER:DISABLE_USER 留痕（独立 action + target=纯业务键）")
     void shouldRecordAuditAfterUpdateStatus_whenDisableUser() {
         UserContext.setUser(UserInfo.builder().userId(ADMIN_ID).build());
 
@@ -85,7 +93,7 @@ class UserAdminManagerTest {
         InOrder inOrder = inOrder(userRepository, operationLogManager);
         inOrder.verify(userRepository).updateStatusById(TARGET_USER_ID, UserStatusEnum.FROZEN);
         inOrder.verify(operationLogManager).record(ADMIN_ID, OperationAuditConstants.MODULE_USER,
-                OperationAuditConstants.ACTION_UPDATE_USER_STATUS, "targetUserId=7, status=FROZEN");
+                OperationAuditConstants.ACTION_DISABLE_USER, "7", "targetUserId=7, status=FROZEN");
     }
 
     @Test
@@ -96,7 +104,7 @@ class UserAdminManagerTest {
         userAdminManager.updateStatus(TARGET_USER_ID, 1);
 
         verify(operationLogManager).record(ADMIN_ID, OperationAuditConstants.MODULE_USER,
-                OperationAuditConstants.ACTION_UPDATE_USER_STATUS, "targetUserId=7, status=NORMAL");
+                OperationAuditConstants.ACTION_UPDATE_USER_STATUS, "7", "targetUserId=7, status=NORMAL");
     }
 
     @Test
@@ -152,6 +160,52 @@ class UserAdminManagerTest {
         InOrder inOrder = inOrder(authContextClient, operationLogManager);
         inOrder.verify(authContextClient).setUserRole(TARGET_USER_ID, 2);
         inOrder.verify(operationLogManager).record(ADMIN_ID, OperationAuditConstants.MODULE_USER,
-                OperationAuditConstants.ACTION_SET_USER_ROLE, "targetUserId=7, roleType=2");
+                OperationAuditConstants.ACTION_SET_USER_ROLE, "7", "targetUserId=7, roleType=2");
+    }
+
+    // ==================== 吊销结果分流（U17 第二步，两个「不写就出真 bug」的条件）====================
+
+    @Test
+    @DisplayName("禁用 + 吊销成功 → 写终结记录 REVOKE_USER_TOKENS(ok)，禁用不被阻断")
+    void shouldRecordOkOutcome_whenRevokeSucceeds() {
+        UserContext.setUser(UserInfo.builder().userId(ADMIN_ID).build());
+
+        userAdminManager.updateStatus(TARGET_USER_ID, 0);
+
+        verify(operationLogManager).record(ADMIN_ID, OperationAuditConstants.MODULE_USER,
+                OperationAuditConstants.ACTION_REVOKE_USER_TOKENS, "7", "ok");
+    }
+
+    @Test
+    @DisplayName("★ 禁用 + 吊销抛 4xx → 写 permanent-4xx 终结（否则对账会无限重放同一次必然失败）")
+    void shouldRecordPermanentOutcome_whenRevokeRejectedAsClientError() {
+        UserContext.setUser(UserInfo.builder().userId(ADMIN_ID).build());
+        doThrow(clientError()).when(authContextClient).revokeUserTokens(any());
+
+        assertThatCode(() -> userAdminManager.updateStatus(TARGET_USER_ID, 0)).doesNotThrowAnyException();
+
+        verify(operationLogManager).record(ADMIN_ID, OperationAuditConstants.MODULE_USER,
+                OperationAuditConstants.ACTION_REVOKE_USER_TOKENS, "7", "permanent-4xx");
+    }
+
+    @Test
+    @DisplayName("★ 禁用 + 吊销抛不可用 → **不写**终结记录（留待对账重放），且禁用不被阻断")
+    void shouldNotRecordOutcome_whenRevokeUnavailable() {
+        UserContext.setUser(UserInfo.builder().userId(ADMIN_ID).build());
+        doThrow(new BizException(ErrorCode.SYSTEM_BUSY)).when(authContextClient).revokeUserTokens(any());
+
+        assertThatCode(() -> userAdminManager.updateStatus(TARGET_USER_ID, 0)).doesNotThrowAnyException();
+
+        verify(operationLogManager, never()).record(any(), any(), eq(OperationAuditConstants.ACTION_REVOKE_USER_TOKENS),
+                any(), any());
+        // 但禁用审计本身必须已经落库（否则对账连候选集都没有）
+        verify(operationLogManager).record(any(), eq(OperationAuditConstants.MODULE_USER),
+                eq(OperationAuditConstants.ACTION_DISABLE_USER), eq("7"), any());
+    }
+
+    /** 构造一枚真实的 4xx 上游异常（category=CLIENT）。 */
+    private static UpstreamException clientError() {
+        return new UpstreamException(
+                ErrorInfo.of(1103, "用户不存在", ErrorCategory.CLIENT, null), 404);
     }
 }
