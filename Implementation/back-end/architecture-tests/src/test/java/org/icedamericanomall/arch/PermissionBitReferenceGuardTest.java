@@ -123,6 +123,36 @@ class PermissionBitReferenceGuardTest {
     }
 
     // ==================================================================================
+    // ①·二 「位存在」必须按 status=1 判，而不是「表里有这一行」
+    // ==================================================================================
+
+    /**
+     * 停用位不得算「存在」。
+     *
+     * <p>这条看着显然，但很容易写错：{@code sys_permission} 里停用的位<b>行还在</b>（我们的停用机制是
+     * {@code status=0} 而不是删行），所以「查得到这一行」≠「这个位可用」。
+     * 若门禁按全量行判存在，就会出现：<b>注解指着一个已停用的位，门禁全绿，线上永久 403</b> ——
+     * 恰好是这条门禁最该防的形态。
+     */
+    @Test
+    @DisplayName("★ 位存在判定必须看 status=1 —— 停用位不得算作「存在」")
+    void shouldTreatDisabledBitAsMissing() {
+        Map<String, PermRow> seed = Map.of(
+                "user:admin", new PermRow(5L, "user:admin", 0),        // 行还在，但已停用
+                "seller:admin", new PermRow(6L, "seller:admin", 1));
+
+        assertThat(findUnknownCitations(List.of("user:admin"), seed))
+                .as("停用位被算作「存在」的话，迁移期注解指着旧位会静默通过")
+                .hasSize(1);
+        assertThat(findUnknownCitations(List.of("user:admin"), seed).get(0))
+                .as("违规信息必须点明「已停用」，否则看的人会以为是自己拼错了")
+                .contains("已停用");
+        assertThat(findUnknownCitations(List.of("seller:admin"), seed))
+                .as("启用位不得被误判")
+                .isEmpty();
+    }
+
+    // ==================================================================================
     // ② 解析边界：复杂表达式必须直接失败（看不懂就报错，不许猜）
     // ==================================================================================
 
