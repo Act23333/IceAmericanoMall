@@ -20,7 +20,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * <b>管理端/商家端端点的鉴权门禁</b>（RBAC0 的第 2 步，2026-10-18）—— 让「新增端点忘了鉴权」变成构建失败。
+ * <b>管理端/商家端端点的鉴权门禁</b>（RBAC0，2026-10-18）—— 让「新增端点忘了鉴权」变成构建失败。
  *
  * <h2>规则</h2>
  * <blockquote>
@@ -29,23 +29,26 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </blockquote>
  *
  * <h2>为什么是「类级」而不是「每个方法」</h2>
- * 现阶段的权限粒度就是<b>一个控制器一个权限位</b>（实测：14 个 {@code adapter/admin} 控制器、
- * 48 个端点，全部是类级注解）。类级要求有决定性好处：<b>新增方法自动被覆盖</b>，
- * 不存在「加了个 {@code @GetMapping} 忘了加注解」这种形态。
- * 等权限矩阵细化到方法级时，本规则再收紧（那时才需要逐方法判定）。
+ * 现阶段的权限粒度就是<b>一个控制器一个权限位</b>。类级要求有决定性好处：
+ * <b>新增方法自动被覆盖</b>，不存在「加了个 {@code @GetMapping} 忘了加注解」这种形态。
+ * 等权限矩阵细化到方法级时，本规则再收紧。
  *
- * <h2>为什么这条门禁必须先于「拆权限位」上线</h2>
- * 大规模改注解时，人最容易漏掉的是<b>没有注解的那些</b>（本次实测发现 4 个 {@code /api/seller/**}
- * 控制器共 19 个端点<b>完全没有</b> {@code @PreAuthorize}，靠控制器内 {@code hasRole} 兜）。
- * 没有这条门禁，改完也说不清「是覆盖全了，还是本来就没有」。
+ * <h2>Q5 裁决已落地（2026-10-18）：不再有「代码内守卫」这条豁免路径</h2>
+ * 此前 {@code AdminPayController} / {@code AdminMerchantController} 因为所在服务**没有**
+ * {@code spring-boot-starter-security}（{@code ia-common} 里是 {@code optional}），
+ * {@code @PreAuthorize} 编译都过不了，只能用代码内 {@code assertAdmin()}。
+ * 裁决是<b>补依赖、不做双轨</b>：四个服务（pay / merchant / ai / logistics）已引入依赖，
+ * 两个控制器改为类级注解、{@code assertAdmin()} 已删除，豁免条目也已从本表移除。
+ * <b>不要重新引入「代码内判定」这条豁免</b> —— 两套机制并存时，漏写注解的地方不会有任何提示，
+ * 本次门禁上线抓到的两个控制器正是那个形态。
  *
  * <h2>豁免表纪律</h2>
  * 每条都要写清<b>为什么现在不能加注解</b>与<b>什么时候必须去掉</b>；且<b>陈旧即失败</b> ——
- * 类已不存在、或已补上注解，都必须从表里删除，否则白名单会无限膨胀成免责名单。
- * <b>表内条目属业务边界裁定</b>（哪些端点该由哪个权限位守），须经人工评审后才行删除/保留。
+ * 类已不存在、或已补上注解，都必须从表里删除，否则白名单会膨胀成免责名单。
+ * 现存条目全部是<b>待权限矩阵裁定</b>（商家端四个控制器：该挂哪位尚未执行）。
  *
  * <p>实现是<b>源码扫描</b>（不是字节码）：{@code architecture-tests} 不依赖各业务模块，
- * 扫源码可以跨全部 6 个服务的控制器，且不需要 reactor 先编译它们。
+ * 扫源码可跨全部服务，且不需要 reactor 先编译它们。<b>判定前必须先剥注释</b>（见 {@link SourceFile}）。
  */
 @DisplayName("架构守卫 — /api/admin 与 /api/seller 控制器必须有类级 @PreAuthorize")
 class AdminEndpointAuthorizationGuardTest {
@@ -60,44 +63,25 @@ class AdminEndpointAuthorizationGuardTest {
     private static final Pattern CLASS_MAPPING = Pattern.compile("@RequestMapping\\(\\s*\"([^\"]+)\"");
 
     /**
-     * 豁免表（简单类名 → 理由 + 截止）。<b>当前 4 条全部是「待权限矩阵裁定」</b>，
-     * 不是永久豁免 —— 见 {@code rbac-permission-matrix-draft.md}。
+     * 豁免表（简单类名 → 理由 + 截止）。<b>全部是「待权限矩阵执行」</b>，见
+     * {@code rbac-permission-matrix-draft.md}；裁定并执行后应补注解并删条目。
      */
-    private static final Map<String, Exemption> EXEMPT = buildExempt();
+    private static final Map<String, String> EXEMPT = buildExempt();
 
-    /**
-     * 一条豁免 = 理由 + <b>替代条件</b>。
-     *
-     * <p>{@code requireInCodeAdminGuard} 为 {@code true} 时，<b>不许只是"放行"</b>：
-     * 必须做到「每个映射方法体都调了 {@code assertAdmin()}」—— 因为这类服务
-     * （pay / merchant）<b>没有 spring-security 依赖，{@code @PreAuthorize} 根本不可用</b>，
-     * 代码内守卫是唯一手段。豁免因此变成<b>可验证的替代条件</b>，而不是免责。
-     */
-    record Exemption(String reason, boolean requireInCodeAdminGuard) { }
-
-    private static Map<String, Exemption> buildExempt() {
-        Map<String, Exemption> table = new LinkedHashMap<>();
-        table.put("SellerFinanceController", new Exemption(
-                "待矩阵裁定（截止 2026-11-15）：端点全部由 UserContext 取 sellerId 自证身份，"
-                        + "但没有声明式权限位；应归 seller:admin 还是拆 finance:read/finance:write 由人工评审定", false));
-        table.put("MerchantCouponController", new Exemption(
-                "待矩阵裁定（截止 2026-11-15）：同上，属商家营销位（seller:admin 还是 marketing:admin）", false));
-        table.put("KnowledgeBaseController", new Exemption(
-                "待矩阵裁定（截止 2026-11-15）：控制器内有显式 UserContext.hasRole(ROLE_SELLER)，"
-                        + "但属「代码内判定」不可 grep 审计；应改为声明式", false));
-        table.put("MerchantController", new Exemption(
-                "待矩阵裁定（截止 2026-11-15）：**同类里有一条必须永久豁免** —— POST /api/seller/apply 是"
-                        + "入驻申请，任何登录用户都要能调，不能挂 seller:admin；其余端点属商家自有店铺", false));
-        // ★ 这两条不是「待裁定」，而是**能力受限**：pay / merchant 未引 spring-boot-starter-security
-        //   （ia-common 里是 optional），@PreAuthorize 编译都过不了。替代条件 = 逐个映射方法都有 assertAdmin()。
-        table.put("AdminPayController", new Exemption(
-                "能力受限：pay-service 无 spring-security 依赖，@PreAuthorize 不可用；"
-                        + "替代条件 = 每个映射方法体都调用 assertAdmin()（本门禁强制校验，非放行）。"
-                        + "Q5 决定是否补依赖后转声明式", true));
-        table.put("AdminMerchantController", new Exemption(
-                "能力受限：merchant-service 无 spring-security 依赖，@PreAuthorize 不可用；"
-                        + "替代条件 = 每个映射方法体都调用 assertAdmin()（本门禁强制校验，非放行）。"
-                        + "Q5 决定是否补依赖后转声明式", true));
+    private static Map<String, String> buildExempt() {
+        Map<String, String> table = new LinkedHashMap<>();
+        table.put("SellerFinanceController",
+                "待矩阵执行（截止 2026-11-15）：端点由 UserContext 取 sellerId 自证身份，但没有声明式权限位；"
+                        + "Q3 已裁决拆三位，待执行（seller:finance）");
+        table.put("MerchantCouponController",
+                "待矩阵执行（截止 2026-11-15）：Q3 已裁决拆三位，待执行（seller:coupon）");
+        table.put("KnowledgeBaseController",
+                "待矩阵执行（截止 2026-11-15）：控制器内有显式 UserContext.hasRole(ROLE_SELLER)，"
+                        + "属「代码内判定」不可 grep 审计；按 Q3 应改为声明式 seller:knowledge");
+        table.put("MerchantController",
+                "待矩阵执行（截止 2026-11-15）：**同类里有一条必须永久豁免** —— POST /api/seller/apply 是"
+                        + "入驻申请（Q4 裁决：无权限位，任何登录用户可调），不能挂 seller:admin；"
+                        + "其余端点属商家自有店铺");
         return Map.copyOf(table);
     }
 
@@ -108,32 +92,14 @@ class AdminEndpointAuthorizationGuardTest {
     @Test
     @DisplayName("真实扫描 — 受管控制器必须有类级 @PreAuthorize（反空断言 + 豁免陈旧即红）")
     void shouldRequireClassLevelPermission_whenControllerServesAdminOrSellerPaths() {
-        List<SourceFile> scanned = scanControllers();
-        assertThat(scanned)
-                .as("扫描面为空：一个控制器都没扫到，说明路径或谓词失效")
-                .isNotEmpty();
-
-        List<SourceFile> guarded = scanned.stream()
-                .filter(source -> source.classMapping() != null)
-                .filter(source -> startsWithGuardedPrefix(source.classMapping()))
-                .toList();
+        List<SourceFile> guarded = guardedControllers();
         assertThat(guarded)
                 .as("受管的 /api/admin|/api/seller 控制器少于 %d 个 —— 谓词或扫描目录可能失效", MIN_GUARDED_CONTROLLERS)
                 .hasSizeGreaterThanOrEqualTo(MIN_GUARDED_CONTROLLERS);
 
         List<String> violations = new ArrayList<>();
-        List<String> inCodeGuardViolations = new ArrayList<>();
         for (SourceFile source : guarded) {
-            Exemption exemption = EXEMPT.get(source.simpleName());
-            if (exemption != null) {
-                // 豁免不是放行：要求「代码内守卫逐方法覆盖」时，必须真的逐个方法都有 assertAdmin()
-                if (exemption.requireInCodeAdminGuard()
-                        && source.mappingCount() != source.assertAdminCallCount()) {
-                    inCodeGuardViolations.add(source.relative()
-                            + "（映射方法 " + source.mappingCount()
-                            + " 个 / assertAdmin() 调用 " + source.assertAdminCallCount()
-                            + " 次）—— 替代条件不成立：每个映射方法都必须调 assertAdmin()");
-                }
+            if (EXEMPT.containsKey(source.simpleName())) {
                 continue;
             }
             if (!source.hasClassLevelPreAuthorize()) {
@@ -141,14 +107,10 @@ class AdminEndpointAuthorizationGuardTest {
                         + "（映射 " + source.classMapping() + "）缺类级 @PreAuthorize");
             }
         }
-        assertThat(inCodeGuardViolations)
-                .as("这些控制器因缺少 spring-security 依赖而无法用 @PreAuthorize，豁免的替代条件是"
-                        + "「每个映射方法都调 assertAdmin()」—— 现在不成立")
-                .isEmpty();
         assertThat(violations)
                 .as("下列管理端/商家端控制器没有类级 @PreAuthorize —— 新增端点会静默无鉴权；"
-                        + "请补 `@PreAuthorize(\"@ss.hasPermi('…')\")`，或在 AdminEndpointAuthorizationGuardTest.EXEMPT "
-                        + "登记并对齐权限矩阵草案")
+                        + "请补 `@PreAuthorize(\"@ss.hasPermi('…')\")`，或在 EXEMPT 登记并对齐权限矩阵草案。"
+                        + "注意：若该服务缺少 spring-boot-starter-security，注解会被静默忽略（安全剧场）")
                 .isEmpty();
     }
 
@@ -161,9 +123,9 @@ class AdminEndpointAuthorizationGuardTest {
     void shouldFailWhenExemptionIsStale() {
         List<SourceFile> scanned = scanControllers();
 
-        for (Map.Entry<String, Exemption> entry : EXEMPT.entrySet()) {
+        for (Map.Entry<String, String> entry : EXEMPT.entrySet()) {
             String simpleName = entry.getKey();
-            String reason = entry.getValue().reason();
+            String reason = entry.getValue();
 
             List<SourceFile> matches = scanned.stream()
                     .filter(source -> source.simpleName().equals(simpleName))
@@ -186,20 +148,23 @@ class AdminEndpointAuthorizationGuardTest {
     // ==================================================================================
 
     @Test
-    @DisplayName("★ 变异自证 — 无注解的 admin 控制器样本必须被判违规；豁免项不误判")
+    @DisplayName("★ 变异自证 — 无注解的 admin 控制器样本必须被判违规；豁免项不误判；注释里提到不算")
     void shouldFlagSyntheticControllerWithoutAnnotation() {
         SourceFile violating = sourceOf("SyntheticAdminController", "/api/admin/synthetic", false);
         SourceFile exempted = sourceOf("SellerFinanceController", "/api/seller/finance", false);
         SourceFile compliant = sourceOf("SyntheticCompliantController", "/api/admin/ok", true);
+        SourceFile mentionOnly = sourceOf("SyntheticMentionOnlyController", "/api/admin/mention", false,
+                "/** 语义等价于原 @PreAuthorize(\"@ss.hasPermi('user:admin')\") */\n");
 
-        assertThat(startsWithGuardedPrefix(violating.classMapping())).isTrue();
         assertThat(isViolation(violating))
                 .as("无注解的 /api/admin 控制器必须判违规 —— 否则本门禁是空转")
                 .isTrue();
         assertThat(isViolation(compliant)).as("有类级注解的控制器不得误判").isFalse();
         assertThat(isViolation(exempted)).as("豁免项不得判违规（但必须由 ② 管其陈旧性）").isFalse();
-        // 非受管路径（普通前台端点）不归本门禁管
-        assertThat(startsWithGuardedPrefix("/api/order")).isFalse();
+        assertThat(isViolation(mentionOnly))
+                .as("只在注释里提到 @PreAuthorize 必须仍判违规 —— 扫描前必须先剥注释（实测踩到过）")
+                .isTrue();
+        assertThat(startsWithGuardedPrefix("/api/order")).as("普通前台端点不归本门禁管").isFalse();
     }
 
     // ==================================================================================
@@ -228,10 +193,21 @@ class AdminEndpointAuthorizationGuardTest {
 
     /** 合成样本（不上盘：直接把源码片段包成同一个 record 结构）。 */
     private static SourceFile sourceOf(String simpleName, String classMapping, boolean annotated) {
-        String header = (annotated ? "@PreAuthorize(\"@ss.hasPermi('user:admin')\")\n" : "")
+        return sourceOf(simpleName, classMapping, annotated, "");
+    }
+
+    private static SourceFile sourceOf(String simpleName, String classMapping, boolean annotated, String javadoc) {
+        String header = javadoc
+                + (annotated ? "@PreAuthorize(\"@ss.hasPermi('user:admin')\")\n" : "")
                 + "@RestController\n@RequestMapping(\"" + classMapping + "\")\n";
         String body = header + "public class " + simpleName + " { }\n";
         return new SourceFile(Paths.get(simpleName + ".java"), simpleName, body);
+    }
+
+    private static List<SourceFile> guardedControllers() {
+        return scanControllers().stream()
+                .filter(source -> startsWithGuardedPrefix(source.classMapping()))
+                .toList();
     }
 
     // ==================================================================================
@@ -242,9 +218,8 @@ class AdminEndpointAuthorizationGuardTest {
      * 一个控制器源文件：路径、简单类名、全文。判定用纯文本，不引入解析器。
      *
      * <p><b>必须先剥注释再判定</b>（实测踩到）：{@code KnowledgeBaseController} 的 javadoc 里写着
-     * 「语义等价于原 {@code @PreAuthorize}」，于是朴素的 {@code contains("@PreAuthorize")}
-     * 把它判成「已有类级注解」—— 一个<b>假阳性</b>，会让陈旧检查误报。
-     * 与本仓已记过的「grep 不排除 javadoc」是同一类事故：<b>扫描前先剥注释</b>。
+     * 「语义等价于原 {@code @PreAuthorize}」，朴素的 {@code contains("@PreAuthorize")} 会把它判成
+     * 「已有类级注解」—— 一个<b>假阳性</b>。与本仓已记过的「grep 不排除 javadoc」是同一类事故。
      */
     record SourceFile(Path path, String simpleName, String content) {
 
@@ -261,36 +236,6 @@ class AdminEndpointAuthorizationGuardTest {
             String header = classIndex > 0 ? cleaned.substring(0, classIndex) : "";
             Matcher matcher = CLASS_MAPPING.matcher(header);
             return matcher.find() ? matcher.group(1) : null;
-        }
-
-        /** 映射方法个数（用于「代码内守卫逐方法覆盖」的替代条件）。 */
-        int mappingCount() {
-            return count("@GetMapping", "@PostMapping", "@PutMapping", "@DeleteMapping", "@PatchMapping");
-        }
-
-        /**
-         * {@code assertAdmin();} <b>调用</b>次数（去掉注释后计数）——刻意带分号，
-         * 以排除方法声明 {@code private void assertAdmin() {} } 本身。
-         */
-        int assertAdminCallCount() {
-            return count("assertAdmin();");
-        }
-
-        private int count(String... markers) {
-            String cleaned = cleaned();
-            int total = 0;
-            for (String marker : markers) {
-                int from = 0;
-                while (true) {
-                    int index = cleaned.indexOf(marker, from);
-                    if (index < 0) {
-                        break;
-                    }
-                    total++;
-                    from = index + marker.length();
-                }
-            }
-            return total;
         }
 
         /** 类级 {@code @PreAuthorize}：出现在 {@code public class} 之前 ⇒ 覆盖整个控制器。 */
@@ -334,18 +279,15 @@ class AdminEndpointAuthorizationGuardTest {
         }
     }
 
-    /** 供断言消息使用的受管控制器名集合（调试时打印，便于确认扫描面）。 */
+    /** 扫描面自检：打印受管控制器清单与豁免条目（排障用）。 */
     @Test
-    @DisplayName("扫描面自检 — 打印受管控制器清单与豁免命中情况")
+    @DisplayName("扫描面自检 — 打印受管控制器清单与豁免条目")
     void shouldReportGuardSurface() {
-        List<String> guarded = List.copyOf(new TreeSet<>(scanControllers().stream()
-                .filter(source -> startsWithGuardedPrefix(source.classMapping()))
+        List<String> guarded = List.copyOf(new TreeSet<>(guardedControllers().stream()
                 .map(SourceFile::simpleName)
                 .toList()));
         System.out.println("[rbac-guard] 受管控制器 = " + guarded.size() + " 个 -> " + guarded);
         System.out.println("[rbac-guard] 豁免条目 = " + EXEMPT.keySet());
-        EXEMPT.forEach((name, exemption) ->
-                System.out.println("[rbac-guard]   " + name + " -> inCodeGuard=" + exemption.requireInCodeAdminGuard()));
         assertThat(guarded).isNotEmpty();
     }
 }

@@ -19,6 +19,13 @@
     </properties>
 
     <dependencies>
+        <!-- RBAC0 前置（Q5 裁决，2026-10-18）：@PreAuthorize 需要方法级安全基础设施。
+             ia-common 里本依赖是 optional；不显式引入则 MethodSecurityConfig 的 @ConditionalOnClass
+             不成立 ⇒ 注解会被静默忽略（安全剧场）。此前 pay/merchant 因此退回代码内 assertAdmin()。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
         <!-- 共享库：异常体系统一走 ia-common（ErrorCode / 全局异常处理 / ss 鉴权 Bean） -->
         <dependency>
             <groupId>org.nolazy</groupId>

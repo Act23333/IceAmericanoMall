@@ -113,4 +113,27 @@ class PermissionServiceTest {
         assertThat(permissionService.hasRole(ROLE_ADMIN)).isTrue();
         assertThat(permissionService.hasRole("ROLE_SELLER")).isFalse();
     }
+
+    @Test
+    @DisplayName("★ Q6 — 通配符不得覆盖 rbac:admin（提权路径必须显式授予）")
+    void shouldNotGrantRbacAdminThroughWildcard() {
+        UserContext.setUser(UserInfo.builder()
+                .userId(1L).roles(Set.of(ROLE_ADMIN)).permissions(Set.of(WILDCARD)).build());
+
+        assertThat(permissionService.hasPermi("rbac:admin"))
+                .as("若通配符能顶 rbac:admin，任何拿到超级位的账号都能改角色/权限 —— 提权路径没有被单独看守")
+                .isFalse();
+        // 其他位不受影响（排除是精确位，不是前缀）
+        assertThat(permissionService.hasPermi("user:admin")).isTrue();
+    }
+
+    @Test
+    @DisplayName("Q6 反向 — 显式持 rbac:admin 才通过（且不依赖通配符）")
+    void shouldGrantRbacAdminOnlyWhenExplicitlyGiven() {
+        UserContext.setUser(UserInfo.builder()
+                .userId(1L).permissions(Set.of("rbac:admin")).build());
+
+        assertThat(permissionService.hasPermi("rbac:admin")).isTrue();
+        assertThat(permissionService.hasPermi("user:admin")).isFalse();
+    }
 }

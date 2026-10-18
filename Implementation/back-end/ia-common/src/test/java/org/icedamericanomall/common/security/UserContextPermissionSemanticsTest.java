@@ -67,4 +67,16 @@ class UserContextPermissionSemanticsTest {
         assertThat(UserContext.hasAnyPermission("user:admin", "seller:admin")).isTrue();
         assertThat(UserContext.hasAnyPermission("user:admin", "invoice:issue")).isFalse();
     }
+
+    @Test
+    @DisplayName("★ Q6 对齐 — 代码内判定同样不得用通配符顶 rbac:admin")
+    void shouldNotGrantRbacAdminThroughWildcard() {
+        UserContext.setUser(UserInfo.builder().userId(1L).permissions(Set.of(WILDCARD)).build());
+
+        assertThat(UserContext.hasPermission("rbac:admin"))
+                .as("两条判定路径必须同语义 —— 否则「显式授予才能改 RBAC」只在一个入口成立")
+                .isFalse();
+        assertThat(UserContext.hasAnyPermission("rbac:admin")).isFalse();
+        assertThat(UserContext.hasPermission("user:admin")).isTrue();
+    }
 }

@@ -105,41 +105,167 @@
 
 ---
 
-## 5. 待裁决（请逐条给结论，否则不执行）
+## 5. 裁决结果（2026-10-18，已定，不再讨论）
 
-- **Q1 粒度**：管理端按**域**拆（`user:` / `order:` / `pay:` …）即可，还是要域 × 读/写二维（`user:read` / `user:write`）？
-  草案默认「域 + 少量动作」（见 §4.1），因为多数管理端页面读写同权。
-- **Q2 资金面是否独立**：`pay:admin` / `finance:admin` / `invoice:issue` / `currency:admin` 建议独立于 `user:admin`
-  （否则「客服能退款重试」这种授权无法拒绝）。**是否同意**？
-- **Q3 商家端是否拆分**：`seller:admin` 拆成 finance / coupon / knowledge 三位，还是保持一位（商家自己就是老板，岗位分离诉求弱）？
-- **Q4 入驻申请**：`POST /api/seller/apply` 保持「任何登录用户可调」（无权限位）——**确认**？
-- **Q5 method security**：为 pay / merchant / ai / logistics 补 `spring-boot-starter-security`（统一声明式的前提），
-  还是允许代码内 `assertAdmin()` 双轨？**建议补依赖**（否则「统一」只是口号，且第三条路径永远存在）。
-- **Q6 RBAC 管理面是否单列 `rbac:admin`**：改角色/权限本身比改业务数据更敏感，建议单列。
+| Q | 裁决 | 对实现的影响 |
+|---|---|---|
+| Q1 | **域 + `{read, write/admin}`，不做全二维**；逐域明确有无 admin 档 | §6 权限位表：每个域只有 **两个** 位（读 + 写/admin），不出现 `域:子资源:动作` |
+| Q2 | **资金面独立**（无商量）；`invoice:issue` / `invoice:void` 再拆 | `pay:admin` / `finance:admin` / `currency:admin` 独立；发票拆发行与作废两位 |
+| Q3 | **商家端拆三位，默认角色给全集，存量不失权** | `seller:finance` / `seller:coupon` / `seller:knowledge`；`ROLE_SELLER` 迁移时一次性给全 |
+| Q4 | **入驻申请无权限位**同意；**补限流**进 open-items | `POST /api/seller/apply` 永久豁免门禁；限流登记（见 open-items §1.17） |
+| Q5 | **补依赖，`assertAdmin()` 降级或删，不做双轨** | ✅ **已执行**：4 个 pom + 两个控制器转声明式 + 门禁转正（`e361a8d5` 之后） |
+| Q6 | **`rbac:admin` 单列、只给超管、通配符显式排除** | ✅ **已实现** `PermissionBits.WILDCARD_EXCLUDED = {rbac:admin}`，两条判定路径共用 |
+
+> Q5 的执行前提已实测：`MethodSecurityConfig` 是 `@ConditionalOnClass(EnableWebSecurity)` + `@EnableMethodSecurity`
+> 且已进 `AutoConfiguration.imports` ⇒ 补依赖后注解**真的生效**（否则就是安全剧场）。
+> 四个服务亦无自建 `SecurityFilterChain`，不会触发该配置退避。
 
 ---
 
-## 6. 执行顺序（评审通过后，不跳步）
+## 6. 页一 · 角色 → 权限映射（裁决后，待审）
 
-1. **门禁先行**（已完成）：`AdminEndpointAuthorizationGuardTest` 在，后续所有改动都被它兜底。
-2. **种子迁移**：`Initialize.sql` 的 `sys_permission` 加新位、`sys_role_permission` 重挂；
-   同步 `RbacSeedEscalationGuardTest`（它守「非 ROLE_ADMIN 不得持超级位」，新位不受影响但需跑）。
-3. **注解替换**：逐控制器类级替换（门禁保证不漏）。
-4. **缓存失效**（不可省）：拆位后**必须**清 `user:perms:*`，否则 TTL 30 分钟内旧权限集继续生效：
+### 6.1 权限位全表（Q1：每域两档）
+
+| 权限位 | 含义 | 有 admin 档？ | `*:*:*` 是否覆盖 |
+|---|---|---|---|
+| `ai:chat` | AI 对话/客服 | 否（单一能力位） | ✅ |
+| `product:read` | 商品浏览 | 否 | ✅ |
+| `product:write` | 商家维护自有商品 | 否（写即商家档） | ✅ |
+| `order:read` | 订单查询（含自有） | 否 | ✅ |
+| `order:write` | 订单管理（发货/取消等后台动作） | **是** | ✅ |
+| `aftersale:read` | 售后查询 | 否 | ✅ |
+| `aftersale:write` | 售后审核 / 退款确认 | **是** | ✅ |
+| `pay:admin` | 退款重试 / 手动对账（资金面，Q2） | **是** | ✅ |
+| `finance:admin` | 结算 / 提现审核（资金面，Q2） | **是** | ✅ |
+| `invoice:issue` | 开具 / 重开 | **是** | ✅ |
+| `invoice:void` | 作废 / 冲红（Q2 再拆） | **是** | ✅ |
+| `currency:admin` | 汇率维护 | **是** | ✅ |
+| `marketing:read` | 营销活动查询 | 否 | ✅ |
+| `marketing:admin` | 券/秒杀/满减/任务/拼团管理 | **是** | ✅ |
+| `merchant:admin` | 商家入驻审核 | **是** | ✅ |
+| `home:admin` | 首页装修 | **是** | ✅ |
+| `kg:admin` | 知识图谱 / 配对规则治理 | **是** | ✅ |
+| `user:read` | 用户查询 / 审计日志查询 | 否 | ✅ |
+| `user:write` | 用户状态/角色变更 | **是** | ✅ |
+| `rbac:admin` | **改角色/权限本身**（Q6） | **是** | ❌ **显式排除**（必须单独授予） |
+| `seller:admin` | 店铺资料维护（商家自有） | 否 | ✅ |
+| `seller:finance` | 商家结算 / 余额 / 提现申请 | 否 | ✅ |
+| `seller:coupon` | 商家券 | 否 | ✅ |
+| `seller:knowledge` | 商家知识库 | 否 | ✅ |
+
+**「有 admin 档」= 该域的写操作会改动他人数据/资金/平台配置**，故单独一位；纯读域只给 `read`。
+**不做 `域:子资源:动作` 三级**（Q1）——端点规模不需要，且 SpEL 里的串越长越容易写错。
+
+### 6.2 角色矩阵（Q3：默认给全集，存量不失权）
+
+| 角色 | 持有的位 | 说明 |
+|---|---|---|
+| `ROLE_USER` | `ai:chat`、`product:read`、`order:read` | 全是"自有数据"语义；公开端点本就无 `@PreAuthorize` |
+| `ROLE_VIP` | 同 `ROLE_USER` | 会员权益走等级规则（ADR-044），不走权限位 |
+| `ROLE_SELLER` | `ROLE_USER` 全集 + `product:write`、`seller:admin`、`seller:finance`、`seller:coupon`、`seller:knowledge`、`order:write` | 迁移时**一次性给全**（Q3「存量不失权」）；后续要拆细是"收窄"，需单独评审 |
+| `ROLE_ADMIN` | `*:*:*` + **`rbac:admin`（显式）** | 其余位经通配符获得；`rbac:admin` 通配符**不顶**（Q6） |
+
+**为什么管理员要显式列 `rbac:admin`**：它是唯一「能改变授权本身」的位。若通配符能顶，任何拿到超级位的账号
+都能改角色、给自身上位 —— 提权路径没有被单独看守。`PermissionBits` 的排除表刻意用**精确位**而非
+`rbac:` 前缀：按前缀自动扩会让「新增一个 rbac 子位」悄悄改变已有账号的授权范围。
+
+---
+
+## 7. 页二 · 迁移映射（现 6 位 → 新位，待审后执行）
+
+### 7.1 位级映射
+
+| 旧位 | 新位 | 备注 |
+|---|---|---|
+| `user:admin` | `user:read`、`user:write`、`order:write`、`aftersale:write`、`pay:admin`、`finance:admin`、`invoice:issue`、`invoice:void`、`merchant:admin`、`marketing:read`、`marketing:admin`、`currency:admin`、`home:admin`、`kg:admin` | 1 → 14；`user:admin` 是当前**唯一**的管理端开关 |
+| `seller:admin` | `seller:admin`、`seller:finance`、`seller:coupon`、`seller:knowledge` | 1 → 4（Q3） |
+| `ai:chat` / `order:read` / `product:read` | **保留原名** | 首次真正被 `@PreAuthorize` 消费 |
+| （新增） | `rbac:admin` | 只挂 `ROLE_ADMIN`，且**不**由通配符覆盖 |
+
+**旧位不删除、只停用**（`sys_permission.status = 0`）：便于回滚比对；注解改完后若有残留引用，
+`AdminEndpointAuthorizationGuardTest` 不会报（它只看"有没有注解"），所以**必须另加一条门禁/脚本**
+扫描「注解里出现的位是否都在 `sys_permission` 且 `status=1`」——列为执行批的必做项。
+
+### 7.2 种子 SQL 草案（执行时才落盘，此处只审结构）
+
+```sql
+-- ① 新增位（id 从 7 起，保持既有 1–6 不动）
+INSERT INTO sys_permission (id, name, code, type, path, sort_order, status) VALUES
+  (7,  '用户查询',   'user:read',      3, '/api/admin/user/**',       10, 1),
+  (8,  '用户变更',   'user:write',     3, '/api/admin/user/**',       11, 1),
+  (9,  '订单管理',   'order:write',    3, '/api/admin/order/**',      12, 1),
+  (10, '售后处理',   'aftersale:write',3, '/api/admin/after-sale/**', 13, 1),
+  (11, '支付运维',   'pay:admin',      3, '/api/admin/pay/**',        14, 1),
+  (12, '财务结算',   'finance:admin',  3, '/api/admin/finance/**',    15, 1),
+  (13, '发票开具',   'invoice:issue',  3, '/api/admin/invoice/**',    16, 1),
+  (14, '发票作废',   'invoice:void',   3, '/api/admin/invoice/**',    17, 1),
+  (15, '汇率维护',   'currency:admin', 3, '/api/admin/currency/**',   18, 1),
+  (16, '营销查询',   'marketing:read', 3, '/api/admin/**',            19, 1),
+  (17, '营销管理',   'marketing:admin',3, '/api/admin/**',            20, 1),
+  (18, '商家审核',   'merchant:admin', 3, '/api/admin/seller/**',     21, 1),
+  (19, '首页装修',   'home:admin',     3, '/api/admin/home/**',       22, 1),
+  (20, '知识图谱',   'kg:admin',       3, '/api/admin/kg/**',         23, 1),
+  (21, 'RBAC 管理',  'rbac:admin',     3, '/api/admin/roles/**',      24, 1),
+  (22, '商品维护',   'product:write',  3, '/api/seller/**',           25, 1),
+  (23, '商家结算',   'seller:finance', 3, '/api/seller/finance/**',   26, 1),
+  (24, '商家券',     'seller:coupon',  3, '/api/seller/coupon/**',    27, 1),
+  (25, '商家知识库', 'seller:knowledge',3,'/api/seller/knowledge/**', 28, 1);
+
+-- ② ROLE_ADMIN：显式加 rbac:admin（通配符不覆盖它）
+INSERT INTO sys_role_permission (role_id, permission_id)
+SELECT 4, id FROM sys_permission WHERE code = 'rbac:admin';
+
+-- ③ ROLE_SELLER：一次性给全（Q3 存量不失权）
+INSERT INTO sys_role_permission (role_id, permission_id)
+SELECT 3, id FROM sys_permission WHERE code IN
+  ('product:write','seller:admin','seller:finance','seller:coupon','seller:knowledge','order:write');
+
+-- ④ 旧位停用（不删）
+UPDATE sys_permission SET status = 0 WHERE code IN ('user:admin');
+```
+
+### 7.3 迁移后的「不失权」验证（必须做，不能靠肉眼）
+
+1. **投影比对**：建立「端点 → 所需位」映射，对每个角色计算「旧位集合下可达端点集」与「新位集合下可达端点集」，
+   断言 **旧 ⊆ 新**（只许放宽不许收紧；任何收紧都必须单独列出并确认是有意的）。
+2. **缓存失效**（不可省）：
    ```bash
    redis-cli --scan --pattern 'user:perms:*' | xargs -r redis-cli DEL
    ```
-   并确认 `PermissionCacheEvictor` 在角色/权限变更时已删缓存（已有）。
-5. **端到端 403 测试**（不可省，**当前卡环境**）：需要 Nacos + Redis 起 authorization + gateway + 目标服务，
-   用「有 A 位、无 B 位」的账号打 B 端点断言 **403**。当前 Nacos/Redis 不可达 ⇒ **本项无法执行**，
-   只能留在 open-items（不得因为「单测绿」就宣称鉴权可用）。
-6. **前端菜单**（S0 之后）：前端目前**完全不做权限判定**；落地时要补，且必须同时支持
-   通配符与（若保留）管理员短路，否则管理员菜单会整体消失。
+   否则 TTL 30 分钟内旧权限集继续生效，测出来的 403 是假的。
+3. **端到端 403 用例清单**（每条：账号 → 端点 → 期望）：
+   - 有 `user:read`、无 `user:write` → `PUT /api/admin/user/{id}/status` = **403**
+   - 有 `aftersale:write`、无 `pay:admin` → `POST /api/admin/pay/refund/{no}/retry` = **403**（资金面隔离的核心断言）
+   - 有 `*:*:*`、**无** `rbac:admin` → `PUT /api/admin/roles/{id}/permissions` = **403**（Q6 的核心断言）
+   - 商家 A 调 `GET /api/seller/finance/balance` 只看得到自己的余额（数据面，非本批）
+4. **回滚**：旧位只停用不删 + 注解改动可 `git revert`；缓存失效命令对回滚同样适用。
+
+### 7.4 宣称边界（写死，避免误判「已完成」）
+
+- **端到端 403 用例仍卡 Nacos/Redis，未执行**。在它跑通之前，只能说「单测 + 门禁通过」，
+  **不得声称「RBAC 已符合大厂标准」**。
+- `sys_permission.path` 仍是**装饰**，本批不接路径解析层（不要顺手做成第二套判定）。
+- **数据权限（行级）不在本批**，另立项。
 
 ---
 
-## 7. 不做什么（防止范围蔓延）
+## 8. 执行顺序（评审通过后，不跳步）
 
-- **不做数据权限**（店铺/部门行级过滤）—— 另立项，需先定模型。
-- **不引入 ABAC / 属性权限** / 不做权限继承层级。
-- **不把 `sys_permission.path` 做成第二套判定** —— 除非另行立项（要么接 Filter 真用，要么在 09-constraints 写明「仅展示」）。
+1. ✅ 门禁先行（`AdminEndpointAuthorizationGuardTest` 在）
+2. ✅ Q5：4 个服务补 `spring-boot-starter-security` + 两个控制器转声明式 + 门禁转正
+3. ✅ Q6：`PermissionBits` 单点实现 + `rbac:admin` 通配符排除 + 两条路径共用
+4. ⬜ **种子迁移**（§7.2）+ **新增门禁**：注解里的位必须存在于 `sys_permission` 且 `status=1`
+5. ⬜ **逐控制器替换注解**（门禁兜底）
+6. ⬜ **缓存失效**（§7.3-2）
+7. ⬜ **投影比对**（§7.3-1）
+8. ⬜ **端到端 403**（§7.3-3，**卡环境**）
+9. ⬜ 前端入口隐藏（S0 之后；须支持通配符与 `rbac:admin` 排除，否则管理员菜单会消失/越权可见）
+
+---
+
+## 9. 不做什么（防止范围蔓延）
+
+- **不做数据权限**（店铺/部门行级过滤）—— 另立项。
+- **不引入 ABAC / 权限继承层级**。
+- **不把 `sys_permission.path` 做成第二套判定**。
+- **不保留「代码内 assertAdmin」**（Q5：不做双轨）。

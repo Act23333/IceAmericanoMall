@@ -35,9 +35,6 @@ import java.util.Arrays;
 @Service("ss")
 public class PermissionService {
 
-    /** 超级管理员通配符 */
-    private static final String SUPER_ADMIN_PERM = "*:*:*";
-
     /**
      * 检查当前用户是否拥有指定权限。
      * <p>
@@ -51,12 +48,9 @@ public class PermissionService {
         if (user == null || user.permissions() == null) {
             return false;
         }
-        // 规则②：通配符（超级管理员的唯一载体）
-        if (user.permissions().contains(SUPER_ADMIN_PERM)) {
-            return true;
-        }
-        // 规则③：精确匹配。**刻意没有「ROLE_ADMIN ⇒ 放行」的短路**（见类注释）。
-        return user.permissions().contains(permission);
+        // 规则②③统一在 PermissionBits（唯一实现）：通配符 + 精确匹配 + Q6 的 rbac:admin 排除。
+        // **刻意没有「ROLE_ADMIN ⇒ 放行」的短路**（见类注释）。
+        return PermissionBits.grants(user.permissions(), permission);
     }
 
     /**

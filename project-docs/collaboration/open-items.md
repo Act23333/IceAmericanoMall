@@ -427,13 +427,37 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
    `@PreAuthorize`（类级要求 ⇒ 新增方法自动被覆盖）；豁免表 4 条全部标「待矩阵裁定」+ deadline
    `2026-11-15`，**陈旧即失败**。门禁自证：合成违规样本必须判红 + 反空断言（受管控制器 ≥ 下限）。
 
-**待评审**：`rbac-permission-matrix-draft.md`（拟议权限位 + 6 个待裁决问题 Q1–Q6）。
-**评审通过前不执行拆分** —— 业务边界不由 AI 拍。
+**待评审**：`rbac-permission-matrix-draft.md`（§5 裁决结果 / §6 角色→权限映射 / §7 迁移映射，两页待审）。
+
+**Q1–Q6 已裁决（2026-10-18，不再讨论）**：Q1 域 + `{read, write/admin}`、不做全二维；Q2 资金面独立、
+发票拆 `invoice:issue` / `invoice:void`；Q3 商家端拆三位且默认角色给全集（存量不失权）；Q4 入驻申请无权限位；
+Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超管、**通配符显式排除**。
+
+**已执行（Q5 + Q6）**：
+
+- **Q5**：pay / merchant / ai / logistics 四个 pom 补 `spring-boot-starter-security`；
+  `AdminPayController`、`AdminMerchantController` 由代码内 `assertAdmin()` 改为**类级** `@PreAuthorize`，
+  原守卫方法**删除**（不做双轨）；门禁里这两条豁免**已移除**（转正）。
+  生效前提已实测：`MethodSecurityConfig` 是 `@ConditionalOnClass(EnableWebSecurity)` + `@EnableMethodSecurity`
+  且已进 `AutoConfiguration.imports`，四服务亦无自建 `SecurityFilterChain` 不会退避 —— 否则注解只是装饰。
+- **Q6**：新增 `PermissionBits`（**唯一**规则实现），`PermissionService` 与 `UserContext` 都委托给它；
+  通配符对 `rbac:admin` **不生效**。排除表刻意用**精确位**而非 `rbac:` 前缀 —— 按前缀自动扩会让
+  「新增一个 rbac 子位」悄悄改变已有账号的授权范围。
+
+**Q4 附加（限流）**：`POST /api/seller/apply` 因无权限位，必须补**限流**（当前无 `@RateLimit`），
+否则它成了唯一可被未入驻用户高频打的下游写入口。执行批一并做。
+
+**执行批必做项（新增，见草案 §8）**：注解里出现的权限位必须存在于 `sys_permission` 且 `status=1` ——
+现有门禁只看「有没有注解」，**不看位是否真实存在**，注解把位名写错不会红。需补一条门禁或脚本。
 
 **三件不可省**：① 种子迁移（`sys_permission` + `sys_role_permission`）；② **缓存失效**
 （拆位后必须 `DEL user:perms:*`，否则 TTL 30 分钟内旧权限集继续生效）；③ **端到端 403 用例**
-（有 A 位、无 B 位的账号打 B 端点断言 403）—— **③ 当前卡 Nacos/Redis，无法执行**，
-**不得因为单测绿就宣称鉴权可用**。
+（核心两条：有 `aftersale:write` 无 `pay:admin` 打退款重试 = 403；持 `*:*:*` 无 `rbac:admin`
+打角色权限变更 = 403）—— **③ 当前卡 Nacos/Redis，无法执行**。
+
+**宣称边界（写死）**：端到端 403 用例跑通之前，只能说「单测 + 门禁通过」，
+**不得声称「RBAC 已符合大厂标准」**；`sys_permission.path` 仍是装饰，本批不接路径解析层；
+数据权限（行级）不在本批。
 
 ---
 

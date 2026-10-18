@@ -43,25 +43,18 @@ public class UserContext {
     //   （pay / merchant / ai / logistics —— 它们没引 spring-security，用不了 @PreAuthorize）
     //   会**开始拒绝管理员**。这是个只会在大改时炸的隐性分叉，故此处统一。
 
-    /** 超级管理员通配符（与 {@code PermissionService.SUPER_ADMIN_PERM} 同一取值，勿各写一份）。 */
-    private static final String SUPER_ADMIN_PERM = "*:*:*";
-
-    /** 检查当前用户是否拥有指定权限（`*:*:*` 通配；无上下文即拒绝）。 */
+    /** 检查当前用户是否拥有指定权限（`*:*:*` 通配；无上下文即拒绝）。规则见 {@link PermissionBits}。 */
     public static boolean hasPermission(String permission) {
         UserInfo user = HOLDER.get();
-        if (user == null || user.permissions() == null) {
-            return false;
-        }
-        return user.permissions().contains(SUPER_ADMIN_PERM) || user.permissions().contains(permission);
+        return user != null && PermissionBits.grants(user.permissions(), permission);
     }
 
     /** 检查当前用户是否拥有任一指定权限（`*:*:*` 通配）。 */
     public static boolean hasAnyPermission(String... permissions) {
         UserInfo user = HOLDER.get();
-        if (user == null || user.permissions() == null) return false;
-        if (user.permissions().contains(SUPER_ADMIN_PERM)) return true;
+        if (user == null || permissions == null) return false;
         for (String perm : permissions) {
-            if (user.permissions().contains(perm)) return true;
+            if (PermissionBits.grants(user.permissions(), perm)) return true;
         }
         return false;
     }
