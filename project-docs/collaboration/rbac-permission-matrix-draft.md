@@ -397,6 +397,22 @@ Q3 裁决的是**权限位**拆三位（`seller:finance` / `seller:coupon` / `se
    已补前缀并新增「允许方法级」规则（要求注解数 ≥ 全部映射方法数，管理端无公开端点可豁免）。
    **教训**：受管前缀不能按"看起来像管理端"猜，要按实际 `RequestMapping` 扫。
 
+**批 7 方法清单与三问（2026-10-18 实测，逐控制器）**：
+
+| 控制器 | 方法 | ① 公开端点 | ② 同步资金侧效应 | ③ 跨域方法 | 结论 |
+|---|---|---|---|---|---|
+| `AdminCouponController` | `POST` 建券 / `PUT /{id}/disable` 停用 | 无 | 无（券是折扣，非资金划转；无 Feign 退款） | 无 | **可类级** |
+| `AdminFlashController` | `POST` / `PUT /{id}` / `DELETE /{id}` | 无 | 无 —— `FlashSaleAdminManager#deleteFlashSale` 对**进行中**活动直接抛 `PARAM_ERROR`（禁删），不触发退款 | 无 | **可类级** |
+| `AdminPromotionController` | `POST` / `PUT /{id}` / `DELETE /{id}` | 无 | 无（满减/满折是配置） | 无 | **可类级** |
+| `AdminTaskController` | `GET` 分页 / `POST` / `PUT /{code}` | 无（`GET` 在 `/api/admin/task`，非公开） | 无 | 无（任务定义属营销域） | **可类级** |
+| `AdminGroupBuyController` | `POST` / `PUT /{id}` / `DELETE /{id}` | 无 | 无 —— `GroupBuyAdminManager#deleteActivity` 同样对**进行中**活动抛错（禁删）；退款路径在 `GroupBuyParticipationManager`（参与/成团失败驱动），**不在管理端删除路径上** | 无 | **可类级** |
+
+**三问口径**（写死，后续新控制器直接套）：
+1. **公开端点**：该类路径下是否有免登录/免鉴权方法？有 → 类级会误封，必须方法级。
+2. **同步资金侧效应**：方法体是否**同步**调退款/打款（`refundClient` / `walletClient` 等）？
+   有 → 该方法的位应按资金面（`pay:admin`）而非业务域位。
+3. **跨域方法**：同一控制器里是否混了另一个域的写操作？有 → 按方法挂，别按类挂。
+
 **受管前缀覆盖表（2026-10-18 全量扫描，按实际 `RequestMapping` 而非名字猜）**：
 
 | 前缀 | 受管 | 说明 |
@@ -491,6 +507,8 @@ SoD（职责分离：一个人不能既开票又作废）**另立项**：它需�
      | 3 ✅ | `AdminOrderController`（**全方法级**：4 个订单域 + `GET /dashboard`） | `order:admin` ×4 / `dashboard:read` ×1 | 14 → 13 |
      | 4 ✅ | `AdminAfterSaleController`（**按方法**：GET / PUT review / PUT confirm-return） | `aftersale:read` / `pay:admin` / `pay:admin` | 13 → 12 |
      | 5 ✅ | `AdminPayController` | `pay:admin` | 12 → 11 |
+     | 6 ✅ | `AdminFinanceController` | `finance:admin` | 11 → 10 |
+     | 7 ⬜ | marketing 五个（见 §8 清单） | `marketing:admin`（**待确认后执行**） | — |
      | 4 ⬜ | `AdminAfterSaleController`（**按方法**：GET list / PUT review / PUT confirm-return） | `aftersale:read` / `pay:admin` / `pay:admin` | — |
      | 8 ⬜ | `AdminLogController` / `AdminUserController` / `Role`+`Permission` | `audit:read` 类级 / **按方法** `user:read`+`user:write`+**`rbac:admin`** / `rbac:admin` | — |
      | 末 ⬜ | `AdminInvoiceController`（按方法：issue / void / red-flush） | `invoice:issue` / `invoice:void` / `invoice:void`（Q9） | — |

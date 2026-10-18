@@ -21,7 +21,10 @@ import org.springframework.web.bind.annotation.*;
  * 两者入参均为标识/状态/日期，故开启参数摘要（非 id 类值仍只记类型名）。
  */
 @RestController
-@PreAuthorize("@ss.hasPermi('user:admin')")
+// 权限位拆分（5a 批 6，2026-10-18）：财务结算独立成位 finance:admin（Q2 资金面独立）。
+// 已核：withdrawal/{id}/review 只做状态流转（未见同步打款调用），故不并入 pay:admin；
+// 若将来审核后改为**同步**打款，必须并按方法拆位（参照 after-sale 那批的做法）。
+@PreAuthorize("@ss.hasPermi('finance:admin')")
 @RequestMapping("/api/admin/finance")
 @RequiredArgsConstructor
 public class AdminFinanceController {
