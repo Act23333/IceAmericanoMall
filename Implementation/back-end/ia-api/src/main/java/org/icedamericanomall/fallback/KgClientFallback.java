@@ -96,8 +96,9 @@ public class KgClientFallback implements FallbackFactory<KgClient> {
                             srcType, srcId, upstream.getCode(), upstream.getMsg());
                     throw upstream;
                 }
-                log.warn("KG 清边降级: 本次清边未执行（category={}；残留边由管理端 KG 全量重建收敛）"
-                                + " srcType={}, srcId={}", category, srcType, srcId, cause);
+                log.warn("KG 清边降级: 本次清边未执行（category={}；⚠ 无可靠消费者——重建只覆盖「仍存在且已下架」"
+                                + "的 SPU，已删除 SPU 的残留边需人工处理） srcType={}, srcId={}",
+                        category, srcType, srcId, cause);
                 throw new BizException(ErrorCode.SYSTEM_BUSY, DEGRADED_MESSAGE);
             }
         };

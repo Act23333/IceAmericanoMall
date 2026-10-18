@@ -103,17 +103,25 @@ public class PayEventNotifier {
      * {@code AfterSaleClientFallback} 已改为「4xx 透传 / 其余抛 SYSTEM_BUSY」，此处再加一层
      * {@code catch (Exception)} 防御，确保<b>任何</b>异常都不会影响退款落账。
      *
-     * <p><b>⚠ 收敛路径的诚实口径（U17 catch 体审计，2026-10-18）</b>：失败后<b>既没有自动重试、
-     * 也没有对账消费者</b> —— 售后单会停在 {@code APPROVED(2)}，只能<b>人工在管理端核对</b>。
-     * 缺口已登记在 {@code collaboration/open-items.md}（U17）。<b>不要</b>把这里写成
-     * 「待对账/重试收敛」：本仓已因这类假承诺留下过沉默缺口（同族：`flash_order_log` 的列注释）。
+     * <p><b>⚠ 收敛路径（U17 catch 体审计，2026-10-18）—— 登记必须可执行，所以写全三件</b>：
+     * <ul>
+     *   <li><b>消费者：暂无</b>（无自动重试、无对账 Job）—— 失败后售后单停在 {@code APPROVED(2)}；</li>
+     *   <li><b>人工核对入口</b>：管理端售后列表按状态筛选 {@code APPROVED(2)} ——
+     *       {@code GET /api/admin/after-sale?status=2}（{@code AdminAfterSaleController#pageByStatus}），
+     *       逐单与 {@code refund_order} 的退款成功记录对照后手工回写；</li>
+     *   <li><b>告警级别 = {@code ERROR}</b>（不是 WARN）：这条日志代表一笔「钱已退、售后单未回写」的
+     *       <b>数据不一致</b>，且无任何自动收敛手段，必须能惊动值班；用 WARN 会被同期其它告警淹掉。</li>
+     * </ul>
+     * <p><b>不要</b>写成「待对账/重试收敛」：本仓已因这类假承诺留下过沉默缺口
+     * （同族：{@code flash_order_log} 的列注释）。
      */
     private void writeBackAfterSaleRefunded(Long afterSaleId) {
         try {
             afterSaleClient.markRefunded(afterSaleId);
             log.info("退款成功，售后单已回写 REFUNDED: afterSaleId={}", afterSaleId);
         } catch (Exception e) {
-            log.warn("退款成功但售后单回写失败（fail-open；无自动重试/对账消费者，需人工核对）: afterSaleId={}",
+            log.error("退款成功但售后单回写失败（无自动重试/对账消费者；人工入口 "
+                    + "GET /api/admin/after-sale?status=2 按 APPROVED(2) 对照 refund_order 回写）: afterSaleId={}",
                     afterSaleId, e);
         }
     }

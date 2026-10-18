@@ -171,7 +171,15 @@ public class KgEdgeIngestManager {
     }
 
     /**
-     * 按 src 清边（fail-open，I59）：下架/删除商品与重建清理共用；降级为空操作仅记 WARN。
+     * 按 src 清边（I59）：下架/删除商品与重建清理共用；<b>失败仍 fail-open</b>（降级只记日志，不阻断主流程）。
+     *
+     * <p><b>⚠ 收敛路径的诚实口径（U17 catch 体审计，2026-10-18；此前写「AD64 重建兜底」是错的）</b>：
+     * 管理端重建（{@code KgAdminManager#rebuild}）**不是全量重建、也不做全局清空** —— 它只
+     * {@code spuRepository.pageAll(...)} 扫描<b>仍存在</b>的 SPU，再按在售状态 upsert 或清边。
+     * 因此收敛能力只覆盖「仍存在但已下架」这一种情形：<b>SPU 行已删除时，重建根本扫不到它，
+     * 其残留边没有任何自动消费者清理</b>。故本方法的准确结论是
+     * **「暂无可靠消费者」**（仅部分场景有管理端人工入口），已登记在
+     * {@code collaboration/open-items.md} 的 U17 —— <b>不要</b>再写「重建兜底」。
      *
      * @param srcType 源节点类型
      * @param srcId   源节点 id
@@ -181,7 +189,9 @@ public class KgEdgeIngestManager {
             kgClient.deleteEdges(srcType, srcId);
             log.debug("KG 清边完成: srcType={}, srcId={}", srcType, srcId);
         } catch (Exception e) {
-            log.warn("KG 清边失败，主流程不受影响（AD64 重建兜底）: srcType={}, srcId={}", srcType, srcId, e);
+            // 可定位键：srcType + srcId；无自动重试/可靠对账消费者（见上方口径）
+            log.warn("KG 清边失败，主流程不受影响（⚠ 无可靠消费者：重建只覆盖「仍存在且已下架」的 SPU，"
+                    + "已删除 SPU 的残留边需人工处理）: srcType={}, srcId={}", srcType, srcId, e);
         }
     }
 

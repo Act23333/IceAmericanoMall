@@ -316,8 +316,31 @@ class FallbackDegradeContractTest {
      * 在 4xx 下是抛的（所以不在此表），它只在<b>不可用</b>分支静默 —— 那由处置表的
      * {@code RETURNS} 管，理由写在 {@code open-items} 的 U17 行（调用点无 try/catch，需先补防护）。
      * 两张表的职责不同：这张管「4xx 底下有没有真的抛」，处置表管「不可用时应抛还是应返回」。
+     *
+     * <h2>检测边界（空集只有在这些前提下才可信 —— 否则是假阴性）</h2>
+     * <ul>
+     *   <li><b>只看 4xx（CLIENT）分支</b>：不可用分支由处置表（{@code THROWS}/{@code RETURNS}）管。</li>
+     *   <li><b>只看 {@code void} 方法</b>：有返回值的方法即便静默返回，调用方至少拿到一个降级值、
+     *       能自己判断；{@code void} 的静默与成功同形，才是本条要堵的形态。</li>
+     *   <li><b>只看「没抛」</b>：抛了但抛错类型（不是 {@code UpstreamException}）由 ② 的 CLIENT 扫描判违规，
+     *       两处分工不重叠。</li>
+     *   <li><b>扫描面 = {@code ia-api/target/classes} 里 {@code org.icedamericanomall.fallback} 下的
+     *       {@code FallbackFactory} 实现</b>（编译产物，非源码扫描）。<b>其它包/模块的 {@code void}
+     *       降级方法不在覆盖范围内</b> —— 新增降级工厂请放这个包，否则本条看不见它。</li>
+     *   <li><b>空集本身不是证据</b>：必须同时证明「确实扫到了若干个 {@code void} 方法」，
+     *       见 {@link #MIN_SCANNED_VOID_METHODS} 的下限断言。</li>
+     * </ul>
      */
     private static final Map<String, String> VOID_CLIENT_SILENT_ALLOWED = Map.of();
+
+    /**
+     * 扫描面下限（<b>防假阴性</b>）：谓词或输出目录一旦失效，扫到的 {@code void} 方法会掉到 0，
+     * 那时「静默集合为空」与登记表（也为空）恰好相等 —— <b>空集会被当成合规</b>，规则静默失效。
+     *
+     * <p>取下限而非等值：新增 {@code void} 降级方法时不必改这里（只增不减），
+     * 但掉到 0 或明显变少会立刻红。下限值取自改造完成时的实测数（留余量，不追求精确）。
+     */
+    private static final int MIN_SCANNED_VOID_METHODS = 10;
 
     /** 处置表按「类名#方法名」寻址（与 {@link #METHOD_DISPOSITIONS} 同一口径）。 */
 
@@ -347,10 +370,14 @@ class FallbackDegradeContractTest {
         }
 
         // 反空断言必须落在「扫描面」上，而不是「违规集合」上 —— 后者的正确状态本来就可能是空
-        // （当前全部 void 方法在 4xx 下都抛）。写成「违规集合非空」会在代码正确时反而变红。
+        // （当前全部 void 方法在 4xx 下都抛）。写成「违规集合非空」会在代码正确时反而变红；
+        // 写成「isPositive」又太弱（谓词退化到只剩 1 个方法也会通过）。故用下限 + 打印实测数。
+        System.out.println("[fallback-contract] 4xx 扫描面: 扫到 void 方法 = " + scannedVoidMethods
+                + " 个 / 其中静默返回 = " + silentVoidMethods.size() + " 个 -> " + silentVoidMethods);
         assertThat(scannedVoidMethods)
-                .as("扫描面为空：一个 void 降级方法都没扫到，说明谓词或扫描路径失效")
-                .isPositive();
+                .as("扫描面过小（%d < %d）：谓词或输出目录可能失效，此时「静默集合为空」是假阴性，不是合规",
+                        scannedVoidMethods, MIN_SCANNED_VOID_METHODS)
+                .isGreaterThanOrEqualTo(MIN_SCANNED_VOID_METHODS);
 
         assertThat(silentVoidMethods)
                 .as("void 方法在 4xx 下静默返回的集合与登记表不一致 —— "

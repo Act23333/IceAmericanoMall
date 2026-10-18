@@ -301,11 +301,18 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
   `KgClientFallback` **不动工厂级**（同工厂 `edgeUpsert` 走哨兵 `-1`、`neighbors` 返回空列表，
   按 PRD §16.8.1 必须继续 fail-open），改为在 `METHOD_DISPOSITIONS` 新增
   `"KgClientFallback#deleteEdges" → THROWS`。**一个方法一个结论，别把工厂级当整类。**
-- **两个 catch 体的收敛路径（各一句话，按要求写死）**：
-  - `PayEventNotifier#writeBackAfterSaleRefunded`：**暂无消费者** —— 失败后售后单停在 `APPROVED(2)`，
-    只能人工在管理端核对；原日志里的「待对账/重试收敛」是**假承诺**，已改写并登记于此。
-  - `KgEdgeIngestManager#deleteEdgesSafely`：**收敛入口 = 管理端 KG 全量重建（AD64）**，
-    残留边由下一次重建覆盖；日志已带 `srcType` + `srcId` 可定位键。
+- **两个 catch 体的收敛路径（各一句话，按要求写死；写不出的按「暂无消费者」）**：
+  - `PayEventNotifier#writeBackAfterSaleRefunded`：**暂无自动消费者** —— 人工核对入口 =
+    管理端售后列表按状态 `APPROVED(2)`（`GET /api/admin/after-sale?status=2`，
+    `AdminAfterSaleController#pageByStatus`）逐单与 `refund_order` 对照后手工回写；
+    **告警级别 = ERROR**（不是 WARN）：这是「钱已退、售后单未回写」的数据不一致，
+    且无任何自动收敛手段，WARN 会被同期告警淹掉。原日志里的「待对账/重试收敛」是**假承诺**，已改写。
+  - `KgEdgeIngestManager#deleteEdgesSafely`：**暂无可靠消费者**（原写「AD64 全量重建兜底」是**错的**，
+    已订正）。实测 `KgAdminManager#rebuild` **不是全量重建、也不做全局清空** ——
+    它只 `spuRepository.pageAll(...)` 扫描**仍存在**的 SPU，在售 upsert、下架清边
+    （`writeSpuEdges` 的分支）。因此它只能收敛「仍存在但已下架」这一种情形；
+    **SPU 行已删除时重建扫不到它，残留边永不清**。日志已带 `srcType`/`srcId` 可定位键。
+    —— 这条正是「写不出可靠收敛路径时按『暂无消费者』登记」的实例：**别为了让登记好看而编一个兜底**。
 - **⚠ M8 挖出的真洞（本条最值得记）**：处置表的 `THROWS` **只约束「不可用」那一支**。
   CLIENT（4xx）分支的判据是「有没有抛异常」—— 对有返回值的方法，静默返回还能被调用方看见；
   对 `void` 方法，**静默返回与「真的执行成功」完全同形**。实测：把
@@ -325,6 +332,19 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
 - `revokeUserTokens`：先给 `UserAdminManager#updateStatus` 补调用点防护，再改抛（当前仅 WARN）。
 - 补偿消费者：选型已定（复用 `operation_log` 对账），三条前置见下方；**其中 `record` 增 `target` 未做**。
 - 前端兜底分支：见 U19。
+
+**第二步的空窗问题（已裁决：方案 A —— 同批上，不拆可独立合并的 commit）**
+
+- **空窗长什么样**：若先把 `revokeUserTokens` 改成抛、而调用点防护与补偿还没上，一次吊销失败会让
+  一次**已提交**的禁用对外报 5xx，且不留任何记录 —— **比现状更糟**。
+- **选 A（同一提交内完成）**，内部顺序固定：① `record` 增 `target` 入参 + 新增 `DISABLE_USER` /
+  `REVOKE_USER_TOKENS` 两个 action；② 调用点 `try/catch` + 补偿记录 + **ERROR** 告警；
+  ③ 对账 Job 消费；④ fallback 改抛；⑤ 处置表补一条 + 测试。
+  先做前三步再做后两步，但**同属一个 commit**，不存在「合并到一半」的中间态。
+- **不选 B（catch 里同步重试一次）**：① 它把失败路径的 Feign 调用从 1 次变 2 次，最坏耗时翻倍
+  （TimeLimiter 5s × 2），而 auth 域真故障时重试必败 —— 只在「瞬时抖动」上有效；
+  ② 它**不消除**对补偿记录 + 消费者（Job）的需求，只是把窗口缩小；
+  ③ A 已经没有窗口，B 的收益归零、复杂度却留着。
 
 ---
 
@@ -528,6 +548,10 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
    - 判据：**多个来源矛盾时，越接近事实的那一方优先**。HTTP 状态码是传输层观测面（调用方、网关、熔断器、指标都只看它）；`category` 只是我们对它的解释 —— **解释可以错，事实不会**。
    - 反例同族：`retryable` 必须由 `category` **单向派生**、不许下游报文覆写（`ErrorInfo.of` 已强制）。凡是「派生出来的值」与「采信外部输入的值」同时存在，都要问一句：谁覆盖谁。
    - 落地方式：把「优先级」写成**一个函数里的一个 return**（`CarriedErrorException#httpStatus`），不要分散成两处 if —— 分散就必然出现「一处按事实、一处按解释」。
+8. **一个方法一个结论 —— 别把「工厂级」当成整类**。同一个降级工厂内，方法的处置可以不同：`KgClientFallback` 的 `edgeUpsert`（返回哨兵 `-1`）与 `neighbors`（返回空列表）按 PRD §16.8.1 必须 fail-open，只有 `deleteEdges` 该抛。图省事把工厂级改成 `THROWS`，那两个方法会立刻被判红 —— **门禁是对的，省事是错的**。
+   - 判据：**结论要落在「方法」这个粒度上**；工厂级只是「本工厂内多数方法的缺省」，一旦出现分歧就必须在 `METHOD_DISPOSITIONS` 逐条覆盖。
+   - 反向同样成立：也不能因为**一个**方法该 fail-open，就把整类标成 fail-open。
+   - 这条同时解释了为什么「处置表」要分成工厂级 + 方法级两层，而不是一张平表：**缺省 + 显式例外**比「每个方法都登记」更不容易在被忽略的地方漂。
 
 ---
 
