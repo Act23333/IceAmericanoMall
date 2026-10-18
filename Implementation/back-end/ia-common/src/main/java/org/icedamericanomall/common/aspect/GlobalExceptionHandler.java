@@ -4,12 +4,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.api.ErrorInfo;
 import org.icedamericanomall.common.api.Result;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.icedamericanomall.common.exception.*;
-import org.icedamericanomall.common.filter.TraceIdFilter;
 import org.icedamericanomall.common.utils.WebUtils;
-import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -31,13 +28,13 @@ import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebA
  * 全局异常处理器 —— 把 {@code ia-common} 异常体系统一映射为
  * {@code ResponseEntity<Result<Object>>}（HTTP 状态码取自 {@code ErrorCode}）。
  *
- * <p>两个关键约定：
+ * <p>三个关键约定：
  * <ul>
  *   <li>{@code /internal/**} 路径的业务异常<b>不包装 {@code Result}</b>，而是直接用
  *       {@code ErrorCode} 的 HTTP 状态码应答（body 为 {@link ErrorInfo}：
  *       {@code code / msg / category / retryable / traceId}）—— 见
- *       {@link #rawInternalResponse(CommonException)}。内部接口由 Feign 调用，调用方需要的是
- *       「真实 HTTP 状态码」+「足以判定处置的字段」，而不是 {@code Result} 信封。
+ *       {@link ExceptionResponseSupport#rawInternalResponse(CommonException)}。内部接口由 Feign
+ *       调用，调用方需要的是「真实 HTTP 状态码」+「足以判定处置的字段」，而不是 {@code Result} 信封。
  *       <p><b>V5.3 修正（P1 缺陷）</b>：此前实现是在 {@code @ExceptionHandler} 里
  *       {@code throw e;} 想「原样抛出」，但 {@code HandlerExceptionResolver} 捕获异常后
  *       <b>不会二次解析</b>新抛出的异常，最终由容器兜底成 HTTP 500 —— 一切内部
@@ -48,15 +45,24 @@ import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebA
  *       {@code private final RateLimitUtils rateLimitUtils} 字段，构成一条隐性的
  *       Redis 硬依赖 —— 无 Redis 的服务即使不看异常处理逻辑也会因缺少该 Bean 而启动失败。
  *       删除该死字段后，全局异常处理在任意类路径下都可独立存活。</li>
+ *   <li><b>已类型化的上游错误必须被接住</b>（2026-10-18 修正）：{@link CarriedErrorException}
+ *       分支是「跨服务 4xx 透传」的最后一米，见
+ *       {@link #handleCarriedErrorException(CarriedErrorException)}。缺了它，降级工厂抛出的
+ *       {@code UpstreamException} 会落 {@link #handleException(Exception)} 变成 HTTP 500 ——
+ *       透传名存实亡。</li>
  * </ul>
  *
  * <p><b>2026-10-18 批次 ⑤（错误体类型化）</b>：内部错误体由原来的极简
- * {@code {"code","msg"}} 扩为 {@link ErrorInfo}（新增 {@code category / retryable / traceId}）。
+ * {@code {"code","msg"}} 扩为 {@code ErrorInfo}（新增 {@code category / retryable / traceId}）。
  * 这是<b>向后兼容</b>的字段追加：生产环境 Jackson 的
  * {@code FAIL_ON_UNKNOWN_PROPERTIES=false}（Spring Boot 默认），存量按 {@code code}/{@code msg}
  * 解析的调用方不受影响。依据 {@code collaboration/09-constraints.md} §三·八·3。
  * <b>对外 {@code /api/**} 的响应一个字节都没变</b> —— 仍是 {@link Result}，
  * 见 {@link #processResponse(CommonException)}。
+ *
+ * <p><b>本类行数受类长度棘轮约束</b>（{@code class-size-baseline.tsv}，「不许增长」）：
+ * 因此「响应形态」与「上游透传」的实现都放在 {@link ExceptionResponseSupport}，本类只留
+ * 「异常类型 → 出口」的映射表。新增错误类型时请照此切分，不要往这里堆实现。
  *
  * @ClassName: CommonExceptionAdvice
  * @Description: TODO
@@ -70,9 +76,6 @@ import static org.springframework.boot.autoconfigure.condition.ConditionalOnWebA
 @RestControllerAdvice
 @ConditionalOnWebApplication(type = SERVLET)
 public class GlobalExceptionHandler {
-
-    /** 内部接口路径标识 —— 命中即按「裸状态码 + {@link ErrorInfo}」应答（见类注释）。 */
-    private static final String INTERNAL_PATH_SEGMENT = "/internal/";
 
     /**
      * 处理自定义异常
@@ -90,6 +93,26 @@ public class GlobalExceptionHandler {
         HttpStatus httpStatus = errorCode.getHttpStatus();
         String url = Objects.requireNonNull(WebUtils.getRequest()).getRequestURI();
         log.error(format, url, httpStatus, bizCode, message, e);
+    }
+
+    /**
+     * 处理「已类型化上游错误」（{@link CarriedErrorException}）—— 跨服务 <b>4xx 透传的最后一米</b>。
+     *
+     * <p><b>这个分支此前不存在，是一个真实的断链缺陷</b>：降级工厂确实按
+     * {@code 09-constraints} §三·八·1 把下游 4xx <b>原样抛出</b>了，但抛出之后没有任何
+     * {@code @ExceptionHandler} 接得住它 —— {@code ia-api} 的 {@code UpstreamException}
+     * 当时直接继承 {@code RuntimeException}，只能落到 {@link #handleException(Exception)}
+     * 兜底分支 → {@code INTERNAL_ERROR} / HTTP <b>500</b>。即「透传」的全部投资在最后一米失效：
+     * 调用方看到的仍是「服务宕机」，既读不出「是这单不存在」，也会被上层当成可重试故障。
+     *
+     * <p>响应形态与日志级别口径见 {@link ExceptionResponseSupport#carriedResponse}。
+     * 与 {@link #handleException(Exception)} 同处一个 advice 是<b>刻意</b>的：Spring 在
+     * <b>同一 advice 内</b>按异常类型的最深匹配选方法，不需要靠 {@code @Order} 去和别的
+     * advice 抢匹配（跨 advice 时「先注册的宽匹配会遮蔽后注册的窄匹配」，是个易断的隐式依赖）。
+     */
+    @ExceptionHandler(CarriedErrorException.class)
+    public Object handleCarriedErrorException(CarriedErrorException e) {
+        return ExceptionResponseSupport.carriedResponse(e);
     }
 
     /**
@@ -236,6 +259,17 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public Object handleException(Exception e) {
+        // 装饰器（重试/熔断/隔舱）或容器可能把上游失败再包一层；此时类型匹配会选不中上面那条
+        // 载体分支，静默退回 500。故兜底前先沿 cause 链找一次载体 —— 找到就仍按透传应答。
+        // 找不到载体时行为与改动前逐字一致。
+        //
+        // ⚠️ 这段与 handleCarriedErrorException 是**互为冗余的双保险**（实测：单独删掉任一条，
+        //    行为都不变；两条同时删掉才会让透传彻底失效）。**不要把它当重复代码清理掉** ——
+        //    显式分支负责「一眼可见」，这段负责「被包一层也能兜住」。
+        CarriedErrorException carried = CarriedErrorException.findCarriedIn(e, CarriedErrorException.class);
+        if (carried != null) {
+            return ExceptionResponseSupport.carriedResponse(carried);
+        }
         CommonException commonException = new CommonException(ErrorCode.INTERNAL_ERROR, e);
         return handleCommonException(commonException);
     }
@@ -254,49 +288,10 @@ public class GlobalExceptionHandler {
      * 前端契约（键集合与取值）与改动前逐字一致。
      */
     private Object processResponse(CommonException e) {
-        if (isInternalRequest()) {
-            return rawInternalResponse(e);
+        if (ExceptionResponseSupport.isInternalRequest()) {
+            return ExceptionResponseSupport.rawInternalResponse(e);
         }
         return ResponseEntity.status(e.getErrorCode().getHttpStatus())
                 .body(Result.error(e.getErrorCode().getCode(), e.getDisplayMessage(), e.getData()));
-    }
-
-    /**
-     * 判断当前请求是否为内部接口（{@code /internal/} 路径段）。
-     *
-     * <p>无请求上下文（如定时任务/异步线程内抛异常）时按外部接口处理，避免 NPE。
-     */
-    private static boolean isInternalRequest() {
-        HttpServletRequest request = WebUtils.getRequest();
-        return request != null && request.getRequestURI() != null
-                && request.getRequestURI().contains(INTERNAL_PATH_SEGMENT);
-    }
-
-    /**
-     * 内部接口错误响应：HTTP 状态码取自 {@code ErrorCode}，body 为 {@link ErrorInfo}。
-     *
-     * <p>不含 {@code data}（payload），避免把可能带 PII 的内部数据回传给调用方日志。
-     * {@code category} / {@code retryable} 一律<b>派生</b>（{@link ErrorInfo#of}），不手填 —— 手填
-     * 必然在某处与状态码矛盾，而调用方会照着矛盾的那一半做决策。
-     */
-    private static ResponseEntity<ErrorInfo> rawInternalResponse(CommonException e) {
-        ErrorInfo body = ErrorInfo.of(e.getErrorCode(), e.getDisplayMessage(), currentTraceId());
-        return ResponseEntity.status(e.getErrorCode().getHttpStatus()).body(body);
-    }
-
-    /**
-     * 读取当前请求的 traceId —— 复用网关 {@code X-Trace-Id} → {@code TraceIdFilter} → MDC 这条
-     * <b>现成链路</b>（不引入 micrometer-tracing / skywalking：那是跨切面改造，与本口径无关）。
-     *
-     * <p>取不到（异步线程、无 MDC 上下文、过滤器未装配）一律 {@code null} ——
-     * <b>绝不</b>抛异常、<b>绝不</b>因为「追踪号缺失」把一次业务失败升级成 500。
-     */
-    private static String currentTraceId() {
-        try {
-            return MDC.get(TraceIdFilter.TRACE_ID);
-        } catch (RuntimeException ex) {
-            // MDC 实现异常（如上下文未装配）不得影响错误响应本身
-            return null;
-        }
     }
 }

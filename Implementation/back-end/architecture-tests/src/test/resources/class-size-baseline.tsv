@@ -29,7 +29,6 @@
 # =============================================================================
 authorization-service/src/main/java/org/icedamericanomall/auth/app/AuthManager.java	313	2026-12-31	登录/注册/改密多策略编排集中在一类，登记时已超限；可拆出凭证校验与注册两族
 cart-service/src/main/java/org/icedamericanomall/cart/app/CartManager.java	434	2026-12-31	购物车写路径与读时视图装配（ADR-021）同处一类，读侧可抽独立 assembler
-ia-common/src/main/java/org/icedamericanomall/common/aspect/GlobalExceptionHandler.java	302	2026-12-31	异常→HTTP 状态映射分支密集，属映射表类；新增错误类型时行数仍会增长
 ia-common/src/main/java/org/icedamericanomall/common/aspect/OperationLogAspect.java	307	2026-12-31	审计切面（ADR-032 管道一）拦截/脱敏/JSON 渲染三段挤在一类，脱敏与渲染可下沉工具类
 ia-common/src/main/java/org/icedamericanomall/common/enums/ErrorCategory.java	431	2026-12-31	错误处置类别判定表（纯常量 + 判定函数），属字典类；按业务域增补条目而增长
 ia-common/src/main/java/org/icedamericanomall/common/enums/ErrorCode.java	439	2026-12-31	错误码目录（纯枚举常量），按业务域线性增长，属字典类，不按用例拆
