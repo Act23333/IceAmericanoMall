@@ -564,6 +564,14 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
 - 真正值得优先看的是**计数器类写操作**（`incrementLikeCount` / `decrementLikeCount` /
   `increaseSoldCount` / `decreaseSoldCount` / `upsert`）—— 重复执行会**累计错值**，
   且这类操作常出现在 MQ 消费链路里（② 大概率成立）。
+- **RBAC 8 个写操作已快速确认（② 不成立 + 约束保护）**：
+  `sys_role_permission` 主键是 `(role_id, permission_id)` ⇒ 批量授权重复插入**被主键挡住**；
+  写操作只在管理员 HTTP 请求里发生（`RoleManageManager` 的 for 循环在**同一事务**内），
+  无 MQ/job 重放路径 ⇒ 不构成缺口。
+- **`restoreStock` 调用点已有状态守卫（静态可查）**：`OrderLifecycleManager` 里只有
+  条件状态迁移**成功**（`cancelled` 为真）才走回补；`items.isEmpty()` 提前返回。
+  即"一次取消只还一次"由**调用方的条件更新结果**保证，不是靠库存侧幂等。
+  ⇒ 归类为 guarded，但**注意**：这依赖调用方纪律，库存侧本身没有幂等键（`restoreStock` 无 biz_ref）。
 - 注意：`SkuMapper.deductStock/restoreStock` 已由 ADR-020 的条件更新保护（`WHERE stock >= ?`，
   0 行 = 失败），脚本已正确归类为 guarded —— 但 `restoreStock` 是否**幂等**（重复还库存）仍待人工确认。
 
@@ -587,7 +595,13 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
 而不是"0 个未匹配"的假绿；缺解释器时 `exit 3` 并打印"这不是通过"。
 
 **4 个无 Feign 消费者的内部端点 —— 已按"文档有无"定性（2026-10-18，含一次自我纠正）**：
-> **教训：零文档引用 ≠ 零消费者，也 ≠ 可删。** 上一轮我用 `{id}` 字面量 grep 文档，漏掉了
+> **教训（已一般化）：grep 文档必须覆盖文档的"实际格式"，不能只 grep 你以为的写法。**
+> 契约文档里内部端点常写成 `| I7 | GET | /internal/user/{id} | ... |` —— 表格行 + 编号，
+> 字面量 `{id}` 在、但**编号 I7 才是检索入口**；同理还有代码段、`<br>`、全角标点、驼峰/下划线变体。
+> 一般化规则：**搜端点先搜"末段名"（`user/count`、`coupon/grant`）+ 搜编号（I7/I8/AD57）+ 搜中文名**，
+> 三条里任一条命中即视为"有文档"；只搜完整路径会误判为无文档。
+>
+> **零文档引用 ≠ 零消费者，也 ≠ 可删。** 上一轮我用 `{id}` 字面量 grep 文档，漏掉了
 > 契约表里的 `GET /internal/user/{id}`（表格里写作 I7 那一行）；按你要求"删前 grep 全仓 + 网关/运维配置"
 > 复查后，**三个端点全部有契约文档**，结论从"待删"改回"保留 + 补注释"。
 > **删任何端点前必须做三件事**：全仓 grep（含 `.md` / `.yml` / 运维脚本）、查契约文档表、
@@ -605,7 +619,16 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
 （`LogisticsManager#updateStatus`）在全仓**没有任何生产调用方**（只有控制器与单测）。
 ⇒ 物流记录创建后状态**无法推进**：`PENDING→SHIPPED→DELIVERED↔RETURNED` 这台状态机在代码里存在，
 但**没有推动者** —— 买家确认收货、退货、发货部分包裹都不会回写物流状态。
-属**业务闭环缺口**（订单状态与物流记录脱节），不是死接口。**定为 P0**。
+属**业务闭环缺口**（订单状态与物流记录脱节），不是死接口。**优先级重定（2026-10-18 二次 grep 后）：从 P0 降为 P1（展示不一致），不是退货卡死。**
+| 判定项 | grep 结果 | 结论 |
+|---|---|---|
+| 展示层读取 | `GET /api/logistics/{orderId}`（logistics-service 自己的 `LogisticsController`） | 买家端会**永久显示创建时的状态**（确认收货后也不变）⇒ **展示不一致 = P1** |
+| 退货流程依赖 | `AfterSaleManager` 只 `setLogisticsNumber(买家填的运单号)`，**不读物流状态**；logistics-service 内无售后相关代码 | **退货不卡死** ⇒ 不构成 P0 |
+| 资金/结算依赖 | 未发现读物流状态 | 不构成 P0 |
+
+⇒ 正确表述：**功能能用但"永远显示已发货"，属数据不一致（P1）**；
+只有在将来把"签收"接入结算/售后时效判断时才会升级为 P0。
+
 
 **影响面（已 grep）**：`order_logistics.status` 目前无任何跨服务读取方参与业务判定
 —— 买家端 `/api/logistics` 只做展示，trade 的发货/确认收货**不读也不写**物流状态。
