@@ -49,9 +49,9 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/admin/pay")
-// TODO(拆位, open-items §1.17): 权限位拆分后改为 @ss.hasPermi('pay:admin')；
-//   现在是过渡态：所有管理端共用一个 user:admin，资金/审核面尚未按域隔离。
-@PreAuthorize("@ss.hasPermi('user:admin')")
+// 权限位拆分（5a 批 5，2026-10-18）：支付运维独立成位 pay:admin（Q2 资金面独立）。
+// 与 aftersale 的两个写方法（也挂 pay:admin）属于同一资金面 —— 谁能让钱动，谁才有这些位。
+@PreAuthorize("@ss.hasPermi('pay:admin')")
 @RequiredArgsConstructor
 public class AdminPayController {
 

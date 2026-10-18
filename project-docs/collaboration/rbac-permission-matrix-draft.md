@@ -407,9 +407,11 @@ Q3 裁决的是**权限位**拆三位（`seller:finance` / `seller:coupon` / `se
 | `/api/trade/seller/**` | ✅（新补） | **批 4 前扫描发现**：`SellerDashboardController` / `SellerOrderController` 同族盲区 |
 | `/api/item/category`、`/brand`、`/attr` | ✅（平台配置组，允许方法级） | Q8 |
 | `/internal/**` | ❌ 不需要 | 网关不路由，集群内 Feign 专用 |
-| 买家/公开资源段（`/api/trade/order`、`/api/after-sale`、`/api/item`、`/api/user/**`、`/api/cart`…） | ❌ 不该受管 | 只需登录态 + 数据归属过滤；挂权限位反而会误伤所有买家 |
+| 买家/公开资源段（`/api/trade/order`、`/api/after-sale`、`/api/item`、`/api/user/**`、`/api/cart`…） | **鉴权不是漏** | 这些端点只需登录态，挂权限位会误伤所有买家。<br>**但"数据归属未验证"—— 属 P0 缺口**（见 open-items）：鉴权层放行后，是否只返回本人在/本店数据，靠每条查询自己带 `userId`/`sellerId`，<b>没有任何门禁能发现漏写</b>。<br>**两件事必须分开说**：① 鉴权位覆盖 = 本表管；② 数据归属 = 另一层，目前无门禁 → P0。
 
-**判据**：`/internal/**` 与买家资源段**不是**漏，其余"含写操作且非公开"的控制器都应在表内。
+**判据**：`/internal/**` 与买家资源段的**鉴权不是漏**（网关不路由 / 只需登录态），
+其余"含写操作且非公开"的控制器都应在表内。
+**但买家资源段的"数据归属"是另一层且未验证（P0）** —— 不要把"鉴权不是漏"读成"这一层没问题"。
 扫描脚本逻辑要按类级 `@RequestMapping` 实际值匹配，**不能按目录名或类名猜** ——
 `AdminOrderController` 的类名与目录都像管理端，却挂在 `/api/trade/admin`，
 正是"按名字猜"会漏的形态。
@@ -488,6 +490,7 @@ SoD（职责分离：一个人不能既开票又作废）**另立项**：它需�
      | 2 ✅ | `AdminMerchantController` | `merchant:admin` | 15 → 14 |
      | 3 ✅ | `AdminOrderController`（**全方法级**：4 个订单域 + `GET /dashboard`） | `order:admin` ×4 / `dashboard:read` ×1 | 14 → 13 |
      | 4 ✅ | `AdminAfterSaleController`（**按方法**：GET / PUT review / PUT confirm-return） | `aftersale:read` / `pay:admin` / `pay:admin` | 13 → 12 |
+     | 5 ✅ | `AdminPayController` | `pay:admin` | 12 → 11 |
      | 4 ⬜ | `AdminAfterSaleController`（**按方法**：GET list / PUT review / PUT confirm-return） | `aftersale:read` / `pay:admin` / `pay:admin` | — |
      | 8 ⬜ | `AdminLogController` / `AdminUserController` / `Role`+`Permission` | `audit:read` 类级 / **按方法** `user:read`+`user:write`+**`rbac:admin`** / `rbac:admin` | — |
      | 末 ⬜ | `AdminInvoiceController`（按方法：issue / void / red-flush） | `invoice:issue` / `invoice:void` / `invoice:void`（Q9） | — |

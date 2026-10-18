@@ -51,6 +51,14 @@ fast_steps() {
   run "根文档计数与实测一致"   node "$BE/scripts/sync-doc-counts.mjs" --check --strict-tests
   run "ID 不变量（ADR-050/051）" bash "$BE/scripts/check-id-invariants.sh"
   run "ia-api 单测（含降级语义契约门禁）" mvn $MVN_ARGS -q -f "$BE/pom.xml" -pl ia-api test
+  # ★ 2026-10-18 补：**fast 必须 ⊇ full 的全部"安全类"门禁**（架构/鉴权/降级/RBAC 语义）。
+  # 事故：批 4 提交时 fast 全绿而 full 红 —— 因为 fast 此前**根本不跑 architecture-tests**，
+  # 于是"受管控制器必须有类级 @PreAuthorize / 位必须存在 / 旧位引用归零 / 降级契约 / 类大小棘轮"
+  # 这些守卫在提交动作上一律缺席，红灯要等有人手动跑 full 才出现。
+  # 区分原则：fast 只砍"慢且与安全无关"的（全量 reactor 跑 15 个服务），
+  #           **凡属"代码正确性/安全边界"的必须留在 fast**，否则 fast 的绿不构成提交许可。
+  # 代价实测很低：architecture-tests 是源码扫描 + 纯单测，秒级，不依赖其他模块编译。
+  run "架构/安全门禁（architecture-tests 全部守卫）"       mvn $MVN_ARGS -q -f "$BE/pom.xml" -pl architecture-tests test
 }
 
 case "$MODE" in
