@@ -559,6 +559,15 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
 口径收定：**无保护 = ①写方法 + ②可能被重试 + ③无幂等键且无条件更新，三条同时满足**。
 静态只能判 ①③：②（MQ 重投 / Feign 重试 / job 重放 / 人工重放）**必须运行环境确认，不假装查完**。
 - 全景表：`--table`（module / class / method / 幂等键 / 条件更新 / 判定）；
+- **分档结果（`scripts/idempotency-tier.py`，2026-10-18 首次跑）**：① MQ/Feign 链路 **2 个**
+  （`UserAuthMapper.upsert`、`ShopDecorationMapper.upsert`）/ ② 定时 job **0 个** /
+  ③ 仅 HTTP/app 入口 **25 个**（RBAC 8 已确认非缺口，其余为点赞/评价计数、库存、发票、浏览记录）。
+- **★ 分档的已知局限（不假装守住）**：脚本只走**一跳**（mapper 方法 → 直接调用者），
+  **漏掉"经 app 层再由内部端点触发"的链路**。实证：`WalletAccountMapper.credit/deduct` 被判进 ③，
+  但真实入口是 wallet-service `POST /internal/balance/deduct`（`InternalWalletController` → `walletManager`）
+  ⇒ **实际属 ①**。修正：①档至少应含 wallet 的 `credit`/`deduct`；
+  脚本须改成**两跳**（mapper → app 方法 → 该方法的调用者层）才可信。
+  在改好之前**禁止**用"②档为 0"推出"没有重试风险"。
 - 缺口候选：`--gaps`。首次结果：**43 个写操作，27 个候选**；
 - 已知误报源：RBAC 写操作（管理员人工触发、无自动重试）⇒ ② 不成立，不是缺口；
 - 真正值得优先看的是**计数器类写操作**（`incrementLikeCount` / `decrementLikeCount` /
