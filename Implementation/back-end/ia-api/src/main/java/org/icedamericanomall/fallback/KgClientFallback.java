@@ -3,6 +3,8 @@ package org.icedamericanomall.fallback;
 import lombok.extern.slf4j.Slf4j;
 import org.icedamericanomall.client.KgClient;
 import org.icedamericanomall.common.enums.ErrorCategory;
+import org.icedamericanomall.common.enums.ErrorCode;
+import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.dto.KgEdgeUpsertCO;
 import org.icedamericanomall.dto.KgNeighborCO;
 import org.icedamericanomall.exception.UpstreamException;
@@ -25,7 +27,8 @@ import java.util.List;
  *       <td>4xx 透传；{@code TRANSIENT}/{@code BUG} → 哨兵 {@code -1}</td></tr>
  *   <tr><td>{@code deleteEdges}</td>
  *       <td>{@code item KgEdgeIngestManager#deleteEdgesSafely}（自带 try/catch）</td>
- *       <td>4xx 透传；其余 → 空操作（重建兜底）</td></tr>
+ *       <td>4xx 透传；其余 → 抛 {@code SYSTEM_BUSY}（<b>不是空操作</b>：静默返回让调用方以为清边成功，
+ *           残留边会一直挂在图谱里；抛错由调用点 catch，主流程行为不变）</td></tr>
  *   <tr><td><b>{@code neighbors}</b></td>
  *       <td>{@code item KgPairingManager#itemsFromGraph} —— <b>没有 try/catch</b>，
  *           直接服务于 C 端商品详情 P35 搭配卡；空列表即回退向量兜底</td>
@@ -43,6 +46,9 @@ public class KgClientFallback implements FallbackFactory<KgClient> {
 
     /** 摄取降级哨兵（对齐 I47 口径）。 */
     public static final int UPSERT_FALLBACK_SENTINEL = -1;
+
+    /** {@code deleteEdges} 的降级文案 —— 「暂时无法执行」，<b>不得</b>写成「服务不可用」（§三·八·2）。 */
+    private static final String DEGRADED_MESSAGE = "知识图谱暂时无法更新，请稍后重试";
 
     @Override
     public KgClient create(Throwable cause) {
@@ -82,13 +88,17 @@ public class KgClientFallback implements FallbackFactory<KgClient> {
 
             @Override
             public void deleteEdges(String srcType, Long srcId) {
+                // 4xx 透传（必须真的抛出去）；其余抛 SYSTEM_BUSY。
+                // 唯一调用方 item KgEdgeIngestManager#deleteEdgesSafely:179 自带 try/catch(Exception)，
+                // 抛错不打断主流程 —— 即「依然 fail-open，但不再谎报成功」。
                 if (category == ErrorCategory.CLIENT && upstream != null) {
                     log.warn("KG 清边降级(透传): 下游业务失败 srcType={}, srcId={}, code={}, msg={}",
                             srcType, srcId, upstream.getCode(), upstream.getMsg());
                     throw upstream;
                 }
-                log.warn("KG 清边降级：暂时无法获取，本次清边未执行（重建兜底） srcType={}, srcId={}, category={}",
-                        srcType, srcId, category, cause);
+                log.warn("KG 清边降级: 本次清边未执行（category={}；残留边由管理端 KG 全量重建收敛）"
+                                + " srcType={}, srcId={}", category, srcType, srcId, cause);
+                throw new BizException(ErrorCode.SYSTEM_BUSY, DEGRADED_MESSAGE);
             }
         };
     }

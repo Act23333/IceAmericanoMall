@@ -23,8 +23,14 @@ import org.springframework.stereotype.Component;
  * 也就是说「异常」这条路它本来就接住了（退款主流程不受影响）。而旧实现静默返回，
  * 于是 <b>trade 不可用时调用方会打出「已回写」的成功日志</b>，售后单实际停在 {@code APPROVED(2)}，
  * 且没有任何告警 —— 典型的「静默成功 = 操作丢了」。
- * 改抛异常后：异常被该 catch 接住并落 {@code WARN}（含「待对账/重试收敛」），
+ * 改抛异常后：异常被该 catch 接住并落 {@code WARN}（带 {@code afterSaleId}，可定位），
  * <b>主流程行为一字不改，可观测性从「谎报成功」变为「如实告警」</b>。
+ *
+ * <p><b>⚠ 收敛路径的诚实口径（2026-10-18 U17 catch 体审计结论）</b>：调用点 catch 体内
+ * **既没有自动重试、也没有对账消费者** —— 也就是说售后单一旦停在 {@code APPROVED(2)}，
+ * **目前只能靠人工在管理端核对**。这条缺口已登记在 {@code collaboration/open-items.md}（U17），
+ * <b>不要</b>在日志或注释里写成「待对账/重试收敛」—— 那是本仓反复出现过的假承诺
+ * （同族事故：`flash_order_log` 的列注释自称幂等兜底、`notification.type` 的注释教义）。
  */
 @Slf4j
 @Component
@@ -42,19 +48,22 @@ public class AfterSaleClientFallback implements FallbackFactory<AfterSaleClient>
 
             @Override
             public void markRefunded(Long afterSaleId) {
-                // fail-open（ADR-011 三分法，由 AfterSaleClientFallbackTest 锁死）：本方法是「退款已成功后」的
-                // 下游状态回写。此处若抛异常，pay-service 会把一次**已成功**的退款判为失败 —— 钱已退、状态被
-                // 篡改，比丢一个回写严重得多。故一律不抛，只留可观测日志，由对账/重试收敛。
+                // 4xx 必须原样抛出去（§三·八·1）：只打日志就 return，调用方会把「下游明确拒绝」当成
+                // 「已回写」并打出成功日志 —— 那正是本类此前的事故形态。
+                // 唯一调用方 pay-service PayEventNotifier#writeBackAfterSaleRefunded:106 自带
+                // try/catch(Exception)，抛错不会把「已成功的退款」判为失败；catch 体审计结论见
+                // collaboration/open-items.md 的 U17（当前无自动消费者，需人工收敛）。
                 if (category == ErrorCategory.CLIENT && upstream != null) {
-                    log.warn("售后状态回写降级：下游明确拒绝（非本域故障，需对账/人工收敛） afterSaleId={}, "
+                    log.warn("售后状态回写降级(透传): 下游业务失败 afterSaleId={}, "
                                     + "upstreamStatus={}, code={}, category={}, msg={}, traceId={}",
                             afterSaleId, upstream.getUpstreamStatus(), upstream.getCode(),
                             category, upstream.getMsg(), upstream.getTraceId());
-                    return;
+                    throw upstream;
                 }
-                log.error("售后状态回写降级：暂时无法回写（category={}；fail-open 不抛异常 —— 退款已在 "
-                                + "pay-service 侧成功，抛错会导致整笔退款被判失败。售后单将停 APPROVED，"
-                                + "须由对账/重试收敛） afterSaleId={}", category, afterSaleId, cause);
+                log.error("售后状态回写降级: 暂时无法回写，售后单将停在 APPROVED（category={}；"
+                        + "目前无自动重试/对账消费者，需人工在管理端核对） afterSaleId={}",
+                        category, afterSaleId, cause);
+                throw new BizException(ErrorCode.SYSTEM_BUSY, DEGRADED_MESSAGE);
             }
         };
     }

@@ -138,6 +138,10 @@ class FallbackDegradeContractTest {
             "AuthContextClientFallback#setUserRole", Disposition.THROWS,
             // reindex 全量数据源：空页会让索引被重建为 0 条文档，必须 fail-closed；searchPage / suggest / detail 是①展示型。
             "ItemSearchClientFallback#exportPage", Disposition.THROWS,
+            // U17（2026-10-18）：清边的「静默空操作」让调用方以为清边成功，残留边会一直挂在图谱里。
+            // 工厂级仍 RETURNS（edgeUpsert 走哨兵 -1、neighbors 走空列表，二者按 PRD §16.8.1 全链路 fail-open），
+            // 只有这一个方法改抛 —— 调用方 KgEdgeIngestManager#deleteEdgesSafely 自带 try/catch。
+            "KgClientFallback#deleteEdges", Disposition.THROWS,
             // 用户建档：返回 null 会触发 user_auth.user_id 非空约束违约，必须 fail-closed；countUsers 是①展示型。
             "UserClientFallback#getOrCreateUser", Disposition.THROWS);
 
@@ -155,6 +159,7 @@ class FallbackDegradeContractTest {
     private static Map<String, Disposition> buildFactoryDispositions() {
         Map<String, Disposition> table = new LinkedHashMap<>();
         // ---- fail-closed：不可用时抛 BizException ----
+        table.put("AfterSaleClientFallback", Disposition.THROWS);
         table.put("AddressClientFallback", Disposition.THROWS);
         table.put("BalanceClientFallback", Disposition.THROWS);
         table.put("CartClientFallback", Disposition.THROWS);
@@ -176,12 +181,11 @@ class FallbackDegradeContractTest {
         // ---- fail-open / fail-soft：不可用时返回降级值（不抛）----
         // 注意：其中 AuthContextClientFallback / ItemSearchClientFallback / UserClientFallback 的个别方法
         // 由 METHOD_DISPOSITIONS 覆盖为 THROWS —— 这里登记的是「工厂级默认」。
-        table.put("AfterSaleClientFallback", Disposition.RETURNS);
         table.put("AuthContextClientFallback", Disposition.RETURNS);
         table.put("ItemSearchClientFallback", Disposition.RETURNS);
-        table.put("KgClientFallback", Disposition.RETURNS);
         table.put("KnowledgeVectorClientFallback", Disposition.RETURNS);
         table.put("MemberClientFallback", Disposition.RETURNS);
+        table.put("KgClientFallback", Disposition.RETURNS);
         table.put("NoteVectorClientFallback", Disposition.RETURNS);
         table.put("SearchClientFallback", Disposition.RETURNS);
         table.put("SpuVectorClientFallback", Disposition.RETURNS);
@@ -291,6 +295,69 @@ class FallbackDegradeContractTest {
         }
     }
 
+    /**
+     * <b>{@code void} 方法在 4xx 分支「静默返回」的登记表</b>（键 = {@code 工厂简单类名#方法名}）。
+     * <b>当前为空</b> —— 全部 {@code void} 降级方法在 4xx 下都已抛（F 批改造的结果）。
+     *
+     * <h2>这条规则补的是什么洞（M8 实测发现的，不是推演）</h2>
+     * 处置表（{@link #FACTORY_DISPOSITIONS} / {@link #METHOD_DISPOSITIONS}）里的 {@code THROWS}
+     * <b>只约束「不可用」那一支</b>。而 CLIENT（4xx）分支的判据是「有没有抛异常」——
+     * 对<b>有返回值</b>的方法，静默返回至少还能被调用方看见（拿到降级值）；
+     * 对 <b>{@code void}</b> 方法，<b>静默返回与「真的执行成功」在调用方眼里完全同形</b>。
+     * 于是「把 {@code throw} 改回 {@code return}」这种回归<b>不会被后者咬住</b>：
+     * M8 实测（把 {@code AfterSaleClientFallback#markRefunded} 的 {@code throw upstream} 换成
+     * {@code return}，处置表仍为 {@code THROWS}）→ 全部用例照旧绿。
+     *
+     * <p>故补一条：<b>{@code void} 方法在 4xx 下不许静默返回</b>，除非登记在本表并写清理由。
+     * 登记项<b>陈旧即失败</b> —— 见 {@link #shouldKeepVoidSilentWhitelistExact()}：
+     * 它把「扫描到的 void + 静默」集合与登记表<b>双向比对</b>，多一条少一条都红。
+     *
+     * <p><b>⚠ 别把「不可用分支的静默」塞进这张表</b>：{@code AuthContextClientFallback#revokeUserTokens}
+     * 在 4xx 下是抛的（所以不在此表），它只在<b>不可用</b>分支静默 —— 那由处置表的
+     * {@code RETURNS} 管，理由写在 {@code open-items} 的 U17 行（调用点无 try/catch，需先补防护）。
+     * 两张表的职责不同：这张管「4xx 底下有没有真的抛」，处置表管「不可用时应抛还是应返回」。
+     */
+    private static final Map<String, String> VOID_CLIENT_SILENT_ALLOWED = Map.of();
+
+    /** 处置表按「类名#方法名」寻址（与 {@link #METHOD_DISPOSITIONS} 同一口径）。 */
+
+    /**
+     * ★ <b>登记表必须与实现严格一致（双向）</b>：扫描到的「{@code void} + 4xx 静默返回」集合，
+     * 必须与 {@link #VOID_CLIENT_SILENT_ALLOWED} 的键集合逐一对应。
+     *
+     * <p>双向而非单向的理由：只查「新增未登记」会让删掉实现后的登记项永远留着（白名单膨胀成免责名单）；
+     * 只查「陈旧」则挡不住新出现的静默方法。
+     */
+    @Test
+    @DisplayName("★ void 方法 4xx 静默返回的登记表 — 必须与实现双向一致（新增未登记 / 陈旧登记 都红）")
+    void shouldKeepVoidSilentWhitelistExact() {
+        Set<String> silentVoidMethods = new TreeSet<>();
+        int scannedVoidMethods = 0;
+        for (Class<?> factoryClass : discoverFactoryClasses()) {
+            Object client = instantiate(factoryClass).create(clientErrorCause());
+            for (Method method : clientMethods(client)) {
+                if (method.getReturnType() != void.class) {
+                    continue;
+                }
+                scannedVoidMethods++;
+                if (invokeCapturingFailure(client, method) == null) {
+                    silentVoidMethods.add(methodKey(factoryClass, method));
+                }
+            }
+        }
+
+        // 反空断言必须落在「扫描面」上，而不是「违规集合」上 —— 后者的正确状态本来就可能是空
+        // （当前全部 void 方法在 4xx 下都抛）。写成「违规集合非空」会在代码正确时反而变红。
+        assertThat(scannedVoidMethods)
+                .as("扫描面为空：一个 void 降级方法都没扫到，说明谓词或扫描路径失效")
+                .isPositive();
+
+        assertThat(silentVoidMethods)
+                .as("void 方法在 4xx 下静默返回的集合与登记表不一致 —— "
+                        + "新增的请登记并写清理由（改抛优先），已不再静默的请从表里删掉")
+                .containsExactlyInAnyOrderElementsOf(VOID_CLIENT_SILENT_ALLOWED.keySet());
+    }
+
     // ==================================================================================
     // ② CLIENT（4xx 透传）—— 杀掉 M1「无条件 SYSTEM_BUSY」
     // ==================================================================================
@@ -352,9 +419,11 @@ class FallbackDegradeContractTest {
     /**
      * 「下游 4xx 必须原样透传」的检测逻辑 —— <b>唯一一份</b>判定，② 与 ⑤ 都调它。
      *
-     * <p>4xx 场景返回降级值不判违规（{@code AfterSaleClientFallback} / {@code KgClientFallback#neighbors} /
-     * {@code MemberClientFallback} 按各自类注释显式豁免透传，属既定例外），但<b>必须</b>计入
+     * <p>4xx 场景返回降级值不判违规（{@code KgClientFallback#neighbors} / {@code MemberClientFallback} /
+     * {@code AfterSaleClientFallback} 的同行方法等，按各自类注释显式豁免透传，属既定例外），但<b>必须</b>计入
      * {@link ClientErrorScan#returnedDegradedValue()} —— 否则「零违规」可能只是「一个方法都没扫到」。
+     * <p>⚠ {@code AfterSaleClientFallback#markRefunded} 自 U17（2026-10-18）起<b>不再</b>属于这里的例外，
+     * 它已改为 4xx 透传 —— 别再从这份名单里给它找豁免。
      */
     static ClientErrorScan scanClientErrorPassThrough(Class<?> factoryClass, Object client, int downstreamClientCode) {
         List<String> violations = new ArrayList<>();
@@ -363,6 +432,13 @@ class FallbackDegradeContractTest {
         for (Method method : clientMethods(client)) {
             Throwable thrown = invokeCapturingFailure(client, method);
             if (thrown == null) {
+                // void 方法的静默返回在调用方眼里与「真的执行了」完全同形 ⇒ 不许无声发生（M8 实测的洞）
+                if (method.getReturnType() == void.class
+                        && !VOID_CLIENT_SILENT_ALLOWED.containsKey(methodKey(factoryClass, method))) {
+                    violations.add(describe(factoryClass, method)
+                            + " 是 void 方法却在 4xx 下静默返回 —— 调用方无法区分「已执行」与「根本没执行」；"
+                            + "请改抛 UpstreamException（4xx 透传），或登记到 VOID_CLIENT_SILENT_ALLOWED 并写清理由");
+                }
                 returnedDegradedValue++;
                 continue;
             }

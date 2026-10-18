@@ -99,15 +99,22 @@ public class PayEventNotifier {
     /**
      * 回写 trade 售后单为 REFUNDED（I42）。
      *
-     * <p><b>fail-open</b>：状态回写丢失不阻断退款主流程（由对账/管理端重试收敛）；
-     * {@code AfterSaleClientFallback} 本身即 fail-open，此处再加一层防御避免任何异常影响退款落账。
+     * <p><b>fail-open</b>：状态回写丢失不阻断退款主流程（退款已落账，这里只是下游状态同步）。
+     * {@code AfterSaleClientFallback} 已改为「4xx 透传 / 其余抛 SYSTEM_BUSY」，此处再加一层
+     * {@code catch (Exception)} 防御，确保<b>任何</b>异常都不会影响退款落账。
+     *
+     * <p><b>⚠ 收敛路径的诚实口径（U17 catch 体审计，2026-10-18）</b>：失败后<b>既没有自动重试、
+     * 也没有对账消费者</b> —— 售后单会停在 {@code APPROVED(2)}，只能<b>人工在管理端核对</b>。
+     * 缺口已登记在 {@code collaboration/open-items.md}（U17）。<b>不要</b>把这里写成
+     * 「待对账/重试收敛」：本仓已因这类假承诺留下过沉默缺口（同族：`flash_order_log` 的列注释）。
      */
     private void writeBackAfterSaleRefunded(Long afterSaleId) {
         try {
             afterSaleClient.markRefunded(afterSaleId);
             log.info("退款成功，售后单已回写 REFUNDED: afterSaleId={}", afterSaleId);
         } catch (Exception e) {
-            log.warn("退款成功但售后单回写失败（fail-open，待对账/重试收敛）: afterSaleId={}", afterSaleId, e);
+            log.warn("退款成功但售后单回写失败（fail-open；无自动重试/对账消费者，需人工核对）: afterSaleId={}",
+                    afterSaleId, e);
         }
     }
 

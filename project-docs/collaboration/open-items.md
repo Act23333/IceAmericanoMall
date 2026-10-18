@@ -287,6 +287,45 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
     于是「发出的状态码」与「body 里的 category」可能不同源。这是刻意的（透传不改写下游事实），
     但调用方若**只看 category** 就会与状态码不一致 —— 已由契约 §二 两条规则写明「以状态码为准」。
 
+### 1.16 U17 第一步：void 降级方法的兜底（2026-10-18）
+
+**做完了什么**（两处改 throw + 两处 catch 体审计 + 一条新门禁）：
+
+- **改 throw（复用现成载体，零新异常）**：
+  - `AfterSaleClientFallback#markRefunded`：4xx → `throw upstream`；其余 → `BizException(SYSTEM_BUSY)`。
+    删掉那段过时的方法注释（它说「一律不抛…抛错会把成功的退款判成失败」），改为指向
+    `PayEventNotifier#writeBackAfterSaleRefunded:106` 的锚点。实测该调用点**有** `try/catch(Exception)`，
+    所以类注释一直是对的、方法注释是过时的。
+  - `KgClientFallback#deleteEdges`：同上。
+- **处置表两行**（与代码同 commit）：`AfterSaleClientFallback` 工厂级 `RETURNS → THROWS`；
+  `KgClientFallback` **不动工厂级**（同工厂 `edgeUpsert` 走哨兵 `-1`、`neighbors` 返回空列表，
+  按 PRD §16.8.1 必须继续 fail-open），改为在 `METHOD_DISPOSITIONS` 新增
+  `"KgClientFallback#deleteEdges" → THROWS`。**一个方法一个结论，别把工厂级当整类。**
+- **两个 catch 体的收敛路径（各一句话，按要求写死）**：
+  - `PayEventNotifier#writeBackAfterSaleRefunded`：**暂无消费者** —— 失败后售后单停在 `APPROVED(2)`，
+    只能人工在管理端核对；原日志里的「待对账/重试收敛」是**假承诺**，已改写并登记于此。
+  - `KgEdgeIngestManager#deleteEdgesSafely`：**收敛入口 = 管理端 KG 全量重建（AD64）**，
+    残留边由下一次重建覆盖；日志已带 `srcType` + `srcId` 可定位键。
+- **⚠ M8 挖出的真洞（本条最值得记）**：处置表的 `THROWS` **只约束「不可用」那一支**。
+  CLIENT（4xx）分支的判据是「有没有抛异常」—— 对有返回值的方法，静默返回还能被调用方看见；
+  对 `void` 方法，**静默返回与「真的执行成功」完全同形**。实测：把
+  `AfterSale#markRefunded` 的 `throw upstream` 换回 `return`（表仍为 `THROWS`）→ **全部用例照旧绿**。
+  即「改 throw 的回归可以无声发生」。
+  - 补的规则：`VOID_CLIENT_SILENT_ALLOWED`（**当前为空**）+ 「扫描到的 `void`+4xx 静默」集合与登记表
+    **双向比对**（新增未登记、陈旧登记 都红）。**M8b 实测**：同一变异 → 2 例红
+    （void 登记表 + CLIENT 扫描），正是这条规则与既有语义门禁各咬一口。
+  - **它同时纠正了我自己的一个误判**：原以为 `AuthContextClientFallback#revokeUserTokens` 会进白名单，
+    扫描发现它在 **4xx 分支其实是抛的**（只有不可用分支静默）⇒ 白名单应为空。
+    那张表管「4xx 底下有没有真的抛」，处置表管「不可用时应抛还是应返回」，**职责不同，别混**。
+  - **顺带踩了个坑（值得记）**：反空断言原本写成「违规集合非空」，于是**代码正确时反而变红**
+    （正确状态就是空集）。反空断言必须落在**扫描面**上（「扫到了几个 void 方法」），
+    不能落在「违规集合」上。
+
+**U17 剩余（第二步，未做）**：
+- `revokeUserTokens`：先给 `UserAdminManager#updateStatus` 补调用点防护，再改抛（当前仅 WARN）。
+- 补偿消费者：选型已定（复用 `operation_log` 对账），三条前置见下方；**其中 `record` 增 `target` 未做**。
+- 前端兜底分支：见 U19。
+
 ---
 
 ## 2. 待办
@@ -329,7 +368,7 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
 | **U12** | `[历史]` 审计快照：若干部份 spu 表无 `short_code` 列、部分 sku 表无 `sku_id` 列（逐表清单见 U1 的 H2 豁免记录）⇒ 这些 H2 表无法补唯一键。若日后参与写入用例，必须补列+补键 | 低（目前只读）|
 | **U13** | `FavoriteSpuBriefQueryImplH2Test` 的 `spu_id` 约束是**匿名**（H2 自动名），键在但名与生产 `uk_spu_id` 不同 | 低 |
 | **U10** | 契约 §二 覆盖率数字（98/40/58 → 实测 99/52）—— **A/B/C/E 批的 E 项就是删这些数字** | 在 R2 批内 |
-| **U17** | **`void` 降级方法的兜底口径（已裁决：方案 A，下一批做）**。问题：语义门禁对「没抛异常」只做 `returnedDegradedValue++` 计数、**零校验**，而 `void` 的静默返回在调用方看来与真成功**完全同形**（正是 §1.10 里 `TradeInvoiceClientFallback` 那次事故的形态）。<br>**做法（不用手写控制流 lint）**：「能否抛」能从**类型**上强制就不做检查 —— 让该抛的方法 `throw` 复用现成的载体（`CarriedErrorException`），再加 ArchUnit 防回归；确实不能抛的才进白名单并写清理由。白名单若要求「日志 + 补偿记录 + 告警」，那三条**必须能被机器验**，否则又是会漂的注释。<br>**调用点已 grep（实测，别重查）**：<br>· `AfterSaleClientFallback#markRefunded` → `pay-service PayEventNotifier#writeBackAfterSaleRefunded:106-111` **有 `try/catch(Exception)`** ⇒ 可直接改 throw；<br>· `KgClientFallback#deleteEdges` → `item-service KgEdgeIngestManager#deleteEdgesSafely:179-181` **自有 try/catch** ⇒ 可直接改 throw；<br>· `AuthContextClientFallback#revokeUserTokens` → `user-service UserAdminManager#updateStatus:110` **无 try/catch**，且 DB 状态**已提交** ⇒ 直接改 throw 会让「已提交的禁用」对外报 5xx，**必须同步补调用点防护**。<br>**因此清单 =「两处改 throw + 三个 catch 点审计/补齐」**（两个已存在 → 审计其是否真的兜住并留 WARN/补偿；一个缺失 → 补齐）。<br>**两条硬约束**：① `revokeUserTokens` 若落补偿记录，**必须有真实消费者**（重试任务或管理端收敛入口）—— 否则就是造僵尸数据（`invoice_link_compensation` 那条教训）；② **删过时注释、留锚点**：`AfterSaleClientFallback` 的**方法注释与类注释互相矛盾**（类注释说「改抛异常后异常被 catch 接住」，方法注释说「一律不抛…抛错会把成功的退款判成失败」）。实测调用点有 try/catch ⇒ **方法注释是过时的**，改 throw 时删掉它，并留一行指向 `PayEventNotifier#writeBackAfterSaleRefunded` 的锚点 | 下一批（方案 A） |
+| **U17** | **`void` 降级方法的兜底口径（方案 A：第一步已完成，见 §1.16；第二步待做）**。问题：语义门禁对「没抛异常」只做 `returnedDegradedValue++` 计数、**零校验**，而 `void` 的静默返回在调用方看来与真成功**完全同形**（正是 §1.10 里 `TradeInvoiceClientFallback` 那次事故的形态）。<br>**重要修正（M8 实测）**：光改 throw 不够 —— 处置表的 `THROWS` 只约束**不可用**分支，**4xx 分支的静默对 `void` 不可见**。故已补 `VOID_CLIENT_SILENT_ALLOWED`（当前为空）+ 双向陈旧检查（§1.16）。<br>**剩余（第二步）**：① `revokeUserTokens` 需先给 `UserAdminManager#updateStatus:110` 补调用点防护再改抛；② 补偿消费者 `operation_log` 对账（选型已定，前置见下）；③ 前端兜底分支见 U19。<br>**做法（不用手写控制流 lint）**：「能否抛」能从**类型**上强制就不做检查 —— 让该抛的方法 `throw` 复用现成的载体（`CarriedErrorException`），再加 ArchUnit 防回归。白名单若要求「日志 + 补偿记录 + 告警」，那三条**必须能被机器验**，否则又是会漂的注释。<br>**调用点已 grep（实测，别重查）**：<br>· `AfterSaleClientFallback#markRefunded` → `pay-service PayEventNotifier#writeBackAfterSaleRefunded:106-111` **有 `try/catch(Exception)`** ⇒ 已改 throw；<br>· `KgClientFallback#deleteEdges` → `item-service KgEdgeIngestManager#deleteEdgesSafely:179-181` **自有 try/catch** ⇒ 已改 throw；<br>· `AuthContextClientFallback#revokeUserTokens` → `user-service UserAdminManager#updateStatus:110` **无 try/catch**，且 DB 状态**已提交** ⇒ 直接改 throw 会让「已提交的禁用」对外报 5xx，**必须同步补调用点防护**（第二步）。<br>**两条硬约束**：① `revokeUserTokens` 若落补偿记录，**必须有真实消费者**（重试任务或管理端收敛入口）—— 否则就是造僵尸数据（`invoice_link_compensation` 那条教训）；② **删过时注释、留锚点**（已执行：`AfterSaleClientFallback` 的过时方法注释已删，改留锚点指向 `PayEventNotifier#writeBackAfterSaleRefunded`） | 第一步 ✅ / 第二步待做 |
 | ~~**U18**~~ | ✅ **无需另做**：「9 个 fallback 的 CLIENT 分支回归测试」这一项已被 §1.10 的**发现式**语义门禁覆盖 —— `FallbackDegradeContractTest` 扫描 `target/classes` 自动发现全部工厂（不维护类名清单），逐个方法验证 CLIENT 分支。**不要再手写逐工厂的 CLIENT 用例**：那既冗余，也会在新增工厂时静默漏测（清单必然漂） | 已覆盖 |
 | **U19** | **前端兜底分支（待办，随 U17 一起收）**：契约 §二 新增「下游透传」规则后，`/api/**` **可能出现不在 §2.1a 清单里的 4xx**（下游 409/422/429、非标准 499）。前端现状是「按已知码分支 + 其余落到通用提示」，需确认两件事：① **未登记的 4xx 必须落通用兜底**（通用错误 + 直显 `msg`），**不得**因为「状态码不在清单里」就走「服务异常」话术；② `check-error-codes.mjs` 当前报「未覆盖 0」是按**业务码**核对的（下游码也在本域 `ErrorCode` 里，所以仍覆盖），但**状态码维度没有门禁** ⇒ 前端若按状态码分支会漏。**不要**为此新增状态码白名单（会变成第二套映射），只补兜底分支 + 一条用例 | 随 U17 |
 
@@ -339,9 +378,12 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
 
 1. **改 throw**（复用现成载体，不新造异常）：
    - `AfterSaleClientFallback#markRefunded`、`KgClientFallback#deleteEdges`（调用点已有 try/catch）
-   - **同步改语义门禁的处置表**：`FACTORY_DISPOSITIONS` 里二者从 `RETURNS` 改为 `THROWS`，
-     并删掉 `AfterSaleClientFallbackTest` 的 `assertDoesNotThrow`。**不改表就不是完成** ——
-     语义门禁当前会把「没抛」当既定豁免计数，不改它就等于门禁看不见这次改动。
+   - **同步改语义门禁的处置表**：`AfterSaleClientFallback` 工厂级 `RETURNS → THROWS`；
+     `KgClientFallback` 走 `METHOD_DISPOSITIONS` 单方法覆盖（同工厂另有必须 fail-open 的方法）。
+     **不改表就不是完成** —— 语义门禁当前会把「没抛」当既定豁免计数，不改它就等于门禁看不见这次改动。
+   - **⚠ 但改表只完成一半**（M8 实测）：处置表的 `THROWS` **只约束「不可用」那一支**，
+     4xx 分支的静默对 `void` 方法**不可见**。故必须同时有 `VOID_CLIENT_SILENT_ALLOWED` 那条双向检查，
+     否则「把 throw 改回 return」的回归不会被任何用例咬住。
 2. **删过时注释、留锚点**：`AfterSaleClientFallback` 的方法注释说「一律不抛…抛错会把成功的退款判成失败」，
    而类注释说「改抛异常后异常被 catch 接住」—— 实测调用点有 try/catch ⇒ **方法注释过时**，
    删掉并留一行指向 `PayEventNotifier#writeBackAfterSaleRefunded` 的锚点，避免下次又有人照它写反。
