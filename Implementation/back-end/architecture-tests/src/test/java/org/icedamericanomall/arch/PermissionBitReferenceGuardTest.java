@@ -84,6 +84,20 @@ class PermissionBitReferenceGuardTest {
 
     private static final Pattern ANNOTATION_START = Pattern.compile("@PreAuthorize\\s*\\(");
 
+    /**
+     * <b>已弃用（待停用）的权限位</b>：位 → 取代它的新位 + 停用前置条件。
+     *
+     * <p>这是「后删旧位」那一步的**独立判据**：旧位的<b>注解引用必须归零</b>才可以停用。
+     * 注意它与「零消费 WARN 归零」是两件事 —— WARN 说的是"新位还没接上"，本条说的是
+     * "旧位还在被引用"。<b>WARN 归零不能替代本条</b>：完全可能出现"新位都接上了、
+     * 但某个旧控制器还挂着旧位"的状态，那时 WARN 是 0 而旧位仍被引用。
+     */
+    private static final Map<String, String> DEPRECATED_BITS = Map.of(
+            "user:admin", "被域位取代（user:read / user:write / order:write / aftersale:write / "
+                    + "pay:admin / finance:admin / invoice:issue / invoice:void / currency:admin / "
+                    + "marketing:read / marketing:admin / merchant:admin / home:admin / kg:admin + rbac:admin）。"
+                    + "停用前置：注解引用归零（见 shouldHaveZeroReferencesToDeprecatedBits）");
+
     /** 反空断言下限：注解数量下限（扫描失效会掉到 0）。 */
     private static final int MIN_SCANNED_ANNOTATIONS = 10;
 
@@ -156,6 +170,55 @@ class PermissionBitReferenceGuardTest {
     }
 
     // ==================================================================================
+    // ==================================================================================
+    // ①·三 独立判据：「后删旧位」的前置是旧位引用归零（WARN 归零不能替代）
+    // ==================================================================================
+
+    /**
+     * 旧位引用必须归零，才允许把 {@code status} 改成 0。
+     *
+     * <p>为什么必须独立成一条：一旦把旧位停用，{@link #shouldFailWhenAnnotationCitesMissingPermissionBit}
+     * 也会红 —— 但那时已经晚了，中间态是<b>全线 403</b>。<b>本条跑在停用之前</b>，它回答的是
+     * 「现在能不能停」；另一条回答的是「停用后有没有人还指着它」。
+     *
+     * <p>WARN 归零（新位都接上了）**不代表**旧位没人引用：完全可以新位全接、某个控制器还挂旧位。
+     */
+    @Test
+    @DisplayName("★ 独立判据 — 旧位（user:admin）注解引用必须归零，才允许停用")
+    void shouldHaveZeroReferencesToDeprecatedBits() {
+        List<String> citations = scanCitations();
+        assertThat(citations)
+                .as("扫描到的 @PreAuthorize 少于 %d 处 —— 扫描失效会让本判据恒真", MIN_SCANNED_ANNOTATIONS)
+                .hasSizeGreaterThanOrEqualTo(MIN_SCANNED_ANNOTATIONS);
+
+        Map<String, PermRow> seed = loadSeedRows();
+
+        for (Map.Entry<String, String> entry : DEPRECATED_BITS.entrySet()) {
+            String deprecated = entry.getKey();
+            assertThat(seed)
+                    .as("旧位 %s 已不在种子里（被物理删除？）—— 停用机制是 status=0 不删行，"
+                            + "若确要删行请同时删掉 DEPRECATED_BITS 条目", deprecated)
+                    .containsKey(deprecated);
+
+            List<String> stillCited = citations.stream().filter(deprecated::equals).toList();
+            PermRow row = seed.get(deprecated);
+            if (row != null && row.status() == 0) {
+                // 稳态不变量：旧位**已停用**后，注解引用必须为 0
+                assertThat(stillCited)
+                        .as("旧位 %s 已停用（status=0）却仍有 %d 处注解引用 —— 这些端点会永久 403",
+                                deprecated, stillCited.size())
+                        .isEmpty();
+            } else {
+                // 停用**前**的准入检查刻意不放门禁：若放这里，CI 在"第 5 步还没做"的整段期间常红，
+                // 人就开始忽略红色。它落在 scripts/preflight-rbac-deprecated-bits.sh，
+                // 引用未归零时退出非零 —— 那正是它的正常工作状态。
+                System.out.println("[rbac-bits][INFO] " + deprecated + " 尚未停用，当前仍有 "
+                        + stillCited.size() + " 处注解引用；停用前跑 "
+                        + "scripts/preflight-rbac-deprecated-bits.sh（引用须归零）");
+            }
+        }
+    }
+
     // ② 解析边界：复杂表达式必须直接失败（看不懂就报错，不许猜）
     // ==================================================================================
 
