@@ -515,6 +515,35 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
 - `FlashSaleAdminManager#deleteFlashSale` 对进行中活动**禁删**；若放开，删除会间接影响已下单用户履约/退款 ⇒ 需重新评估是否改挂 `pay:admin`。
 - `GroupBuyAdminManager#deleteActivity` 本轮**已补**"有拼团中（未结团）的团禁删"（原来是允许删的，属间接资金影响）。
 
+**当前代码事实核对（2026-10-18，交接用；以代码为准，不以本文为准）**
+| 项 | 代码事实 | 文档口径 |
+|---|---|---|
+| 解析器 `MethodScanner`（含 8 条七形态单测） | **已提交**（`JavaMethodScannerTest`） | 可用 |
+| 守卫切到新解析器 | **未做** —— `FundTransactionGuardTest:83` 仍是旧 `methods(source)` | **已回滚，未重做** |
+| `KNOWN_FUND_METHODS` 扫描面断言 | **不存在**（grep 计数 0） | **已回滚，未重做** |
+| `REGISTERED_EXEMPTIONS` 豁免登记表 | **不存在**（grep 计数 0） | **已回滚，未重做** |
+| 含 Feign 多写判红 / 模式兜底 | **已提交** | 生效 |
+| `payByBalance` 假阴性 | **仍未修**（旧解析器不识别其 3 个本地写） | **待重做** |
+
+⇒ **"仓库实扫 0 违规" 在当前状态下依然不可信**，因为扫描面断言缺席（判据 #16 未落地）。
+
+**下一轮唯一任务的设计说明（≤20 行，落文档不靠记忆）**
+```
+目标：把 FundTransactionGuardTest 从旧 methods() 切到 MethodScanner.parse()，并补三件验收设施。
+1. 切解析器：两处 `methods(x)` → `MethodScanner.parse(x)`；Method 属性改 name()/body()。
+2. 事务归属：MethodScanner 只切 body，不认注解 ⇒ 单独用正则按「@Transactional ... 方法名(」抽
+   transactionalNames 集合，isTransactional(name, set) 判定；**不还原旧 methods()**。
+3. 真冒烟：对真实文件断言——WalletManager 含 refund/deductBalance；PayManager 含 payByBalance；
+   且 payByBalance.body() 内 payOrderService.* 出现 ≥3 次（证明 N=3 是本地写、Feign 未计入）。
+4. 已知清单断言：KNOWN_FUND_METHODS = {WalletManager#refund, WalletManager#deductBalance,
+   PayManager#payByBalance}，扫描结果必须全部出现。
+5. 豁免表：REGISTERED_EXEMPTIONS.put("PayManager#payByBalance", 理由)；理由须含
+   「依赖 mark-failed 可见性修复」前提。陈旧即失败：条目当前必须仍在违规。
+6. 验收四态：a) payByBalance 首次红并贴原始报错（证明 N=3）；
+   b) 登记豁免后转绿；c) 已知清单三条齐全；d) **绿且豁免条目为空 ⇒ 红**（豁免表误伤或解析器跳过）。
+硬约束：不用 shell 写 Java（一律 edit/write 工具）；每改必编译；预算尽即停并回滚。
+```
+
 **判据 #16：工具类门禁必须自带扫描面断言（三种形态齐备）**
 "工具报 0 违规"在扫描面未验证前不是结论，只是"没看见"。要求三种断言**同时具备**：
 | 形态 | 作用 | 抓什么 |
