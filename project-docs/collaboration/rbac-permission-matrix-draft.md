@@ -185,6 +185,12 @@
 一旦给商家这个位，他读到的就是**别家的售后**。商家看自己的售后走 `/api/seller/**`（由 `seller:admin` 覆盖），
 不读管理端列表。**这也是"管理端 read 档不能给商家"的具体一例**，与 §7.6 第 2 条判据同源。
 
+**`marketing:admin` 的持有者与"运营能不能看营销配置"（批 7 复核问题）**：
+当前 `marketing:admin` **只由 `ROLE_ADMIN` 经通配符持有**（§6.2 没有其他角色持有它）。
+⇒ **没有"只读运营"这个档位**：运营若要进营销后台，必须是管理员账号 —— 而管理员**既能看也能改**。
+要让"运营只看不改"，必须把 `GET` 类端点接 **`marketing:read`**（种子里已有该位，但目前**零消费**、在白名单里）。
+**本批不做**（那属于"位→端点"细化，会牵动前端菜单）；登记在 open-items。
+
 **为什么管理员要显式列 `rbac:admin`**：它是唯一「能改变授权本身」的位。若通配符能顶，任何拿到超级位的账号
 都能改角色、给自身上位 —— 提权路径没有被单独看守。`PermissionBits` 的排除表刻意用**精确位**而非
 `rbac:` 前缀：按前缀自动扩会让「新增一个 rbac 子位」悄悄改变已有账号的授权范围。
@@ -508,7 +514,7 @@ SoD（职责分离：一个人不能既开票又作废）**另立项**：它需�
      | 4 ✅ | `AdminAfterSaleController`（**按方法**：GET / PUT review / PUT confirm-return） | `aftersale:read` / `pay:admin` / `pay:admin` | 13 → 12 |
      | 5 ✅ | `AdminPayController` | `pay:admin` | 12 → 11 |
      | 6 ✅ | `AdminFinanceController` | `finance:admin` | 11 → 10 |
-     | 7 ⬜ | marketing 五个（见 §8 清单） | `marketing:admin`（**待确认后执行**） | — |
+     | 7 ✅ | marketing 五个（Coupon/Flash/Promotion/Task/GroupBuy） | `marketing:admin` | 10 → 5 |
      | 4 ⬜ | `AdminAfterSaleController`（**按方法**：GET list / PUT review / PUT confirm-return） | `aftersale:read` / `pay:admin` / `pay:admin` | — |
      | 8 ⬜ | `AdminLogController` / `AdminUserController` / `Role`+`Permission` | `audit:read` 类级 / **按方法** `user:read`+`user:write`+**`rbac:admin`** / `rbac:admin` | — |
      | 末 ⬜ | `AdminInvoiceController`（按方法：issue / void / red-flush） | `invoice:issue` / `invoice:void` / `invoice:void`（Q9） | — |

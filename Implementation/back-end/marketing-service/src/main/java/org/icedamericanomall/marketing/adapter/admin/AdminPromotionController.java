@@ -28,7 +28,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 默认不记参数值（PII 安全默认），删除端点开启参数摘要（仅活动 id）。
  */
 @RestController
-@PreAuthorize("@ss.hasPermi('user:admin')")
+// 权限位拆分（5a 批 7，2026-10-18）：满减/满折配置管理
+@PreAuthorize("@ss.hasPermi('marketing:admin')")
 @RequestMapping("/api/admin/promotion")
 @RequiredArgsConstructor
 public class AdminPromotionController {

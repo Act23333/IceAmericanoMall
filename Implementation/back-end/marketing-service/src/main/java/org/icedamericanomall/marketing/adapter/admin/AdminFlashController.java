@@ -29,7 +29,10 @@ import org.springframework.web.bind.annotation.RestController;
  * 默认不记参数值（PII 安全默认），删除端点开启参数摘要（仅活动 id）。
  */
 @RestController
-@PreAuthorize("@ss.hasPermi('user:admin')")
+// 权限位拆分（5a 批 7，2026-10-18）：秒杀活动管理。**注意**：`FlashSaleAdminManager#deleteFlashSale` 对进行中活动直接抛错（禁删）；
+//   若将来放开"删除进行中活动"，需重新评估权限位 —— 那会间接影响已下单用户的履约/退款，
+//   与拼团那边（批 7 复核已加"有未结团团禁删"）同源
+@PreAuthorize("@ss.hasPermi('marketing:admin')")
 @RequestMapping("/api/admin/flash")
 @RequiredArgsConstructor
 public class AdminFlashController {

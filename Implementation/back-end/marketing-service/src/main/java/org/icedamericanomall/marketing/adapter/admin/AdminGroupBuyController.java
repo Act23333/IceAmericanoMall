@@ -28,7 +28,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 默认不记参数值（PII 安全默认），删除端点开启参数摘要（仅活动 id）。
  */
 @RestController
-@PreAuthorize("@ss.hasPermi('user:admin')")
+// 权限位拆分（5a 批 7，2026-10-18）：拼团活动管理。删除路径本轮补了"有拼团中（未结团）的团禁删"守卫 —— 那类删除会间接影响退款
+@PreAuthorize("@ss.hasPermi('marketing:admin')")
 @RequestMapping("/api/admin/group-buy")
 @RequiredArgsConstructor
 public class AdminGroupBuyController {

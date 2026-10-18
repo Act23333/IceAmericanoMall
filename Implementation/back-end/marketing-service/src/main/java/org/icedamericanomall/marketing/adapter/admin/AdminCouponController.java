@@ -26,7 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 默认不记参数值（PII 安全默认），仅券号标识的下线端点开启参数摘要。
  */
 @RestController
-@PreAuthorize("@ss.hasPermi('user:admin')")
+// 权限位拆分（5a 批 7，2026-10-18）：优惠券管理（发/停），券是折扣承诺不是资金划转
+@PreAuthorize("@ss.hasPermi('marketing:admin')")
 @RequestMapping("/api/admin/coupon")
 @RequiredArgsConstructor
 public class AdminCouponController {

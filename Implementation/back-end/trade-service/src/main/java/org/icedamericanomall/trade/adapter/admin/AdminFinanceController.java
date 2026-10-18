@@ -22,8 +22,11 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 // 权限位拆分（5a 批 6，2026-10-18）：财务结算独立成位 finance:admin（Q2 资金面独立）。
-// 已核：withdrawal/{id}/review 只做状态流转（未见同步打款调用），故不并入 pay:admin；
-// 若将来审核后改为**同步**打款，必须并按方法拆位（参照 after-sale 那批的做法）。
+// 已核（grep 全仓）：提现状态只有 PENDING_REVIEW / PAID_OUT / REJECTED，**没有 APPROVED**；
+// 也**没有下游打款消费者** —— 打款在系统外完成，review 只是把状态标成 PAID_OUT。
+// 但请注意它的语义：这个动作是在**断言"钱已经打出去了"**（资金事实）
+// ⇒ 若将来接入自动打款（同步调 wallet/pay），必须把该方法改挂 pay:admin
+//   （参照 after-sale 那批：两个写方法因同步退款而挂 pay:admin 的做法）。
 @PreAuthorize("@ss.hasPermi('finance:admin')")
 @RequestMapping("/api/admin/finance")
 @RequiredArgsConstructor

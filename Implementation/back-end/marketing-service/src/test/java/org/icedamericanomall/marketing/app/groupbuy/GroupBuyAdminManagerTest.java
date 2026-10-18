@@ -25,6 +25,9 @@ import java.time.LocalDateTime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -77,13 +80,17 @@ class GroupBuyAdminManagerTest {
     @Mock
     private GroupBuyActivityRepository groupBuyActivityRepository;
 
+    /** 批 7 复核新增：删除活动前要确认没有"拼团中"的团（间接资金影响）。 */
+    @Mock
+    private org.icedamericanomall.marketing.domain.repository.GroupTeamRepository groupTeamRepository;
+
     private final MarketingConverter converter = Mappers.getMapper(MarketingConverter.class);
 
     private GroupBuyAdminManager groupBuyAdminManager;
 
     @BeforeEach
     void setUp() {
-        groupBuyAdminManager = new GroupBuyAdminManager(groupBuyActivityRepository, converter,
+        groupBuyAdminManager = new GroupBuyAdminManager(groupBuyActivityRepository, groupTeamRepository, converter,
                 new org.icedamericanomall.marketing.app.groupbuy.GroupBuyViewManager(converter, briefQuery));
         // 仓储 INSERT 主键回填（模拟 MyBatis-Plus 生成主键后写回聚合）
         lenient().doAnswer(invocation -> {
@@ -311,10 +318,46 @@ class GroupBuyAdminManagerTest {
     }
 
     @Test
+    @DisplayName("delete — 已结束但仍有「拼团中」的团 → 拒删（间接资金影响，批 7 复核新增守卫）")
+    void shouldRejectDelete_whenEndedButTeamsOngoing() {
+        when(groupBuyActivityRepository.findById(ACTIVITY_ID)).thenReturn(activity(
+                LocalDateTime.now().minusHours(3), LocalDateTime.now().minusHours(1)));
+        // 团还没成/还没退：删掉活动会让这批用户失去可追溯的活动配置，且退款依赖结团 Job
+        when(groupTeamRepository.findTeamsByActivityAndStatus(
+                eq(ACTIVITY_ID),
+                eq(org.icedamericanomall.marketing.domain.enums.GroupTeamStatusEnum.ONGOING.getCode()),
+                eq(1)))
+                .thenReturn(java.util.List.of(
+                        org.icedamericanomall.marketing.domain.model.groupbuy.GroupTeam.builder()
+                                .id(9L).activityId(ACTIVITY_ID).build()));
+
+        BizException ex = assertThrows(BizException.class,
+                () -> groupBuyAdminManager.deleteActivity(ACTIVITY_ID));
+
+        assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
+        verify(groupBuyActivityRepository, never()).deleteById(any());
+    }
+
+    @Test
+    @DisplayName("delete — 已结束且无进行中的团 → 物理删除成功（守卫不得误伤）")
+    void shouldDelete_whenEndedAndNoOngoingTeams() {
+        when(groupBuyActivityRepository.findById(ACTIVITY_ID)).thenReturn(activity(
+                LocalDateTime.now().minusHours(3), LocalDateTime.now().minusHours(1)));
+        when(groupTeamRepository.findTeamsByActivityAndStatus(anyLong(), anyInt(), anyInt()))
+                .thenReturn(java.util.List.of());
+
+        groupBuyAdminManager.deleteActivity(ACTIVITY_ID);
+
+        verify(groupBuyActivityRepository).deleteById(ACTIVITY_ID);
+    }
+
+    @Test
     @DisplayName("delete — 已结束活动 → 物理删除成功")
     void shouldDelete_whenActivityEnded() {
         when(groupBuyActivityRepository.findById(ACTIVITY_ID)).thenReturn(activity(
                 LocalDateTime.now().minusHours(3), LocalDateTime.now().minusHours(1)));
+        when(groupTeamRepository.findTeamsByActivityAndStatus(anyLong(), anyInt(), anyInt()))
+                .thenReturn(java.util.List.of());
 
         groupBuyAdminManager.deleteActivity(ACTIVITY_ID);
 
@@ -326,6 +369,8 @@ class GroupBuyAdminManagerTest {
     void shouldDelete_whenActivityNotStarted() {
         when(groupBuyActivityRepository.findById(ACTIVITY_ID)).thenReturn(activity(
                 LocalDateTime.now().plusHours(1), LocalDateTime.now().plusHours(3)));
+        when(groupTeamRepository.findTeamsByActivityAndStatus(anyLong(), anyInt(), anyInt()))
+                .thenReturn(java.util.List.of());
 
         groupBuyAdminManager.deleteActivity(ACTIVITY_ID);
 

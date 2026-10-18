@@ -29,7 +29,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 审计日志（logger {@code AUDIT}）；默认不记参数值（PII 安全默认）。
  */
 @RestController
-@PreAuthorize("@ss.hasPermi('user:admin')")
+// 权限位拆分（5a 批 7，2026-10-18）：每日任务定义管理（任务配置属营销域；GET 在 /api/admin/task，非公开）
+@PreAuthorize("@ss.hasPermi('marketing:admin')")
 @RequestMapping("/api/admin/task")
 @RequiredArgsConstructor
 public class AdminTaskController {

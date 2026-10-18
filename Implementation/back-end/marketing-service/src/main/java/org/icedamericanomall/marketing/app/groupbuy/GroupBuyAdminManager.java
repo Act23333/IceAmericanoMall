@@ -8,8 +8,10 @@ import org.icedamericanomall.marketing.adapter.request.GroupBuyCreateReq;
 import org.icedamericanomall.marketing.adapter.request.GroupBuyUpdateReq;
 import org.icedamericanomall.marketing.adapter.response.GroupBuyActivityVO;
 import org.icedamericanomall.marketing.domain.enums.GroupBuyActivityStatusEnum;
+import org.icedamericanomall.marketing.domain.enums.GroupTeamStatusEnum;
 import org.icedamericanomall.marketing.domain.model.groupbuy.GroupBuyActivity;
 import org.icedamericanomall.marketing.domain.repository.GroupBuyActivityRepository;
+import org.icedamericanomall.marketing.domain.repository.GroupTeamRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,7 @@ import java.time.LocalDateTime;
 public class GroupBuyAdminManager {
 
     private final GroupBuyActivityRepository groupBuyActivityRepository;
+    private final GroupTeamRepository groupTeamRepository;
     private final MarketingConverter marketingConverter;
     private final GroupBuyViewManager groupBuyViewManager;
 
@@ -98,6 +101,18 @@ public class GroupBuyAdminManager {
         GroupBuyActivity activity = requireActivity(id);
         if (activity.deriveStatus(LocalDateTime.now()) == GroupBuyActivityStatusEnum.ACTIVE.getCode()) {
             throw new BizException(ErrorCode.PARAM_ERROR, "进行中的拼团活动禁止删除");
+        }
+        // 2026-10-18（权限位拆分批 7 复核发现）：此前的守卫只禁「进行中」，
+        // **不检查是否还有未结团的团** —— 于是"已结束但有人已参团、团还没成/还没退"的活动可以被删掉，
+        // 而那些团的退款依赖结团 Job 后续处理（GroupBuyParticipationManager → groupBuyTeamClient.refundTeam），
+        // 删除活动会让这批用户**失去可追溯的活动配置**，属"间接资金影响"。
+        // 两个选项里选了这个（加禁删规则），而不是把 delete 挂到 pay:admin ——
+        // 因为问题不是"谁能删"，而是"这种状态本就不该删"；给个资金位不解决数据一致性问题。
+        if (!groupTeamRepository
+                .findTeamsByActivityAndStatus(id, GroupTeamStatusEnum.ONGOING.getCode(), 1)
+                .isEmpty()) {
+            throw new BizException(ErrorCode.PARAM_ERROR,
+                    "活动仍有拼团中（未结团）的团，禁止删除");
         }
         groupBuyActivityRepository.deleteById(id);
     }
