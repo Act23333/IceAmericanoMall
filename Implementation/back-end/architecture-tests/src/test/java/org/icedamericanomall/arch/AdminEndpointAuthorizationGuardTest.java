@@ -85,7 +85,12 @@ class AdminEndpointAuthorizationGuardTest {
      *
      * <p>本组要求：{@code @PreAuthorize} 数 ≥ 全部映射方法数（管理端没有公开端点，不许漏）。
      */
-    private static final String[] METHOD_LEVEL_ADMIN_PREFIXES = {"/api/trade/admin"};
+    private static final String[] METHOD_LEVEL_ADMIN_PREFIXES = {
+            "/api/trade/admin",
+            // 批 4：售后管理端**必须**按方法（查询 aftersale:read / 两个写方法 pay:admin）——
+            // 整类挂任一位都是错的：挂 pay:admin 让"只看列表"的客服拿到退款权，
+            // 挂 aftersale:read 则写不了。所以它必须进本集合，而不是被"必须有类级注解"卡住。
+            "/api/admin/after-sale"};
 
     /** 写操作的映射注解（用于平台配置前缀的方法级覆盖计数）。 */
     private static final String[] WRITE_MAPPINGS = {"@PostMapping", "@PutMapping", "@DeleteMapping", "@PatchMapping"};
