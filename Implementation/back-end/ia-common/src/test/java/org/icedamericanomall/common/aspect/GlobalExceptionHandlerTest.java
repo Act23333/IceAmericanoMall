@@ -506,6 +506,35 @@ class GlobalExceptionHandlerTest {
                 .isEqualTo(499);
     }
 
+    /**
+     * ★ <b>不变量</b>：{@code upstreamStatus = 0}（连接层失败 / 超时 / 熔断，根本没有 HTTP 响应）
+     * <b>必须在进 {@code ResponseEntity} 之前还原成合法状态码</b>，四个类别一个都不许漏。
+     *
+     * <p><b>为什么单独一条</b>：{@code httpStatus()} 改成返回 {@code int} 之后，
+     * 「0」成了一个能一路传下去的值 —— {@code ResponseEntity.status(0)} 会抛
+     * {@code IllegalArgumentException}，把一次「下游没响应」升级成「响应构造失败」。
+     * 这条用例锁的是「还原发生在出口之前」，而不是「调用方记得判 0」。
+     *
+     * <p>同时也锁住「{@code httpStatus()} 的消费点没有第二次 resolve」：
+     * 生产消费点只有 {@code ExceptionResponseSupport#carriedResponse} 一处，
+     * 它拿到的必须已是可直接使用的状态码。
+     */
+    @Test
+    @DisplayName("★ 不变量 — upstreamStatus=0 时四类都必须还原成合法状态码，绝不把 0 交给 ResponseEntity")
+    void shouldNeverEmitZeroStatus_whenObservedStatusMissing() {
+        bindRequest(PUBLIC_URI);
+
+        for (ErrorCategory category : ErrorCategory.values()) {
+            Object response = handler.handleCarriedErrorException(new ProbeCarriedException(
+                    ErrorInfo.of(DOWNSTREAM_CLIENT_CODE, DOWNSTREAM_MSG, category, null), 0));
+
+            assertThat(((ResponseEntity<?>) response).getStatusCode().value())
+                    .as("category=%s 且 upstreamStatus=0 —— 还原结果必须落在合法区间（0 会让 ResponseEntity 抛异常）",
+                            category)
+                    .isBetween(100, 599);
+        }
+    }
+
     @Test
     @DisplayName("★ 装饰器把载体再包一层 → 兜底分支仍按透传应答（不得静默退回 500）")
     void shouldStillPassThrough_whenCarrierIsWrappedByDecorator() {

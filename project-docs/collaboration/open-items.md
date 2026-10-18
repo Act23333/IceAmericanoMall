@@ -268,6 +268,16 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
   不被 `HttpStatus.resolve` 解析成 `null` 再回落成 400（那等于又开了一条谎报通道）。
   **M7 实测**：把映射退回「类别优先」→ `GlobalExceptionHandlerTest` 8 例红，
   包括两条带指名信息的缺陷回归（`CLIENT`+500 不得回 400 / `RULE`+非 2xx 不得回 200）。
+- **`int` 返回类型的两点复核（改 `int` 之后必须验的，已验）**：
+  1. **`0` 不会漏进 `ResponseEntity`**：`0` 在 `httpStatus()` 内部就被还原
+     （`hasObservedStatus()` 为假 → `derivedStatus()`，四个分支只产出 200/400/500/503），
+     调用方拿到的**已经是可用状态码**；`ResponseEntity.status(0)` 会抛
+     `IllegalArgumentException`，所以这条不能靠「调用方记得判 0」。已加不变量用例
+     `shouldNeverEmitZeroStatus_whenObservedStatusMissing`：遍历四个类别 × `upstreamStatus=0`，
+     断言落点均在 `100..599`。
+  2. **没有二次 resolve**：`httpStatus()` 的生产消费点**只有一处**
+     （`ExceptionResponseSupport#carriedResponse`，`int status = e.httpStatus()` → `status(int)` 直接建响应）；
+     全仓 `HttpStatus.resolve` **零命中**（这条 grep 值得保留：它是「又有人把数值转回枚举」的信号）。
 - **已知边界（登记，未做）**：
   - 若上游失败被**替换**（而非嵌套在 `cause` 链上）成别的异常，仍会 500；当前链路不产生这种形态。
   - 下游 `401/403` 属 `CLIENT`，会**原样透传**成 401/403。集群内 `/internal/**` 的鉴权由网关注入头承担、
@@ -323,6 +333,27 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
 | ~~**U18**~~ | ✅ **无需另做**：「9 个 fallback 的 CLIENT 分支回归测试」这一项已被 §1.10 的**发现式**语义门禁覆盖 —— `FallbackDegradeContractTest` 扫描 `target/classes` 自动发现全部工厂（不维护类名清单），逐个方法验证 CLIENT 分支。**不要再手写逐工厂的 CLIENT 用例**：那既冗余，也会在新增工厂时静默漏测（清单必然漂） | 已覆盖 |
 | **U19** | **前端兜底分支（待办，随 U17 一起收）**：契约 §二 新增「下游透传」规则后，`/api/**` **可能出现不在 §2.1a 清单里的 4xx**（下游 409/422/429、非标准 499）。前端现状是「按已知码分支 + 其余落到通用提示」，需确认两件事：① **未登记的 4xx 必须落通用兜底**（通用错误 + 直显 `msg`），**不得**因为「状态码不在清单里」就走「服务异常」话术；② `check-error-codes.mjs` 当前报「未覆盖 0」是按**业务码**核对的（下游码也在本域 `ErrorCode` 里，所以仍覆盖），但**状态码维度没有门禁** ⇒ 前端若按状态码分支会漏。**不要**为此新增状态码白名单（会变成第二套映射），只补兜底分支 + 一条用例 | 随 U17 |
 
+#### U17 的完成定义（DoD）—— **catch 体审计是完成条件，不是附加项**
+
+**为什么必须写进 DoD**：把 `void` 从「fallback 里静默 return」改成「抛出」，如果调用点的 `catch` 只是空着或只打一行日志，**静默只是从 fallback 挪到了 catch**，什么都没改变。故第一步的完成定义是四件事：
+
+1. **改 throw**（复用现成载体，不新造异常）：
+   - `AfterSaleClientFallback#markRefunded`、`KgClientFallback#deleteEdges`（调用点已有 try/catch）
+   - **同步改语义门禁的处置表**：`FACTORY_DISPOSITIONS` 里二者从 `RETURNS` 改为 `THROWS`，
+     并删掉 `AfterSaleClientFallbackTest` 的 `assertDoesNotThrow`。**不改表就不是完成** ——
+     语义门禁当前会把「没抛」当既定豁免计数，不改它就等于门禁看不见这次改动。
+2. **删过时注释、留锚点**：`AfterSaleClientFallback` 的方法注释说「一律不抛…抛错会把成功的退款判成失败」，
+   而类注释说「改抛异常后异常被 catch 接住」—— 实测调用点有 try/catch ⇒ **方法注释过时**，
+   删掉并留一行指向 `PayEventNotifier#writeBackAfterSaleRefunded` 的锚点，避免下次又有人照它写反。
+3. **两个 catch 体审计**（本条即完成条件）：逐个回答三个问题，任一不满足就要补或登记：
+   - ① **是否吞掉**：必须至少 WARN，且带**可定位键**（单号 / 售后单 id / 用户 id）；
+   - ② **是否有可收敛路径**：补偿记录、对账、或管理端人工入口 —— 都没有就必须**明确登记「暂无消费者」**，
+     不许用「待对账收敛」这类话术含糊带过（本仓已因这类话术留下过沉默缺口）；
+   - ③ **是否还打成功日志**：catch 内**不得**出现「已完成 / 已回写」这类成功文案。
+4. **缺的条件进本文件**：`AuthContextClientFallback#revokeUserTokens` 的调用点
+   （`UserAdminManager#updateStatus:110`）**无 try/catch** 且 DB 已提交 —— 本条不在第一步做，
+   作为「需先补调用点防护」登记（见 U17 行 + 下方补偿选型）。
+
 #### U17 的补偿消费者选型（已定，2026-10-18）
 
 **选定方案 A：复用 `operation_log` 做对账，不新建补偿表。**
@@ -341,6 +372,29 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
     —— 而「补偿必须有真实消费者」正是这次要守住的红线。
   - **不能把吊销放进禁用事务**：`Manager` 调 Feign 不得 `@Transactional`（硬约束，见 CLAUDE.md），
     且远端调用入事务会把一次远端抖动放大成事务持有时间。所以「先提交再吊销」的顺序不能改。
+
+**动手前的三条前置（已 grep 实测，2026-10-18）**
+
+1. **`record` 调用点与签名现状**：全仓只有**两处生产调用** —— `UserAdminManager:104`（状态变更）与
+   `UserAdminManager:130`（角色变更），另有 `OperationLogManagerTest` 两处。
+   签名是 `record(Long userId, String module, String action, String content)`，
+   **`target` 从不写入 ⇒ `operation_log.target` 今天恒为 `NULL`**（已核对 `OperationLogManager`
+   的 builder 只填 `userId/username/action/detail/ip`）。故对账前必须先给 `record` 增 `target`
+   （新增重载或加参数）并改这两处调用点 —— **对账不能建在恒 NULL 的列上**。
+2. **`target` 格式定死为「纯业务键字符串」**（如 `"7"`）：
+   - **不带** `userId=` 之类的键名前缀，**不带**实体类型前缀；理由：前缀会逼每个消费者各自 split，
+     而**列名本身已经声明了语义**；
+   - 将来若多实体共用该账本，**加列**区分实体，**不要**在 `target` 里塞复合编码 ——
+     那正是 §5 判据 2「注释/字段里复写会漂的结构」的复发形态；
+   - `action` 已经是 `MODULE:ACTION` 形态（见 `OperationLogManager` 的 builder），故模块维度**不重复**进 target。
+3. **对账判定条件（只按列判定，禁止解析 `detail`）**：
+   - **候选集**：存在 `action='USER:DISABLE_USER'` 且 `target=u` 且 `create_time <= now()-N`。
+     ⚠ **需要新增 `DISABLE_USER` 这个 action** —— 现状统一是 `UPDATE_USER_STATUS`、而「是禁用还是启用」
+     只写在 `detail` 的 `status=FROZEN` 文案里；对着人读文案做判定不可接受（同上判据）；
+   - **已完成**：存在 `action='USER:REVOKE_USER_TOKENS'` 且 `target=u` 且 `create_time >= 禁用时间`；
+   - **判定**：候选有、已完成无 ⇒ 重放 `revokeUserTokens`（**幂等**：令牌版本号单调推进），成功后写第二条记录；
+   - **无状态重试（刻意不建状态机）**：每轮重放所有未成功项，不引入退避状态机 ——
+     因为「没有承载就必然会想建表」，而建表正是要避免的僵尸数据源；连续失败超过 N 轮打 **ERROR** 告警交人工。
 
 ---
 
@@ -428,6 +482,10 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
 5. **「跑一遍全绿」不能证明门禁有效**。门禁最可能的失效形态是**恒真空转**（谓词选不中任何类、断言永远为空集）。所以每条门禁都必须自带**合成违规样本**并断言它变红：`verify-gates.sh self-test`、`FallbackDegradeContractTest` 的两个合成违规体、`FallbackCategoryGuardTest` 的 fixture、`ClassSizeRatchetTest` 的纯函数单测。**判定逻辑要抽成纯函数**，否则没法喂合成输入。
    - 补一条更硬的：**「绿」还可能是运气**。`FallbackCategoryGuardTest` 的变异样本原用运行期 `javac` + 临时目录，某次全量绿、下一次整模块跑就红 —— 是**我按 `verify-gates.sh` 换入口重跑时才暴露的**。故判据升格为：**同一门禁在四个入口（单类 / 整模块 / 关联模块 / 全量 clean）结论必须一致**，不一致就是 flaky，必须修掉而不是记住「它有时红」。`verify-gates.sh matrix` 已把「单类 vs 整模块」这一对做成常规门禁。
 6. **交接单一旦被当成 SSOT，错的就是它**。它复述的每个数字都会漂，而漂了的数字比没有数字更危险（会让人照着过期清单动手）。机制化处理：本文件禁止复述可测量事实（`check-ledger-facts.sh`，已进 CI），事实一律「跑命令去量」。
+7. **派生值不得覆盖观测事实（「事实优先于解释」）**。批次 J 的两处映射写反就是这个形态：`category` 是**派生标签**，而且可以被**下游报文**覆盖；我却让它决定 HTTP 状态码，于是 `category=CLIENT` + 状态码 500 被回成 **400**（把服务端的账记到调用方头上）、`category=RULE` + 非 2xx 被回成 **200**（用 200 承载失败，熔断器永不触发）。
+   - 判据：**多个来源矛盾时，越接近事实的那一方优先**。HTTP 状态码是传输层观测面（调用方、网关、熔断器、指标都只看它）；`category` 只是我们对它的解释 —— **解释可以错，事实不会**。
+   - 反例同族：`retryable` 必须由 `category` **单向派生**、不许下游报文覆写（`ErrorInfo.of` 已强制）。凡是「派生出来的值」与「采信外部输入的值」同时存在，都要问一句：谁覆盖谁。
+   - 落地方式：把「优先级」写成**一个函数里的一个 return**（`CarriedErrorException#httpStatus`），不要分散成两处 if —— 分散就必然出现「一处按事实、一处按解释」。
 
 ---
 
