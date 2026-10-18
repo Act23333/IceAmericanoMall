@@ -2,7 +2,7 @@
 
 > **用途**：跨会话的工作交底。不是规格文档，不需要进规格索引。
 > **维护规则**：任何一批工作落地后，同步更新本文件的「已完成 / 待办 / 已知未修 / 验证边界」四段。
-> **最后更新**：2026-10-18（F 批收口：双门禁 + 发票联动补偿表 + U11）
+> **最后更新**：2026-10-18（批次 J：跨服务 4xx 透传的最后一米）
 
 ## 0. 要数字？跑命令 —— 本文件不是 SSOT
 
@@ -185,6 +185,80 @@ git log --oneline -10                                        # 谁改了什么�
 - **S0-0 四件事（已定）**：① 23 条「有端点无权限位」的鉴权口径；② 13 条「声明路径 ≠ 实际路径」的收敛；③ 表 C 最终形态（可执行常量表）；④ **契约 ✅ 对账门禁**——`✅` 必须有前端入口、`🔌` 必须登记，否则红（不阻塞 S0-pre）。
 - **三条裁决已落**：契约 ✅ 对账进 S0-0④；网关营销路由标 🟡 并登记 **U16**；`apps/web` 的旧文件/行数改为**指向命令**（21/18 两处已改，不再写死）。
 
+### 1.15 跨服务 4xx 透传的「最后一米」（批次 J，2026-10-18）
+
+F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门禁），但只覆盖了链条的**上半段**：谁抛出。
+
+- **缺陷（实测，不是推断）**：`ia-common` 的 `GlobalExceptionHandler` 对 `UpstreamException` **零引用**
+  （全文件 grep = 0）；而 `UpstreamException extends RuntimeException`（历史注释明写「不是 `CommonException`」，
+  理由是不绑定本域 `ErrorCode`）。两者相交的后果是：工厂**正确地** `throw upstream` 之后，
+  它必然落 `@ExceptionHandler(Exception.class)` 兜底 → `INTERNAL_ERROR` / **HTTP 500**。
+  **透传的全部投资在最后一米被碾平**，且没有任何红。
+- **根因是模块方向**：`ia-common` 是 `ia-api` 的上游依赖，反向 `import UpstreamException` 会成环
+  （`ErrorCategory` 的 javadoc 早已把该禁令写死）。故把「透传所需的**形状**」下沉：
+  - `ia-common` 新增 `common/exception/CarriedErrorException`（持 `ErrorInfo` + `upstreamStatus`，
+    **不含本域 `ErrorCode`**，且 **`httpStatus()` 是状态码还原的唯一入口**）；
+  - `ia-api` 的 `UpstreamException` 改为继承它。**构造器与全部 getter 签名不变** ——
+    降级工厂与调用方一个字都不用改（这是能低成本修掉的前提）。
+- **响应口径**（`ExceptionResponseSupport#carriedResponse`）：
+  - 内部 `/internal/**`：body 就是下游那份 `ErrorInfo` **原样** —— 业务码、文案、`category`、
+    `retryable`、`traceId` 一个字段都不重算。多跳链（A→B→C）不会在中途把 C 的业务事实改写成 B 的。
+  - 对外 `/api/**`：仍是 `Result`，键集合恒为 `code/msg/data`（**前端契约零变化**），
+    **变的只有 HTTP 状态码** —— 从恒 500 变为真实值。这一条由既有那条「`Result` 字段集 + 字面量」守卫继续钉死。
+  - 状态码还原：`CLIENT` 原样用上游 4xx（上游状态码不可用时回落 **400**，不回落 500 ——
+    把调用方的账记到服务端会让监控与重试策略同时误判）/ `RULE` 200 / `TRANSIENT` 503 / `BUG` 500。
+  - 日志级别**不是**一律 ERROR：`CLIENT` / `RULE` 走 WARN（客户传错参数不该惊动值班），
+    `TRANSIENT` / `BUG` 才 ERROR 带堆栈。
+  - 兜底分支先沿 `cause` 链找载体（装饰器/容器再包一层的形态），**找不到时行为与改动前逐字一致**。
+- **棘轮把「顺手塞实现」逼成了「按职责拆分」（本轮最值得记的一条）**：
+  首版把整段实现写进 `GlobalExceptionHandler` → 变成 404 行，`ClassSizeRatchetTest` 判红（`不许增长`）；
+  抽出 `ExceptionResponseSupport` 后降到 293 行，**同一条门禁又判红**（`BASELINE_REDEEMED`：
+  实测 ≤ 300 即债务还清，必须从基线删除，`基线只减不增`）。删基线条目后才绿。
+  **两条规则各自都咬到了**，而且它们联合起来做的事是：不允许「为了方便往映射表里堆实现」。
+  代价是本类的到期拆类任务少了一个；基线条目已删，不要再加回去。
+- **变异验证（M3/M4/M5 三次，都按 md5 复原）** —— 其中 M3 的第一版结论**被自己推翻**，留档：
+  1. **M3**：摘掉 `@ExceptionHandler(CarriedErrorException.class)` → **只有声明层反射守卫红**，
+     其余直调用例全绿。**我起初据此写下「那颗反射钉子不可省」，随后补了框架层用例复跑 M3，
+     结果框架层用例也全绿** —— 原因是兜底分支的 `cause` 链回溯本来就能接住同一条异常。
+     故修正为：**这条显式分支对行为是冗余的**，声明层守卫守的是「显眼」，不是「可用」。
+     （教训与 §5 判据 4 同源：**「我对变异的预期」不是证据，跑到才算**。）
+  2. **M4**：把 `UpstreamException` 改回 `extends RuntimeException`，**并补一个状态码 shim 让它仍可编译**
+     → **只有继承断言红**，round-trip 用例全绿。这条变异证明的是：
+     `shouldExtendCarriedErrorException` 是这条回归的**唯一**防线
+     （ia-common 侧用的是合成子类，看不见真实类的继承关系）。
+  3. **M5（唯一能杀行为的变异）**：**同时**摘注解 + 停掉兜底回溯 → 框架层五条透传用例
+     **全红**（响应变成 500 + `code=1000`），反向对照（无关异常仍 500）保持绿。
+     **结论：两条路径是刻意的双保险，谁把它们当重复代码删掉，M5 就会红。**
+     代码里两处都写了「不要清理」的告示（`handleException` 的注释 + 各自用例的类注释）。
+- **框架层证据（本轮补，回答「直调 handler 算不算验证过」）**：
+  `CarriedErrorPassthroughMvcTest` 用 `MockMvc` + **真实 `ExceptionHandlerExceptionResolver`** 打
+  `standaloneSetup`（只装探针 Controller + 真实 handler，**不需要 Nacos/Redis/MySQL**），
+  覆盖：内部 404 + `ErrorInfo` 原样 / 对外 404 + `Result` 三键 / `TRANSIENT` → 503 /
+  装饰器包装仍透传 / 反向对照仍 500。**这一层不可省**：直调用例根本不经过类型匹配，
+  「Spring 会不会选中它」它们一概看不见。
+- **接缝修法**：继承关系这件事**没有任何编译器或跨模块检查能保证**（改回去编译照样过、
+  ia-common 的测试照样绿），故在 `ia-api` 侧立 `UpstreamExceptionPassthroughWiringTest`
+  —— 它同时看得见两个类，正好站在「A 交给 B」那一行。
+- **双保险等价性（提交前补的，最容易漏的一条）**：两条冗余路径自己都「能用」不等于「等价」——
+  若各自跑偏，同一个故障会按**包装层数**给出两种报文，比只有一条路更糟。故新增
+  `shouldProduceIdenticalResponse_throughEitherRedundantPath`：显式分支 / 兜底直接收到载体 /
+  装饰器包装 三条路，status 与 body 必须逐一相同，且带**反空前提**（三条都得真的是 404+下游码，
+  否则「三个 500 彼此相等」也会通过）。**M6 实测**：让兜底路径故意返回 500+1000 →
+  该用例红（报错文案直接指出「报文形态取决于包装层数，而不是下游说了什么」）。
+  ⚠ 比较必须**分开比 status 与 body**：`ResponseEntity` 继承的 `equals` 只比 headers+body，
+  整体 `isEqualTo` 会漏掉「状态码不同、body 相同」这一形态。
+- **契约口径（提交前补，否则明知不全还提交）**：`05-API-Specification` §二 增加
+  「状态码的两个来源」两条规则 —— **本域映射**（状态码 = `ErrorCode.httpStatus`）与
+  **下游透传**（状态码 = 下游真实状态码，业务码/文案原样，`/internal/**` body 原样、
+  `/api/**` 只换状态码不换信封）。**边界写进契约**：`/api/**` 因此可能出现**不在 §2.1a 清单里的 4xx**
+  （如下游 409/422），前端只能走「通用错误 + 直显 msg」，不得据此反推本域码。
+  原文只写「内部状态码 = `ErrorCode` 对应状态」，在透传情形下会与实现矛盾 —— 补这两条是**让那句话不再说谎**。
+- **已知边界（登记，未做）**：
+  - 若上游失败被**替换**（而非嵌套在 `cause` 链上）成别的异常，仍会 500；当前链路不产生这种形态。
+  - 下游 `401/403` 属 `CLIENT`，会**原样透传**成 401/403。集群内 `/internal/**` 的鉴权由网关注入头承担、
+    正常不会返回 401；若出现，那属于服务间凭证配置故障（可重试），应在**解码侧**归类，
+    **不要**在响应层按状态码特判 —— 那会重新打开「两份状态码判断」的漂移口子。
+
 ---
 
 ## 2. 待办
@@ -227,6 +301,8 @@ git log --oneline -10                                        # 谁改了什么�
 | **U12** | `[历史]` 审计快照：若干部份 spu 表无 `short_code` 列、部分 sku 表无 `sku_id` 列（逐表清单见 U1 的 H2 豁免记录）⇒ 这些 H2 表无法补唯一键。若日后参与写入用例，必须补列+补键 | 低（目前只读）|
 | **U13** | `FavoriteSpuBriefQueryImplH2Test` 的 `spu_id` 约束是**匿名**（H2 自动名），键在但名与生产 `uk_spu_id` 不同 | 低 |
 | **U10** | 契约 §二 覆盖率数字（98/40/58 → 实测 99/52）—— **A/B/C/E 批的 E 项就是删这些数字** | 在 R2 批内 |
+| **U17** | **`void` 降级方法的兜底口径（已裁决：方案 A，下一批做）**。问题：语义门禁对「没抛异常」只做 `returnedDegradedValue++` 计数、**零校验**，而 `void` 的静默返回在调用方看来与真成功**完全同形**（正是 §1.10 里 `TradeInvoiceClientFallback` 那次事故的形态）。<br>**做法（不用手写控制流 lint）**：「能否抛」能从**类型**上强制就不做检查 —— 让该抛的方法 `throw` 复用现成的载体（`CarriedErrorException`），再加 ArchUnit 防回归；确实不能抛的才进白名单并写清理由。白名单若要求「日志 + 补偿记录 + 告警」，那三条**必须能被机器验**，否则又是会漂的注释。<br>**调用点已 grep（实测，别重查）**：<br>· `AfterSaleClientFallback#markRefunded` → `pay-service PayEventNotifier#writeBackAfterSaleRefunded:106-111` **有 `try/catch(Exception)`** ⇒ 可直接改 throw；<br>· `KgClientFallback#deleteEdges` → `item-service KgEdgeIngestManager#deleteEdgesSafely:179-181` **自有 try/catch** ⇒ 可直接改 throw；<br>· `AuthContextClientFallback#revokeUserTokens` → `user-service UserAdminManager#updateStatus:110` **无 try/catch**，且 DB 状态**已提交** ⇒ 直接改 throw 会让「已提交的禁用」对外报 5xx，**必须同步补调用点防护**。<br>**因此清单 =「两处改 throw + 三个 catch 点审计/补齐」**（两个已存在 → 审计其是否真的兜住并留 WARN/补偿；一个缺失 → 补齐）。<br>**两条硬约束**：① `revokeUserTokens` 若落补偿记录，**必须有真实消费者**（重试任务或管理端收敛入口）—— 否则就是造僵尸数据（`invoice_link_compensation` 那条教训）；② **删过时注释、留锚点**：`AfterSaleClientFallback` 的**方法注释与类注释互相矛盾**（类注释说「改抛异常后异常被 catch 接住」，方法注释说「一律不抛…抛错会把成功的退款判成失败」）。实测调用点有 try/catch ⇒ **方法注释是过时的**，改 throw 时删掉它，并留一行指向 `PayEventNotifier#writeBackAfterSaleRefunded` 的锚点 | 下一批（方案 A） |
+| ~~**U18**~~ | ✅ **无需另做**：「9 个 fallback 的 CLIENT 分支回归测试」这一项已被 §1.10 的**发现式**语义门禁覆盖 —— `FallbackDegradeContractTest` 扫描 `target/classes` 自动发现全部工厂（不维护类名清单），逐个方法验证 CLIENT 分支。**不要再手写逐工厂的 CLIENT 用例**：那既冗余，也会在新增工厂时静默漏测（清单必然漂） | 已覆盖 |
 
 ---
 
@@ -258,6 +334,7 @@ git log --oneline -10                                        # 谁改了什么�
 |---|---|
 | 后端逻辑/编译 | ✅ 全量单测通过（自己跑 `verify-gates.sh full` 或 `mvn clean test` 取数；**必须 JDK 21**，JDK 25 下 JaCoCo 会全仓红）|
 | 降级透传门禁 | ✅ **两层面均做过变异验证**（M1 改回无条件 `SYSTEM_BUSY` → 语义+结构同时红；M2 fail-closed→fail-open → 语义红；复原后全绿）|
+| **4xx 透传到达 HTTP** | ✅ **三层证据**：① 直调 handler（四类映射 + 接缝断言）；② 框架层 `CarriedErrorPassthroughMvcTest`（真实 `ExceptionHandlerExceptionResolver` + MockMvc，含装饰器包装与反向对照）；③ 突变 M5（双保险同时摘掉 → 框架层五条全红）。⚠ 边界：**真实网络/网关仍未验**（Nacos/Redis 不可达，服务起不来）|
 | 门禁自证 | ✅ `verify-gates.sh self-test` 会对门禁喂合成违规样本并断言其变红；Java 侧自证（`FallbackDegradeGateSelfTest` / guard fixture / 棘轮四条规则）随 `mvn test` 执行 |
 | 契约 ⇄ 代码 | ✅ 端点对账 289/0/43 + `check-section7` |
 | 建库脚本 | ✅ 真库实跑过一次、0 错误且幂等（MySQL 8.0.36）；⚠ `[历史]` 那次跑在新增 `invoice_link_compensation` **之前** ⇒ **该表尚未真库实跑**，目前只有 H2 与静态核对 |
@@ -277,6 +354,27 @@ git log --oneline -10                                        # 谁改了什么�
   export PATH=$JAVA_HOME/bin:/e/maven/apache-maven-3.9.7/bin:$PATH
   cd Implementation/back-end && mvn -o -pl <module> test      # -o 离线；不要动根目录 clean 去和并行会话抢
   ```
+- **改了共享模块（`ia-common` / `ia-api`）之后必须先 `install`，否则门禁会给出误导性的红**（本轮实测，浪费了十分钟）：
+  `verify-gates.sh fast` 的 ia-api 步骤跑的是 `-pl ia-api test`（**不含 `ia-common` 的 reactor**），
+  它从本地仓库取 `ia-common` 的 **jar**。若新增的类只存在于 `target/classes`、尚未 install，
+  症状是 **`TestEngine with ID 'junit-jupiter' failed to discover tests`** —— 一个看起来像
+  「测试引擎坏了」的报错，而不是「找不到类」。修法：`mvn -o -pl ia-common -DskipTests install`。
+  同理，`mvn -pl ia-common,ia-api test`（reactor 含两者）**绿并不代表** `verify-gates.sh fast` 会绿 ——
+  这是「两个入口结论不一致」的又一个实例，**取数一律以门禁入口为准**。
+  注意 groupId 是 `org.nolazy`（不是 `org.icedamericanomall`），jar 落地在 `/e/maven/myRepository/org/nolazy/`。
+- **「门禁全通过」不覆盖一致性，这是已知盲区**（本轮实测）：契约七节 / 前端死路径 / 路径互校 /
+  错误码表 / 查询参数命名 / `codeOnly==0` 这六道闸**只在 CI 的 `consistency` job**，
+  `verify-gates.sh fast|full` **都不含**。所以本地跑绿**不等于**一致性通过 —— 改过契约、
+  端点数、错误码或前端路径时，必须手工补跑（CI 兜底，但 push 后才发现就晚了）：
+  ```bash
+  node Implementation/back-end/scripts/check-section7.mjs
+  node Implementation/front-end/scripts/check-frontend-api-paths.mjs
+  node Implementation/front-end/scripts/crosscheck-api-paths.mjs
+  node Implementation/front-end/scripts/check-error-codes.mjs
+  node Implementation/front-end/scripts/check-query-param-naming.mjs
+  node Implementation/back-end/scripts/extract-endpoints.mjs    # codeOnly 必须为 0
+  ```
+  是否把这几道并入 `full` 尚未裁决（会让 pre-push 变慢）；**当前结论：记在这里，CI 兜底**。
 - **注意 shell 归属**：后台任务若用 `pwsh` 里的 `bash`，可能命中 WSL 的 bash（`/c/...` 在 WSL 下不存在，整条脚本静默全败）。跑 `.sh` 要么用 `ops_bash`（Git Bash），要么显式调 `C:\Program Files\Git\bin\bash.exe`。
 - **MySQL**：本机 8.0.36 可用（凭据由用户提供，**不落仓库**）。`iam_smoke` 库已按 `Initialize.sql` 建过（**新增 `invoice_link_compensation` 之后需重建**才能核对表结构）。
 - `icedamericano_mall` 现存 **11 张旧名空表**（`order`/`product` 不在新脚本 DROP 清单内，就地重建会残留这 2 张）。

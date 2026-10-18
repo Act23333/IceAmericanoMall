@@ -446,10 +446,13 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 > | 解码下游错误体 / 未知一律降级不吞错 | `ia-api` `exception/UpstreamErrorDecoder` | `UpstreamErrorDecoderTest` |
 > | 解码路径与降级路径**同一个类别入口**（禁止一处说 TRANSIENT、另一处说 BUG） | `ia-api` `exception/UpstreamFailures#classify` | `UpstreamFailuresTest`（真实 `feign.RetryableException` / resilience4j `CallNotPermittedException`） |
 > | `traceId` 跨服务透传（`X-Trace-Id`，**MDC 有值才注入**） | `ia-api` `config/DefaultFeignConfig`（`RequestInterceptor`） | `DefaultFeignConfigTest` / `TraceIdPropagationChainTest` |
+> | **4xx 原样透传必须真正到达 HTTP 响应**（载体形状下沉到 `ia-common`，不让 `ia-common` 反依赖 `ia-api`；状态码还原只有一处） | `ia-common` `common/exception/CarriedErrorException`（`httpStatus()` 唯一还原入口）+ `common/aspect/ExceptionResponseSupport#carriedResponse` | `GlobalExceptionHandlerTest`（四类映射 + 「状态码与业务码同源于一条上游错误」接缝断言 + `@ExceptionHandler` 挂载反射门禁）/ `UpstreamExceptionPassthroughWiringTest`（继承关系即接缝：改回 `RuntimeException` 即红） |
 > | 状态码 → `category` 的**逐行映射**（`408/429/502/503/504` + `null` ⇒ `TRANSIENT`；`≥500` ⇒ `BUG`；`≥400` ⇒ `CLIENT`；`2xx` ⇒ `RULE`；覆盖表当前 3 条）与**三看分工**（状态码 → 网关/缓存/熔断/SLO；`code` → 前端文案；`category` → 跨服务透传或降级） | `ia-common` `common/enums/ErrorCategory#ofStatus` / `#of(Integer,Throwable)` | 逐行取证、覆盖表清单、判定顺序与「**`category` 不能按码段判定**」的反例 → [ADR-066](../adr/066-http-status-and-business-code-layering.md) §决策 2 / §决策 3 |
 
 1. **透传优先**：下游 **4xx + 已知 `code` 必须原样透传**；**只有 5xx / 超时 / 熔断**才允许改写成本域的 `SYSTEM_BUSY`。
    > 反例（本仓已发生）：`SpuDetailClient` 把下游 404（商品不存在）降级成 `SYSTEM_BUSY("商品服务暂不可用")`，导致「商品不存在」被说成「服务故障」。
+   >
+   > **反例之二（同一条铁律的另一半，2026-10-18 修正）**：降级工厂已经 `throw upstream`（上半条做对了），但**异常抛出之后没有任何 `@ExceptionHandler` 接得住**（`UpstreamException` 当时直接继承 `RuntimeException`），于是落兜底分支变成 **HTTP 500**。**「透传」的判据不止于「谁抛出」，还包括「谁在 HTTP 层原样接住」** —— 只做前半条，等于把业务事实交给了一个会说「服务宕机」的兜底分支。载体形状现由 `ia-common` 的 `CarriedErrorException` 认领（`ia-common` 不能反依赖 `ia-api`，见 [ADR-066](../adr/066-http-status-and-business-code-layering.md) §决策 3 的分层理由）。
 2. **fallback 只许降级，不许吞错**。
    - 只读展示类：可 fail-open，但降级文案必须是「**暂时无法获取/比对**」，**不得写成「服务不可用」**；
    - 写 / 资金 / 库存：**fail-closed**，**绝不** fallback 成「成功」。
