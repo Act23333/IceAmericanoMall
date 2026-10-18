@@ -200,7 +200,7 @@ public class PayManager {
         PayOrder payOrder = payOrderService.createPending(orderNo, userId, amount,
                 PayChannelEnum.BALANCE.getCode(), PayTypeEnum.BALANCE.getCode());
         try {
-            channelRouter.deductBalance(userId, amount);
+            channelRouter.deductBalance(userId, amount, payOrder.getPayOrderNo());
         } catch (Exception e) {
             payOrderService.cancelPending(payOrder.getId());
             log.error("余额扣款失败，支付单已取消: userId={}, amount={}, orderNo={}", userId, amount, orderNo, e);

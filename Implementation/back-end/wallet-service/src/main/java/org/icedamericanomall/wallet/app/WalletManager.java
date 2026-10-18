@@ -35,6 +35,7 @@ public class WalletManager {
 
     /** 退款流水的固定摘要。 */
     static final String REFUND_REMARK = "售后退款";
+    static final String DEDUCT_REMARK = "余额支付";
 
     private final WalletAccountRepository walletAccountRepository;
     private final WalletTransactionRepository walletTransactionRepository;
@@ -47,14 +48,29 @@ public class WalletManager {
     /**
      * 原子扣减余额（余额支付）；余额不足抛 BALANCE_INSUFFICIENT。
      */
-    public void deductBalance(Long userId, int amount) {
+    public void deductBalance(String transactionNo, Long userId, int amount) {
+        if (transactionNo == null || transactionNo.isBlank()) {
+            throw new BadRequestException(ErrorCode.PARAM_ERROR, "扣款流水号不能为空（幂等键）");
+        }
         if (amount <= 0) {
             throw new BadRequestException(ErrorCode.PARAM_ERROR, "扣减金额必须大于0");
         }
+        // ★ 顺序是核心：**先插流水**（uk_transaction_no 拦住重复请求），再动余额。
+        // 反过来（先扣余额后插流水）一旦第二次进来，余额已经错了 —— 流水只能事后发现，不能事前阻止。
+        try {
+            walletTransactionRepository.insert(WalletTransaction.expense(
+                    transactionNo, userId, amount, transactionNo, DEDUCT_REMARK));
+        } catch (DuplicateKeyException e) {
+            // 幂等：同一 transactionNo 重复请求，不重复扣余额
+            log.info("[wallet][deduct][idempotent] 流水已存在，幂等返回: transactionNo={}, userId={}, amount={}",
+                    transactionNo, userId, amount);
+            return;
+        }
         if (walletAccountRepository.deduct(userId, amount) <= 0) {
+            // 余额不足：抛出让本地事务回滚，流水一并撤销（否则会留下"有流水没扣钱"的假记录）
             throw new BizException(ErrorCode.BALANCE_INSUFFICIENT, "余额不足");
         }
-        log.info("[wallet][deduct][ok] userId={}, amount={}", userId, amount);
+        log.info("[wallet][deduct][ok] userId={}, amount={}, transactionNo={}", userId, amount, transactionNo);
     }
 
     /**

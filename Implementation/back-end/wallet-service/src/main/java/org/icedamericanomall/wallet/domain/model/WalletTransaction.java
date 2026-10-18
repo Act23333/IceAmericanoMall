@@ -25,4 +25,11 @@ public record WalletTransaction(String transactionNo, Long userId, int type, int
         return new WalletTransaction(transactionNo, userId, WalletTransactionType.INCOME.getCode(), amount,
                 bizNo, remark);
     }
+
+    /** 支出流水（余额支付扣款）：与 income 对称，方向由 {@link WalletTransactionType#EXPENSE} 决定。 */
+    public static WalletTransaction expense(String transactionNo, Long userId, int amount, String bizNo,
+                                            String remark) {
+        return new WalletTransaction(transactionNo, userId, WalletTransactionType.OUTCOME.getCode(), amount,
+                bizNo, remark);
+    }
 }

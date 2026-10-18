@@ -20,7 +20,8 @@ public interface BalanceClient {
 
     /** 原子扣减余额（余额支付）。 */
     @PostMapping("/deduct")
-    void deductBalance(@RequestParam(name = "user_id") Long userId, @RequestParam Integer amount);
+    void deductBalance(@RequestParam(name = "user_id") Long userId, @RequestParam Integer amount,
+                       @RequestParam(name = "biz_ref") String bizRef);
 
     /**
      * 余额退款入账（F1 余额渠道原路退回，I41）。

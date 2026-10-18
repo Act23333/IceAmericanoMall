@@ -247,7 +247,7 @@ class PayManagerTest {
 
         payManager.initiatePayment(ORDER_NO, 100L, PayChannelEnum.BALANCE);
 
-        verify(channelRouter).deductBalance(100L, 5000);
+        verify(channelRouter).deductBalance(eq(100L), eq(5000), anyString());
         verify(payOrderService).markBalancePaidIfPending(1L);
         verify(orderClient).updateOrderStatus(ORDER_NO, 2);   // 待发货
         verify(payOrderService, never()).cancelPending(anyLong());
@@ -262,7 +262,7 @@ class PayManagerTest {
         when(payOrderService.createPending(anyString(), anyLong(), anyInt(), anyString(), anyInt()))
                 .thenReturn(payOrder(PayStatusEnum.PENDING_PAY.getCode()));
         doThrow(new BizException(ErrorCode.BALANCE_INSUFFICIENT, "余额不足"))
-                .when(channelRouter).deductBalance(100L, 5000);
+                .when(channelRouter).deductBalance(eq(100L), eq(5000), anyString());
 
         BizException ex = assertThrows(BizException.class,
                 () -> payManager.initiatePayment(ORDER_NO, 100L, PayChannelEnum.BALANCE));

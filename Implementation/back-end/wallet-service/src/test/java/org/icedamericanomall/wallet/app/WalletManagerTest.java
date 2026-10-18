@@ -52,7 +52,7 @@ class WalletManagerTest {
         when(walletAccountRepository.deduct(100L, 3000)).thenReturn(0);
 
         BizException ex = assertThrows(BizException.class,
-                () -> walletManager.deductBalance(100L, 3000));
+                () -> walletManager.deductBalance("tx-1", 100L, 3000));
 
         assertEquals(ErrorCode.BALANCE_INSUFFICIENT, ex.getErrorCode());
     }
@@ -61,7 +61,7 @@ class WalletManagerTest {
     @DisplayName("deductBalance — 金额非法 → BadRequestException，不打仓储")
     void shouldReject_whenAmountNonPositive() {
         BadRequestException ex = assertThrows(BadRequestException.class,
-                () -> walletManager.deductBalance(100L, 0));
+                () -> walletManager.deductBalance("tx-2", 100L, 0));
 
         assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
         verify(walletAccountRepository, never()).deduct(100L, 0);

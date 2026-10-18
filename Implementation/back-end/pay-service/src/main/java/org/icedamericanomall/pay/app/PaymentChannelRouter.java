@@ -76,8 +76,8 @@ public class PaymentChannelRouter {
     }
 
     /** 余额扣款（代理 BalanceClient）。 */
-    public void deductBalance(Long userId, int amount) {
-        balanceClient.deductBalance(userId, amount);
+    public void deductBalance(Long userId, int amount, String bizRef) {
+        balanceClient.deductBalance(userId, amount, bizRef);
     }
 
     /**

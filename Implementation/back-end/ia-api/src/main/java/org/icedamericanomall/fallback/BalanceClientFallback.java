@@ -46,7 +46,7 @@ public class BalanceClientFallback implements FallbackFactory<BalanceClient> {
         return new BalanceClient() {
 
             @Override
-            public void deductBalance(Long userId, Integer amount) {
+            public void deductBalance(Long userId, Integer amount, String bizRef) {
                 if (category == ErrorCategory.CLIENT && upstream != null) {
                     log.warn("余额扣减降级(透传): 下游业务失败 userId={}, amount={}, code={}, msg={}",
                             userId, amount, upstream.getCode(), upstream.getMsg());

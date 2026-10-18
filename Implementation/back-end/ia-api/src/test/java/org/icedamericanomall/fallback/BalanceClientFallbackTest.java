@@ -26,7 +26,7 @@ class BalanceClientFallbackTest {
     @Test
     @DisplayName("deductBalance 服务不可用 → BizException(BUSINESS_EXECUTION_EXCEPTION)")
     void shouldThrow_whenDeductAndServiceDown() {
-        BizException ex = assertThrows(BizException.class, () -> client.deductBalance(100L, 5000));
+        BizException ex = assertThrows(BizException.class, () -> client.deductBalance(100L, 5000, "pay-no-1"));
 
         assertEquals(ErrorCode.SYSTEM_BUSY, ex.getErrorCode());
     }
