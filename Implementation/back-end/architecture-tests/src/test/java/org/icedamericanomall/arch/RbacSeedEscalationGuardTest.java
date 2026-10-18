@@ -355,6 +355,22 @@ class RbacSeedEscalationGuardTest {
                 .isEmpty();
     }
 
+    @Test
+    @DisplayName("★ 种子解析 — INSERT ... SELECT（按编码取 ID）的绑定必须被解析，不能只认 VALUES 字面量")
+    void shouldParseBindingsDeclaredByInsertSelect() {
+        String syntheticSql = "INSERT INTO `sys_permission` (`id`, `name`, `code`, `type`, `path`, `sort_order`, `status`) "
+                + "VALUES (22, 'RBAC 管理', 'rbac:admin', 3, '/api/admin/roles/**', 25, 1);\n"
+                + "INSERT INTO `sys_role_permission` (`role_id`, `permission_id`) "
+                + "SELECT 4, id FROM `sys_permission` WHERE `code` = 'rbac:admin';";
+
+        RbacSeed parsed = parseSeed(syntheticSql);
+
+        assertThat(parsed.bindings())
+                .as("按编码取 ID 的绑定必须被解析 —— 否则守卫在真实种子上是假阴性："
+                        + "判不出「非管理员持有」，还误报「未授予管理员」")
+                .containsExactly(new Binding(ROLE_ADMIN_ID, 22L));
+    }
+
     // ==================================================================================
     // 判定（纯函数，无 IO）+ 死数据载体 + 解析
     // ==================================================================================
@@ -428,8 +444,15 @@ class RbacSeedEscalationGuardTest {
             }
         }
 
-        // sys_role_permission：只取该表 INSERT 的 VALUES 段，避免把别的表误当绑定
+        // sys_role_permission 有**两种**写法，两种都必须解析：
+        //   ① VALUES (roleId, permissionId), ...                             —— 字面量
+        //   ② INSERT ... SELECT roleId, id FROM sys_permission WHERE code = 'x' / IN (...) —— 按编码取 ID
+        // 只解析 ① 会让守卫在 ② 上变**假阴性**：绑定集为空 ⇒「非管理员持有」判不出来，
+        // 反而误报「未授予管理员」。2026-10-18 拆位迁移首次用了 ②，当场把这条守卫打红
+        // —— 与「status 过滤只验一条通道」是同族事故：**门禁的解析面必须覆盖种子的全部写法**。
         List<Binding> bindings = new ArrayList<>();
+
+        // ① 字面量 VALUES
         Matcher stmt = Pattern.compile(
                 "INSERT INTO `sys_role_permission`[^;]*?VALUES(.*?)(?:ON DUPLICATE KEY|;)",
                 Pattern.DOTALL).matcher(sql);
@@ -437,6 +460,30 @@ class RbacSeedEscalationGuardTest {
             Matcher pair = Pattern.compile("\\((\\d+)\\s*,\\s*(\\d+)\\)").matcher(stmt.group(1));
             while (pair.find()) {
                 bindings.add(new Binding(Long.parseLong(pair.group(1)), Long.parseLong(pair.group(2))));
+            }
+        }
+
+        // ② INSERT ... SELECT <roleId>, id FROM sys_permission WHERE code = 'x' / IN ('x','y')
+        Matcher selectStmt = Pattern.compile(
+                "INSERT INTO `sys_role_permission`[^;]*?SELECT\\s+(\\d+)\\s*,\\s*id\\s+FROM\\s+`?sys_permission`?"
+                        + "\\s+WHERE\\s+`?code`?\\s+(?:=\\s*'([^']+)'|IN\\s*\\(([^)]*)\\))",
+                Pattern.DOTALL).matcher(sql);
+        while (selectStmt.find()) {
+            long roleId = Long.parseLong(selectStmt.group(1));
+            List<String> selectedCodes = new ArrayList<>();
+            if (selectStmt.group(2) != null) {
+                selectedCodes.add(selectStmt.group(2));
+            } else if (selectStmt.group(3) != null) {
+                Matcher codeMatcher = Pattern.compile("'([^']+)'").matcher(selectStmt.group(3));
+                while (codeMatcher.find()) {
+                    selectedCodes.add(codeMatcher.group(1));
+                }
+            }
+            for (String code : selectedCodes) {
+                byId.entrySet().stream()
+                        .filter(entry -> code.equals(entry.getValue()))
+                        .findFirst()
+                        .ifPresent(entry -> bindings.add(new Binding(roleId, entry.getKey())));
             }
         }
 

@@ -169,6 +169,14 @@
 | `ROLE_SELLER` | `ROLE_USER` 全集 + `product:write`、`seller:admin`、`seller:finance`、`seller:coupon`、`seller:knowledge` | 迁移时**一次性给全**（Q3「存量不失权」）。<br>**刻意不给 `order:write`**：该位守的是 `/api/admin/order/**`（跨商家后台动作），商家发货走 `/api/seller/**` 由 `seller:admin` 覆盖 —— 把 admin 档位给商家就是"多给"，与 Q3「不失权」不是一回事（不失权指**原有能力**不减，不代表**新增**跨商家能力） |
 | `ROLE_ADMIN` | `*:*:*` + **`rbac:admin`（显式）** | 其余位经通配符获得；`rbac:admin` 通配符**不顶**（Q6） |
 
+**商家侧售后：当前没有（实测，2026-10-18）**。全部售后端点只有三个：买家端 `/api/after-sale`、
+管理端 `/api/admin/after-sale`、内部 `I42`（`/internal/trade/after-sale`）；`trade-service` 的
+`/api/seller/**` 只有 finance。且 `after_sale` 表只有 `order_no` + `user_id`，**没有 seller/shop 维度**。
+
+> **结论写死**：**商家侧暂无售后功能**。将来要引入，**前置是 `after_sale` 补 `seller_id`（或经 order 关联取
+> seller）**，然后才谈 `seller:aftersale` 位 —— **权限位不能绕过这个前置**：没有 seller 维度的表，
+> 给商家任何售后位都等于让他读/审批别家的售后（这正是 S0-pre 种子守卫拦的那件事）。
+
 **`aftersale:read` 给谁（审阅问题，此处给结论）**：**只由 `ROLE_ADMIN` 经通配符获得**，不给商家。
 理由是种子守卫 S0-pre 记录的那个事实：`after_sale` 表**没有 seller 维度**，管理端列表只按状态过滤 ——
 一旦给商家这个位，他读到的就是**别家的售后**。商家看自己的售后走 `/api/seller/**`（由 `seller:admin` 覆盖），
@@ -273,9 +281,13 @@ UPDATE sys_permission SET status = 0 WHERE code IN ('user:admin');
    断言 **旧 ⊆ 新**（只许放宽不许收紧；任何收紧都必须单独列出并确认是有意的）。
 2. **缓存失效**（不可省）：
    ```bash
-   redis-cli --scan --pattern 'user:perms:*' | xargs -r redis-cli DEL
+   # 必须打印清除条数：不打印就无法区分「清了 0 条」和「命令没生效」
+   redis-cli --scan --pattern 'user:perms:*' | tee /tmp/perms.keys | xargs -r redis-cli DEL
+   echo "cleared=$(wc -l < /tmp/perms.keys)"
    ```
    否则 TTL 30 分钟内旧权限集继续生效，测出来的 403 是假的。
+   **「清了 0 条」也要当结论看**：可能是缓存键前缀写错（应与 `UserSecurityCache` 里的
+   `user:perms:` 完全一致），不是"本来就没有"。
 3. **端到端 403 用例清单**（每条：账号 → 端点 → 期望）：
    - 有 `user:read`、无 `user:write` → `PUT /api/admin/user/{id}/status` = **403**
    - 有 `aftersale:write`、无 `pay:admin` → `POST /api/admin/pay/refund/{no}/retry` = **403**（资金面隔离的核心断言）
@@ -316,7 +328,7 @@ UPDATE sys_permission SET status = 0 WHERE code IN ('user:admin');
 
 > 迁移执行时把这三条写成脚本/门禁跑一遍（而不是审阅时肉眼扫），因为 §6 与 §7 会分别改。
 
-### 7.4b 待裁决（新，Q7）：商家侧要不要拆成"商家管理员 / 运营 / 财务"三个角色
+### 7.4b Q7 **已裁决（2026-10-18）**：维持单一 ROLE_SELLER，员工角色另立项
 
 Q3 裁决的是**权限位**拆三位（`seller:finance` / `seller:coupon` / `seller:knowledge`），
 但**角色**仍只有一个 `ROLE_SELLER` —— 等于"拆了位、没拆角色"，实际效果是**每个商家账号都拿三个位全集**
@@ -355,7 +367,13 @@ Q3 裁决的是**权限位**拆三位（`seller:finance` / `seller:coupon` / `se
 1. ✅ 门禁先行（`AdminEndpointAuthorizationGuardTest` 在）
 2. ✅ Q5：4 个服务补 `spring-boot-starter-security` + 两个控制器转声明式 + 门禁转正
 3. ✅ Q6：`PermissionBits` 单点实现 + `rbac:admin` 通配符排除 + 两条路径共用
-4. ⬜ **种子迁移**（§7.2）+ **新增门禁**：注解里的位必须存在于 `sys_permission` 且 `status=1`
+4. ✅ **种子迁移（2026-10-18 已执行）**：`sys_permission` 新增 20 位（id 7–26，`status=1`）；
+   `ROLE_ADMIN` 经 `INSERT ... SELECT ... WHERE code = 'rbac:admin'` **显式**持有该位；
+   `ROLE_SELLER` 一次性拿全 `product:write` + 三个 `seller:*`。
+   **`user:admin` 刻意保持 `status=1`** —— 它就是「后删旧位」那一步，必须等注解替换完再停用，
+   否则中间态全线 403（执行顺序的意义就在这里）。
+   **进度计**：此刻 `PermissionBitReferenceGuardTest` 会打印 20 条「零消费」WARN，
+   它们逐条对应待接线的位 —— 第 5 步做完，WARN 归零；这就是迁移进度表，不需要另做一份。
 5. ⬜ **逐控制器替换注解**（门禁兜底）
 6. ⬜ **缓存失效**（§7.3-2）
 7. ⬜ **投影比对**（§7.3-1）

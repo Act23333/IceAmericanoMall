@@ -976,7 +976,35 @@ INSERT INTO `sys_permission` (`id`, `name`, `code`, `type`, `path`, `sort_order`
 (3, '订单查询',    'order:read',   3, '/api/trade/order/**',  2,  1),
 (4, '商品浏览',    'product:read', 3, '/api/item/**',         3,  1),
 (5, '用户管理',    'user:admin',   3, '/api/admin/**',        10, 1),
-(6, '商家管理',    'seller:admin', 3, '/api/seller/**',       11, 1)
+(6, '商家管理',    'seller:admin', 3, '/api/seller/**',       11, 1);
+
+-- RBAC0 权限位拆分（2026-10-18，草案 rbac-permission-matrix-draft.md §6.1/§7.2）。
+-- 执行顺序「先种子 → 再注解 → 后删旧位」：本段只**新增**位（status=1），
+-- 旧开关 user:admin 暂不在此停用 —— 它必须等注解逐个替换完之后才停用（否则中间态全线 403）。
+INSERT INTO `sys_permission` (`id`, `name`, `code`, `type`, `path`, `sort_order`, `status`) VALUES
+(7,  '用户查询',    'user:read',       3, '/api/admin/user/**',        10, 1),
+(8,  '用户变更',    'user:write',      3, '/api/admin/user/**',        11, 1),
+(9,  '订单管理',    'order:write',     3, '/api/admin/order/**',       12, 1),
+(10, '售后处理',    'aftersale:write', 3, '/api/admin/after-sale/**',  13, 1),
+(11, '售后查询',    'aftersale:read',  3, '/api/admin/after-sale/**',  14, 1),
+(12, '支付运维',    'pay:admin',       3, '/api/admin/pay/**',         15, 1),
+(13, '财务结算',    'finance:admin',   3, '/api/admin/finance/**',     16, 1),
+(14, '发票开具',    'invoice:issue',   3, '/api/admin/invoice/**',     17, 1),
+(15, '发票作废',    'invoice:void',    3, '/api/admin/invoice/**',     18, 1),
+(16, '汇率维护',    'currency:admin',  3, '/api/admin/currency/**',    19, 1),
+(17, '营销查询',    'marketing:read',  3, '/api/admin/**',             20, 1),
+(18, '营销管理',    'marketing:admin', 3, '/api/admin/**',             21, 1),
+(19, '商家审核',    'merchant:admin',  3, '/api/admin/seller/**',      22, 1),
+(20, '首页装修',    'home:admin',      3, '/api/admin/home/**',        23, 1),
+(21, '知识图谱',    'kg:admin',        3, '/api/admin/kg/**',          24, 1),
+(22, 'RBAC 管理',   'rbac:admin',      3, '/api/admin/roles/**',       25, 1),
+(23, '商品维护',    'product:write',   3, '/api/seller/**',            26, 1),
+(24, '商家结算',    'seller:finance',  3, '/api/seller/finance/**',    27, 1),
+(25, '商家券',      'seller:coupon',   3, '/api/seller/coupon/**',     28, 1),
+(26, '商家知识库',  'seller:knowledge',3, '/api/seller/knowledge/**',  29, 1)
+ON DUPLICATE KEY UPDATE
+    `name` = VALUES(`name`), `code` = VALUES(`code`), `type` = VALUES(`type`),
+    `path` = VALUES(`path`), `sort_order` = VALUES(`sort_order`), `status` = VALUES(`status`);
 ON DUPLICATE KEY UPDATE
     `name`       = VALUES(`name`),
     `code`       = VALUES(`code`),
@@ -997,6 +1025,19 @@ INSERT INTO `sys_role_permission` (`role_id`, `permission_id`) VALUES (3,2), (3,
 ON DUPLICATE KEY UPDATE `permission_id` = VALUES(`permission_id`);
 -- ROLE_ADMIN: 全部权限 (含 *:*:* 超级管理员)
 INSERT INTO `sys_role_permission` (`role_id`, `permission_id`) VALUES (4,1), (4,2), (4,3), (4,4), (4,5), (4,6)
+
+-- RBAC0 拆位（2026-10-18）：
+--   ROLE_ADMIN 必须**显式**持有 rbac:admin —— PermissionBits 的通配符对它是排除的，
+--     只有种子能授予它（RbacSeedEscalationGuardTest 会校验"只能给 ROLE_ADMIN"）。
+--   ROLE_SELLER 一次性拿全三位（Q3「存量不失权」）：拆位不能让商家丢能力。
+--     注意：**不给 aftersale:write / pay:admin / finance:admin 等 admin 档** ——
+--     商家侧暂无售后功能（after_sale 无 seller 维度），给位等于让商家读别家售后。
+INSERT INTO `sys_role_permission` (`role_id`, `permission_id`)
+SELECT 4, id FROM `sys_permission` WHERE `code` = 'rbac:admin';
+
+INSERT INTO `sys_role_permission` (`role_id`, `permission_id`)
+SELECT 3, id FROM `sys_permission`
+WHERE `code` IN ('product:write', 'seller:finance', 'seller:coupon', 'seller:knowledge');
 ON DUPLICATE KEY UPDATE `permission_id` = VALUES(`permission_id`);
 
 -- =====================================================================
