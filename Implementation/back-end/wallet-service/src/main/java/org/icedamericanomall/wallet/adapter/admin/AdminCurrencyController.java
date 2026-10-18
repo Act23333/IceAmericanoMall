@@ -30,7 +30,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 汇率留痕以 source/effect_time/updater_id 落库承载。
  */
 @RestController
-@PreAuthorize("@ss.hasPermi('user:admin')")
+// 权限位拆分（5a，2026-10-18）：汇率与币种维护（平台级配置，影响全站价格）
+@PreAuthorize("@ss.hasPermi('currency:admin')")
 @RequestMapping("/api/admin/currency")
 @RequiredArgsConstructor
 public class AdminCurrencyController {

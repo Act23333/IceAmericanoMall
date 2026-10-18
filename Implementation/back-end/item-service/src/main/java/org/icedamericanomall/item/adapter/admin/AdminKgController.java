@@ -36,7 +36,8 @@ import java.util.List;
  * AD65 为只读查询，不标注。
  */
 @RestController
-@PreAuthorize("@ss.hasPermi('user:admin')")
+// 权限位拆分（5a，2026-10-18）：知识图谱与配对规则治理（平台级配置）
+@PreAuthorize("@ss.hasPermi('kg:admin')")
 @RequestMapping("/api/admin/kg")
 @RequiredArgsConstructor
 public class AdminKgController {

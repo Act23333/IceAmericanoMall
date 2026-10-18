@@ -20,7 +20,8 @@ import java.util.List;
  * 仅路径标识的删除端点开启参数摘要。
  */
 @RestController
-@PreAuthorize("@ss.hasPermi('user:admin')")
+// 权限位拆分（5a，2026-10-18）：首页装修（平台级配置）
+@PreAuthorize("@ss.hasPermi('home:admin')")
 @RequestMapping("/api/admin/home")
 @RequiredArgsConstructor
 public class AdminHomeController {

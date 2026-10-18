@@ -367,13 +367,14 @@ Q3 裁决的是**权限位**拆三位（`seller:finance` / `seller:coupon` / `se
    - 已知近似：方法级覆盖是**计数**不是逐方法绑定（可能把注解挂读方法上凑数），
      更严需源码解析器 —— 已在门禁注释里写明，不假装守住了。
 
-### 7.4d 待裁决（新，Q9）：发票冲红该挂 `invoice:issue` 还是 `invoice:void`
+### 7.4d Q9 **已裁决（2026-10-18）**：冲红挂 `invoice:void`
 
 `AdminInvoiceController` 有三个写方法，Q2 已裁决拆出 `invoice:issue` / `invoice:void`，
 但 `PUT /{invoiceNo}/red-flush`（冲红：作废原票 + 重开）**同时具备两者语义**。
-请裁决：挂 `invoice:void`（作废为主）？还是要求同时持有两位（`hasAllPermi` —— 但本批门禁只认
-`hasPermi` 单参，需先扩门禁）？**默认建议**：挂 `invoice:void`，并在方法注释写明"冲红等于作废+重开，
-按作废授权"，避免引入双位要求而拖慢门禁。
+**裁决**：挂 **`invoice:void`**。方法注释必须写明「**冲红 = 作废 + 重开**」的**原子语义** ——
+一次请求同时完成作废与重开，不是两个可分别授权的小动作。
+SoD（职责分离：一个人不能既开票又作废）**另立项**：它需要"同一实体两个动作互斥"的授权模型，
+不是权限位能表达的（现在 `*:*:*` 一律通吃），且本批门禁只认 `hasPermi` 单参，双位要求会先卡住门禁。
 
 ### 7.5 Q5 过渡态登记（拆位时必须改掉，不然就是"拆了位但没拆到这两处"）
 
@@ -408,6 +409,13 @@ Q3 裁决的是**权限位**拆三位（`seller:finance` / `seller:coupon` / `se
      **但已 grep 出唯一跨域控制器 —— `AdminInvoiceController`**：`issue` / `void` / `red-flush`
      三个方法对应**不同的位**（`invoice:issue` / `invoice:void` / 冲红归属待定，见 Q9），
      **必须按方法替换**。其余控制器域一致，可类级替换。
+   - **批次顺序（已调整）**：**单域控制器先做**（用它们验证流程：类级替换 → full → preflight 递减 →
+     grep 本批控制器代码内判权），**`AdminInvoiceController` 单独一批放最后**（按方法替换、风险最高）。
+   - **批次日志**：
+     | 批 | 控制器 | 位 | preflight 引用数 |
+     |---|---|---|---|
+     | 1 ✅ | `AdminCurrencyController` / `AdminHomeController` / `AdminKgController` | `currency:admin` / `home:admin` / `kg:admin` | 18 → 15 |
+     | 末 ⬜ | `AdminInvoiceController`（按方法：issue / void / red-flush） | `invoice:issue` / `invoice:void` / `invoice:void`（Q9） | — |
    - **每批替换后必须跑 `verify-gates.sh full`**，不能只看零消费 WARN 的下降：
      WARN 只反映"有没有被注解引用"，**不反映测试是否还在 mock 旧位**（mock 里写死
      `"user:admin"` 会导致"注解换了、测试还绿、线上却换位"的假通过）。WARN 是进度计，不是验收。
