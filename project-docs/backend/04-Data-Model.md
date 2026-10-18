@@ -10,21 +10,23 @@
 > **2026-10-16（SPU 词汇统一，ADR-059 落地批次，后端 `578fac27`）**：库表重命名同步 —— 表 `product`→`spu`、`product_view_log`→`spu_view_log`、`note_product`→`note_spu`；列 `product_id`→`spu_id`（`spu.spu_id` 业务键 `BINARY(16)`；`sku.spu_id` / `review.spu_id` / `favorite.spu_id` / `spu_view_log.spu_id` / `flash_sale.spu_id` / `note_spu.spu_id` / `group_buy_activity.spu_id` 为技术外键）、`product_ids`→`spu_ids`（`home_config`）、`hot_product_ids`→`hot_spu_ids`（`shop_decoration`）；索引/外键/唯一键 `uk_product_id`→`uk_spu_id`、`idx_product_id`→`idx_spu_id`、`idx_product`→`idx_spu`、`uk_user_product`→`uk_user_spu`、`uk_note_product`→`uk_note_spu`、`fk_sku_product`→`fk_sku_spu`、`fk_view_log_product`→`fk_view_log_spu`、`fk_product_seller`→`fk_spu_seller`、`fk_product_category`→`fk_spu_category`、`fk_product_freight_template`→`fk_spu_freight_template`（§3.5/§3.6、§七 7.1/7.2/7.7/7.8、§五、§十一、§十二同步；表数 62 不变）。**§11.2 原记 `idx_product_time` 有误**，实测 `spu_view_log` 为 `uk_user_spu(user_id, spu_id)` + `idx_user_time(user_id, view_time)`，本批次一并更正。**刻意保留**：展示名 `product_name`/`product_image`、ES 索引名 `products`、`conversation_id` 的 `product_{productId}` 格式（客户端自造，ADR-050）。线格式契约同步见 [05 §4](../contract/05-API-Specification.md)。
 > **2026-10-16（历史注记词汇同步小批，`product`→`spu`）**：上一段（2026-10-03「最后更新」历史注记）中的表名旧词 `product/orders/…`、`product/review 实际列修正` 已按 [ADR-059](../adr/059-spu-sku-vocabulary-disambiguation.md) 词汇口径一并改为 `spu/orders/…`、`spu/review 实际列修正` —— 该段的**事实内容与结论未动**，仅统一词汇，避免历史注记成为旧表名的埋伏源。本文档头仍保留 `product` 旧词的两处为**合法保留**：①下一段（2026-10-16 SPU 词汇统一批次）的「改前→改后」映射记录；②**代码标识符/展示名的刻意保留清单**——展示名 `product_name`/`product_image`、ES 索引名 `products`、`conversation_id` 的 `product_{productId}` 格式（ADR-059「刻意保留」清单）。
 > **2026-10-18（B6 批次：对外渠道号与内部业务键分离，[ADR-063](../adr/063-external-channel-number-separation.md)，代码 `256abbf3`）**：①`pay_order` 新增 `channel_trade_no VARCHAR(32)` + `uk_channel_trade_no` —— **对外渠道号**（渠道 `out_trade_no` 的唯一取值来源；20 位随机 hex / 80 bit 熵 / 无时间序 / 跨重试稳定 / 余额渠道为 `NULL`）；②`refund_order` 新增 `out_refund_no VARCHAR(64)` + `uk_out_refund_no` —— **对外退款项号**（渠道 `out_refund_no` 的唯一取值来源，与内部 `refund_no` 分离）；**同时明确 `channel_refund_no` 仍是「渠道退款单号（微信 `refund_id`，回调回填）」，不承载对外退款项号**（两列语义相反：一为「我方发出」、一为「渠道回填」，不可互相顶替）；③`reconciliation_detail` 新增 `channel_trade_no`（比对键）且 `pay_order_no` **放开 `NULL`**（「渠道有本地无」的明细没有本地支付单，不得伪造）；④同步订正 §12.1 `refund_order` 的 `after_sale_id`（ADR-049 起**可空**）与 `biz_ref`（ADR-049 新增，既有文档缺失）。两列均按 ADR-050「**外部格式列保留 VARCHAR**」口径（`channel_*` / 非业务标识），不进 `BINARY(16)` 转换面。
-> **2026-10-18（B7a 批次：承载层解耦契约先行，[ADR-063](../adr/063-external-channel-number-separation.md) §决策 7/8）**：①`spu` 新增 **`short_code VARCHAR(16) NOT NULL` + `UNIQUE KEY uk_short_code`** —— SPU **短码**（10 位小写 hex / 40 bit 熵 / 无时间序 / 不复用业务键任何子串），唯一用途是写入小程序码 `scene`（`p=<短码>`）并由新增端点 **P38** `GET /api/item/spu/by-code/{code}` 换回 SPU；**不是实体标识**，不得进任何 VO，不得替代 `spu_id`。✅ **已收口（B7b，`265543d6`）**：`Initialize.sql` 已直改快照加列（`short_code VARCHAR(16) NOT NULL` + `UNIQUE KEY uk_short_code`；ADR-045：无迁移无回填，库无存量数据）。本条原记「本批只写文档、`Initialize.sql` 尚未加列」为 B7a 时点状态。②**承载位容量口径登记**（不新增列，但决定「一列能装多少业务键」）：`home_config.spu_ids VARCHAR(500)` ⇒ 按「33 字符/项」上限 **15 项**；`chat_message.conversation_id VARCHAR(36)` 与 `ai_conversation.conversation_id BINARY(16)` 是**两套并存口径**，✅ **已收口（B7b）**：`chat_message.conversation_id` 已对齐为内容派生 32-hex（`sha256(buyerId|sellerId|spuId)` 前 32 位，服务端唯一派生点 `ai` `ConversationId.derive`；复合串业务键化后为 57 字符，超限 21）。详见 [05 §1.9⑦/⑧](../contract/05-API-Specification.md)。
+> **2026-10-18（B7a 批次：承载层解耦契约先行，[ADR-063](../adr/063-external-channel-number-separation.md) §决策 7/8）**：①`spu` 新增 **`short_code VARCHAR(16) NOT NULL` + `UNIQUE KEY uk_short_code`** —— SPU **短码**（10 位小写 hex / 40 bit 熵 / 无时间序 / 不复用业务键任何子串），唯一用途是写入小程序码 `scene`（`p=<短码>`）并由新增端点 **P38** `GET /api/item/spu/by-code/{code}` 换回 SPU；**不是实体标识**，不得进任何 VO，不得替代 `spu_id`。✅ **已收口（B7b，`265543d6`）**：`Initialize.sql` 已直改快照加列（`short_code VARCHAR(16) NOT NULL` + `UNIQUE KEY uk_short_code`；ADR-045：无迁移无回填，库无存量数据）。本条原记「本批只写文档、`Initialize.sql` 尚未加列」为 B7a 时点状态。②**承载位容量口径登记**（不新增列，但决定「一列能装多少业务键」）：`home_config.spu_ids VARCHAR(500)` ⇒ 按「33 字符/项」上限 **15 项**；`chat_message.conversation_id VARCHAR(36)` 与 AI 会话表（该表零代码引用，已按 U3 删除，见文档头注记）的 `conversation_id BINARY(16)` 曾是**两套并存口径**，✅ **已收口（B7b）**：`chat_message.conversation_id` 已对齐为内容派生 32-hex（`sha256(buyerId|sellerId|spuId)` 前 32 位，服务端唯一派生点 `ai` `ConversationId.derive`；复合串业务键化后为 57 字符，超限 21）。详见 [05 §1.9⑦/⑧](../contract/05-API-Specification.md)。
 > 归属域: backend | Owner: doc-engineer | 更新触发条件: 新增/变更表结构时必须同步
 
-> **⚠️ 2026-10-18（U3 裁决：5 张死表已删除，本文相关小节降级为历史设计记录）**
+> **⚠️ 2026-10-18（U3 裁决：5 张死表已删除；U14 已把逐列小节从正文清理）**
 > 以下 5 张表在**代码中零引用**（全仓 `.java/.xml/.yml` 命中 = 0，仅本目录等设计文档提及），
 > 已从 `Implementation/back-end/database/Initialize.sql` **删除**（CREATE 块 + DROP 行同时移除）：
-> `seller_application`（商家入驻申请，已被 `seller` 取代）、`flash_order_log`（秒杀日志，
+> `seller_application`（商家入驻申请，已被 `seller` 取代；trade-service 的平行入驻流程已于
+> 2026-10 第六轮退役删除——与商家域入驻重复且网关路由不可达）、`flash_order_log`（秒杀日志，
 > 幂等实际靠 Redis Lua + `orders.uk_order_no` —— 该表列注释自称「幂等+兜底」属**假承诺**）、
 > `merchant_reply_template`（客服快捷回复，从未实现）、`ai_message` / `ai_conversation`
-> （IM 历史，实际由 `chat_message` 承载）。
+> （IM 历史，实际由 `chat_message` 承载）。**上引括注即这 5 张表保留的全部设计意图**。
 >
-> **口径**：`Initialize.sql` 是**当前 schema 的唯一真源**；本文中涉及上述 5 表的逐列小节是
-> **历史设计记录**（保留供追溯设计意图，不代表现状），不得据以编码。表数以
-> `node Implementation/back-end/scripts/sync-doc-counts.mjs --list-tables` 为准。
-> 逐节清理（把这 5 处从正文删除）登记在 `collaboration/open-items.md` §2.3。
+> **口径**：`Initialize.sql` 是**当前 schema 的唯一真源**；本文**已不再保留**这 5 张表的逐列/索引
+> 结构（U14 清理：原 §7.2 秒杀日志表、§7.3 入驻申请表、§9.1 会话与消息两表、§10.2 回复模板表
+> 均已从正文移除，§9.1 / §10.2 仅留标题位指回本节），不得据以编码。**表数不写死**：全库表数以
+> `node Implementation/back-end/scripts/sync-doc-counts.mjs --list-tables` 为准；本文正文与历史变更
+> 记录中出现的具体表数均为**当时时点值**（不随删表回改）。登记见 `collaboration/open-items.md` §2.3（U3 / U14）。
 
 ---
 
@@ -44,7 +46,7 @@
 | **引擎** | InnoDB |
 | **JSON 扩展** | 使用 `JSON` 列类型（`expand_json`）预留灵活性 |
 
-> **数据库目录与装库语义（2026-10 整治；2026-10-15 fix-doc 更正）**：脚本目录 `Implementation/back-end/database/`。**`Initialize.sql` 是唯一结构真相源（实测 62 张表，一次装库到位）**。
+> **数据库目录与装库语义（2026-10 整治；2026-10-15 fix-doc 更正）**：脚本目录 `Implementation/back-end/database/`。**`Initialize.sql` 是唯一结构真相源（表数以 `node Implementation/back-end/scripts/sync-doc-counts.mjs --list-tables` 为准，一次装库到位）**。
 >
 > ⚠️ **迁移机制已废除（[ADR-045](../adr/045-db-snapshot-single-source.md)，2026-10-05）**：原 `database/migrations/` 目录（曾含约 30 个 `V*.sql` 版本化文件、V1.1.0 → V5.6）**已整体删除，该目录现已不存在**（库无存量数据，无需升级路径）。**此后任何结构变更（新表 / 新列 / 约束 / 种子）一律直接修改 `Initialize.sql`**——不得再新增迁移文件、不得再引用 `database/migrations/V*.sql`。RBAC 种子与基线一致且幂等：`ROLE_ADMIN` 持有 `*:*:*` 超管权限。
 
@@ -130,13 +132,14 @@
 - **保留列**（不转 BINARY）：管理端输入分组（stack_group）、复合会话 ID（chat_message.conversation_id）、枚举/语义编码（notification.type/identity_type/task code）、复合/外部格式（biz_ref/biz_no/channel_*/embedding_id）；
 - **运维 SQL**：需 `HEX(col)` / `UNHEX('...')` 包裹业务标识列。
 
-### 现状核对快照（2026-10-14 全库审计，62 表）
+### 现状核对快照（2026-10-14 全库审计时点）
 
 > 证据快照（防「漏改 / 过度设计」误读）。分诊口径 = 该表是否含业务标识列（`BINARY(16)` 或登记保留列）。
+> **数量列为 2026-10-14 审计时点值**（U3 删表后不回算，下面的枚举已剔除已删表）；**当前全库表数以 `node Implementation/back-end/scripts/sync-doc-counts.mjs --list-tables` 为准**，本文不写死。
 
 | 类别 | 数量 | 说明与典型表 |
 |---|---|---|
-| **真双 ID**（技术键 + `BINARY(16)` 业务键） | 23 张 | 资金/凭证/订单链/身份/资源类：user、spu、sku、freight_template、orders、pay_order、user_coupon、flash_order_log、after_sale、settlement、withdrawal、chat_message（message_id）、refund_order、wallet_transaction、reconciliation_detail、member_growth_log、group_team、group_team_member、invoice、coupon、ai_conversation（预留）、ai_message（预留）、review（订单引用业务键，2026-10-14 收敛） |
+| **真双 ID**（技术键 + `BINARY(16)` 业务键） | 23 张（时点） | 资金/凭证/订单链/身份/资源类：user、spu、sku、freight_template、orders、pay_order、user_coupon、after_sale、settlement、withdrawal、chat_message（message_id）、refund_order、wallet_transaction、reconciliation_detail、member_growth_log、group_team、group_team_member、invoice、coupon、review（订单引用业务键，2026-10-14 收敛） |
 | **特殊保留** | 1 张 | chat_message.conversation_id（复合格式，内嵌技术 id，不可二进制化） |
 | **仅技术主键**（零业务标识，刻意为之） | 38 张 | 子实体/关联/内部/台账：order_item、cart、address、category、**note**、**note_like**、**note_spu**、**shop_decoration**、**task_def**、**task_record**、sys_*、operation_log、points_log、promotion、flash_sale、shop、home_config、currency、exchange_rate、reconciliation_batch 等（表级条目见 §3/§七） |
 
@@ -586,21 +589,6 @@ public void createOrder(OrderDTO dto) {
 | version | INT | 乐观锁 |
 | start_time / end_time | DATETIME | |
 
-**`flash_order_log`** — 秒杀订单事务日志 (V3.7，幂等+兜底)
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | BIGINT PK | |
-| order_no | BINARY(16) UNIQUE | 订单号（UUIDv7 原始字节，ADR-050；当前无代码接入，与 orders 口径一致） |
-| flash_id | BIGINT | 秒杀活动ID |
-| user_id | BIGINT | 用户ID |
-| status | TINYINT DEFAULT 0 | 0=待处理, 1=已创建, 2=失败, 3=超时取消 |
-| retry_count | INT DEFAULT 0 | 重试次数 |
-| error_msg | VARCHAR(500) | 失败原因 |
-| create_time | DATETIME | |
-| update_time | DATETIME | |
-
-索引: `idx_order_no`, `idx_status_time`(status, create_time)
-
 **`home_config`** — 首页配置
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -673,7 +661,7 @@ public void createOrder(OrderDTO dto) {
 | used_order_no | BINARY(16) | orders.order_no 复制（UUIDv7 原始字节，ADR-050） |
 | use_time | DATETIME | |
 
-### 7.3 V2.0 售后 & 入驻
+### 7.3 V2.0 售后
 
 **`after_sale`** — 售后申请
 | 字段 | 类型 | 说明 |
@@ -688,18 +676,6 @@ public void createOrder(OrderDTO dto) {
 | logistics_number | VARCHAR(50) | 退货物流单号 |
 
 > **V5.5/V5.6 已建（买家退款资金流，[ADR-035](../adr/035-refund-fund-flow-and-refunded-activation.md)/[ADR-037](../adr/037-freight-model-package-split-and-refund-trigger.md)）**：状态 5=已退款（REFUNDED）已激活——pay-service 退款成功后经 `PUT /internal/trade/after-sale/{id}/refunded` 条件回写（**来源 APPROVED(2) | RETURNED(4) → REFUNDED(5)**，0 行=幂等空操作）；退款处理中/失败时售后单停留 2=同意（APPROVED），失败单可重试。退款触发时机（ADR-037 纠正）：**仅退款（type=2）审核同意即触发；退货退款（type=1）在商家确认收到退货后触发**（`PUT /api/admin/after-sale/{id}/confirm-return`，APPROVED→RETURNED）。每张售后单至多一次退款（退款单 `uk_after_sale` 唯一约束兜底，天然幂等）。退款金额在申请时已校验 ≤ 订单实付（`payAmount`）。退款单见 §十二 12.1。
-
-**`seller_application`** — 商家入驻申请 ⚠️ **deprecated（2026-10 第六轮）**
-
-> trade-service 平行入驻流程已退役删除（SellerApplicationController / AdminApplicationController / ApplicationService / SellerApplicationEntity / Mapper；原因：与商家域入驻流程平行重复，且网关 `/api/seller/**`、`/api/admin/**` 均路由不到 trade，早已不可达）。表保留在库作数据备份（**DDL 现状见 `Initialize.sql`；历史注记**：原文引用的 `V2.0__add_after_sale_application.sql` 所在 `database/migrations/` 目录**已不存在**，ADR-045）；现行入驻以 merchant-service `seller` 表为准（见 03-Domain-Model §3.3）。
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | BIGINT PK | |
-| user_id | BIGINT | |
-| shop_name / contact_phone | VARCHAR(100)/(20) | |
-| province / city / district / detail_address | | |
-| status | TINYINT | 0=待审核, 1=通过, 2=拒绝 |
 
 ### 7.4 V2.1 财务结算
 
@@ -870,35 +846,7 @@ public void createOrder(OrderDTO dto) {
 
 ### 9.1 会话与消息
 
-**`ai_conversation`** — AI 对话会话
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | BIGINT PK AUTO_INCREMENT | 主键 |
-| conversation_id | BINARY(16) UNIQUE NOT NULL | 会话业务ID（预留表；服务端生成 32-hex，ADR-050 修订） |
-| user_id | BIGINT NOT NULL | 用户ID，FK → `user.id` |
-| agent_type | VARCHAR(20) NOT NULL | Agent 类型: `SHOPPING` / `CUSTOMER_SERVICE` |
-| title | VARCHAR(100) | 会话标题（取首条用户消息截断） |
-| message_count | INT DEFAULT 0 | 消息总数 |
-| status | TINYINT DEFAULT 1 | 1=活跃, 2=已归档, 3=已删除 |
-| create_time | DATETIME DEFAULT CURRENT_TIMESTAMP | 创建时间 |
-| update_time | DATETIME ON UPDATE CURRENT_TIMESTAMP | 最后更新时间 |
-
-索引: `idx_user_agent` (`user_id`, `agent_type`), `idx_create_time` (`create_time`)
-
-**`ai_message`** — 对话消息
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | BIGINT PK AUTO_INCREMENT | 主键 |
-| conversation_id | BINARY(16) NOT NULL | 会话ID（= ai_conversation 复制；预留表，ADR-050 修订），FK → `ai_conversation.conversation_id` |
-| role | VARCHAR(10) NOT NULL | 角色: `USER` / `ASSISTANT` / `SYSTEM` / `TOOL` |
-| content | TEXT NOT NULL | 消息内容 |
-| tool_calls | JSON | Tool 调用记录: `[{toolName, input, output, latencyMs}]` |
-| token_count | INT | Token 消耗估算 |
-| create_time | DATETIME DEFAULT CURRENT_TIMESTAMP | 消息时间 |
-
-索引: `idx_conversation_id` (`conversation_id`)
+> **本小节原有两张表的逐列结构已删除（U3 裁决，见本文档头注记）**：会话/消息现由 §10.1 `chat_message` 承载，此处不再保留字段表与索引；设计意图见文档头注记的括注。
 
 ### 9.2 知识库 (V3.4 已建)
 
@@ -918,14 +866,14 @@ public void createOrder(OrderDTO dto) {
 
 索引: `idx_seller_category` (`seller_id`, `category`), `idx_status` (`status`)
 
-### 8.3 评估与统计 (V3.0+)
+### 9.3 评估与统计 (V3.0+)
 
 **`ai_evaluation`** — AI 回答用户反馈
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK AUTO_INCREMENT | 主键 |
-| message_id | BIGINT NOT NULL | 消息ID，FK → `ai_message.id` |
+| message_id | BIGINT NOT NULL | 消息ID（原设计外键指向的会话消息表已按 U3 删除；落地时改指 §10.1 `chat_message.id`） |
 | user_id | BIGINT NOT NULL | 用户ID |
 | rating | TINYINT | 评分: 1-5 (5=非常满意) |
 | feedback_type | VARCHAR(20) | 反馈类型: `HELPFUL` / `NOT_HELPFUL` / `HARMFUL` |
@@ -974,21 +922,9 @@ public void createOrder(OrderDTO dto) {
 
 索引: `idx_conversation` (`conversation_id`), `idx_sender_receiver` (`sender_id`, `receiver_id`)
 
-### 10.2 merchant_reply_template（商家回复模板）
+### 10.2 商家回复模板
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | BIGINT PK AUTO_INCREMENT | |
-| seller_id | BIGINT NOT NULL | 商家ID，FK → `seller.id` |
-| title | VARCHAR(200) NOT NULL | 模板标题 |
-| content | TEXT NOT NULL | 模板内容 (变量: {buyer_name}, {product_name}, {order_no}) |
-| category | VARCHAR(30) NOT NULL | GREETING / FAQ / OFFLINE / ORDER |
-| sort_order | INT DEFAULT 0 | 排序 |
-| status | TINYINT DEFAULT 1 | 1=启用, 0=禁用 |
-| create_time | DATETIME NOT NULL | |
-| update_time | DATETIME NOT NULL | |
-
-索引: `idx_seller_category` (`seller_id`, `category`)
+> **该表的逐列结构已删除（U3 裁决，见本文档头注记）**：客服快捷回复从未实现，不再保留字段表与索引。
 
 ---
 
@@ -1025,7 +961,7 @@ public void createOrder(OrderDTO dto) {
 > | **V5.8 促销与会员** | `promotion`（F5 满减/满折活动）+ `member_level_rule`、`member_growth_log`（F6 等级规则与成长值流水，含 seed） | ~~`V5.8__promotion_and_member_level.sql`~~ |
 > | **V5.9–V5.18 及后续** | P2/P3 与边界重构全部增量（`shop_decoration`/`note*`/`task_*`/`group_*`/`pairing_rule`/`currency`/`exchange_rate`/`invoice*` 等） | **无迁移文件**——直接改 `Initialize.sql`（ADR-045 口径） |
 >
-> ※ **2026-10-05 用户裁决：迁移文件机制废除**（[ADR-045](../adr/045-db-snapshot-single-source.md)）——`database/migrations/` 目录已删除（库无存量数据，无需升级路径），`Initialize.sql` 为**唯一结构真相源**（实测 62 张表），此后结构变更直接修改快照；上表批次与文件名仅作演进存档。
+> ※ **2026-10-05 用户裁决：迁移文件机制废除**（[ADR-045](../adr/045-db-snapshot-single-source.md)）——`database/migrations/` 目录已删除（库无存量数据，无需升级路径），`Initialize.sql` 为**唯一结构真相源**（表数以 `node Implementation/back-end/scripts/sync-doc-counts.mjs --list-tables` 为准），此后结构变更直接修改快照；上表批次与文件名仅作演进存档。
 >
 > 全部新表遵循 §一 约定：`INT` 分、`TINYINT` 状态枚举、审计列 `create_time`/`update_time`、`utf8mb4` + InnoDB、技术主键 `id AUTO_INCREMENT` + 业务唯一键（主键决策矩阵）。
 >

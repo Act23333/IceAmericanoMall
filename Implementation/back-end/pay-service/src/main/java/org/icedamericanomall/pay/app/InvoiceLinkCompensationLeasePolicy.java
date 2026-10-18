@@ -26,6 +26,14 @@ package org.icedamericanomall.pay.app;
  * 出现一次并发重调，此时靠下游幂等（trade 侧「无有效票 = 空操作」）兜底，不会重复冲红。
  * <b>租约 ≠ 分布式锁</b>：它缩小重复窗口，不承诺「恰好一次」；要承诺需 ADR-024 的
  * {@code DistributedLock} 或 XXL 分片调度。
+ *
+ * <p><b>崩溃恢复上限 = 租约时长本身（{@link #CLAIM_LEASE_SECONDS}，即 10 分钟）</b>：持有者进程
+ * 在「已认领、未回写状态」之间崩溃时，{@code markDone} / {@code scheduleRetry} 都没执行，
+ * 该行没有任何退避记录可用 —— {@code next_retry_at} <b>不覆盖</b>这个窗口，唯一的恢复途径就是
+ * 等租约自然到期。这就是把租约从 120s 抬到 600s 付的代价：恢复窗口从 2 分钟变成 10 分钟。
+ * 取这个方向是因为反过来的错误更贵 —— 租约护不住最坏批耗时（500s）时，会出现「自己还在重调、
+ * 别人已接手」的并发重调，而降级态正是最需要认领生效的时候。若日后要求更快恢复，
+ * 正确的做法是缩短批大小（{@link #BATCH_LIMIT}）而不是削租约。
  */
 final class InvoiceLinkCompensationLeasePolicy {
 

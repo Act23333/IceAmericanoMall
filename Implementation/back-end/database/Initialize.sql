@@ -625,7 +625,6 @@ CREATE TABLE `flash_sale` (
     KEY `idx_spu` (`spu_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='秒杀活动';
 
--- flash_order_log（秒杀订单事务日志，幂等+兜底）
 CREATE TABLE `home_config` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
     `slot` VARCHAR(30) NOT NULL COMMENT '位置标识(banner/hot/new/sale)',
@@ -724,9 +723,6 @@ CREATE TABLE `after_sale` (
     UNIQUE KEY `uk_order_user` (`order_no`, `user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='售后申请';
 
--- seller_application（商家入驻申请）
---   ⚠️ deprecated（2026-10 第六轮）：平行入驻流程已退役；现行入驻以 seller 表为准。
---   表保留作数据备份，不做数据迁移。
 
 -- settlement（结算单）— trade-service 结算域
 CREATE TABLE `settlement` (
@@ -766,12 +762,11 @@ CREATE TABLE `withdrawal` (
 -- 七、AI 客服域：会话 / 消息 / 人工 IM / 知识库（V2.5 / V3.3 / V3.4）
 -- =====================================================================
 
--- ai_conversation（AI 对话会话）
 CREATE TABLE `chat_message`
 (
     `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
     `message_id`      BINARY(16)  NOT NULL UNIQUE COMMENT '消息业务ID（UUIDv7 原始字节，ADR-050）',
-    `conversation_id` VARCHAR(36)  NOT NULL COMMENT '会话键：内容派生值 sha256("<buyerId>|<sellerId>|<spuId>") 前 32 位小写 hex（服务端唯一派生点 ConversationId；ADR-063 §决策 7 表 #4）。与 ai_conversation.conversation_id BINARY(16) 是两套口径，勿混',
+    `conversation_id` VARCHAR(36)  NOT NULL COMMENT '会话键：内容派生值 sha256("<buyerId>|<sellerId>|<spuId>") 前 32 位小写 hex（服务端唯一派生点 ConversationId；ADR-063 §决策 7 表 #4）。会话键口径唯一：另一套 BINARY(16) 会话表已按 U3 删除，勿再引入第二套',
     `sender_id`       BIGINT       NOT NULL COMMENT '发送者用户ID',
     `sender_role`     VARCHAR(10)  NOT NULL COMMENT 'BUYER / SELLER / AI',
     `receiver_id`     BIGINT       NOT NULL COMMENT '接收者用户ID',
@@ -802,7 +797,6 @@ CREATE TABLE `merchant_knowledge_base`
     INDEX `idx_status` (`status`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '商家AI知识库';
 
--- merchant_reply_template（商家回复模板）
 CREATE TABLE `notification` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
     `recipient_id` BIGINT NOT NULL COMMENT '接收者用户ID',

@@ -222,11 +222,11 @@
 - RBAC 五表（`sys_*`）**已**在 §八 8.1–8.3 收录 ✓（初筛误报，已复核修正）。
 - `review_like`、`merchant_reply_template` 已收录 ✓。
 
-### B3. 🟠 死表：`merchant_reply_template`
+### B3. ✅ 已收口：死表 `merchant_reply_template`（2026-10-18 已删除）
 
-- `Initialize.sql` 建了 `merchant_reply_template`；`04-Data-Model.md` §10.2 有专节；**但全仓 `grep` 无任何 Java 代码引用该表**（无 PO / Mapper / Repository）。
-- 与之对应，契约 §4.12.3 CH6–CH9（`/api/seller/templates`）标 ✅ V3.3 却无实现（见 §A1）。
-- 三者叠加 = **一张建了但无代码的表 + 一节文档 + 一节标「已实现」的契约端点，功能实际不存在**。→ `discuss`（补实现 / 删表删契约，需产品定论）。
+- ✅ **已按 U3 裁决删除**：`Initialize.sql` 已无该表（同批删除的还有 `seller_application` / `flash_order_log` / `ai_message` / `ai_conversation`）；`04-Data-Model.md` §10.2 的逐列小节已由 U14 清理为 stub（仅留节号，避免断号与外部引用失效）。
+- ⚠️ **仍然悬空的一项（不在表侧）**：契约 §4.12.3 CH6–CH9（`/api/seller/templates`）仍标 ✅ V3.3 却无实现（见 §A1）—— 表删了，**端点声明还留着**，需产品定论「补实现 or 删契约」。这属契约域，未随 U3 一并处理。
+- 原始判据留档：全仓 `grep` 无任何 Java 代码引用该表（无 PO / Mapper / Repository）。
 
 ### B4. 🟠 镜像文档版本滞后
 
