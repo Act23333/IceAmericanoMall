@@ -14,7 +14,7 @@
 
 | 判断项 | 结论 | 依据 |
 | --- | --- | --- |
-| 现有前端代码量 | **按平台分列**（合计 159 的**口径未声明，勿用于推算**）：**时点快照 2026-10-14** —— `apps/web` 59/5,128 行；`miniprogram` 48/1,977；`mobile` 1/0；`admin`/`seller` 已于 2026-10-18 复核更正为 **11 / 10 个文件**（统计口径：**排除 `node_modules`**；旧值 9/93、8/85 的口径未声明、作废 —— `apps/admin` 的真实源码目录是 `apps/admin/app/`，按 `src/` 去数会得到 **0**） | [20 §七](../quality/20-Doc-Code-Consistency-Audit.md)、[18 §二](18-Frontend-Implementation.md) |
+| 现有前端代码量 | **按平台分列**（合计 159 的**口径未声明，勿用于推算**）：**时点快照 2026-10-14** —— `apps/web` 59/5,128 行（**已漂移，勿引用**：取数用 `find Implementation/front-end/apps/web -type f -not -path '*/node_modules/*' | wc -l` 与 `git ls-files Implementation/front-end/apps/web | xargs wc -l`）；`miniprogram` 48/1,977；`mobile` 1/0；`admin`/`seller` 已于 2026-10-18 复核更正为 **11 / 10 个文件**（统计口径：**排除 `node_modules`**；旧值 9/93、8/85 的口径未声明、作废 —— `apps/admin` 的真实源码目录是 `apps/admin/app/`，按 `src/` 去数会得到 **0**） | [20 §七](../quality/20-Doc-Code-Consistency-Audit.md)、[18 §二](18-Frontend-Implementation.md) |
 | 可复用部分 | `packages/ui`（16 文件/1,012 行）、`apps/web` 的 25 个页面骨架与设计系统落地、`packages/api` 的 15 个 `use-*.ts` hooks 骨架 | 同上 |
 | 必须重写部分 | **API 层全部路径**（原判 **9 条调用 / 7 组前缀**指向后端不存在的路径 → ✅ **已收口 2026-10-18**：现无活调用指向不存在的路径，残留只在注释里）、错误码映射、类型定义、**购物车数据源**（现为 localStorage，需切服务端） | 本文 §三 |
 | `admin` / `seller` | **纯骨架**（2026-10-18 复核：**admin 11 / seller 10 个文件**，统计口径**排除 `node_modules`**；**行数未复测**，旧值 93 / 85 行作废）——不存在「重构」，只有「从零实现」 | 同上 |
@@ -94,7 +94,7 @@
 | --- | --- | --- |
 | 1 | **购物车存在双真相源**：`apps/web` 的加购/购物车/结算全走 **localStorage 的 Zustand store**（自述 `TODO: Phase 4 API integration`），而 `packages/api/hooks/use-cart.ts` 这套**写对了的服务端购物车 hook 零消费者** | 结算页把 localStorage 的 skuId 当 `cartItemIds` 发给 `POST /api/trade/order`，而 `CreateOrderReq` **无此字段**（只有 `addressId`/`userCouponId`/`remark`/`displayCurrency`），后端读的是**服务端购物车** → **下单必然命中「购物车为空」**。这是现有 Web 端最致命的业务缺陷 |
 | 2 | **Web 端当前无法登录**：登录页调用已废弃的 `POST /api/auth/login` 与 `POST /api/user/code` | 认证链路整体不可用；重构的第一步就是修这两条 |
-| 3 | **管理端营销功能经网关不可达**：`/api/admin/{flash,promotion,task,group-buy}/**` 无网关路由 → 落入 `/api/admin/**` 兜底 → 404（共 12 个端点） | `apps/admin` 无法管理秒杀/满减满折/任务/拼团，**必须等后端补网关路由后才能联调** |
+| 3 | 🟡 **静态已具备、运行时未验证（2026-10-18）**：**管理端营销功能经网关不可达**（历史判定）：`/api/admin/{flash,promotion,task,group-buy}/**` 无网关路由 → 落入 `/api/admin/**` 兜底 → 404（共 12 个端点） | `apps/admin` 无法管理秒杀/满减满折/任务/拼团，**必须等后端补网关路由后才能联调** |
 | 4 | **12 个管理端点无鉴权**（`AdminPay`/`AdminAfterSale`/`AdminFinance`/`AdminLog` 缺 `@PreAuthorize`）→ ✅ **已收口（2026-10-18）**，逐条现判据见右列 | 「前端不能依赖『调不动就说明没权限』」的旧风险已消失，但**鉴权 ≠ 路由守卫**（见本表 #8）。逐条现判据：<br>· `AdminAfterSale` ✅ 已收口 —— 类级 `@PreAuthorize("@ss.hasPermi('user:admin')")`（`AdminAfterSaleController.java:33`），覆盖 3 条<br>· `AdminFinance` ✅ 已收口 —— 类级 `@PreAuthorize`（`AdminFinanceController.java:24`），覆盖 4 条<br>· `AdminLog` ✅ 已收口 —— 类级 `@PreAuthorize`（`AdminLogController.java:15`），覆盖 1 条<br>· `AdminPay` ✅ 已收口 —— 该服务未引入 Spring Security（类注释明写），4 条走方法体内 `assertAdmin()`（调用 :80/:91/:106/:124，守卫定义 `:129`）<br>（附记：`AdminMerchantController` 2 条同为 `assertAdmin()`，:50/:43，定义 :56 —— 不在原 12 条内）<br>残留真问题已不是「无鉴权」，而是 [23 §5.3](23-Frontend-Platform-Gap-Matrix.md) 的语义分叉与 §5.4 的种子冲突 |
 | 5 | **4 个服务为 `SNAKE_CASE`**（authorization / notification / verification / wallet），其余 11 个为 camelCase | 前端必须按服务区分字段命名：这 4 个服务的**请求体与响应体字段名是 snake_case**（如 `access_token`），其余是 camelCase。**生成客户端时必须按服务覆盖命名策略**，否则一半接口字段全为 `undefined` |
 | 6 | **站内信链路失效**：notification-service 收 SNAKE_CASE，而 4 个调用方（item/merchant/pay/trade）发 camelCase | `app/user/notifications` 页面将收不到站内信；这不是前端能修的，需后端统一或给 DTO 加显式 `@JsonProperty` |
@@ -127,7 +127,7 @@
 - 完成判据：`node Implementation/back-end/scripts/extract-endpoints.mjs` 的 `docOnly` 中「标注已实现但缺失」= **0**；`node Implementation/back-end/scripts/check-section7.mjs` 的「不存在」中真实缺陷 = **0**。
 
 ### 阶段 0b：后端放行面修复（对应 [20 §八](../quality/20-Doc-Code-Consistency-Audit.md) #0–#4、#9–#11）
-- 网关补 `/api/admin/{flash,promotion,task,group-buy}/**` 4 条路由谓词（否则管理端 12 个端点 404）。
+- 网关补 `/api/admin/{flash,promotion,task,group-buy}/**` 4 条路由谓词（否则管理端 12 个端点 404）→ 🟡 **静态已补**：`gateway-service/src/main/resources/application.yml:146-149` 已有四族谓词；**谓词顺序的运行时行为未验证**（见 23 §8.1 #2），故不标「已收口」。
 - 4 个 admin 控制器补 `@PreAuthorize`（12 个端点当前无鉴权）→ ✅ **已收口（2026-10-18）**：3 个改为类级 `@PreAuthorize`、`AdminPay` 走方法体内 `assertAdmin()`（该服务无 Spring Security 依赖），逐条判据见 §3.1 第 4 项。
 - 跨服务线格式收敛：统一命名策略或给 `InAppMessageSendReqCO` 等加显式 `@JsonProperty`（否则站内信收不到，且前端字段命名无法统一生成）。
 - 定人机验证契约方向（扁平 vs 嵌套 + snake_case），否则风控开启后登录死循环。

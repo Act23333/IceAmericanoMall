@@ -66,7 +66,7 @@
 
 | 平台 | 仓库位置 | 实施状态 | 规模（实测） | 平台细则 |
 | :-- | :-- | :-- | :-- | :-- |
-| **Web** | `apps/web`（用户端）+ `apps/admin` + `apps/seller` | 🟡 **骨架已实现，API 层需重写** —— Phase 1 已落地；Phase 2/3 页面骨架在（原判「8 组前缀指向后端不存在的路径」→ ✅ **已收口 2026-10-18**，见 [21 §三](./21-Frontend-Refactor-Readiness.md)） | 59 文件 / 5,128 行（约 25 路由页，**时点快照 2026-10-14**，行数未复测）；admin **11 文件**、seller **10 文件**（纯骨架，**时点快照 2026-10-18**；口径见下表注） | [web.md](./18-platforms/web.md) |
+| **Web** | `apps/web`（用户端）+ `apps/admin` + `apps/seller` | 🟡 **骨架已实现，API 层需重写** —— Phase 1 已落地；Phase 2/3 页面骨架在（原判「8 组前缀指向后端不存在的路径」→ ✅ **已收口 2026-10-18**，见 [21 §三](./21-Frontend-Refactor-Readiness.md)） | 文件数与行数**不在此写死**（已漂移）：取数用 `find Implementation/front-end/apps/web -type f -not -path '*/node_modules/*' | wc -l`（约 25 路由页，**时点快照 2026-10-14**，行数未复测）；admin **11 文件**、seller **10 文件**（纯骨架，**时点快照 2026-10-18**；口径见下表注） | [web.md](./18-platforms/web.md) |
 | **小程序** | `apps/miniprogram`（Taro 4，微信 + 支付宝） | 🟡 **实码已存在，待对齐 API 层** —— 后端小程序增量已全量补齐（V5.18：微信小程序登录、PAY7 JSAPI 拉起支付、P37 分享码） | 48 文件 / 1,977 行 | [miniprogram.md](./18-platforms/miniprogram.md) |
 | **移动端（RN）** | `apps/mobile`（React Native 0.76+） | ⚪ **空占位，未激活** —— 策略是 PWA 先行；激活触发条件见 `Implementation/front-end/apps/mobile/README.md` | 1 文件 / 0 行 | 无独立平台细则（PWA 并入 web.md §4.5） |
 | **Android** | 无独立工程 | ⚪ **未开工** | — | [android.md](./18-platforms/android.md) |

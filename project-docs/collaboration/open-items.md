@@ -173,6 +173,18 @@ git log --oneline -10                                        # 谁改了什么�
 - **U7 裁决：退役 `database/seed-data.js`** —— 它和 `Initialize.sql` 抢同一唯一键（`USERNAME/'admin'`），
   业务 ID 还是 ADR-050 之前的非 hex 形态。种子真源统一为 `Initialize.sql`。
 
+### 1.14 Web 角色端：S0-pre 完成 + S0-0 范围（2026-10-18）
+- **顺序（用户定）**：`S0-pre` → `S0-0` → 新开商家售后端点 → `S0-1..4`。**S0 是「首次落地」**，不要再用「重启」（查无取消记录）。
+- **S0-pre 完成**：
+  - **写侧留痕本来就有**（`AdminAfterSaleController:62/77` 两个写操作都带 `@OperationLog`，类注释引 ADR-032 管道一）⇒ 本步无需新增代码。
+  - 新增 `RbacSeedEscalationGuardTest`：判据「**非 ROLE_ADMIN 角色不得持有 `*:*:*` 或 `user:admin`**」，判定抽成纯函数；带**两条合成变异**（非管理员持超级位 / 商家持 `user:admin`）+ 一条反向对照；并**在真实 `Initialize.sql` 里注入 `(3,5)` 实测变红**后复原。
+  - **自查教训（值得记）**：首版解析器全文件扫 `(\d+, '..', '..')`，把 `sys_role` 的 `(1,'ROLE_USER',…)` 当成权限位 ⇒ **真实扫描红、变异用例绿**。这正是「变异绿不构成证据」的镜像：**扫描面过宽**也会让门禁骗人。已改为只解析 `sys_permission` 的 INSERT 语句。
+- **两个细节已确认（供 S0 叙事定性）**：
+  - (a) **ROLE_SELLER 访问 admin 端点 = 403**。`PermissionService.hasPermi` 顺序：`user/permissions 为 null → false`（fail-closed）→ `*:*:*` → **`roles 含 ROLE_ADMIN` 短路** → 否则查集合；商家不命中任何一条。
+  - (b) **语义分叉实锤（G2 根因）**：后端 `hasPermi` 有 `ROLE_ADMIN` 短路 + `*:*:*` 通配；前端 `UserContext.hasPermission` **两者都没有**。⇒ 同一个权限串两端结论不同：`ROLE_ADMIN` 在**前端会被判无权限**（菜单消失）、后端放行。这就是「**后端 `@PreAuthorize` 是唯一权威，前端判定只用于隐藏入口**」必须写成硬约束的原因。
+- **S0-0 四件事（已定）**：① 23 条「有端点无权限位」的鉴权口径；② 13 条「声明路径 ≠ 实际路径」的收敛；③ 表 C 最终形态（可执行常量表）；④ **契约 ✅ 对账门禁**——`✅` 必须有前端入口、`🔌` 必须登记，否则红（不阻塞 S0-pre）。
+- **三条裁决已落**：契约 ✅ 对账进 S0-0④；网关营销路由标 🟡 并登记 **U16**；`apps/web` 的旧文件/行数改为**指向命令**（21/18 两处已改，不再写死）。
+
 ---
 
 ## 2. 待办
@@ -202,7 +214,8 @@ git log --oneline -10                                        # 谁改了什么�
 |---|---|---|
 | **U2** | `Initialize.sql` 两处过时注释（「未启用 `@TableLogic`、无 `deleted` 列」但 `invoice_title.deleted`+`@TableLogic` 已落地；「每表以 BIGINT AUTO_INCREMENT 为主键」但 3 张关联表是双列 PK）；并给 **4 组同名不同型列**（`spu_id`/`sku_id`/`user_id`/`coupon_id`）标注键型 | 我可直接做 |
 | ~~**U3**~~ | ✅ **已裁决并执行（本批）**：5 张零代码引用的死表**已从 `Initialize.sql` 删除**（`seller_application` / `flash_order_log` / `merchant_reply_template` / `ai_message` / `ai_conversation`；CREATE 块与 DROP 行同步移除，双向零差集）。理由：`flash_order_log` 列注释自称「秒杀幂等+兜底」是**假承诺**（实际靠 Lua + `orders.uk_order_no`）；`ai_*` 已被 `chat_message` 取代；`seller_application` 已被 `seller` 取代。设计意图仍留在 ADR/04（已加裁决注记）| 已完成 |
-| **U15** | **售后跨商家越权面（未爆发，但只差一行种子数据）**：`after_sale` 表**无 seller_id/shop_id**（只有 `order_no`+`user_id`），admin 列表 `pageByStatus(status,…)` **只按状态过滤、无商家维度**；写侧 `PUT /api/admin/after-sale/{id}/review`、`/{id}/confirm-return` **只按 id 操作、无归属校验**。今天**不可利用**（`user:admin`=permission_id 5 只绑 role_id 4，ROLE_SELLER=role 3 只绑 2/3/4/6），但一旦为「修 403」把 `user:admin` 授予商家 ⇒ **跨商家读取 + 跨商家审批退款**，而代码层没有任何兜底。**建议①**加种子数据门禁（断言 `user:admin` 只绑 ROLE_ADMIN，可机器校验、成本极低）；**建议②**新开 seller 端点时**必须经 `orders.seller_id` join 过滤**；**建议③**写侧补操作者审计。优先级高于 S0 | 高 |
+| **U16** | **网关营销路由「静态已具备、运行时未验证」**：`gateway-service/application.yml:146-149` 已有 `/api/admin/{flash,promotion,task,group-buy}/**` 四族谓词（注释还留着「实测营销端点不可达」的历史说明），但**谓词顺序的运行时行为没测过**（`/api/admin/**` 兜底在其后，顺序错了就会被兜底吃掉）。要验证需起网关 + 路由断言，属运行态。文档已标 🟡，勿改标「已收口」| 中（运行态）|
+| ~~**U15**~~ | ✅ **已用门禁封住（S0-pre，2026-10-18）**：**不是「修好了越权」，而是把可利用面钉成构建期失败**。判据（实测）：`after_sale` 表**无 seller_id/shop_id**（只有 `order_no`+`user_id`）；admin 列表 `pageByStatus(status,…)` **只按状态过滤**；写侧 `PUT /{id}/review`、`/{id}/confirm-return` **只按 id 操作**。今天**不可利用** —— `PermissionService.hasPermi` 依次判「user/permissions 为 null → false」（fail-closed）、`*:*:*` 通配、**「roles 含 ROLE_ADMIN」短路**、否则查集合；ROLE_SELLER 只持 `[ai:chat, order:read, product:read, seller:admin]` ⇒ **403**。危险点在于：安全只靠种子少一行 `(3,5)`。故新增 `RbacSeedEscalationGuardTest`（纯函数判定 + 两条合成变异 + **真实文件注入 `(3,5)` 实测变红**）| 已封 |
 | ~~**U14**~~ | ✅ **已完成（同批）**：`04-Data-Model.md` 中 5 张死表的逐列小节已清理（§7.2/§7.3 整段删除，§9.1/§10.2 留标题位 + stub 以免断号与外部引用失效；悬空 FK `ai_message.id` 已改指 `chat_message.id`）。连带清掉 `Initialize.sql` 里**上次删表遗留的 6 行孤立节标题注释**与 1 处仍指向已删表的列 COMMENT —— 那些注释正好压在下一张表上方，属主动误导。`quality/20` 的 B3 条目已标收口，并留档「契约 CH6–CH9 仍标 ✅ 却无实现」这个**表侧已删、契约侧未动**的悬空项 | 已完成 |
 | **U4** | 60 行**只读**结构对账脚本（打印缺表/缺列/类型不符），**不进 CI、不阻塞提交** | 我可直接做 |
 | **U5** | 2 处缺索引（`sys_user_role.role_id` 非前导、`refund_order(status,create_time)`）+ 7 处冗余索引 + 6 处疑似死索引 | 低优先，**不建议现在删** |
