@@ -388,6 +388,25 @@ Q3 裁决的是**权限位**拆三位（`seller:finance` / `seller:coupon` / `se
 若按控制器机械挂 `aftersale:write`，后果正是 Q2 要防的**"客服能退款"越权**。
 ⇒ `aftersale:write` 当前**无消费者**（保留给将来"不涉退款的售后状态操作"；若无则按 §7.1 停用）。
 
+**批 3 确认（已装库必须迁移）**：种子 **8304f976 里落的位是 `order:write`**（不是 `order:admin`）。
+本次改名只动了 `Initialize.sql`，而那是**全新安装**脚本 ⇒ **已装库仍是 `order:write`**。
+若不迁移，代码注解找 `order:admin` 而库里没有该位 ⇒ **该位不存在 ⇒ 永久 403**。
+⇒ 已提供 `scripts/migrate-rbac-order-admin.sql`（幂等 UPDATE + 复核 SELECT），执行完跑 `verify-rbac-seed.sh`。
+
+**批 4 方法清单（实测，必须按方法挂，不能类级）**：`AdminAfterSaleController` 有三个方法 ——
+`GET`（分页查询）、`PUT /{id}/review`、`PUT /{id}/confirm-return`。
+⇒ 查询挂 **`aftersale:read`**；两个 PUT 都**同步触发退款** ⇒ 挂 **`pay:admin`**。
+若整类挂 `pay:admin`，"只想看售后列表的客服"会被迫拿到退款权；若整类挂 `aftersale:read`，则查询也写不了。
+**类级在这里是错的两种走法都不通**，必须按方法。
+
+**批 8 切分（已定，含一条提权路径）**：
+- `GET /user/page` → `user:read`；
+- `PUT /user/{id}/status` → `user:write`；
+- `PUT /user/{id}/role` → **`rbac:admin`**（实测：`roleType` 来自**请求参数**，直传
+  `authContextClient.setUserRole(id, roleType)`，**可以传 ADMIN** ⇒ 能改角色 = **能造超管**）。
+  ⇒ 若把"改角色"归给 `user:write`，任何拿到用户写权限的运营都能给自己/别人造一个管理员 ——
+  这正是 Q6 把 RBAC 单列的理由。
+
 **批 2 确认**：`MerchantManager#approve` 调 `authContextClient.setUserRole(userId, ROLE_TYPE_SELLER)`——
 **固定常量，不是任意角色** ⇒ `merchant:admin` 足够，不需要 `rbac:admin`。
 但它是"写授权域数据"的侧效应，目前只有 `log.info`，**建议补一条操作审计**（登记，不阻塞）。
@@ -440,6 +459,9 @@ SoD（职责分离：一个人不能既开票又作废）**另立项**：它需�
      | 批 | 控制器 | 位 | preflight 引用数 |
      |---|---|---|---|
      | 1 ✅ | `AdminCurrencyController` / `AdminHomeController` / `AdminKgController` | `currency:admin` / `home:admin` / `kg:admin` | 18 → 15 |
+     | 2 ✅ | `AdminMerchantController` | `merchant:admin` | 15 → 14 |
+     | 4 ⬜ | `AdminAfterSaleController`（**按方法**：GET list / PUT review / PUT confirm-return） | `aftersale:read` / `pay:admin` / `pay:admin` | — |
+     | 8 ⬜ | `AdminLogController` / `AdminUserController` / `Role`+`Permission` | `audit:read` 类级 / **按方法** `user:read`+`user:write`+**`rbac:admin`** / `rbac:admin` | — |
      | 末 ⬜ | `AdminInvoiceController`（按方法：issue / void / red-flush） | `invoice:issue` / `invoice:void` / `invoice:void`（Q9） | — |
    - **每批替换后必须跑 `verify-gates.sh full`**，不能只看零消费 WARN 的下降：
      WARN 只反映"有没有被注解引用"，**不反映测试是否还在 mock 旧位**（mock 里写死

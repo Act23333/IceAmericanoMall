@@ -29,9 +29,10 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/admin/seller")
-// TODO(拆位, open-items §1.17): 权限位拆分后改为 @ss.hasPermi('merchant:admin')；
-//   现在是过渡态：所有管理端共用一个 user:admin，资金/审核面尚未按域隔离。
-@PreAuthorize("@ss.hasPermi('user:admin')")
+// 权限位拆分（5a 批 2，2026-10-18）：管理端商家审核独立成位。
+// 侧效应说明：approve 会经 AuthContextClient.setUserRole(userId, ROLE_TYPE_SELLER) 授予**固定**卖家角色
+// （不是任意角色）⇒ merchant:admin 足够，不需要 rbac:admin。
+@PreAuthorize("@ss.hasPermi('merchant:admin')")
 @RequiredArgsConstructor
 public class AdminMerchantController {
 
