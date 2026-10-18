@@ -67,6 +67,7 @@ class InvoiceLinkCompensationH2Test {
                     status TINYINT NOT NULL DEFAULT 0,
                     retry_count INT NOT NULL DEFAULT 0,
                     next_retry_at TIMESTAMP NULL,
+                    lease_until TIMESTAMP NULL,
                     last_error VARCHAR(500) NULL,
                     create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

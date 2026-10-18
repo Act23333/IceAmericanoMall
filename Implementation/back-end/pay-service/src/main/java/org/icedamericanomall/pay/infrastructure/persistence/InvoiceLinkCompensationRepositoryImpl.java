@@ -26,6 +26,20 @@ import java.util.List;
  * 理由见该 Mapper 类注释）。本类只负责「状态码取自枚举 + 摘要按列宽截断 + 聚合 ↔ PO 转换」，
  * 命中行数即成败 —— <b>绝不</b>把 {@code status} 读到内存里判完再写回。
  *
+ * <p><b>认领 = 带过期时间的租约</b>（{@link #tryClaim}）：同一行被多实例 / 双入口同时拾取时，
+ * 由一条条件 UPDATE 裁决谁重调，命中 1 行才成功。<b>租约到期自动失效</b>（拾取 SQL 自带
+ * {@code lease_until IS NULL OR lease_until < now} 判定），因此<b>不需要回收任务，也没有
+ * 「处理中卡死」的僵尸态</b> —— 用一个会自愈的时间盒代替一个会卡住的状态。
+ *
+ * <p><b>租约不进领域模型</b>（四层纪律）：{@code lease_until} 是持久化层的并发控制机制，
+ * 不是业务语义，故 {@link InvoiceLinkCompensation} 没有该字段、{@code toDomain} 刻意不映射它；
+ * 它只出现在 PO / Mapper SQL / 本类的标量参数上。业务状态仍是 PENDING / DONE / FAILED_PERMANENT。
+ *
+ * <p><b>租约的时间值由本类算好再传入 SQL</b>（不用 {@code DATE_ADD(... INTERVAL ...)}）：
+ * MySQL 与测试用 H2 的日期算术方言不同，参数化后一条 SQL 两边通用；且「判定基准 {@code now}」与
+ * 「写入值 {@code leaseUntil}」取同一时钟，不混用应用时钟与库时钟。多实例间的时钟偏差
+ * （秒级）远小于租约时长（分钟级），不影响互斥语义。
+ *
  * <p><b>事务</b>：单条 {@code INSERT} / {@code UPDATE} 自提交，本类刻意不加 {@code @Transactional}
  * —— 调用点 {@code PayEventNotifier} 与补偿重试任务都调 Feign，事务边界必须留在外层之外。
  */
@@ -65,6 +79,20 @@ public class InvoiceLinkCompensationRepositoryImpl implements InvoiceLinkCompens
     public List<InvoiceLinkCompensation> findDueForRetry(int limit) {
         return invoiceLinkCompensationMapper.selectDueForRetry(PENDING, LocalDateTime.now(), limit)
                 .stream().map(InvoiceLinkCompensationRepositoryImpl::toDomain).toList();
+    }
+
+    @Override
+    public boolean tryClaim(Long id, int leaseSeconds) {
+        // 判定基准与写入值取同一时钟（见类注释：不用 SQL 的 DATE_ADD，保持 MySQL/H2 通用）
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime leaseUntil = now.plusSeconds(leaseSeconds);
+        boolean claimed = invoiceLinkCompensationMapper.claimIfLeasable(id, PENDING, leaseUntil, now) > 0;
+        if (!claimed) {
+            // 不是错误：并发驱动的另一个执行者已抢先认领，或该行已被推进到终态
+            log.info("[refund-invoice][retry][claim-miss] 认领未命中（他人持有租约或状态已推进），"
+                    + "本轮跳过该行: id={}", id);
+        }
+        return claimed;
     }
 
     @Override
@@ -117,6 +145,9 @@ public class InvoiceLinkCompensationRepositoryImpl implements InvoiceLinkCompens
      * `toHexString` 一处实现；仓储各自手写 {@code HexFormat} 是 ADR-062 §决策 1 明确禁止的。
      * 还原出的 32-hex 才是对外口径 —— 补偿重试要把它原样放进 {@code InvoiceVoidCO.orderNo}
      * 传给 trade-service（trade 侧按 wire 形态寻址，不认 BINARY）。
+     *
+     * <p><b>{@code lease_until} 刻意不映射</b>：租约是持久化层的并发控制机制，不是业务语义，
+     * 不进领域聚合（四层纪律）；聚合只保留 PENDING / DONE / FAILED_PERMANENT 三态的业务视图。
      */
     private static InvoiceLinkCompensation toDomain(InvoiceLinkCompensationPO po) {
         return InvoiceLinkCompensation.builder()

@@ -1513,7 +1513,8 @@ INSERT IGNORE INTO `exchange_rate` (`code`, `rate_scaled`, `source`, `effect_tim
 -- =====================================================================
 -- 发票联动补偿（I56 全额退款冲红 / I60 部分退款置标 —— 联动失败的承载表）
 -- 由 pay-service 在发票联动失败时落一条 PENDING 记录（「静默丢失」升级为「可补偿」）；
--- 调度器就绪后按 (status, next_retry_at) 拾取重试，或由管理端人工收敛。
+-- 调度器按 (status, next_retry_at) 拾取、先用 lease_until 认领再重试（租约到期自动回到可认领集合，
+-- 故不需要回收任务/不需要 PROCESSING 状态），或由管理端人工收敛。
 -- schema 直改本文件，无迁移文件（ADR-045）。
 -- =====================================================================
 
@@ -1526,6 +1527,7 @@ INSERT IGNORE INTO `exchange_rate` (`code`, `rate_scaled`, `source`, `effect_tim
     `status`        TINYINT      NOT NULL DEFAULT 0 COMMENT '状态：0=PENDING 待补偿 1=DONE 已补偿 2=FAILED_PERMANENT 永久失败（重试耗尽/人工终止）',
     `retry_count`   INT          NOT NULL DEFAULT 0 COMMENT '已重试次数（调度器每次拾取重试 +1）',
     `next_retry_at` DATETIME     NULL COMMENT '下次可拾取时间（落库即当前时间——调度器就绪后即刻可拾取；重试失败按退避推迟）',
+    `lease_until`   DATETIME     NULL COMMENT '认领租约到期时间；NULL=未认领。到期后自动可被再次认领（无需回收任务）',
     `last_error`    VARCHAR(500) NULL COMMENT '最近一次失败原因摘要（异常类型 + 消息，不含敏感细节；超长截断至 500）',
     `create_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

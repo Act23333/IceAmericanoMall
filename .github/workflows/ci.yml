@@ -45,20 +45,23 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: ID Invariants Gate (ADR-050/051)
-        run: bash Implementation/back-end/scripts/check-id-invariants.sh
+      # 与本地 .githooks 用**同一份定义**（scripts/verify-gates.sh），否则 hook 绿、CI 红，
+      # 或反之 —— 两边各自维护一套步骤就是漂移源。MVN_ARGS="" 让 mvn 走在线模式（CI 有网络）。
+      # 该脚本的 fast 段已含：交接单禁复述事实 / 根文档计数 / ID 不变量 / ia-api 单测；
+      # full 段追加全量 mvn test（含 architecture-tests 全部守卫）。
+      - name: Gates (shared definition with local hooks)
+        run: MVN_ARGS="" bash Implementation/back-end/scripts/verify-gates.sh full
 
-      - name: Build & Compile
-        run: mvn -f Implementation/back-end/pom.xml clean compile -DskipTests
-
-      - name: Run Unit Tests
-        run: mvn -f Implementation/back-end/pom.xml test
-
-      # 根文档计数必须由脚本生成（--write 是唯一写入口）：手改数字下次 --check 必红。
-      # 放 build job 而非 consistency job：这里刚跑完全量测试，surefire 报告在工作区；
-      # consistency job 不跑 mvn，放那儿等于把「测试数」这条断言关掉。
-      - name: Doc counts (--check)
-        run: node Implementation/back-end/scripts/sync-doc-counts.mjs --check --strict-tests
+      # 钩子文件是「流程修复」的载体，不能被静默删掉或丢掉可执行位（否则没人会跑门禁）。
+      - name: Git hooks present & executable
+        run: |
+          set -e
+          for h in .githooks/pre-commit .githooks/pre-push; do
+            test -f "$h" || { echo "::error::缺少钩子文件 $h"; exit 1; }
+            mode=$(git ls-files -s "$h" | awk '{print $1}')
+            test "$mode" = "100755" || { echo "::error::$h 索引模式为 $mode（应为 100755）"; exit 1; }
+          done
+          echo "钩子文件齐备且可执行"
 
       - name: Package
         run: mvn -f Implementation/back-end/pom.xml package -DskipTests

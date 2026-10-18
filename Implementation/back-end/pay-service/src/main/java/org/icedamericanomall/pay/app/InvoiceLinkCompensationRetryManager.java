@@ -27,11 +27,15 @@ import java.util.List;
  *
  * <pre>
  * Scenario: 到期行重调成功
- *   Then 条件置 DONE（终态），不再被拾取
+ *   Then 条件置 DONE（终态）并释放租约，不再被拾取
+ * Scenario: 同一行被两个执行者同轮拾取（多实例 / XXL 与 @Scheduled 双入口）
+ *   Then 只有认领命中（受影响行数 = 1）者重调；另一个跳过该行，记日志、不报错、不触发 Feign
+ * Scenario: 持租约的进程崩在「Feign 成功、markDone 之前」
+ *   Then 该行只是带着租约等待，租约到期后自动重回可认领集合（无需回收任务）
  * Scenario: 重调失败且可重试（TRANSIENT / BUG / 拿不到分类）
- *   Then retry_count + 1，next_retry_at = now + 2^n 分钟（封顶），last_error 落摘要，仍为 PENDING
+ *   Then retry_count + 1，next_retry_at = now + 2^n 分钟（封顶），last_error 落摘要，仍为 PENDING，释放租约
  * Scenario: 重调失败且次数耗尽（retry_count + 1 &gt;= MAX_RETRY）
- *   Then 条件置 FAILED_PERMANENT，交管理端人工收敛
+ *   Then 条件置 FAILED_PERMANENT，释放租约，交管理端人工收敛
  * Scenario: 重调失败且下游 4xx（category == CLIENT：订单/发票已不存在、参数被拒）
  *   Then 直接 FAILED_PERMANENT，<b>不进退避</b>（重试必然重复失败）
  * Scenario: 某一单抛错（含状态回写失败）
@@ -40,6 +44,17 @@ import java.util.List;
  *
  * <p><b>事务纪律</b>：本类调 Feign，故<b>不加</b> {@code @Transactional}（硬约束）；状态迁移
  * 下沉为仓储条件更新，单条 UPDATE 自提交，重复/并发调度安全（谁先到谁生效）。
+ *
+ * <p><b>并发纪律：先认领再重调</b>（{@code tryClaim} + {@link #CLAIM_LEASE_SECONDS}）。任务有两个入口
+ * （XXL-Job 与 {@code @Scheduled}）且多实例部署，同一次调度可能同时对同一行触发；不认领就重调，
+ * 等于把「重复冲红」这件事寄托在「下游恰好幂等」这个<b>假设</b>上。认领把假设换成机制：
+ * 只有命中「受影响行数 = 1」的执行者才允许重调，其余跳过该行（记 info，不算错误）。
+ *
+ * <p><b>租约 = 会自愈的时间盒，不是一个状态</b>：{@code lease_until} 到期后该行自动回到可认领集合
+ * （到期拾取查询本身就带租约条件），所以<b>不需要回收任务</b>，也不需要引入 {@code PROCESSING} 状态 ——
+ * 后者只会换出一个「进程崩在处理中就永久卡住、还得再写一个回收任务去救」的新僵尸态。
+ * 进程在「Feign 调用成功、{@code markDone} 尚未执行」之间崩溃时，该行只是带着租约等它过期，
+ * 之后被下一轮重新拾取（下游幂等使重复重调无害）。
  *
  * <p><b>重放参数的来源</b>：只用 {@code order_no} + {@code scene_ref} + {@code kind} 三列还原调用，
  * 与 {@code PayEventNotifier#triggerInvoiceLinkage} 的入参口径逐字一致（{@code scene_ref}
@@ -58,6 +73,24 @@ public class InvoiceLinkCompensationRetryManager {
     static final int BATCH_LIMIT = 100;
 
     /**
+     * 认领租约时长（秒）—— 认领成功后，该行在这段时间内不会再被别的执行者认领。
+     *
+     * <p><b>为什么是 120 秒</b>（三条约束的交集）：
+     * <ol>
+     *   <li><b>必须 &gt; 单批最长处理时间</b>：{@link #BATCH_LIMIT}（100 条）× 单笔 ~200ms ≈ 20s，
+     *       留 6 倍余量吸收下游变慢 —— 租约短于处理时间会出现「自己还在重调，别人已接手」的并发重调，
+     *       认领就白做了；</li>
+     *   <li><b>应约为 {@code @Scheduled} 间隔（默认 60s）的 2 倍以上</b>：保证「上一轮还没跑完、
+     *       下一轮已触发」时不会把仍在处理的行抢走；</li>
+     *   <li><b>必须短到「崩溃后可尽快恢复」</b>：持有者进程崩溃后，该行最多等一个租约周期就重新可认领
+     *       （不需要回收任务）；拖到小时级等于事实停摆。</li>
+     * </ol>
+     * 时间盒本身就是回收机制 —— 到期即自动可认领，故这里取值是「安全余量 vs 恢复窗口」的权衡，
+     * 不是重试退避（退避由 {@link #backoffMinutes} 单独表达）。
+     */
+    static final int CLAIM_LEASE_SECONDS = 120;
+
+    /**
      * 最大重试次数：{@code retry_count + 1 >= MAX_RETRY} 即转 {@code FAILED_PERMANENT}。
      * 取值理由：退避是 2^n 分钟，5 次退避的累计窗口约 2+4+8+16 = 30 分钟 —— 覆盖下游分钟级抖动；
      * 再往后失败的几乎都是确定性缺陷（数据缺陷/契约变更），继续重试只会拖长「可观测但无进展」的窗口。
@@ -74,33 +107,65 @@ public class InvoiceLinkCompensationRetryManager {
     private final TradeInvoiceClient tradeInvoiceClient;
 
     /**
-     * 补偿一轮：拾取到期记录 → 逐条重调发票联动 → 按结果推进状态。
+     * 补偿一轮：拾取到期记录 → <b>逐条先认领</b> → 认领成功才重调发票联动 → 按结果推进状态。
      *
      * <p>单条异常（含状态回写失败）仅记日志、继续下一单：该行仍是 {@code PENDING}
-     * （或已由他人推进），下轮自然再次拾取；下游联动本身幂等（无有效票是空操作），
+     * （或已由他人推进），租约到期后自然再次被拾取；下游联动本身幂等（无有效票是空操作），
      * 不会因重复重调而重复冲红。
      *
-     * @return 本轮拾取的到期记录数（供调度侧观测）
+     * @return 本轮拾取的到期记录数（供调度侧观测；其中被他人认领而跳过的条数见 claim 日志）
      */
     public int retryDueCompensations() {
         List<InvoiceLinkCompensation> due = invoiceLinkCompensationRepository.findDueForRetry(BATCH_LIMIT);
         log.info("[refund-invoice][retry][scan] limit={}, dueCount={}", BATCH_LIMIT, due.size());
+        int claimed = 0;
+        int skipped = 0;
         for (InvoiceLinkCompensation compensation : due) {
             try {
-                retryOne(compensation);
+                if (retryOneIfClaimed(compensation)) {
+                    claimed++;
+                } else {
+                    skipped++;
+                }
             } catch (RuntimeException e) {
                 log.error("[refund-invoice][retry][aborted] id={} 单笔补偿意外异常，继续下一笔",
                         compensation.getId(), e);
             }
         }
+        log.info("[refund-invoice][retry][claimed] dueCount={}, claimed={}, skipped={}",
+                due.size(), claimed, skipped);
         return due.size();
+    }
+
+    /**
+     * 认领 + 重试（认领失败即跳过，<b>不触碰 Feign</b>）。
+     *
+     * <p>认领与重调必须成对出现在这里，不允许调用方绕过：只要有一条路径「不认领就重调」，
+     * 并发互斥就整体失效（多实例下同一行被重复冲红）。认领未命中不是错误 ——
+     * 说明别的执行者已经在处理，或该行已被推进到终态。
+     *
+     * <p>认领成功后若本进程崩溃，该行只是带着租约等它到期再被拾取；不会永久卡住（无回收任务，
+     * 因为租约过期本身即回收）。
+     *
+     * @param compensation 到期补偿记录
+     * @return {@code true} 本轮由本执行者认领并重试；{@code false} 认领未命中（跳过）
+     */
+    private boolean retryOneIfClaimed(InvoiceLinkCompensation compensation) {
+        if (!invoiceLinkCompensationRepository.tryClaim(compensation.getId(), CLAIM_LEASE_SECONDS)) {
+            log.info("[refund-invoice][retry][claim-skip] id={}, orderNo={}, sceneRef={} 认领未命中"
+                            + "（他人持有租约或状态已推进），本轮跳过（非错误）",
+                    compensation.getId(), compensation.getOrderNo(), compensation.getSceneRef());
+            return false;
+        }
+        retryOne(compensation);
+        return true;
     }
 
     /**
      * 单笔重试：先重调 Feign，成功才条件置 {@code DONE}；失败按类别分派（退避 / 永久失败）。
      *
      * <p>{@code markDone} 刻意在 {@code try} 之外：只有「重调 Feign 失败」才谈补偿策略，
-     * 状态回写失败属于持久层故障（该行仍是 {@code PENDING}，下轮会再拾取），
+     * 状态回写失败属于持久层故障（该行仍是 {@code PENDING}，租约到期后被下一轮再拾取），
      * 直接抛给批量循环兜底记录，不伪装成「联动失败」。
      *
      * @param compensation 到期补偿记录（含 {@code id}，来自 {@code findDueForRetry}）

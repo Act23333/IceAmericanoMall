@@ -36,18 +36,25 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>并发限制（如实照既有口径，不自创一套）</b>：同包三个既有 Job <b>都没有</b>分布式锁
  * （{@code RefundResumeJob} / {@code ReconciliationJob} / {@code PayTimeoutJob} 一律裸触发），
- * 本 Job 同样不加锁。多实例/两种入口同时触发时的后果可控，靠两层既有保证兜住：
+ * 本 Job 同样不加锁 —— 但补偿这一类<b>不允许</b>靠「下游幂等」兜底重复重调，故并发裁决下沉到数据层，
+ * 由三层机制共同保证「至多一次有效推进」：
  * <ol>
+ *   <li><b>认领租约</b>（{@code lease_until}）：拾取后先 {@code tryClaim}，只有命中「受影响行数 = 1」
+ *       的执行者才重调，其余跳过该行（{@code InvoiceLinkCompensationRetryManager#CLAIM_LEASE_SECONDS}）；</li>
  *   <li><b>状态迁移全是条件更新</b>（{@code WHERE id = ? AND status = PENDING}）—— 同一行被两个执行者
  *       拾取时，只有一个能推进状态，另一个的 {@code markDone / scheduleRetry} 命中 0 行、记日志跳过，
  *       不会把终态行拉回待补偿，也不会覆盖彼此的 {@code retry_count} / {@code next_retry_at}；</li>
- *   <li><b>下游联动本身幂等</b>（trade 侧：无有效票 = 空操作；同一订单的冲红/置标重复调用结果一致），
- *       故同一行被重复重调<b>不会</b>重复冲红或重复置标。</li>
+ *   <li><b>下游联动本身幂等</b>（trade 侧：无有效票 = 空操作；同一订单的冲红/置标重复调用结果一致）——
+ *       这一层现在只是<b>纵深防御</b>，不再是重复重调的主要防线。</li>
  * </ol>
- * 剩余风险（明确记在此处而非掩盖）：同一行可能被重复调用一次（多一次 Feign 流量），
- * 补偿「恰好一次」不成立、只保证「至多一次有效推进」。要彻底消除，需引入
- * {@code DistributedLock}（ADR-024）或 XXL-Job 的分片/串行策略 —— 那属跨 Job 的统一决策，
- * 不在本批单独为一张补偿表另起一套。
+ *
+ * <p><b>剩余风险（明确记在此处而非掩盖）</b>：租约是<b>时间盒</b>而非分布式锁 ——
+ * 若某次 Feign 调用耗时超过租约时长（默认 120s，远大于单批估算耗时 20s），该行可能在原持有者
+ * 仍在调用时被另一执行者再次认领，形成一次并发重调；此时由第 3 层（下游幂等）兜住。
+ * 租约到期即自动回收，故<b>崩溃后不需要人工干预、也不需要回收任务</b>（这是选租约而不是
+ * {@code PROCESSING} 状态的全部理由：新状态会换出一个会永久卡住的僵尸态）。
+ * 要彻底消除上面的窗口，需引入 {@code DistributedLock}（ADR-024）或 XXL-Job 的分片/串行策略
+ * —— 那属跨 Job 的统一决策，不在本批单独为一张补偿表另起一套。
  */
 @Slf4j
 @Component
@@ -75,7 +82,7 @@ public class InvoiceLinkCompensationRetryJob {
     /**
      * 补偿一轮（生产入口，XXL-Job Admin 调度）。
      *
-     * <p>断点/重复调度安全：状态迁移条件化 + 下游幂等（见类注释）。
+     * <p>断点/重复调度安全：认领租约 + 状态迁移条件化 + 下游幂等（见类注释）。
      */
     @XxlJob("retryInvoiceLinkCompensation")
     public void retryInvoiceLinkCompensation() {

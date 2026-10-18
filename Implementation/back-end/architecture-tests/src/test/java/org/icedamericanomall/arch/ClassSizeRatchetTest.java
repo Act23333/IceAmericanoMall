@@ -245,6 +245,23 @@ class ClassSizeRatchetTest {
     }
 
     @Test
+    @DisplayName("边界语义 — **只约束「已超限类」与「越过 300 上限」，不禁止未超限类增长**：250→290 不判，250→310 判")
+    void shouldAllowGrowthOfUnbaselinedClass_whenStillWithinHardLimit() {
+        String path = "synthetic-service/src/main/java/x/Growing.java";
+
+        // 250 → 290：未登记、仍 ≤ 300 ⇒ 不红。这是刻意的：棘轮是「超限债务只减不增」，
+        // 不是「所有类都不许变长」—— 否则任何正常迭代都会被门禁拦住，最后只能删掉门禁。
+        Report withinLimit = evaluate(Map.of(path, 290), List.of(), LocalDate.of(2026, 10, 18));
+        assertThat(withinLimit.violations())
+                .as("未超限类从 250 长到 290 必须放行（只受「不许越过 300」约束）").isEmpty();
+
+        // 250 → 310：越过硬上限 ⇒ 规则 1 判红（此时才需要在同一提交里登记限时豁免）
+        Report crossedLimit = evaluate(Map.of(path, 310), List.of(), LocalDate.of(2026, 10, 18));
+        assertThat(crossedLimit.violationsOf(Rule.NEW_OVER_SIZED))
+                .as("越过 300 上限即红，与是否「以前没超」无关").hasSize(1);
+    }
+
+    @Test
     @DisplayName("规则 2（不许增长）— 合成：实测 345 > 基线 344 → GREW_BEYOND_BASELINE；等值 344 不判")
     void shouldFlagGrowth_whenClassExceedsBaselineMaxLines() {
         String path = "synthetic-service/src/main/java/x/Grown.java";

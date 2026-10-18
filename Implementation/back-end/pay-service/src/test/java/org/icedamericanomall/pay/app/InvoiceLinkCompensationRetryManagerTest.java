@@ -44,11 +44,12 @@ import static org.mockito.Mockito.when;
  * InvoiceLinkCompensationRetryManager 单元测试 —— 补偿重试任务的分派语义
  * （{@code invoice_link_compensation} 的消费者，本批新增）。
  *
- * <p><b>为什么用 Mockito 而不是 H2</b>：本类被测的是<b>决策</b>（成功置 DONE / 可重试退避 /
- * 次数耗尽终态 / 下游 4xx 直接终态 / 单条异常不中断整批），输入是「到期行 + 重调结果」，
- * 输出是「对仓储端口的哪一次条件更新调用」。条件更新本身（{@code WHERE status = PENDING}
- * 真的在库里生效）由 {@code InvoiceLinkCompensationRetryH2Test} 用真实 H2 证明 —— 二者缺一，
- * 「幂等补偿」都只是口头承诺。
+ * <p><b>为什么用 Mockito 而不是 H2</b>：本类被测的是<b>决策</b>（认领命中才会重调 / 成功置 DONE /
+ * 可重试退避 / 次数耗尽终态 / 下游 4xx 直接终态 / 单条异常不中断整批），输入是「到期行 + 认领结果 +
+ * 重调结果」，输出是「对仓储端口的哪一次条件更新调用」。条件更新与认领互斥本身
+ * （{@code WHERE status = PENDING AND (lease_until IS NULL OR lease_until < now)} 真的在库里生效）
+ * 由 {@code InvoiceLinkCompensationRetryH2Test} / {@code InvoiceLinkCompensationLeaseH2Test}
+ * 用真实 H2 证明 —— 二者缺一，「幂等补偿」都只是口头承诺。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("InvoiceLinkCompensationRetryManager 补偿重试编排测试")
@@ -79,6 +80,18 @@ class InvoiceLinkCompensationRetryManagerTest {
         return record;
     }
 
+    /**
+     * 认领成功的桩：{@code tryClaim} 命中 1 行。
+     *
+     * <p>默认 {@code false} 是 Mockito 的 boolean 缺省值 —— 每个「到期行应当被重调」的用例都必须显式打开它，
+     * 否则本类会静默退化成「所有行都被跳过」。这不是样板噪音：认领是重调的前置条件，
+     * 用例里写出来才看得见这条纪律。
+     */
+    private void claimable(long id) {
+        when(invoiceLinkCompensationRepository.tryClaim(id, InvoiceLinkCompensationRetryManager.CLAIM_LEASE_SECONDS))
+                .thenReturn(true);
+    }
+
     /** 下游 4xx 的真实形态：降级工厂把 {@code UpstreamException}（category=CLIENT）原样抛出（§三·八 透传）。 */
     private static UpstreamException downstreamClientError() {
         return new UpstreamException(
@@ -92,6 +105,7 @@ class InvoiceLinkCompensationRetryManagerTest {
     void shouldRedispatchVoid_whenDueRowKindIsVoid() {
         when(invoiceLinkCompensationRepository.findDueForRetry(InvoiceLinkCompensationRetryManager.BATCH_LIMIT))
                 .thenReturn(List.of(dueRow(ROW_ID, ORDER_NO, InvoiceLinkKindEnum.VOID, 0)));
+        claimable(ROW_ID);
 
         int scanned = retryManager.retryDueCompensations();
 
@@ -109,6 +123,7 @@ class InvoiceLinkCompensationRetryManagerTest {
     void shouldRedispatchPartial_whenDueRowKindIsPartial() {
         when(invoiceLinkCompensationRepository.findDueForRetry(InvoiceLinkCompensationRetryManager.BATCH_LIMIT))
                 .thenReturn(List.of(dueRow(ROW_ID, ORDER_NO, InvoiceLinkKindEnum.PARTIAL, 0)));
+        claimable(ROW_ID);
 
         retryManager.retryDueCompensations();
 
@@ -129,6 +144,7 @@ class InvoiceLinkCompensationRetryManagerTest {
         // 第二轮：该行已 DONE，findDueForRetry 不再返回它（条件更新 + status 筛选的效果）
         when(invoiceLinkCompensationRepository.findDueForRetry(InvoiceLinkCompensationRetryManager.BATCH_LIMIT))
                 .thenReturn(List.of(row), List.of());
+        claimable(ROW_ID);
         when(invoiceLinkCompensationRepository.markDone(ROW_ID)).thenReturn(true);
 
         retryManager.retryDueCompensations();
@@ -149,6 +165,7 @@ class InvoiceLinkCompensationRetryManagerTest {
         InvoiceLinkCompensation row = dueRow(ROW_ID, ORDER_NO, InvoiceLinkKindEnum.VOID, 0);
         when(invoiceLinkCompensationRepository.findDueForRetry(InvoiceLinkCompensationRetryManager.BATCH_LIMIT))
                 .thenReturn(List.of(row));
+        claimable(ROW_ID);
         doThrow(new BizException(ErrorCode.SYSTEM_BUSY, "发票联动暂时无法完成"))
                 .when(tradeInvoiceClient).voidOnFullRefund(any(InvoiceVoidCO.class));
 
@@ -178,6 +195,7 @@ class InvoiceLinkCompensationRetryManagerTest {
         InvoiceLinkCompensation row = dueRow(ROW_ID, ORDER_NO, InvoiceLinkKindEnum.VOID, 1);
         when(invoiceLinkCompensationRepository.findDueForRetry(InvoiceLinkCompensationRetryManager.BATCH_LIMIT))
                 .thenReturn(List.of(row));
+        claimable(ROW_ID);
         doThrow(new IllegalStateException("契约违约"))
                 .when(tradeInvoiceClient).voidOnFullRefund(any(InvoiceVoidCO.class));
 
@@ -200,6 +218,7 @@ class InvoiceLinkCompensationRetryManagerTest {
                 InvoiceLinkCompensationRetryManager.MAX_RETRY - 1);
         when(invoiceLinkCompensationRepository.findDueForRetry(InvoiceLinkCompensationRetryManager.BATCH_LIMIT))
                 .thenReturn(List.of(row));
+        claimable(ROW_ID);
         doThrow(new BizException(ErrorCode.SYSTEM_BUSY, "发票联动暂时无法完成"))
                 .when(tradeInvoiceClient).voidOnFullRefund(any(InvoiceVoidCO.class));
 
@@ -221,6 +240,7 @@ class InvoiceLinkCompensationRetryManagerTest {
         InvoiceLinkCompensation row = dueRow(ROW_ID, ORDER_NO, InvoiceLinkKindEnum.PARTIAL, 0);
         when(invoiceLinkCompensationRepository.findDueForRetry(InvoiceLinkCompensationRetryManager.BATCH_LIMIT))
                 .thenReturn(List.of(row));
+        claimable(ROW_ID);
         doThrow(downstreamClientError())
                 .when(tradeInvoiceClient).markPartialRefund(any(InvoicePartialRefundCO.class));
 
@@ -249,10 +269,54 @@ class InvoiceLinkCompensationRetryManagerTest {
 
         assertEquals(0, scanned);
         verifyNoInteractions(tradeInvoiceClient);
+        verify(invoiceLinkCompensationRepository, never()).tryClaim(anyLong(), anyInt());
         verify(invoiceLinkCompensationRepository, never()).markDone(anyLong());
         verify(invoiceLinkCompensationRepository, never())
                 .scheduleRetry(anyLong(), anyInt(), any(LocalDateTime.class), anyString());
         verify(invoiceLinkCompensationRepository, never()).markFailedPermanent(anyLong(), anyString());
+    }
+
+    // ==================== ⑥b 认领未命中 → 不重调（并发互斥） ====================
+
+    @Test
+    @DisplayName("认领未命中 — tryClaim 返回 false（他人持有租约/状态已推进）时零 Feign 交互、零状态写入，且计入 due 数但不计 claim")
+    void shouldNotRedispatch_whenClaimMisses() {
+        InvoiceLinkCompensation claimedByOther = dueRow(ROW_ID, ORDER_NO, InvoiceLinkKindEnum.VOID, 0);
+        when(invoiceLinkCompensationRepository.findDueForRetry(InvoiceLinkCompensationRetryManager.BATCH_LIMIT))
+                .thenReturn(List.of(claimedByOther));
+        when(invoiceLinkCompensationRepository.tryClaim(
+                ROW_ID, InvoiceLinkCompensationRetryManager.CLAIM_LEASE_SECONDS)).thenReturn(false);
+
+        int scanned = retryManager.retryDueCompensations();
+
+        assertEquals(1, scanned, "到期行仍计入扫描数（观测口径不变）");
+        verifyNoInteractions(tradeInvoiceClient);
+        verify(invoiceLinkCompensationRepository, never()).markDone(anyLong());
+        verify(invoiceLinkCompensationRepository, never())
+                .scheduleRetry(anyLong(), anyInt(), any(LocalDateTime.class), anyString());
+        verify(invoiceLinkCompensationRepository, never()).markFailedPermanent(anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("同批混跑 — 被他人认领的行跳过，认领成功的行照常重调并置 DONE（互斥不阻断整批）")
+    void shouldRedispatchOnlyClaimedRows_whenBatchMixed() {
+        InvoiceLinkCompensation claimedByOther = dueRow(ROW_ID, ORDER_NO, InvoiceLinkKindEnum.VOID, 0);
+        InvoiceLinkCompensation mine = dueRow(OTHER_ROW_ID, OTHER_ORDER_NO, InvoiceLinkKindEnum.VOID, 0);
+        when(invoiceLinkCompensationRepository.findDueForRetry(InvoiceLinkCompensationRetryManager.BATCH_LIMIT))
+                .thenReturn(List.of(claimedByOther, mine));
+        when(invoiceLinkCompensationRepository.tryClaim(
+                ROW_ID, InvoiceLinkCompensationRetryManager.CLAIM_LEASE_SECONDS)).thenReturn(false);
+        claimable(OTHER_ROW_ID);
+
+        int scanned = retryManager.retryDueCompensations();
+
+        assertEquals(2, scanned);
+        ArgumentCaptor<InvoiceVoidCO> captor = ArgumentCaptor.forClass(InvoiceVoidCO.class);
+        verify(tradeInvoiceClient, times(1)).voidOnFullRefund(captor.capture());
+        assertEquals(OTHER_ORDER_NO, captor.getValue().getOrderNo(),
+                "只有认领成功的行才能重调（被他人认领的行必须零 Feign）");
+        verify(invoiceLinkCompensationRepository).markDone(OTHER_ROW_ID);
+        verify(invoiceLinkCompensationRepository, never()).markDone(ROW_ID);
     }
 
     // ==================== ⑦ 单条抛错不影响同批其它行 ====================
@@ -264,6 +328,8 @@ class InvoiceLinkCompensationRetryManagerTest {
         InvoiceLinkCompensation healthy = dueRow(OTHER_ROW_ID, OTHER_ORDER_NO, InvoiceLinkKindEnum.VOID, 0);
         when(invoiceLinkCompensationRepository.findDueForRetry(InvoiceLinkCompensationRetryManager.BATCH_LIMIT))
                 .thenReturn(List.of(failing, healthy));
+        claimable(ROW_ID);
+        claimable(OTHER_ROW_ID);
         // 第 1 次重调失败（TRANSIENT）→ 进退避；第 2 次成功 → 置 DONE（证明整批没被前一行拖死）
         doThrow(new BizException(ErrorCode.SYSTEM_BUSY, "发票联动暂时无法完成"))
                 .doNothing()
@@ -306,6 +372,7 @@ class InvoiceLinkCompensationRetryManagerTest {
         InvoiceLinkCompensation row = dueRow(ROW_ID, ORDER_NO, InvoiceLinkKindEnum.VOID, 0);
         when(invoiceLinkCompensationRepository.findDueForRetry(InvoiceLinkCompensationRetryManager.BATCH_LIMIT))
                 .thenReturn(List.of(row));
+        claimable(ROW_ID);
         // 并发调度下另一执行者已置 DONE：条件更新命中 0 行
         when(invoiceLinkCompensationRepository.markDone(ROW_ID)).thenReturn(false);
 
