@@ -153,7 +153,19 @@ public class UserAdminManager {
         }
     }
 
-    /** 写吊销<b>终结</b>记录（ok / permanent-4xx）；写失败只打 ERROR，绝不影响已提交的禁用。 */
+    /**
+     * 写吊销<b>终结</b>记录（ok / permanent-4xx）。
+     *
+     * <p><b>为什么这里也吞掉异常（权衡过的，不是偷懒）</b>：写失败<b>不会</b>让状态变错 ——
+     * 缺一条终结记录的唯一后果是「对账 Job 会再重放一次 {@code revokeUserTokens}」，
+     * 而该操作<b>幂等</b>（单调推进令牌版本号），重复调用无副作用，只多一次 RPC。
+     * 反过来，若让写库异常外溢，就会把一次<b>已经提交成功</b>的禁用变成对外 5xx。
+     * 用「一次冗余 RPC」换「一个假失败」，这个交换是划算的。
+     *
+     * <p><b>⚠ 别把这段当 bug 修掉</b>：去掉 {@code catch}「让异常正常抛」会让链路变成
+     * 「禁用成功 → 记录失败 → 接口报错 → 管理员重试禁用 → 又一次记录失败」，对账候选集反而更脏。
+     * 该做的是让记录<b>更能写成功</b>（索引/容量），不是把容错删掉。
+     */
     private void recordRevokeOutcome(Long id, String outcome) {
         try {
             operationLogManager.record(UserContext.getUserId(), OperationAuditConstants.MODULE_USER,

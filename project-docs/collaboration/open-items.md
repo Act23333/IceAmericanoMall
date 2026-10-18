@@ -365,8 +365,22 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
 - **M10** 4xx 不再判终结 → `shouldRecordPermanent_whenRevokeRejectedAsClientError` 红。
 两者均按 md5 复原。
 
-**仍未做**：窗口外（>24h）的失败没有自动收敛，需人工按 `operation_log` 里
-`DISABLE_USER` 无对应 `REVOKE_USER_TOKENS` 的记录排查；前端兜底分支见 U19。
+**仍未做 / 已知边界（2026-10-18 复审补登记）**：
+
+- **多实例部署形态（已确认结论）**：本仓开发/联调形态 = **单实例**（`docker-compose` 每服务一份、无 replica），
+  生产形态**本仓未定义**。多实例下同一用户可能被两个实例各重放一次 —— 结果仍**安全**
+  （吊销单调推进令牌版本号，幂等），代价是多一次 RPC；若要求「每轮恰好一次」需加
+  `DistributedLock`（ADR-024）或改 XXL-Job 分片。**这是「不是 bug 的 bug」，越晚发现越难改**，故写死在此。
+- **24h 窗口起点（写死）**：对某条 `DISABLE_USER` 记录，可重放窗口 = **[该记录 create_time, create_time + 24h]**；
+  实现上 `create_time >= now-24h` 与定义等价。**窗口外不再自动重试**，人工入口是只读脚本
+  `scripts/inspect-pending-token-revokes.sh --all`（**不再只给一句 SQL**）。脚本口径与代码一致
+  （只按 action/target/create_time，禁解析 detail），且明确警告「不要手工补终结记录」。
+- **「记录失败也吞」为什么可接受（已写进 javadoc，防止被当 bug 修掉）**：缺一条终结记录的唯一后果是
+  对账会再重放一次**幂等**的吊销（多一次 RPC）；而让写库异常外溢会把一次**已提交**的禁用变成 5xx。
+  用「一次冗余 RPC」换「一个假失败」是划算的。去掉 `catch` 会形成「禁用成功→记录失败→接口报错→重试禁用」的坏环。
+- **告警聚合 / dev 开关（记一笔，不阻塞收尾）**：当前每轮失败只打 WARN，**无聚合、无计数指标**；
+  生产接入前应补「连续 N 轮仍有候选未终结」的聚合告警。`@Scheduled` 无环境门槛，**dev 也会每 15 分钟跑一轮**
+  （窗口内通常为空，代价可忽略，但排障时要知道它不是只在生产跑）。
 
 **第二步的空窗问题（已裁决：方案 A —— 同批上，不拆可独立合并的 commit）**
 
@@ -380,6 +394,46 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
   （TimeLimiter 5s × 2），而 auth 域真故障时重试必败 —— 只在「瞬时抖动」上有效；
   ② 它**不消除**对补偿记录 + 消费者（Job）的需求，只是把窗口缩小；
   ③ A 已经没有窗口，B 的收益归零、复杂度却留着。
+
+### 1.17 RBAC 现状实测 + 「标准」范围界定（2026-10-18，拆分待评审）
+
+**本批范围（已定）**：**RBAC0 + 统一声明式 `@PreAuthorize`**；**数据权限（行级/店铺维度）另立项** ——
+它需要新模型（范围维度 + 查询层强制注入），不是加几个权限串能解决的。别把两件事混成一批。
+
+**实测现状（不是推断）**
+
+| 项 | 结果 |
+|---|---|
+| 权限位 | 只有 **6 个**（`*:*:*` / `ai:chat` / `order:read` / `product:read` / `user:admin` / `seller:admin`） |
+| 真被消费的位 | **2 个**：`user:admin`（21 处）、`seller:admin`（2 处）；`ai:chat` / `order:read` / `product:read` **零注解引用** |
+| 判定路径 | **三条**：`@ss.hasPermi` / `UserContext.hasPermission` / 控制器内 `hasRole` |
+| method security | `spring-boot-starter-security` 在 `ia-common` 是 `optional`，**仅 6/10 服务声明** ⇒ pay / merchant / ai / logistics **用不了 `@PreAuthorize`**（这就是 `assertAdmin()` 存在的原因） |
+| `sys_permission.path` | **空设计**：只在 VO/PO 转换里被读出，**没有路径→权限的解析层** |
+| 前端判定 | **完全没有**（grep 0 命中）⇒ 后端是唯一权威，但也无入口隐藏能力 |
+
+**结论**：当前是「管理员 / 非管理员」两个档位 —— 做不了岗位分离（运营只读 / 客服只售后 / 财务只开票）。
+门禁上线时还抓到两处**我先前的误判**：`AdminPayController`（其映射方法全部**无注解**、只有代码内 `assertAdmin()`）与
+`AdminMerchantController`（同样只有 `assertAdmin()`）—— 它们靠代码内 `assertAdmin()`，且 javadoc 提到
+`@PreAuthorize` 会让朴素扫描误判成「已有注解」。**扫描必须先剥注释**（已修）。
+
+**本次已落地（安全增强，不需要评审）**
+
+1. **移除 `PermissionService` 的「`roles` 含 ROLE_ADMIN 即放行」短路**。前提已核实：`ROLE_ADMIN`
+   持 `*:*:*`（`sys_role_permission (4,1)`），管理员仍经通配符全通，**行为不变**；但从此可以给管理员**收窄**。
+2. **`UserContext.hasPermission` 对齐通配符**。此前它**只做精确匹配**，与 `PermissionService` 语义不同 ——
+   今天两份种子数据让两者恰好一致，但一旦把管理员收窄成「只留 `*:*:*`」，
+   pay / merchant / ai / logistics 的 `assertAdmin()` 会**开始拒绝管理员**。这是只会在大改时炸的隐性分叉。
+3. **新增门禁** `AdminEndpointAuthorizationGuardTest`：`/api/admin`、`/api/seller` 控制器必须有**类级**
+   `@PreAuthorize`（类级要求 ⇒ 新增方法自动被覆盖）；豁免表 4 条全部标「待矩阵裁定」+ deadline
+   `2026-11-15`，**陈旧即失败**。门禁自证：合成违规样本必须判红 + 反空断言（受管控制器 ≥ 下限）。
+
+**待评审**：`rbac-permission-matrix-draft.md`（拟议权限位 + 6 个待裁决问题 Q1–Q6）。
+**评审通过前不执行拆分** —— 业务边界不由 AI 拍。
+
+**三件不可省**：① 种子迁移（`sys_permission` + `sys_role_permission`）；② **缓存失效**
+（拆位后必须 `DEL user:perms:*`，否则 TTL 30 分钟内旧权限集继续生效）；③ **端到端 403 用例**
+（有 A 位、无 B 位的账号打 B 端点断言 403）—— **③ 当前卡 Nacos/Redis，无法执行**，
+**不得因为单测绿就宣称鉴权可用**。
 
 ---
 

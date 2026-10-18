@@ -49,15 +49,34 @@ import java.util.Optional;
  *       非 {@link UserStatusEnum#FROZEN} 一律写 {@code skipped: re-enabled or missing} 终结并跳过。</li>
  * </ol>
  *
- * <h2>时间窗（无状态重试的天然上限）</h2>
- * 只重放 {@link #LOOKBACK_HOURS} 小时内的禁用：超出窗口不再重试，转人工（见 {@code open-items} U17）。
+ * <h2>时间窗（无状态重试的天然上限）—— 起点是「禁用时刻」，不是「扫描时刻」</h2>
+ * <b>窗口定义（写死，别含糊）</b>：对某条 {@code DISABLE_USER} 记录，其可重放窗口是
+ * <b>[该记录的 {@code create_time}, 该 {@code create_time} + {@link #LOOKBACK_HOURS} 小时]</b>。
+ * 实现上用 {@code create_time >= now - 24h} 表达，与上述定义等价（把 now 挪到不等式右边即得）。
+ * <ul>
+ *   <li><b>窗口内</b>：每轮（默认 15 分钟）重放直到成功或写出终结记录；</li>
+ *   <li><b>窗口外</b>：<b>不再自动重试</b>，属人工收敛 —— 入口是只读脚本
+ *       {@code scripts/inspect-pending-token-revokes.sh --all}（不给"自己写 SQL"这种不可执行的口径）。</li>
+ * </ul>
  * <b>刻意不引入"重试次数"状态表</b> —— 那会立刻需要一个与 {@code operation_log} 并行的状态机，
  * 而补偿的全部状态其实已经在这张台账里了（有终结记录 / 没有）。
  *
- * <h2>并发与幂等</h2>
- * 本类<b>不加分布式锁</b>（沿用同仓 {@code RefundResumeJob} / {@code ReconciliationJob} 的既有形态）：
- * 多实例同时跑最多让同一用户被重放两次，而 {@code revokeUserTokens} 是<b>单调推进令牌版本号</b>，
- * 重复调用安全；残余风险是「同一轮多打一次 RPC」，不是数据错误。
+ * <h2>并发与幂等（含多实例部署形态的确认结论）</h2>
+ * 本类<b>不加分布式锁</b>（沿用同仓 {@code RefundResumeJob} / {@code ReconciliationJob} 的既有形态）。
+ * 已知的部署事实：本仓的开发/联调形态是<b>单实例</b>（{@code docker-compose} 每个服务一份、无 replica；
+ * 服务进程跑在本机），生产形态**本仓未定义**。
+ * <ul>
+ *   <li><b>单实例</b>（当前）：不存在并发重放。</li>
+ *   <li><b>多实例</b>（若将来部署）：同一用户可能被两个实例各重放一次 —— 结果仍<b>安全</b>
+ *       （{@code revokeUserTokens} 单调推进令牌版本号，幂等），代价只是多一次 RPC。
+ *       若要求「每轮恰好一次」，需加 {@code DistributedLock}（ADR-024）或改用 XXL-Job 分片。</li>
+ *   <li><b>失败路径</b>：多实例下若两个实例都失败，会各打一条 WARN —— 日志重复但状态不乱；
+ *       不去重是为了「失败一定留下痕迹」，宁可重复不可丢失。</li>
+ * </ul>
+ * <b>告警口径（登记，未实现）</b>：当前每轮失败打 WARN，没有聚合与计数指标；生产接入前应补一条
+ * 「连续 N 轮仍有候选未终结」的聚合告警（否则持续故障只会刷日志）。
+ * <b>dev 开关（登记）</b>：{@code @Scheduled} 无环境门槛，dev 也会每 15 分钟跑一轮；
+ * 因窗口内通常为空，代价可忽略，但排障时要知道它不是"只在生产跑"。
  */
 @Slf4j
 @Component
