@@ -53,6 +53,7 @@ IceAmericanoMall 是一个 B2B2C 电商平台（类淘宝/京东），后端为 
 | [18-Frontend-Implementation.md](./frontend/18-Frontend-Implementation.md) | 前端实施方案文档 — 总览（Phase 模型 + 平台优先级 + 跨平台共享物 + 全局 DoD） | doc-engineer | 任一平台实施阶段推进时 |
 | [18-platforms/](./frontend/18-platforms/) | 各平台实施细则（[ADR-054](./adr/054-frontend-multi-platform-architecture-and-doc-axis.md) §一，**已物理落地**）— `web.md`（实稿，原 `18` 正文已平移）＋ `desktop.md`/`android.md`/`ios.md`/`miniprogram.md`（占位骨架，只有节标题 + TODO）。**子目录不独立编号，归属由本行与上一行说明** | doc-engineer | **该平台**实施阶段推进时 |
 | [21-Frontend-Refactor-Readiness.md](./frontend/21-Frontend-Refactor-Readiness.md) | 前端重构准备方案 — 准入条件、阻断级差异、架构决策与验收基线 | doc-engineer | 契约收敛批次 / 前端重构阶段推进时 |
+| [23-Frontend-Platform-Gap-Matrix.md](./frontend/23-Frontend-Platform-Gap-Matrix.md) | 前端角色端补完缺口矩阵 — admin/seller 端点（95）· 页面入口 · 权限位三类缺口 ＋ S0 取证 | product-manager（需求/契约域测量） | 角色端端点、页面或权限位变化时 |
 
 ## quality 质量域
 

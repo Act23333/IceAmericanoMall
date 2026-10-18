@@ -195,13 +195,14 @@ git log --oneline -10                                        # 谁改了什么�
 | ~~—~~ | ~~**补偿重试**~~ | ✅ **已完成**（批次 G）：`InvoiceLinkCompensationRetryManager` + XXL/`@Scheduled` 双入口，4xx 短路为永久失败，见 §1.11 |
 | 1 | **D（拆类还债）** | `PayManager`（344 行）/ `RefundManager`（334 行）已登记**限时豁免 deadline `2026-11-15`**；另有 17 个类在 `class-size-baseline.tsv` 里只受「不许增长 / 陈旧即红」约束。**先出测量报告**再决定拆法 |
 | 2 | **H** | 小程序**仅文档**（用户已裁决：本轮完全排除代码）|
-| 3 | **Web 角色端开发** | seller / admin 两个 app（现状：各 1 个"开发中"占位页）。用户定的优先级：**Web 各角色平台先补完**。S0（基座）曾被取消，需重启 |
+| 3 | **Web 角色端开发** | seller / admin 两个 app（实测：**0 处 API 调用**，仅 Dockerfile 引用 `packages/api`；共 9 个源文件）。用户定的优先级：**Web 各角色平台先补完**。<br>**测量已交付**：三张表（端点→页面 / 页面→端点 / 端点→权限位）+ 缺口分解见 `frontend/23-Frontend-Platform-Gap-Matrix.md`——**别再引用「65 admin / 30 seller」这种数字**（口径不可复现，见该文 §2）。<br>**S0（基座）取证结论**：全仓 + git 历史**找不到取消记录**（唯一提及是本文件，无理由/时间/决策人；`git log -S"基座"` 只有引入那一次，`apps/admin|seller` 全历史零文件删除 ⇒ S0 从未以代码形态落地）。**因此 S0 的范围不能靠"当初为什么取消"来定，只能靠测量结果定。** |
 
 ### 2.3 审计交回、待排期
 | 项 | 内容 | 需要谁 |
 |---|---|---|
 | **U2** | `Initialize.sql` 两处过时注释（「未启用 `@TableLogic`、无 `deleted` 列」但 `invoice_title.deleted`+`@TableLogic` 已落地；「每表以 BIGINT AUTO_INCREMENT 为主键」但 3 张关联表是双列 PK）；并给 **4 组同名不同型列**（`spu_id`/`sku_id`/`user_id`/`coupon_id`）标注键型 | 我可直接做 |
 | ~~**U3**~~ | ✅ **已裁决并执行（本批）**：5 张零代码引用的死表**已从 `Initialize.sql` 删除**（`seller_application` / `flash_order_log` / `merchant_reply_template` / `ai_message` / `ai_conversation`；CREATE 块与 DROP 行同步移除，双向零差集）。理由：`flash_order_log` 列注释自称「秒杀幂等+兜底」是**假承诺**（实际靠 Lua + `orders.uk_order_no`）；`ai_*` 已被 `chat_message` 取代；`seller_application` 已被 `seller` 取代。设计意图仍留在 ADR/04（已加裁决注记）| 已完成 |
+| **U15** | **售后跨商家越权面（未爆发，但只差一行种子数据）**：`after_sale` 表**无 seller_id/shop_id**（只有 `order_no`+`user_id`），admin 列表 `pageByStatus(status,…)` **只按状态过滤、无商家维度**；写侧 `PUT /api/admin/after-sale/{id}/review`、`/{id}/confirm-return` **只按 id 操作、无归属校验**。今天**不可利用**（`user:admin`=permission_id 5 只绑 role_id 4，ROLE_SELLER=role 3 只绑 2/3/4/6），但一旦为「修 403」把 `user:admin` 授予商家 ⇒ **跨商家读取 + 跨商家审批退款**，而代码层没有任何兜底。**建议①**加种子数据门禁（断言 `user:admin` 只绑 ROLE_ADMIN，可机器校验、成本极低）；**建议②**新开 seller 端点时**必须经 `orders.seller_id` join 过滤**；**建议③**写侧补操作者审计。优先级高于 S0 | 高 |
 | ~~**U14**~~ | ✅ **已完成（同批）**：`04-Data-Model.md` 中 5 张死表的逐列小节已清理（§7.2/§7.3 整段删除，§9.1/§10.2 留标题位 + stub 以免断号与外部引用失效；悬空 FK `ai_message.id` 已改指 `chat_message.id`）。连带清掉 `Initialize.sql` 里**上次删表遗留的 6 行孤立节标题注释**与 1 处仍指向已删表的列 COMMENT —— 那些注释正好压在下一张表上方，属主动误导。`quality/20` 的 B3 条目已标收口，并留档「契约 CH6–CH9 仍标 ✅ 却无实现」这个**表侧已删、契约侧未动**的悬空项 | 已完成 |
 | **U4** | 60 行**只读**结构对账脚本（打印缺表/缺列/类型不符），**不进 CI、不阻塞提交** | 我可直接做 |
 | **U5** | 2 处缺索引（`sys_user_role.role_id` 非前导、`refund_order(status,create_time)`）+ 7 处冗余索引 + 6 处疑似死索引 | 低优先，**不建议现在删** |

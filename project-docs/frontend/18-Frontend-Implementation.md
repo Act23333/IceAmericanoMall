@@ -1,6 +1,6 @@
 # 18 — 前端实施方案文档（总览）
 
-> 最后更新: 2026-10-14 | 版本: V2.0（多平台拆分：总览 + `18-platforms/`）
+> 最后更新: 2026-10-18 | 版本: V2.1（多平台拆分：总览 + `18-platforms/`；2026-10-18 按实测订正 §二 规模列的文件数与其统计口径）
 >
 > 依赖: [16-Frontend-Product-Design](../product/16-Frontend-Product-Design.md) · [17-Frontend-Design-System](./17-Frontend-Design-System.md) · [05-API-Specification](../contract/05-API-Specification.md) · [15-Front-End-Technology-Selection](./15-Front-End-Technology-Selection.md)
 >
@@ -66,12 +66,21 @@
 
 | 平台 | 仓库位置 | 实施状态 | 规模（实测） | 平台细则 |
 | :-- | :-- | :-- | :-- | :-- |
-| **Web** | `apps/web`（用户端）+ `apps/admin` + `apps/seller` | 🟡 **骨架已实现，API 层需重写** —— Phase 1 已落地；Phase 2/3 页面骨架在但引用了 8 组后端不存在的路径 | 59 文件 / 5,128 行（约 25 路由页）；admin 9/93、seller 8/85（纯骨架） | [web.md](./18-platforms/web.md) |
+| **Web** | `apps/web`（用户端）+ `apps/admin` + `apps/seller` | 🟡 **骨架已实现，API 层需重写** —— Phase 1 已落地；Phase 2/3 页面骨架在（原判「8 组前缀指向后端不存在的路径」→ ✅ **已收口 2026-10-18**，见 [21 §三](./21-Frontend-Refactor-Readiness.md)） | 59 文件 / 5,128 行（约 25 路由页，**时点快照 2026-10-14**，行数未复测）；admin **11 文件**、seller **10 文件**（纯骨架，**时点快照 2026-10-18**；口径见下表注） | [web.md](./18-platforms/web.md) |
 | **小程序** | `apps/miniprogram`（Taro 4，微信 + 支付宝） | 🟡 **实码已存在，待对齐 API 层** —— 后端小程序增量已全量补齐（V5.18：微信小程序登录、PAY7 JSAPI 拉起支付、P37 分享码） | 48 文件 / 1,977 行 | [miniprogram.md](./18-platforms/miniprogram.md) |
 | **移动端（RN）** | `apps/mobile`（React Native 0.76+） | ⚪ **空占位，未激活** —— 策略是 PWA 先行；激活触发条件见 `Implementation/front-end/apps/mobile/README.md` | 1 文件 / 0 行 | 无独立平台细则（PWA 并入 web.md §4.5） |
 | **Android** | 无独立工程 | ⚪ **未开工** | — | [android.md](./18-platforms/android.md) |
 | **iOS** | 无独立工程 | ⚪ **未开工** | — | [ios.md](./18-platforms/ios.md) |
 | **桌面端** | 无 | ⚪ **未排期** | — | [desktop.md](./18-platforms/desktop.md) |
+
+> **规模列的两个口径（必读 —— 口径不明会数出 0）**：
+>
+> 1. **统计口径：排除 `node_modules`**（含 `app/` 源码、构建与配置文件；`tsconfig.tsbuildinfo` 是构建产物，虽被 `.gitignore` 忽略但仍计入文件数）。
+>    量法：`find Implementation/front-end/apps/{admin,seller} -type f -not -path '*/node_modules/*' | wc -l` → 2026-10-18 实测 **admin 11 / seller 10**。
+> 2. **`apps/admin`、`apps/seller` 的真实源码目录是 `app/`，不是 `src/`** —— 按 `apps/*/src/` 去数会得到 **0 文件**。旧值「admin 9 文件 / 93 行、seller 8 文件 / 85 行」**口径未声明且已作废**；**逐文件行数本轮未复测**（[23 §8.2](./23-Frontend-Platform-Gap-Matrix.md) 明确「行数统计本轮未做」），故本列不再引用旧行数。
+> 3. 文件数随开发漂移：**引用规模前先跑上面那条命令**，不要把本文数字当当前真值。
+>
+> 2026-10-18 复核的一处差异待裁决：[23 §8.2](./23-Frontend-Platform-Gap-Matrix.md) 记「各 11 个文件」，本文按同一命令测得 seller 为 **10**（`apps/seller` 无 `next-env.d.ts`，该文件仅 `apps/admin` 有）——以命令输出为准，差异已上报主 agent。
 
 ### 2.1 平台优先级与排期
 

@@ -2,7 +2,10 @@
 
 > 归属域: frontend | Owner: doc-engineer | 更新触发条件: 契约收敛批次推进 / 前端重构阶段推进时
 >
-> **日期**：2026-10-14 | **上游依据**：[20-Doc-Code-Consistency-Audit.md](../quality/20-Doc-Code-Consistency-Audit.md)（本文所有结论均可在该文查到取证）
+> **日期**：2026-10-14（**2026-10-18 按实测订正 §一 / §三 / §3.1 / §五 / §六 的过期判据**，订正依据见 [23-Frontend-Platform-Gap-Matrix.md](23-Frontend-Platform-Gap-Matrix.md)） | **上游依据**：[20-Doc-Code-Consistency-Audit.md](../quality/20-Doc-Code-Consistency-Audit.md)（本文所有结论均可在该文查到取证）
+>
+> **计数口径（硬规则）**：本文出现的**所有数字都是时点快照，不是当前真值** —— 端点数以 `node Implementation/back-end/scripts/extract-endpoints.mjs` 的实跑输出为准；前端文件数以 `find Implementation/front-end/apps/<平台> -type f -not -path '*/node_modules/*' | wc -l` 为准；契约侧行数以 [05 §四](../contract/05-API-Specification.md) 表头自述计数为准。**引用前先跑命令，本文不写死会漂的数**。
+>
 > **定位**：本文不是实施手册（那是 [18-Frontend-Implementation.md](18-Frontend-Implementation.md)），而是**重构的准入清单**——回答「现在能不能开工、开工前必须先定什么、开工后以什么为验收基线」。
 
 ---
@@ -11,14 +14,16 @@
 
 | 判断项 | 结论 | 依据 |
 | --- | --- | --- |
-| 现有前端代码量 | **159 个源文件**（`apps/web` 59/5,128 行；`miniprogram` 48/1,977；`admin` 9/93；`seller` 8/85；`mobile` 1/0） | [20 §七](../quality/20-Doc-Code-Consistency-Audit.md) |
+| 现有前端代码量 | **按平台分列**（合计 159 的**口径未声明，勿用于推算**）：**时点快照 2026-10-14** —— `apps/web` 59/5,128 行；`miniprogram` 48/1,977；`mobile` 1/0；`admin`/`seller` 已于 2026-10-18 复核更正为 **11 / 10 个文件**（统计口径：**排除 `node_modules`**；旧值 9/93、8/85 的口径未声明、作废 —— `apps/admin` 的真实源码目录是 `apps/admin/app/`，按 `src/` 去数会得到 **0**） | [20 §七](../quality/20-Doc-Code-Consistency-Audit.md)、[18 §二](18-Frontend-Implementation.md) |
 | 可复用部分 | `packages/ui`（16 文件/1,012 行）、`apps/web` 的 25 个页面骨架与设计系统落地、`packages/api` 的 15 个 `use-*.ts` hooks 骨架 | 同上 |
-| 必须重写部分 | **API 层全部路径**（**9 条调用 / 7 组前缀**指向后端不存在的路径）、错误码映射、类型定义、**购物车数据源**（现为 localStorage，需切服务端） | 本文 §三 |
-| `admin` / `seller` | **纯骨架（93 / 85 行）**——不存在「重构」，只有「从零实现」 | 同上 |
+| 必须重写部分 | **API 层全部路径**（原判 **9 条调用 / 7 组前缀**指向后端不存在的路径 → ✅ **已收口 2026-10-18**：现无活调用指向不存在的路径，残留只在注释里）、错误码映射、类型定义、**购物车数据源**（现为 localStorage，需切服务端） | 本文 §三 |
+| `admin` / `seller` | **纯骨架**（2026-10-18 复核：**admin 11 / seller 10 个文件**，统计口径**排除 `node_modules`**；**行数未复测**，旧值 93 / 85 行作废）——不存在「重构」，只有「从零实现」 | 同上 |
 | 契约可信度 | 🔴 契约本身含 **13 条标注「已实现」但代码不存在的端点** + **33 条「计划中」混排在端点表内** | [20 §A1/A2](../quality/20-Doc-Code-Consistency-Audit.md) |
 | 文档可信度 | 🔴 前端域文档（`15`/`17`/`18`/`16`）全部停在 **V1.0 / 2026-08-02**，而契约已 V5.18.0 | 同上 |
 
-**核心结论**：现有前端是**按「想象中的 API」写的**。它调用的 7 组前缀里，`/api/user/notifications`、`/api/user/balance`、`/api/user/points`、`/api/auth/login`、`/api/auth/login/wechat` **5 组在契约与代码中都不存在**（纯属自造）；`/api/user/sign`、`/api/user/code`、`/api/coupon/available/filter` **3 组只存在于契约里，而契约本身是错的**（见 [20 §A1](../quality/20-Doc-Code-Consistency-Audit.md)）。因此不存在「小步重构现有 API 层」的选项；正确路径是**冻结契约 → 生成类型与客户端 → 重写 API 层 → 迁移页面**。
+**核心结论（2026-10-14 原判）**：现有前端当初是**按「想象中的 API」写的**。它调用的 7 组前缀里，`/api/user/notifications`、`/api/user/balance`、`/api/user/points`、`/api/auth/login`、`/api/auth/login/wechat` **5 组在契约与代码中都不存在**（纯属自造）；`/api/user/sign`、`/api/user/code`、`/api/coupon/available/filter` **3 组只存在于契约里，而契约本身是错的**（见 [20 §A1](../quality/20-Doc-Code-Consistency-Audit.md)）。因此当时不存在「小步重构现有 API 层」的选项；正确路径是**冻结契约 → 生成类型与客户端 → 重写 API 层 → 迁移页面**。
+>
+> ✅ **2026-10-18 复核：上述 9 条路径已全部收口** —— 前端活调用 **0 条**落在不存在的路径上（`/api/auth/web/login`、`/api/verification/codes`、`/api/sign*`、`/api/points/*`、`/api/notifications*`、`/api/wallet` 均已在用，旧路径只残留在**注释**里）；被页面消费的 55 条端点 **55/55 有后端实现**（[23 §四 表 B](23-Frontend-Platform-Gap-Matrix.md)）。**原判据保留以供追溯**：把前端源码 `grep` 到的路径集合与后端 Controller 实测路径集合取差集，差集非空即判为落差 —— 本次复核该差集为**空集**。
 
 ---
 
@@ -32,7 +37,7 @@
 
 契约已被确认为**规格（spec）**，规格本就应包含计划项，因此**不要移出**：
 
-**要求**：§四 的 33 条 `⚪` **保留在端点表内**，但（a）新增「状态」列或按状态分区成表；（b）头部计数拆为「已实现 N / 计划中 M」（实测基准：代码 286 个端点 / 契约表 326 行）；（c）§七 页面映射里混入的 9 条计划端点也加 `⚪` 标注。理由与决策见 [22 §五 D7](../quality/22-API-Spec-BigTech-Conformance-Review.md)。
+**要求**：§四 的 `⚪` **保留在端点表内**，但（a）新增「状态」列或按状态分区成表；（b）头部计数拆为「已实现 N / 计划中 M」—— **两侧数字都不手写**：代码侧取 `node Implementation/back-end/scripts/extract-endpoints.mjs` 的实跑输出（`code.distinct`），契约侧取 `05 §四` 表头自述计数（2026-10-18 的实跑读数见 [23 §一 / §7.3](23-Frontend-Platform-Gap-Matrix.md)）；（c）§七 页面映射里混入的计划端点也加 `⚪` 标注。理由与决策见 [22 §五 D7](../quality/22-API-Spec-BigTech-Conformance-Review.md)。
 
 ### 2.2 更正 13 条「标注已实现但代码不存在」的端点
 
@@ -52,11 +57,18 @@
 
 ## 三、阻断级差异清单与路径映射表（现有前端调用 → 后端真实路径）
 
-> 这张表**就是「适配层清单」**：它列出了现有前端与真实后端之间的全部路径落差。但**不建议据此写兼容适配层**（理由见 §七 第 2 条）——正确用法是作为阶段 1 生成客户端与阶段 3 页面迁移时的**逐条改造清单**。
+> 这张表**曾是「适配层清单」**：它列出了 2026-10-14 时点现有前端与真实后端之间的全部路径落差（**9 条已全部收口，见下方收口说明**）。当时**不建议**据此写兼容适配层（理由见 §七 第 2 条）——正确用法是把它当作阶段 1 生成客户端与阶段 3 页面迁移时的**逐条改造清单**；现在只作历史追溯。
+
+> **⚠️ 收口状态（2026-10-18 复核）：下表 9 条落差已全部消失**
+>
+> - 结论：现有前端**活调用 0 条**指向不存在的路径 —— 9 条旧路径全部已改到真实路径，**残留只出现在注释里**；被页面消费的 55 条端点 **55/55 有后端实现**（证据：[23 §四 表 B](23-Frontend-Platform-Gap-Matrix.md)）。
+> - 复核命令：`grep -rnF --include='*.ts' --include='*.tsx' "<旧路径>" Implementation/front-end/apps Implementation/front-end/packages` → 命中行**全部是注释**。
+> - **下表保留为 2026-10-14 快照**，仅用于追溯原判据，**不得再作为改造清单使用**（阶段 1 的改造对象已由「改 9 条路径」变为「生成客户端」）。
+> - **原判据保留一句以备追溯**：把「`grep` 前端源码得到的路径集合」与「后端 Controller 实测路径集合」取差集，差集非空即判为落差 —— 本次复核该差集为**空集**。
 
 以下为**实测**（`grep` 前端源码得到的路径 vs 后端 Controller 实测路径）。`前端错` = 契约正确、前端写错；`同错` = 前端与契约都错，以**代码**为准。
 
-| # | 现有前端调用 | 后端真实路径（准） | 契约写法 | 判定 |
+| # | 现有前端调用（2026-10-14 快照） | 后端真实路径（准） | 契约写法 | 判定（2026-10-14；现均已收口） |
 | --- | --- | --- | --- | --- |
 | 1 | `POST /api/auth/login` | `POST /api/auth/web/login` | ✅ `/api/auth/web/login` | 前端错 |
 | 2 | `POST /api/auth/login/wechat` | `POST /api/auth/web/wechat/login` | ✅ `/api/auth/web/wechat/login` | 前端错 |
@@ -68,9 +80,11 @@
 | 8 | `GET /api/user/balance`<br>`POST /api/user/balance/recharge` | **`GET /api/wallet`**<br>**`POST /api/wallet/recharge`** | ✅ `/api/wallet` | 前端错 |
 | 9 | `POST /api/coupon/available/filter` | **无此端点**（用 `GET /api/coupon/available`） | ❌ `/api/coupon/available/filter`（标 ✅ V4.3） | 同错 |
 
-**受影响页面（现有代码已踩中）**：`app/auth/login`、`app/auth/register`、`app/user/sign-in`、`app/user/points`、`app/user/notifications`、`app/user/balance`、`app/shop/checkout`（券过滤）。
+**受影响页面**（2026-10-14 快照：当时已踩中；2026-10-18 复核已全部改到真实路径）：`app/auth/login`、`app/auth/register`、`app/user/sign-in`、`app/user/points`、`app/user/notifications`、`app/user/balance`、`app/shop/checkout`（券过滤）。
 
 此外 `packages/api/error-codes.ts` 映射了 `1004`（**枚举中不存在**，真实流控码为 `1014 FREQUENT_ERROR`）→ 限流提示永远不会命中。
+
+> **一处旧判定作废（本表从未列入，记此防再次误判）**：`/api/user/address/*` 四条 —— `GET /list`、`POST /add`、`PUT /update/{id}`、`DELETE /delete/{id}` —— 曾在早期路径核对中被判「前端错、后端无此实现」。**2026-10-18 复核：判错的是文档，不是前端** —— 后端就是这种实现（`AddressController` 类上 `@RequestMapping("/api/user/address")`，四条分别位于 `AddressController.java:35/41/54/70`；另有 `GET /{id}` :48、`PUT /default/{id}` :63）。因此这四条**不属于**上表的 9 条落差，也不进本表；前端 `apps/web/app/user/addresses/page.tsx` 的调用与后端一致（[23 §四 表 B-13](23-Frontend-Platform-Gap-Matrix.md)）。
 
 ### 3.1 路径之外的阻断项（同样必须先解决）
 
@@ -81,7 +95,7 @@
 | 1 | **购物车存在双真相源**：`apps/web` 的加购/购物车/结算全走 **localStorage 的 Zustand store**（自述 `TODO: Phase 4 API integration`），而 `packages/api/hooks/use-cart.ts` 这套**写对了的服务端购物车 hook 零消费者** | 结算页把 localStorage 的 skuId 当 `cartItemIds` 发给 `POST /api/trade/order`，而 `CreateOrderReq` **无此字段**（只有 `addressId`/`userCouponId`/`remark`/`displayCurrency`），后端读的是**服务端购物车** → **下单必然命中「购物车为空」**。这是现有 Web 端最致命的业务缺陷 |
 | 2 | **Web 端当前无法登录**：登录页调用已废弃的 `POST /api/auth/login` 与 `POST /api/user/code` | 认证链路整体不可用；重构的第一步就是修这两条 |
 | 3 | **管理端营销功能经网关不可达**：`/api/admin/{flash,promotion,task,group-buy}/**` 无网关路由 → 落入 `/api/admin/**` 兜底 → 404（共 12 个端点） | `apps/admin` 无法管理秒杀/满减满折/任务/拼团，**必须等后端补网关路由后才能联调** |
-| 4 | **12 个管理端点无鉴权**（`AdminPay`/`AdminAfterSale`/`AdminFinance`/`AdminLog` 缺 `@PreAuthorize`） | 前端不能依赖「调不动就说明没权限」；且这是必须在管理端上线前修掉的安全问题 |
+| 4 | **12 个管理端点无鉴权**（`AdminPay`/`AdminAfterSale`/`AdminFinance`/`AdminLog` 缺 `@PreAuthorize`）→ ✅ **已收口（2026-10-18）**，逐条现判据见右列 | 「前端不能依赖『调不动就说明没权限』」的旧风险已消失，但**鉴权 ≠ 路由守卫**（见本表 #8）。逐条现判据：<br>· `AdminAfterSale` ✅ 已收口 —— 类级 `@PreAuthorize("@ss.hasPermi('user:admin')")`（`AdminAfterSaleController.java:33`），覆盖 3 条<br>· `AdminFinance` ✅ 已收口 —— 类级 `@PreAuthorize`（`AdminFinanceController.java:24`），覆盖 4 条<br>· `AdminLog` ✅ 已收口 —— 类级 `@PreAuthorize`（`AdminLogController.java:15`），覆盖 1 条<br>· `AdminPay` ✅ 已收口 —— 该服务未引入 Spring Security（类注释明写），4 条走方法体内 `assertAdmin()`（调用 :80/:91/:106/:124，守卫定义 `:129`）<br>（附记：`AdminMerchantController` 2 条同为 `assertAdmin()`，:50/:43，定义 :56 —— 不在原 12 条内）<br>残留真问题已不是「无鉴权」，而是 [23 §5.3](23-Frontend-Platform-Gap-Matrix.md) 的语义分叉与 §5.4 的种子冲突 |
 | 5 | **4 个服务为 `SNAKE_CASE`**（authorization / notification / verification / wallet），其余 11 个为 camelCase | 前端必须按服务区分字段命名：这 4 个服务的**请求体与响应体字段名是 snake_case**（如 `access_token`），其余是 camelCase。**生成客户端时必须按服务覆盖命名策略**，否则一半接口字段全为 `undefined` |
 | 6 | **站内信链路失效**：notification-service 收 SNAKE_CASE，而 4 个调用方（item/merchant/pay/trade）发 camelCase | `app/user/notifications` 页面将收不到站内信；这不是前端能修的，需后端统一或给 DTO 加显式 `@JsonProperty` |
 | 7 | **人机验证参数口径不符**致登录死循环 1016 | 风控开启后登录页会卡在验证失败；须先定契约方向（见 [20 §九](../quality/20-Doc-Code-Consistency-Audit.md) 决策 8） |
@@ -97,7 +111,7 @@
 | # | 决策 | 选项 | 影响面 | 建议 |
 | --- | --- | --- | --- | --- |
 | 1 | **Token 存储** | (a) 维持现状：`access_token` + **7 天 `refresh_token`** 均存 JS 可读 Cookie；(b) `refresh_token` 改 httpOnly + BFF/Route Handler 代理刷新 | 决定整个认证架构与 `middleware.ts` 路由守卫实现 | **(b)**。现状 `packages/api/token.ts` 自注「存在 XSS 暴露面」，且把 7 天有效的 refresh token 暴露给 JS 属高危。走 (b) 需 `apps/web` 增加 Route Handler 承接 `/api/auth/refresh` |
-| 2 | **契约 → TS 类型** | (a) 继续手写（现状 24 个类型覆盖 286 个端点）；(b) 从 Knife4j/OpenAPI 生成 | 决定 API 层能否长期不漂移 | **(b)**。后端已上 Knife4j 4.5.0（OpenAPI 3），16 个服务可聚合一份 spec，用 orval/openapi-typescript 生成 types + 客户端。**本次 9 条死路径正是「手写」的必然结果** |
+| 2 | **契约 → TS 类型** | (a) 继续手写（现状 24 个类型；端点数**不在此写死** —— 以 `extract-endpoints.mjs` 实跑为准）；(b) 从 Knife4j/OpenAPI 生成 | 决定 API 层能否长期不漂移 | **(b)**。后端已上 Knife4j 4.5.0（OpenAPI 3），16 个服务可聚合一份 spec，用 orval/openapi-typescript 生成 types + 客户端。**2026-10-14 判出的 9 条死路径（已于 2026-10-18 收口）正是「手写」的必然结果** |
 | 3 | **多端策略** | (a) `admin`/`seller` 各自 Next.js 应用（现状）；(b) 合并为单应用多布局 | 影响构建/部署与共享代码 | **(a) 保持**。现状 5 个 app 的 monorepo 骨架已成型，重构成本低于合并；但 `admin`/`seller` 需从零实现，可先复用 `packages/ui` + `packages/api` |
 | 4 | **React 版本** | 实际 `react ~18.2.0`（根 `pnpm.overrides` 强制锁 18.2.0）；`frontend/15` 声明 **React 19** | 影响可用特性（Server Components `use()` 等）与依赖兼容（antd 5 对 19 支持） | **先改文档为 18.2**（`fix-doc`），React 19 升级作为独立议题单独立项 |
 
@@ -114,17 +128,17 @@
 
 ### 阶段 0b：后端放行面修复（对应 [20 §八](../quality/20-Doc-Code-Consistency-Audit.md) #0–#4、#9–#11）
 - 网关补 `/api/admin/{flash,promotion,task,group-buy}/**` 4 条路由谓词（否则管理端 12 个端点 404）。
-- 4 个 admin 控制器补 `@PreAuthorize`（12 个端点当前无鉴权）。
+- 4 个 admin 控制器补 `@PreAuthorize`（12 个端点当前无鉴权）→ ✅ **已收口（2026-10-18）**：3 个改为类级 `@PreAuthorize`、`AdminPay` 走方法体内 `assertAdmin()`（该服务无 Spring Security 依赖），逐条判据见 §3.1 第 4 项。
 - 跨服务线格式收敛：统一命名策略或给 `InAppMessageSendReqCO` 等加显式 `@JsonProperty`（否则站内信收不到，且前端字段命名无法统一生成）。
 - 定人机验证契约方向（扁平 vs 嵌套 + snake_case），否则风控开启后登录死循环。
 - 补 `GET /api/user/address/{id}` 归属校验、`PUT /api/item/spu/{spuId}/status` 的 sellerId 校验、`/api/item/category` 写操作的管理员校验。
-- 完成判据：管理端 12 个端点经网关可访问且非管理员被拒（403）；站内信可端到端收到一条。
+- 完成判据：管理端 12 个端点经网关可访问且非管理员被拒（403）——**鉴权声明侧已于 2026-10-18 收口**（§3.1 第 4 项），但「非管理员被拒 403」的**运行时**行为**尚未实机验证**（[23 §8.1](23-Frontend-Platform-Gap-Matrix.md) 未核实项 3：需要 authorization-service ＋ 三种身份）；站内信可端到端收到一条。
 
 > 阶段 0a 与 0b 完成前，阶段 1 生成的客户端**无法通过联调验证**——会分不清「前端接错」还是「后端不可达」。
 
 ### 阶段 1：生成 API 层（可并行）
 - 聚合 16 个服务的 OpenAPI spec（Knife4j），生成 TS 类型 + 请求客户端。
-- **删除**现有手写的 9 条死路径，`error-codes.ts` 改为从 `ErrorCode` 生成/全量对齐（现仅 9 条，实际枚举 98 条）。
+- **删除**现有手写的 9 条死路径 —— ✅ **已收口（2026-10-18）**，无待删对象（旧路径只剩注释），本项留作阶段 1 的历史输入；`error-codes.ts` 改为从 `ErrorCode` 生成/全量对齐（现仅 9 条，实际枚举 98 条）。
 - 完成判据：生成的客户端中每个 path 都能在后端 `endpoints-code.json` 中找到；`grep` 前端源码无硬编码 `/api/` 字面量。
 
 ### 阶段 2：认证与骨架（阻塞阶段 3）
@@ -154,15 +168,15 @@
 | # | 基线 | 校验方式 |
 | --- | --- | --- |
 | 1 | 前端无硬编码路径 | `grep -rn "'/api/" Implementation/front-end --include=*.ts --include=*.tsx \| wc -l` → 0（全部走生成客户端） |
-| 2 | 前端调用的每个路径都存在 | 对前端生成的客户端路径集合与 `extract-endpoints.mjs` 输出的代码端点清单（286 条） 取差集 → 空 |
+| 2 | 前端调用的每个路径都存在 | 对前端生成的客户端路径集合与 `extract-endpoints.mjs` 输出的代码端点清单（**条数以该脚本实跑为准，本处不写死**）取差集 → 空 |
 | 3 | 错误码映射完整 | `error-codes.ts` 覆盖 `ErrorCode.java` 全部 98 个码（或明确声明只覆盖前端需分流的子集并给出判据） |
 | 4 | 契约自洽 | `Implementation/back-end/scripts/extract-endpoints.mjs` 输出：`docOnly` 中 `⚪ 计划中` 与 `✅` 已分离；`✅` 类 `docOnly` = 0 |
 | 5 | 契约与代码双向一致 | 同上脚本 `codeOnly` = 0（补录 3 个 `/internal/auth/*` + `/api/verification/codes` 后） |
 | 6 | Token 不落 JS 可读存储 | 代码审查：`refresh_token` 无 `document.cookie` 写入路径 |
 | 7 | 金额口径 | 前端一律按「分」整数处理（`/100` 仅用于展示）；多币种换算严格按契约 §1.5 定点整数公式 `round(amountCNY × rate_scaled × 10^exponent ÷ 10^8)`，禁 `BigDecimal`/浮点 |
 | 8 | 内部端点不误用 | 前端代码中 `/internal/**` 出现次数 = 0 |
-| 9 | 管理端端点经网关可达 | 对 `extract-endpoints.mjs` 输出的代码端点清单（286 条） 中 `/api/admin/**` 逐个走网关首命中路由，全部落到 marketing/trade/pay/merchant/wallet/auth/user **对应服务**而非兜底 user-service；即 [20 §C2-1](../quality/20-Doc-Code-Consistency-Audit.md) 的 12 个端点可访问 |
-| 10 | 管理端鉴权生效 | 非管理员 token 调 `/api/admin/{pay,after-sale,finance,log}/**` 一律 403（当前为 200） |
+| 9 | 管理端端点经网关可达 | 对 `extract-endpoints.mjs` 输出的代码端点清单（**条数以该脚本实跑为准，本处不写死**）中 `/api/admin/**` 逐个走网关首命中路由，全部落到 marketing/trade/pay/merchant/wallet/auth/user **对应服务**而非兜底 user-service；即 [20 §C2-1](../quality/20-Doc-Code-Consistency-Audit.md) 的 12 个端点可访问 |
+| 10 | 管理端鉴权生效 | 非管理员 token 调 `/api/admin/{pay,after-sale,finance,log}/**` 一律 403。**2026-10-18 现状：鉴权声明已就位**（`AdminAfterSale`/`AdminFinance`/`AdminLog` 类级 `@PreAuthorize`，`AdminPay` 走 `assertAdmin()`，逐条判据见 §3.1 第 4 项），旧描述「当前为 200」已作废；但 **403 的运行时行为尚未实机验证**（[23 §8.1](23-Frontend-Platform-Gap-Matrix.md) 未核实项 3） |
 | 11 | 字段命名按服务一致 | 生成客户端对 4 个 `SNAKE_CASE` 服务（authorization/notification/verification/wallet）产出 snake_case 字段，其余 camelCase；字段 `undefined` 数 = 0 |
 | 12 | 购物车单一真相源 | 加购/结算只走服务端购物车（`/api/cart*`）；`localStorage` 不再作为购物车事实源；`CreateOrderReq` 只发 `addressId`/`userCouponId`/`remark`/`displayCurrency` |
 | 13 | 路由守卫校验角色 | 非 ADMIN 访问 `/admin/**`、非 SELLER 访问 `/seller/**` 被 `middleware.ts` 拦截（当前只查 Cookie 存在性） |
@@ -172,7 +186,7 @@
 ## 七、边界与不要在重构中做的事
 
 1. **不要把 33 个 `⚪ 计划中` 端点实现进前端**（品牌 CRUD、到货通知、账户注销/复活、`/api/chat` 已读等）——它们在契约里是计划，不是现状。
-2. **不要为 9 条死路径写「兼容适配层」**。适配层会把错误固化成契约外约定；正确做法是改前端调用（阶段 1 生成客户端后自然消失）。
+2. **不要为 9 条死路径写「兼容适配层」**。适配层会把错误固化成契约外约定；正确做法是改前端调用（阶段 1 生成客户端后自然消失）。**2026-10-18 复核：这 9 条已收口、前端已改到真实路径，本条作为纪律保留**。
 3. **不要信任前端域文档的 API 描述**：`15`/`17`/`18`/`16` 均停在 V1.0（2026-08-02），早于契约 V5.7–V5.18 的全部增量（拼团/发票/知识图谱/多币种/笔记/装修/任务中心/小程序支付）。前端技术选型（框架/状态/表单/样式）仍可参考，**API 与页面映射必须以 `contract/05` + 代码为准**。
 4. **不要绕过网关直连服务**：契约 §六 的路由表本身有 6 处缺行与 2 处目标服务写错（[20 §A5](../quality/20-Doc-Code-Consistency-Audit.md)），以 `gateway-service/src/main/resources/application.yml` 为准；`/api/admin/**`、`/api/seller/**` 存在**顺序敏感的兜底路由**，新增前缀前必须确认归属。
 5. **未验证项不得当作已同步**：[20 §十](../quality/20-Doc-Code-Consistency-Audit.md) 列出了截至本轮的**仍未取得结论**项（契约 §八 CO/VO 逐字段、`12`/`02` 逐条差集、配置键级差集、索引/约束级差集、ArchUnit 规则逐条对应）。这些不影响 §二/§五 的准入判断（准入只看 §三 的阻断项），但不得在文档或联调结论里声称已同步。
