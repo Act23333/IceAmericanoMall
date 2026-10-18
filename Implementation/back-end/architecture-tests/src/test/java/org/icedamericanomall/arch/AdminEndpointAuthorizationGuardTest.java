@@ -85,6 +85,13 @@ class AdminEndpointAuthorizationGuardTest {
      *
      * <p>本组要求：{@code @PreAuthorize} 数 ≥ 全部映射方法数（管理端没有公开端点，不许漏）。
      */
+    /**
+     * <b>按类名允许方法级</b>（前缀不适用时用）：`AdminUserController` 的类级路径是宽泛的 `/api/admin`，
+     * 若把 `/api/admin` 放进前缀集合，会**削弱整个管理端的"必须类级"规则**。
+     * 故此类按**类名**精确放行。
+     */
+    private static final String[] METHOD_LEVEL_ADMIN_CLASSES = {"AdminUserController"};
+
     private static final String[] METHOD_LEVEL_ADMIN_PREFIXES = {
             "/api/trade/admin",
             // 批 4：售后管理端**必须**按方法（查询 aftersale:read / 两个写方法 pay:admin）——
@@ -217,7 +224,9 @@ class AdminEndpointAuthorizationGuardTest {
         if (mapping == null || EXEMPT.containsKey(source.simpleName())) {
             return false;
         }
-        if (startsWithAny(mapping, METHOD_LEVEL_ADMIN_PREFIXES)) {
+        boolean methodLevelAllowed = startsWithAny(mapping, METHOD_LEVEL_ADMIN_PREFIXES)
+                || java.util.Arrays.asList(METHOD_LEVEL_ADMIN_CLASSES).contains(source.simpleName());
+        if (methodLevelAllowed) {
             // 管理端方法级：注解数必须覆盖全部映射方法（无公开端点可豁免）
             if (source.hasClassLevelPreAuthorize()) {
                 return false;

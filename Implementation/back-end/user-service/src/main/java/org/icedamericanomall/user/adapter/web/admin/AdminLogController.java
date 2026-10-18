@@ -12,7 +12,9 @@ import org.springframework.web.bind.annotation.*;
  * 操作日志查询 — 管理后台。
  */
 @RestController
-@PreAuthorize("@ss.hasPermi('user:admin')")
+// 权限位拆分（5a 批 8，2026-10-18）：审计日志查询独立成位 audit:read。
+// **不挂 user:read** —— 读审计（谁做了什么）与读用户资料是两件事，前者的信息更敏感。
+@PreAuthorize("@ss.hasPermi('audit:read')")
 @RequestMapping("/api/admin/log")
 @RequiredArgsConstructor
 public class AdminLogController {

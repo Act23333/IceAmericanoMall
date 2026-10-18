@@ -284,7 +284,12 @@ class RbacSeedEscalationGuardTest {
                     .filter(path -> {
                         try {
                             String code = stripComments(Files.readString(path, StandardCharsets.UTF_8));
-                            return code.contains(literal);
+                            // **注解里的引用是合法的**：本守卫要抓的是"运行时特判"
+                            //（`hasPermission("rbac:admin")`、字符串常量、按角色直接授予），
+                            // 而不是"某个端点需要该位"。注解引用由 PermissionBitReferenceGuardTest 管。
+                            // 不加这一步会把 AdminUserController 的合法注解判成违规 —— 规则过粗也是 bug。
+                            String withoutAnnotations = code.replaceAll("@PreAuthorize\\([^)]*\\)", " ");
+                            return withoutAnnotations.contains(literal);
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
                         }

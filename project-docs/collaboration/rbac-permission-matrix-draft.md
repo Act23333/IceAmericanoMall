@@ -403,6 +403,26 @@ Q3 裁决的是**权限位**拆三位（`seller:finance` / `seller:coupon` / `se
    已补前缀并新增「允许方法级」规则（要求注解数 ≥ 全部映射方法数，管理端无公开端点可豁免）。
    **教训**：受管前缀不能按"看起来像管理端"猜，要按实际 `RequestMapping` 扫。
 
+**批 8 三层断言（`setUserRole`，与挂 `rbac:admin` 同 commit）**：
+1. **roleType 合法性** —— 越界值 400，不再透传给授权域（透传等于让调用方决定枚举域边界）；
+2. **ADMIN 护栏** —— 授予 ADMIN 要求当前用户 `hasRole(ROLE_ADMIN)`；
+   注释写明**「当前恒真，勿删」**：它防的是未来把 `rbac:admin` 授给别的角色后出现的自封超管路径；
+3. **授权审计** —— detail 记 `roleCode` 与 `operatorIsAdmin`（谁把什么角色给了谁）。
+
+**批 8 顺带修了两处门禁问题**（都是"规则过粗"）：
+- `AdminUserController` 的类级路径是宽泛的 `/api/admin`，按前缀允许方法级会**削弱整个管理端**规则
+  ⇒ 门禁改为**按类名**放行；
+- `rbac:admin` 守卫原本禁止该字面量出现在任何主源码（除 `PermissionBits`），
+  于是把 `AdminUserController` 的**合法注解**判成违规 ⇒ 规则收窄为"剔除 `@PreAuthorize` 后再查"，
+  只抓运行时特判（`hasPermission("rbac:admin")`、字符串常量、按角色直授）。
+
+**停用 `user:admin` 前的三项确认（批 8 已做，末批后复查）**：
+| 项 | 结果 |
+|---|---|
+| 绑定只有 ROLE_ADMIN | ✅ 种子解析：`user:admin` holders = `[ROLE_ADMIN]` |
+| 清理零消费白名单 | ⏳ 末批后处理：`aftersale:write`（无消费者，需登记或停用）、`marketing:read`（待接线）；`invoice:*` 将由末批消费 |
+| `verify-rbac-seed.sh` 确认新位齐全 | ❌ **跑不了**：MySQL 不可达（`root@127.0.0.1:3306`）。**这一条在停用前必须在有库环境补跑**，不能因为"种子文件里写了"就算验证过 |
+
 **批 7 方法清单与三问（2026-10-18 实测，逐控制器）**：
 
 | 控制器 | 方法 | ① 公开端点 | ② 同步资金侧效应 | ③ 跨域方法 | 结论 |
@@ -517,6 +537,7 @@ SoD（职责分离：一个人不能既开票又作废）**另立项**：它需�
      | 7 ✅ | marketing 五个（Coupon/Flash/Promotion/Task/GroupBuy） | `marketing:admin` | 10 → 5 |
      | 4 ⬜ | `AdminAfterSaleController`（**按方法**：GET list / PUT review / PUT confirm-return） | `aftersale:read` / `pay:admin` / `pay:admin` | — |
      | 8 ⬜ | `AdminLogController` / `AdminUserController` / `Role`+`Permission` | `audit:read` 类级 / **按方法** `user:read`+`user:write`+**`rbac:admin`** / `rbac:admin` | — |
+     | 8 ✅ | `AdminLogController`（类级 `audit:read`）/ `AdminUserController`（**按方法**：GET `user:read`、PUT status `user:write`、PUT role **`rbac:admin`**）/ `Role`+`Permission`（类级 `rbac:admin`，Q11 含读） | 见左 | 5 → 1 |
      | 末 ⬜ | `AdminInvoiceController`（按方法：issue / void / red-flush） | `invoice:issue` / `invoice:void` / `invoice:void`（Q9） | — |
    - **每批替换后必须跑 `verify-gates.sh full`**，不能只看零消费 WARN 的下降：
      WARN 只反映"有没有被注解引用"，**不反映测试是否还在 mock 旧位**（mock 里写死

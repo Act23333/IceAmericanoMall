@@ -37,7 +37,10 @@ import java.util.List;
 @Slf4j
 @RestController
 @RequestMapping("/api/admin/roles")
-@PreAuthorize("@ss.hasPermi('user:admin')")
+// 权限位拆分（5a 批 8，2026-10-18）：RBAC 管理整体挂 rbac:admin（Q11：**含读**）。
+// 理由：读"谁能做什么"本身就是敏感信息；且 PermissionBits 的通配符对 rbac:admin 是**排除**的
+// —— 它只能被种子显式授予，故这两个控制器是唯一真正的"超管专属面"。
+@PreAuthorize("@ss.hasPermi('rbac:admin')")
 public class RoleController {
 
     /** 审计模块：RBAC 角色权限管理。 */

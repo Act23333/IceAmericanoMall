@@ -1,5 +1,7 @@
 package org.icedamericanomall.user.app.user;
 
+import org.icedamericanomall.common.enums.RoleEnum;
+import org.icedamericanomall.common.exception.ForbiddenException;
 import org.icedamericanomall.client.AuthContextClient;
 import org.icedamericanomall.common.api.ErrorInfo;
 import org.icedamericanomall.common.enums.ErrorCategory;
@@ -151,7 +153,7 @@ class UserAdminManagerTest {
     }
 
     @Test
-    @DisplayName("修改角色 — 委托 authorization-service 后按 USER:SET_USER_ROLE 留痕")
+    @DisplayName("修改角色 — 委托 authorization-service 后按 USER:SET_USER_ROLE 留痕（含角色码与操作人是否管理员）")
     void shouldRecordAuditAfterDelegation_whenSetUserRole() {
         UserContext.setUser(UserInfo.builder().userId(ADMIN_ID).build());
 
@@ -160,7 +162,50 @@ class UserAdminManagerTest {
         InOrder inOrder = inOrder(authContextClient, operationLogManager);
         inOrder.verify(authContextClient).setUserRole(TARGET_USER_ID, 2);
         inOrder.verify(operationLogManager).record(ADMIN_ID, OperationAuditConstants.MODULE_USER,
-                OperationAuditConstants.ACTION_SET_USER_ROLE, "7", "targetUserId=7, roleType=2");
+                OperationAuditConstants.ACTION_SET_USER_ROLE, "7",
+                "targetUserId=7, roleType=2, roleCode=ROLE_SELLER, operatorIsAdmin=false");
+    }
+
+    // ==================== setUserRole 的三层断言（批 8）====================
+
+    @Test
+    @DisplayName("第一层 — 非法 roleType → 400，且不得透传给授权域、不得留痕")
+    void shouldRejectIllegalRoleType_whenSetUserRole() {
+        UserContext.setUser(UserInfo.builder().userId(ADMIN_ID).build());
+
+        assertThatThrownBy(() -> userAdminManager.setUserRole(TARGET_USER_ID, 99))
+                .as("roleType 直来自请求参数，透传等于让调用方决定枚举域边界")
+                .isInstanceOf(BadRequestException.class);
+
+        verifyNoInteractions(authContextClient, operationLogManager);
+    }
+
+    @Test
+    @DisplayName("第二层 — 非 ROLE_ADMIN 授予 ADMIN → 403（当前恒真，但防未来把 rbac:admin 授给别人）")
+    void shouldRejectAdminGrant_whenOperatorIsNotAdmin() {
+        // 操作人有 rbac:admin 的能力（能进这个端点），但**角色**不是 ROLE_ADMIN
+        UserContext.setUser(UserInfo.builder().userId(ADMIN_ID)
+                .permissions(java.util.Set.of("rbac:admin")).build());
+
+        assertThatThrownBy(() -> userAdminManager.setUserRole(TARGET_USER_ID, RoleEnum.ADMIN.getRoleType()))
+                .as("没有这道闸，任何拿到 rbac:admin 的非管理员都能给自己或别人封超管")
+                .isInstanceOf(ForbiddenException.class);
+
+        verify(authContextClient, never()).setUserRole(any(), any());
+    }
+
+    @Test
+    @DisplayName("第二层反向 — ROLE_ADMIN 授予 ADMIN → 通过并留痕（不得误伤正常路径）")
+    void shouldAllowAdminGrant_whenOperatorIsAdmin() {
+        UserContext.setUser(UserInfo.builder().userId(ADMIN_ID)
+                .roles(java.util.Set.of(RoleEnum.ADMIN.getCode())).build());
+
+        userAdminManager.setUserRole(TARGET_USER_ID, RoleEnum.ADMIN.getRoleType());
+
+        verify(authContextClient).setUserRole(TARGET_USER_ID, RoleEnum.ADMIN.getRoleType());
+        verify(operationLogManager).record(eq(ADMIN_ID), eq(OperationAuditConstants.MODULE_USER),
+                eq(OperationAuditConstants.ACTION_SET_USER_ROLE), eq("7"),
+                org.mockito.ArgumentMatchers.contains("operatorIsAdmin=true"));
     }
 
     // ==================== 吊销结果分流（U17 第二步，两个「不写就出真 bug」的条件）====================

@@ -1,5 +1,10 @@
 package org.icedamericanomall.user.app.user;
 
+import java.util.Arrays;
+import org.icedamericanomall.common.exception.ForbiddenException;
+import org.icedamericanomall.common.exception.BadRequestException;
+import org.icedamericanomall.common.enums.RoleEnum;
+import org.icedamericanomall.common.enums.ErrorCode;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -196,9 +201,33 @@ public class UserAdminManager {
      * @param roleType 目标角色类型码
      */
     public void setUserRole(Long id, Integer roleType) {
+        // ── 第一层：roleType 合法性。不许把任意整数透传给授权域 ──
+        // 为什么必须在这一层挡：roleType 直接来自**请求参数**，透传等于让调用方决定枚举域边界；
+        // 授权域收到越界值的行为取决于它的实现（忽略/报错/误匹配），不应成为本域的契约依赖。
+        RoleEnum target = Arrays.stream(RoleEnum.values())
+                .filter(role -> role.getRoleType() == roleType)
+                .findFirst()
+                .orElseThrow(() -> new BadRequestException(ErrorCode.PARAM_ERROR,
+                        "非法角色类型: " + roleType));
+
+        // ── 第二层：ADMIN 护栏（defense in depth）──
+        // **当前恒真，勿删**：现在 rbac:admin 只由 ROLE_ADMIN 持有，所以能走到这里的必然是管理员。
+        // 它防的是**未来的配置变更** —— 一旦有人把 rbac:admin 授予别的角色（例如"运营主管"），
+        // 没有这行就等于"给他开了一道自封超管/给他人封超管的门"。
+        // 删除它需要同时证明：rbac:admin 的持有者集合 ⊆ ROLE_ADMIN 持有者集合，且以后也不会扩。
+        if (target == RoleEnum.ADMIN && !UserContext.hasRole(RoleEnum.ADMIN.getCode())) {
+            throw new ForbiddenException(ErrorCode.FORBIDDEN,
+                    "只有管理员才能授予管理员角色");
+        }
+
         authContextClient.setUserRole(id, roleType);
+
+        // ── 第三层：授权审计。记录"授予了什么角色"与"操作人是否管理员" ──
+        // 角色变更是最该留痕的动作之一（能造超管）；detail 只供人读，不参与判定。
         operationLogManager.record(UserContext.getUserId(), OperationAuditConstants.MODULE_USER,
                 OperationAuditConstants.ACTION_SET_USER_ROLE, String.valueOf(id),
-                "targetUserId=" + id + ", roleType=" + roleType);
+                "targetUserId=" + id + ", roleType=" + roleType
+                        + ", roleCode=" + target.getCode()
+                        + ", operatorIsAdmin=" + UserContext.hasRole(RoleEnum.ADMIN.getCode()));
     }
 }

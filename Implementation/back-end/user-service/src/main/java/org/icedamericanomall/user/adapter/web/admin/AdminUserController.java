@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/admin")
-@PreAuthorize("@ss.hasPermi('user:admin')")
 public class AdminUserController {
 
     private final UserAdminManager userAdminManager;
@@ -26,6 +25,8 @@ public class AdminUserController {
     }
 
     /** 分页查询用户列表（roleType 由 RBAC 五表角色派生）。 */
+    // 批 8：本控制器**按方法**挂位（类级路径是 /api/admin，太宽，不能一个位封住三种语义）。
+    @PreAuthorize("@ss.hasPermi('user:read')")
     @GetMapping("/user/page")
     public Result<IPage<UserInfoResp>> pageUsers(
             @RequestParam(defaultValue = "1") int page,
@@ -34,6 +35,8 @@ public class AdminUserController {
     }
 
     /** 启用/禁用用户（status 见 UserStatusEnum）。 */
+    // 改用户状态（冻结/解冻）—— 用户域写权限。
+    @PreAuthorize("@ss.hasPermi('user:write')")
     @PutMapping("/user/{id}/status")
     public Result<Void> updateUserStatus(@PathVariable Long id, @RequestParam Integer status) {
         userAdminManager.updateStatus(id, status);
@@ -45,6 +48,8 @@ public class AdminUserController {
      * {@code user.role_type} 列退役（代码不读写，响应 roleType 由五表派生）。
      * 经 ADR-018 委托 authorization-service 执行，变更后远端主动失效该用户的权限缓存。
      */
+    // 改用户角色 —— **能改角色 = 能造超管**，故挂 rbac:admin 而不是 user:write。
+    @PreAuthorize("@ss.hasPermi('rbac:admin')")
     @PutMapping("/user/{id}/role")
     public Result<Void> setUserRole(@PathVariable Long id, @RequestParam(name = "role_type") Integer roleType) {
         userAdminManager.setUserRole(id, roleType);
