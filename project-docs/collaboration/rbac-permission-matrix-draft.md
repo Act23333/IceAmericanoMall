@@ -182,7 +182,7 @@
 | 旧位 | 新位 | 备注 |
 |---|---|---|
 | `user:admin` | `user:read`、`user:write`、`order:write`、`aftersale:write`、`pay:admin`、`finance:admin`、`invoice:issue`、`invoice:void`、`merchant:admin`、`marketing:read`、`marketing:admin`、`currency:admin`、`home:admin`、`kg:admin` | 1 → 14；`user:admin` 是当前**唯一**的管理端开关 |
-| `seller:admin` | `seller:admin`、`seller:finance`、`seller:coupon`、`seller:knowledge` | 1 → 4（Q3） |
+| `seller:admin` | `seller:admin`、`seller:finance`、`seller:coupon`、`seller:knowledge` | 1 → 4（Q3）。**逐一对上 §6.2**：四个位都在 `ROLE_SELLER` 那一行里，且 §6.1 中四者的「有 admin 档？」均为**否**（商家只动自有数据）。对账口径见 §7.6 |
 | `ai:chat` / `order:read` / `product:read` | **保留原名** | 首次真正被 `@PreAuthorize` 消费 |
 | （新增） | `rbac:admin` | 只挂 `ROLE_ADMIN`，且**不**由通配符覆盖 |
 
@@ -257,6 +257,17 @@ UPDATE sys_permission SET status = 0 WHERE code IN ('user:admin');
    - 商家 A 调 `GET /api/seller/finance/balance` 只看得到自己的余额（数据面，非本批）
 4. **回滚**：旧位只停用不删 + 注解改动可 `git revert`；缓存失效命令对回滚同样适用。
 
+**端到端 403 的覆盖边界（写死，别把它当"鉴权全验过"）**：
+
+| 层次 | 是否覆盖 | 说明 |
+|---|---|---|
+| **控制器链路（mock）** | ✅ 覆盖 | 用 `MockMvc` / `standaloneSetup` 装配真实 `@PreAuthorize` 拦截器，注入不同权限集的 `UserContext`，断言 **403 vs 2xx**。它验的是"注解 + 判定函数 + 异常映射"这条链 |
+| **DB 层（权限装配 SQL）** | ❌ **未覆盖** | `selectDirectPermCodesByUserId` / `selectRolePermCodesByUserId` 的 `status=1` 过滤、以及角色-权限 join 是否正确，mock 层完全碰不到。这一层现在只由 `PermissionStatusFilterGuardTest`（源码级）兜住"过滤没被删掉"，**不证明 SQL 语义在真实库上正确** |
+| **种子正确性** | ❌ 未由 e2e 覆盖 | 靠 **投影比对（§7.3-1）+ 人工审**。即"谁的位集合能到哪些端点"是算出来的、审出来的，不是跑出来的 |
+| **网关 → 下游的身份透传** | ❌ 未覆盖 | 需要 Nacos + gateway + 目标服务同时起（当前不可达）。`UserContext` 在真实链路上是否正确重建，至今**没有自动化验证** |
+
+**所以 403 用例通过后的正确说法是**：「控制器链路的鉴权验证通过」，**不是**「鉴权验证通过」。
+
 ### 7.4 宣称边界（写死，避免误判「已完成」）
 
 - **端到端 403 用例仍卡 Nacos/Redis，未执行**。在它跑通之前，只能说「单测 + 门禁通过」，
@@ -265,6 +276,19 @@ UPDATE sys_permission SET status = 0 WHERE code IN ('user:admin');
 - **数据权限（行级）不在本批**，另立项。
 
 ---
+
+### 7.6 归属对账（每次改动本映射表都要重跑，别靠眼看）
+
+**做法**：从 §6.1 表抽出全部位 → 判「有 admin 档」；从 §6.2 抽出每个角色持有的位；
+然后机械检查三条，任一不满足就是错（`order:write` 那次就是这条抓出来的）：
+
+1. **1→4 / 1→14 的目标位必须都出现在对应角色的行里**（迁移后的位不能成为"孤儿位"）；
+2. **`admin 档 = 是` 的位不得出现在 `ROLE_USER` / `ROLE_VIP` / `ROLE_SELLER` 行里**
+   （唯一例外：`ROLE_ADMIN` 经通配符获得，无需逐位列出）——
+   这条就是 `order:write` 的错误形态：它是 admin 档，却被写进商家的行；
+3. **每个角色持有的位都必须在 §6.1 表里存在**（角色行不能引用不存在的位）。
+
+> 迁移执行时把这三条写成脚本/门禁跑一遍（而不是审阅时肉眼扫），因为 §6 与 §7 会分别改。
 
 ### 7.5 Q5 过渡态登记（拆位时必须改掉，不然就是"拆了位但没拆到这两处"）
 

@@ -684,6 +684,11 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
    - 反向同样成立：也不能因为**一个**方法该 fail-open，就把整类标成 fail-open。
    - 这条同时解释了为什么「处置表」要分成工厂级 + 方法级两层，而不是一张平表：**缺省 + 显式例外**比「每个方法都登记」更不容易在被忽略的地方漂。
 
+9. **「扫描源码找语义」必须先剥注释再判定**（被咬三次后才升格为规则）。三次事故：① grep 扫到 javadoc 里的 `@PreAuthorize`；② `KnowledgeBaseController` 的 javadoc 写着「语义等价于原 @PreAuthorize」，被朴素 `contains` 判成"已有注解"（假阳性）；③ `rbac:admin` 守卫把 `PermissionService` 注释里的提及判成"代码特判"。
+   - 判据：**注释是给人和文档的，不是数据**。凡门禁要"从源码读出事实"，一律先 `stripComments` 再匹配；并且**这条规则本身必须有用例**（`RbacSeedEscalationGuardTest#shouldStripCommentsBeforeScanning`：注释里的字面量不得被识别、代码里的必须被识别）。
+   - 附带：为"制造一个换行"写多行字符串时极易引入转义 bug（本轮因转义连红三次），测试里的输入尽量用单行拼接。
+10. **停用机制必须验证到"真的停用"**。本轮实测发现两条权限装配查询都不过滤 `sys_permission.status`，即我们选定的"`status=0` 停用"**纯属装饰** —— 停用的位照样进 `user:perms:`、照样通过判权。判据：**任何"开关式"机制（停用/灰度/开关），都要有一条断言证明"关掉之后行为真的变了"**，否则它只是字段。落地为 `PermissionStatusFilterGuardTest`（源码级 + 合成违规样本 + 真实变异 M11 验证会咬）。
+
 ---
 
 ## 6. TradeInvoice 三态设计 —— 三件事实已查明（2026-10-18）

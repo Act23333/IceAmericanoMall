@@ -152,17 +152,118 @@ class RbacSeedEscalationGuardTest {
             return;
         }
 
-        List<Long> holders = seed.bindings().stream()
+        List<String> violations = findRbacAdminHolderViolations(seed.permissionsById(), seed.bindings());
+        assertThat(violations)
+                .as("%s 必须由种子显式授予且只能给 ROLE_ADMIN（通配符不覆盖它）："
+                        + "不授予 = 管理员也改不了 RBAC；给了别人 = 那个角色可以给自己提权", RBAC_ADMIN_PERM)
+                .isEmpty();
+    }
+
+    /**
+     * 判定 {@code rbac:admin} 的持有关系（纯函数，便于喂合成种子做反向验证）。
+     *
+     * <p>两条硬规则：
+     * <ul>
+     *   <li>位存在时，<b>必须</b>授予 ROLE_ADMIN（否则管理员也改不了 RBAC）；</li>
+     *   <li><b>只能</b>给 ROLE_ADMIN（任何其他角色持有 = 可以给自己提权）。</li>
+     * </ul>
+     *
+     * @param permissionsById 权限 ID → 编码
+     * @param bindings        角色/权限绑定
+     * @return 违规描述（空 = 干净）。位不存在时返回空（迁移前合法）。
+     */
+    static List<String> findRbacAdminHolderViolations(Map<Long, String> permissionsById, List<Binding> bindings) {
+        Long rbacAdminId = permissionsById.entrySet().stream()
+                .filter(entry -> RBAC_ADMIN_PERM.equals(entry.getValue()))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(null);
+        if (rbacAdminId == null) {
+            return List.of();   // 迁移尚未引入该位
+        }
+        List<Long> holders = bindings.stream()
                 .filter(binding -> binding.permissionId() == rbacAdminId)
                 .map(Binding::roleId)
                 .toList();
-        assertThat(holders)
-                .as("%s 必须显式授予 ROLE_ADMIN（角色 ID %d）—— 通配符不覆盖它，不授予就等于管理员也改不了 RBAC",
-                        RBAC_ADMIN_PERM, ROLE_ADMIN_ID)
-                .contains(ROLE_ADMIN_ID);
-        assertThat(holders)
-                .as("%s 只能给 ROLE_ADMIN —— 其他任何角色持有它都等于「可以给自己提权」", RBAC_ADMIN_PERM)
-                .containsOnly(ROLE_ADMIN_ID);
+        List<String> violations = new ArrayList<>();
+        if (!holders.contains(ROLE_ADMIN_ID)) {
+            violations.add(String.format("%s 未授予 ROLE_ADMIN（角色 ID %d）—— 通配符不覆盖它，"
+                    + "不授予等于管理员也改不了 RBAC", RBAC_ADMIN_PERM, ROLE_ADMIN_ID));
+        }
+        holders.stream()
+                .filter(roleId -> roleId != ROLE_ADMIN_ID)
+                .forEach(roleId -> violations.add(String.format(
+                        "%s 授予了非 ROLE_ADMIN 角色（role=%d）—— 等于该角色可以给自己提权",
+                        RBAC_ADMIN_PERM, roleId)));
+        return violations;
+    }
+
+    // ==================================================================================
+    // ①·三 反向验证：硬断言真的会触发（否则「自动转硬断言」只是口头承诺）
+    // ==================================================================================
+
+    @Test
+    @DisplayName("★ 反向 A — 种子有 rbac:admin 但持有者含非 ROLE_ADMIN 必须判红")
+    void shouldFlagRbacAdminGrantedToNonAdmin_whenSeedInjectsIt() {
+        Map<Long, String> perms = Map.of(1L, SUPER_PERM, 21L, RBAC_ADMIN_PERM);
+        List<Binding> synthetic = List.of(
+                new Binding(ROLE_ADMIN_ID, 1L),
+                new Binding(ROLE_ADMIN_ID, 21L),
+                new Binding(3L, 21L));   // 商家角色也拿到 rbac:admin
+
+        List<String> violations = findRbacAdminHolderViolations(perms, synthetic);
+
+        assertThat(violations)
+                .as("非 ROLE_ADMIN 持有 rbac:admin 必须判红 —— 否则「可以给自己提权」这条只在文档里成立")
+                .hasSize(1);
+        assertThat(violations.get(0)).contains("role=3").contains(RBAC_ADMIN_PERM);
+    }
+
+    @Test
+    @DisplayName("★ 反向 B — 种子有 rbac:admin 却没给 ROLE_ADMIN 必须判红（通配符顶不了）")
+    void shouldFlagRbacAdminMissingOnAdmin_whenSeedForgetsIt() {
+        Map<Long, String> perms = Map.of(1L, SUPER_PERM, 21L, RBAC_ADMIN_PERM);
+        List<Binding> synthetic = List.of(new Binding(ROLE_ADMIN_ID, 1L));   // 只有通配符
+
+        List<String> violations = findRbacAdminHolderViolations(perms, synthetic);
+
+        assertThat(violations)
+                .as("只持通配符不够 —— 它对 rbac:admin 不生效，种子必须显式授予管理员")
+                .hasSize(1);
+        assertThat(violations.get(0)).contains("未授予 ROLE_ADMIN");
+    }
+
+    @Test
+    @DisplayName("反向对照 — 位不存在时零违规（迁移前合法）；只给管理员时零违规")
+    void shouldStayClean_whenBitAbsentOrAdminOnly() {
+        assertThat(findRbacAdminHolderViolations(Map.of(1L, SUPER_PERM), List.of(new Binding(ROLE_ADMIN_ID, 1L))))
+                .as("迁移尚未引入该位时不应判红（否则当前构建就是红的）")
+                .isEmpty();
+        assertThat(findRbacAdminHolderViolations(
+                Map.of(1L, SUPER_PERM, 21L, RBAC_ADMIN_PERM),
+                List.of(new Binding(ROLE_ADMIN_ID, 1L), new Binding(ROLE_ADMIN_ID, 21L))))
+                .as("合法形态被判红的话，上面两条反向用例什么也证明不了")
+                .isEmpty();
+    }
+
+    // ==================================================================================
+    // ①·四 「扫描源码先剥注释」必须有自己的用例（被咬三次的规则不能只活在对话里）
+    // ==================================================================================
+
+    @Test
+    @DisplayName("★ 剥离生效 — 注释里的字面量不得被当成代码引用，代码里的必须被识别")
+    void shouldStripCommentsBeforeScanning() {
+        // 构造两种输入：字面量只出现在注释里 vs 出现在代码里。刻意不用多行字符串，
+        // 免得为了"制造一个换行"又引入转义 bug（本轮已经因为转义连红三次）。
+        String commentOnly = "/** 语义等价于原 " + RBAC_ADMIN_PERM + " */  // 也不要 " + RBAC_ADMIN_PERM;
+        String inCode = "private static final Set<String> EXCLUDED = Set.of(" + RBAC_ADMIN_PERM + ");";
+        assertThat(stripComments(commentOnly))
+                .as("注释里提到该字面量必须被剥掉 —— 本轮就被这条误判过一次（同族第三次）")
+                .doesNotContain(RBAC_ADMIN_PERM);
+
+        assertThat(stripComments(inCode))
+                .as("代码里的字面量必须保留 —— 否则守卫会漏掉真正的特判")
+                .contains(RBAC_ADMIN_PERM);
     }
 
     /**
