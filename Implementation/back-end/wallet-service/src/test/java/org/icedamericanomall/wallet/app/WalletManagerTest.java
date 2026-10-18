@@ -79,8 +79,10 @@ class WalletManagerTest {
 
         assertThrows(BizException.class, () -> walletManager.deductBalance("tx-insufficient", 100L, 3000));
 
-        // 先插流水是设计（唯一键在动余额前拦住重复），失败靠事务回滚撤销 —— 故此处断言"插过"，
-        // 回滚本身由 @Transactional 保证，见下一条注解断言。
+        // ⚠️ 本用例**只验异常类型 + 流水曾插入**，**不验回滚**：
+        // 单元测试里没有事务代理，"抛异常后流水不存在"在这里无意义（mock 不会回滚）。
+        // 回滚是否真的生效属**集成测试**范畴（需真实事务管理器 + H2/Testcontainers），当前缺。
+        // 下一条注解断言只保证"注解在"，不保证"事务生效" —— 见该用例的边界说明。
         verify(walletTransactionRepository).insert(any(WalletTransaction.class));
     }
 
@@ -90,6 +92,10 @@ class WalletManagerTest {
         Method method = WalletManager.class.getMethod("deductBalance", String.class, Long.class, int.class);
         Transactional annotation = method.getAnnotation(Transactional.class);
 
+        // ⚠️ 边界：**注解在 ≠ 事务生效**。
+        //   ① 自调用（同类内 this.method()）绕过 Spring 代理 ⇒ 注解形同虚设，本断言防不住；
+        //   ② 事务是否真生效（传播行为、只读、数据源）需真实容器，本断言防不住。
+        // 因此本条只保证"没漏写注解"这一最低要求；**实际生效待集成测试**。
         assertThat(annotation).as("缺事务 ⇒ 扣款失败时已插入的支出流水不会回滚，账实不符").isNotNull();
         assertThat(annotation.rollbackFor()).contains(Exception.class);
     }
