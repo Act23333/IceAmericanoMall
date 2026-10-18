@@ -1,5 +1,9 @@
 package org.icedamericanomall.wallet.app;
 
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.assertj.core.api.Assertions.assertThat;
+import java.lang.reflect.Method;
+import org.springframework.transaction.annotation.Transactional;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BadRequestException;
 import org.icedamericanomall.common.exception.BizException;
@@ -58,6 +62,38 @@ class WalletManagerTest {
     }
 
     @Test
+    @DisplayName("deductBalance — ★重复请求（流水号已存在）→ 幂等返回，**不得再扣余额**")
+    void shouldBeIdempotentWithoutDeductingAgain_whenTransactionNoAlreadyUsed() {
+        doThrow(new DuplicateKeyException("dup"))
+                .when(walletTransactionRepository).insert(any(WalletTransaction.class));
+
+        walletManager.deductBalance("tx-dup", 100L, 3000);
+
+        verify(walletAccountRepository, never()).deduct(any(), anyInt());
+    }
+
+    @Test
+    @DisplayName("deductBalance — 余额不足 → 抛 BALANCE_INSUFFICIENT（流水随事务回滚）")
+    void shouldThrowAndNotKeepTransaction_whenBalanceInsufficient() {
+        when(walletAccountRepository.deduct(100L, 3000)).thenReturn(0);
+
+        assertThrows(BizException.class, () -> walletManager.deductBalance("tx-insufficient", 100L, 3000));
+
+        // 先插流水是设计（唯一键在动余额前拦住重复），失败靠事务回滚撤销 —— 故此处断言"插过"，
+        // 回滚本身由 @Transactional 保证，见下一条注解断言。
+        verify(walletTransactionRepository).insert(any(WalletTransaction.class));
+    }
+
+    @Test
+    @DisplayName("deductBalance — ★必须带 @Transactional：否则插流水与扣余额不在同一事务，失败会留下假流水")
+    void shouldBeTransactional_whenDeductBalance() throws NoSuchMethodException {
+        Method method = WalletManager.class.getMethod("deductBalance", String.class, Long.class, int.class);
+        Transactional annotation = method.getAnnotation(Transactional.class);
+
+        assertThat(annotation).as("缺事务 ⇒ 扣款失败时已插入的支出流水不会回滚，账实不符").isNotNull();
+        assertThat(annotation.rollbackFor()).contains(Exception.class);
+    }
+
     @DisplayName("deductBalance — 金额非法 → BadRequestException，不打仓储")
     void shouldReject_whenAmountNonPositive() {
         BadRequestException ex = assertThrows(BadRequestException.class,

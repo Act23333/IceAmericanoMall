@@ -48,6 +48,7 @@ public class WalletManager {
     /**
      * 原子扣减余额（余额支付）；余额不足抛 BALANCE_INSUFFICIENT。
      */
+    @Transactional(rollbackFor = Exception.class)
     public void deductBalance(String transactionNo, Long userId, int amount) {
         if (transactionNo == null || transactionNo.isBlank()) {
             throw new BadRequestException(ErrorCode.PARAM_ERROR, "扣款流水号不能为空（幂等键）");
@@ -111,6 +112,12 @@ public class WalletManager {
         if (amount <= 0) {
             throw new BadRequestException(ErrorCode.PARAM_ERROR, "退款金额必须大于0");
         }
+        // ★ 顺序说明（与 deduct 相反，两者都成立，理由不同）：
+        //   refund：**先查重 → 改余额 → 插流水**，靠 uk_transaction_no 并发冲突抛错回滚（"乐观"）；
+        //   deduct：**先插流水 → 再扣余额**，靠唯一键在**动余额之前**就拦住（"悲观"）。
+        // 为什么 refund 不改成先插流水：它是"钱已经在系统外退出、这里只做入账"，并发孪生请求
+        // 用 DuplicateKey 回滚已能保证不重复加钱；而 deduct 面对的是"用户主动支付"，
+        // 重复请求更常见（连点/重发），必须在动余额前就拦住，故取先插流水。
         if (walletTransactionRepository.existsByTransactionNo(transactionNo)) {
             log.info("[wallet][refund][idempotent] 流水已存在，幂等返回: transactionNo={}, userId={}, amount={}",
                     transactionNo, userId, amount);

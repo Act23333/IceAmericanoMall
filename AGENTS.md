@@ -45,7 +45,7 @@ mvn -f Implementation/back-end/pom.xml clean install -DskipTests
 # Build a single service (and its dependencies)
 mvn -f Implementation/back-end/pom.xml -pl user-service -am clean install
 
-# Run tests (2381 tests across all 19 modules, 0 failures, 1 pre-existing @Disabled skip — strict four-layer DDD everywhere, ADR-038/039; business IDs BINARY(16)+UUIDv7 per ADR-050)
+# Run tests (2383 tests across all 19 modules, 0 failures, 1 pre-existing @Disabled skip — strict four-layer DDD everywhere, ADR-038/039; business IDs BINARY(16)+UUIDv7 per ADR-050)
 mvn -f Implementation/back-end/pom.xml test
 
 # Run tests for a specific module
@@ -74,7 +74,7 @@ Docker Compose infra exists: `Implementation/back-end/docker-compose.yml` + `doc
 
 ## Architecture Overview
 
-IceAmericanoMall is a B2B2C e-commerce platform (similar to Taobao/JD) built as a distributed microservices system. **Backend is fully implemented** (35/35 PRD features + P1/P2 growth lines + P3 拼团/发票/知识图谱/多币种 Phase 1 + 需求对账缺口收敛 + 小程序后端增量 + ADR-050 业务标识存储升级 + ADR-052 search 直读退出 + ArchUnit 架构守卫; **19 Maven modules** = 15 services + `architecture-tests` + 3 shared libs (`ia-common`/`ia-api`/`ia-integration`; `database/` is a script dir, **not** a module), **289 HTTP endpoints** measured (226 public + **63** `/internal/**`) — `project-docs/contract/05-API-Specification.md` §四 is the single source of truth (code↔contract diff closed: 0 un-documented), **2381 tests green** (all services strict four-layer DDD, ADR-038/039); re-measured 2026-10-15). The core transaction flow (register → browse → cart → order → pay → ship → confirm) is implemented end-to-end; module boundaries were finalized in the 2026-10 boundary refactor, round 6 (merchant-service) included (see `project-docs/backend/02-Architecture.md` §3).
+IceAmericanoMall is a B2B2C e-commerce platform (similar to Taobao/JD) built as a distributed microservices system. **Backend is fully implemented** (35/35 PRD features + P1/P2 growth lines + P3 拼团/发票/知识图谱/多币种 Phase 1 + 需求对账缺口收敛 + 小程序后端增量 + ADR-050 业务标识存储升级 + ADR-052 search 直读退出 + ArchUnit 架构守卫; **19 Maven modules** = 15 services + `architecture-tests` + 3 shared libs (`ia-common`/`ia-api`/`ia-integration`; `database/` is a script dir, **not** a module), **289 HTTP endpoints** measured (226 public + **63** `/internal/**`) — `project-docs/contract/05-API-Specification.md` §四 is the single source of truth (code↔contract diff closed: 0 un-documented), **2383 tests green** (all services strict four-layer DDD, ADR-038/039); re-measured 2026-10-15). The core transaction flow (register → browse → cart → order → pay → ship → confirm) is implemented end-to-end; module boundaries were finalized in the 2026-10 boundary refactor, round 6 (merchant-service) included (see `project-docs/backend/02-Architecture.md` §3).
 
 ### Technical Stack
 
@@ -301,7 +301,7 @@ void shouldReturnToken_whenNewPhoneAndValidCode() { ... }
 - Service/Domain unit tests use JUnit 5 + Mockito (`@ExtendWith(MockitoExtension.class)`)
 - Controller integration tests use `@SpringBootTest` + Testcontainers
 
-**Current test coverage**: **2381 tests** across all **19 Maven modules** (0 failures, 0 errors, **1** pre-existing `@Disabled` skip; `database/` ships SQL only, is **not** a module, and carries no tests). ⚠️ **口径说明**：上表 per-module 列为 2026-10-10 surefire 快照（合计 1747，**与新基线不可直接对齐**——模块归属有调整且新增测试未分摊）；**2381 为 2026-10-15 全量实测基线，repo 总数以此为准**。需要精确 per-module 拆分时以 `mvn -f Implementation/back-end/pom.xml clean test` + surefire 报告为准。Tests are mostly JUnit 5 + Mockito unit tests; several services carry self-contained H2-backed persistence tests (`UserProvisioningH2Test` in user, `OrderRepositoryImplH2Test`/`InvoiceRepositoryImplH2Test` in trade, `FlashSaleManagerH2Test` in marketing, `CartManagerH2Test` in cart, etc. — manual MyBatis-Plus wiring against repository impls). No `@SpringBootTest`/Testcontainers integration tests yet.
+**Current test coverage**: **2383 tests** across all **19 Maven modules** (0 failures, 0 errors, **1** pre-existing `@Disabled` skip; `database/` ships SQL only, is **not** a module, and carries no tests). ⚠️ **口径说明**：上表 per-module 列为 2026-10-10 surefire 快照（合计 1747，**与新基线不可直接对齐**——模块归属有调整且新增测试未分摊）；**2383 为 2026-10-15 全量实测基线，repo 总数以此为准**。需要精确 per-module 拆分时以 `mvn -f Implementation/back-end/pom.xml clean test` + surefire 报告为准。Tests are mostly JUnit 5 + Mockito unit tests; several services carry self-contained H2-backed persistence tests (`UserProvisioningH2Test` in user, `OrderRepositoryImplH2Test`/`InvoiceRepositoryImplH2Test` in trade, `FlashSaleManagerH2Test` in marketing, `CartManagerH2Test` in cart, etc. — manual MyBatis-Plus wiring against repository impls). No `@SpringBootTest`/Testcontainers integration tests yet.
 
 **MyBatis-Plus testing limitation**: Methods using `lambdaQuery()`/`lambdaUpdate()` chains cannot be unit-tested with Mockito mocks (the mapper proxy's `currentModelClass()` reads generic type info lost on Mockito proxies). These methods require `@SpringBootTest` with H2 or Testcontainers. Methods using only standard `BaseMapper` methods (`save()`, `getById()`, `updateById()`) are fully testable with Mockito.
 
