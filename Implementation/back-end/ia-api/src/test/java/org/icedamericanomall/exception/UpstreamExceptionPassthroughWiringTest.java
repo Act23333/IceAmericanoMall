@@ -60,7 +60,7 @@ class UpstreamExceptionPassthroughWiringTest {
         assertThat(decoded.getCategory()).isEqualTo(ErrorCategory.CLIENT);
         assertThat(decoded.getUpstreamStatus()).isEqualTo(404);
         // 状态码还原与业务码保留必须同时成立：一个还原错、一个被替换，都算透传失败
-        assertThat(decoded.httpStatus().value()).isEqualTo(404);
+        assertThat(decoded.httpStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
         assertThat(decoded.getCode()).isEqualTo(1103);
         assertThat(decoded.getMsg()).isEqualTo("商品不存在或已删除");
         assertThat(decoded.isClientError()).isTrue();
@@ -72,7 +72,7 @@ class UpstreamExceptionPassthroughWiringTest {
         UpstreamException decoded = decode(503, TYPED_503);
 
         assertThat(decoded.getCategory()).isEqualTo(ErrorCategory.TRANSIENT);
-        assertThat(decoded.httpStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(decoded.httpStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE.value());
         assertThat(decoded.isRetryable()).isTrue();
         assertThat(decoded.isClientError()).isFalse();
     }

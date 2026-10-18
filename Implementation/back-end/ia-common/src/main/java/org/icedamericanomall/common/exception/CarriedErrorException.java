@@ -47,17 +47,21 @@ import java.util.Objects;
  * 「跨服务调用的解码/降级路径」产生 —— 目前唯一的生产者是 {@code ia-api} 的
  * {@code UpstreamErrorDecoder} 与各降级工厂。
  *
- * <h2>状态码口径（{@link #httpStatus()}）</h2>
- * <p>{@link ErrorInfo#category()} 是由 HTTP 状态码<b>派生</b>的（{@link ErrorCategory}），
- * 方向是「状态码 → 类别」；本类的 {@link #httpStatus()} 做的是<b>反向单点还原</b>，
- * 且只在「能还原」的类别上还原：
+ * <h2>状态码口径（{@link #httpStatus()}）—— <b>状态码优先，类别兜底</b></h2>
+ * <p>{@link ErrorInfo#category()} 是<b>派生标签</b>（方向：状态码 → 类别），而且解码器会
+ * <b>采信下游报文里写的 {@code category}</b>。所以两者可能打架。本类一律让<b>事实</b>优先：
  * <ul>
- *   <li>{@link ErrorCategory#CLIENT}：<b>原样用下游状态码</b>（404 就是 404、409 就是 409）——
- *       这是「透传」的定义本身；下游给了 4xx 区间之外的值（如连接层失败时传 0）才回落 400。</li>
- *   <li>{@link ErrorCategory#RULE}：下游用 200 + 业务码承载「业务规则拒绝」，还原为 <b>200</b>。</li>
- *   <li>{@link ErrorCategory#TRANSIENT}：<b>503</b>（下游不可用 / 超时 / 熔断）。</li>
- *   <li>{@link ErrorCategory#BUG}：<b>500</b>（下游代码缺陷，细节不外泄）。</li>
+ *   <li><b>上游给过真实状态码（{@code 100..599}）→ 原样用它</b>，不做任何改写。
+ *       这是「透传」的定义本身：下游在线上发了什么，我们就回什么。</li>
+ *   <li><b>拿不到状态码</b>（连接层失败 / 超时 / 熔断，{@code upstreamStatus = 0}）才按类别还原：
+ *       {@link ErrorCategory#CLIENT} → 400、{@link ErrorCategory#RULE} → 200、
+ *       {@link ErrorCategory#TRANSIENT} → 503、{@link ErrorCategory#BUG} → 500。</li>
  * </ul>
+ * <p><b>反之（类别优先）是有缺陷的写法</b>，实测两个症状：
+ * {@code category=CLIENT}+状态码 500 会被回成 <b>400</b>（把服务端的账记到调用方头上，
+ * {@code 09-constraints} §三·六 明文禁止）；{@code category=RULE}+非 2xx 会被回成 <b>200</b>
+ * （用 200 承载失败，熔断器永不触发 —— §三·八·5）。详见 {@link #httpStatus()} 的 javadoc。
+ *
  * <p>还原规则<b>只写在这里一处</b>：{@code GlobalExceptionHandler} 与测试都调它。任何在
  * 别处再写一份 {@code switch (category)} 的代码，都会在新增类别时与本处漂移。
  */
@@ -68,9 +72,9 @@ public class CarriedErrorException extends RuntimeException {
     /** 异常链回溯上限 —— 防止畸形/自引用链把降级路径拖成死循环。 */
     private static final int MAX_CAUSE_DEPTH = 16;
 
-    /** 4xx 区间（含端点）—— CLIENT 类别原样透传的合法范围。 */
-    private static final int CLIENT_STATUS_MIN = 400;
-    private static final int CLIENT_STATUS_MAX = 499;
+    /** 合法 HTTP 状态码区间（含端点）—— 之外的一律视为「没有状态码线索」。 */
+    private static final int MIN_HTTP_STATUS = 100;
+    private static final int MAX_HTTP_STATUS = 599;
 
     /** 下游错误体（业务码 / 文案 / 类别 / 可重试性 / traceId）。 */
     private final ErrorInfo errorInfo;
@@ -142,31 +146,56 @@ public class CarriedErrorException extends RuntimeException {
     }
 
     /**
-     * 应答本次请求应使用的 HTTP 状态码（<b>全仓唯一还原入口</b>，规则见类注释）。
+     * 应答本次请求应使用的 HTTP 状态码（<b>全仓唯一还原入口</b>）。
      *
-     * @return 永不为 {@code null}
+     * <p><b>规则：状态码优先，类别只在拿不到状态码时兜底。</b>
+     * <ol>
+     *   <li>上游给过真实状态码（{@code 100..599}）→ <b>原样用它</b>，不做任何改写；</li>
+     *   <li>拿不到（连接层失败 / 超时 / 熔断，{@code upstreamStatus = 0}；或超出合法区间）
+     *       → 才按 {@link #getCategory()} 还原：{@code CLIENT} 400 / {@code RULE} 200 /
+     *       {@code TRANSIENT} 503 / {@code BUG} 500。</li>
+     * </ol>
+     *
+     * <p><b>为什么必须「状态码优先」而不是「类别优先」（此前写反了，是缺陷）</b>：
+     * {@link #getCategory()} 是<b>派生标签</b>，且解码器会<b>采信下游报文里的 {@code category}</b>
+     * （{@code UpstreamErrorDecoder#toErrorInfo}：「已类型化的下游优先，缺省才按状态码派生」）。
+     * 于是下游报文自相矛盾时，两者会打架：<ul>
+     *   <li>{@code category=CLIENT} + 状态码 500 → 若信类别就返回 <b>400</b>，
+     *       即<b>把服务端的账记到调用方头上</b>，调用方会去改一个本来没错的请求
+     *       （{@code 09-constraints} §三·六 明文禁止「谎报成 400」）；</li>
+     *   <li>{@code category=RULE} + 非 2xx 状态码 → 若信类别就返回 <b>200</b>，
+     *       即<b>用 200 承载失败</b>：熔断器永不触发、成功率指标虚高
+     *       （{@code 09-constraints} §三·八·5「状态码是被观测面」）。</li>
+     * </ul>
+     * 而 HTTP 状态码是<b>传输层的观测事实</b>（调用方、网关、熔断器、指标都只看它），
+     * 类别只是我们对它的解释。两者矛盾时，<b>事实优先于解释</b>。
+     * 这条规则同时消灭了上述两类症状，且与「透传」的定义一致：下游在线上发了什么，我们就回什么。
+     *
+     * @return HTTP 状态码数值（永不为 {@code null}；用数值而非 {@code HttpStatus} 枚举，
+     *         是为了让非标准的合法状态码（如 499）也能原样透传，不被枚举解析掉）
      */
-    public final HttpStatus httpStatus() {
-        return switch (getCategory()) {
-            case CLIENT -> clientStatus();
-            case RULE -> HttpStatus.OK;
-            case TRANSIENT -> HttpStatus.SERVICE_UNAVAILABLE;
-            case BUG -> HttpStatus.INTERNAL_SERVER_ERROR;
-        };
+    public final int httpStatus() {
+        return hasObservedStatus() ? upstreamStatus : derivedStatus();
+    }
+
+    /** 上游是否给过可用的 HTTP 状态码（{@code 100..599} 之外一律视为「没有线索」）。 */
+    private boolean hasObservedStatus() {
+        return upstreamStatus >= MIN_HTTP_STATUS && upstreamStatus <= MAX_HTTP_STATUS;
     }
 
     /**
-     * CLIENT 类别：原样用下游 4xx；下游状态码不可用（0 / 超范围 / 非标准值）才回落 400。
+     * 没有状态码线索时按类别还原（只用于连接层失败 / 超时 / 熔断这类<b>根本没有响应</b>的故障）。
      *
-     * <p>为什么回落 400 而不是 500：类别既然是 CLIENT（调用方的错），把「本该算调用方的账」
-     * 记到服务端头上只会让监控与重试策略同时误判（{@code 09-constraints} §三·八·3）。
+     * <p>各分支的理由：{@code CLIENT} → 400（调用方的错）；{@code RULE} → 200（业务规则拒绝的既有
+     * 形态就是 200 + 业务码）；{@code TRANSIENT} → 503（暂时不可用）；{@code BUG} → 500（缺陷）。
      */
-    private HttpStatus clientStatus() {
-        if (upstreamStatus < CLIENT_STATUS_MIN || upstreamStatus > CLIENT_STATUS_MAX) {
-            return HttpStatus.BAD_REQUEST;
-        }
-        HttpStatus resolved = HttpStatus.resolve(upstreamStatus);
-        return resolved == null ? HttpStatus.BAD_REQUEST : resolved;
+    private int derivedStatus() {
+        return switch (getCategory()) {
+            case CLIENT -> HttpStatus.BAD_REQUEST.value();
+            case RULE -> HttpStatus.OK.value();
+            case TRANSIENT -> HttpStatus.SERVICE_UNAVAILABLE.value();
+            case BUG -> HttpStatus.INTERNAL_SERVER_ERROR.value();
+        };
     }
 
     /**

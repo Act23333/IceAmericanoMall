@@ -435,6 +435,77 @@ class GlobalExceptionHandlerTest {
         assertThat(((ResponseEntity<?>) response).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
+    // ==================== 状态码优先（既有映射写反的缺陷，回归锁死）====================
+    //
+    // 根因：category 是**派生标签**，而 UpstreamErrorDecoder 会采信下游报文里写的 category
+    // ⇒ 报文自相矛盾时 category 与状态码会打架。此前 httpStatus() 只信 category、把状态码丢了。
+    // HTTP 状态码是传输层的观测事实（调用方/网关/熔断器/指标都只看它），类别只是解释 ——
+    // 矛盾时事实优先。
+
+    @Test
+    @DisplayName("★ 缺陷回归 — CLIENT 类别 + 状态码 500 → 必须回 500，不得谎报 400（把服务端的账记到调用方头上）")
+    void shouldKeepObservedStatus_whenClientCategoryCarriesServerError() {
+        bindRequest(PUBLIC_URI);
+
+        Object response = handler.handleCarriedErrorException(new ProbeCarriedException(
+                ErrorInfo.of(DOWNSTREAM_CLIENT_CODE, DOWNSTREAM_MSG, ErrorCategory.CLIENT, null), 500));
+
+        assertThat(((ResponseEntity<?>) response).getStatusCode())
+                .as("category=CLIENT 但下游其实回了 500 —— 回 400 等于让调用方去改一个本来没错的请求"
+                        + "（09-constraints §三·六「谎报成 400 更糟」）")
+                .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    @Test
+    @DisplayName("★ 缺陷回归 — RULE 类别 + 非 2xx（409）→ 必须回 409，不得回 200（200 承载失败则熔断器永不触发）")
+    void shouldKeepObservedStatus_whenRuleCategoryCarriesNon2xx() {
+        bindRequest(PUBLIC_URI);
+
+        Object response = handler.handleCarriedErrorException(new ProbeCarriedException(
+                ErrorInfo.of(ErrorCode.BUSINESS_EXECUTION_EXCEPTION.getCode(), "业务规则拒绝",
+                        ErrorCategory.RULE, null), 409));
+
+        assertThat(((ResponseEntity<?>) response).getStatusCode())
+                .as("下游确实发了 409，回 200 会让成功率指标虚高、熔断器永不触发（09-constraints §三·八·5）")
+                .isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    @DisplayName("状态码越界（700）→ 视为没有线索，才按类别兜底 CLIENT → 400")
+    void shouldFallBackToCategory_whenObservedStatusOutOfRange() {
+        bindRequest(PUBLIC_URI);
+
+        Object response = handler.handleCarriedErrorException(new ProbeCarriedException(
+                ErrorInfo.of(DOWNSTREAM_CLIENT_CODE, DOWNSTREAM_MSG, ErrorCategory.CLIENT, null), 700));
+
+        assertThat(((ResponseEntity<?>) response).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("TRANSIENT 带 429 → 原样 429（不再归一成 503；保留限流语义，调用方可按退避重试）")
+    void shouldKeepObservedStatus_whenTransientCarriesRateLimited() {
+        bindRequest(PUBLIC_URI);
+
+        Object response = handler.handleCarriedErrorException(new ProbeCarriedException(
+                ErrorInfo.of(ErrorCode.FREQUENT_ERROR.getCode(), "操作过于频繁",
+                        ErrorCategory.TRANSIENT, null), ErrorCode.FREQUENT_ERROR.getHttpStatus().value()));
+
+        assertThat(((ResponseEntity<?>) response).getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    @Test
+    @DisplayName("非标准但合法的状态码（499）→ 原样透传，不被 HttpStatus 枚举解析掉")
+    void shouldPassThroughNonStandardStatus() {
+        bindRequest(PUBLIC_URI);
+
+        Object response = handler.handleCarriedErrorException(new ProbeCarriedException(
+                ErrorInfo.of(DOWNSTREAM_CLIENT_CODE, DOWNSTREAM_MSG, ErrorCategory.CLIENT, null), 499));
+
+        assertThat(((ResponseEntity<?>) response).getStatusCode().value())
+                .as("用数值而非 HttpStatus 枚举承载状态码，正是为了让 499 这类非标准码也能透传")
+                .isEqualTo(499);
+    }
+
     @Test
     @DisplayName("★ 装饰器把载体再包一层 → 兜底分支仍按透传应答（不得静默退回 500）")
     void shouldStillPassThrough_whenCarrierIsWrappedByDecorator() {

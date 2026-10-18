@@ -10,7 +10,6 @@ import org.icedamericanomall.common.exception.CommonException;
 import org.icedamericanomall.common.filter.TraceIdFilter;
 import org.icedamericanomall.common.utils.WebUtils;
 import org.slf4j.MDC;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 /**
@@ -109,7 +108,7 @@ final class ExceptionResponseSupport {
      * @return 内部为 {@code ResponseEntity<ErrorInfo>}、对外为 {@code ResponseEntity<Result>}
      */
     static Object carriedResponse(CarriedErrorException e) {
-        HttpStatus status = e.httpStatus();
+        int status = e.httpStatus();
         logCarried(e, status);
         if (isInternalRequest()) {
             return ResponseEntity.status(status).body(e.getErrorInfo());
@@ -124,16 +123,16 @@ final class ExceptionResponseSupport {
      * 把它们记成 ERROR 会让告警与「本服务代码缺陷」混在一起（客户传错参数不该惊动值班）；
      * 只有 {@code TRANSIENT}（下游不可用）与 {@code BUG}（下游缺陷）才升为 ERROR 并带堆栈。
      */
-    private static void logCarried(CarriedErrorException e, HttpStatus status) {
+    private static void logCarried(CarriedErrorException e, int status) {
         String url = currentUri();
         if (e.getCategory() == ErrorCategory.CLIENT || e.getCategory() == ErrorCategory.RULE) {
             // 调用方的错：不刷 ERROR 堆栈，否则真实故障会被客户错误淹掉
             log.warn("上游业务失败透传: url={}, httpStatus={}, upstreamStatus={}, code={}, category={}, msg={}",
-                    url, status.value(), e.getUpstreamStatus(), e.getCode(), e.getCategory(), e.getMsg());
+                    url, status, e.getUpstreamStatus(), e.getCode(), e.getCategory(), e.getMsg());
             return;
         }
         log.error("上游不可用或缺陷: url={}, httpStatus={}, upstreamStatus={}, code={}, category={}, retryable={}, msg={}",
-                url, status.value(), e.getUpstreamStatus(), e.getCode(), e.getCategory(), e.isRetryable(),
+                url, status, e.getUpstreamStatus(), e.getCode(), e.getCategory(), e.isRetryable(),
                 e.getMsg(), e);
     }
 }

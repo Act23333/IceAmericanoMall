@@ -205,8 +205,7 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
     `retryable`、`traceId` 一个字段都不重算。多跳链（A→B→C）不会在中途把 C 的业务事实改写成 B 的。
   - 对外 `/api/**`：仍是 `Result`，键集合恒为 `code/msg/data`（**前端契约零变化**），
     **变的只有 HTTP 状态码** —— 从恒 500 变为真实值。这一条由既有那条「`Result` 字段集 + 字面量」守卫继续钉死。
-  - 状态码还原：`CLIENT` 原样用上游 4xx（上游状态码不可用时回落 **400**，不回落 500 ——
-    把调用方的账记到服务端会让监控与重试策略同时误判）/ `RULE` 200 / `TRANSIENT` 503 / `BUG` 500。
+  - 状态码还原：**状态码优先，类别只在拿不到状态码时兜底** —— 上游给过真实状态码（`100..599`）就原样透传（`409`/`422`/`429`/非标准 `499` 都照发）；只有连接层失败 / 超时 / 熔断（`upstreamStatus = 0`）才按类别还原：`CLIENT` 400 / `RULE` 200 / `TRANSIENT` 503 / `BUG` 500。
   - 日志级别**不是**一律 ERROR：`CLIENT` / `RULE` 走 WARN（客户传错参数不该惊动值班），
     `TRANSIENT` / `BUG` 才 ERROR 带堆栈。
   - 兜底分支先沿 `cause` 链找载体（装饰器/容器再包一层的形态），**找不到时行为与改动前逐字一致**。
@@ -253,11 +252,30 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
   `/api/**` 只换状态码不换信封）。**边界写进契约**：`/api/**` 因此可能出现**不在 §2.1a 清单里的 4xx**
   （如下游 409/422），前端只能走「通用错误 + 直显 msg」，不得据此反推本域码。
   原文只写「内部状态码 = `ErrorCode` 对应状态」，在透传情形下会与实现矛盾 —— 补这两条是**让那句话不再说谎**。
+- **批次 J 后补修：两处映射「写反了」（同一根因，两个症状）**。自查方法很简单 ——
+  问「这个状态码是从哪来的」。答案：`httpStatus()` 我只信了 `category`，
+  而 `category` 恰恰是**可以被下游报文覆盖**的派生标签
+  （`UpstreamErrorDecoder#toErrorInfo`：报文里有 `category` 就采信它，缺省才按状态码派生）。
+  于是下游报文自相矛盾时，我把唯一的**事实**（HTTP 状态码）丢掉了：
+  - `category=CLIENT` + 状态码 **500** → 回过 **400**：把服务端的账记到调用方头上，
+    调用方会去改一个本来没错的请求（`09-constraints` §三·六 明文「谎报成 400 更糟」）；
+  - `category=RULE` + **非 2xx** → 回过 **200**：用 200 承载失败，熔断器**永不触发**、
+    成功率指标虚高（§三·八·5「状态码是被观测面」）；且 `ErrorDecoder` 只在非 2xx 时被调用，
+    所以「RULE 带非 2xx」正是这条矛盾路径才可能出现的形态。
+  **修法（一条规则同时杀掉两个症状）**：`httpStatus()` 改为 **状态码优先**（`100..599` 原样透传），
+  类别只在**拿不到状态码**时兜底。判据一句话：**事实（状态码）优先于解释（category）**。
+  顺带把返回类型从 `HttpStatus` 改成 **`int`**：让 `499` 这类合法但非标准的状态码也能透传，
+  不被 `HttpStatus.resolve` 解析成 `null` 再回落成 400（那等于又开了一条谎报通道）。
+  **M7 实测**：把映射退回「类别优先」→ `GlobalExceptionHandlerTest` 8 例红，
+  包括两条带指名信息的缺陷回归（`CLIENT`+500 不得回 400 / `RULE`+非 2xx 不得回 200）。
 - **已知边界（登记，未做）**：
   - 若上游失败被**替换**（而非嵌套在 `cause` 链上）成别的异常，仍会 500；当前链路不产生这种形态。
   - 下游 `401/403` 属 `CLIENT`，会**原样透传**成 401/403。集群内 `/internal/**` 的鉴权由网关注入头承担、
     正常不会返回 401；若出现，那属于服务间凭证配置故障（可重试），应在**解码侧**归类，
     **不要**在响应层按状态码特判 —— 那会重新打开「两份状态码判断」的漂移口子。
+  - 下游报文 `category` 与状态码矛盾时，我们的**响应 body 仍原样透传那份 `category`**，
+    于是「发出的状态码」与「body 里的 category」可能不同源。这是刻意的（透传不改写下游事实），
+    但调用方若**只看 category** 就会与状态码不一致 —— 已由契约 §二 两条规则写明「以状态码为准」。
 
 ---
 
@@ -303,6 +321,26 @@ F 批把「工厂必须原样透传」变成了机械强制（§1.10 两只门�
 | **U10** | 契约 §二 覆盖率数字（98/40/58 → 实测 99/52）—— **A/B/C/E 批的 E 项就是删这些数字** | 在 R2 批内 |
 | **U17** | **`void` 降级方法的兜底口径（已裁决：方案 A，下一批做）**。问题：语义门禁对「没抛异常」只做 `returnedDegradedValue++` 计数、**零校验**，而 `void` 的静默返回在调用方看来与真成功**完全同形**（正是 §1.10 里 `TradeInvoiceClientFallback` 那次事故的形态）。<br>**做法（不用手写控制流 lint）**：「能否抛」能从**类型**上强制就不做检查 —— 让该抛的方法 `throw` 复用现成的载体（`CarriedErrorException`），再加 ArchUnit 防回归；确实不能抛的才进白名单并写清理由。白名单若要求「日志 + 补偿记录 + 告警」，那三条**必须能被机器验**，否则又是会漂的注释。<br>**调用点已 grep（实测，别重查）**：<br>· `AfterSaleClientFallback#markRefunded` → `pay-service PayEventNotifier#writeBackAfterSaleRefunded:106-111` **有 `try/catch(Exception)`** ⇒ 可直接改 throw；<br>· `KgClientFallback#deleteEdges` → `item-service KgEdgeIngestManager#deleteEdgesSafely:179-181` **自有 try/catch** ⇒ 可直接改 throw；<br>· `AuthContextClientFallback#revokeUserTokens` → `user-service UserAdminManager#updateStatus:110` **无 try/catch**，且 DB 状态**已提交** ⇒ 直接改 throw 会让「已提交的禁用」对外报 5xx，**必须同步补调用点防护**。<br>**因此清单 =「两处改 throw + 三个 catch 点审计/补齐」**（两个已存在 → 审计其是否真的兜住并留 WARN/补偿；一个缺失 → 补齐）。<br>**两条硬约束**：① `revokeUserTokens` 若落补偿记录，**必须有真实消费者**（重试任务或管理端收敛入口）—— 否则就是造僵尸数据（`invoice_link_compensation` 那条教训）；② **删过时注释、留锚点**：`AfterSaleClientFallback` 的**方法注释与类注释互相矛盾**（类注释说「改抛异常后异常被 catch 接住」，方法注释说「一律不抛…抛错会把成功的退款判成失败」）。实测调用点有 try/catch ⇒ **方法注释是过时的**，改 throw 时删掉它，并留一行指向 `PayEventNotifier#writeBackAfterSaleRefunded` 的锚点 | 下一批（方案 A） |
 | ~~**U18**~~ | ✅ **无需另做**：「9 个 fallback 的 CLIENT 分支回归测试」这一项已被 §1.10 的**发现式**语义门禁覆盖 —— `FallbackDegradeContractTest` 扫描 `target/classes` 自动发现全部工厂（不维护类名清单），逐个方法验证 CLIENT 分支。**不要再手写逐工厂的 CLIENT 用例**：那既冗余，也会在新增工厂时静默漏测（清单必然漂） | 已覆盖 |
+| **U19** | **前端兜底分支（待办，随 U17 一起收）**：契约 §二 新增「下游透传」规则后，`/api/**` **可能出现不在 §2.1a 清单里的 4xx**（下游 409/422/429、非标准 499）。前端现状是「按已知码分支 + 其余落到通用提示」，需确认两件事：① **未登记的 4xx 必须落通用兜底**（通用错误 + 直显 `msg`），**不得**因为「状态码不在清单里」就走「服务异常」话术；② `check-error-codes.mjs` 当前报「未覆盖 0」是按**业务码**核对的（下游码也在本域 `ErrorCode` 里，所以仍覆盖），但**状态码维度没有门禁** ⇒ 前端若按状态码分支会漏。**不要**为此新增状态码白名单（会变成第二套映射），只补兜底分支 + 一条用例 | 随 U17 |
+
+#### U17 的补偿消费者选型（已定，2026-10-18）
+
+**选定方案 A：复用 `operation_log` 做对账，不新建补偿表。**
+`operation_log` 现成列（`Initialize.sql`）：`user_id`（**操作人**）/ `username` / `action` / `target` VARCHAR(100) / `detail` / `ip` / `create_time`。
+- 禁用操作先落审计（`transactionTemplate` 已提交），再调 `revokeUserTokens`；
+  吊销成功再补一条 `action=REVOKE_USER_TOKENS`、`target=<目标用户ID>`。
+- 定时 Job：找 `action=UPDATE_USER_STATUS` 且目标为 FROZEN、超过 N 分钟仍**没有**同 `target` 的
+  `REVOKE_USER_TOKENS` 记录 → **重放吊销**（幂等：令牌版本号推进是单调的）→ 补写成功记录。
+- **先决条件（动手前要做）**：现在 `OperationLogManager.record(...)` 只收 `detail`，
+  `target` 很可能为空，而 `detail` 里是 `targetUserId=7, status=FROZEN` 这种**人读文案**。
+  **对着 `detail` 做字符串解析是不可接受的**（§5 判据 2：注释/文案会漂）⇒ 需要给 `record` 增加
+  `target` 入参（或新增一个带目标键的 action），让对账**按列检索**而不是按文案猜。
+- **为什么不用另外两个方案**：
+  - **不新建 `token_revoke_compensation` 表**：`invoice_link_compensation` 那一套是为「多状态重试机」建的；
+    吊销的补偿只是「再调一次」，用审计账本对账就够。**新建表最大的风险是造出第二个僵尸数据源**
+    —— 而「补偿必须有真实消费者」正是这次要守住的红线。
+  - **不能把吊销放进禁用事务**：`Manager` 调 Feign 不得 `@Transactional`（硬约束，见 CLAUDE.md），
+    且远端调用入事务会把一次远端抖动放大成事务持有时间。所以「先提交再吊销」的顺序不能改。
 
 ---
 
