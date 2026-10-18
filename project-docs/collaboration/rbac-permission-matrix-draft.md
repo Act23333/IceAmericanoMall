@@ -301,6 +301,27 @@ UPDATE sys_permission SET status = 0 WHERE code IN ('user:admin');
   ⇒ 改为**就近**规则（先看映射之前取最后一个，没有再看之后取第一个）。
 **结论**：TSV 可信的前提是"抽验过"，不是"跑出来了"。
 
+**注解归属的边界规则（Bug 1 / Bug 3 定稿，写进生成器注释 + 4 条自测）**：
+对第 i 个映射，取 `before`（上一个映射**结束** → 本映射开始）与 `after`（本映射结束 → 下一个映射开始）：
+1. `before` 里有注解 → 取**最后一个**（注解写在映射**下方**也归本方法）；
+2. 否则 `after` 里有 → 取**第一个**（就近原则，避免把下一个方法的上方注计算进来）。
+`node scripts/gen-permission-map.mjs --self-test` 锁四件事：上方注解、下方注解、上一方法有注解而本方法裸奔、
+以及**一条已知盲区用例**（前一方法注解在映射下方 + 后一方法裸奔 ⇒ 后者被误判为已覆盖）。
+盲区根因是**按注解位置切段**而非按方法签名切段；同源盲区也在 `everyMappingCovered`。
+**不假装守住**：该盲区已登记，禁止用"门禁绿 / 脚本绿"宣称"没有漏注解的端点"。
+
+**expected 三态（区分"公开"与"漏加注解"）**：`public`（匿名）/ `buyer`（需登录但不需要权限位）/
+`guarded`｜`UNANNOTATED`（**受管前缀但无注解 = 真拆位遗漏**）。`--project` 只报最后一类。
+预演结果（首次跑）：**20 个 UNANNOTATED** = 商家端 5b 全部未替换（19 个，EXEMPT 到 2026-11-15）
++ `/api/item/category/tree`（受管前缀下的公开读，属规则例外而非遗漏）。
+
+**门禁两个覆盖口径的差别（明确确认）**：
+| 场景 | 用哪个判定 | 读方法裸奔 |
+|---|---|---|
+| 管理端方法级（`/api/trade/admin`、`/api/trade/seller`、`/api/admin/after-sale`、`/api/admin/invoice`、`AdminUserController`） | `everyMappingCovered` | **不允许**（管理端没有公开读） |
+| 平台配置组（`/api/item/category`、`/brand`、`/attr`） | `everyWriteMappingCovered` | **允许**（类级会封掉公开 GET /tree 等） |
+| 其余受管前缀 | 要求类级注解 | 不适用（必须整类） |
+
 0. **「位 → 端点」映射从哪来（定死，不手工维护）**：**由门禁/脚本在注解替换后生成** ——
    扫 `@PreAuthorize` 拿位、扫类级 `@RequestMapping` + 方法级 `@XxxMapping` 拿端点，产出
    `controller → 方法 → HTTP 路径 → 权限位` 的 TSV，作为投影比对的输入。
