@@ -126,9 +126,9 @@
 
 ### 6.1 权限位全表（Q1：每域两档）
 
-**计数口径（别再用"25 个"那种说法）**：本表共 **25 行** = **存量保留 4**（`ai:chat`、`product:read`、
+**计数口径（别再用"25 个"那种说法）**：本表共 **27 行** = **存量保留 4**（`ai:chat`、`product:read`、
 `order:read`、`seller:admin`）+ **迁移新增 21**（`user:admin` 1→14、`seller:admin` 1→4、
-`rbac:admin` 1、`aftersale:read` 1、`product:admin` 1）。`user:admin` 本身不在表内活位之列（迁移后 `status=0` 停用）。
+`rbac:admin` 1、`aftersale:read` 1、`product:admin` 1、`dashboard:read` 1、`audit:read` 1）。`user:admin` 本身不在表内活位之列（迁移后 `status=0` 停用）。
 
 | 权限位 | 含义 | 有 admin 档？ | `*:*:*` 是否覆盖 |
 |---|---|---|---|
@@ -137,9 +137,9 @@
 | `product:write` | 商家维护自有商品 | 否（写即商家档） | ✅ |
 | `product:admin` | **平台级商品配置**（类目/品牌/属性）+ 管理员的商品干预 | **是**（Q8） | ✅ |
 | `order:read` | 订单查询（含自有） | 否 | ✅ |
-| `order:write` | 订单管理（发货/取消等后台动作） | **是** | ✅ |
+| `order:admin` | 订单管理（发货/改状态等后台动作，**不按方法分**） | **是** | ✅ |
 | `aftersale:read` | 售后查询 | 否 | ✅ |
-| `aftersale:write` | 售后审核 / 退款确认 | **是** | ✅ |
+| `aftersale:write` | 售后状态操作（**当前无消费者**，见下） | **是** | ✅ |
 | `pay:admin` | 退款重试 / 手动对账（资金面，Q2） | **是** | ✅ |
 | `finance:admin` | 结算 / 提现审核（资金面，Q2） | **是** | ✅ |
 | `invoice:issue` | 开具 / 重开 | **是** | ✅ |
@@ -150,7 +150,9 @@
 | `merchant:admin` | 商家入驻审核 | **是** | ✅ |
 | `home:admin` | 首页装修 | **是** | ✅ |
 | `kg:admin` | 知识图谱 / 配对规则治理 | **是** | ✅ |
-| `user:read` | 用户查询 / 审计日志查询 | 否 | ✅ |
+| `user:read` | 用户资料查询（**不含审计日志**） | 否 | ✅ |
+| `audit:read` | 审计日志查询（**不挂 user:read**） | 否 | ✅ |
+| `dashboard:read` | 平台看板/统计数据（看数据 ≠ 改订单） | 否 | ✅ |
 | `user:write` | 用户状态/角色变更 | **是** | ✅ |
 | `rbac:admin` | **改角色/权限本身**（Q6） | **是** | ❌ **显式排除**（必须单独授予） |
 | `seller:admin` | 店铺资料维护（商家自有） | 否 | ✅ |
@@ -237,7 +239,7 @@
 INSERT INTO sys_permission (id, name, code, type, path, sort_order, status) VALUES
   (7,  '用户查询',   'user:read',      3, '/api/admin/user/**',       10, 1),
   (8,  '用户变更',   'user:write',     3, '/api/admin/user/**',       11, 1),
-  (9,  '订单管理',   'order:write',    3, '/api/admin/order/**',      12, 1),
+  (9,  '订单管理',   'order:admin',    3, '/api/admin/order/**',      12, 1),
   (10, '售后处理',   'aftersale:write',3, '/api/admin/after-sale/**', 13, 1),
   (11, '支付运维',   'pay:admin',      3, '/api/admin/pay/**',        14, 1),
   (12, '财务结算',   'finance:admin',  3, '/api/admin/finance/**',    15, 1),
@@ -255,7 +257,9 @@ INSERT INTO sys_permission (id, name, code, type, path, sort_order, status) VALU
   (24, '商家券',     'seller:coupon',  3, '/api/seller/coupon/**',    27, 1),
   (25, '商家知识库', 'seller:knowledge',3,'/api/seller/knowledge/**', 28, 1),
   (26, '售后查询',   'aftersale:read', 3, '/api/admin/after-sale/**', 29, 1),
-  (27, '平台商品配置','product:admin', 3, '/api/item/category/**',    30, 1);
+  (27, '平台商品配置','product:admin', 3, '/api/item/category/**',    30, 1),
+  (28, '看板数据',   'dashboard:read',3, '/api/admin/dashboard/**',   31, 1),
+  (29, '审计日志查询','audit:read',   3, '/api/admin/log/**',         32, 1);
 
 -- ② ROLE_ADMIN：显式加 rbac:admin（通配符不覆盖它）
 INSERT INTO sys_role_permission (role_id, permission_id)
@@ -366,6 +370,27 @@ Q3 裁决的是**权限位**拆三位（`seller:finance` / `seller:coupon` / `se
      需要先盘点再逐条补，不塞进拆位批）。
    - 已知近似：方法级覆盖是**计数**不是逐方法绑定（可能把注解挂读方法上凑数），
      更严需源码解析器 —— 已在门禁注释里写明，不假装守住了。
+
+### 7.4e 裁决与批前确认（2026-10-18，已定）
+
+| 项 | 裁决 | 依据 |
+|---|---|---|
+| Q10 | 仪表盘独立 `dashboard:read` | 看数据 ≠ 能改订单；与 `order:admin` 分开 |
+| Q11 | RBAC 控制器（`RoleController` / `PermissionController`）**整体挂 `rbac:admin` 含读** | 读角色/权限配置本身即为敏感信息（谁能做什么） |
+| 批 3 | 管理端订单统一 **`order:admin`，不按方法分**；原 `order:write` **改名**为 `order:admin`（非新增） | 若按方法分，`order:read` 会**与买家侧同名但语义不同**；改名消除歧义，买家侧 `order:read` 保持不变 |
+| 批 8 | `AdminLogController` 挂 **`audit:read`**，**不挂 `user:read`** | 读审计 ≠ 读用户资料 |
+
+**批 4 确认（推翻了原计划，必须记住）**：
+`AdminAfterSaleController#review`（type=2 仅退款）与 `#confirm-return`（type=1 退货退款）
+**都同步**调 {@code refundClient.refund(...)}（Feign，fail-closed 不吞异常）——
+即"审核售后/确认退货"**就是资金动作**，不是状态动作。
+⇒ **两个写方法都挂 `pay:admin`**，而**不是** `aftersale:write`。
+若按控制器机械挂 `aftersale:write`，后果正是 Q2 要防的**"客服能退款"越权**。
+⇒ `aftersale:write` 当前**无消费者**（保留给将来"不涉退款的售后状态操作"；若无则按 §7.1 停用）。
+
+**批 2 确认**：`MerchantManager#approve` 调 `authContextClient.setUserRole(userId, ROLE_TYPE_SELLER)`——
+**固定常量，不是任意角色** ⇒ `merchant:admin` 足够，不需要 `rbac:admin`。
+但它是"写授权域数据"的侧效应，目前只有 `log.info`，**建议补一条操作审计**（登记，不阻塞）。
 
 ### 7.4d Q9 **已裁决（2026-10-18）**：冲红挂 `invoice:void`
 

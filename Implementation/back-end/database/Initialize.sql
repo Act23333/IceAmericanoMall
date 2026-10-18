@@ -984,7 +984,9 @@ INSERT INTO `sys_permission` (`id`, `name`, `code`, `type`, `path`, `sort_order`
 INSERT INTO `sys_permission` (`id`, `name`, `code`, `type`, `path`, `sort_order`, `status`) VALUES
 (7,  '用户查询',    'user:read',       3, '/api/admin/user/**',        10, 1),
 (8,  '用户变更',    'user:write',      3, '/api/admin/user/**',        11, 1),
-(9,  '订单管理',    'order:write',     3, '/api/admin/order/**',       12, 1),
+-- 批 3 裁决（2026-10-18）：管理端订单统一用 order:admin，**不按方法分**；
+-- 买家侧 order:read 保持不变（原 order:write 与买家 read 会构成同域两名，故改名）。
+(9,  '订单管理',    'order:admin',     3, '/api/admin/order/**',       12, 1),
 (10, '售后处理',    'aftersale:write', 3, '/api/admin/after-sale/**',  13, 1),
 (11, '售后查询',    'aftersale:read',  3, '/api/admin/after-sale/**',  14, 1),
 (12, '支付运维',    'pay:admin',       3, '/api/admin/pay/**',         15, 1),
@@ -1004,7 +1006,11 @@ INSERT INTO `sys_permission` (`id`, `name`, `code`, `type`, `path`, `sort_order`
 (26, '商家知识库',  'seller:knowledge',3, '/api/seller/knowledge/**',  29, 1),
 -- Q8 裁决（2026-10-18）：平台级商品配置（类目/品牌/属性）单独一位，**不新造 category:admin**。
 -- 与 product:write 的区别：write 是"商家维护自有商品"，admin 是"平台维护全局配置"。
-(27, '平台商品配置','product:admin',  3, '/api/item/category/**',     30, 1)
+(27, '平台商品配置','product:admin',  3, '/api/item/category/**',     30, 1),
+-- Q10 裁决：仪表盘/统计独立成位（与 order:admin 分开 —— 看数据不等于能改订单）。
+(28, '看板数据',    'dashboard:read', 3, '/api/admin/dashboard/**',   31, 1),
+-- 批 8 裁决：审计日志查询独立成位（**不挂 user:read** —— 读审计不等于读用户资料）。
+(29, '审计日志查询','audit:read',     3, '/api/admin/log/**',         32, 1)
 ON DUPLICATE KEY UPDATE
     `name` = VALUES(`name`), `code` = VALUES(`code`), `type` = VALUES(`type`),
     `path` = VALUES(`path`), `sort_order` = VALUES(`sort_order`), `status` = VALUES(`status`);

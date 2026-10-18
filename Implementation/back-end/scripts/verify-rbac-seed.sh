@@ -66,8 +66,8 @@ new_active=$(q "SELECT COUNT(*) FROM sys_permission WHERE id BETWEEN 7 AND 26 AN
 # 之所以用精确等值而不是 `>= 20`：`>=` 无法区分"少落了 1 个"与"全落了"，
 # 而 INSERT 少落一行恰恰是静默失败的主要形态。
 RBAC_BIT_ID_MIN=7
-RBAC_BIT_ID_MAX=27
-RBAC_BIT_EXPECTED=21
+RBAC_BIT_ID_MAX=29
+RBAC_BIT_EXPECTED=23
 new_active=$(q "SELECT COUNT(*) FROM sys_permission WHERE id BETWEEN $RBAC_BIT_ID_MIN AND $RBAC_BIT_ID_MAX AND status=1")
 if [[ "${new_active:-0}" -eq "$RBAC_BIT_EXPECTED" ]]; then
   echo "[OK]   id $RBAC_BIT_ID_MIN–$RBAC_BIT_ID_MAX 中 status=1 的位 = $new_active（精确期望 $RBAC_BIT_EXPECTED）"
