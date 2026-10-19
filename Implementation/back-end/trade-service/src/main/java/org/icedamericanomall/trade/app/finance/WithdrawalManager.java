@@ -12,6 +12,7 @@ import org.icedamericanomall.trade.domain.enums.WithdrawalStatusEnum;
 import org.icedamericanomall.trade.domain.model.finance.Withdrawal;
 import org.icedamericanomall.trade.domain.repository.SellerFundAccountRepository;
 import org.icedamericanomall.trade.domain.repository.SettlementRepository;
+import org.icedamericanomall.trade.domain.port.WithdrawalPayoutPort;
 import org.icedamericanomall.trade.domain.repository.WithdrawalSettlementRepository;
 import org.icedamericanomall.trade.domain.service.SettlementAllocator;
 import org.icedamericanomall.trade.domain.repository.WithdrawalRepository;
@@ -42,6 +43,7 @@ public class WithdrawalManager {
     private final SellerFundAccountRepository sellerFundAccountRepository;
     private final SettlementRepository settlementRepository;
     private final WithdrawalSettlementRepository withdrawalSettlementRepository;
+    private final WithdrawalPayoutPort payoutPort;
     private final SettlementManager settlementManager;
     private final TradeConverter tradeConverter;
 
@@ -192,6 +194,14 @@ public class WithdrawalManager {
         }
         releaseFrozen(withdrawal.getSellerId(), amount);
         if (target == WithdrawalStatusEnum.PAID_OUT) {
+            // 出款只走端口（当前为「人工确认」适配器，无 I/O）；受理失败**不得**标已打款
+            WithdrawalPayoutPort.PayoutResult result = payoutPort.pay(new WithdrawalPayoutPort.PayoutCommand(
+                    withdrawal.getWithdrawalNo(), withdrawal.getId(), withdrawal.getSellerId(), amount,
+                    withdrawal.getBankAccount(), withdrawal.getBankName()));
+            if (!result.accepted()) {
+                throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
+                        "出款未受理：" + result.reason());
+            }
             settlementManager.payout(withdrawal.getSellerId(), amount);
         }
     }

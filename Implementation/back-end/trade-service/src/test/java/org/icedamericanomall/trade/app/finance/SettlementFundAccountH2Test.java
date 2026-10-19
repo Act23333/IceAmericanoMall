@@ -251,7 +251,7 @@ class SettlementFundAccountH2Test {
         settlementManager = new SettlementManager(settlementRepository, fundAccountRepository, null,
                 new TradeConverterImpl());
         withdrawalManager = new WithdrawalManager(withdrawalRepository, fundAccountRepository,
-                settlementRepository, withdrawalSettlementRepository, settlementManager,
+                settlementRepository, withdrawalSettlementRepository, new org.icedamericanomall.trade.infrastructure.adapter.payout.ManualPayoutAdapter(), settlementManager,
                 new TradeConverterImpl());
         // 生产默认关闭打款（只记账不付款）；H2 用例要验打款/核销路径，显式打开
         org.springframework.test.util.ReflectionTestUtils.setField(withdrawalManager, "payoutEnabled", true);
