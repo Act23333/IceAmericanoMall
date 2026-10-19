@@ -2,7 +2,7 @@
 
 > **用途**：跨会话的工作交底。不是规格文档，不需要进规格索引。
 > **维护规则**：任何一批工作落地后，同步更新本文件的「已完成 / 待办 / 已知未修 / 验证边界」四段。
-> **最后更新**：2026-10-19（批次 K：第一步 + 触发入口（§1.26）+ **第二步条件预占（§1.28）** 均已落码并跑通 0→4；仍不可上线 —— 端点/调度注册、分配核销、真实打款渠道三缺，见 §3）
+> **最后更新**：2026-10-19（批次 K：第一步 + 触发入口（§1.26）+ **第二步条件预占（§1.28）** 均已落码并跑通 0→4；**第三步语义已定（§1.29）但未写代码**；仍不可上线 —— 端点/调度注册、分配核销、真实打款渠道三缺，见 §3）
 
 ## 0. 要数字？跑命令 —— 本文件不是 SSOT
 
@@ -1899,6 +1899,9 @@ bash Implementation/back-end/scripts/verify-gates.sh full
 helper `savePendingWithdrawal` 已删（留着迟早又被用来绕）。
 **规则写死：造数据不许绕过被验的入口。**
 
+> 另一条本文档只留指针：本步踩到的**重载陷阱**（同名重载让门禁只看到委托版）已升格为判据，
+> 写在 `09-constraints.md` §七「重载不作语义分叉」——判据只留一处，别在台账里复制第二份。
+
 **登记两条（用户点名）**
 
 1. **`limit` 与 XXL-Job 任务超时匹配**：`settlePendingSettlements` 已在日志里打**耗时**；
@@ -1910,6 +1913,68 @@ helper `savePendingWithdrawal` 已删（留着迟早又被用来绕）。
    （详见 §1.25「退出条件」与守卫类 javadoc）。
 
 **仍不可上线**：管理端端点 / handler 未注册 / 首次三段核对（§1.26）+ 分配核销（第三步）+ 真实打款渠道。
+
+> ⚠ **E3 的前提（用户点名登记）**：`frozen_amount == Σ PENDING_REVIEW` 假设「**只有「待审核」占用冻结**」。
+> 新增任何占用 `frozen_amount` 的状态（例如将来的「打款中 / 银行处理中」）时，
+> **必须同步扩展 E3 与释放路径**；否则等式失效的方式是「多算 / 少算」而**不报错**
+> （比抛异常更难发现，只能靠对账任务兜住）。
+
+
+### 1.29 第三步语义决定（2026-10-19，**先定语义、不写代码**）
+
+> 用户点名先定两件事：① 部分提现后结算单状态变不变；② 读模型靠分配表聚合还是 `withdrawn_amount` 列。
+> 这两条决定**表结构**与**等式**，定了再动 `Initialize.sql` —— 否则等于「改表即改等式」，返工最贵。
+
+**决定 1：部分提现【不】改变结算单状态（`SETTLED` 始终表示「可提现」）**
+
+- 状态只承载**阶段**（待结算 → 可提现），不承载**余额**。一旦让状态表达「提了一部分」，它就变成
+  `Σ 分配` 的派生值 ⇒ 两个真源 ⇒ 必然漂移（`markSellerSettlementsPaidOut` 正是这么坏掉的）。
+- 故**不新增** `PARTIALLY_WITHDRAWN`，也**不复活** `PAID_OUT`（守卫继续封其写路径）。
+- 「这张单提了多少 / 还能提多少」是**金额信息**，由 `withdrawn_amount` 列 + 分配明细表达。
+
+**决定 2：分配表是真源，`settlement.withdrawn_amount` 是条件更新的守门列；读模型读列**
+
+- 表：`withdrawal_settlement(id, withdrawal_id, settlement_id, amount, create_time)`，
+  `UNIQUE uk_withdrawal_settlement (withdrawal_id, settlement_id)`（防同对重复分配）、`KEY idx_settlement_id`；
+  **不加外键** —— 与 `settlement` / `withdrawal` 同族（这两张财务表本就没有 FK，全库 FK 集中在 RBAC 等）。
+- 列：`settlement.withdrawn_amount INT NOT NULL DEFAULT 0`；**只能**由分配仓储的分配/释放方法写
+  （同事务、带条件）；其它位置不许 `setWithdrawnAmount`（第三步加静态守卫，同 `settled_total` 的写法）。
+- **为什么不「只靠分配表聚合」**：并发下「读 SUM → 比较 → 插入」不是原子的 ——
+  要么 `SELECT ... FOR UPDATE` 锁结算单行，要么加列。本仓库既有 idiom 是**条件更新 + 影响行数**
+  （`deductStock` / `settleIfPending` / `freeze`），`FOR UPDATE` 无先例 ⇒ 选列。
+- **为什么这不算「两个真源」**：列是**可重建的投影**，等式的存在就是证明它没漂；
+  与 `settled_total ↔ Σ SETTLED 结算单` 同构（聚合列 + 明细 + 等式，本仓库已验证的写法）。
+
+**决定 3：核销时点 = 申请时（与 `freeze` 同一事务）；FIFO；一笔可跨多单**
+
+- 申请时就要钉死「这笔钱从哪几张单出」，否则**拒绝释放**无处落脚；也让单据维度的占用可见。
+- 顺序：`period_end ASC, id ASC` 逐张吃满（账期先到先核销，可解释、可复算；不引入「用户指定单据」）。
+- 两种部分核销形态都要支持：**一张单被多笔提现部分占用**、**一笔提现跨多张单**（多行分配）。
+- 释放（拒绝）**删分配行** + `withdrawn_amount -= amount`（`WHERE withdrawn_amount >= amount`；0 行 = 账不平 ⇒ 抛），同事务。
+  **不保留 released 标记**：未核销即无分配是硬语义；留标记会让每条等式都多一个过滤条件，多一处忘过滤的机会。
+  审计线索靠 `withdrawal.admin_remark` + 释放时的日志，本步不新增审计表。
+- 打款（PAID_OUT）**保留分配行**（钱确实从这些单出），`withdrawn_amount` 不再变。
+
+**等式清单（第三步后共六条；前三条已上，后三条本步落地）**
+
+| # | 等式 | 抓什么 |
+|---|---|---|
+| E1 | `settled_total == Σ settlement.settlement_amount WHERE status = SETTLED` | 结算 ↔ 账户 |
+| E2 | `paid_total == Σ withdrawal.amount WHERE status = PAID_OUT` | 打款 ↔ 账户 |
+| E3 | `frozen_amount == Σ withdrawal.amount WHERE status = PENDING_REVIEW` | 冻结 ↔ 待审（⚠ 前提见 §1.28 末尾） |
+| **E4** | 逐单 `settlement.withdrawn_amount == Σ withdrawal_settlement.amount`；且 `0 ≤ withdrawn_amount ≤ settlement_amount`；且 `status != SETTLED ⇒ withdrawn_amount == 0` | 列 ↔ 明细 |
+| **E5** | 每笔 `Σ allocation.amount == withdrawal.amount`（PENDING_REVIEW / PAID_OUT）；`REJECTED ⇒ Σ == 0` | 提现 ↔ 明细 |
+| **E6** | `Σ allocation.amount WHERE withdrawal.status = PAID_OUT == paid_total` | **两张表钉死**（E2+E5 可推出，但独立断言能同时抓两边漂移） |
+
+**影响面（第三步开工清单，先登记免得漏）**
+
+1. `Initialize.sql`：+`withdrawal_settlement` 表、+`settlement.withdrawn_amount` 列（表数 +1；计数由 `--list-tables`/`--write` 回填，不许手改）；
+2. H2 用例的**启动期 schema 断言**要加新表与新列，否则双源自检会漏；
+3. 守卫：`withdrawn_amount` 只许分配仓储写；
+4. 契约：提现详情 / 结算单列表显示「核销到哪些单」属**读模型**，先出草案（未落契约前不做端点）；
+5. E1~E3 已有用例按「等式」组织，追加 E4~E6 即可（先红后绿）。
+
+**本节不是实现**：只有决定与影响面，代码 / DDL / 用例一行未写。
 
 
 ---
@@ -1944,7 +2009,7 @@ helper `savePendingWithdrawal` 已删（留着迟早又被用来绕）。
 | 编号 | 任务 | 内容与验收 | 依赖 / 期限 |
 |---|---|---|---|
 | ~~**T-5b**~~ | ✅ **已完成（§1.22）**：商家端权限接线（`/api/seller/**` 全量），EXEMPT 清零 | 按 `rbac-permission-matrix-draft.md` §4.2b 逐端点挂位；**接线与删 EXEMPT 同一个 commit**；验收 = 四个控制器转强制 + 无残留豁免 + 每映射方法都有 `@PreAuthorize` | **截止 2026-11-15**；等用户签 §4.2b（只需签两类判断） |
-| **T-WITHDRAW** | 提现缺口（=超额提现 + `mark-all` 吞余额 + 缺 `PENDING→SETTLED` 入口，§1.21/§1.23） | 实施计划与验收口径见 **§1.24b**；**第一步已落码，且已跑通 0→4（§1.25「验证结果」，提交 `fd569cb0`）**，第二步起未开工。裁决：`seller_fund_account` 做成**权威**（唯一写入者 = `settle()` 与打款，且各自同事务），可提现额 = `settled_total − frozen_amount − paid_total`；`frozen_amount` 与 `applyWithdrawal` 预占一起做（第二步）；额度判定**只在申请侧**（审核侧不判）；`settlement.status` **不承载打款事实**（已打款看 `withdrawal`，故 `withdrawal_settlement` 分配表只解决「按金额核销 + 拒绝释放」）；幂等键前端传 `Idempotency-Key` | **与 T-5b 不合批**（用户裁决）；验收 = 第一步自检三条绿（`SettlementFundAccountH2Test`，**非空断言靠自造数据真走 `settle()`**）。⚠ **提现仍不可上线**：§1.26 已交触发入口（调度 + 运维脚本；管理端端点待做、handler 未在 XXL-Job 注册），但 `frozen_amount` 预占（第二步）与 `withdrawal_settlement` 按金额核销（第三步）未做 ⇒ **上线须三件齐：端点/调度接线、预占、核销**，缺一不许上 |
+| **T-WITHDRAW** | 提现缺口（=超额提现 + `mark-all` 吞余额 + 缺 `PENDING→SETTLED` 入口，§1.21/§1.23） | 实施计划与验收口径见 **§1.24b**；**第一步（§1.25）与第二步（§1.28）均已落码并跑通 0→4**；**第三步语义已定（§1.29）、代码未写**。裁决：`seller_fund_account` 做成**权威**（唯一写入者 = `settle()` 与打款，且各自同事务），可提现额 = `settled_total − frozen_amount − paid_total`；`frozen_amount` 与 `applyWithdrawal` 预占一起做（第二步）；额度判定**只在申请侧**（审核侧不判）；`settlement.status` **不承载打款事实**（已打款看 `withdrawal`，故 `withdrawal_settlement` 分配表只解决「按金额核销 + 拒绝释放」）；幂等键前端传 `Idempotency-Key` | **与 T-5b 不合批**（用户裁决）；验收 = 第一步自检三条绿（`SettlementFundAccountH2Test`，**非空断言靠自造数据真走 `settle()`**）。⚠ **提现仍不可上线**：§1.26 已交触发入口（调度 + 运维脚本；管理端端点待做、handler 未在 XXL-Job 注册），`frozen_amount` 预占（第二步）已在 §1.28 完成；仍缺 `withdrawal_settlement` 按金额核销（第三步，语义见 §1.29）+ 端点/调度接线 + 真实打款渠道 ⇒ **上线须三件齐，缺一不许上** |
 | **T-SIGN** | 签到幂等升级（§1.20） | 加 `sign_log` + `uk_user_date`；签到与积分发放进**同一本地事务**；`points_log` 加 `biz_key`+`uk_biz_key`；Redis Bitmap 降级为投影；三条用例（并发只发一次 / 失败可重试补发 / 重复调用语义不变） | 无外部期限；建议排在 D1 之后、B1 之前 |
 | **D1** | 数据权限范围文档（**带静态断言**） | 只写文档 + **一条 `SellerScope` 静态断言**（不许只有文档）：断言"按 seller 维度取数的仓储方法必须显式接收 `sellerId` 参数"或等价形态；文档范围 = 维度（本店/本部门/本人）+ 查询层强制注入方式 + 与 RBAC0 的边界 | 用户要求：若做就必须带断言 |
 | **B1** | 剩余基线超限类拆分 | 按**用例族**拆（§1.18.3 判据），不按行数砍；还清即删基线条目 | **截止 2026-12-31** |
