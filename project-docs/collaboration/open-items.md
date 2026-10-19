@@ -2114,6 +2114,40 @@ E2 才有证据力；在那之前**不得**引用 E2 证明账平。
 `classify()`：`BizException` → `BIZ:<错误码>`；`DataAccessException` → `DATA_ACCESS`；其它 → `UNEXPECTED`。
 理由：响应会进前端/工单/审计，异常消息常带 SQL 片段、主键甚至账号；细节留在 `log.warn` 的堆栈里。
 
+### 1.34 三件处置 + 合入裁决（2026-10-19）
+
+**① KNOWN_DEBT 的业务影响评估 + deadline（deadline 已机器化，不是注释）**
+
+| 债务 | 写放大 | 影响 | deadline |
+|---|---|---|---|
+| `CouponClaimManager#smartClaim->claim` | **两张表**：`coupon` 自增发行量（条件更新）+ `user_coupon` 插入 | **高**：自调用时两者不在同一事务 ⇒ 可能「券数已增、领取记录没落」（或反过来），属可观测的券账不一致 | **2026-11-10** |
+| `ShopManager#updateMyDefaultShop->updateMyShop` | **单表**：`shopRepository.updateProfile` | **低**：单表单写，跨表原子性无从谈起 —— 这里的 `@Transactional` 是**装饰**，修法是删注解/下沉私有方法 | **2026-12-31** |
+
+deadline 的落实方式：`KNOWN_DEBT` 的值是 `Debt(reason, deadline)`，守卫里有一条断言
+**过期即红**（`now > deadline`）。到期只有两条路：修掉，或走裁决把 deadline 往后挪 ——
+改常量会出现在 diff 里，是唯一留痕。**没有期限的债务清单与「自我清算」断言是矛盾的**（用户判据）。
+
+**② 守卫从「有注解」升级为「有效事务」**
+`hasEffectiveTransaction()`：只有 `REQUIRED / REQUIRES_NEW / NESTED` 算数；
+`NOT_SUPPORTED / NEVER` 明确不建事务（新增反例3 覆盖）；`SUPPORTS / MANDATORY` 取决于调用上下文、
+静态判不了 ⇒ **按「不算」处理（宁可误报）**。局限已登记：这两种在外层有事务时其实是安全的，本守卫仍会红。
+
+**③ `BIZ:<错误码>` 的暴露面登记**
+AD24 响应里的 `failures.reason` 现在会带 `BIZ:<错误码>`。当前端点挂 `finance:admin`（管理端），
+错误码可见性可接受。⚠ **一旦降低权限或复用到商家端/公开端**，必须重新评估：
+错误码是**可枚举的侧信道**（能反推账号状态、单据存在性等），届时应改为固定文案 + 服务端日志关联 traceId。
+
+**④ 裁决：合入主干的判据 = 代码可合，不是功能可用**
+
+| 判据 | 内容 |
+|---|---|
+| **合入主干**（本批按此） | ① 门禁全绿（`full` 七段）② 债务已登记（含 deadline）③ 上线 checklist 写清「还差什么」 |
+| **功能可用**（另一道闸） | ① 触发入口完整（AD24 + **handler 在 XXL-Job 注册** + 首次三段核对）**且** ② 真实打款渠道接入 |
+
+理由：把「功能可用」当合入判据会让 `wip` 分支长期挂着，merge 成本随时间上升（用户判据）。
+⇒ `[UNVERIFIED]` 分支前缀此后只表示「**功能未完成**」，不再表示「没验证过」；
+合入时按上表逐条勾，**不得**把「合入」读成「提现可用」。
+
 ---
 
 ## 2. 待办

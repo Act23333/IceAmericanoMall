@@ -49,13 +49,27 @@ class TransactionSelfInvocationGuardTest {
      * ① 每条必须写清修法；② 下面有一条断言要求<b>清单里的键在扫描中仍能命中</b> ——
      * 修好之后必须删掉对应条目，否则守卫自己红（清单会自我清算，不会烂在代码里）。
      */
-    private static final java.util.Map<String, String> KNOWN_DEBT = new java.util.LinkedHashMap<>();
+    /**
+     * 一条债务：现状 + 修法 + <b>deadline</b>。
+     *
+     * <p>为什么必须有 deadline：没有期限的债务清单与「自我清算」断言是矛盾的 ——
+     * 前者允许永久共存，后者假装会消失。带 deadline 后，**过期即红**（下面有断言），
+     * 到期只有两条路：修掉，或走裁决重定期限（改这个常量会出现在 diff 里）。
+     */
+    record Debt(String reason, java.time.LocalDate deadline) {
+    }
+
+    private static final java.util.Map<String, Debt> KNOWN_DEBT = new java.util.LinkedHashMap<>();
 
     static {
-        KNOWN_DEBT.put("CouponClaimManager#smartClaim->claim",
-                "营销域历史代码：smartClaim 的自动/手动分支自调用 claim。修法：把 claim 抽到独立 Bean（或给 smartClaim 加 @Transactional）后删除本条");
-        KNOWN_DEBT.put("ShopManager#updateMyDefaultShop->updateMyShop",
-                "商家域历史代码：设默认店铺时自调用 updateMyShop。修法：把共用逻辑下沉到私有方法（无事务语义）后删除本条");
+        KNOWN_DEBT.put("CouponClaimManager#smartClaim->claim", new Debt(
+                "营销域历史代码。写放大：claim 内写 2 张表（coupon 自增发行量 + user_coupon 插入）⇒ "
+                        + "自调用时两者不在同一事务，可能「券数已增、领取记录没落」。修法：把 claim 抽到独立 Bean 后删除本条",
+                java.time.LocalDate.of(2026, 11, 10)));
+        KNOWN_DEBT.put("ShopManager#updateMyDefaultShop->updateMyShop", new Debt(
+                "商家域历史代码。写放大：updateMyShop 只写 1 张表（shop.updateProfile）⇒ 无事务只是注解装饰，"
+                        + "影响低。修法：把共用逻辑下沉为私有方法并去掉 @Transactional（它本就不需要事务）后删除本条",
+                java.time.LocalDate.of(2026, 12, 31)));
     }
 
 
@@ -96,6 +110,15 @@ class TransactionSelfInvocationGuardTest {
         assertThat(hitDebt)
                 .as("已知债务清单自我清算：清单里的键必须仍能命中 —— 修好之后必须删掉对应条目，否则守卫自己红")
                 .isEqualTo(KNOWN_DEBT.keySet());
+
+        java.time.LocalDate today = java.time.LocalDate.now();
+        List<String> overdue = KNOWN_DEBT.entrySet().stream()
+                .filter(entry -> today.isAfter(entry.getValue().deadline()))
+                .map(entry -> entry.getKey() + "（deadline " + entry.getValue().deadline() + "）")
+                .toList();
+        assertThat(overdue)
+                .as("债务已过期：要么修掉，要么走裁决把 deadline 往后挪（改常量会出现在 diff 里，这是唯一的留痕）")
+                .isEmpty();
         assertThat(txMethodsSeen)
                 .as("已知清单：必须扫到事务方法（扫不到说明扫描面选错了）")
                 .isGreaterThanOrEqualTo(5);
@@ -124,6 +147,23 @@ class TransactionSelfInvocationGuardTest {
                 import org.springframework.transaction.annotation.Transactional;
                 class Demo {
                     void caller() { this.callee(); }
+                    @Transactional(rollbackFor = Exception.class)
+                    void callee() { }
+                }
+                """);
+        assertThat(violationsIn("Demo.java", unit)).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("反例3 — 调用方用 NOT_SUPPORTED：注解在但不建事务 ⇒ 仍须红（不能只看「有注解」）")
+    void shouldFlag_whenCallerSuspendsTransaction() {
+        CompilationUnit unit = JavaParserUtil.parse("""
+                package demo;
+                import org.springframework.transaction.annotation.Transactional;
+                import org.springframework.transaction.annotation.Propagation;
+                class Demo {
+                    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+                    void caller() { callee(); }
                     @Transactional(rollbackFor = Exception.class)
                     void callee() { }
                 }
@@ -190,7 +230,7 @@ class TransactionSelfInvocationGuardTest {
                 if (caller.isEmpty()) {
                     continue;
                 }
-                boolean callerTransactional = caller.get().isAnnotationPresent("Transactional");
+                boolean callerTransactional = hasEffectiveTransaction(caller.get());
                 if (!callerTransactional) {
                     String key = type.getNameAsString() + "#" + caller.get().getNameAsString()
                             + "->" + call.getNameAsString();
@@ -200,6 +240,29 @@ class TransactionSelfInvocationGuardTest {
             }
         }
         return problems;
+    }
+
+    /**
+     * 调用方是否**真的**有事务，而不是「注解在」。
+     *
+     * <p>只有 {@code REQUIRED / REQUIRES_NEW / NESTED} 算数；{@code NOT_SUPPORTED / NEVER} 明确不建事务，
+     * {@code SUPPORTS / MANDATORY} 取决于调用上下文（静态判不了）—— 后者按<b>不算</b>处理（宁可误报）。
+     *
+     * <p>已知局限（登记）：{@code SUPPORTS} 在外层有事务时其实是安全的，本守卫仍会红；
+     * {@code MANDATORY} 同理。这是**故意保守**：静态分析给不出调用链，误报代价低于漏报。
+     */
+    static boolean hasEffectiveTransaction(MethodDeclaration method) {
+        java.util.Optional<com.github.javaparser.ast.expr.AnnotationExpr> annotation =
+                method.getAnnotationByName("Transactional");
+        if (annotation.isEmpty()) {
+            return false;
+        }
+        String text = annotation.get().toString().toUpperCase(java.util.Locale.ROOT);
+        if (text.contains("NOT_SUPPORTED") || text.contains("NEVER")
+                || text.contains("SUPPORTS") || text.contains("MANDATORY")) {
+            return false;
+        }
+        return true;
     }
 
     private static Set<String> transactionalMethodsOf(ClassOrInterfaceDeclaration type) {
