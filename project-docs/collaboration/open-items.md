@@ -1807,6 +1807,47 @@ bash Implementation/back-end/scripts/verify-gates.sh full
    三段对不上就停，别当成功。
 
 
+### 1.27 第二步开工口径（2026-10-19 锁定，动代码前先认这一节）
+
+> 这三条不是建议，是**实现约束**。要改先改这一节，别只在代码里改完再回来补文档。
+
+**① 三个字段的同事务边界**
+
+| 字段 | 唯一写入点 | 与谁同事务 |
+|---|---|---|
+| `settled_total` | `SettlementManager#settle`（含 `SettlementSweeper`） | 与 `settlement.status PENDING→SETTLED` 同事务（已实现） |
+| `frozen_amount`（加） | `applyWithdrawal` 预占 | 与 `withdrawal` 插入 PENDING 同事务 |
+| `frozen_amount`（减） | review 终态（PAID_OUT / REJECTED） | 与 `withdrawal` 条件迁移同事务；PAID_OUT 时再加 `paid_total` |
+| `paid_total` | 打款（`payout`，由 review 调） | 同上 |
+
+**顺序不是风格问题，是被幂等语义决定的**：
+
+- `applyWithdrawal`：**先预占**（0 行 = 额度不足 ⇒ 拒，此时 `withdrawal` 还没插）**再插** `withdrawal`（插入不会 0 行）。
+- `review`：**先迁移状态**（0 行 = 重复审核 ⇒ **幂等返回，不许动账户**）**再动账户**；账户侧 0 行（`frozen` 不足）⇒
+  **必须抛 `BizException` 整笔回滚** —— 此时状态已变，账不平不能静默。
+  ⚠ 写反的顺序（先扣 `frozen` 再迁移）会让**重复审核先扣一次再看 0 行返回**，凭空吃钱。
+
+**② `frozen_amount` 不许减到负**
+
+- 所有减少一律 `UPDATE seller_fund_account SET frozen_amount = frozen_amount - #{amount}
+  WHERE seller_id = ? AND frozen_amount >= #{amount}`；**0 行 = 抛异常**（不是 `return`），让整笔（含状态迁移）回滚。
+- **不加 DDL `CHECK` 约束**：仓库现有表都没用 CHECK，且 H2/MySQL 的表达不一致；靠**条件更新 + 对账等式**兜住。
+- 新增第三条不变量（第二步落地即生效，必须进 H2 用例）：`frozen_amount == Σ withdrawal.amount WHERE status = PENDING`。
+  与已有两条并列、互不推导：`settled_total ↔ Σ SETTLED 结算单`、`paid_total ↔ Σ PAID_OUT 提现`、`frozen_amount ↔ Σ PENDING 提现`。
+
+**③ 限额：会被别的事务改掉的进 WHERE，只依赖请求的留方法体**
+
+- **可用额度**（`settled_total - frozen_amount - paid_total >= amount`）：**并入条件更新**。
+  理由：读-比较-写不是原子的，两笔并发各自读到同一可用额会**同时通过** —— 这正是第二步要堵的洞，不是优化项。
+- **单笔上限** `WITHDRAWAL_MAX_PER_REQUEST`：**独立判断**（`amount <= max`）。只依赖请求本身、与账户状态无关、无竞态；
+  放在事务内预占之前，早失败早返回。
+- **金额 > 0**：保留独立判断（同上）。
+- 一句话判据：**「这个判断会不会被别的事务改掉」→ 会，就进 WHERE；不会，就留方法体。**
+
+**做完第二步仍不能上线**（写死，汇报里不许含糊）：① 管理端端点未做、handler 未在 XXL-Job 注册；
+② 分配/核销（第三步）未做；③ 真实打款渠道没有。⇒ 交付口径固定为 **「提现仍不可上线」**。
+
+
 ---
 
 ## 2. 待办
