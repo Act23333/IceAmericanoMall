@@ -47,4 +47,17 @@ public interface SettlementRepository {
      * @return 影响行数：1=本次真的完成结算；0=条件不满足（幂等 no-op，不抛异常）
      */
     int settleConditionally(Long id, Integer fromStatus, Integer toStatus, LocalDate today, LocalDateTime now);
+
+    /**
+     * 取「可结算」结算单的 id 候选（触发入口用；只读）。
+     *
+     * <p>与 {@link #settleConditionally} 同条件，但<b>它不是判定</b>：候选取出到真正结算之间，
+     * 状态可能被别的路径改掉（例如同一批被两个调度实例扫到）—— 那时条件更新返回 0 行、本单跳过，
+     * 不会重复记账。故这里不做锁、不做预留。
+     *
+     * @param today 应用时钟的「今天」
+     * @param limit 单批上限（&gt; 0；调用方负责给默认值）
+     * @return 按 id 升序的候选 id；无候选返回空列表（不返回 null）
+     */
+    List<Long> findSettleableIds(LocalDate today, int limit);
 }

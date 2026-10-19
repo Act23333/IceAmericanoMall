@@ -564,4 +564,35 @@ class SettlementFundAccountH2Test {
         assertEquals(settledSum, settledTotalOf(SELLER_RECONCILE),
                 "★ 另一条等式：Σ settlement.settlement_amount WHERE status = SETTLED == settled_total");
     }
+
+    @Test
+    @DisplayName("触发入口 — 一次扫描把「到期」结算单结算掉、不动未到期的；重复扫描不再动账")
+    void shouldSweepSettleableSettlementsOnly() {
+        long sellerDueA = 9010L;
+        long sellerDueB = 9011L;
+        long sellerNotDue = 9012L;
+        Long dueA = savePending(sellerDueA, AMOUNT, yesterday(), 1);
+        Long dueB = savePending(sellerDueB, AMOUNT, yesterday(), 2);
+        Long notDue = savePending(sellerNotDue, AMOUNT, LocalDate.now().plusDays(2), 1);
+
+        SettlementSweeper sweeper = new SettlementSweeper(settlementRepository, settlementManager);
+        sweeper.sweep(LocalDate.now(), 200);
+
+        assertEquals(SettlementStatusEnum.SETTLED.getCode(),
+                settlementRepository.findById(dueA).getStatus().intValue(), "到期的必须被结算（= 可提现）");
+        assertEquals(SettlementStatusEnum.SETTLED.getCode(),
+                settlementRepository.findById(dueB).getStatus().intValue());
+        assertEquals(SettlementStatusEnum.PENDING.getCode(),
+                settlementRepository.findById(notDue).getStatus().intValue(), "未到期的一条都不许动");
+        assertEquals(AMOUNT, settledTotalOf(sellerDueA), "扫描结算同样要记账（与逐条 settle 同一入口）");
+        assertEquals(AMOUNT, settledTotalOf(sellerDueB));
+
+        // 断言「不再动账」，而不是断言 sweep 返回 0：本类共用一个库，其它用例可能留下可结算的行
+        int settledBeforeResweep = settledTotalOf(sellerDueA) + settledTotalOf(sellerDueB);
+        sweeper.sweep(LocalDate.now(), 200);
+        assertEquals(settledBeforeResweep, settledTotalOf(sellerDueA) + settledTotalOf(sellerDueB),
+                "重扫不得重复累加（条件更新 0 行 = 已结算，跳过）");
+        assertEquals(SettlementStatusEnum.PENDING.getCode(),
+                settlementRepository.findById(notDue).getStatus().intValue());
+    }
 }

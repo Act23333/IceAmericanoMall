@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.utils.IdGenerator;
+import org.icedamericanomall.trade.domain.enums.SettlementStatusEnum;
 import org.icedamericanomall.trade.domain.model.finance.Settlement;
 import org.icedamericanomall.trade.domain.repository.SettlementRepository;
 import org.springframework.stereotype.Repository;
@@ -62,6 +63,11 @@ public class SettlementRepositoryImpl implements SettlementRepository {
     @Override
     public int settleConditionally(Long id, Integer fromStatus, Integer toStatus, LocalDate today, LocalDateTime now) {
         return settlementMapper.settleIfPending(id, fromStatus, toStatus, today, now);
+    }
+
+    @Override
+    public List<Long> findSettleableIds(LocalDate today, int limit) {
+        return settlementMapper.selectSettleableIds(SettlementStatusEnum.PENDING.getCode(), today, limit);
     }
 
     // ==================== PO <-> 聚合 ====================

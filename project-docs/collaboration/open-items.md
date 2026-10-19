@@ -2,7 +2,7 @@
 
 > **用途**：跨会话的工作交底。不是规格文档，不需要进规格索引。
 > **维护规则**：任何一批工作落地后，同步更新本文件的「已完成 / 待办 / 已知未修 / 验证边界」四段。
-> **最后更新**：2026-10-19（批次 K 收口：T-WITHDRAW 第一步已落码、已提交临时分支、**0→4 全绿**；功能面仍是「生产提现中断」，见 §3）
+> **最后更新**：2026-10-19（批次 K 收口 + §1.26：T-WITHDRAW 第一步已落码、已提交临时分支、**0→4 全绿**；结算触发入口已交调度与运维脚本，管理端端点仍为草案；提现整体仍不可上线，见 §3）
 
 ## 0. 要数字？跑命令 —— 本文件不是 SSOT
 
@@ -1486,9 +1486,10 @@ UPDATE seller_fund_account SET frozen_amount = frozen_amount + #{amount}
 | 覆盖面一致 | `seller_fund_account` 行集合 == 「有 `status = SETTLED` 结算单的商家」集合 | 少建/多建了余额行 |
 | **非空断言** | 已结算集合为 **0 行** ⇒ **自检必须失败** | 第一步还没跑通一条真实结算（空集假绿）|
 
-**已知前置（不在本步骤内但会挡住它）**：当前代码**没有 `PENDING→SETTLED` 的触发者**（§1.23①），
-第一步只把 `settle()` 做成**唯一且原子的入口**；**触发入口本身仍是缺口，且已升级为上线阻塞项** ——
-`settle()` 无人调用 ⇒ 账户恒 0 ⇒ 提现恒拒，见 §1.25 头部与 §3。
+**已知前置（本批已补，见 §1.26）**：在 §1.26 之前，代码**没有 `PENDING→SETTLED` 的触发者**（§1.23①），
+第一步只把 `settle()` 做成**唯一且原子的入口**；**触发入口当时是上线阻塞项**。
+§1.26 已交付「调度 + 运维脚本」两条路径，**仍未交付管理端端点**（契约草案见
+`collaboration/settle-trigger-draft.md`）。
 
 
 ### 1.25 T-WITHDRAW 第一步落地（2026-10-19）：**只动 `settled_total` 与 `paid_total`**
@@ -1500,16 +1501,15 @@ UPDATE seller_fund_account SET frozen_amount = frozen_amount + #{amount}
 > 下面写的是**口径与意图**；跑绿的是**用例与门禁**，不是「提现已修复」。
 >
 > ⚠ **本步不是「部分收敛」，而是「生产功能中断」**（定性已订正，取代先前的「部分收敛」说法）：
-> `settle()` **目前没有任何触发者**（无定时任务、无手动入口、无运维脚本），而它现在是
+> 在 §1.26 落地之前，`settle()` **没有任何触发者**（无定时任务、无手动入口、无运维脚本），而它是
 > `settled_total` 的**唯一写入者** ⇒ `seller_fund_account` 永远建不出行 / 恒为 0
 > ⇒ `availableBalance` 恒 0 ⇒ `applyWithdrawal` 恒拒 ⇒ **生产上提现完全不可用**。
-> 这与本批改动之前的实际状态一致（旧口径 `Σ status=SETTLED` 同样恒空，因为从来没有 `PENDING→SETTLED` 入口），
-> 即**本批没有把可用功能改成不可用，但也没有把不可用改成可用**。
+> 这与本批改动之前的实际状态一致（旧口径 `Σ status=SETTLED` 同样恒空，因为从来没有 `PENDING→SETTLED` 入口）。
 >
-> ⇒ **上线前置（阻塞项，不是后续任务）**：本批上线时**必须同时提供 `settle()` 的触发入口**（二者取一）：
-> ① 管理端手动按钮（`POST /api/admin/finance/settlement/{id}/settle`，挂 `finance:admin`，需先改契约）；
-> ② 运维脚本/一次性入口（走 `/internal/**` 或直连库的受控脚本，需在运维手册登记）。
-> **没有触发入口就不许上线** —— 否则等于新增一张只读的空表，并把「提现不可用」从「没人注意」变成「有表为证」。
+> ⇒ **§1.26 已补触发入口（调度 + 运维脚本）**，所以「无人调用 `settle()`」这一条**不再成立**；
+> 但**仍不许上线**：① 管理端端点还没做（草案见 `settle-trigger-draft.md`）；
+> ② `frozen_amount` 预占（第二步）未做；③ `withdrawal_settlement` 核销（第三步）未做。
+> 交付口径固定为 **「提现前置条件之一已通，提现整体仍不可上线」**。
 
 **范围 —— 用户裁决改掉了 §1.24b 的两处写法**
 
@@ -1767,6 +1767,46 @@ bash Implementation/back-end/scripts/verify-gates.sh full
 `fast` 里那道计数闸会 `[skip]`，所以「`fast` 绿」并不覆盖这一项（本批第 4 步的 `full` 才覆盖它）。
 
 
+### 1.26 结算触发入口（2026-10-19）：把「提现完全不可用」的断链接上
+
+> 状态：**调度 + 运维脚本已落码并跑绿**；**管理端端点仍是草案**（`collaboration/settle-trigger-draft.md`）。
+> 这一节存在的理由：`settle()` 是 `settled_total` 的唯一写入者，它的**调用者**不是实现细节，而是上线前置。
+
+**交付了什么**
+
+| 件 | 落点 | 说明 |
+|---|---|---|
+| 批处理外壳 | `app/finance/SettlementSweeper#sweep(LocalDate, int)` | 取候选 → 逐条经 `SettlementManager#settle` 结算；`limit <= 0` 直接返回 0 |
+| 调度适配器 | `infrastructure/scheduler/SettlementSettleJob`（`@XxlJob("settlePendingSettlements")`） | 只算「今天」、取 `trade.settlement.sweep.limit`（默认 200）、写日志 |
+| 候选查询 | `SettlementMapper#selectSettleableIds` + 端口 `findSettleableIds` | 与 `settleIfPending` **同条件**；只缩小范围，判定仍在条件更新 |
+| 运维脚本 | `scripts/settle-pending.sh` | 默认只读报告候选条数；`--trigger` 才 POST 到 `XXL_JOB_TRIGGER_URL`（不猜地址） |
+| 契约草案 | `collaboration/settle-trigger-draft.md` | `POST /api/admin/finance/settlements/settle` 的完整草案（未落契约） |
+
+**为什么循环在 `SettlementSweeper` 而不是 `SettlementManager`（踩点记录）**
+
+`settle()` 带 `@Transactional`，靠 Spring 代理生效。若在 Manager 内部写 `settlePending()` 循环调用
+`this.settle(...)`，那是**自调用** ⇒ 代理被绕过 ⇒ **事务不生效**（单测仍全绿、线上无事务）。
+所以循环必须落在**另一个 Bean**：`SettlementSettleJob`（调度）与未来的端点都调 `SettlementSweeper`，
+`Sweeper` 再逐条经代理进 `Manager` ⇒ 每条一个事务、单条失败只回滚本条。
+
+> 顺带记一条分层教训：这一层最初写在 `infrastructure/scheduler` 里，包级 `sweep` 立刻**跨包不可见**（编译直接红）。
+> H2 用例逼着把它挪到 app 层 ——「批处理外壳」本来就是 use-case，**不该住在 scheduler 里**。
+
+**验收（已跑绿，用例名可复查）**
+
+- `SettlementFundAccountH2Test#shouldSweepSettleableSettlementsOnly` —— 真库：一次扫描结算掉到期的、**不动未到期的**、重扫不再动账；
+- `SettlementSweeperTest` —— 条件未命中不计入 / 单条抛异常不中断整批 / 无候选不空转 / `limit <= 0` 不查库。
+
+**仍未做（上线前必须补）**
+
+1. **管理端端点**（草案 `AD-draft.1`）：做之前先过契约（契约表行 + `docOnly` 计数 + 权限矩阵），
+   并确认权限位仍是 `finance:admin`（与现有 `AdminFinanceController` 口径一致）。
+2. **调度接线**：`@XxlJob` handler 需要在 XXL-Job 管理端**建任务并配 cron**；本批只交代码，
+   **没有在生产调度器上注册过** ——「有 handler」≠「会定时跑」，这条必须进运维手册。
+3. **首次跑的三段核对**：脚本只读报告 → 触发 → 回查日志「实际结算 N 条」与库内 `status` 分布；
+   三段对不上就停，别当成功。
+
+
 ---
 
 ## 2. 待办
@@ -1799,7 +1839,7 @@ bash Implementation/back-end/scripts/verify-gates.sh full
 | 编号 | 任务 | 内容与验收 | 依赖 / 期限 |
 |---|---|---|---|
 | ~~**T-5b**~~ | ✅ **已完成（§1.22）**：商家端权限接线（`/api/seller/**` 全量），EXEMPT 清零 | 按 `rbac-permission-matrix-draft.md` §4.2b 逐端点挂位；**接线与删 EXEMPT 同一个 commit**；验收 = 四个控制器转强制 + 无残留豁免 + 每映射方法都有 `@PreAuthorize` | **截止 2026-11-15**；等用户签 §4.2b（只需签两类判断） |
-| **T-WITHDRAW** | 提现缺口（=超额提现 + `mark-all` 吞余额 + 缺 `PENDING→SETTLED` 入口，§1.21/§1.23） | 实施计划与验收口径见 **§1.24b**；**第一步已落码，且已跑通 0→4（§1.25「验证结果」，提交 `fd569cb0`）**，第二步起未开工。裁决：`seller_fund_account` 做成**权威**（唯一写入者 = `settle()` 与打款，且各自同事务），可提现额 = `settled_total − frozen_amount − paid_total`；`frozen_amount` 与 `applyWithdrawal` 预占一起做（第二步）；额度判定**只在申请侧**（审核侧不判）；`settlement.status` **不承载打款事实**（已打款看 `withdrawal`，故 `withdrawal_settlement` 分配表只解决「按金额核销 + 拒绝释放」）；幂等键前端传 `Idempotency-Key` | **与 T-5b 不合批**（用户裁决）；验收 = 第一步自检三条绿（`SettlementFundAccountH2Test`，**非空断言靠自造数据真走 `settle()`**）。⚠ **生产提现功能中断**：`settle()` 无触发者 ⇒ 账户恒 0 ⇒ 申请恒拒 ⇒ **上线必须同时提供触发入口（按钮/脚本），否则不许上线** |
+| **T-WITHDRAW** | 提现缺口（=超额提现 + `mark-all` 吞余额 + 缺 `PENDING→SETTLED` 入口，§1.21/§1.23） | 实施计划与验收口径见 **§1.24b**；**第一步已落码，且已跑通 0→4（§1.25「验证结果」，提交 `fd569cb0`）**，第二步起未开工。裁决：`seller_fund_account` 做成**权威**（唯一写入者 = `settle()` 与打款，且各自同事务），可提现额 = `settled_total − frozen_amount − paid_total`；`frozen_amount` 与 `applyWithdrawal` 预占一起做（第二步）；额度判定**只在申请侧**（审核侧不判）；`settlement.status` **不承载打款事实**（已打款看 `withdrawal`，故 `withdrawal_settlement` 分配表只解决「按金额核销 + 拒绝释放」）；幂等键前端传 `Idempotency-Key` | **与 T-5b 不合批**（用户裁决）；验收 = 第一步自检三条绿（`SettlementFundAccountH2Test`，**非空断言靠自造数据真走 `settle()`**）。⚠ **提现仍不可上线**：§1.26 已交触发入口（调度 + 运维脚本；管理端端点待做、handler 未在 XXL-Job 注册），但 `frozen_amount` 预占（第二步）与 `withdrawal_settlement` 按金额核销（第三步）未做 ⇒ **上线须三件齐：端点/调度接线、预占、核销**，缺一不许上 |
 | **T-SIGN** | 签到幂等升级（§1.20） | 加 `sign_log` + `uk_user_date`；签到与积分发放进**同一本地事务**；`points_log` 加 `biz_key`+`uk_biz_key`；Redis Bitmap 降级为投影；三条用例（并发只发一次 / 失败可重试补发 / 重复调用语义不变） | 无外部期限；建议排在 D1 之后、B1 之前 |
 | **D1** | 数据权限范围文档（**带静态断言**） | 只写文档 + **一条 `SellerScope` 静态断言**（不许只有文档）：断言"按 seller 维度取数的仓储方法必须显式接收 `sellerId` 参数"或等价形态；文档范围 = 维度（本店/本部门/本人）+ 查询层强制注入方式 + 与 RBAC0 的边界 | 用户要求：若做就必须带断言 |
 | **B1** | 剩余基线超限类拆分 | 按**用例族**拆（§1.18.3 判据），不按行数砍；还清即删基线条目 | **截止 2026-12-31** |
@@ -1897,8 +1937,9 @@ bash Implementation/back-end/scripts/verify-gates.sh full
 
 | 项 | 后果 |
 |---|---|
-| **`settle()` 无触发者 ⇒ 生产提现功能中断（上线阻塞项）** | 入口本身已落码，是 PENDING→SETTLED 的**唯一且原子**的迁移（条件更新 + 同事务累加）；但它**没有定时任务 / 手动入口 / 运维脚本**，而它是 `settled_total` 的**唯一写入者** ⇒ 账户恒 0 ⇒ `applyWithdrawal` 恒拒 ⇒ **生产上提现完全不可用**。这与本批改动之前一致（此前也从未有 `PENDING→SETTLED` 入口），即「没把可用改坏，也没把不可用改好」。⚠ 该入口**代码已写但从未执行过**（本环境无测试环境）——「唯一且原子」目前是**设计结论**，不是验证结论。**上线必须同时提供触发入口**（管理端按钮 `POST /api/admin/finance/settlement/{id}/settle` 挂 `finance:admin`，**需先改契约**；或运维脚本，**需登记手册**）。**没有入口不许上线** —— 否则只是新增一张只读空表 |
-| **`frozen_amount` 仍是 0，且审核侧不判额度 ⇒ 额度守门只剩申请侧的读校验（第二步）** | 第一步只做「已打款」这一项的扣减，**待审提现不冻结**；同时按裁决 `review` **不再判一次额度**（额度属 `applyWithdrawal`）。⇒ 第一步里唯一的额度守门是 `applyWithdrawal` 的「先读 `availableBalance` 再比」——**不是原子的**（并发/连提两笔仍可能超额）。**结论写死：本步是口径迁移，不是缺陷修复 —— 超额提现仍可能、且提现功能在生产上仍是中断的（缺 `settle()` 触发入口），任何口径都不得宣称 T-WITHDRAW 已修复**；第二步的条件预占（`frozen_amount += amount WHERE settled_total - frozen_amount - paid_total >= amount`）才真正堵住。**不要把额度条件临时塞回 `review`**：那会变成「申请通过、打款被拒，而钱已付出」的假拒绝 |
+| ~~**`settle()` 无触发者 ⇒ 生产提现功能中断（上线阻塞项）**~~ → 🟡 **触发入口已交付（2026-10-19，§1.26），但提现整体仍不可上线** | 已交：`SettlementSweeper`（app 层批处理外壳）+ `SettlementSettleJob`（`@XxlJob("settlePendingSettlements")`）+ `scripts/settle-pending.sh`（默认只读、`--trigger` 才触发）+ 契约草案。**收敛掉的旧结论**：「账户恒 0 ⇒ 提现恒拒」不再成立。**仍缺**：① 管理端端点（草案未落契约）；② **XXL-Job 管理端并未注册该 handler**（「有 handler」≠「会定时跑」）；③ 首次真实触发的三段核对未做（只读报告 / 日志条数 / 库内 status 分布）。⇒ 上线前这三条都要补，别把「代码在」读成「已在跑」 |
+| **`frozen_amount` 仍是 0，且审核侧不判额度 ⇒ 额度守门只剩申请侧的读校验（第二步）** | 第一步只做「已打款」这一项的扣减，**待审提现不冻结**；同时按裁决 `review` **不再判一次额度**（额度属 `applyWithdrawal`）。⇒ 第一步里唯一的额度守门是 `applyWithdrawal` 的「先读 `availableBalance` 再比」——**不是原子的**（并发/连提两笔仍可能超额）。**结论写死：本步是口径迁移，不是缺陷修复 —— 超额提现仍可能；提现在生产上仍**不可上线**
+（触发入口已有调度+脚本但未接调度器、`frozen_amount` 未做、分配表未做），任何口径都不得宣称 T-WITHDRAW 已修复**；第二步的条件预占（`frozen_amount += amount WHERE settled_total - frozen_amount - paid_total >= amount`）才真正堵住。**不要把额度条件临时塞回 `review`**：那会变成「申请通过、打款被拒，而钱已付出」的假拒绝 |
 | **自检取数当前只在 SETTLED（改宽是「条件性」动作，不是待办）** | `SettlementFundAccountH2Test` 的两处对账取数用 `status = SETTLED`：**① 数值一致** `settledAmountBySeller()`、**② 覆盖面一致** `settledSellersInLedger()`。第一步没有任何路径把结算单迁出 SETTLED ⇒ 现在准确且更严（若有行被错迁成 PAID_OUT，自检当场红）。**只有当后续步骤仍决定把行标成 PAID_OUT 时**，才必须在同一 commit 里把**两处**都改成 `IN (SETTLED, PAID_OUT)`，漏一处就自检突然红；按本批裁定的状态语义（`SETTLED` = 可提现、打款事实看 `withdrawal`、分配表与行状态解耦）**预期不写 PAID_OUT ⇒ 两处应保持不动**。「结算单列表区分已打款」属读模型（join `withdrawal`），不是改行状态 |
 | ~~**资金门禁的新动词只做了静态补表，未跑过**~~ → ✅ **已实跑** | `add` / `increase` / `settle` / `payout` 进 `WRITE_VERB_PREFIXES` 后，门禁类与全量 `mvn test` 均绿（§1.25「验证结果」第 1、2 步），且本批的 `SettlementManager#settle` 已在「≥2 个资金写」集合里被扫到。**残留教训**：`WRITE_VERB_PREFIXES` 仍是新动词的唯一真源 —— 出现「两个资金写但动词不在表里」的写法时门禁依旧瞎，**补动词必须同时补一条合成反例** |
 | **`settlement.status` 不承载打款事实（这是语义，不是缺陷）** | `SETTLED` = **可提现**，**不是「未打款」**；**已打款的事实源是 `withdrawal.status = PAID_OUT`**（聚合看 `seller_fund_account.paid_total`）。⇒「结算单列表看不到已打款」**不是缺口**，也**不要**从 `settlement` 反推打款。旧的全量置位（mark-all）已删除且**不打算恢复**；`settlement.status = 3` 保留为历史语义、本批起不再写入。要做「列表区分已打款」= **读模型**（join `withdrawal`），不是改行状态 |

@@ -3,10 +3,12 @@ package org.icedamericanomall.trade.infrastructure.persistence.finance;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 结算单 Mapper。
@@ -38,4 +40,24 @@ public interface SettlementMapper extends BaseMapper<SettlementPO> {
                         @Param("toStatus") Integer toStatus,
                         @Param("today") LocalDate today,
                         @Param("now") LocalDateTime now);
+
+    /**
+     * 扫描「可结算」的结算单 id（触发入口的第一步：先取候选，再逐条走 {@link #settleIfPending}）。
+     *
+     * <pre>
+     * WHERE status = ? AND period_end &lt;= ? AND settlement_amount &gt; 0 AND order_count &gt; 0
+     * ORDER BY id LIMIT ?
+     * </pre>
+     *
+     * <p><b>条件必须与 {@code settleIfPending} 完全一致</b>：扫描只是「缩小候选」，真正的判定仍在
+     * 条件更新里（两次扫描之间状态可能已变），所以这里宽一点、严一点都不会造成错结 —— 只会多扫或漏扫。
+     * 但如果两者条件不一致，就会出现「扫到却永远结不掉」的僵尸候选（每天白扫），故保持一致。
+     *
+     * @param limit 单批上限：调度频次交给 XXL-Job，批次大小由调用方控制，避免一次扫全表
+     */
+    @Select("SELECT id FROM settlement WHERE status = #{pendingStatus} AND period_end <= #{today} "
+            + "AND settlement_amount > 0 AND order_count > 0 ORDER BY id LIMIT #{limit}")
+    List<Long> selectSettleableIds(@Param("pendingStatus") Integer pendingStatus,
+                                   @Param("today") LocalDate today,
+                                   @Param("limit") int limit);
 }

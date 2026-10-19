@@ -66,6 +66,13 @@ T-WITHDRAW **第一步**：把「商家能提多少」从「Σ 结算单」搬�
 
 ## 2. 改动清单
 
+> §1.26（结算触发入口）在同一分支的后续提交里，件与落点：
+> `app/finance/SettlementSweeper.java`（新）、`infrastructure/scheduler/SettlementSettleJob.java`（新）、
+> `SettlementMapper#selectSettleableIds`（改）、`SettlementRepository#findSettleableIds`（改）、
+> `SettlementRepositoryImpl#findSettleableIds`（改）、`scripts/settle-pending.sh`（新）、
+> `project-docs/collaboration/settle-trigger-draft.md`（新）、
+> `SettlementFundAccountH2Test#shouldSweepSettleableSettlementsOnly`（新用例）、`SettlementSweeperTest`（新）。
+
 ### 2.1 建库脚本
 
 | 文件 | 改了什么 |
