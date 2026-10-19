@@ -224,14 +224,20 @@ class FundTransactionGuardTest {
         return sb.toString();
     }
 
-    private static int countFundWrites(String body) {
+    static int countFundWrites(String body) {
+        // 口径：资金写 = **资金仓储 receiver + 写动词**。
+        // 必须按 receiver 判定，不能用"调用点前 N 字符窗口" —— 窗口会吃进前一次调用的 receiver，
+        // 实测把 payByBalance 数成 5（真值 3）。receiver 只认单个标识符：链式 getRepo().credit(...) 的
+        // receiver 是 ')' ⇒ 不算；实体 payOrder.markPaid(...) 无仓储后缀 ⇒ 不算。
         int count = 0;
-        Matcher matcher = WRITE_CALL.matcher(body);
+        Matcher matcher = Pattern.compile(
+                        "\\b([A-Za-z_$][\\w$]*)\\s*\\.\\s*"
+                                + "(?:insert|save|update|delete|deduct|credit|mark|create|cancel|void|bind"
+                                + "|freeze|unfreeze)\\w*\\s*\\(")
+                .matcher(body);
         while (matcher.find()) {
-            String receiverWindow = body.substring(Math.max(0, matcher.end() - 200), matcher.end());
-            boolean fundReceiver = FUND_IDENTIFIER_PATTERNS.stream()
-                    .anyMatch(pattern -> pattern.matcher(receiverWindow).find());
-            if (fundReceiver) {
+            String receiver = matcher.group(1);
+            if (FUND_IDENTIFIER_PATTERNS.stream().anyMatch(pattern -> pattern.matcher(receiver).find())) {
                 count++;
             }
         }
