@@ -10,7 +10,6 @@ import org.icedamericanomall.trade.domain.model.finance.Withdrawal;
 import org.icedamericanomall.trade.domain.repository.SellerFundAccountRepository;
 import org.icedamericanomall.trade.domain.repository.SettlementRepository;
 import org.icedamericanomall.trade.domain.repository.WithdrawalRepository;
-import org.icedamericanomall.trade.domain.port.WithdrawalPayoutPort;
 import org.icedamericanomall.trade.domain.repository.WithdrawalSettlementRepository;
 import org.icedamericanomall.trade.domain.service.SettlementAllocator;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +25,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -63,20 +63,16 @@ class WithdrawalManagerTest {
     @Mock private SellerFundAccountRepository fundAccountRepository;
     @Mock private SettlementRepository settlementRepository;
     @Mock private WithdrawalSettlementRepository withdrawalSettlementRepository;
-    @Mock private WithdrawalPayoutPort payoutPort;
 
     private WithdrawalManager manager;
 
     @BeforeEach
     void setUp() {
         manager = new WithdrawalManager(withdrawalRepository, fundAccountRepository,
-                settlementRepository, withdrawalSettlementRepository, payoutPort, settlementManager,
+                settlementRepository, withdrawalSettlementRepository, settlementManager,
                 new TradeConverterImpl());
         // 生产默认关闭（只记账不付款）；本单测要验「打款路径」，显式打开
         org.springframework.test.util.ReflectionTestUtils.setField(manager, "payoutEnabled", true);
-        // lenient：并非每个用例都会走到出款（默认关闭/拒绝分支），严格桩会误报 UnnecessaryStubbing
-        org.mockito.Mockito.lenient().when(payoutPort.pay(any()))
-                .thenReturn(new WithdrawalPayoutPort.PayoutResult(true, "MANUAL", null));
     }
 
     private WithdrawalApplyReq req(Integer amount) {
@@ -187,7 +183,7 @@ class WithdrawalManagerTest {
     @DisplayName("review — 打款渠道未接入（默认关闭）：拒绝标已打款，避免「已记账未付款」")
     void shouldRejectPaidOut_whenPayoutChannelDisabled() {
         WithdrawalManager noChannel = new WithdrawalManager(withdrawalRepository, fundAccountRepository,
-                settlementRepository, withdrawalSettlementRepository, payoutPort, settlementManager,
+                settlementRepository, withdrawalSettlementRepository, settlementManager,
                 new TradeConverterImpl());
         when(withdrawalRepository.findById(WITHDRAWAL_ID)).thenReturn(pendingWithdrawal());
 
@@ -234,18 +230,18 @@ class WithdrawalManagerTest {
     }
 
     @Test
-    @DisplayName("review — 打款：迁移 → 解冻 → 记账；**不退核销**（分配行保留给 E6）")
-    void shouldReleaseThenPayout_whenReviewPaidOut() {
-        when(withdrawalRepository.findById(WITHDRAWAL_ID)).thenReturn(pendingWithdrawal());
-        when(withdrawalRepository.reviewIfPending(anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
-        when(fundAccountRepository.unfreeze(SELLER_ID, AMOUNT)).thenReturn(1);
+    @DisplayName("review — 已打款：**只受理**（待审核 → 付款中）；不出款、不释放预占、不记账")
+    void shouldOnlyClaimPaying_whenReviewPaidOut() {
+        Withdrawal pending = pendingWithdrawal();
+        when(withdrawalRepository.findById(WITHDRAWAL_ID)).thenReturn(pending);
+        when(withdrawalRepository.claimPaying(anyLong(), any())).thenReturn(1);
 
         manager.review(WITHDRAWAL_ID, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
 
-        InOrder order = inOrder(withdrawalRepository, fundAccountRepository, settlementManager);
-        order.verify(withdrawalRepository).reviewIfPending(anyLong(), anyInt(), anyInt(), any());
-        order.verify(fundAccountRepository).unfreeze(SELLER_ID, AMOUNT);
-        order.verify(settlementManager).payout(SELLER_ID, AMOUNT);
+        verify(withdrawalRepository).claimPaying(WITHDRAWAL_ID, pending.getWithdrawalNo());
+        verify(withdrawalRepository, never()).reviewIfPending(anyLong(), anyInt(), anyInt(), any());
+        verify(fundAccountRepository, never()).unfreeze(anyLong(), anyInt());
+        verify(settlementManager, never()).payout(anyLong(), anyInt());
         verify(withdrawalSettlementRepository, never()).release(anyLong());
     }
 
@@ -279,46 +275,26 @@ class WithdrawalManagerTest {
     }
 
     @Test
-    @DisplayName("review — 解冻 0 行（冻结额不足=账不平）：抛异常回滚，不记账")
-    void shouldThrow_whenUnfreezeMisses() {
-        when(withdrawalRepository.findById(WITHDRAWAL_ID)).thenReturn(pendingWithdrawal());
-        when(withdrawalRepository.reviewIfPending(anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
+    @DisplayName("completePayout — 解冻 0 行（冻结额不足=账不平）：抛异常回滚，不记账")
+    void shouldThrow_whenCompletePayoutUnfreezeMisses() {
+        Withdrawal pending = pendingWithdrawal();
+        when(withdrawalRepository.markPaidIfPaying(WITHDRAWAL_ID)).thenReturn(1);
         when(fundAccountRepository.unfreeze(SELLER_ID, AMOUNT)).thenReturn(0);
 
-        BizException ex = assertThrows(BizException.class,
-                () -> manager.review(WITHDRAWAL_ID, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款"));
+        BizException ex = assertThrows(BizException.class, () -> manager.completePayout(pending));
         assertEquals(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, ex.getErrorCode());
-
         verify(settlementManager, never()).payout(anyLong(), anyInt());
     }
 
     @Test
-    @DisplayName("review — 出款未受理：**不得**标已打款、不得记 paid_total（端口是唯一出款出口）")
-    void shouldNotMarkPaid_whenPayoutRejected() {
-        when(withdrawalRepository.findById(WITHDRAWAL_ID)).thenReturn(pendingWithdrawal());
-        when(withdrawalRepository.reviewIfPending(anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
-        when(fundAccountRepository.unfreeze(SELLER_ID, AMOUNT)).thenReturn(1);
-        when(payoutPort.pay(any())).thenReturn(
-                new WithdrawalPayoutPort.PayoutResult(false, null, "CHANNEL_DOWN"));
+    @DisplayName("completePayout — 状态已变（回写 0 行）：幂等返回 false，不动账户")
+    void shouldNotTouchAccount_whenCompletePayoutReplayed() {
+        Withdrawal pending = pendingWithdrawal();
+        when(withdrawalRepository.markPaidIfPaying(WITHDRAWAL_ID)).thenReturn(0);
 
-        BizException ex = assertThrows(BizException.class,
-                () -> manager.review(WITHDRAWAL_ID, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款"));
-        assertEquals(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, ex.getErrorCode());
-        assertTrue(ex.getMessage().contains("CHANNEL_DOWN"), "原因分类要透出来，便于运维判断");
-
+        assertFalse(manager.completePayout(pending));
+        verify(fundAccountRepository, never()).unfreeze(anyLong(), anyInt());
         verify(settlementManager, never()).payout(anyLong(), anyInt());
     }
 
-    @Test
-    @DisplayName("review — 审核侧不判额度：不读 availableBalance")
-    void shouldNotCheckAvailableBalance_whenReviewPaidOut() {
-        when(withdrawalRepository.findById(WITHDRAWAL_ID)).thenReturn(pendingWithdrawal());
-        when(withdrawalRepository.reviewIfPending(anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
-        when(fundAccountRepository.unfreeze(SELLER_ID, AMOUNT)).thenReturn(1);
-
-        manager.review(WITHDRAWAL_ID, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
-
-        verify(settlementManager, never()).availableBalance(anyLong());
-        verify(settlementManager).payout(SELLER_ID, AMOUNT);
-    }
 }

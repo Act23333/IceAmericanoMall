@@ -3,6 +3,7 @@ package org.icedamericanomall.trade.infrastructure.persistence.finance;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 /**
@@ -13,6 +14,35 @@ import org.apache.ibatis.annotations.Update;
  */
 @Mapper
 public interface WithdrawalMapper extends BaseMapper<WithdrawalPO> {
+
+    /**
+     * 受理出款：待审核 → 付款中，并落幂等键（条件更新，0 行 = 已受理/已终态）。
+     *
+     * @param id       提现单主键
+     * @param payoutNo 出款幂等键（全生命周期不变；重试复用同一个）
+     * @return 影响行数
+     */
+    @Update("UPDATE withdrawal SET status = 4, payout_no = #{payoutNo} "
+            + "WHERE id = #{id} AND status = 1")
+    int claimPaying(@Param("id") Long id, @Param("payoutNo") String payoutNo);
+
+    /**
+     * 回写已打款：付款中 → 已打款（0 行 = 状态已被改过，调用方不得再记账）。
+     *
+     * @param id 提现单主键
+     * @return 影响行数
+     */
+    @Update("UPDATE withdrawal SET status = 2 WHERE id = #{id} AND status = 4")
+    int markPaidIfPaying(@Param("id") Long id);
+
+    /**
+     * 取「付款中」的单（按主键升序，限量）。
+     *
+     * @param limit 上限
+     * @return 主键列表
+     */
+    @Select("SELECT id FROM withdrawal WHERE status = 4 ORDER BY id ASC LIMIT #{limit}")
+    java.util.List<Long> selectPayingIds(@Param("limit") int limit);
 
     /**
      * 审核提现：{@code status = 待审核 → 目标状态}，并记录审核备注。

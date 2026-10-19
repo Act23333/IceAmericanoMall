@@ -15,6 +15,9 @@ public class WithdrawalPO implements Serializable {
     private byte[] withdrawalNo;
     private Long sellerId;
     private Integer amount;
+    /** 出款幂等键（受理时生成，全生命周期不变）。 */
+    private String payoutNo;
+
     private Integer status;
     private String bankAccount;
     private String bankName;

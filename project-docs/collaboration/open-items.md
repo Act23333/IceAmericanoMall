@@ -2212,6 +2212,29 @@ A 部分不依赖这些决策，可以先落地（含 E3 扩展与新状态的�
 A1 里该分支只有单测（mock 返回 false）；**真实渠道接入后第一次失败回执**才是真实验证。
 在那之前，报告里只能说「有代码路径与单测」，不能说「出款失败已被验证」。
 
+### 1.37 A1 落地（2026-10-19）：两阶段出款 + E3 扩展
+
+**状态机**：`待审核(1) → 付款中(4) → 已打款(2)`；拒绝仍是 `待审核 → 已拒绝(3)`。
+`FAILED` **未引入**（A2 等「失败后钱怎么退」口径）—— 渠道未受理就停在 `PAYING` 只告警。
+
+**改了哪些**
+- 枚举加 `PAYING(4)`；`withdrawal` 加 `payout_no`（唯一键，出款幂等键 = 单据业务号）
+- 条件迁移：`claimPaying(id, payoutNo)`（`WHERE status=1`）、`markPaidIfPaying(id)`（`WHERE status=4`）
+- `review(PAID_OUT)` 只做**受理**（第一段）：打款闸仍在**任何写之前**，通过后仅 `claimPaying`；
+  **不再**在事务里解冻/记账
+- 新增 `WithdrawalPayoutService`（事务外调渠道）+ `WithdrawalPayoutJob`（`@XxlJob("payoutPendingWithdrawals")`）；
+  落账由 `WithdrawalManager#completePayout`（`@Transactional`，跨 Bean 调用 ⇒ 代理生效）
+- **E3 扩展**：`frozen == Σ (待审核 + 付款中)`；新增用例钉住「受理后仍占冻结、paid 不记」
+
+**为什么这样切**：远程出款不能进事务；`review` 与「调渠道」事务语义相反，同居一类迟早出事故，
+且同类自调用会让 `@Transactional` 失效（§1.33 守卫）。
+
+**登记（未验证 / 待 A2）**
+1. `accepted=false` 只有单测；真实失败回执未见（渠道接入后首次失败才是真验证）；
+2. `PAYING` 停留的**升级告警未实现**（§1.36 口径要求 N 天未处置升级）—— 当前只 `log.warn`；
+3. mock 通道（四态 + `Clock` 驱动）**未实现**，现用 `ManualPayoutAdapter`（本地确认、无 I/O）；
+4. `FAILED` + 人工释放（双确认 + 依据 + 审计）属 A2。
+
 ---
 
 ## 2. 待办

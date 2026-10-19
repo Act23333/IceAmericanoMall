@@ -785,14 +785,16 @@ CREATE TABLE `withdrawal` (
     `withdrawal_no` BINARY(16) NOT NULL UNIQUE COMMENT '提现单号（UUIDv7 原始字节，ADR-050）',
     `seller_id` BIGINT NOT NULL COMMENT '商家ID',
     `amount` INT NOT NULL COMMENT '提现金额（分）',
-    `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=待审核, 2=已打款, 3=拒绝',
+    `payout_no` VARCHAR(64) DEFAULT NULL COMMENT '出款幂等键（渠道去重依据，全生命周期不变）',
+  `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=待审核, 2=已打款, 3=拒绝, 4=付款中（结果未知，仍占冻结）',
     `bank_account` VARCHAR(50) COMMENT '银行账号',
     `bank_name` VARCHAR(100) COMMENT '开户行',
     `admin_remark` VARCHAR(500) COMMENT '审核备注',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY `idx_seller_id` (`seller_id`),
-    KEY `idx_status` (`status`)
+    KEY `idx_status` (`status`),
+    UNIQUE KEY `uk_payout_no` (`payout_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='提现申请';
 
 CREATE TABLE `withdrawal_settlement` (

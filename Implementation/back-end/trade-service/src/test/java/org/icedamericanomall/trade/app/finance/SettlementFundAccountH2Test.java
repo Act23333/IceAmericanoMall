@@ -152,6 +152,7 @@ class SettlementFundAccountH2Test {
     private static WithdrawalRepository withdrawalRepository;
     private static WithdrawalSettlementRepository withdrawalSettlementRepository;
     private static SqlSession sharedSession;
+    private static org.icedamericanomall.trade.app.finance.WithdrawalPayoutService payoutService;
     private static SettlementManager settlementManager;
     private static WithdrawalManager withdrawalManager;
 
@@ -196,6 +197,7 @@ class SettlementFundAccountH2Test {
                     withdrawal_no BINARY(16) NOT NULL UNIQUE,
                     seller_id BIGINT NOT NULL,
                     amount INT NOT NULL,
+                    payout_no VARCHAR(64),
                     status TINYINT NOT NULL DEFAULT 1,
                     bank_account VARCHAR(50),
                     bank_name VARCHAR(100),
@@ -251,8 +253,11 @@ class SettlementFundAccountH2Test {
         settlementManager = new SettlementManager(settlementRepository, fundAccountRepository, null,
                 new TradeConverterImpl());
         withdrawalManager = new WithdrawalManager(withdrawalRepository, fundAccountRepository,
-                settlementRepository, withdrawalSettlementRepository, new org.icedamericanomall.trade.infrastructure.adapter.payout.ManualPayoutAdapter(), settlementManager,
+                settlementRepository, withdrawalSettlementRepository, settlementManager,
                 new TradeConverterImpl());
+        payoutService = new org.icedamericanomall.trade.app.finance.WithdrawalPayoutService(
+                withdrawalRepository, new org.icedamericanomall.trade.infrastructure.adapter.payout.ManualPayoutAdapter(),
+                withdrawalManager);
         // 生产默认关闭打款（只记账不付款）；H2 用例要验打款/核销路径，显式打开
         org.springframework.test.util.ReflectionTestUtils.setField(withdrawalManager, "payoutEnabled", true);
     }
@@ -572,7 +577,7 @@ class SettlementFundAccountH2Test {
         assertTrue(settleInTx(settlementId));
 
         Long paidWithdrawalId = withdraw(SELLER_RECONCILE, PAID_PART);
-        reviewInTx(paidWithdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        payoutInTx(paidWithdrawalId);
 
         Long rejectedWithdrawalId = withdraw(SELLER_RECONCILE, REJECTED_PART);
         reviewInTx(rejectedWithdrawalId, WithdrawalStatusEnum.REJECTED.getCode(), "信息不全");
@@ -705,7 +710,7 @@ class SettlementFundAccountH2Test {
         assertTrue(settleInTx(settlementId));
         Long withdrawalId = withdraw(seller, 4_000);
 
-        reviewInTx(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        payoutInTx(withdrawalId);
 
         assertEquals(0, frozenOf(seller), "打款后预占必须释放为 0");
         assertEquals(4_000, paidTotalOf(seller), "只把这一笔记进 paid_total");
@@ -737,7 +742,7 @@ class SettlementFundAccountH2Test {
         assertTrue(settleInTx(settlementId));
         Long withdrawalId = withdraw(seller, 4_000);
 
-        reviewInTx(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        payoutInTx(withdrawalId);
         reviewInTx(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "再点一次");
 
         assertEquals(0, frozenOf(seller));
@@ -756,15 +761,38 @@ class SettlementFundAccountH2Test {
         assertEquals(5_000, frozenOf(seller));
 
         // 审掉第一笔：预占 5000 → 剩 2000，paid 3000
-        reviewInTx(firstId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        payoutInTx(firstId);
 
-        int pendingSum = intOf("SELECT COALESCE(SUM(amount), 0) FROM withdrawal "
-                + "WHERE seller_id = ? AND status = ?", seller, WithdrawalStatusEnum.PENDING_REVIEW.getCode());
-        assertEquals(pendingSum, frozenOf(seller),
-                "★ 第三条等式：frozen_amount 必须等于「待审提现金额之和」—— "
-                        + "申请加、终态减，两边同时变才可能对上；只改一边就是脏账");
-        assertEquals(2_000, pendingSum);
+        // E3（A1 扩展）：占用冻结的不只是「待审核」，还有「付款中」——结果未知的钱必须继续占着
+        int occupying = intOf("SELECT COALESCE(SUM(amount), 0) FROM withdrawal "
+                + "WHERE seller_id = ? AND status IN (?, ?)", seller,
+                WithdrawalStatusEnum.PENDING_REVIEW.getCode(), WithdrawalStatusEnum.PAYING.getCode());
+        assertEquals(occupying, frozenOf(seller),
+                "★ 第三条等式：frozen_amount 必须等于「待审核 + 付款中」金额之和 —— "
+                        + "漏掉付款中就等于「结果未知的钱先把额度还了」，可能被再提一次");
+        assertEquals(2_000, occupying);
         assertEquals(3_000, paidTotalOf(seller));
+    }
+
+    @Test
+    @DisplayName("A1 — 受理后停在「付款中」：仍占预占、不记 paid_total、不进 E2（结果未知≠已付款）")
+    void shouldKeepFrozenHeld_whenWithdrawalIsPaying() throws SQLException {
+        long seller = 9051L;
+        Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
+        assertTrue(settleInTx(settlementId));
+        Long withdrawalId = withdraw(seller, 4_000);
+
+        reviewInTx(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+
+        assertEquals(WithdrawalStatusEnum.PAYING.getCode(),
+                withdrawalRepository.findById(withdrawalId).getStatus().intValue(),
+                "受理后必须停在付款中，不能直接跳到已打款");
+        assertEquals(4_000, frozenOf(seller), "★ 付款中仍占冻结：否则这笔钱能被再提一次");
+        assertEquals(0, paidTotalOf(seller), "★ 未拿到回执不得记 paid_total（否则 E2 变成假的已付款）");
+        int occupying = intOf("SELECT COALESCE(SUM(amount), 0) FROM withdrawal "
+                + "WHERE seller_id = ? AND status IN (?, ?)", seller,
+                WithdrawalStatusEnum.PENDING_REVIEW.getCode(), WithdrawalStatusEnum.PAYING.getCode());
+        assertEquals(occupying, frozenOf(seller), "E3 必须把付款中算进占用");
     }
 
     // ─────────────────── 第三步：按金额核销（分配表）───────────────────
@@ -812,7 +840,7 @@ class SettlementFundAccountH2Test {
         assertTrue(settleInTx(settlementId));
         Long withdrawalId = withdraw(seller, 4_000);
 
-        reviewInTx(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        payoutInTx(withdrawalId);
 
         assertEquals(1, allocationCount(withdrawalId), "打款保留分配行 —— 它是 E6 闭环的依据");
         assertEquals(4_000, withdrawnOf(settlementId), "withdrawn_amount 不再变");
@@ -849,7 +877,7 @@ class SettlementFundAccountH2Test {
         assertTrue(settleInTx(b));
 
         Long paid = withdraw(seller, 12_000);          // 跨单：a 吃满 10000 + b 2000
-        reviewInTx(paid, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        payoutInTx(paid);
         Long pending = withdraw(seller, 500);           // 还剩 b 的 10550
         Long rejected = withdraw(seller, 300);
         reviewInTx(rejected, WithdrawalStatusEnum.REJECTED.getCode(), "信息不全");
@@ -933,6 +961,16 @@ class SettlementFundAccountH2Test {
      */
     private static boolean settleInTx(Long settlementId) {
         return inTx(() -> settlementManager.settle(settlementId));
+    }
+
+    /**
+     * 走完整两阶段：受理（待审核 → 付款中）→ 出款执行器（拿回执 → 已打款 + 释放预占 + 记 paid_total）。
+     *
+     * <p>与生产同形：受理在事务里，出款在事务外调渠道，落账回到事务里。
+     */
+    private static void payoutInTx(Long id) {
+        reviewInTx(id, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        inTx(() -> payoutService.settle(100));
     }
 
     private static void reviewInTx(Long id, Integer status, String remark) {

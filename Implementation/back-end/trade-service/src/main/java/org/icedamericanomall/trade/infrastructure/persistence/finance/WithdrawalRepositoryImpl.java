@@ -32,6 +32,21 @@ public class WithdrawalRepositoryImpl implements WithdrawalRepository {
     }
 
     @Override
+    public int claimPaying(Long id, String payoutNo) {
+        return withdrawalMapper.claimPaying(id, payoutNo);
+    }
+
+    @Override
+    public int markPaidIfPaying(Long id) {
+        return withdrawalMapper.markPaidIfPaying(id);
+    }
+
+    @Override
+    public java.util.List<Long> findPayingIds(int limit) {
+        return withdrawalMapper.selectPayingIds(limit);
+    }
+
+    @Override
     public int reviewIfPending(Long id, Integer fromStatus, Integer toStatus, String adminRemark) {
         return withdrawalMapper.reviewIfPending(id, fromStatus, toStatus, adminRemark);
     }

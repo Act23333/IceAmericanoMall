@@ -12,7 +12,6 @@ import org.icedamericanomall.trade.domain.enums.WithdrawalStatusEnum;
 import org.icedamericanomall.trade.domain.model.finance.Withdrawal;
 import org.icedamericanomall.trade.domain.repository.SellerFundAccountRepository;
 import org.icedamericanomall.trade.domain.repository.SettlementRepository;
-import org.icedamericanomall.trade.domain.port.WithdrawalPayoutPort;
 import org.icedamericanomall.trade.domain.repository.WithdrawalSettlementRepository;
 import org.icedamericanomall.trade.domain.service.SettlementAllocator;
 import org.icedamericanomall.trade.domain.repository.WithdrawalRepository;
@@ -43,7 +42,6 @@ public class WithdrawalManager {
     private final SellerFundAccountRepository sellerFundAccountRepository;
     private final SettlementRepository settlementRepository;
     private final WithdrawalSettlementRepository withdrawalSettlementRepository;
-    private final WithdrawalPayoutPort payoutPort;
     private final SettlementManager settlementManager;
     private final TradeConverter tradeConverter;
 
@@ -182,28 +180,40 @@ public class WithdrawalManager {
             throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
                     "打款渠道未接入：本系统只记账不付款，禁止把提现标成已打款（trade.withdrawal.payout-enabled）");
         }
-        int claimed = withdrawalRepository.reviewIfPending(id,
-                WithdrawalStatusEnum.PENDING_REVIEW.getCode(), target.getCode(), adminRemark);
-        if (claimed == 0) {
-            return;     // 重复审核 ⇒ 幂等，且**不动账户**（先迁移后动账的唯一理由）
-        }
         int amount = withdrawal.getAmount() == null ? 0 : withdrawal.getAmount();
         if (target == WithdrawalStatusEnum.REJECTED) {
+            if (withdrawalRepository.reviewIfPending(id,
+                    WithdrawalStatusEnum.PENDING_REVIEW.getCode(), target.getCode(), adminRemark) == 0) {
+                return;     // 重复审核 ⇒ 幂等，且**不动账户**
+            }
             // 释放两个维度：先退回单据核销（LIFO 反向），再解冻账户额度
             withdrawalSettlementRepository.release(withdrawal.getId());
+            releaseFrozen(withdrawal.getSellerId(), amount);
+            return;
         }
+        // 已打款 = 两阶段第一阶段：**只受理**（待审核 → 付款中），不出款、不动账户。
+        // 出款由 WithdrawalPayoutService 在**事务外**调渠道；拿到回执后由 completePayout 落账。
+        withdrawalRepository.claimPaying(id, withdrawal.getWithdrawalNo());
+    }
+
+    /**
+     * 拿到渠道回执后落账：付款中 → 已打款 + 释放预占 + 记 {@code paid_total}。
+     *
+     * <p>三步必须同一事务（状态与分析账不能分开，否则会出「已打款但没记账」）。
+     * 只允许出款任务调用；**不得**在事务内调渠道（远程调用不进事务）。
+     *
+     * @param withdrawal 提现单（读取时的快照）
+     * @return true = 本次完成落账；false = 状态已变化（幂等，未做任何记账）
+     */
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public boolean completePayout(Withdrawal withdrawal) {   // 必须 public：@Transactional 只对 public 方法生效
+        if (withdrawalRepository.markPaidIfPaying(withdrawal.getId()) == 0) {
+            return false;
+        }
+        int amount = withdrawal.getAmount() == null ? 0 : withdrawal.getAmount();
         releaseFrozen(withdrawal.getSellerId(), amount);
-        if (target == WithdrawalStatusEnum.PAID_OUT) {
-            // 出款只走端口（当前为「人工确认」适配器，无 I/O）；受理失败**不得**标已打款
-            WithdrawalPayoutPort.PayoutResult result = payoutPort.pay(new WithdrawalPayoutPort.PayoutCommand(
-                    withdrawal.getWithdrawalNo(), withdrawal.getId(), withdrawal.getSellerId(), amount,
-                    withdrawal.getBankAccount(), withdrawal.getBankName()));
-            if (!result.accepted()) {
-                throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
-                        "出款未受理：" + result.reason());
-            }
-            settlementManager.payout(withdrawal.getSellerId(), amount);
-        }
+        settlementManager.payout(withdrawal.getSellerId(), amount);
+        return true;
     }
 
     /** 释放预占；0 行 = 冻结额不足（账不平）⇒ 抛异常让整笔回滚，不许 return。 */
