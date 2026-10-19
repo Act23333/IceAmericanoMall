@@ -6,7 +6,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -87,6 +86,9 @@ public class MockPayoutAdapter implements WithdrawalPayoutPort {
         this.callbackDelay = callbackDelay;
         this.clock = clock;
         this.credentials = new java.util.LinkedHashMap<>(credentials);
+        // 构造期自检（而不是 @PostConstruct）：占位凭据必须让**容器启动失败**，
+        // 而 @PostConstruct 在部分轻量 Runner / 代理场景下不保证被调用 —— 构造失败没有这个不确定性。
+        verifyNoPlaceholderCredentials();
     }
 
     private static Map<String, String> credentials(String appId, String mchId, String apiKey) {
@@ -103,8 +105,7 @@ public class MockPayoutAdapter implements WithdrawalPayoutPort {
      * <p>先例：{@code MockWechatMiniClient} 刻意不用 {@code @Primary}，就是为了让「互斥失效」
      * 变成启动失败而不是假登录成功。这里用同一条约定。
      */
-    @PostConstruct
-    void verifyNoPlaceholderCredentials() {
+    public final void verifyNoPlaceholderCredentials() {
         credentials.forEach((key, value) -> {
             if (value != null && !value.isBlank() && PLACEHOLDER.matcher(value).matches()) {
                 throw new IllegalStateException("出款 mock 通道发现占位凭据 " + key + "=" + value

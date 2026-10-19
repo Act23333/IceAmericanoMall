@@ -83,10 +83,10 @@ class MockPayoutAdapterTest {
     void shouldFailFast_whenCredentialIsPlaceholder() {
         Map<String, String> placeholder = new LinkedHashMap<>();
         placeholder.put("app-id", "CHANGE_ME");
-        MockPayoutAdapter mock = new MockPayoutAdapter(
-                MockPayoutAdapter.Mode.ACCEPTED, Duration.ZERO, Clock.systemUTC(), placeholder);
 
-        assertThrows(IllegalStateException.class, mock::verifyNoPlaceholderCredentials);
+        assertThrows(IllegalStateException.class, () -> new MockPayoutAdapter(
+                MockPayoutAdapter.Mode.ACCEPTED, Duration.ZERO, Clock.systemUTC(), placeholder),
+                "占位凭据必须在**构造期**就炸，而不是等运行时");
     }
 
     @Test
@@ -94,7 +94,7 @@ class MockPayoutAdapterTest {
     void shouldStartWithBlankCredentials() {
         MockPayoutAdapter mock = new MockPayoutAdapter(
                 MockPayoutAdapter.Mode.ACCEPTED, Duration.ZERO, Clock.systemUTC(), blankCredentials());
-        mock.verifyNoPlaceholderCredentials();
+        mock.verifyNoPlaceholderCredentials();     // 空凭据：自检通过
     }
 
     private static MockPayoutAdapter adapter(MockPayoutAdapter.Mode mode, Duration delay) {

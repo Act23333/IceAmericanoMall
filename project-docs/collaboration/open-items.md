@@ -2262,6 +2262,31 @@ A1 里该分支只有单测（mock 返回 false）；**真实渠道接入后第�
 
 **仍未做**：`PAYING` 停留的升级告警（mock 后单独补，不等 A2）；`FAILED` + 人工释放（A2）。
 
+### 1.39 合入（2026-10-19）与两条确认
+
+**合入**：`wip/t-withdraw-step1-unverified` → **`develop`**（fast-forward，18 个提交）。
+`main` 未动（它落后 develop，按原节奏走发布）。合入用 `git merge --ff-only`，
+**全程未用 `git add -A`**，提交均按显式路径；合入前后 `git status` 的其它会话改动数**一致**（未被触碰）。
+
+**① 占位凭据自检的位置：构造期（已确认只属于 mock）**
+`MockPayoutAdapter` 的自检从 `@PostConstruct` **前移到构造函数**：Spring 启动即构造该 Bean ⇒ 构造抛
+`IllegalStateException` ⇒ **容器启动失败**，且不依赖 `@PostConstruct` 是否被调用。
+`ManualPayoutAdapter` **不参与**（它没有这段自检）。
+⚠ 登记局限：曾尝试用 `ApplicationContextRunner` 写容器级 `hasFailed()` 断言，但该 Runner 下 Bean 未注册/惰性，
+测不到启动失败 —— 已删掉那条测试，改为「构造期抛异常 + 单测锁定」。要真做容器级断言需整包 `@SpringBootTest`
+（要 Nacos/DB），属后续项，不假装覆盖。
+
+**② 时钟口径：mock 与 job 未联动（登记）**
+mock 的 `ASYNC_CALLBACK` 由注入 `Clock` 驱动；但 **resume job 目前没有超时判定**（A1 只扫全部 `PAYING`），
+所以两者**没有共用时钟**这件事目前不产生矛盾 —— 一旦加超时阈值，必须让 job 与 mock 用同一个 `Clock`，
+否则「测试里时钟推进了、job 仍按系统时间判」会造出假绿。下一轮做 `PAYING` 停留告警时一并匹配。
+
+**③ `[UNVERIFIED]` 语义失效**
+代码已合入 develop 且门禁全绿 ⇒ 该前缀**不再表示「未验证」**；历史提交信息不改写，
+但**此后新分支/提交不得再用此前缀表达「未验证」**；若要表达「功能未完成」，请直接写「功能未完成」。
+
+**④ 主干复核**：合入后在 `develop` 上重跑 `verify-gates.sh full` —— 见本节的验证记录（全绿）。
+
 ---
 
 ## 2. 待办
