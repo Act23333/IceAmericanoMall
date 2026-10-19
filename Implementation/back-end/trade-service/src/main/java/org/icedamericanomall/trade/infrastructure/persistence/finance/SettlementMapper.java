@@ -60,4 +60,52 @@ public interface SettlementMapper extends BaseMapper<SettlementPO> {
     List<Long> selectSettleableIds(@Param("pendingStatus") Integer pendingStatus,
                                    @Param("today") LocalDate today,
                                    @Param("limit") int limit);
+
+    /**
+     * 可核销候选：该商家<b>已结算</b>且<b>还有余额</b>的结算单（按账期升序 = FIFO 顺序）。
+     *
+     * <pre>
+     * SELECT id, settlement_amount - withdrawn_amount AS remaining FROM settlement
+     *  WHERE seller_id = ? AND status = ? AND withdrawn_amount &lt; settlement_amount
+     *  ORDER BY period_end ASC, id ASC
+     * </pre>
+     *
+     * <p>排序写在这里而不是规划器里：规划器是纯函数，若它再排一次，「查询忘了排序」这类错就会被掩盖。
+     */
+    @Select("SELECT id, settlement_amount - withdrawn_amount AS remaining FROM settlement "
+            + "WHERE seller_id = #{sellerId} AND status = #{settledStatus} "
+            + "AND withdrawn_amount < settlement_amount ORDER BY period_end ASC, id ASC")
+    List<SettlementRemainingPO> selectAllocatable(@Param("sellerId") Long sellerId,
+                                                  @Param("settledStatus") Integer settledStatus);
+
+    /**
+     * 核销累加：{@code withdrawn_amount += amount}，且<b>不许超过该单结算额、只许作用于 SETTLED 单</b>。
+     *
+     * <pre>
+     * WHERE id = ? AND status = ? AND withdrawn_amount + ? &lt;= settlement_amount
+     * </pre>
+     *
+     * <p>0 行 = 可核销额不足 / 单已不是 SETTLED / 单不存在 ⇒ 调用方<b>必须抛</b>（整笔回滚），
+     * 不许当作「额度不足就少核销一点」—— 核销必须足额，否则 E5（Σ 明细 == 提现金额）立刻破。
+     */
+    @Update("UPDATE settlement SET withdrawn_amount = withdrawn_amount + #{amount} "
+            + "WHERE id = #{id} AND status = #{settledStatus} "
+            + "AND withdrawn_amount + #{amount} <= settlement_amount")
+    int increaseWithdrawn(@Param("id") Long id,
+                          @Param("settledStatus") Integer settledStatus,
+                          @Param("amount") int amount);
+
+    /**
+     * 核销回退（拒绝释放）：{@code withdrawn_amount -= amount}，且<b>不许减到负</b>。
+     *
+     * <pre>
+     * WHERE id = ? AND withdrawn_amount &gt;= ?
+     * </pre>
+     *
+     * <p>0 行 = 账不平 ⇒ 调用方必须抛。这是全仓<b>唯一</b>允许减 {@code withdrawn_amount} 的语句
+     * （门禁按「SQL 归属」检查，不按方法名）。
+     */
+    @Update("UPDATE settlement SET withdrawn_amount = withdrawn_amount - #{amount} "
+            + "WHERE id = #{id} AND withdrawn_amount >= #{amount}")
+    int decreaseWithdrawn(@Param("id") Long id, @Param("amount") int amount);
 }

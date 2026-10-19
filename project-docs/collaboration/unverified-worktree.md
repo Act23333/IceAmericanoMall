@@ -81,6 +81,15 @@ T-WITHDRAW **第一步**：把「商家能提多少」从「Σ 结算单」搬�
 > 测试：`SettlementFundAccountH2Test`（+7 条真库用例、删 `savePendingWithdrawal` 绕过 helper）、
 > `WithdrawalManagerTest`（重写，inOrder 钉死两条顺序）、`SettlementSweeperTest`（重写，四段计数）。
 
+> §1.30（第三步：按金额核销）同批：`Initialize.sql`（+`withdrawal_settlement` 表、+`settlement.withdrawn_amount` 列）、
+> `Settlement`/`SettlementPO`（+字段）、`SettlementMapper`（+`selectAllocatable`/`increaseWithdrawn`/`decreaseWithdrawn`）、
+> `SettlementRepository(+Impl)`（+`findAllocatable`）、`domain/service/SettlementAllocator`（新，纯函数）、
+> `domain/model/finance/SettlementRemaining`（新）、`WithdrawalSettlement{PO,Mapper,Repository,RepositoryImpl}`（新）、
+> `WithdrawalManager`（申请=冻结→落单→核销；拒绝=迁移→退核销→解冻）、
+> 守卫：`WithdrawnAmountWriteGuardTest`（新，按 SQL 归属）、
+> 测试：`SettlementFundAccountH2Test`（+5 条核销用例、装配里 `LocalCacheScope=STATEMENT`）、
+> `SettlementAllocatorTest`（新）、`WithdrawalManagerTest`（重写，含核销顺序）。
+
 ### 2.1 建库脚本
 
 | 文件 | 改了什么 |

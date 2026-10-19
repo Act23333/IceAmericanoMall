@@ -2,6 +2,7 @@ package org.icedamericanomall.trade.domain.repository;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.icedamericanomall.trade.domain.model.finance.Settlement;
+import org.icedamericanomall.trade.domain.model.finance.SettlementRemaining;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -60,4 +61,12 @@ public interface SettlementRepository {
      * @return 按 id 升序的候选 id；无候选返回空列表（不返回 null）
      */
     List<Long> findSettleableIds(LocalDate today, int limit);
+
+    /**
+     * 可核销候选：该商家「已结算且还有余额」的结算单，按账期升序（= FIFO 顺序）。
+     *
+     * <p>只返回 id 与余额两个数：核销规划是纯函数，不需要整个聚合；也不需要在这里判额度
+     * （额度由 {@code freeze} 的 SQL 守）。返回空列表表示「没有可核销的单」。
+     */
+    List<SettlementRemaining> findAllocatable(Long sellerId);
 }

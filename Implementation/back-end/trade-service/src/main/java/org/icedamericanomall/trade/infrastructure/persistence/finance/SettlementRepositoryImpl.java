@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.trade.domain.enums.SettlementStatusEnum;
 import org.icedamericanomall.trade.domain.model.finance.Settlement;
+import org.icedamericanomall.trade.domain.model.finance.SettlementRemaining;
 import org.icedamericanomall.trade.domain.repository.SettlementRepository;
 import org.springframework.stereotype.Repository;
 
@@ -70,6 +71,14 @@ public class SettlementRepositoryImpl implements SettlementRepository {
         return settlementMapper.selectSettleableIds(SettlementStatusEnum.PENDING.getCode(), today, limit);
     }
 
+    @Override
+    public List<SettlementRemaining> findAllocatable(Long sellerId) {
+        return settlementMapper.selectAllocatable(sellerId, SettlementStatusEnum.SETTLED.getCode()).stream()
+                .map(po -> new SettlementRemaining(po.getId(),
+                        po.getRemaining() == null ? 0 : po.getRemaining()))
+                .toList();
+    }
+
     // ==================== PO <-> 聚合 ====================
 
     static Settlement toDomain(SettlementPO po) {
@@ -86,6 +95,7 @@ public class SettlementRepositoryImpl implements SettlementRepository {
         settlement.setTotalAmount(po.getTotalAmount());
         settlement.setCommission(po.getCommission());
         settlement.setSettlementAmount(po.getSettlementAmount());
+        settlement.setWithdrawnAmount(po.getWithdrawnAmount());
         settlement.setStatus(po.getStatus());
         settlement.setCreateTime(po.getCreateTime());
         settlement.setUpdateTime(po.getUpdateTime());
@@ -103,6 +113,7 @@ public class SettlementRepositoryImpl implements SettlementRepository {
         po.setTotalAmount(settlement.getTotalAmount());
         po.setCommission(settlement.getCommission());
         po.setSettlementAmount(settlement.getSettlementAmount());
+        po.setWithdrawnAmount(settlement.getWithdrawnAmount());
         po.setStatus(settlement.getStatus());
         po.setCreateTime(settlement.getCreateTime());
         po.setUpdateTime(settlement.getUpdateTime());

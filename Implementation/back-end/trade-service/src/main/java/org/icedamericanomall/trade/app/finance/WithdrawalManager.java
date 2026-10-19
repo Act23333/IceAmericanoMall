@@ -11,10 +11,15 @@ import org.icedamericanomall.trade.adapter.response.WithdrawalVO;
 import org.icedamericanomall.trade.domain.enums.WithdrawalStatusEnum;
 import org.icedamericanomall.trade.domain.model.finance.Withdrawal;
 import org.icedamericanomall.trade.domain.repository.SellerFundAccountRepository;
+import org.icedamericanomall.trade.domain.repository.SettlementRepository;
+import org.icedamericanomall.trade.domain.repository.WithdrawalSettlementRepository;
+import org.icedamericanomall.trade.domain.service.SettlementAllocator;
 import org.icedamericanomall.trade.domain.repository.WithdrawalRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 /**
  * 提现用例族编排（应用层）。
@@ -35,6 +40,8 @@ public class WithdrawalManager {
 
     private final WithdrawalRepository withdrawalRepository;
     private final SellerFundAccountRepository sellerFundAccountRepository;
+    private final SettlementRepository settlementRepository;
+    private final WithdrawalSettlementRepository withdrawalSettlementRepository;
     private final SettlementManager settlementManager;
     private final TradeConverter tradeConverter;
 
@@ -90,7 +97,19 @@ public class WithdrawalManager {
         withdrawal.setBankAccount(req.getBankAccount());
         withdrawal.setBankName(req.getBankName());
         withdrawal.setStatus(WithdrawalStatusEnum.PENDING_REVIEW.getCode());
-        return tradeConverter.toSellerVO(withdrawalRepository.save(withdrawal));
+        Withdrawal saved = withdrawalRepository.save(withdrawal);
+
+        // 核销计划必须在「冻结成功」之后、且在「明细落库」之前算：冻结守住账户维度，核销钉死单据维度。
+        // 两者是同一件事的两个投影（E3 与 E5），任一步失败都整笔回滚。
+        List<SettlementAllocator.Allocation> plan =
+                SettlementAllocator.fifo(amount, settlementRepository.findAllocatable(sellerId));
+        if (SettlementAllocator.sum(plan) != amount) {
+            // 失败关闭：账户额度够而单据余额不够 = 数据漂移（E4/E5 已破），不许「少核销一点」蒙过去
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
+                    "核销计划不足：可核销结算单余额小于提现金额（数据漂移，需对账）");
+        }
+        withdrawalSettlementRepository.allocate(saved.getId(), plan);
+        return tradeConverter.toSellerVO(saved);
     }
 
     /**
@@ -149,6 +168,10 @@ public class WithdrawalManager {
             return;     // 重复审核 ⇒ 幂等，且**不动账户**（先迁移后动账的唯一理由）
         }
         int amount = withdrawal.getAmount() == null ? 0 : withdrawal.getAmount();
+        if (target == WithdrawalStatusEnum.REJECTED) {
+            // 释放两个维度：先退回单据核销（LIFO 反向），再解冻账户额度
+            withdrawalSettlementRepository.release(withdrawal.getId());
+        }
         releaseFrozen(withdrawal.getSellerId(), amount);
         if (target == WithdrawalStatusEnum.PAID_OUT) {
             settlementManager.payout(withdrawal.getSellerId(), amount);

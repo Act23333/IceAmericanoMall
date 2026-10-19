@@ -119,6 +119,7 @@ DROP TABLE IF EXISTS `user_coupon`;
 DROP TABLE IF EXISTS `coupon`;
 DROP TABLE IF EXISTS `settlement`;
 DROP TABLE IF EXISTS `withdrawal`;
+DROP TABLE IF EXISTS `withdrawal_settlement`;
 DROP TABLE IF EXISTS `seller_fund_account`;
 DROP TABLE IF EXISTS `after_sale`;
 DROP TABLE IF EXISTS `flash_sale`;
@@ -769,6 +770,7 @@ CREATE TABLE `settlement` (
     `total_amount` INT NOT NULL DEFAULT 0 COMMENT '订单总金额（分）',
     `commission` INT NOT NULL DEFAULT 0 COMMENT '平台佣金（分）',
     `settlement_amount` INT NOT NULL DEFAULT 0 COMMENT '结算金额（分）',
+    `withdrawn_amount` INT NOT NULL DEFAULT 0 COMMENT '已核销提现金额（分）：只能由核销仓储写（带边界条件的条件更新）；只统计 SETTLED 单',
     `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=待结算, 2=已结算(=可提现，不代表未打款), 3=已打款(历史语义，本批起不再写入；已打款事实看 withdrawal)',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -792,6 +794,17 @@ CREATE TABLE `withdrawal` (
     KEY `idx_seller_id` (`seller_id`),
     KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='提现申请';
+
+CREATE TABLE `withdrawal_settlement` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `withdrawal_id` BIGINT NOT NULL COMMENT '提现单技术主键',
+    `settlement_id` BIGINT NOT NULL COMMENT '结算单技术主键',
+    `amount` INT NOT NULL COMMENT '本笔提现从该结算单核销的金额（分）',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_withdrawal_settlement` (`withdrawal_id`, `settlement_id`),
+    KEY `idx_settlement_id` (`settlement_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='提现核销明细（按金额把提现分配到结算单；拒绝时删行，不留 released 标记）';
 
 -- seller_fund_account（商家资金账户）— T-WITHDRAW 第一步：把「可提现额」从「Σ 结算单」搬到一行权威账户上
 --   口径（写死，别按列名猜）：可提现额 = settled_total - frozen_amount - paid_total。

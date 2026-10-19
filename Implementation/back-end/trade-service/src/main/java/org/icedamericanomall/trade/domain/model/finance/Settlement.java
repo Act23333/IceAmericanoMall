@@ -29,6 +29,8 @@ public class Settlement {
     private Integer totalAmount;
     private Integer commission;
     private Integer settlementAmount;
+    /** 已核销提现金额（分）。基础字段只读；写入只走核销仓储的条件更新，不做 setter 赋值。 */
+    private Integer withdrawnAmount;
     private Integer status;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

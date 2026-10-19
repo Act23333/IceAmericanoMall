@@ -3,6 +3,7 @@ package org.icedamericanomall.trade.app.finance;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.config.GlobalConfig;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
+import org.apache.ibatis.session.LocalCacheScope;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.h2.Driver;
 import org.icedamericanomall.common.enums.ErrorCode;
@@ -18,12 +19,15 @@ import org.icedamericanomall.trade.domain.model.finance.Withdrawal;
 import org.icedamericanomall.trade.domain.repository.SellerFundAccountRepository;
 import org.icedamericanomall.trade.domain.repository.SettlementRepository;
 import org.icedamericanomall.trade.domain.repository.WithdrawalRepository;
+import org.icedamericanomall.trade.domain.repository.WithdrawalSettlementRepository;
 import org.icedamericanomall.trade.infrastructure.persistence.finance.SellerFundAccountMapper;
 import org.icedamericanomall.trade.infrastructure.persistence.finance.SellerFundAccountRepositoryImpl;
 import org.icedamericanomall.trade.infrastructure.persistence.finance.SettlementMapper;
 import org.icedamericanomall.trade.infrastructure.persistence.finance.SettlementRepositoryImpl;
 import org.icedamericanomall.trade.infrastructure.persistence.finance.WithdrawalMapper;
 import org.icedamericanomall.trade.infrastructure.persistence.finance.WithdrawalRepositoryImpl;
+import org.icedamericanomall.trade.infrastructure.persistence.finance.WithdrawalSettlementMapper;
+import org.icedamericanomall.trade.infrastructure.persistence.finance.WithdrawalSettlementRepositoryImpl;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -146,6 +150,7 @@ class SettlementFundAccountH2Test {
     private static SettlementRepository settlementRepository;
     private static SellerFundAccountRepository fundAccountRepository;
     private static WithdrawalRepository withdrawalRepository;
+    private static WithdrawalSettlementRepository withdrawalSettlementRepository;
     private static SettlementManager settlementManager;
     private static WithdrawalManager withdrawalManager;
 
@@ -168,6 +173,7 @@ class SettlementFundAccountH2Test {
                     total_amount INT NOT NULL DEFAULT 0,
                     commission INT NOT NULL DEFAULT 0,
                     settlement_amount INT NOT NULL DEFAULT 0,
+                    withdrawn_amount INT NOT NULL DEFAULT 0,
                     status TINYINT NOT NULL DEFAULT 1,
                     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -196,16 +202,31 @@ class SettlementFundAccountH2Test {
                     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )""");
+
+            stmt.execute("""
+                CREATE TABLE withdrawal_settlement (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    withdrawal_id BIGINT NOT NULL,
+                    settlement_id BIGINT NOT NULL,
+                    amount INT NOT NULL,
+                    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT uk_withdrawal_settlement UNIQUE (withdrawal_id, settlement_id)
+                )""");
         }
 
         // 手写 DDL 的「记得同步」不靠自觉：启动即对结构做断言（漏列 / 漏唯一键当场红）
         assertSchemaMatchesProduction();
 
         MybatisConfiguration config = new MybatisConfiguration();
+        // 一级缓存按 SqlSession 生效；本用例让每个仓储各持一个 session，
+        // 若开着一级缓存，A 仓储写、B 仓储读会拿到**上一轮**的行（核销候选曾因此偏大）。
+        // 生产里每个事务一个 session，等价于 STATEMENT 级，所以这里显式对齐生产语义。
+        config.setLocalCacheScope(LocalCacheScope.STATEMENT);
         config.setMapUnderscoreToCamelCase(true);
         config.addMapper(SettlementMapper.class);
         config.addMapper(SellerFundAccountMapper.class);
         config.addMapper(WithdrawalMapper.class);
+        config.addMapper(WithdrawalSettlementMapper.class);
 
         GlobalConfig globalConfig = new GlobalConfig();
         globalConfig.setBanner(false);
@@ -222,11 +243,14 @@ class SettlementFundAccountH2Test {
                 sqlSessionFactory.openSession().getMapper(SellerFundAccountMapper.class));
         withdrawalRepository = new WithdrawalRepositoryImpl(
                 sqlSessionFactory.openSession().getMapper(WithdrawalMapper.class));
+        withdrawalSettlementRepository = new WithdrawalSettlementRepositoryImpl(
+                sqlSessionFactory.openSession().getMapper(WithdrawalSettlementMapper.class),
+                sqlSessionFactory.openSession().getMapper(SettlementMapper.class));
         // 结算/打款只用到三个仓储；出参转换与订单查询不在本用例路径上
         settlementManager = new SettlementManager(settlementRepository, fundAccountRepository, null,
                 new TradeConverterImpl());
         withdrawalManager = new WithdrawalManager(withdrawalRepository, fundAccountRepository,
-                settlementManager,
+                settlementRepository, withdrawalSettlementRepository, settlementManager,
                 new TradeConverterImpl());
     }
 
@@ -235,6 +259,7 @@ class SettlementFundAccountH2Test {
     /** 与 {@code Initialize.sql} 对齐的关键列 / 唯一键；漏一个就红（替掉「靠记得同步」）。 */
     private static void assertSchemaMatchesProduction() throws SQLException {
         assertColumns("settlement", "id", "settlement_no", "seller_id", "period_start", "period_end",
+                "settlement_amount", "withdrawn_amount",
                 "order_count", "total_amount", "commission", "settlement_amount", "status",
                 "create_time", "update_time");
         assertColumns("seller_fund_account", "id", "seller_id", "settled_total", "frozen_amount",
@@ -243,6 +268,8 @@ class SettlementFundAccountH2Test {
                 "bank_account", "bank_name", "admin_remark", "create_time", "update_time");
 
         assertUniqueOn("settlement", List.of("settlement_no"));
+        assertColumns("withdrawal_settlement", "id", "withdrawal_id", "settlement_id", "amount", "create_time");
+        assertUniqueOn("withdrawal_settlement", List.of("withdrawal_id", "settlement_id"));
         assertUniqueOn("seller_fund_account", List.of("seller_id"));
         assertUniqueOn("withdrawal", List.of("withdrawal_no"));
     }
@@ -705,6 +732,154 @@ class SettlementFundAccountH2Test {
                         + "申请加、终态减，两边同时变才可能对上；只改一边就是脏账");
         assertEquals(2_000, pendingSum);
         assertEquals(3_000, paidTotalOf(seller));
+    }
+
+    // ─────────────────── 第三步：按金额核销（分配表）───────────────────
+
+    @Test
+    @DisplayName("★ 第三步 — 一笔提现跨两张结算单：按账期 FIFO 核销（先吃满旧的）")
+    void shouldAllocateAcrossSettlementsInFifoOrder() throws SQLException {
+        long seller = 9030L;
+        Long older = savePending(seller, 10_000, LocalDate.now().minusDays(30), 1);
+        Long newer = savePending(seller, 20_000, yesterday(), 1);
+        assertTrue(settlementManager.settle(older));
+        assertTrue(settlementManager.settle(newer));
+
+        Long withdrawalId = withdraw(seller, 15_000);
+
+        assertEquals(10_000, allocationOf(withdrawalId, older), "旧单先被吃满（FIFO）");
+        assertEquals(5_000, allocationOf(withdrawalId, newer), "剩余的才落到新单");
+        assertEquals(10_000, withdrawnOf(older));
+        assertEquals(5_000, withdrawnOf(newer));
+        assertEquals(15_000, frozenOf(seller), "账户冻结与单据核销是同一件事的两个投影");
+    }
+
+    @Test
+    @DisplayName("★ 第三步 — 拒绝：删分配行 + 回退 withdrawn_amount + 解冻（两个维度一起退）")
+    void shouldReleaseAllocationOnReject() throws SQLException {
+        long seller = 9031L;
+        Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
+        assertTrue(settlementManager.settle(settlementId));
+        Long withdrawalId = withdraw(seller, 4_000);
+        assertEquals(4_000, withdrawnOf(settlementId));
+
+        withdrawalManager.review(withdrawalId, WithdrawalStatusEnum.REJECTED.getCode(), "信息不全");
+
+        assertEquals(0, allocationCount(withdrawalId), "拒绝必须删分配行（不留 released 标记）");
+        assertEquals(0, withdrawnOf(settlementId), "withdrawn_amount 必须回退");
+        assertEquals(0, frozenOf(seller), "冻结额必须释放");
+        assertEquals(AMOUNT, settlementManager.availableBalance(seller), "额度完全恢复");
+    }
+
+    @Test
+    @DisplayName("第三步 — 打款：保留分配行（钱确实从这些单出），withdrawn_amount 不再变")
+    void shouldKeepAllocationOnPayout() throws SQLException {
+        long seller = 9032L;
+        Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
+        assertTrue(settlementManager.settle(settlementId));
+        Long withdrawalId = withdraw(seller, 4_000);
+
+        withdrawalManager.review(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+
+        assertEquals(1, allocationCount(withdrawalId), "打款保留分配行 —— 它是 E6 闭环的依据");
+        assertEquals(4_000, withdrawnOf(settlementId), "withdrawn_amount 不再变");
+        assertEquals(0, frozenOf(seller));
+        assertEquals(4_000, paidTotalOf(seller));
+    }
+
+    @Test
+    @DisplayName("★ 第三步 — 一张单被多笔提现部分占用：withdrawn_amount 累计到结算额为止")
+    void shouldAccumulatePartialAllocationsOnOneSettlement() throws SQLException {
+        long seller = 9033L;
+        Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
+        assertTrue(settlementManager.settle(settlementId));
+
+        withdraw(seller, 3_000);
+        withdraw(seller, 2_000);
+        assertEquals(5_000, withdrawnOf(settlementId), "两张提现单各核销一部分");
+        assertEquals(AMOUNT - 5_000, settlementManager.availableBalance(seller));
+
+        withdraw(seller, AMOUNT - 5_000);
+        assertEquals(AMOUNT, withdrawnOf(settlementId), "吃满到结算额，不多不少");
+
+        BizException ex = assertThrows(BizException.class, () -> withdraw(seller, 1));
+        assertEquals(ErrorCode.BALANCE_INSUFFICIENT, ex.getErrorCode(), "核销吃满后额度为 0，再提必须被拒");
+    }
+
+    @Test
+    @DisplayName("★ 第三步的三条等式：E4 列↔明细、E5 提现↔明细、E6 跨表闭环")
+    void shouldReconcileAllocationEquations() throws SQLException {
+        long seller = 9034L;
+        Long a = savePending(seller, 10_000, LocalDate.now().minusDays(40), 1);
+        Long b = savePending(seller, AMOUNT, yesterday(), 1);
+        assertTrue(settlementManager.settle(a));
+        assertTrue(settlementManager.settle(b));
+
+        Long paid = withdraw(seller, 12_000);          // 跨单：a 吃满 10000 + b 2000
+        withdrawalManager.review(paid, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        Long pending = withdraw(seller, 500);           // 还剩 b 的 10550
+        Long rejected = withdraw(seller, 300);
+        withdrawalManager.review(rejected, WithdrawalStatusEnum.REJECTED.getCode(), "信息不全");
+        Long pendingAfterReject = withdraw(seller, 500);
+
+        // E4：逐单 withdrawn_amount == Σ 明细；且不超过结算额；非 SETTLED 必须为 0
+        for (Long settlementId : List.of(a, b)) {
+            assertEquals(sumAllocationsOfSettlement(settlementId), withdrawnOf(settlementId),
+                    "★ E4：settlement.withdrawn_amount 必须等于该单的明细合计");
+            assertTrue(withdrawnOf(settlementId) <= settlementAmountOf(settlementId),
+                    "E4：withdrawn_amount 不得超过 settlement_amount");
+        }
+        assertEquals(0, withdrawnOfAnyPendingSettlement(),
+                "E4：非 SETTLED 单的 withdrawn_amount 必须为 0（当前恒真：只有 SETTLED 单会被核销）");
+
+        // E5：每笔的明细合计 == 提现金额；被拒 == 0
+        assertEquals(12_000, sumAllocationsOfWithdrawal(paid));
+        assertEquals(500, sumAllocationsOfWithdrawal(pending));
+        assertEquals(0, sumAllocationsOfWithdrawal(rejected), "★ E5：被拒的提现不得留任何明细");
+        assertEquals(500, sumAllocationsOfWithdrawal(pendingAfterReject));
+
+        // E6：Σ(已打款提现的明细) == paid_total
+        // 按商家收口：本类共用一个库，其它用例的已打款提现不能算进这条等式
+        int paidAllocations = intOf("SELECT COALESCE(SUM(ws.amount), 0) FROM withdrawal_settlement ws "
+                + "JOIN withdrawal w ON w.id = ws.withdrawal_id WHERE w.status = ? AND w.seller_id = ?",
+                WithdrawalStatusEnum.PAID_OUT.getCode(), seller);
+        assertEquals(paidTotalOf(seller), paidAllocations,
+                "★ E6：明细合计（已打款）必须等于 paid_total —— 把两张表钉在一起");
+    }
+
+    // ─────────────────── 第三步用的小工具 ───────────────────
+
+    private static int withdrawnOf(long settlementId) throws SQLException {
+        return intOf("SELECT withdrawn_amount FROM settlement WHERE id = ?", settlementId);
+    }
+
+    private static int settlementAmountOf(long settlementId) throws SQLException {
+        return intOf("SELECT settlement_amount FROM settlement WHERE id = ?", settlementId);
+    }
+
+    private static int allocationOf(long withdrawalId, long settlementId) throws SQLException {
+        return intOf("SELECT COALESCE(SUM(amount), 0) FROM withdrawal_settlement "
+                + "WHERE withdrawal_id = ? AND settlement_id = ?", withdrawalId, settlementId);
+    }
+
+    private static int allocationCount(long withdrawalId) throws SQLException {
+        return intOf("SELECT COUNT(*) FROM withdrawal_settlement WHERE withdrawal_id = ?", withdrawalId);
+    }
+
+    private static int sumAllocationsOfWithdrawal(long withdrawalId) throws SQLException {
+        return intOf("SELECT COALESCE(SUM(amount), 0) FROM withdrawal_settlement WHERE withdrawal_id = ?",
+                withdrawalId);
+    }
+
+    private static int sumAllocationsOfSettlement(long settlementId) throws SQLException {
+        return intOf("SELECT COALESCE(SUM(amount), 0) FROM withdrawal_settlement WHERE settlement_id = ?",
+                settlementId);
+    }
+
+    /** 非 SETTLED 结算单上被核销的金额合计（当前应当恒为 0）。 */
+    private static int withdrawnOfAnyPendingSettlement() throws SQLException {
+        return intOf("SELECT COALESCE(SUM(withdrawn_amount), 0) FROM settlement WHERE status <> ?",
+                SettlementStatusEnum.SETTLED.getCode());
     }
 
     // ─────────────────── 第二步用的小工具 ───────────────────
