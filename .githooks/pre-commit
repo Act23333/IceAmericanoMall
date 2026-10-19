@@ -2,4 +2,16 @@
 # 提交前门禁（秒级）。安装: git config core.hooksPath .githooks
 # 为什么在这里拦：2026-10-18 曾有一个「工作区已红、交接单仍写全绿」的窗口持续数小时，
 # 而 CI 只在 push 后运行 —— 提交动作是唯一能可靠插桩的位置。
-exec bash "$(git rev-parse --show-toplevel)/Implementation/back-end/scripts/verify-gates.sh" fast
+ROOT="$(git rev-parse --show-toplevel)"
+bash "$ROOT/Implementation/back-end/scripts/verify-gates.sh" fast || exit $?
+
+# 陈旧产物检查：fast 会编译，编完仍然「源码比 class 新」说明这次构建的绿不代表当前源码。
+# 为什么必须在提交口拦：2026-10-19 实证过一次「陈旧 target 给出假绿」（已提交的测试在全量里红、
+# 增量构建里绿）。跳过方式只有一个显式开关，便于打包类提交：SKIP_STALE_CHECK=1
+if [ "${SKIP_STALE_CHECK:-0}" != "1" ]; then
+  if ! bash "$ROOT/Implementation/back-end/scripts/check-stale-classes.sh"; then
+    echo "✗ 存在陈旧 class：本次提交通过的门禁**不代表当前源码**。"
+    echo "  修法：mvn -o -DskipTests install（必要时 clean）；确需跳过：SKIP_STALE_CHECK=1 git commit ..."
+    exit 1
+  fi
+fi

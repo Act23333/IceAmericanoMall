@@ -17,8 +17,16 @@ for m in "${MODULES[@]}"; do
   [ -d "$m/target/classes" ] || continue
   newest_src=$(find "$m/src/main/java" -name '*.java' -newer "$m/target/classes" -print -quit 2>/dev/null || true)
   if [ -n "$newest_src" ]; then
-    echo "✗ 陈旧产物: $(basename "$m") —— $(basename "$newest_src") 比 target/classes 新"
+    echo "✗ 陈旧主代码产物: $(basename "$m") —— $(basename "$newest_src") 比 target/classes 新"
     stale=1
+  fi
+  # 测试代码同样会陈旧：本轮 ShortCodeTest 就是**测试代码**陈旧（target/test-classes 未重编）
+  if [ -d "$m/target/test-classes" ]; then
+    newest_test=$(find "$m/src/test/java" -name '*.java' -newer "$m/target/test-classes" -print -quit 2>/dev/null || true)
+    if [ -n "$newest_test" ]; then
+      echo "✗ 陈旧测试产物: $(basename "$m") —— $(basename "$newest_test") 比 target/test-classes 新"
+      stale=1
+    fi
   fi
 done
 [ "$stale" -eq 0 ] && echo "✓ 无陈旧 class（本次构建的绿对应当前源码）"
