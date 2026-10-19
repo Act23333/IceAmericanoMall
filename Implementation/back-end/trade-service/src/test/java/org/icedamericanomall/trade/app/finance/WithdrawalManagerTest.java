@@ -70,6 +70,8 @@ class WithdrawalManagerTest {
         manager = new WithdrawalManager(withdrawalRepository, fundAccountRepository,
                 settlementRepository, withdrawalSettlementRepository, settlementManager,
                 new TradeConverterImpl());
+        // 生产默认关闭（只记账不付款）；本单测要验「打款路径」，显式打开
+        org.springframework.test.util.ReflectionTestUtils.setField(manager, "payoutEnabled", true);
     }
 
     private WithdrawalApplyReq req(Integer amount) {
@@ -175,6 +177,24 @@ class WithdrawalManagerTest {
     }
 
     // ─────────────────────────── 审核侧 ───────────────────────────
+
+    @Test
+    @DisplayName("review — 打款渠道未接入（默认关闭）：拒绝标已打款，避免「已记账未付款」")
+    void shouldRejectPaidOut_whenPayoutChannelDisabled() {
+        WithdrawalManager noChannel = new WithdrawalManager(withdrawalRepository, fundAccountRepository,
+                settlementRepository, withdrawalSettlementRepository, settlementManager,
+                new TradeConverterImpl());
+        when(withdrawalRepository.findById(WITHDRAWAL_ID)).thenReturn(pendingWithdrawal());
+        when(withdrawalRepository.reviewIfPending(anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
+
+        BizException ex = assertThrows(BizException.class,
+                () -> noChannel.review(WITHDRAWAL_ID, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款"));
+        assertEquals(ErrorCode.BUSINESS_EXECUTION_EXCEPTION, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("渠道未接入"), "报错必须直说「没有打款渠道」，不能含糊成系统错误");
+
+        verify(settlementManager, never()).payout(anyLong(), anyInt());
+        verify(fundAccountRepository, never()).unfreeze(anyLong(), anyInt());
+    }
 
     @Test
     @DisplayName("review — 非法状态值：PARAM_ERROR，且不读库")

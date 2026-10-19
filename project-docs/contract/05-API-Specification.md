@@ -2281,6 +2281,8 @@ Feature: 买家退款资金流（F1）
 > **`SettlementVO.status` 语义（V5.25.0 起写死）**：1=待结算、2=已结算（**= 可提现，不代表「未打款」**）、
 > 3=已打款（**历史语义**，不再写入）。**「已打款」看 `WithdrawalVO.status = 2`**，
 > 不要从结算单反推；打款后不回写结算单状态（T-WITHDRAW-2）。
+> **AD23 的打款闸（V5.26.0 起）**：`status=2`（已打款）在默认配置 `trade.withdrawal.payout-enabled=false` 下**直接拒绝**——本系统只记账不出款，把提现标成已打款会造成「已记账未付款」。人工银行转账需显式开启，且语义是**人工确认**、不是渠道回执。
+>
 > **AD23 的资金副作用（V5.25.0 起）**：`status=2`（已打款）时在 `seller_fund_account` 上累加 `paid_total`。
 > 状态迁移为**条件更新**（待审核 → 终态），0 行即 no-op ⇒ 重复审核不会重复记账。
 > **审核侧不判额度**：`settled_total − frozen_amount − paid_total ≥ amount` 属**申请侧**

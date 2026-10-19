@@ -151,6 +151,7 @@ class SettlementFundAccountH2Test {
     private static SellerFundAccountRepository fundAccountRepository;
     private static WithdrawalRepository withdrawalRepository;
     private static WithdrawalSettlementRepository withdrawalSettlementRepository;
+    private static SqlSession sharedSession;
     private static SettlementManager settlementManager;
     private static WithdrawalManager withdrawalManager;
 
@@ -236,7 +237,7 @@ class SettlementFundAccountH2Test {
         // 生产：一个事务一个 SqlSession（Spring 管），一级缓存（默认 SESSION）靠「同 session 内写会清缓存」保证不脏读。
         // 本用例原本每个仓储各持一个长活 session，那是假环境 —— 会让 A 仓储的写对 B 仓储不可见（核销候选曾因此偏大）。
         // 这里改为**共用一个 session**：与生产的 session 生命周期语义一致，同时保持默认 SESSION 级缓存不变。
-        SqlSession sharedSession = sqlSessionFactory.openSession();
+        sharedSession = sqlSessionFactory.openSession(false);   // 关自动提交：本用例按「一业务方法一事务」提交/回滚
         settlementRepository = new SettlementRepositoryImpl(
                 sharedSession.getMapper(SettlementMapper.class));
         fundAccountRepository = new SellerFundAccountRepositoryImpl(
@@ -252,6 +253,8 @@ class SettlementFundAccountH2Test {
         withdrawalManager = new WithdrawalManager(withdrawalRepository, fundAccountRepository,
                 settlementRepository, withdrawalSettlementRepository, settlementManager,
                 new TradeConverterImpl());
+        // 生产默认关闭打款（只记账不付款）；H2 用例要验打款/核销路径，显式打开
+        org.springframework.test.util.ReflectionTestUtils.setField(withdrawalManager, "payoutEnabled", true);
     }
 
     // ─────────────────────── 结构断言（双源同步的可执行检查） ───────────────────────
@@ -341,7 +344,7 @@ class SettlementFundAccountH2Test {
         settlement.setCommission(0);
         settlement.setSettlementAmount(settlementAmount);
         settlement.setStatus(SettlementStatusEnum.PENDING.getCode());
-        Settlement saved = settlementRepository.save(settlement);
+        Settlement saved = inTx(() -> settlementRepository.save(settlement));
         assertNotNull(saved.getId(), "造数据失败：结算单没拿到主键");
         return saved.getId();
     }
@@ -416,6 +419,17 @@ class SettlementFundAccountH2Test {
     }
 
     /** 单值整数查询（对账用；无行返回 0）。 */
+    /** 直连 JDBC 改一行（造漂移用；与 session 无关，所以前面必须已提交）。 */
+    private static int exec(String sql, Object... args) throws SQLException {
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            for (int i = 0; i < args.length; i++) {
+                ps.setObject(i + 1, args[i]);
+            }
+            return ps.executeUpdate();
+        }
+    }
+
     private static int intOf(String sql, Object... args) throws SQLException {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -435,7 +449,7 @@ class SettlementFundAccountH2Test {
     void shouldSetSettledAndIncreaseSettledTotal_whenPeriodEndedAndAmountPositive() {
         Long id = savePending(SELLER_SETTLE, AMOUNT, yesterday(), 3);
 
-        assertTrue(settlementManager.settle(id), "账期已走完、金额>0、有订单的待结算单必须被结算");
+        assertTrue(settleInTx(id), "账期已走完、金额>0、有订单的待结算单必须被结算");
 
         Settlement reloaded = settlementRepository.findById(id);
         assertEquals(SettlementStatusEnum.SETTLED.getCode(), reloaded.getStatus().intValue(),
@@ -450,10 +464,10 @@ class SettlementFundAccountH2Test {
     void shouldBeNoOp_whenSettleCalledTwice() {
         Long id = savePending(SELLER_IDEMPOTENT, AMOUNT, yesterday(), 2);
 
-        assertTrue(settlementManager.settle(id));
+        assertTrue(settleInTx(id));
         assertEquals(AMOUNT, settledTotalOf(SELLER_IDEMPOTENT));
 
-        assertFalse(settlementManager.settle(id), "已结算再调 = 0 行，幂等 no-op");
+        assertFalse(settleInTx(id), "已结算再调 = 0 行，幂等 no-op");
         assertEquals(AMOUNT, settledTotalOf(SELLER_IDEMPOTENT), "重复调用不得重复累加");
         assertEquals(SettlementStatusEnum.SETTLED.getCode(),
                 settlementRepository.findById(id).getStatus().intValue());
@@ -466,10 +480,10 @@ class SettlementFundAccountH2Test {
         Long zeroAmount = savePending(SELLER_GUARD, 0, yesterday(), 2);
         Long noOrders = savePending(SELLER_GUARD, AMOUNT, yesterday(), 0);
 
-        assertFalse(settlementManager.settle(notDue), "账期未走完不得结算");
-        assertFalse(settlementManager.settle(zeroAmount), "零额单不结算（否则白占余额）");
-        assertFalse(settlementManager.settle(noOrders), "无订单的账期不结算");
-        assertFalse(settlementManager.settle(999_999_999L), "不存在的结算单 = no-op，不抛异常");
+        assertFalse(settleInTx(notDue), "账期未走完不得结算");
+        assertFalse(settleInTx(zeroAmount), "零额单不结算（否则白占余额）");
+        assertFalse(settleInTx(noOrders), "无订单的账期不结算");
+        assertFalse(settleInTx(999_999_999L), "不存在的结算单 = no-op，不抛异常");
 
         assertEquals(SettlementStatusEnum.PENDING.getCode(),
                 settlementRepository.findById(notDue).getStatus().intValue());
@@ -487,7 +501,7 @@ class SettlementFundAccountH2Test {
     @DisplayName("payout — 只累加 paid_total（settled_total 不动）；**不做额度判断**（额度属申请侧）")
     void shouldIncreasePaidTotalOnly_whenPayout() {
         Long id = savePending(SELLER_PAYOUT, AMOUNT, yesterday(), 1);
-        assertTrue(settlementManager.settle(id));
+        assertTrue(settleInTx(id));
         int available = settlementManager.availableBalance(SELLER_PAYOUT);
         assertEquals(AMOUNT, available, "可提现额 = 已结算 − 冻结 − 已打款");
 
@@ -521,7 +535,7 @@ class SettlementFundAccountH2Test {
     void shouldPassFirstStepSelfChecks_withRealSettledData() throws SQLException {
         // 自检的数据必须来自真实 settle()，不能直接插一行 SETTLED（那能骗过自检，却证明不了入口是通的）
         Long id = savePending(SELLER_SELF_CHECK, AMOUNT, yesterday(), 4);
-        assertTrue(settlementManager.settle(id), "自检前置：settle() 必须真的把单子结算掉");
+        assertTrue(settleInTx(id), "自检前置：settle() 必须真的把单子结算掉");
 
         Map<Long, Integer> settledBySeller = settledAmountBySeller();
 
@@ -555,13 +569,13 @@ class SettlementFundAccountH2Test {
     void shouldReconcilePaidTotalAgainstPaidOutWithdrawals() throws SQLException {
         // 造数据：真实结算 + 真实审核（一个打款、一个拒绝）
         Long settlementId = savePending(SELLER_RECONCILE, AMOUNT, yesterday(), 1);
-        assertTrue(settlementManager.settle(settlementId));
+        assertTrue(settleInTx(settlementId));
 
         Long paidWithdrawalId = withdraw(SELLER_RECONCILE, PAID_PART);
-        withdrawalManager.review(paidWithdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        reviewInTx(paidWithdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
 
         Long rejectedWithdrawalId = withdraw(SELLER_RECONCILE, REJECTED_PART);
-        withdrawalManager.review(rejectedWithdrawalId, WithdrawalStatusEnum.REJECTED.getCode(), "信息不全");
+        reviewInTx(rejectedWithdrawalId, WithdrawalStatusEnum.REJECTED.getCode(), "信息不全");
 
         int paidTotal = intOf("SELECT paid_total FROM seller_fund_account WHERE seller_id = ?", SELLER_RECONCILE);
         assertEquals(0, frozenOf(SELLER_RECONCILE), "两笔都到终态后预占必须归零");
@@ -596,7 +610,7 @@ class SettlementFundAccountH2Test {
 
         SettlementSweeper sweeper = new SettlementSweeper(settlementRepository, settlementManager);
         LocalDateTime sweepNow = LocalDateTime.now();
-        SettlementSweeper.SweepResult first = sweeper.sweep(sweepNow.toLocalDate(), sweepNow, 200);
+        SettlementSweeper.SweepResult first = sweepInTx(sweeper, sweepNow.toLocalDate(), sweepNow, 200);
         assertEquals(0, first.failed(), "首次扫描不该有异常失败");
 
         assertEquals(SettlementStatusEnum.SETTLED.getCode(),
@@ -611,7 +625,7 @@ class SettlementFundAccountH2Test {
         // 断言「不再动账」，而不是断言 sweep 返回 0：本类共用一个库，其它用例可能留下可结算的行
         int settledBeforeResweep = settledTotalOf(sellerDueA) + settledTotalOf(sellerDueB);
         LocalDateTime resweepNow = LocalDateTime.now();
-        sweeper.sweep(resweepNow.toLocalDate(), resweepNow, 200);
+        sweepInTx(sweeper, resweepNow.toLocalDate(), resweepNow, 200);
         assertEquals(settledBeforeResweep, settledTotalOf(sellerDueA) + settledTotalOf(sellerDueB),
                 "重扫不得重复累加（条件更新 0 行 = 已结算，跳过）");
         assertEquals(SettlementStatusEnum.PENDING.getCode(),
@@ -628,7 +642,7 @@ class SettlementFundAccountH2Test {
 
         SettlementSweeper sweeper = new SettlementSweeper(settlementRepository, settlementManager);
         LocalDateTime now = LocalDateTime.now();
-        sweeper.sweep(now.toLocalDate(), now, 200, targetPeriod);
+        sweepInTx(sweeper, now.toLocalDate(), now, 200, targetPeriod);
 
         assertEquals(SettlementStatusEnum.SETTLED.getCode(),
                 settlementRepository.findById(target).getStatus().intValue(), "指定账期必须被结算");
@@ -644,7 +658,7 @@ class SettlementFundAccountH2Test {
     void shouldFreezeOnApply() {
         long seller = 9020L;
         Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
-        assertTrue(settlementManager.settle(settlementId));
+        assertTrue(settleInTx(settlementId));
         assertEquals(AMOUNT, settlementManager.availableBalance(seller));
 
         withdraw(seller, 3_000);
@@ -660,7 +674,7 @@ class SettlementFundAccountH2Test {
     void shouldRejectWhenQuotaInsufficient() {
         long seller = 9021L;
         Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
-        assertTrue(settlementManager.settle(settlementId));
+        assertTrue(settleInTx(settlementId));
         withdraw(seller, 3_000);
 
         BizException ex = assertThrows(BizException.class, () -> withdraw(seller, AMOUNT - 3_000 + 1));
@@ -675,7 +689,7 @@ class SettlementFundAccountH2Test {
     void shouldRejectWhenOverSingleLimit() {
         long seller = 9022L;
         Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
-        assertTrue(settlementManager.settle(settlementId));
+        assertTrue(settleInTx(settlementId));
 
         BizException ex = assertThrows(BizException.class, () -> withdraw(seller, 5_000_001));
         assertEquals(ErrorCode.PARAM_ERROR, ex.getErrorCode());
@@ -688,10 +702,10 @@ class SettlementFundAccountH2Test {
     void shouldReleaseAndRecordPaidOnPaidOut() {
         long seller = 9023L;
         Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
-        assertTrue(settlementManager.settle(settlementId));
+        assertTrue(settleInTx(settlementId));
         Long withdrawalId = withdraw(seller, 4_000);
 
-        withdrawalManager.review(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        reviewInTx(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
 
         assertEquals(0, frozenOf(seller), "打款后预占必须释放为 0");
         assertEquals(4_000, paidTotalOf(seller), "只把这一笔记进 paid_total");
@@ -703,10 +717,10 @@ class SettlementFundAccountH2Test {
     void shouldReleaseOnRejectAndKeepQuota() {
         long seller = 9024L;
         Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
-        assertTrue(settlementManager.settle(settlementId));
+        assertTrue(settleInTx(settlementId));
         Long withdrawalId = withdraw(seller, 4_000);
 
-        withdrawalManager.review(withdrawalId, WithdrawalStatusEnum.REJECTED.getCode(), "信息不全");
+        reviewInTx(withdrawalId, WithdrawalStatusEnum.REJECTED.getCode(), "信息不全");
 
         assertEquals(0, frozenOf(seller), "拒绝也要释放预占（否则额度被永久占住）");
         assertEquals(0, paidTotalOf(seller), "拒绝不记账");
@@ -720,11 +734,11 @@ class SettlementFundAccountH2Test {
     void shouldBeIdempotentOnReplayedReview() {
         long seller = 9025L;
         Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
-        assertTrue(settlementManager.settle(settlementId));
+        assertTrue(settleInTx(settlementId));
         Long withdrawalId = withdraw(seller, 4_000);
 
-        withdrawalManager.review(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
-        withdrawalManager.review(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "再点一次");
+        reviewInTx(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        reviewInTx(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "再点一次");
 
         assertEquals(0, frozenOf(seller));
         assertEquals(4_000, paidTotalOf(seller),
@@ -736,13 +750,13 @@ class SettlementFundAccountH2Test {
     void shouldReconcileFrozenAgainstPendingWithdrawals() throws SQLException {
         long seller = 9026L;
         Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
-        assertTrue(settlementManager.settle(settlementId));
+        assertTrue(settleInTx(settlementId));
         Long firstId = withdraw(seller, 3_000);
         withdraw(seller, 2_000);
         assertEquals(5_000, frozenOf(seller));
 
         // 审掉第一笔：预占 5000 → 剩 2000，paid 3000
-        withdrawalManager.review(firstId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        reviewInTx(firstId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
 
         int pendingSum = intOf("SELECT COALESCE(SUM(amount), 0) FROM withdrawal "
                 + "WHERE seller_id = ? AND status = ?", seller, WithdrawalStatusEnum.PENDING_REVIEW.getCode());
@@ -761,8 +775,8 @@ class SettlementFundAccountH2Test {
         long seller = 9030L;
         Long older = savePending(seller, 10_000, LocalDate.now().minusDays(30), 1);
         Long newer = savePending(seller, 20_000, yesterday(), 1);
-        assertTrue(settlementManager.settle(older));
-        assertTrue(settlementManager.settle(newer));
+        assertTrue(settleInTx(older));
+        assertTrue(settleInTx(newer));
 
         Long withdrawalId = withdraw(seller, 15_000);
 
@@ -778,11 +792,11 @@ class SettlementFundAccountH2Test {
     void shouldReleaseAllocationOnReject() throws SQLException {
         long seller = 9031L;
         Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
-        assertTrue(settlementManager.settle(settlementId));
+        assertTrue(settleInTx(settlementId));
         Long withdrawalId = withdraw(seller, 4_000);
         assertEquals(4_000, withdrawnOf(settlementId));
 
-        withdrawalManager.review(withdrawalId, WithdrawalStatusEnum.REJECTED.getCode(), "信息不全");
+        reviewInTx(withdrawalId, WithdrawalStatusEnum.REJECTED.getCode(), "信息不全");
 
         assertEquals(0, allocationCount(withdrawalId), "拒绝必须删分配行（不留 released 标记）");
         assertEquals(0, withdrawnOf(settlementId), "withdrawn_amount 必须回退");
@@ -795,10 +809,10 @@ class SettlementFundAccountH2Test {
     void shouldKeepAllocationOnPayout() throws SQLException {
         long seller = 9032L;
         Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
-        assertTrue(settlementManager.settle(settlementId));
+        assertTrue(settleInTx(settlementId));
         Long withdrawalId = withdraw(seller, 4_000);
 
-        withdrawalManager.review(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        reviewInTx(withdrawalId, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
 
         assertEquals(1, allocationCount(withdrawalId), "打款保留分配行 —— 它是 E6 闭环的依据");
         assertEquals(4_000, withdrawnOf(settlementId), "withdrawn_amount 不再变");
@@ -811,7 +825,7 @@ class SettlementFundAccountH2Test {
     void shouldAccumulatePartialAllocationsOnOneSettlement() throws SQLException {
         long seller = 9033L;
         Long settlementId = savePending(seller, AMOUNT, yesterday(), 1);
-        assertTrue(settlementManager.settle(settlementId));
+        assertTrue(settleInTx(settlementId));
 
         withdraw(seller, 3_000);
         withdraw(seller, 2_000);
@@ -831,14 +845,14 @@ class SettlementFundAccountH2Test {
         long seller = 9034L;
         Long a = savePending(seller, 10_000, LocalDate.now().minusDays(40), 1);
         Long b = savePending(seller, AMOUNT, yesterday(), 1);
-        assertTrue(settlementManager.settle(a));
-        assertTrue(settlementManager.settle(b));
+        assertTrue(settleInTx(a));
+        assertTrue(settleInTx(b));
 
         Long paid = withdraw(seller, 12_000);          // 跨单：a 吃满 10000 + b 2000
-        withdrawalManager.review(paid, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
+        reviewInTx(paid, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款");
         Long pending = withdraw(seller, 500);           // 还剩 b 的 10550
         Long rejected = withdraw(seller, 300);
-        withdrawalManager.review(rejected, WithdrawalStatusEnum.REJECTED.getCode(), "信息不全");
+        reviewInTx(rejected, WithdrawalStatusEnum.REJECTED.getCode(), "信息不全");
         Long pendingAfterReject = withdraw(seller, 500);
 
         // E4：逐单 withdrawn_amount == Σ 明细；且不超过结算额；非 SETTLED 必须为 0
@@ -901,6 +915,65 @@ class SettlementFundAccountH2Test {
                 SettlementStatusEnum.SETTLED.getCode());
     }
 
+
+    // ─────────────────── 事务边界（harness 必须与生产同语义） ───────────────────
+
+    /**
+     * 在一个事务里跑一段写，成功提交、异常回滚。
+     *
+     * <p><b>为什么必须有</b>：生产里 manager 的 {@code @Transactional} 是 Spring 代理给的；
+     * 本用例手搓仓储、没有 Spring，若不自己开事务，#{@code openSession()} 默认自动提交，
+     * 于是「冻结成功、核销抛异常」会留下**半截脏账**，而生产会整体回滚 ——
+     * 那正好是「测试绿、生产错」的经典形态。
+     *
+     * <p>⚠ <b>本 harness 只能验「提交」，验不了「回滚」</b>：这里没有 Spring 事务管理器，
+     * 实测 {@code SqlSession.rollback()} 不会真的回滚（状态迁移会留在库里）。
+     * 所以「审核中途失败整笔回滚」目前是<b>未覆盖项</b>（open-items §1.32）——
+     * 要真验需 {@code @SpringBootTest} + {@code DataSourceTransactionManager}（或 Testcontainers）。
+     */
+    private static boolean settleInTx(Long settlementId) {
+        return inTx(() -> settlementManager.settle(settlementId));
+    }
+
+    private static void reviewInTx(Long id, Integer status, String remark) {
+        inTx(() -> {
+            withdrawalManager.review(id, status, remark);
+            return null;
+        });
+    }
+
+    private static SettlementSweeper.SweepResult sweepInTx(SettlementSweeper sweeper, LocalDate today,
+                                                           LocalDateTime now, int limit) {
+        return inTx(() -> sweeper.sweep(today, now, limit));
+    }
+
+    private static SettlementSweeper.SweepResult sweepInTx(SettlementSweeper sweeper, LocalDate today,
+                                                           LocalDateTime now, int limit, LocalDate periodEnd) {
+        return inTx(() -> sweeper.sweep(today, now, limit, periodEnd));
+    }
+
+    private static <T> T inTx(java.util.function.Supplier<T> op) {
+        try {
+            T result = op.get();
+            session().commit();
+            return result;
+        } catch (RuntimeException e) {
+            session().rollback();
+            throw e;
+        }
+    }
+
+    private static void inTx(Runnable op) {
+        inTx(() -> {
+            op.run();
+            return null;
+        });
+    }
+
+    private static SqlSession session() {
+        return sharedSession;
+    }
+
     // ─────────────────── 第二步用的小工具 ───────────────────
 
     private static Long withdraw(long sellerId, int amount) {
@@ -908,7 +981,7 @@ class SettlementFundAccountH2Test {
         req.setAmount(amount);
         req.setBankAccount("6222****1234");
         req.setBankName("招商银行");
-        return withdrawalManager.applyWithdrawal(sellerId, req).getId();
+        return inTx(() -> withdrawalManager.applyWithdrawal(sellerId, req).getId());
     }
 
     private static int frozenOf(long sellerId) {

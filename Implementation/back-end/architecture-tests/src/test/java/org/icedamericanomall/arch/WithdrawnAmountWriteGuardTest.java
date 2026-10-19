@@ -42,6 +42,15 @@ class WithdrawnAmountWriteGuardTest {
     private static final String TABLE_SQL_MARK = "update settlement";
     private static final int MIN_SCANNED_SOURCE_FILES = 800;
 
+    /**
+     * 额外的减法语句白名单：<b>SQL 文本 → 为什么必须有第二条</b>。
+     *
+     * <p>用 {@code Map} 而不是 {@code Set}（用户点名）：加一条必须写理由，
+     * 评审 diff 里能直接看到「这条为什么存在」；{@code Set} 就是个开关，谁都能悄悄加。
+     * 当前为空：释放路径只有一处，本来就该唯一。
+     */
+    private static final java.util.Map<String, String> ALLOWED_EXTRA_DECREMENTS = java.util.Map.of();
+
     @Test
     @DisplayName("真实扫描 — 写 withdrawn_amount 的 SQL 全部自增自减且带边界；全仓只有一个减点")
     void shouldKeepWithdrawnAmountWritesBoundedAndSingleDecrement() throws IOException {
@@ -86,7 +95,7 @@ class WithdrawnAmountWriteGuardTest {
                         + "③ 再把该 SQL 按文本加入本守卫的白名单并写清理由（白名单是清单，不是开关）；"
                         + "④ 两条路径都必须带 `WHERE withdrawn_amount >= #{}` 边界 —— 少边界就等于允许减成负数。"
                         + "只把断言从 1 改成 2 而不做 ①②③④，等于把唯一的「多回退路径」探测点关掉。")
-                .isEqualTo(1);
+                .isEqualTo(1 + ALLOWED_EXTRA_DECREMENTS.size());
     }
 
     @Test

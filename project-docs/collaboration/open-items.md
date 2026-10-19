@@ -2049,6 +2049,37 @@ helper `savePendingWithdrawal` 已删（留着迟早又被用来绕）。
 `SettlementFundAccountH2Test` 新增「按账期补跑只动该账期」；契约 AD24 行 + 注记 + 变更记录 V5.26.0；
 `--write` 回填（端点数 +1、测试数更新）；`verify-gates.sh full` 七段全绿。
 
+### 1.32 五件确认（2026-10-19）：打款闸 / 事务边界 / 白名单结构 / N 与 periodEnd / 脚本归属
+
+**① `review(PAID_OUT)` 在无渠道时的行为 —— 加了限制**
+`trade.withdrawal.payout-enabled` **默认 false**：标已打款直接抛 `BUSINESS_EXECUTION_EXCEPTION`（文案「打款渠道未接入…」），
+**不动 frozen / paid**。理由：该动作只改本地状态 + 记 `paid_total`、**不调用任何出款接口** —— 是「已记账未付款」，
+比「功能不可用」危险得多（商家投诉时无从自证）。人工银行转账场景显式置 true，注释写明
+「系统认为已付款来自**人工确认**，不是渠道回执」。契约 AD23 注记同步一句。
+
+**② 测试「共用 session」有没有事务边界 —— 原来没有，已补；但回滚仍是未覆盖**
+- 实测：`openSession(true)` ⇒ `autocommit=true` ⇒ **每条语句自成一个事务**，失败不会回滚（生产会）。
+- 已改：`openSession(false)` + `inTx()` 包装（成功 `commit`、异常 `rollback`），每个 manager 调用成为一个显式事务。
+- **但实测 `SqlSession.rollback()` 在本 harness 不生效**（手搓 MyBatis session、无 Spring 事务管理器）。
+⇒ 「审核中途失败整笔回滚」列为**未覆盖项**（不做假绿）：要真验需 `@SpringBootTest` + `DataSourceTransactionManager`
+（或 Testcontainers）。相关 javadoc 已写明，避免后来人把它当已覆盖。
+
+**③ 守卫白名单的数据结构 —— 当前没有白名单，但结构定死**
+释放路径本来就唯一，断言是 `decrement == 1`。按用户要求把「将来若要加」的结构写成
+`Map<String /*SQL*/, String /*为什么必须有第二条*/>`，断言改成 `1 + allowlist.size()`；
+**明确否掉 `Set`** —— 它是开关，加一条不留理由。
+
+**④ `failures` 的 N 与 `periodEnd` 覆盖**
+- `N = 20`（常量 `MAX_FAILURES`，不做配置）：够运维定位，又不至于把响应变成日志倾倒口；**截断条数不截断原因**。
+- `periodEnd` 两种取值都有覆盖：**null** 由 3 参 `sweep(...)` 的 H2 用例走到 SQL 的 `IS NULL` 分支；
+  **有值** 由 `shouldSweepOnlyGivenPeriodEnd`（真库）+ `shouldPassPeriodEndToQuery`（单测透传）覆盖。
+
+**⑤ 工作区脚本改动 —— 不是本批，但影响绿的适用范围**
+`verify-gates.sh`（+45/−6：重排成 report-free / test / count 三段）与 `sync-doc-counts.mjs`
+（+180：`CI_COMPLETE_FLOOR`、半量构建判定）**是并行会话的未提交改动**。
+⇒ 本批 `full` 的绿是在**带这些改动的工作区**上取得的，只对「当前树」成立；
+**若这两处被回退或再改，必须重跑 `full`**（不能引用本批结论）。
+
 ---
 
 ## 2. 待办

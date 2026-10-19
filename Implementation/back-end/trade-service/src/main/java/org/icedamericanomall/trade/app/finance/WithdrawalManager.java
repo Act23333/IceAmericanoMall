@@ -56,6 +56,17 @@ public class WithdrawalManager {
     @Value("${trade.withdrawal.max-per-request:5000000}")
     private int maxPerRequest = 5_000_000;
 
+    /**
+     * 打款渠道是否已接入。<b>默认 false</b>：此时「审核为已打款」<b>直接拒绝</b>。
+     *
+     * <p>为什么默认关：这个动作只改本地状态 + 记 {@code paid_total}，**不调用任何出款接口** ——
+     * 是「已记账未付款」，比「功能不可用」更危险（账上有、钱没出，商家投诉时无从自证）。
+     * 人工银行转账场景请显式打开 {@code trade.withdrawal.payout-enabled=true}，并明白
+     * 「系统认为已付款」来自人工确认，不是渠道回执。
+     */
+    @Value("${trade.withdrawal.payout-enabled:false}")
+    private boolean payoutEnabled;
+
     /** 商家提现单分页（创建时间倒序）。 */
     public IPage<WithdrawalVO> pageBySeller(Long sellerId, int page, int size) {
         return withdrawalRepository.pageBySeller(sellerId, page, size)
@@ -168,6 +179,10 @@ public class WithdrawalManager {
             return;     // 重复审核 ⇒ 幂等，且**不动账户**（先迁移后动账的唯一理由）
         }
         int amount = withdrawal.getAmount() == null ? 0 : withdrawal.getAmount();
+        if (target == WithdrawalStatusEnum.PAID_OUT && !payoutEnabled) {
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
+                    "打款渠道未接入：本系统只记账不付款，禁止把提现标成已打款（trade.withdrawal.payout-enabled）");
+        }
         if (target == WithdrawalStatusEnum.REJECTED) {
             // 释放两个维度：先退回单据核销（LIFO 反向），再解冻账户额度
             withdrawalSettlementRepository.release(withdrawal.getId());
