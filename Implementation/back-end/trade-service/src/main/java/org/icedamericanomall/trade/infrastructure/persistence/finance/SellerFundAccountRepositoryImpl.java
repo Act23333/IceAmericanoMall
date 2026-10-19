@@ -68,8 +68,17 @@ public class SellerFundAccountRepositoryImpl implements SellerFundAccountReposit
     }
 
     @Override
-    public List<SellerFundAccount> findAll() {
-        return sellerFundAccountMapper.selectList(null).stream()
+    public int freeze(Long sellerId, int amount) {
+        return sellerFundAccountMapper.freeze(sellerId, amount);
+    }
+
+    @Override
+    public int unfreeze(Long sellerId, int amount) {
+        return sellerFundAccountMapper.unfreeze(sellerId, amount);
+    }
+
+    @Override
+    public List<SellerFundAccount> findAll() {        return sellerFundAccountMapper.selectList(null).stream()
                 .map(SellerFundAccountRepositoryImpl::toDomain).toList();
     }
 

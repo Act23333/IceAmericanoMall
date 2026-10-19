@@ -118,7 +118,7 @@ class FundTransactionGuardTest {
                 List.of("createPending", "deductBalance", "markBalancePaidIfPending"));
         // T-WITHDRAW 第一步（2026-10-19）：本批的结算/记账入口必须被解析出来，且 body 必须完整 ——
         // 若解析器在新包里漏切方法，「0 违规」就只是「没看见」。
-        KNOWN_FUND_METHODS_AND_TOKENS.put("SettlementManager#settle",
+        KNOWN_FUND_METHODS_AND_TOKENS.put("SettlementManager#settleAt",
                 List.of("settleConditionally", "addSettled"));
         KNOWN_FUND_METHODS_AND_TOKENS.put("SellerFundAccountRepositoryImpl#addSettled",
                 List.of("increaseSettledTotal", "insert"));

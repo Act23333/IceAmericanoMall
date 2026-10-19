@@ -39,6 +39,27 @@ public interface SellerFundAccountRepository {
     void addPaid(Long sellerId, int amount);
 
     /**
+     * <b>条件预占</b>（第二步 · 提现申请）：{@code frozen_amount += amount}，且可用额必须够
+     * （额度判定写在 SQL 的 {@code WHERE} 里，不是先读再比）。
+     *
+     * <p>必须与「插入 PENDING 提现单」<b>同事务</b>：冻结了而单没落 ⇒ 额度被白占；
+     * 单落了而没冻结 ⇒ 这笔钱可以被再提一次。
+     *
+     * @return 影响行数：1=预占成功；0=可用额不足（或账户行不存在）⇒ 调用方拒单，不动其它表
+     */
+    int freeze(Long sellerId, int amount);
+
+    /**
+     * 释放预占（第二步 · 审核到终态）：{@code frozen_amount -= amount}，且<b>不许减到负</b>。
+     *
+     * <p>重复审核走的是状态条件迁移（0 行即幂等返回），**到不了这里**，所以本方法不需要幂等语义。
+     *
+     * @return 影响行数：1=释放成功；<b>0=账不平</b>（冻结额不足）⇒ 调用方<b>必须抛异常</b>整笔回滚，
+     *         不许当作幂等分支 {@code return}（否则留下「状态已迁移、预占没释放」的脏账）
+     */
+    int unfreeze(Long sellerId, int amount);
+
+    /**
      * 全部账户行 —— <b>仅供对账/自检</b>（第一步验收的三条自检要逐行比对）。
      * 不做业务查询用途（那会把「全量扫账户」当成常规读法）。
      */

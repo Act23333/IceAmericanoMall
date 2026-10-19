@@ -2,7 +2,7 @@
 
 > **用途**：跨会话的工作交底。不是规格文档，不需要进规格索引。
 > **维护规则**：任何一批工作落地后，同步更新本文件的「已完成 / 待办 / 已知未修 / 验证边界」四段。
-> **最后更新**：2026-10-19（批次 K 收口 + §1.26：T-WITHDRAW 第一步已落码、已提交临时分支、**0→4 全绿**；结算触发入口已交调度与运维脚本，管理端端点仍为草案；提现整体仍不可上线，见 §3）
+> **最后更新**：2026-10-19（批次 K：第一步 + 触发入口（§1.26）+ **第二步条件预占（§1.28）** 均已落码并跑通 0→4；仍不可上线 —— 端点/调度注册、分配核销、真实打款渠道三缺，见 §3）
 
 ## 0. 要数字？跑命令 —— 本文件不是 SSOT
 
@@ -1462,9 +1462,9 @@ UPDATE seller_fund_account SET frozen_amount = frozen_amount + #{amount}
 若留在唯一键之外，将来加补签就必须改唯一键（带数据迁移），现在只是多一列。
 
 
-#### 1.24b T-WITHDRAW 实施计划（**第一步已落码，见 §1.25；第二步起未开工**，2026-10-19 定稿）
+#### 1.24b T-WITHDRAW 实施计划（**第一步、第二步均已落码并跑绿：§1.25 / §1.28；第三步未开工**，2026-10-19 定稿）
 
-> 状态：**第一步代码与用例已写（未执行，环境原因见 §1.25「验证边界」）；第二步之后一行未写。**
+> 状态：**第一步与第二步的代码与用例均已落码、均已跑通 0→4（见 §1.25「验证结果」与 §1.28）；第三步一行未写。**
 > 本节是**可直接照着做的任务分解 + 验收口径**。与 T-5b **不合批**（用户裁决）；顺序固定为下面的 1 → 4。
 > ⚠ 第一步的**实际口径**以 §1.25 为准：`settled_total` 定为「累计已结算（只增）」，打款只加 `paid_total`，
 > `frozen_amount` 整列留到第二步 —— 本节原表「打款侧三分量一起动」的写法与自检等式不兼容，已订正。
@@ -1795,7 +1795,20 @@ bash Implementation/back-end/scripts/verify-gates.sh full
 **验收（已跑绿，用例名可复查）**
 
 - `SettlementFundAccountH2Test#shouldSweepSettleableSettlementsOnly` —— 真库：一次扫描结算掉到期的、**不动未到期的**、重扫不再动账；
-- `SettlementSweeperTest` —— 条件未命中不计入 / 单条抛异常不中断整批 / 无候选不空转 / `limit <= 0` 不查库。
+- `SettlementSweeperTest` —— 条件未命中计入 `skipped`（不算失败）/ 单条抛异常计入 `failed` 且不中断整批 / 无候选不空转 / `limit <= 0` 不查库。
+
+**2026-10-19 三件收紧（用户点名，已落码）**
+
+1. **返回值改四段计数**：`SweepResult{scanned, settled, skipped, failed}` + `healthy()`。
+   只返回一个数字时，「今天没有可结算的」与「有单但全失败」看起来一模一样，运维无法判断该不该报警。
+2. **时钟只取一次**：`SettlementSweeper#sweep(today, now, limit)` 把同一对时钟同时用于候选查询与逐条条件更新
+   （`SettlementManager#settleAt(id, today, now)` 接收而不再自查 `now()`）；
+   跨零点扫描不会一半按 D 判、一半按 D+1 判。`settle(id)` 保留给单条调用，内部只取一次 `now` 再派生 `today`。
+3. **链路写清**：脚本触发的是 **XXL-Job handler**，**不是**管理端端点（端点仍是草案）。链路
+   `settle-pending.sh → /jobinfo/trigger → XXL-Job → settlePendingSettlements → Sweeper → settle`；
+   **脚本可用 = handler 已注册 + `XXL_JOB_TRIGGER_URL` 配好（管理端开了登录还要 `XXL_JOB_COOKIE`）**。
+   「curl 返回成功」只代表触发被受理，**不等于结算成功**。
+   另：`settlePendingSettlements` 日志已打**耗时**，供「limit 与任务超时」成对调参（见 §1.28 登记）。
 
 **仍未做（上线前必须补）**
 
@@ -1846,6 +1859,57 @@ bash Implementation/back-end/scripts/verify-gates.sh full
 
 **做完第二步仍不能上线**（写死，汇报里不许含糊）：① 管理端端点未做、handler 未在 XXL-Job 注册；
 ② 分配/核销（第三步）未做；③ 真实打款渠道没有。⇒ 交付口径固定为 **「提现仍不可上线」**。
+
+
+### 1.28 第二步落地（2026-10-19）：条件预占 `frozen_amount` + 单笔上限 + 审核释放
+
+> 状态：**已落码、已跑绿（H2 真库 + 单测 + 全量 0→4）**。本节只记「做了什么、怎么验、还差什么」，
+> 口径依据是 §1.27（三件开工确认），不是本节重新发明。
+
+**落地对照 §1.27 的三条**
+
+| 口径 | 落地 |
+|---|---|
+| 三字段同事务 + 顺序由幂等决定 | `applyWithdrawal`：`freeze`（条件更新，0 行=额度不足⇒拒）→ 落 PENDING 单；`review`：`reviewIfPending`（0 行=重复⇒幂等返回、**不碰账户**）→ `unfreeze` → PAID_OUT 时 `payout` |
+| `frozen` 不许减到负 | `SellerFundAccountMapper#unfreeze` 带 `WHERE frozen_amount >= amount`；0 行 ⇒ `releaseFrozen` 抛 `BUSINESS_EXECUTION_EXCEPTION` 整笔回滚（**不是 return**） |
+| 额度进 WHERE、上限留方法体 | `#freeze` 带 `WHERE settled_total - frozen_amount - paid_total >= amount`（原子）；单笔上限 `trade.withdrawal.max-per-request`（默认 5000000 分）与 `amount > 0` 在方法体里独立判 |
+
+**三条对账等式（互不推导，全部有真库用例）**
+
+1. `settled_total == Σ settlement.settlement_amount WHERE status = SETTLED`（§1.25）
+2. `paid_total == Σ withdrawal.amount WHERE status = PAID_OUT`（§1.25）
+3. **新增** `frozen_amount == Σ withdrawal.amount WHERE status = PENDING_REVIEW`（本节；
+   `SettlementFundAccountH2Test#shouldReconcileFrozenAgainstPendingWithdrawals`）
+
+**验收用例（H2 真库，`SettlementFundAccountH2Test`）**
+
+- `shouldFreezeOnApply` —— 申请即预占，可用额 = `settled − frozen − paid`
+- `shouldRejectWhenQuotaInsufficient` —— 预占 0 行 ⇒ `BALANCE_INSUFFICIENT`，不落库、不占额度
+- `shouldRejectWhenOverSingleLimit` —— 超上限 ⇒ `PARAM_ERROR`，不占额度、不落库
+- `shouldReleaseAndRecordPaidOnPaidOut` —— 打款后 frozen 归零、`paid_total` 增加
+- `shouldReleaseOnRejectAndKeepQuota` —— 拒绝也释放，且**额度可再用**（拒绝后能再提一次）
+- `shouldBeIdempotentOnReplayedReview` —— 重复审核不再动账（顺序写反会在这里暴露）
+- 单测 `WithdrawalManagerTest` 用 `InOrder` 把「先预占后落库」「先迁移后释放后记账」两条顺序**钉死**
+
+**踩点（值得记，且它证明了守门在工作）**
+
+既有对账用例原本用 `savePendingWithdrawal` **直接插 PENDING 单**（绕过 `applyWithdrawal`），
+第二步之后 `review` 释放预占拿到 0 行 ⇒ 直接抛「账不平」。这不是用例坏了，而是**守门抓到了造数据绕过入口**：
+绕过申请路径的 PENDING 单，本来就没有对应的冻结额。⇒ 用例改为走真实 `applyWithdrawal` 造数据；
+helper `savePendingWithdrawal` 已删（留着迟早又被用来绕）。
+**规则写死：造数据不许绕过被验的入口。**
+
+**登记两条（用户点名）**
+
+1. **`limit` 与 XXL-Job 任务超时匹配**：`settlePendingSettlements` 已在日志里打**耗时**；
+   limit 调大必须同时看超时配置 —— 跑过超时时间时调度器判超时，而 JVM 仍在跑（可能并发执行同一批，
+   虽然有条件更新兜底不会重复记账，但会让观测与告警失真）。操作手册里「调 limit」与「调超时」必须成对出现。
+2. **第三步退出条件**：动手时先确认读模型**到底需不需要** `PAID_OUT`；确认不需要 ⇒
+   **删枚举值 + 删 `SettlementPaidOutRetiredGuardTest`**，并清理三处引用（`Initialize.sql` 注释、
+   `04-Data-Model` §7.4、本文档提到 `status = 3` 的地方）。**不要**再加第五道判据
+   （详见 §1.25「退出条件」与守卫类 javadoc）。
+
+**仍不可上线**：管理端端点 / handler 未注册 / 首次三段核对（§1.26）+ 分配核销（第三步）+ 真实打款渠道。
 
 
 ---

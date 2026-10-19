@@ -103,14 +103,32 @@ public class SettlementManager {
      */
     @Transactional(rollbackFor = Exception.class)
     public boolean settle(Long settlementId) {
+        LocalDateTime now = LocalDateTime.now();
+        return settleAt(settlementId, now.toLocalDate(), now);
+    }
+
+    /**
+     * 在<b>给定时刻</b>结算 —— 批处理必须整批共用同一对 {@code today} / {@code now}。
+     *
+     * <p>为什么不能每条自己取时钟：一次扫描跨零点时，前半批按 D 判、后半批按 D+1 判，
+     * 而候选查询用的是扫描开始时的 D ⇒ 同一次扫描里的判定口径会分叉（重复扫描还会得到不同结果）。
+     * 时钟由 {@code SettlementSweeper} 取一次往下传，本方法不再调 {@code now()}。
+     *
+     * <p><b>为什么单独起名而不重载 {@code settle}</b>：真正的写就在这里，门禁的「已知资金方法」
+     * 按「文件#方法名」定位 body —— 若叫 {@code settle} 重载，门禁只会检查到那个一行的委托版，
+     * 等于把「body 完整」这条断言架空。命名分叉是为了让门禁看得见真正的写。
+     *
+     * <p>其余语义与 {@link #settle(Long)} 完全一致（条件更新 + 同事务累加），单条仍是幂等 no-op。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public boolean settleAt(Long settlementId, LocalDate today, LocalDateTime now) {
         Settlement settlement = settlementRepository.findById(settlementId);
         if (settlement == null) {
             return false;
         }
-        LocalDateTime now = LocalDateTime.now();
         int rows = settlementRepository.settleConditionally(settlementId,
                 SettlementStatusEnum.PENDING.getCode(), SettlementStatusEnum.SETTLED.getCode(),
-                now.toLocalDate(), now);
+                today, now);
         if (rows == 0) {
             return false;
         }

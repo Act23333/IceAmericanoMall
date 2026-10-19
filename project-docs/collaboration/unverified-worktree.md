@@ -72,6 +72,14 @@ T-WITHDRAW **第一步**：把「商家能提多少」从「Σ 结算单」搬�
 > `SettlementRepositoryImpl#findSettleableIds`（改）、`scripts/settle-pending.sh`（新）、
 > `project-docs/collaboration/settle-trigger-draft.md`（新）、
 > `SettlementFundAccountH2Test#shouldSweepSettleableSettlementsOnly`（新用例）、`SettlementSweeperTest`（新）。
+>
+> §1.28（第二步：条件预占）同批：`SellerFundAccountMapper#freeze/#unfreeze`（改）、
+> `SellerFundAccountRepository#freeze/#unfreeze`（改）、`SellerFundAccountRepositoryImpl`（改）、
+> `WithdrawalManager`（改：预占/释放/单笔上限/终态限定）、`SettlementManager#settleAt(id,today,now)`（改）、
+> `SettlementSweeper`（改：四段计数 + 单一时钟）、`SettlementSettleJob`（改：四段日志 + 耗时）、
+> `scripts/settle-pending.sh`（改：链路与 cookie）、
+> 测试：`SettlementFundAccountH2Test`（+7 条真库用例、删 `savePendingWithdrawal` 绕过 helper）、
+> `WithdrawalManagerTest`（重写，inOrder 钉死两条顺序）、`SettlementSweeperTest`（重写，四段计数）。
 
 ### 2.1 建库脚本
 

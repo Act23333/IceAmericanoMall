@@ -20,6 +20,17 @@
 | 调度（主） | `infrastructure/scheduler/SettlementSettleJob`（`@XxlJob("settlePendingSettlements")`） | XXL-Job 管理端点「执行一次」，或配 cron 每日跑 | 生产常规 |
 | 运维（辅） | `scripts/settle-pending.sh` | 默认只读报告候选条数；`--trigger` 时 POST 到 `XXL_JOB_TRIGGER_URL` | 上线初期人工核对、事故兜底 |
 
+**链路（写清，免得把两件事混成一件）**
+
+```
+settle-pending.sh --POST /jobinfo/trigger--> XXL-Job 管理端 --下发--> trade-service
+  SettlementSettleJob#settlePendingSettlements --> SettlementSweeper#sweep --> SettlementManager#settle
+```
+
+- 脚本触发的是 **XXL-Job handler**，**不是**管理端端点（端点还没做，见 §2 草案）。
+- **脚本可用 = handler 已在 XXL-Job 管理端注册 + `XXL_JOB_TRIGGER_URL` 配好**（管理端开了登录还要
+  `XXL_JOB_COOKIE`）。缺一都不可用；「curl 返回成功」只代表触发请求被受理，**不等于结算成功**。
+
 两条路径最终都进同一个门：`SettlementManager#settle(id)` → 条件更新 → 同事务累加 `settled_total`。
 **没有第二条记账路径**（这是不变量，不是约定）。
 
@@ -31,6 +42,11 @@
 2. **候选查询与条件更新同条件** —— 扫描只缩小范围，判定仍在 `settleIfPending`（两次扫描之间状态可能变）。
 3. **单条失败不中断整批** —— 已整事务回滚，`settled_total` 不会半加；下次扫描重试。
 4. **幂等** —— 重复/并发触发只有一方生效（0 行 = 已结算）。
+5. **四段计数**（已实现）—— 返回值是 `{scanned, settled, skipped, failed}`，不是单个数字：
+   `skipped` = 条件不满足（已结算/未到期/零额/无订单，正常现象），`failed` = 抛异常（真错误）。
+   只给一个数字时，「今天没有可结算的」与「有单但全失败」看起来完全一样，运维无法判断该不该报警。
+6. **时钟只取一次**（已实现）—— 候选查询与逐条条件更新共用同一对 `today` / `now`，
+   跨零点扫描不会一半按 D 判、一半按 D+1 判。
 
 ## 2. 契约草案（**未落 05-API-Specification**）
 
@@ -43,7 +59,8 @@ METHOD/PATH : POST /api/admin/finance/settlements/settle
 权限        : @PreAuthorize("@ss.hasPermi('finance:admin')")   ← 与 AdminFinanceController 现有口径一致
 请求体      : {"limit": 200}          // 可选，默认 200，范围 [1, 1000]（越界 → 400）
 响应        : Result<SettleSweepVO>
-              SettleSweepVO = { "scanned": 12, "settled": 12, "skipped": 0 }
+              SettleSweepVO = { "scanned": 12, "settled": 12, "skipped": 0, "failed": 0 }
+              // failed 必须单列：运维据此区分「条件不满足」与「异常失败」，前者不报警、后者要报警
 语义        : 逐条条件更新，**非单一事务**（每单一个事务）；跳过项只记日志，不中断整批
 幂等        : 是（重复调用不会重复记账）
 副作用      : 只写 settlement.status 与 seller_fund_account.settled_total；

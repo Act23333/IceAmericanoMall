@@ -38,4 +38,33 @@ public interface SellerFundAccountMapper extends BaseMapper<SellerFundAccountPO>
     @Update("UPDATE seller_fund_account SET paid_total = paid_total + #{amount} "
             + "WHERE seller_id = #{sellerId}")
     int increasePaidTotal(@Param("sellerId") Long sellerId, @Param("amount") int amount);
+
+    /**
+     * 预占（第二步 · 提现申请）：{@code frozen_amount += amount}，<b>且可用额必须够</b>。
+     *
+     * <pre>
+     * WHERE seller_id = ? AND settled_total - frozen_amount - paid_total &gt;= ?
+     * </pre>
+     *
+     * <p><b>额度条件写进 WHERE，不是先读再比</b>：读-比较-写不是原子的，两笔并发各自读到同一可用额会
+     * 同时通过（这正是超额提现的成因）。0 行 = 可用额不足（或账户行不存在）⇒ 调用方拒单，不动其它表。
+     */
+    @Update("UPDATE seller_fund_account SET frozen_amount = frozen_amount + #{amount} "
+            + "WHERE seller_id = #{sellerId} AND settled_total - frozen_amount - paid_total >= #{amount}")
+    int freeze(@Param("sellerId") Long sellerId, @Param("amount") int amount);
+
+    /**
+     * 释放预占：{@code frozen_amount -= amount}，<b>且不许减到负</b>。
+     *
+     * <pre>
+     * WHERE seller_id = ? AND frozen_amount &gt;= ?
+     * </pre>
+     *
+     * <p>0 行 = 冻结额不足以释放 ⇒ <b>账不平</b>（不是正常的幂等分支）⇒ 调用方必须抛异常整笔回滚；
+     * 不许 {@code return} 了事 —— 那会留下「状态已迁移、预占没释放」的脏账。
+     * 重复审核走的是状态条件迁移（0 行即幂等返回），**到不了这里**，所以这里不需要幂等语义。
+     */
+    @Update("UPDATE seller_fund_account SET frozen_amount = frozen_amount - #{amount} "
+            + "WHERE seller_id = #{sellerId} AND frozen_amount >= #{amount}")
+    int unfreeze(@Param("sellerId") Long sellerId, @Param("amount") int amount);
 }
