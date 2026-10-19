@@ -2235,6 +2235,33 @@ A1 里该分支只有单测（mock 返回 false）；**真实渠道接入后第�
 3. mock 通道（四态 + `Clock` 驱动）**未实现**，现用 `ManualPayoutAdapter`（本地确认、无 I/O）；
 4. `FAILED` + 人工释放（双确认 + 依据 + 审计）属 A2。
 
+### 1.38 mock 出款通道落地（2026-10-19）
+
+`MockPayoutAdapter`（`trade.withdrawal.payout-mock.enabled=true` 时生效，与 `ManualPayoutAdapter`
+**结构互斥**——后者带 `matchIfMissing=true` 的反向条件，不靠人记得关）。
+
+**四态（全部有用例）**
+
+| 模式 | 返回 | 用例名（按裁决，不出现 FAILED） |
+|---|---|---|
+| `ACCEPTED` | 受理 + `channelRef = MOCK-<no>` | 受理成功且自曝 MOCK 身份 |
+| `REJECTED` | `accepted=false, reason=MOCK_REJECTED` | **不置已打款，保持付款中** |
+| `TIMEOUT` | `accepted=false, reason=MOCK_TIMEOUT` | **不置已打款，保持付款中**（结果未知≠失败） |
+| `ASYNC_CALLBACK` | 时钟未到 ⇒ `MOCK_AWAITING_CALLBACK`；到了 ⇒ 受理 | 时钟推进后受理 + 同 payoutNo 幂等 |
+
+**两条实现约定**
+1. **`Clock` 驱动，零 sleep**：`ASYNC_CALLBACK` 的「回执何时到」由注入的 `Clock` 决定，测试用可变时钟推进；
+2. **只缓存终态**：同一 `payoutNo` 的**终态**结果冻结返回（终态幂等）；非终态（等回执）每次按时钟判定 ——
+   这正是真实渠道的样子（回执没到之前每次问都是「还没到」）。
+
+**resume 语义确认（用户裁决）**：resume job **复用 `pay`**，不另设 query；
+「重试不会出两次钱」**完全依赖端口幂等契约** —— 已写进 `WithdrawalPayoutPort` 注释，作为换适配器的前置条件。
+
+**占位凭据 fail-fast**：`verifyNoPlaceholderCredentials()` 在启动时校验 `app-id/mch-id/api-key`，
+命中 `CHANGE_ME/TODO/xxx/your-/placeholder/示例/待填` ⇒ **抛异常启动失败**；**空值合法**（mock 模式）。
+
+**仍未做**：`PAYING` 停留的升级告警（mock 后单独补，不等 A2）；`FAILED` + 人工释放（A2）。
+
 ---
 
 ## 2. 待办

@@ -311,6 +311,8 @@ redisTemplate.expire(TokenConstants.ACCESS_TOKEN_KEY + token,
 | 序列化 | DTO/VO 必须实现 `Serializable`，显式声明 `serialVersionUID` |
 | Lombok | Entity 用 `@Data` + `@TableName`；DTO/VO 用 `@Data`；Config 用 `@ConfigurationProperties` |
 | 记录日志 | 用 `@Slf4j` + `log.info/error`，禁止 `System.out.println` |
+| **批量替换先排除定义处** | 用脚本/正则跨文件改写调用点时，**先排除被替换方法自身的定义与内部调用**，否则会造出自递归（本轮 `payoutInTx` 调自己 ⇒ `StackOverflowError`）。改完必须看一眼「被替换的字符串在定义体内是否也存在」 |
+| **测试固定 ID 必须查重** | 新增用例里的固定主键（如 `seller = 9031L`）必须与既有用例**全局查重**，否则共享 H2 库下会互相污染、报假失败。加用例前先 `grep "= NNNNL"` |
 | **重载不作语义分叉** | **禁止**用同名重载区分「持有逻辑」与「只是委托」：静态门禁按「**文件#方法名**」定位 body（`FundTransactionGuardTest#shouldParseKnownFundMethodsWithCompleteBody` 就是这么定位的），它只会看到其中一个 ⇒ 看到委托版就等于「body 完整」断言被架空（门禁绿、实际没检查到写）。<br>**要分叉就给持有逻辑的那个独立命名**：`SettlementManager#settleAt(id, today, now)` 持有写逻辑，单条入口 `settle(id)` 只做委托。<br>**判据**：改动某方法语义前，先确认「谁按名字引用它」——门禁、脚本、已知清单只要按**名字**定位，该方法就**不许**重载。 |
 
 ---

@@ -14,6 +14,9 @@ package org.icedamericanomall.trade.domain.port;
  *       详见 {@code open-items} §1.35。</li>
  *   <li>幂等由调用方传 {@code payoutNo} 保证：同一 {@code payoutNo} 重复受理必须返回同一结果，
  *       <b>不得重复出款</b>。渠道侧不支持幂等时，适配器自己落去重记录。</li>
+ *   <li><b>resume 复用 {@link #pay}，不另设 query</b>（2026-10-19 定）：超时单的重试与首次受理走同一个方法、
+ *       同一个 {@code payoutNo}。所以「重试不会出两次钱」<b>完全依赖本端口的幂等契约</b> ——
+ *       换适配器时这条是必须满足的前置条件，不是尽力而为。</li>
  * </ol>
  *
  * <p>当前的 {@code ManualPayoutAdapter} 例外：它是**本地确认**（人已在系统外转账），

@@ -16,6 +16,8 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        name = "trade.withdrawal.payout-mock.enabled", havingValue = "false", matchIfMissing = true)
 public class ManualPayoutAdapter implements WithdrawalPayoutPort {
 
     /** 人工确认的渠道标识；对账时据此把这些单排除在「渠道流水核对」之外。 */
