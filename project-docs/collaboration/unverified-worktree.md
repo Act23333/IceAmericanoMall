@@ -35,21 +35,26 @@ git stash                git clean -fdx           IDE「Revert All」/「Rollbac
 
 ## 0. 提交约定（本批未能执行，恢复后第一件事）
 >
-> **当前状态**：`[UNVERIFIED]` —— 代码与用例已写，**构建、测试、门禁、计数脚本一次都没跑过**
-> （当时 shell 不可用：`ops_bash` / `pwsh` 一律 `0xC0000142` / STATUS_DLL_INIT_FAILED，`git` 也调不起来）。
-> **目前没有测试环境**。
+> **当前状态**：**✅ 已提交 + 已验证（0→4 全绿）**。
+> 提交：分支 `wip/t-withdraw-step1-unverified`，commit `fd569cb0`，消息前缀 `[UNVERIFIED]`（**锁在「功能未完成」语义上**，
+> 不是「没跑过」——详见 `open-items.md` §1.25 的状态说明）。
+> 验证：`mvn -v` = Maven 3.9.7 / JDK 21.0.10；`-DskipTests install` 绿；两个门禁类绿；
+> `clean test` 全绿（本批 H2 用例首跑即绿）；`sync-doc-counts --write` 回填并自检 0 残留；
+> `verify-gates.sh full` 全绿。历史：本批最初受 shell `0xC0000142` 阻塞，提交时还被 pre-commit 钩子
+> 抓到过一个编译错（lambda 捕获非 final 局部变量）——**静态审查不能替代编译**，这条已写进 `open-items` 教训。
 
-## 0. 提交约定（本批未能执行，恢复后第一件事）
+## 0. 提交约定（本批已执行）
 
 ```bash
-git switch -c wip/t-withdraw-step1-unverified
-git add -A
-git commit -m "[UNVERIFIED] T-WITHDRAW 第一步：资金账户成权威（settled_total/paid_total），未跑构建与门禁"
+git switch -c wip/t-withdraw-step1-unverified      # ✅ 已建
+git add <本批 27 个路径>                            # ✅ 只点路径，未用 git add -A
+git commit -F <msg> -- <同样的路径>                 # ✅ fd569cb0（工作区其余改动未纳入、未触碰）
 ```
 
 - **分支名 `wip/*`、commit 前缀 `[UNVERIFIED]`** 固定不变；`git log --grep='\[UNVERIFIED\]'` 可一次捞全。
 - **原则**：不进**主干**，不是「不进任何分支」—— 未验证改动的丢失风险高于「暂时进历史」的代价，前者不可恢复。
-- 合入主干前必须跑通 `open-items.md` §1.25「验证边界」的 **0→4** 顺序，并在合并提交里写明「跑通了哪些门禁」。
+- **合入主干的判据不是「测试绿」**，而是 `open-items.md` §3 里的两条上线阻塞项（`settle()` 触发入口、`frozen_amount` 预占）。
+  在本批标签保持 `[UNVERIFIED]` 期间，任何人不得把它当成「提现已修复」。
 
 ## 1. 批次定性（一句话）
 
@@ -115,13 +120,19 @@ T-WITHDRAW **第一步**：把「商家能提多少」从「Σ 结算单」搬�
 
 ## 3. 跑验证前的提醒
 
-**3.0 工具链在盘上，但本会话起不了进程**
+**3.0 工具链已实测可用（不再是「不可判定」）**
 
-用文件工具取证（不需要 shell）：JDK 21 在 `C:\Users\18279\.jdks\ms-21.0.10\bin\java.exe`；
-Maven 3.9.7 在 `E:\maven\apache-maven-3.9.7\bin\mvn.cmd`（**不在 PATH 上**）；本地仓库在 `E:\maven\myRepository`。
-但**本会话连 `echo` 都起不来**（`ops_bash` / `pwsh` / `git` 一律 `0xC0000142`）⇒ **`mvn -v` 都跑不了**。
-⇒ 「mvn 能否跑」在本会话内**不可判定**；标定它的唯一办法是**有人跑一次 `mvn -v` 并把输出贴回
-`open-items.md` §1.25**（在那之前，既不能说「mvn 不可用」，也不能说「环境已恢复」）。
+`mvn -v` 实测：**Maven 3.9.7 / JDK 21.0.10（Microsoft）/ platform encoding UTF-8**；
+路径为 JDK `C:\Users\18279\.jdks\ms-21.0.10`、Maven `E:\maven\apache-maven-3.9.7`（**不在 PATH 上**，需 export）、
+本地仓库 `E:\maven\myRepository`。命令前须：
+
+```bash
+export JAVA_HOME=/c/Users/18279/.jdks/ms-21.0.10
+export PATH="$JAVA_HOME/bin:/e/maven/apache-maven-3.9.7/bin:/c/Program Files/nodejs:$PATH"
+```
+
+历史：本批前半段整段跑不动（`0xC0000142` / STATUS_DLL_INIT_FAILED，连 bash 内建 `true` 与 `cmd /c echo` 都失败
+⇒ 进程创建层故障，与本批代码无关）。该故障已消失；**若再出现，按 `open-items.md` 的「环境事实」定位，不要改代码去迎合。**
 
 1. **先建分支再跑**（见 §0）：跑坏了可以重来，丢了不能重来。
 2. **门禁本批被改过**：`full` 若红**不能直接归因**，必须先单独跑门禁类（`open-items.md` §1.25 第 1 步），

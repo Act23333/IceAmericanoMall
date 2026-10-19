@@ -2,7 +2,7 @@
 
 > **用途**：跨会话的工作交底。不是规格文档，不需要进规格索引。
 > **维护规则**：任何一批工作落地后，同步更新本文件的「已完成 / 待办 / 已知未修 / 验证边界」四段。
-> **最后更新**：2026-10-19（批次 K：T-WITHDRAW 第一步 —— 资金账户成权威，只动 `settled_total` / `paid_total`）
+> **最后更新**：2026-10-19（批次 K 收口：T-WITHDRAW 第一步已落码、已提交临时分支、**0→4 全绿**；功能面仍是「生产提现中断」，见 §3）
 
 ## 0. 要数字？跑命令 —— 本文件不是 SSOT
 
@@ -1493,11 +1493,11 @@ UPDATE seller_fund_account SET frozen_amount = frozen_amount + #{amount}
 
 ### 1.25 T-WITHDRAW 第一步落地（2026-10-19）：**只动 `settled_total` 与 `paid_total`**
 
-> 状态：**代码与用例已写；应收进临时分支并标 `[UNVERIFIED]`（未进主干）**。
-> ⚠ 该动作**本批没能执行**：shell 不可用（`0xC0000142`），`git` 调不起来 ⇒ 改动仍在**工作区**。
-> 恢复后第一件事：建 `wip/t-withdraw-step1-unverified` 分支并提交（命令与约定见本节末尾「验证边界」），
-> 再跑 **0→4** 顺序验证（任一步红即停）。清单见 `collaboration/unverified-worktree.md`。
-> 下面写的是**口径与意图**，不是「已跑绿」的声明。
+> 状态：**已提交到 `wip/t-withdraw-step1-unverified`（commit `fd569cb0`，消息带 `[UNVERIFIED]`），并已跑通 0→4 门禁**
+> （逐项结果见本节末尾「验证边界」）。**标签仍是 `[UNVERIFIED]` 而不是改成 `[VERIFIED]`** —— 理由：本批的
+> **功能面**未完成（`settle()` 无触发者、`frozen_amount` 未做、分配表未做），把提交锁死在「未完成」语义上，
+> 避免有人只看提交标题就当成可上线。合入主干的判据不是「测试绿」，而是 §3 里那两条上线阻塞项。
+> 下面写的是**口径与意图**；跑绿的是**用例与门禁**，不是「提现已修复」。
 >
 > ⚠ **本步不是「部分收敛」，而是「生产功能中断」**（定性已订正，取代先前的「部分收敛」说法）：
 > `settle()` **目前没有任何触发者**（无定时任务、无手动入口、无运维脚本），而它现在是
@@ -1692,37 +1692,32 @@ UPDATE seller_fund_account SET frozen_amount = frozen_amount + #{amount}
 原写法「不提交」被裁决纠正为 —— 原则是**不进主干**，不是「不进任何分支」：工作区已积累大量未提交改动，
 **丢失风险 > 未经证实进入历史的代价**（后者在临时分支上可回退，前者不可恢复）。
 
-⚠ **本批未能执行该动作**：当时 shell 不可用（`0xC0000142`），`git` 调不起来，所以**分支与提交都没建**。
-恢复后第一件事就是补上（在跑 0→4 之前，先把改动收进分支免得丢）：
+**已完成（执行记录）**：`wip/t-withdraw-step1-unverified` 上 `[UNVERIFIED]` 提交 `fd569cb0`，含且仅含本批 27 个路径；
+工作区其余未提交改动（来自并行会话）**未纳入、未触碰**（`git add` 只点路径 + `git commit -- <paths>`，
+不用 `git add -A`）。沿用约定：**分支名 `wip/*` + commit 前缀 `[UNVERIFIED]`**，`git log --grep='\[UNVERIFIED\]'` 可一次捞全。
+改动清单见 `collaboration/unverified-worktree.md`。
 
-```bash
-git switch -c wip/t-withdraw-step1-unverified
-git add -A
-git commit -m "[UNVERIFIED] T-WITHDRAW 第一步：资金账户成权威（settled_total/paid_total），未跑构建与门禁"
-```
+**验证结果（0 → 4，全部通过。本文件不落数字：数字以根文档与 surefire 报告为准）**
 
-约定：**分支名 `wip/*` + commit 前缀 `[UNVERIFIED]`** 固定不变，便于 `git log --grep='\[UNVERIFIED\]'`
-一次性找出所有「未验证批次」；验证通过（0→4 全绿）后再把这些提交整理进主干，并在合并提交里说明「已跑通哪些门禁」。
-本批的改动清单见 `project-docs/collaboration/unverified-worktree.md`（同批落盘，防止「哪些是新改的」靠回忆）。
+| 步 | 命令 | 结果 |
+|---|---|---|
+| 0 | `mvn -o -f Implementation/back-end/pom.xml -DskipTests install` | BUILD SUCCESS（含测试源码编译）。`mvn -v` = Maven 3.9.7 / JDK 21.0.10 ⇒ **「mvn 能否跑」自此有实测答案，不再是「不可判定」** |
+| 1 | `... -pl architecture-tests test -Dtest='FundTransactionGuardTest,SettlementPaidOutRetiredGuardTest'` | 两个门禁类全绿（资金动词表 + 新守卫的合成反例与真实扫描） |
+| 2 | `mvn -o ... clean test` | BUILD SUCCESS，零失败零错误，仅既有 `@Disabled` 一处跳过；**本批 H2 用例（含 `information_schema` 断言与真实 `review()` 路径）首跑即绿** |
+| 3 | `node ... sync-doc-counts.mjs --write` | 就地定点回填（测试数 / 表数，共十余处），脚本自检「0 处残留差异、命中面不变」 |
+| 4 | `bash ... verify-gates.sh full` | **全绿**：交接单门禁 / ID 不变量 / ia-api 单测 / 架构守卫 / 契约闭环 / 全量 `mvn test` / 根文档计数一致 |
 
-**工具链是否可执行 —— 「我跑不了」不等于「仓库不可验证」**
+**三条教训（保留，不因这次变绿就删）**
 
-用**文件工具**取证（不需要 shell），以下三项都在盘上：
-- JDK 21：`C:\Users\18279\.jdks\ms-21.0.10\bin\java.exe`（`.jdks` 下只此一个版本）；
-- Maven 3.9.7：`E:\maven\apache-maven-3.9.7\bin\mvn.cmd`（**不在 PATH 上**，环境事实 §4 已记）；
-- 本地仓库：`E:\maven\myRepository`（含 `org/nolazy/ia-common/1.0/ia-common-1.0.jar`，即旧版共享 jar）。
+1. **静态审查抓不到编译错**：本批**第一次提交被 pre-commit 钩子拦下** —— 我把循环里被重新赋值的局部变量捕进
+   lambda，报「必须实际上的最终变量」。这类错**只读源码看不出来**（我上一轮逐项审过 import/签名/事务/void）。
+   ⇒ 「环境恢复前只做审查」只能**减少**失败面，**不能替代编译**。
+2. **钩子先于提交跑 `fast`，可以故意用它当第一道编译检查**：它当场给出「编译 + 门禁」的结论，比事后跑 `full`
+   更早暴露问题，且失败**不产生提交**。改了门禁的批次应当**先 commit 一次**探路（本批正是这样定位到编译错的）。
+3. **`information_schema` 断言没踩坑**：H2 2.3.232 下首跑即绿 ⇒ 「失败信息带实有清单」的写法是可移植的。
+   但登记仍然有用 —— 换 H2 版本 / 加表时必须重跑，**别假设「上次绿过」**。
 
-**但本会话连 `echo` 都起不来**（`ops_bash` / `pwsh` 一律 `0xC0000142` / STATUS_DLL_INIT_FAILED，
-`git` 同样调不动）⇒ **无法执行 `mvn -v`，因此「mvn 能否跑」在本会话内不可判定**。
-
-⇒ 结论要分两句话说（这是「全阻塞还是只阻塞提交」的答案）：
-1. **对「我」**：**全过程阻塞**（编译、门禁、测试、计数、`git` 全部无法执行），不是只阻塞提交；
-2. **对「能起 shell 的人/另一会话」**：**只阻塞「由我来跑」** —— 工具链齐备，按 §4 的两条 `export`
-   （`JAVA_HOME=/c/Users/18279/.jdks/ms-21.0.10` + `PATH` 加 Maven）即可执行。
-   **判据只有一条**：跑 `mvn -v`，把它的输出（JDK 版本 + Maven 版本）贴回本文件 —— 在此之前，
-   任何人都不该说「mvn 不可用」或「环境已恢复」。
-
-**恢复后按 0 → 4 顺序跑；任何一步红就停，不要跳步往下跑。**
+**复跑命令（本次实际执行的就是这一段；顺序不可换）**
 
 ```bash
 # 0) 全量编译（同时覆盖「门禁代码编译不过」这一类红）
@@ -1765,12 +1760,11 @@ bash Implementation/back-end/scripts/verify-gates.sh full
 另外**回填前必须保证报告来自本次构建**（`clean` 或确认无残留）：残留报告让总数偏大，
 `--write` 会把脏数据写进文档 —— 若根目录 `clean` 与并行会话冲突，宁可等，也别用上一轮的报告回填。
 
-**等价写法（也接受）**：第 2 步直接跑 `verify-gates.sh full`（它含全量测试）—— **此时段 3（计数闸）红是预期**
-（根文档表数与测试数是旧值），段 1（架构守卫）+ 段 2（全量测试）的结论仍有效；再跑第 3、4 步。
-**判据**：只有「段 1 与段 2 全绿 **且** 回填计数后复跑 `full` 全绿」才算通过；第一次的计数红不算失败，也**不算通过**。
+**只接受这一条主路径**：先 `full` 再 `--write` 再 `full` 的变体**不再保留** —— 计数回填后「段 3 红是预期」这个前提
+已经消失，留着只会让两套流程漂移。判据统一为：**0→4 顺跑全绿**才算通过。
 两处必须由 `--write` 回填（不得手改）：根文档的表数与测试数。
 
-`fast` 里那道计数闸会 `[skip]`，所以「`fast` 绿」并不覆盖这一项。
+`fast` 里那道计数闸会 `[skip]`，所以「`fast` 绿」并不覆盖这一项（本批第 4 步的 `full` 才覆盖它）。
 
 
 ---
@@ -1805,7 +1799,7 @@ bash Implementation/back-end/scripts/verify-gates.sh full
 | 编号 | 任务 | 内容与验收 | 依赖 / 期限 |
 |---|---|---|---|
 | ~~**T-5b**~~ | ✅ **已完成（§1.22）**：商家端权限接线（`/api/seller/**` 全量），EXEMPT 清零 | 按 `rbac-permission-matrix-draft.md` §4.2b 逐端点挂位；**接线与删 EXEMPT 同一个 commit**；验收 = 四个控制器转强制 + 无残留豁免 + 每映射方法都有 `@PreAuthorize` | **截止 2026-11-15**；等用户签 §4.2b（只需签两类判断） |
-| **T-WITHDRAW** | 提现缺口（=超额提现 + `mark-all` 吞余额 + 缺 `PENDING→SETTLED` 入口，§1.21/§1.23） | 实施计划与验收口径见 **§1.24b**；**第一步已落码（§1.25，未执行构建/测试）**，第二步起未开工。裁决：`seller_fund_account` 做成**权威**（唯一写入者 = `settle()` 与打款，且各自同事务），可提现额 = `settled_total − frozen_amount − paid_total`；`frozen_amount` 与 `applyWithdrawal` 预占一起做（第二步）；额度判定**只在申请侧**（审核侧不判）；`settlement.status` **不承载打款事实**（已打款看 `withdrawal`，故 `withdrawal_settlement` 分配表只解决「按金额核销 + 拒绝释放」）；幂等键前端传 `Idempotency-Key` | **与 T-5b 不合批**（用户裁决）；验收 = 第一步自检三条绿（`SettlementFundAccountH2Test`，**非空断言靠自造数据真走 `settle()`**）。⚠ **生产提现功能中断**：`settle()` 无触发者 ⇒ 账户恒 0 ⇒ 申请恒拒 ⇒ **上线必须同时提供触发入口（按钮/脚本），否则不许上线** |
+| **T-WITHDRAW** | 提现缺口（=超额提现 + `mark-all` 吞余额 + 缺 `PENDING→SETTLED` 入口，§1.21/§1.23） | 实施计划与验收口径见 **§1.24b**；**第一步已落码，且已跑通 0→4（§1.25「验证结果」，提交 `fd569cb0`）**，第二步起未开工。裁决：`seller_fund_account` 做成**权威**（唯一写入者 = `settle()` 与打款，且各自同事务），可提现额 = `settled_total − frozen_amount − paid_total`；`frozen_amount` 与 `applyWithdrawal` 预占一起做（第二步）；额度判定**只在申请侧**（审核侧不判）；`settlement.status` **不承载打款事实**（已打款看 `withdrawal`，故 `withdrawal_settlement` 分配表只解决「按金额核销 + 拒绝释放」）；幂等键前端传 `Idempotency-Key` | **与 T-5b 不合批**（用户裁决）；验收 = 第一步自检三条绿（`SettlementFundAccountH2Test`，**非空断言靠自造数据真走 `settle()`**）。⚠ **生产提现功能中断**：`settle()` 无触发者 ⇒ 账户恒 0 ⇒ 申请恒拒 ⇒ **上线必须同时提供触发入口（按钮/脚本），否则不许上线** |
 | **T-SIGN** | 签到幂等升级（§1.20） | 加 `sign_log` + `uk_user_date`；签到与积分发放进**同一本地事务**；`points_log` 加 `biz_key`+`uk_biz_key`；Redis Bitmap 降级为投影；三条用例（并发只发一次 / 失败可重试补发 / 重复调用语义不变） | 无外部期限；建议排在 D1 之后、B1 之前 |
 | **D1** | 数据权限范围文档（**带静态断言**） | 只写文档 + **一条 `SellerScope` 静态断言**（不许只有文档）：断言"按 seller 维度取数的仓储方法必须显式接收 `sellerId` 参数"或等价形态；文档范围 = 维度（本店/本部门/本人）+ 查询层强制注入方式 + 与 RBAC0 的边界 | 用户要求：若做就必须带断言 |
 | **B1** | 剩余基线超限类拆分 | 按**用例族**拆（§1.18.3 判据），不按行数砍；还清即删基线条目 | **截止 2026-12-31** |
@@ -1906,10 +1900,10 @@ bash Implementation/back-end/scripts/verify-gates.sh full
 | **`settle()` 无触发者 ⇒ 生产提现功能中断（上线阻塞项）** | 入口本身已落码，是 PENDING→SETTLED 的**唯一且原子**的迁移（条件更新 + 同事务累加）；但它**没有定时任务 / 手动入口 / 运维脚本**，而它是 `settled_total` 的**唯一写入者** ⇒ 账户恒 0 ⇒ `applyWithdrawal` 恒拒 ⇒ **生产上提现完全不可用**。这与本批改动之前一致（此前也从未有 `PENDING→SETTLED` 入口），即「没把可用改坏，也没把不可用改好」。⚠ 该入口**代码已写但从未执行过**（本环境无测试环境）——「唯一且原子」目前是**设计结论**，不是验证结论。**上线必须同时提供触发入口**（管理端按钮 `POST /api/admin/finance/settlement/{id}/settle` 挂 `finance:admin`，**需先改契约**；或运维脚本，**需登记手册**）。**没有入口不许上线** —— 否则只是新增一张只读空表 |
 | **`frozen_amount` 仍是 0，且审核侧不判额度 ⇒ 额度守门只剩申请侧的读校验（第二步）** | 第一步只做「已打款」这一项的扣减，**待审提现不冻结**；同时按裁决 `review` **不再判一次额度**（额度属 `applyWithdrawal`）。⇒ 第一步里唯一的额度守门是 `applyWithdrawal` 的「先读 `availableBalance` 再比」——**不是原子的**（并发/连提两笔仍可能超额）。**结论写死：本步是口径迁移，不是缺陷修复 —— 超额提现仍可能、且提现功能在生产上仍是中断的（缺 `settle()` 触发入口），任何口径都不得宣称 T-WITHDRAW 已修复**；第二步的条件预占（`frozen_amount += amount WHERE settled_total - frozen_amount - paid_total >= amount`）才真正堵住。**不要把额度条件临时塞回 `review`**：那会变成「申请通过、打款被拒，而钱已付出」的假拒绝 |
 | **自检取数当前只在 SETTLED（改宽是「条件性」动作，不是待办）** | `SettlementFundAccountH2Test` 的两处对账取数用 `status = SETTLED`：**① 数值一致** `settledAmountBySeller()`、**② 覆盖面一致** `settledSellersInLedger()`。第一步没有任何路径把结算单迁出 SETTLED ⇒ 现在准确且更严（若有行被错迁成 PAID_OUT，自检当场红）。**只有当后续步骤仍决定把行标成 PAID_OUT 时**，才必须在同一 commit 里把**两处**都改成 `IN (SETTLED, PAID_OUT)`，漏一处就自检突然红；按本批裁定的状态语义（`SETTLED` = 可提现、打款事实看 `withdrawal`、分配表与行状态解耦）**预期不写 PAID_OUT ⇒ 两处应保持不动**。「结算单列表区分已打款」属读模型（join `withdrawal`），不是改行状态 |
-| **资金门禁的新动词只做了静态补表，未跑过** | `add` / `increase` / `settle` / `payout` 已进 `WRITE_VERB_PREFIXES`、已知清单与三条合成反例（见 §1.25），但**没有一次真实执行**；`WRITE_VERB_PREFIXES` 仍是新动词的唯一真源 —— 出现「两个资金写但动词不在表里」的写法时门禁依旧瞎。恢复环境后**必须先单独跑门禁类**（`verify-gates.sh` 之前的第 1 步），否则 `full` 的红无法归因 |
+| ~~**资金门禁的新动词只做了静态补表，未跑过**~~ → ✅ **已实跑** | `add` / `increase` / `settle` / `payout` 进 `WRITE_VERB_PREFIXES` 后，门禁类与全量 `mvn test` 均绿（§1.25「验证结果」第 1、2 步），且本批的 `SettlementManager#settle` 已在「≥2 个资金写」集合里被扫到。**残留教训**：`WRITE_VERB_PREFIXES` 仍是新动词的唯一真源 —— 出现「两个资金写但动词不在表里」的写法时门禁依旧瞎，**补动词必须同时补一条合成反例** |
 | **`settlement.status` 不承载打款事实（这是语义，不是缺陷）** | `SETTLED` = **可提现**，**不是「未打款」**；**已打款的事实源是 `withdrawal.status = PAID_OUT`**（聚合看 `seller_fund_account.paid_total`）。⇒「结算单列表看不到已打款」**不是缺口**，也**不要**从 `settlement` 反推打款。旧的全量置位（mark-all）已删除且**不打算恢复**；`settlement.status = 3` 保留为历史语义、本批起不再写入。要做「列表区分已打款」= **读模型**（join `withdrawal`），不是改行状态 |
 | **H2 用例的 schema 是手写子集（双源必须同步，且断言本身要适配 H2）** | `SettlementFundAccountH2Test` 的三张表 DDL 是**手工副本**（H2 跑不了 MySQL 专有子句），结构真源是 `Initialize.sql` ⇒ 任何列 / 类型 / 唯一键变更**必须同步该用例 DDL**。已加**可执行检查**：`@BeforeAll` 读 `information_schema` 断言关键列与唯一键存在（漏列当场红），不再只靠「记得」。⚠ **首次跑可能因 H2 / MySQL 的 `information_schema` 差异而红**（列名大小写、`constraint_type` 字面量、内联 UNIQUE 是否进 `table_constraints`）—— 红时先分清「断言不兼容」（改断言）还是「schema 真漂了」（同步 DDL），**不许删断言**。已知刻意差异：时间列可空且无 `ON UPDATE`、省略 `ENGINE`/`COLLATE`/`idx_*`、唯一键用表级 `CONSTRAINT`；判据：**行为相关的差异一条都不许有** |
-| **T-WITHDRAW 第一步的用例与门禁改动都未执行** | 本环境 shell 不可用（`0xC0000142`）**且目前没有测试环境** ⇒ `mvn test` / 门禁 / 计数脚本全未跑 ⇒ 三条自检「设计上齐备」**不等于**「已跑绿」；**门禁本批也改过**（动词表 + 已知清单 + 反例）**并新增了一个门禁类**（`SettlementPaidOutRetiredGuardTest`），所以 `full` 若红**无法直接归因**。另：**`mvn` 是否可执行未判定** —— 工具链（JDK 21 / Maven 3.9.7 / 本地仓库）**都在盘上**（文件工具取证），但本会话起不了任何进程，连 `mvn -v` 都跑不了；标定方式 = 有人跑一次 `mvn -v` 并把输出贴回 §1.25。提交前必须按 §1.25「验证边界」的 **0→4 顺序**跑，且**任一步红即停**（第 1 步 = 两个门禁类整类；若报 `No tests matching`，那是命令错不是红）|
+| ~~**T-WITHDRAW 第一步的用例与门禁改动都未执行**~~ → ✅ **已执行（0→4 全绿）** | 曾经的阻塞：shell 整段不可用（`0xC0000142`，进程创建层失败）+ 无测试环境。恢复后按 §1.25 的 0→4 顺序跑通，含本批 H2 用例、两个门禁类、全量 `mvn test`、计数回填与 `verify-gates.sh full`。**留给下次的教训**：本批第一次提交被 pre-commit 钩子拦下（lambda 捕获非 final 局部变量）—— 「只做静态审查」**不能替代编译** |
 | **小程序三处死路径（U19 邻项，未做）** | `crosscheck-api-paths.mjs` 把它们列为**非阻塞报告项**：`/api/item/product/page`、`/api/item/product/{v}`、`/api/search/product` —— 都是 ADR-062 把资源段 `/product` 改名 `/spu` 时**只改了后端与 web**、小程序没跟上。另有一层**更深**的不一致：小程序用技术键 `id` 寻址 SPU 详情，而后端 `{spuId}` 已要求**业务键 32-hex**（ADR-062），即「改了路径也还是 400」。所以这不是改三处字符串，属小程序整体对接改造 ⇒ 归入 §2.2 的 H 批（用户已裁决本轮排除代码），**不要**当成顺手小修 |
 | **小程序仍用 `categoryId`（驼峰）当查询参数** | 后端 `SpuPageReq` 的线上名是 `category_id`（ADR-056），驼峰被**静默忽略** ⇒ 品类筛选点了没反应。与上一条同源（小程序没跟 ADR-056/062 的线格式改造），同样归 H 批 |
 | **工厂/链式 receiver 的资金写不被计数（已登记边界）** | `getRepo().credit(...)` 这类写法门禁**看不见**（receiver 是表达式，判它需类型推导）。当前全仓零命中，由 `shouldHaveNoFactoryChainedFundWrites` 做体检兜住；一旦出现会红并逼出「改写法 or 补类型解析」的决策。**另**：`this.repo.write(...)` 已补上（此前同样漏算）|
