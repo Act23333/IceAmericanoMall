@@ -16,6 +16,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -67,6 +68,24 @@ class WithdrawalPayoutServiceTest {
         verify(withdrawalManager).completePayout(withdrawal);
         assertEquals(WITHDRAWAL_NO, captor.getValue().payoutNo(),
                 "幂等键必须是单据业务号：重试复用同一个，渠道才能去重");
+    }
+
+    @Test
+    @DisplayName("service — 同一单 settle 两次：渠道被调两次，但**只记账一次**（收口在 completePayout 的返回值）")
+    void shouldAccountOnce_whenSettleRunsTwice() {
+        when(withdrawalRepository.findPayingIds(LIMIT)).thenReturn(List.of(WITHDRAWAL_ID));
+        stubWithdrawal();
+        when(payoutPort.pay(any()))
+                .thenReturn(new WithdrawalPayoutPort.PayoutResult(true, "MOCK-WD-1", null));
+        // 第一次落账成功；第二次状态已变（幂等）⇒ 返回 false
+        when(withdrawalManager.completePayout(withdrawal)).thenReturn(true, false);
+
+        assertEquals(1, payoutService.settle(LIMIT));
+        assertEquals(0, payoutService.settle(LIMIT), "第二次不得再计完成");
+
+        verify(payoutPort, times(2)).pay(any());          // ★ job 层确实调了两次
+        verify(withdrawalManager, times(2)).completePayout(withdrawal);
+        // 记账只发生一次：第二次 completePayout 返回 false，服务不往下推
     }
 
     private void stubWithdrawal() {

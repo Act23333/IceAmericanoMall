@@ -2286,7 +2286,53 @@ mock 的 `ASYNC_CALLBACK` 由注入 `Clock` 驱动；但 **resume job 目前没�
 但**此后新分支/提交不得再用此前缀表达「未验证」**；若要表达「功能未完成」，请直接写「功能未完成」。
 
 **④ 主干复核**：合入后在 `develop` 上重跑 `verify-gates.sh full` —— 见本节的验证记录（全绿）。
+### 1.41 两条结构性问题 + 短码缺陷交办（2026-10-19）
 
+**① 跑 `full` 前必须确认「工作区无未提交源码改动」，否则结论只能标「当前树」**
+`mvn install` 会编译**工作区里的全部源码**（含并行会话未提交的改动），架构守卫又读 `target/classes`
+⇒ 结论可能既不是「主干」也不是「我的分支」。**口径**：跑 `full` 前先 `git status --short` 看源码改动；
+有 ⇒ 结论标「当前树」；无 ⇒ 才能标「主干」。
+
+**② 反向也成立：陈旧的 `target` 会掩盖已提交的失败**
+本轮实证：`item-service.ShortCodeTest` 是**已提交**代码（`265543d6`，并行会话的 186 个提交之一），
+早期 `full` 绿是因为 item-service 的 class 没被重编；`mvn clean` + `install` 后才暴露。
+⇒ **「绿」必须标注它对应的构建状态**（干净重编 / 增量）。
+
+**③ 短码缺陷交办（不是 flake，不要用 flake 定性放过）**
+- 现象：`ShortCodeTest.shouldNotDeriveFromBusinessId` 失败，`短码不得复用业务键子串（可反解）: d75542c73d`
+- 证据：**隔离跑两次全绿（8/8）**；**全量 reactor 红**；来源提交 `265543d6`
+- 三个排查方向（交并行会话）：**(a) 派生逻辑** 是否用了 `id`/`hashCode` 的子串或可变来源；
+  **(b) 断言过宽** 是否把「不等于业务键」写成了「不含任意子串」；**(c) 测试数据/跨测试静态状态混入**
+  （共享 `Random`/`IdGenerator`/静态缓存使不同执行序下输入不同）
+- 该模块红灯**不阻塞**本批：本批以「排除 item-service 的全量 reactor」+「trade-service 单测」为证据。
+
+---
+### 1.40 合入后四件确认（2026-10-19）
+
+**① 门禁脚本版本 —— 主干结论只对「当前树」成立**
+`git show HEAD:.../verify-gates.sh` 里**只有 `fast_steps()`**（旧六段版）；工作区那份带 `+45/−6`
+（三段式）的脚本是**并行会话的未提交改动**。⇒ 我在 `develop` 上跑的 `full` 用的是**工作区脚本**，
+**结论只对当前树成立**；若那份改动被回退/再改，必须重跑（与 §1.32⑤ 同一口径）。
+
+**② `MockPayoutAdapter` 无 `@Lazy`、无全局懒加载**
+`grep` 结果为空（`@Lazy` / `lazy-initialization` 都不存在）⇒ 生产里它**启动即构造**。
+⚠ 但**单测的覆盖边界要说清**：`MockPayoutAdapterTest` 覆盖的是**构造器逻辑**（占位凭据自检、四态、幂等），
+**不是「启动时机」**；容器级启动断言仍未覆盖（`ApplicationContextRunner` 在该 Runner 下测不到，已删测试，§1.39 登记）。
+
+**③ resume job 无超时判定 —— 登记其后果与修法**
+当前 `settle()` 扫**全部** `PAYING`，没有时间阈值 ⇒ **重试频率 = job 频率**（每跑一次就重试一遍全部停留单）。
+加阈值时，扫描条件必须是 `WHERE status = 4 AND create_time < now - timeout`（不是内存过滤），
+且 `now` 与 mock 用**同一个 `Clock`**（§1.39 ②）。
+
+**④ 「调几次 pay、只记一次账」的断言在 service 层**
+新增 `WithdrawalPayoutServiceTest#shouldAccountOnce_whenSettleRunsTwice`：
+同一单 `settle` 两次 ⇒ `pay` 被调 **2** 次、`completePayout` 被调 **2** 次，但只有第一次落账
+（第二次返回 false，服务不再往下推）。不靠 mock 层的幂等来代表 job 层的正确性。
+
+**⑤ 固定 ID 机械检查**：对 `trade-service` 测试做 `grep | uniq -c`，无重复常量/字面量（`SELLER_ID = 9L`
+等多处是**同一常量被多个用例引用**，非撞车）。
+
+---
 ---
 
 ## 2. 待办
