@@ -1,6 +1,6 @@
 # 05 — API 规格文档 (API Specification — SDD)
 
-> **最后更新**: 2026-10-19（**T-WITHDRAW 第一步**：T22 `balance` 的取值口径由「Σ `settlement_amount`（`status = SETTLED`）」迁到**商家资金账户** `seller_fund_account` —— `settled_total − frozen_amount − paid_total`；`frozen_amount` 的预占属第二步 ⇒ **在途提现仍未扣**。**本批未增删任何端点，字段名/类型零变化**；上一批 = 批次 R2「错误承载收口」） | **版本**: V5.25.0
+> **最后更新**: 2026-10-19（**AD24 新增**：`POST /api/admin/finance/settlements/settle` 批量结算触发入口 —— 端点集合 +1；同批含 T-WITHDRAW 第一步资金口径迁移（见下）。上一版 = **T-WITHDRAW 第一步**：T22 `balance` 的取值口径由「Σ `settlement_amount`（`status = SETTLED`）」迁到**商家资金账户** `seller_fund_account` —— `settled_total − frozen_amount − paid_total`；`frozen_amount` 的预占属第二步 ⇒ **在途提现仍未扣**。**本批未增删任何端点，字段名/类型零变化**；上一批 = 批次 R2「错误承载收口」） | **版本**: V5.26.0
 >
 > **🔁 T-WITHDRAW 第一步对三元组的影响：零**（未增删任何端点；**本批未重新度量**——环境 shell 不可用，见下条与 `product/../collaboration/open-items.md` §1.25）。下表数值取自批次 ④，本批**不改变**它成立的前提。
 >
@@ -2274,6 +2274,7 @@ Feature: 买家退款资金流（F1）
 | AD21 | GET  | `/api/admin/finance/settlement/page`        | 🔑  | Query: `page`(1), `size`(20), `seller_id?`, `status?` | `IPage<SettlementVO>` | ✅ | ✅   |
 | AD22 | GET  | `/api/admin/finance/withdrawal/page`        | 🔑  | Query: `status?`, `page`(1), `size`(20)              | `IPage<WithdrawalVO>` | ✅ | ✅   |
 | AD23 | PUT  | `/api/admin/finance/withdrawal/{id}/review` | 🔑  | Path: `id` (Long), Query: `status`, `remark?`        | `Void`                | ✅ | ✅   |
+| AD24 | POST | `/api/admin/finance/settlements/settle`     | 🔑  | Body: `limit?` (1..1000, 默认 200), `periodEnd?`      | `SettlementSweepVO`   | ✅ | ✅   |
 
 > 审计注记（ADR-032）：AD20/AD23 写操作产生审计留痕（ELK AUDIT 日志）。
 > AD22 提现列表返回**明文 + 脱敏**收款账号（`WithdrawalVO` 分端口径见 §4.6.5）。
@@ -2285,6 +2286,14 @@ Feature: 买家退款资金流（F1）
 > **审核侧不判额度**：`settled_total − frozen_amount − paid_total ≥ amount` 属**申请侧**
 > （T23 `POST /api/seller/finance/withdrawal`，第二步改成条件预占冻结额）；审核再判一次会制造
 > 「申请通过、打款被拒而钱已付出」的假拒绝。
+
+> **AD24（批量结算到期结算单，V5.26.0 起）**：把 `PENDING` 且满足「账期已走完 / 金额>0 / 有订单」的结算单**条件迁移**为
+> `SETTLED`（= **可提现**），命中后同事务累加 `seller_fund_account.settled_total`。它是「提现前置条件之一」的
+> 触发入口 —— 结算单不出 `SETTLED`，商家账户恒为 0、申请恒拒。**幂等**：重复调用不重复记账（0 行 = 已结算，
+> 计入 `skipped`）。**响应四段计数分开给**：`scanned` / `settled` / `skipped` / `failed` + `healthy`；
+> ⚠ `scanned` 是**本次**候选数，**不跨次相加**（调度与手动触发可能同时扫到同一批单，它不是「待结算队列长度」）；
+> `failures` 只带**前若干条**（服务端上限，够定位即可），全量在应用日志。`periodEnd` 可选：补跑某账期时把范围
+> 变成显式输入。**不产生** `settlement.status = PAID_OUT`（已打款事实源是 `withdrawal`）。权限 `finance:admin`。
 
 #### 4.13.8 AdminCouponController — `/api/admin/coupon` (marketing-service)
 
@@ -3294,6 +3303,7 @@ data: [DONE]
 | **V5.23.0** | **2026-10-18** | **批次 C1（契约收口，四组并批）：`Result<Map>` → 类型化 VO + not-found 业务码落真 404 + 退款「数据不完整」口径 + 前端审计交回** —— ① **组 1（批次 D 交付）**：**S10 → `SellerDashboardVO`**（`today_order_count` / `pending_ship_count` / `monthly_revenue`，分）、**S11 → `List<SpuStatVO>`**（`spu_name` 快照名聚合 / `quantity` 件 / `revenue` 分；**明确 S11 不限订单状态（含已取消），与 AD14 仅已完成不可横向对比**）、**AD11 样例订正**（删代码从未产出的 `today_new_users` / `pending_seller_count`，补 `completed_orders`）、**AD13 `TrendDataVO` → `OrderTrendVO`**（原类不存在）、**AD14 保留 `List<SpuStatVO>` + 字段表**（该类批次 D 已补齐）、**AD15 `DailySalesVO` → `SalesByDateVO`**（原类不存在；`from`/`to` 左闭右闭逐日枚举）、**T22 → `SellerBalanceVO`**（`seller_id` = `seller.user_id` 而非 `seller.id`；`balance` 分、Σ`SETTLED` 的 `settlement_amount`、已扣 5% 佣金、未扣在途提现）、**M7 → `UserCouponCountVO`**、**U29 → `UnreadCountVO`**（后两者单词键逐字节不变）；**新增 §1.10 三级 BREAKING 登记**（① 线上键 BREAKING = S10/AD11/T22 的 Map 字面键 camelCase → snake_case，成因是**把实现改成契约已声明口径**；② 类型级 BREAKING = S11/AD13/AD14/AD15 元素由 Map → VO；③ 非 BREAKING = M7/U29）；② **组 2（批次 ① 交付）**：**12 个 not-found 业务码由 HTTP 200 改配 404** —— `3009 / 3015 / 3016 / 3017 / 3019 / 3020 / 3032 / 3033 / 3034 / 3035 / 3036 / 3041`，**业务码与文案一律保留**；§二 例外清单由 **3 项扩为 15 项**（另含既有 `3011` 404 与 `3007` / `3008` 401），并新增 15 项完整对照表；**`3000` 仍 200、`3007`/`3008` 仍 401，不得并入「一律 404」**；§1.3 内部接口口径与 §4.14 抬头「3000-3041 一律 200」同步重划；③ **组 3（批次 R1 交付）**：I40 / I55 补「**支付单存在但字段不完整**（缺 `biz_user_id` / 缺 `amount`）→ `INTERNAL_ERROR(1000)` + HTTP 500、`category=BUG`、`retryable=false`，**非** `ORDER_NOT_FOUND`」，与 I55 既有「支付单不存在 → `ORDER_NOT_FOUND(3009)`」**并列并存**；并如实登记 I40 上「缺 `amount`」被金额双保险守卫折叠为 `PARAM_ERROR(1101)`/400 的**实现差异**（与 I55 不同，待裁决）；④ **组 4（B10 前端审计交付）**：U28 `type?` 补齐**10 个合法值枚举**（`LIKE`/`REPLY`/`FOLLOW`/`ORDER_SHIPPED`/`AFTER_SALE_REVIEWED`/`INVOICE_ISSUED`/`INVOICE_RED_FLUSHED`/`INVOICE_VOIDED`/`PAY_SUCCESS`/`REFUND_SUCCESS`，来源 = 4 个服务的生产方常量，notification-service **自身无枚举类**；**后端不支持多值/分组筛选**）、P14 `sort?` 由 `newest\|highest` 补为 **`newest\|highest\|lowest`**（`ReviewSortEnum` 实为三值，**`oldest` 不存在**，**`fromCode()` 对未知码静默回退 `newest`**）；§十二 12.2 登记**两处能力缺口**（评价缺「最旧优先」、通知缺多值/分组 `type` 筛选），并复核 `HistoryVO.product_name` **唯一 SPU 名旧键例外仍在案**；**端点集合零变化：三元组 289 / 0 / 43 不变**（本批只改类型 / 字段表 / 错误口径 / 说明） |
 | **V5.24.0** | **2026-10-18** | **批次 R2（错误承载收口，四项并批；**零新增 / 零删除错误码，端点集合零变化 289 / 0 / 43**）**：① **I40「缺 `amount`」不再折叠成客户错误** —— `RefundManager#requirePayOrder` 拆成两条判据，**先** `PayOrder#assertRefundAmountPresent()`（缺 `amount` → `INTERNAL_ERROR(1000)`/500/`BUG`/不可重试）**再**比较超额（→ `PARAM_ERROR(1101)`/400/`CLIENT`），与 I55 同口径；**顺序不可颠倒**：比较式 `int > Integer` 在 `amount == null` 时拆箱空指针，旧代码靠 `||` 短路才没炸（拆条件不先断言 = 把「码不精确」换成「500 空指针」）；② **`PayManager#resolvePayAmount` 缺 `totalAmount` 不再报 400** —— 上游 trade-service 订单摘要**返回 200 但缺金额** = **上游契约违约** → `INTERNAL_ERROR(1000)`/500/`BUG`/不可重试，文案带 `orderNo`（无 PII）；**明确不采用** `SYSTEM_BUSY` / `UpstreamException`（那是「服务不可用」的承载，把数据问题说成服务不可用是**另一个方向的误报**，历史缺陷 R-4 即此病）；③ **`ORDER_NOT_FOUND(3009)` 不再用于表达「支付单 / 退款单不存在」** —— 退款命令面（I40 / I55 / AD43 / PAY6 退款回调）改抛 **`NO_RESOURCE_FOUND(1103)`**（**同为 404、零新增码**，只把码名与实体对齐），文案带实体名 + 业务号（`payOrderNo=` / `outRefundNo=` / `orderNo=`）；§2.1a、§四 抬头、§4.14.15、§4.14.15b 同步改写，测试侧**改严**（3009 → 1103 并新增「**不是 3009**」负向断言）；**唯一例外**：支付回调 PAY2/PAY3 未动，见 §十二 12.2 ⑩；④ **§二 删除覆盖率数字** —— 原「`ErrorCode` 实测 98 个 / 本节共 40 个 / 未收录约 58 个」三处计数**一并删除**，改指向 **`ErrorCode` 枚举为唯一真相源**，并写明理由（注释里复写会漂的清单 = 制造下一个缺陷；本项目已因「照抄过期清单」导致消息中心 4 个标签页恒空）。**注意：不是为了把 98/40/58 校准成新数字** —— 校准只是把漂移推迟一次。 |
 | **V5.25.0** | **2026-10-19** | **T-WITHDRAW 第一步（资金口径迁移）：T22 `balance` 由「Σ 结算单」改为「商家资金账户」—— 端点与字段零变化**：① **取值口径**：`balance` = `seller_fund_account` 的 `settled_total − frozen_amount − paid_total`（一格一商家）。原口径 Σ`settlement_amount`（`status = SETTLED`）**既不扣已打款、也不扣待审提现** ⇒ 同一商家可连提多笔且笔笔过校验（T-WITHDRAW 的根因）；② **`frozen_amount` 本批恒 0**：其「加」在第二步 `POST /api/seller/finance/withdrawal` 预占时才出现，**先做减法等于减一个从未加过的字段** ⇒ 在途提现**仍未扣**，该缺口在表内已如实标注（§4.6 T22 行）；③ **AD23（提现审核）的副作用变了**：审核为「已打款」时在资金账户上累加 `paid_total`，并**不再**把该商家的结算单**全量**置为已打款（提现 100 会把 1000 全置成已打款、剩 900 看似再也提不出来，T-WITHDRAW-2）；**也不回写任何结算单状态**（`settlement` 不承载打款事实，见 ⑦）。按金额核销（哪笔提现核掉哪些结算单）需「提现单 × 结算单」分配行，属后续批次。**审核侧不判额度**（额度属申请侧 T23，第二步改成条件预占），审核再判一次会造成「申请通过、打款被拒而钱已付出」的假拒绝；④ **幂等**：审核走条件迁移（待审核 → 终态，0 行即 no-op）⇒ 重复审核/并发双击**不会重复记账**；⑤ **端点集合零变化**（本批未增删端点，**未重新度量**，见文件头 🔁 行）；⑥ **定性：生产提现功能中断**（不是「部分收敛」）—— `settle()` 是资金账户的唯一写入者且**目前没有任何触发者**（无定时任务 / 手动按钮 / 运维脚本）⇒ 账户恒 0 ⇒ 申请恒拒 ⇒ 生产上提现完全不可用（与本批之前一致：此前也从未有 `PENDING→SETTLED` 入口）。**上线前置（阻塞项）**：必须同时提供触发入口（管理端手动结算按钮 —— **需先改本契约新增端点**；或运维脚本），否则不得上线；另外 `frozen_amount` 未做 + 审核侧不判额度 ⇒ 额度守门只剩申请侧的非原子校验，**超额提现仍可能**，同样不得宣称提现缺口已修复；⑦ **`SettlementVO.status` 语义**：`SETTLED` = **可提现**（不是「未打款」），**已打款看 `WithdrawalVO.status`**，打款后不回写结算单状态。 |
+| **V5.26.0** | **2026-10-19** | **AD24 新增（提现触发入口）：`POST /api/admin/finance/settlements/settle`** —— 把 `PENDING` 到期结算单条件迁移为 `SETTLED`（= 可提现），同事务累加 `settled_total`；幂等（0 行 = 已结算计 `skipped`）。响应四段计数 `scanned/settled/skipped/failed` + `failures`（前若干条，含 id 与原因）+ `healthy`；`scanned` 为本次候选数、**不跨次相加**；`periodEnd?` 支持按账期补跑；`limit?` 1..1000。**不写 `settlement.status = PAID_OUT`**；权限 `finance:admin`。本批同时落地 T-WITHDRAW 第二/三步（预占 `frozen_amount`、按金额核销 `withdrawal_settlement`），**端点集合仅此 +1**。 |
 
 ---
 

@@ -2,11 +2,13 @@ package org.icedamericanomall.trade.app.finance;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.icedamericanomall.trade.adapter.response.SettlementSweepVO;
 import org.icedamericanomall.trade.domain.repository.SettlementRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -28,6 +30,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SettlementSweeper {
 
+    /** 响应里最多带多少条失败明细：够运维定位，又不至于把响应撑成日志倾倒口。 */
+    private static final int MAX_FAILURES = 20;
+
+    /** 未指定 limit 时的默认单批上限（与调度侧的 {@code trade.settlement.sweep.limit} 默认值保持一致）。 */
+    private static final int DEFAULT_LIMIT = 200;
+
     private final SettlementRepository settlementRepository;
     private final SettlementManager settlementManager;
 
@@ -40,13 +48,24 @@ public class SettlementSweeper {
      * @return 四个计数，<b>运维据此区分「没有可结算的」与「结算失败」</b>
      */
     public SweepResult sweep(LocalDate today, LocalDateTime now, int limit) {
+        return sweep(today, now, limit, null);
+    }
+
+    /**
+     * 同上，但可只扫某个账期（{@code periodEnd} 为 null = 不按账期过滤）。
+     *
+     * <p>为什么要这个参数：运营补跑某一天/某段账期时，全量扫会把不相干的单一起结算；
+     * 按账期过滤是把「补跑范围」变成显式输入，而不是靠人去核对 {@code scanned}。
+     */
+    public SweepResult sweep(LocalDate today, LocalDateTime now, int limit, LocalDate periodEnd) {
         if (limit <= 0) {
-            return new SweepResult(0, 0, 0, 0);
+            return new SweepResult(0, 0, 0, 0, List.of());
         }
-        List<Long> ids = settlementRepository.findSettleableIds(today, limit);
+        List<Long> ids = settlementRepository.findSettleableIds(today, limit, periodEnd);
         int settled = 0;
         int skipped = 0;
         int failed = 0;
+        List<Failure> failures = new ArrayList<>();
         for (Long id : ids) {
             try {
                 if (settlementManager.settleAt(id, today, now)) {
@@ -59,9 +78,42 @@ public class SettlementSweeper {
                 failed++;
                 // 单条失败不中断整批：本条已整事务回滚（settled_total 不会半加），下次扫描会再试
                 log.warn("结算单结算失败，跳过：id={}", id, e);
+                if (failures.size() < MAX_FAILURES) {
+                    // 只留前 N 条：响应要给运维**能直接看的失败原因**，又不能变成一个日志倾倒口
+                    failures.add(new Failure(id, e.getClass().getSimpleName() + ": " + e.getMessage()));
+                }
             }
         }
-        return new SweepResult(ids.size(), settled, skipped, failed);
+        return new SweepResult(ids.size(), settled, skipped, failed, List.copyOf(failures));
+    }
+
+    /**
+     * 管理端触发入口：扫一批并把结果映射成对外 VO（含前若干条失败明细）。
+     *
+     * <p>放在 app 层而不是 controller 里：controller 只做参数校验 + 调 Manager + 包 {@code Result}
+     * （仓库既有约定），映射逻辑跟 {@link #sweep} 挨着才不容易两边口径漂。
+     *
+     * @param limit     单批上限；null 或 &le; 0 用默认值
+     * @param periodEnd 只扫该账期；null = 不按账期过滤（补跑某天时用它把范围变成显式输入）
+     */
+    public SettlementSweepVO sweepForAdmin(Integer limit, LocalDate periodEnd) {
+        LocalDateTime now = LocalDateTime.now();
+        int effectiveLimit = (limit == null || limit <= 0) ? DEFAULT_LIMIT : limit;
+        SweepResult result = sweep(now.toLocalDate(), now, effectiveLimit, periodEnd);
+
+        SettlementSweepVO vo = new SettlementSweepVO();
+        vo.setScanned(result.scanned());
+        vo.setSettled(result.settled());
+        vo.setSkipped(result.skipped());
+        vo.setFailed(result.failed());
+        vo.setHealthy(result.healthy());
+        vo.setFailures(result.failures().stream().map(failure -> {
+            SettlementSweepVO.Failure item = new SettlementSweepVO.Failure();
+            item.setSettlementId(failure.settlementId());
+            item.setReason(failure.reason());
+            return item;
+        }).toList());
+        return vo;
     }
 
     /**
@@ -75,11 +127,23 @@ public class SettlementSweeper {
      * @param skipped 条件不满足（幂等 no-op：已结算 / 账期未到 / 零额 / 无订单 / 不存在）
      * @param failed  抛异常（真错误：DB 故障、账不平……需要人看日志）
      */
-    public record SweepResult(int scanned, int settled, int skipped, int failed) {
+    public record SweepResult(int scanned, int settled, int skipped, int failed, List<Failure> failures) {
 
         /** 是否全部正常（没有异常失败）。运维告警口径：{@code failed > 0} 才值得报警。 */
         public boolean healthy() {
             return failed == 0;
         }
+    }
+
+    /**
+     * 一条失败明细。
+     *
+     * <p>为什么要有它：只给 {@code failed} 计数，运维只知道「有 3 条失败」，还得自己去翻日志；
+     * 把前 N 条 (结算单 id + 原因) 直接放进响应，才能当场判断是「数据问题」还是「环境问题」。
+     *
+     * @param settlementId 失败的结算单主键
+     * @param reason       异常类型 + 消息（不截断原因，截断的是条数）
+     */
+    public record Failure(Long settlementId, String reason) {
     }
 }

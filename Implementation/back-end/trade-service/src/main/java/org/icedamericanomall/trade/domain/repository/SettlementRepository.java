@@ -58,9 +58,10 @@ public interface SettlementRepository {
      *
      * @param today 应用时钟的「今天」
      * @param limit 单批上限（&gt; 0；调用方负责给默认值）
+     * @param periodEnd 只扫该账期（{@code null} = 不按账期过滤）；补跑某一天时用它把范围变成显式输入
      * @return 按 id 升序的候选 id；无候选返回空列表（不返回 null）
      */
-    List<Long> findSettleableIds(LocalDate today, int limit);
+    List<Long> findSettleableIds(LocalDate today, int limit, LocalDate periodEnd);
 
     /**
      * 可核销候选：该商家「已结算且还有余额」的结算单，按账期升序（= FIFO 顺序）。

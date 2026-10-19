@@ -4,6 +4,7 @@ import org.icedamericanomall.common.aspect.GlobalExceptionHandler;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.icedamericanomall.trade.app.finance.SettlementManager;
+import org.icedamericanomall.trade.app.finance.SettlementSweeper;
 import org.icedamericanomall.trade.app.finance.WithdrawalManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,6 +34,9 @@ class AdminFinanceControllerNotFoundTest {
     private SettlementManager settlementManager;
 
     @Mock
+    private SettlementSweeper settlementSweeper;
+
+    @Mock
     private WithdrawalManager withdrawalManager;
 
     private MockMvc mockMvc;
@@ -40,7 +44,7 @@ class AdminFinanceControllerNotFoundTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new AdminFinanceController(settlementManager, withdrawalManager))
+                .standaloneSetup(new AdminFinanceController(settlementManager, settlementSweeper, withdrawalManager))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }

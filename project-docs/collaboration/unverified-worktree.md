@@ -90,6 +90,13 @@ T-WITHDRAW **第一步**：把「商家能提多少」从「Σ 结算单」搬�
 > 测试：`SettlementFundAccountH2Test`（+5 条核销用例、装配里 `LocalCacheScope=STATEMENT`）、
 > `SettlementAllocatorTest`（新）、`WithdrawalManagerTest`（重写，含核销顺序）。
 
+> §1.31（AD24 端点）同批：`AdminFinanceController`（+`POST /settlements/settle`）、
+> `adapter/request/SettlementSweepReq`（新）、`adapter/response/SettlementSweepVO`（新）、
+> `SettlementSweeper`（+`sweep(...,periodEnd)`、`SweepResult.failures`、`sweepForAdmin`）、
+> `SettlementMapper#selectSettleableIds`（+periodEnd）、`SettlementRepository(+Impl)`（签名加 periodEnd）、
+> 契约 `05-API-Specification`（AD24 + 注记 + V5.26.0）、测试 `SettlementSweeperTest`/`SettlementFundAccountH2Test`、
+> 加上「生产 SESSION / 测试共用 session」的装配修正。
+
 ### 2.1 建库脚本
 
 | 文件 | 改了什么 |

@@ -6,11 +6,15 @@ import lombok.RequiredArgsConstructor;
 import org.icedamericanomall.common.annotation.OperationLog;
 import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.trade.adapter.request.WithdrawalPageReq;
+import org.icedamericanomall.trade.adapter.request.SettlementSweepReq;
+import org.icedamericanomall.trade.adapter.response.SettlementSweepVO;
 import org.icedamericanomall.trade.adapter.response.SettlementVO;
 import org.icedamericanomall.trade.adapter.response.WithdrawalVO;
 import org.icedamericanomall.trade.app.finance.SettlementManager;
+import org.icedamericanomall.trade.app.finance.SettlementSweeper;
 import org.icedamericanomall.trade.app.finance.WithdrawalManager;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -44,6 +48,7 @@ public class AdminFinanceController {
     private static final String ACTION_REVIEW_WITHDRAWAL = "REVIEW_WITHDRAWAL";
 
     private final SettlementManager settlementManager;
+    private final SettlementSweeper settlementSweeper;
     private final WithdrawalManager withdrawalManager;
 
     /** 手动生成结算单 */
@@ -57,6 +62,24 @@ public class AdminFinanceController {
     }
 
     /** 结算单列表 */
+    /**
+     * 批量结算到期结算单（把 PENDING 变成 SETTLED = 可提现）。
+     *
+     * <p>这是「提现前置条件之一」的触发入口：结算单不出 SETTLED，商家账户就永远是 0、提现恒拒。
+     * 幂等：重复调用不会重复记账（条件更新 0 行 = 已结算，计入 skipped）。
+     *
+     * <p>响应里 {@code scanned} 是<b>本次</b>候选数（不跨次相加）；与调度同时跑时会扫到同一批单。
+     *
+     * @param req 可选：{@code limit}（1..1000）、{@code periodEnd}（只补跑某账期）
+     */
+    @PostMapping("/settlements/settle")
+    public Result<SettlementSweepVO> settlePendingSettlements(
+            @Validated @RequestBody(required = false) SettlementSweepReq req) {
+        return Result.success(settlementSweeper.sweepForAdmin(
+                req == null ? null : req.getLimit(),
+                req == null ? null : req.getPeriodEnd()));
+    }
+
     @GetMapping("/settlement/page")
     public Result<IPage<SettlementVO>> pageSettlement(@RequestParam(defaultValue = "1") int page,
                                                       @RequestParam(defaultValue = "20") int size) {

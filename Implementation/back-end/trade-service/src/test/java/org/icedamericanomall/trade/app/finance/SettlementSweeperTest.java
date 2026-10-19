@@ -14,6 +14,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -51,7 +52,7 @@ class SettlementSweeperTest {
     @Test
     @DisplayName("扫描 — 全部命中：每条候选都结算一次，四段计数齐全且健康")
     void shouldSettleEveryCandidate_whenAllSucceed() {
-        when(settlementRepository.findSettleableIds(TODAY, LIMIT)).thenReturn(List.of(11L, 12L, 13L));
+        when(settlementRepository.findSettleableIds(TODAY, LIMIT, null)).thenReturn(List.of(11L, 12L, 13L));
         when(settlementManager.settleAt(11L, TODAY, NOW)).thenReturn(true);
         when(settlementManager.settleAt(12L, TODAY, NOW)).thenReturn(true);
         when(settlementManager.settleAt(13L, TODAY, NOW)).thenReturn(true);
@@ -68,7 +69,7 @@ class SettlementSweeperTest {
     @Test
     @DisplayName("扫描 — 条件不满足（返回 false）计入 skipped，**不算 failed**（运维不该为此报警）")
     void shouldCountSkipped_whenConditionMisses() {
-        when(settlementRepository.findSettleableIds(TODAY, LIMIT)).thenReturn(List.of(11L, 12L));
+        when(settlementRepository.findSettleableIds(TODAY, LIMIT, null)).thenReturn(List.of(11L, 12L));
         when(settlementManager.settleAt(11L, TODAY, NOW)).thenReturn(true);
         when(settlementManager.settleAt(12L, TODAY, NOW)).thenReturn(false);
 
@@ -84,7 +85,7 @@ class SettlementSweeperTest {
     @Test
     @DisplayName("扫描 — 某条抛异常计入 failed、只跳过该条，整批继续（异常不冒泡）")
     void shouldCountFailedAndKeepGoing_whenOneCandidateThrows() {
-        when(settlementRepository.findSettleableIds(TODAY, LIMIT)).thenReturn(List.of(11L, 12L, 13L));
+        when(settlementRepository.findSettleableIds(TODAY, LIMIT, null)).thenReturn(List.of(11L, 12L, 13L));
         when(settlementManager.settleAt(11L, TODAY, NOW)).thenReturn(true);
         when(settlementManager.settleAt(12L, TODAY, NOW)).thenThrow(new IllegalStateException("模拟单条结算失败"));
         when(settlementManager.settleAt(13L, TODAY, NOW)).thenReturn(true);
@@ -100,9 +101,36 @@ class SettlementSweeperTest {
     }
 
     @Test
+    @DisplayName("扫描 — 补跑某账期：periodEnd 透传给候选查询（不是内存过滤）")
+    void shouldPassPeriodEndToQuery() {
+        LocalDate periodEnd = LocalDate.of(2026, 10, 18);
+        when(settlementRepository.findSettleableIds(TODAY, LIMIT, periodEnd)).thenReturn(List.of());
+
+        sweeper.sweep(TODAY, NOW, LIMIT, periodEnd);
+
+        verify(settlementRepository).findSettleableIds(TODAY, LIMIT, periodEnd);
+    }
+
+    @Test
+    @DisplayName("扫描 — 失败明细带结算单 id 与原因（运维要能当场定位，不用翻日志）")
+    void shouldCollectFailureDetails() {
+        when(settlementRepository.findSettleableIds(TODAY, LIMIT, null)).thenReturn(List.of(12L));
+        when(settlementManager.settleAt(12L, TODAY, NOW))
+                .thenThrow(new IllegalStateException("模拟单条结算失败"));
+
+        SettlementSweeper.SweepResult result = sweeper.sweep(TODAY, NOW, LIMIT);
+
+        assertEquals(1, result.failures().size());
+        SettlementSweeper.Failure failure = result.failures().get(0);
+        assertEquals(12L, failure.settlementId());
+        assertNotNull(failure.reason());
+        assertTrue(failure.reason().contains("模拟单条结算失败"), "原因必须原样带上，截断的是条数不是信息");
+    }
+
+    @Test
     @DisplayName("扫描 — 没有候选：一条都不调，全 0（不空转、不报错）")
     void shouldDoNothing_whenNoCandidate() {
-        when(settlementRepository.findSettleableIds(TODAY, LIMIT)).thenReturn(List.of());
+        when(settlementRepository.findSettleableIds(TODAY, LIMIT, null)).thenReturn(List.of());
 
         SettlementSweeper.SweepResult result = sweeper.sweep(TODAY, NOW, LIMIT);
 
@@ -117,6 +145,6 @@ class SettlementSweeperTest {
         assertEquals(0, sweeper.sweep(TODAY, NOW, 0).scanned());
         assertEquals(0, sweeper.sweep(TODAY, NOW, -5).scanned());
 
-        verify(settlementRepository, never()).findSettleableIds(any(), anyInt());
+        verify(settlementRepository, never()).findSettleableIds(any(), anyInt(), any());
     }
 }

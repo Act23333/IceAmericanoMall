@@ -3,7 +3,7 @@ package org.icedamericanomall.trade.app.finance;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.config.GlobalConfig;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
-import org.apache.ibatis.session.LocalCacheScope;
+import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.h2.Driver;
 import org.icedamericanomall.common.enums.ErrorCode;
@@ -218,10 +218,6 @@ class SettlementFundAccountH2Test {
         assertSchemaMatchesProduction();
 
         MybatisConfiguration config = new MybatisConfiguration();
-        // 一级缓存按 SqlSession 生效；本用例让每个仓储各持一个 session，
-        // 若开着一级缓存，A 仓储写、B 仓储读会拿到**上一轮**的行（核销候选曾因此偏大）。
-        // 生产里每个事务一个 session，等价于 STATEMENT 级，所以这里显式对齐生产语义。
-        config.setLocalCacheScope(LocalCacheScope.STATEMENT);
         config.setMapUnderscoreToCamelCase(true);
         config.addMapper(SettlementMapper.class);
         config.addMapper(SellerFundAccountMapper.class);
@@ -237,15 +233,19 @@ class SettlementFundAccountH2Test {
         factoryBean.setGlobalConfig(globalConfig);
         SqlSessionFactory sqlSessionFactory = factoryBean.getObject();
 
+        // 生产：一个事务一个 SqlSession（Spring 管），一级缓存（默认 SESSION）靠「同 session 内写会清缓存」保证不脏读。
+        // 本用例原本每个仓储各持一个长活 session，那是假环境 —— 会让 A 仓储的写对 B 仓储不可见（核销候选曾因此偏大）。
+        // 这里改为**共用一个 session**：与生产的 session 生命周期语义一致，同时保持默认 SESSION 级缓存不变。
+        SqlSession sharedSession = sqlSessionFactory.openSession();
         settlementRepository = new SettlementRepositoryImpl(
-                sqlSessionFactory.openSession().getMapper(SettlementMapper.class));
+                sharedSession.getMapper(SettlementMapper.class));
         fundAccountRepository = new SellerFundAccountRepositoryImpl(
-                sqlSessionFactory.openSession().getMapper(SellerFundAccountMapper.class));
+                sharedSession.getMapper(SellerFundAccountMapper.class));
         withdrawalRepository = new WithdrawalRepositoryImpl(
-                sqlSessionFactory.openSession().getMapper(WithdrawalMapper.class));
+                sharedSession.getMapper(WithdrawalMapper.class));
         withdrawalSettlementRepository = new WithdrawalSettlementRepositoryImpl(
-                sqlSessionFactory.openSession().getMapper(WithdrawalSettlementMapper.class),
-                sqlSessionFactory.openSession().getMapper(SettlementMapper.class));
+                sharedSession.getMapper(WithdrawalSettlementMapper.class),
+                sharedSession.getMapper(SettlementMapper.class));
         // 结算/打款只用到三个仓储；出参转换与订单查询不在本用例路径上
         settlementManager = new SettlementManager(settlementRepository, fundAccountRepository, null,
                 new TradeConverterImpl());
@@ -616,6 +616,25 @@ class SettlementFundAccountH2Test {
                 "重扫不得重复累加（条件更新 0 行 = 已结算，跳过）");
         assertEquals(SettlementStatusEnum.PENDING.getCode(),
                 settlementRepository.findById(notDue).getStatus().intValue());
+    }
+
+    @Test
+    @DisplayName("触发入口 — 按账期补跑：只结算指定 period_end 的单，其它照旧待结算")
+    void shouldSweepOnlyGivenPeriodEnd() {
+        long seller = 9040L;
+        LocalDate targetPeriod = LocalDate.now().minusDays(10);
+        Long target = savePending(seller, AMOUNT, targetPeriod, 1);
+        Long other = savePending(seller, AMOUNT, LocalDate.now().minusDays(5), 1);
+
+        SettlementSweeper sweeper = new SettlementSweeper(settlementRepository, settlementManager);
+        LocalDateTime now = LocalDateTime.now();
+        sweeper.sweep(now.toLocalDate(), now, 200, targetPeriod);
+
+        assertEquals(SettlementStatusEnum.SETTLED.getCode(),
+                settlementRepository.findById(target).getStatus().intValue(), "指定账期必须被结算");
+        assertEquals(SettlementStatusEnum.PENDING.getCode(),
+                settlementRepository.findById(other).getStatus().intValue(), "其它账期不许被顺手结算");
+        assertEquals(AMOUNT, settledTotalOf(seller));
     }
 
     // ─────────────────── 第二步：条件预占（frozen_amount）───────────────────

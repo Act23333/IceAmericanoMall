@@ -1912,7 +1912,10 @@ helper `savePendingWithdrawal` 已删（留着迟早又被用来绕）。
    `04-Data-Model` §7.4、本文档提到 `status = 3` 的地方）。**不要**再加第五道判据
    （详见 §1.25「退出条件」与守卫类 javadoc）。
 
-**仍不可上线**：管理端端点 / handler 未注册 / 首次三段核对（§1.26）+ 分配核销（第三步）+ 真实打款渠道。
+**仍不可上线（两件是「且」，不是「或」）**：
+① **触发入口完整**（管理端端点 + handler 在 XXL-Job 注册 + 首次三段核对）；
+② **真实打款渠道**。
+做完了 ① **只说明触发入口完整，不等于功能可用**；**功能可用 = ① 且 ②**。任何人汇报「提现已可用」前，先把这两条逐条打勾。
 
 > ⚠ **E3 的前提（用户点名登记）**：`frozen_amount == Σ PENDING_REVIEW` 假设「**只有「待审核」占用冻结**」。
 > 新增任何占用 `frozen_amount` 的状态（例如将来的「打款中 / 银行处理中」）时，
@@ -2016,6 +2019,35 @@ helper `savePendingWithdrawal` 已删（留着迟早又被用来绕）。
   「冻结→落单→核销」与「迁移→退核销→解冻」两条顺序）
 
 **仍不可上线**：管理端端点 / XXL-Job 注册 / 首次三段核对 + 真实打款渠道（分配核销已不再是缺口）。
+
+### 1.31 触发入口的端点（2026-10-19）：AD24 `POST /api/admin/finance/settlements/settle`
+
+> 这支端点的职责只有一件：把「到期 PENDING 结算单」结算成 `SETTLED`（= 可提现）。
+> **不碰提现、不碰 `frozen_amount`、不碰 `paid_total`、不写 `settlement.status = PAID_OUT`**。
+
+**三个设计点（用户点名，已落）**
+
+| 点 | 落法 |
+|---|---|
+| 响应含失败明细 | `SettlementSweepVO.failures`：前 N 条（服务端 `MAX_FAILURES` 上限）`{settlementId, reason}`；**截断的是条数不是原因**，全量在应用日志。只给 `failed` 计数时运维还得翻日志 |
+| 支持可选 `periodEnd` | `SettlementSweepReq.periodEnd` 透传到 SQL（`AND (#{periodEnd,jdbcType=DATE} IS NULL OR period_end = …)`），**不是内存过滤**；补跑某账期时范围是显式输入 |
+| `scanned` 语义写清 | 契约注记 + VO javadoc 双处写明：**本次候选数，不跨次相加**（调度与手动触发会扫到同一批），不是「待结算队列长度」 |
+
+**同批的四件开工前确认**
+
+1. **生产 `localCacheScope` = SESSION**（取证：全仓无 `local-cache-scope` 配置、无 `LocalCacheScope` 代码 ⇒ MyBatis 默认）。
+   我先前在 H2 用例里改 STATEMENT 是**掩盖问题**：真正错的是「每个仓储各持一个长活 SqlSession」这种假环境。
+   已改为**共用一个 session**（等价于生产「一事务一 session」，同 session 内写会清缓存），并把 STATEMENT 去掉 ——
+   **测试与生产的缓存级别现在一致**。
+2. **守卫「唯一减点」的红信息**改成可执行指引：红时先辨「新业务分支 vs 又写了一遍释放」，
+   新分支要先补等式、再按 SQL 文本加白名单写理由、两条路径都必须带边界；**只把 1 改成 2 等于关掉探测点**。
+3. 端点三个设计点（上表）。
+4. **上线阻塞项是「且」**：① 触发入口完整（端点 + XXL-Job 注册 + 首次三段核对）；
+   ② 真实打款渠道。**做完 ① 只说明入口完整，不等于功能可用；功能可用 = ① 且 ②**。
+
+**验收**：`SettlementSweeperTest` 新增「periodEnd 透传」与「失败明细带 id 与原因」两条；
+`SettlementFundAccountH2Test` 新增「按账期补跑只动该账期」；契约 AD24 行 + 注记 + 变更记录 V5.26.0；
+`--write` 回填（端点数 +1、测试数更新）；`verify-gates.sh full` 七段全绿。
 
 ---
 

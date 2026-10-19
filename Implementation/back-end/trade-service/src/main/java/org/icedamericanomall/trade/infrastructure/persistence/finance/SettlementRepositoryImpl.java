@@ -67,8 +67,9 @@ public class SettlementRepositoryImpl implements SettlementRepository {
     }
 
     @Override
-    public List<Long> findSettleableIds(LocalDate today, int limit) {
-        return settlementMapper.selectSettleableIds(SettlementStatusEnum.PENDING.getCode(), today, limit);
+    public List<Long> findSettleableIds(LocalDate today, int limit, LocalDate periodEnd) {
+        return settlementMapper.selectSettleableIds(SettlementStatusEnum.PENDING.getCode(), today, limit,
+                periodEnd);
     }
 
     @Override

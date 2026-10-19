@@ -56,10 +56,13 @@ public interface SettlementMapper extends BaseMapper<SettlementPO> {
      * @param limit 单批上限：调度频次交给 XXL-Job，批次大小由调用方控制，避免一次扫全表
      */
     @Select("SELECT id FROM settlement WHERE status = #{pendingStatus} AND period_end <= #{today} "
-            + "AND settlement_amount > 0 AND order_count > 0 ORDER BY id LIMIT #{limit}")
+            + "AND settlement_amount > 0 AND order_count > 0 "
+            + "AND (#{periodEnd,jdbcType=DATE} IS NULL OR period_end = #{periodEnd,jdbcType=DATE}) "
+            + "ORDER BY id LIMIT #{limit}")
     List<Long> selectSettleableIds(@Param("pendingStatus") Integer pendingStatus,
                                    @Param("today") LocalDate today,
-                                   @Param("limit") int limit);
+                                   @Param("limit") int limit,
+                                   @Param("periodEnd") LocalDate periodEnd);
 
     /**
      * 可核销候选：该商家<b>已结算</b>且<b>还有余额</b>的结算单（按账期升序 = FIFO 顺序）。
