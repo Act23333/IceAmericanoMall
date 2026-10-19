@@ -2365,6 +2365,29 @@ mock 的 `ASYNC_CALLBACK` 由注入 `Clock` 驱动；但 **resume job 目前没�
    要显式定义，不能靠日志量自然去重 —— 否则要么刷屏、要么被淹没。
 
 ---
+### 1.43 B1 设计（`PAYING` 停留告警）+ 两条流程约束（2026-10-19）
+
+**① `SKIP_STALE_CHECK=1` 必须留痕（已实现）**
+`pre-commit`：跳过时写 `STALE_SKIP.log`（时间 + 提交人）并置 `STALE_SKIP_PENDING`；
+`commit-msg`：存在标记时，**message 必须含 `[SKIP-STALE]`**，否则拒绝提交。
+理由：只用环境变量跳过，**跳过会变成默认**且无人知晓；写进 message 才能 `git log --grep` 查出来。
+
+**② B1 三个设计点（开工即照此）**
+
+| 点 | 定法 | 为什么 |
+|---|---|---|
+| 首次 vs 每轮 | **派生"告警代次"**：`gen = (now - create_time) / N`；**代次变化才告警**，同代次内按 `payoutNo` 去重 | 不用加状态表就同时得到「首次即告」+「每 `N` 再告一次」+「不刷屏」；`N` 与 job 扫描的 timeout **同源** |
+| 告警体结构化 | `PayoutStaleAlert(payoutNo, withdrawalId, sellerId, amount, dwellMinutes, gen, lastAccepted, lastReason, lastChannelRef, nextAction)`，一行 JSON 打 `log.error`（后续可插通知通道） | 只有 `log.error("超时了")` 时，运维还得回查库；结构化才能直接接告警平台与工单 |
+| 带"下一步" | `nextAction` 给**渠道查询入口**：mock → 打印 `channel=MOCK` 与 `payoutNo`；真实渠道 → 渠道后台流水查询 + 管理端 `/api/admin/finance/withdrawals/{id}` | 告警的价值是"下一步做什么"；只报现象等于把排查成本转给人 |
+
+**③ C1 已裁决：`FAILED` **不自动释放****
+失败 ≠ 钱没出去（可能只是回执丢了/渠道超时）⇒ `FAILED` 进「待人工处置」，
+由管理端显式操作释放，且必须**双确认"钱没出去" + 填写依据**，进审计。A2 按此实现。
+
+**④ D1 期限**：`verify-gates.sh` 的接线（stale 检查或强制 clean 进 `full`）由并行会话在
+**2026-10-24 前**确认口径；逾期则本批的「除 item-service 外全绿」**不得再作为主干依据**引用。
+
+---
 ---
 
 ## 2. 待办

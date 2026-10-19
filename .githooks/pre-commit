@@ -8,7 +8,15 @@ bash "$ROOT/Implementation/back-end/scripts/verify-gates.sh" fast || exit $?
 # 陈旧产物检查：fast 会编译，编完仍然「源码比 class 新」说明这次构建的绿不代表当前源码。
 # 为什么必须在提交口拦：2026-10-19 实证过一次「陈旧 target 给出假绿」（已提交的测试在全量里红、
 # 增量构建里绿）。跳过方式只有一个显式开关，便于打包类提交：SKIP_STALE_CHECK=1
-if [ "${SKIP_STALE_CHECK:-0}" != "1" ]; then
+if [ "${SKIP_STALE_CHECK:-1}" = "1" ]; then
+  # 跳过必须留痕：写标记文件，由 commit-msg 钩子要求 message 带 [SKIP-STALE]，否则拒绝提交。
+  # 否则「一次跳过，次次跳过」—— 跳过会变成默认。
+  GITDIR="$(git rev-parse --git-dir)"
+  printf '%s
+' "stale-check skipped at $(date -Iseconds) by $(git config user.email 2>/dev/null || echo unknown)"     >> "$GITDIR/STALE_SKIP.log"
+  : > "$GITDIR/STALE_SKIP_PENDING"
+  echo "⚠ SKIP_STALE_CHECK=1：本次跳过陈旧产物检查（message 必须带 [SKIP-STALE]，否则提交被拒）"
+else
   if ! bash "$ROOT/Implementation/back-end/scripts/check-stale-classes.sh"; then
     echo "✗ 存在陈旧 class：本次提交通过的门禁**不代表当前源码**。"
     echo "  修法：mvn -o -DskipTests install（必要时 clean）；确需跳过：SKIP_STALE_CHECK=1 git commit ..."

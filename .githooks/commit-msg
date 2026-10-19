@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# 提交信息校验（与 pre-commit 配对）：跳过陈旧检查必须显式标注 [SKIP-STALE]。
+#
+# 为什么需要：只用环境变量跳过，跳过会变成默认且无人知晓；要求在 message 里留标记，
+# 历史里能 grep 出来，谁跳过的、跳过几次一目了然。
+set -uo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+GITDIR="$(git rev-parse --git-dir)"
+MSG_FILE="$1"
+
+if [ -f "$GITDIR/STALE_SKIP_PENDING" ]; then
+  if ! grep -q "\[SKIP-STALE\]" "$MSG_FILE"; then
+    echo "✗ 本次用了 SKIP_STALE_CHECK=1，但提交信息没有 [SKIP-STALE] 标记。"
+    echo "  请在 message 里写明为什么跳过（例如：'chore: 仅文档改动 [SKIP-STALE] 未重编'）。"
+    exit 1
+  fi
+  rm -f "$GITDIR/STALE_SKIP_PENDING"
+fi
+
+bash "$ROOT/Implementation/back-end/scripts/check-stale-classes.sh" >/dev/null 2>&1 || true
