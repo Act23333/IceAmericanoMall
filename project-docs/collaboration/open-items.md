@@ -2080,6 +2080,40 @@ helper `savePendingWithdrawal` 已删（留着迟早又被用来绕）。
 ⇒ 本批 `full` 的绿是在**带这些改动的工作区**上取得的，只对「当前树」成立；
 **若这两处被回退或再改，必须重跑 `full`**（不能引用本批结论）。
 
+### 1.33 六件确认（2026-10-19）：闸前置 / 空集绿 / 自调用守卫 / periodEnd 等值 / 脚本独立验证 / reason 分类
+
+**① 打款闸必须在 `reviewIfPending` 之前 —— 已修（这是本批唯一的硬缺陷）**
+原来先迁移状态、后判闸，靠「事务回滚」兜底；而**回滚能否生效取决于代理**（自调用就没了），
+且本仓 harness **验不了回滚**（§1.32 ②）⇒ 两个不确定叠加。现在闸在**迁移之前**：
+不可打款时**根本不改状态**，不依赖任何回滚能力。单测用 `verify(never()).reviewIfPending(...)` 钉住这个顺序。
+
+**② 登记：`payout-enabled=false` 期间 E2 是「空集绿」，不构成账平证据**
+该配置下**不可能**产生 `status = PAID_OUT` 的提现行 ⇒ `paid_total == Σ PAID_OUT` 恒为 `0 == 0`。
+所以「E2 绿」只说明「没有已打款行」，**不说明记账正确**。要等真实渠道接入、有真实 PAID_OUT 数据后，
+E2 才有证据力；在那之前**不得**引用 E2 证明账平。
+
+**③ 新增守卫：事务方法不得被同类非事务方法自调用**
+`TransactionSelfInvocationGuardTest`（扫 `app/` + `infrastructure/persistence/`）：
+同 Bean 内 `foo()`/`this.foo()` 调到 `@Transactional` 方法、而调用方自己不带事务 ⇒ 红。
+调用方也带 `@Transactional` 时放行（外层 REQUIRED 已覆盖）；跨 Bean 调用放行（那才是走代理）。
+**扫出两处历史债务**（本批之前就有，不在资金域）：
+`CouponClaimManager#smartClaim->claim`、`ShopManager#updateMyDefaultShop->updateMyShop` ——
+登记在守卫的 `KNOWN_DEBT`（`Map<键, 修法>`）里，并配一条**自我清算**断言：键修好后必须删条目，否则守卫自己红。
+
+**④ `periodEnd` 是「等于」——有意为之，已写进契约**
+补跑语义下「等于某账期」才明确；区间扫描应由调用方分批（列表接口已有）。
+它与 `today` 独立：仍须 `period_end <= 今天`。契约 AD24 注记已写明「等值匹配，不是区间」。
+
+**⑤ 并行会话的脚本改动需要**独立验证记录**，本批的绿不覆盖它们**
+`verify-gates.sh` / `sync-doc-counts.mjs` 的改动**不是本批**：本批 `full` 只是**把它们跑过**，
+不等于**审过/验过**它们的逻辑（半量构建判定、三段式重排）。⇒ 这两个文件在作者自证前
+（自行跑 `full` + `sync-doc-counts --check` 并留下记录）保持「**未验证的工作区改动**」状态；
+**不得**把本批的绿当作对它们的验证，也不得在其上再叠结论。
+
+**⑥ `failures.reason` 只放分类，不放原始异常消息**
+`classify()`：`BizException` → `BIZ:<错误码>`；`DataAccessException` → `DATA_ACCESS`；其它 → `UNEXPECTED`。
+理由：响应会进前端/工单/审计，异常消息常带 SQL 片段、主键甚至账号；细节留在 `log.warn` 的堆栈里。
+
 ---
 
 ## 2. 待办

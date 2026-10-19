@@ -79,8 +79,10 @@ public class SettlementSweeper {
                 // 单条失败不中断整批：本条已整事务回滚（settled_total 不会半加），下次扫描会再试
                 log.warn("结算单结算失败，跳过：id={}", id, e);
                 if (failures.size() < MAX_FAILURES) {
-                    // 只留前 N 条：响应要给运维**能直接看的失败原因**，又不能变成一个日志倾倒口
-                    failures.add(new Failure(id, e.getClass().getSimpleName() + ": " + e.getMessage()));
+                    // 只留前 N 条；reason **只放分类**，不放原始异常消息：
+                    // 异常消息可能带 SQL 片段 / 主键 / 账号等，落进响应（进而进前端与审计）就越界了。
+                    // 全量细节在日志里（log.warn 已带堆栈），这里给的是"哪一类问题"。
+                    failures.add(new Failure(id, classify(e)));
                 }
             }
         }
@@ -133,6 +135,22 @@ public class SettlementSweeper {
         public boolean healthy() {
             return failed == 0;
         }
+    }
+
+    /**
+     * 把异常收敛成<b>分类标签</b>（不含原始消息）。
+     *
+     * <p>为什么要收敛：响应会进前端、进工单、进审计日志；异常消息常带 SQL 片段、主键、甚至账号。
+     * 运维需要的是"哪一类问题"（业务拒绝 / 数据访问 / 其它），细节看日志。
+     */
+    static String classify(RuntimeException e) {
+        if (e instanceof org.icedamericanomall.common.exception.BizException biz) {
+            return "BIZ:" + biz.getErrorCode().name();
+        }
+        if (e instanceof org.springframework.dao.DataAccessException) {
+            return "DATA_ACCESS";
+        }
+        return "UNEXPECTED";
     }
 
     /**

@@ -2294,8 +2294,8 @@ Feature: 买家退款资金流（F1）
 > 触发入口 —— 结算单不出 `SETTLED`，商家账户恒为 0、申请恒拒。**幂等**：重复调用不重复记账（0 行 = 已结算，
 > 计入 `skipped`）。**响应四段计数分开给**：`scanned` / `settled` / `skipped` / `failed` + `healthy`；
 > ⚠ `scanned` 是**本次**候选数，**不跨次相加**（调度与手动触发可能同时扫到同一批单，它不是「待结算队列长度」）；
-> `failures` 只带**前若干条**（服务端上限，够定位即可），全量在应用日志。`periodEnd` 可选：补跑某账期时把范围
-> 变成显式输入。**不产生** `settlement.status = PAID_OUT`（已打款事实源是 `withdrawal`）。权限 `finance:admin`。
+> `failures` 只带**前若干条**（服务端上限，够定位即可），全量在应用日志。`periodEnd` 可选（**等值匹配** `period_end`，不是区间；要扫区间请分批调用）——
+> 补跑某账期时把范围变成显式输入；它与 `today` 无关，仍须满足 `period_end <= 今天`。**不产生** `settlement.status = PAID_OUT`（已打款事实源是 `withdrawal`）。权限 `finance:admin`。
 
 #### 4.13.8 AdminCouponController — `/api/admin/coupon` (marketing-service)
 

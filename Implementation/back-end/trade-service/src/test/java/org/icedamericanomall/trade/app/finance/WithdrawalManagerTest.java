@@ -185,7 +185,6 @@ class WithdrawalManagerTest {
                 settlementRepository, withdrawalSettlementRepository, settlementManager,
                 new TradeConverterImpl());
         when(withdrawalRepository.findById(WITHDRAWAL_ID)).thenReturn(pendingWithdrawal());
-        when(withdrawalRepository.reviewIfPending(anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
 
         BizException ex = assertThrows(BizException.class,
                 () -> noChannel.review(WITHDRAWAL_ID, WithdrawalStatusEnum.PAID_OUT.getCode(), "已打款"));
@@ -194,6 +193,8 @@ class WithdrawalManagerTest {
 
         verify(settlementManager, never()).payout(anyLong(), anyInt());
         verify(fundAccountRepository, never()).unfreeze(anyLong(), anyInt());
+        // ★ 闸必须在状态迁移**之前**：否则靠「事务回滚」兜底，而回滚能否生效依赖代理
+        verify(withdrawalRepository, never()).reviewIfPending(anyLong(), anyInt(), anyInt(), any());
     }
 
     @Test

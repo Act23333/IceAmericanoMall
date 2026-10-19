@@ -124,7 +124,8 @@ class SettlementSweeperTest {
         SettlementSweeper.Failure failure = result.failures().get(0);
         assertEquals(12L, failure.settlementId());
         assertNotNull(failure.reason());
-        assertTrue(failure.reason().contains("模拟单条结算失败"), "原因必须原样带上，截断的是条数不是信息");
+        assertEquals("UNEXPECTED", failure.reason(),
+                "reason 只放分类（不落原始异常消息：可能带 SQL/主键/账号）；细节在日志");
     }
 
     @Test

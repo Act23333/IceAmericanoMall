@@ -173,16 +173,19 @@ public class WithdrawalManager {
         if (withdrawal == null) {
             throw new BizException(ErrorCode.WITHDRAWAL_NOT_FOUND, "提现申请不存在");
         }
+        // ⚠ 打款闸必须在**状态迁移之前**：迁移之后再抛，靠的是「事务回滚」兜底；
+        // 而事务能否生效取决于代理（自调用就没了），且本仓测试 harness 无法验证回滚。
+        // 放在这里 = 压根不改状态，不依赖任何回滚能力。
+        if (target == WithdrawalStatusEnum.PAID_OUT && !payoutEnabled) {
+            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
+                    "打款渠道未接入：本系统只记账不付款，禁止把提现标成已打款（trade.withdrawal.payout-enabled）");
+        }
         int claimed = withdrawalRepository.reviewIfPending(id,
                 WithdrawalStatusEnum.PENDING_REVIEW.getCode(), target.getCode(), adminRemark);
         if (claimed == 0) {
             return;     // 重复审核 ⇒ 幂等，且**不动账户**（先迁移后动账的唯一理由）
         }
         int amount = withdrawal.getAmount() == null ? 0 : withdrawal.getAmount();
-        if (target == WithdrawalStatusEnum.PAID_OUT && !payoutEnabled) {
-            throw new BizException(ErrorCode.BUSINESS_EXECUTION_EXCEPTION,
-                    "打款渠道未接入：本系统只记账不付款，禁止把提现标成已打款（trade.withdrawal.payout-enabled）");
-        }
         if (target == WithdrawalStatusEnum.REJECTED) {
             // 释放两个维度：先退回单据核销（LIFO 反向），再解冻账户额度
             withdrawalSettlementRepository.release(withdrawal.getId());
