@@ -3,6 +3,7 @@ package org.icedamericanomall.trade.infrastructure.scheduler;
 import com.xxl.job.core.handler.annotation.XxlJob;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.icedamericanomall.trade.app.finance.PayoutStaleAlerter;
 import org.icedamericanomall.trade.app.finance.WithdrawalPayoutService;
 import org.springframework.stereotype.Component;
 
@@ -20,11 +21,24 @@ public class WithdrawalPayoutJob {
     private static final int DEFAULT_LIMIT = 100;
 
     private final WithdrawalPayoutService payoutService;
+    private final PayoutStaleAlerter staleAlerter;
 
     @XxlJob("payoutPendingWithdrawals")
     public void payoutPendingWithdrawals() {
         long start = System.currentTimeMillis();
         int settled = payoutService.settle(DEFAULT_LIMIT);
         log.info("[payout] 出款任务完成 settled={} costMs={}", settled, System.currentTimeMillis() - start);
+    }
+
+    /**
+     * 告警任务：把停留过久的「付款中」单据喊出来。
+     *
+     * <p>与出款任务分开注册：出款失败会红，告警只是提醒 —— 混在一起会让「告警」被「出款失败」淹没。
+     */
+    @XxlJob("alertStalePayingWithdrawals")
+    public void alertStalePayingWithdrawals() {
+        long start = System.currentTimeMillis();
+        int raised = staleAlerter.alertStale(100);
+        log.info("[payout] 停留告警完成 raised={} costMs={}", raised, System.currentTimeMillis() - start);
     }
 }

@@ -45,6 +45,18 @@ public interface WithdrawalMapper extends BaseMapper<WithdrawalPO> {
     java.util.List<Long> selectPayingIds(@Param("limit") int limit);
 
     /**
+     * 取「停留超过阈值」的付款中单据（供告警扫描）。
+     *
+     * @param cutBefore 时间下界（create_time 早于它才算停留过久）
+     * @param limit     上限
+     * @return 提现单 PO 列表（只取告警需要的列）
+     */
+    @Select("SELECT id, withdrawal_no, payout_no, seller_id, amount, create_time FROM withdrawal "
+            + "WHERE status = 4 AND create_time < #{cutBefore} ORDER BY id ASC LIMIT #{limit}")
+    java.util.List<WithdrawalPO> selectStalePaying(@org.apache.ibatis.annotations.Param("cutBefore") java.time.LocalDateTime cutBefore,
+                                                   @Param("limit") int limit);
+
+    /**
      * 审核提现：{@code status = 待审核 → 目标状态}，并记录审核备注。
      *
      * <p>0 行 = 该单已不是「待审核」（重复审核 / 并发双击 / 已被驳回）—— <b>幂等 no-op，不改任何字段</b>。

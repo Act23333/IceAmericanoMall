@@ -29,6 +29,25 @@ public interface WithdrawalRepository {
      * @param payoutNo 出款幂等键（重试必须复用同一个）
      * @return 影响行数；0 = 已受理或已终态（幂等）
      */
+    /**
+     * 一条「停留过久」的付款中单据（告警用；不含任何账户/凭据信息）。
+     *
+     * @param payoutNo   幂等键（告警去重与渠道查询的入口）
+     * @param createTime 受理时间（停留时长的基准）
+     */
+    record StalePaying(Long id, String payoutNo, Long sellerId, int amount,
+                       java.time.LocalDateTime createTime) {
+    }
+
+    /**
+     * 取停留超过阈值的付款中单据。
+     *
+     * @param cutBefore 时间下界（SQL 里判，不做内存过滤）
+     * @param limit     上限
+     * @return 停留过久的单据
+     */
+    java.util.List<StalePaying> findStalePaying(java.time.LocalDateTime cutBefore, int limit);
+
     int claimPaying(Long id, String payoutNo);
 
     /**

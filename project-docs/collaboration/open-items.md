@@ -2388,6 +2388,28 @@ mock 的 `ASYNC_CALLBACK` 由注入 `Clock` 驱动；但 **resume job 目前没�
 **2026-10-24 前**确认口径；逾期则本批的「除 item-service 外全绿」**不得再作为主干依据**引用。
 
 ---
+### 1.44 B1 落地（2026-10-19）：`PAYING` 停留告警
+
+**实现**：`PayoutStaleAlerter` + `@XxlJob("alertStalePayingWithdrawals")`（与出款任务**分开注册** ——
+混在一起会让告警被出款失败淹没）。
+
+| 设计点 | 落法 |
+|---|---|
+| 首次 vs 每轮 | 派生代次 `gen = 停留分钟 / N`，**代次变化才告警**，同代次按 `payoutNo` 去重 ⇒ 首次即告 + 每 N 再告 + 不刷屏，且不需要状态表 |
+| 结构化 | 一行 JSON：`event/payoutNo/withdrawalId/sellerId/amount/dwellMinutes/gen/lastPay/nextAction` |
+| 下一步 | `nextAction` 给**入口**：查渠道流水（MOCK 看日志 payoutNo；真实渠道查后台）→ 管理端 `/api/admin/finance/withdrawals/{id}`；并写明「禁止直接释放冻结」 |
+| 不带敏感信息 | 无银行账号、无开户行、无商户凭据（单测断言 `6222` 与「银行」都不出现） |
+
+**同源**：`N` 取 `trade.withdrawal.payout.stale-alert-minutes`（默认 30），与出款任务扫描的时间下界同一配置；
+时钟经 `Clock` Bean（与 mock 出款通道同一类型），**零 sleep**。
+
+**登记（未做/局限）**
+1. `lastPay` 来自 `WithdrawalPayoutService` 的**进程内**最近一次结果，重启后为 `NOT_ATTEMPTED` ——
+   要跨重启必须落库（新增列），属后续；
+2. 去重集合是**进程内**的：多实例会重复告警，等接告警平台后由平台按 `payoutNo+gen` 去重；
+3. 出款任务的**扫描下界尚未加**（`settle()` 仍扫全部 `PAYING`）—— 加下界那次要复用同一配置与同一 `Clock`。
+
+---
 ---
 
 ## 2. 待办

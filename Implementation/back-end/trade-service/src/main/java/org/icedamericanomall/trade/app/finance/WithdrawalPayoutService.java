@@ -33,6 +33,19 @@ public class WithdrawalPayoutService {
     private final WithdrawalPayoutPort payoutPort;
     private final WithdrawalManager withdrawalManager;
 
+    /** 每单最近一次出款结果（进程内；重启后丢失 —— 告警体标 NOT_ATTEMPTED 即可，不假装有历史）。 */
+    private final java.util.Map<String, String> lastResults = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * 最近一次出款结果（给告警体用）。
+     *
+     * @param payoutNo 出款幂等键
+     * @return 形如 {@code ACCEPTED(MOCK-WD-1)} / {@code REJECTED(MOCK_REJECTED)}；没试过返回 NOT_ATTEMPTED
+     */
+    public String lastResult(String payoutNo) {
+        return lastResults.getOrDefault(payoutNo, "NOT_ATTEMPTED");
+    }
+
     /**
      * 执行一次出款扫描（<b>不在事务里</b>：内部调渠道）。
      *
@@ -61,6 +74,9 @@ public class WithdrawalPayoutService {
         WithdrawalPayoutPort.PayoutResult result = payoutPort.pay(new WithdrawalPayoutPort.PayoutCommand(
                 withdrawal.getWithdrawalNo(), withdrawal.getId(), withdrawal.getSellerId(), amount,
                 withdrawal.getBankAccount(), withdrawal.getBankName()));
+        lastResults.put(withdrawal.getWithdrawalNo(), result.accepted()
+                ? "ACCEPTED(" + result.channelRef() + ")"
+                : "REJECTED(" + result.reason() + ")");
         if (!result.accepted()) {
             // 结果未知 ⇒ 保持 PAYING + 告警；**不判失败、不释放冻结**
             log.warn("[payout] 渠道未受理，保持付款中（结果未知≠失败） id={} reason={}", id, result.reason());

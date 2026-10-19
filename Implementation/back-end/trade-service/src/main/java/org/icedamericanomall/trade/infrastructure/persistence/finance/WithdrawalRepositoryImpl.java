@@ -32,6 +32,14 @@ public class WithdrawalRepositoryImpl implements WithdrawalRepository {
     }
 
     @Override
+    public java.util.List<StalePaying> findStalePaying(java.time.LocalDateTime cutBefore, int limit) {
+        return withdrawalMapper.selectStalePaying(cutBefore, limit).stream()
+                .map(po -> new StalePaying(po.getId(), po.getPayoutNo(), po.getSellerId(),
+                        po.getAmount() == null ? 0 : po.getAmount(), po.getCreateTime()))
+                .toList();
+    }
+
+    @Override
     public int claimPaying(Long id, String payoutNo) {
         return withdrawalMapper.claimPaying(id, payoutNo);
     }
