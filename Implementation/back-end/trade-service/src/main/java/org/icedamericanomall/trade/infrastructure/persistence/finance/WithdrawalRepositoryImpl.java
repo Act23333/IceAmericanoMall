@@ -32,8 +32,8 @@ public class WithdrawalRepositoryImpl implements WithdrawalRepository {
     }
 
     @Override
-    public void update(Withdrawal withdrawal) {
-        withdrawalMapper.updateById(toPO(withdrawal));
+    public int reviewIfPending(Long id, Integer fromStatus, Integer toStatus, String adminRemark) {
+        return withdrawalMapper.reviewIfPending(id, fromStatus, toStatus, adminRemark);
     }
 
     @Override

@@ -27,6 +27,8 @@ import org.springframework.web.bind.annotation.*;
 // 但请注意它的语义：这个动作是在**断言"钱已经打出去了"**（资金事实）
 // ⇒ 若将来接入自动打款（同步调 wallet/pay），必须把该方法改挂 pay:admin
 //   （参照 after-sale 那批：两个写方法因同步退款而挂 pay:admin 的做法）。
+// T-WITHDRAW 第一步起，`PAID_OUT` 还会在权威资金账户上记账（paid_total += amount），
+// 且**余额不足时整笔拒绝**（0 行 = 不改任何字段）—— 它已经不只是"打个状态标记"。
 @PreAuthorize("@ss.hasPermi('finance:admin')")
 @RequestMapping("/api/admin/finance")
 @RequiredArgsConstructor
@@ -70,7 +72,16 @@ public class AdminFinanceController {
         return Result.ok(withdrawalManager.pageByStatus(req.getStatus(), req.getPage(), req.getSize()));
     }
 
-    /** 审核提现（打款成功时级联更新结算单为已打款） */
+    /**
+     * 审核提现（打款成功时在商家资金账户上记账 {@code paid_total += amount}）。
+     *
+     * <p>口径变更（T-WITHDRAW 第一步）：<b>不再</b>把该商家的结算单全量置为已打款 ——
+     * 那是「提现 100 会把 1000 全置成已打款、剩 900 看似再也提不出来」的成因（T-WITHDRAW-2）。
+     * 口径（T-WITHDRAW 第一步）：`settlement.status` 不承载打款事实 —— `SETTLED` 只表示「可提现」，
+     * 「已打款」的唯一事实源是 {@code withdrawal.status = PAID_OUT}（聚合看 {@code seller_fund_account.paid_total}）。
+     * 故打款后**不回写**结算单状态；`markSellerSettlementsPaidOut` 的「按商家全量置位」已删除且不打算恢复（T-WITHDRAW-2）。
+     * 「结算单列表要区分已打款」属读模型（join `withdrawal`），不是改行状态。
+     */
     @OperationLog(module = MODULE_TRADE_FINANCE, action = ACTION_REVIEW_WITHDRAWAL,
             description = "审核提现", recordParams = true)
     @PutMapping("/withdrawal/{id}/review")

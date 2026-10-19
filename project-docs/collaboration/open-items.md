@@ -2,7 +2,7 @@
 
 > **用途**：跨会话的工作交底。不是规格文档，不需要进规格索引。
 > **维护规则**：任何一批工作落地后，同步更新本文件的「已完成 / 待办 / 已知未修 / 验证边界」四段。
-> **最后更新**：2026-10-18（批次 J：跨服务 4xx 透传的最后一米）
+> **最后更新**：2026-10-19（批次 K：T-WITHDRAW 第一步 —— 资金账户成权威，只动 `settled_total` / `paid_total`）
 
 ## 0. 要数字？跑命令 —— 本文件不是 SSOT
 
@@ -508,14 +508,24 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
 **这是一条通用教训**：`preflight` 脚本的扫描面必须同时覆盖「注解」与「代码内 `hasPermi/hasPermission` 调用」，
 否则"注解归零"是假归零。脚本已加该模式（当前 0 处）。
 
-**`marketing:read` 待接线（批 7 复核产出）**：现在 `marketing:admin` 只由 ROLE_ADMIN 持有 ⇒
+**~~`marketing:read` 待接线~~ → ✅ 已接线（B3，2026-10-19，见 §1.19）**：现在 `marketing:admin` 只由 ROLE_ADMIN 持有 ⇒
 **没有"只读运营"档位**——运营要进营销后台就得是管理员，于是"能看"自动等于"能改"。
 要让"运营只看不改"，需把营销域 `GET` 类端点接 `marketing:read`（种子里已有、当前零消费）。
+**B3 的剩余一半（B3b，需契约先行）**：营销域管理端**没有查询端点**（券/秒杀/促销/拼团只有写），
+运营即使拿到 `marketing:read` 也看不到任何列表 ⇒ 「只读运营」只覆盖任务定义。
+要真正成立，必须先在契约里补管理端 list/detail（AD57+ 或重编号）再接线；
+这属于**功能增量**（PRD/契约先行），不是权限位调整，**不要**在权限批次里夹带。
+
 **另外两条"若放开则需重评位"的警告**（与批 6 提现警告同源）：
 - `FlashSaleAdminManager#deleteFlashSale` 对进行中活动**禁删**；若放开，删除会间接影响已下单用户履约/退款 ⇒ 需重新评估是否改挂 `pay:admin`。
 - `GroupBuyAdminManager#deleteActivity` 本轮**已补**"有拼团中（未结团）的团禁删"（原来是允许删的，属间接资金影响）。
 
 **当前代码事实核对（2026-10-18，交接用；以代码为准，不以本文为准）**
+
+> ⚠️ **本表已被 §1.18.1 / §1.18.7 推翻**（同一张表也在提醒：**它自己就会漂**）。当时的「守卫切到新解析器 = 未做」
+> 与「仓库实扫 0 违规不可信」都成立，但**不可信的原因不是没修，而是扫描面为空**（`mainSources()` 未 `normalize()`）；
+> 表里那三行「已回滚，未重做」现已全部按**换解析器**的方式重做（§1.18.7），`payByBalance` 的假阴性也在新解析器上实测为真。
+> 现值与结论一律去跑命令：`mvn -o -pl architecture-tests test`。下表保留为**判断过程的留档**，不要照着它开工。
 | 项 | 代码事实 | 文档口径 |
 |---|---|---|
 | 解析器 `MethodScanner`（含 8 条七形态单测） | **已提交**（`JavaMethodScannerTest`） | 可用 |
@@ -526,6 +536,9 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
 | `payByBalance` 假阴性 | **仍未修**（旧解析器不识别其 3 个本地写） | **待重做** |
 
 ⇒ **"仓库实扫 0 违规" 在当前状态下依然不可信**，因为扫描面断言缺席（判据 #16 未落地）。
+
+> ✅ **已完成（2026-10-19，见 §1.18.7）**：下面的设计说明是**当时**的施工图，保留作为决策留档；
+> 实际落地与它有出入的两点已在那里写明（解析器改用 JavaParser、事务归属改成直接读注解）。
 
 **下一轮唯一任务的设计说明（≤20 行，落文档不靠记忆）**
 ```
@@ -543,6 +556,30 @@ Q5 补 security 依赖、**不做双轨**；Q6 `rbac:admin` 单列、只给超�
    b) 登记豁免后转绿；c) 已知清单三条齐全；d) **绿且豁免条目为空 ⇒ 红**（豁免表误伤或解析器跳过）。
 硬约束：不用 shell 写 Java（一律 edit/write 工具）；每改必编译；预算尽即停并回滚。
 ```
+
+**资金事务门禁的根因与重构决策（2026-10-18，裁决 A：换解析器）**
+根因**不是某个 bug，是架构选择**：用自写文本扫描（regex + 花括号计数）去近似 Java 语法分析。
+代价是**无穷的形态清单**（lambda / 匿名类 / switch / 字符串 / 字符字面量 / 文本块 / 注解括号 / 跨行签名 /
+泛型尖括号 / record / sealed / 嵌套类型）；实测已出现的失效：`payByBalance` 3 个本地资金写被判 0（假阴性）、
+`WalletManager#refund` 解析不出、注解参数里的括号让方法被命名成 `Transactional`。
+⇒ 每修一个形态就冒出另一个，成本已超过换工具。
+
+**A1（换解析器）**：`architecture-tests` 引入 `com.github.javaparser:javaparser-core`，
+用 `MethodDeclaration` 取 name/body/注解，**删除自写的 `MethodScanner` 及其合成测试**。
+三个风险锁死：
+| # | 约束 | 理由 |
+|---|---|---|
+| 1 | **解析失败必须 `orElseThrow`**，禁止返回空集合 | 返回空 = "扫到 0 个方法" = 门禁假绿，正是本轮灾难的成因 |
+| 2 | **语料测试**覆盖三件事：方法数 + 方法名 + **body token** | 只断言方法名会被"空壳 body"骗过（本轮已发生） |
+| 3 | **旧结论作废重验**：迁移前所有关于"哪些方法被解析/计数多少"的结论**全部重新跑** | 换解析器后旧的绿/红都不再有效 |
+
+**A2（计数换 AST）**：`countFundWrites` 改为在 `MethodCallExpr` 上判定
+（`getScope()` 是 `NameExpr` 且名匹配资金仓储 + `getNameAsString()` 在写动词表），
+不再用正则扫文本。**A1 验收必须含**：`FundWriteCounterTest` 六条用例在 **JavaParser body** 上重跑通过。
+预算不足时：**A1 必须完成并以此验收；A2 可顺延**。
+
+**观测设施处置**：删除 trace（跨 fork 观测不可信，已花三轮预算且结论矛盾），
+**保留 `TRACE` 开关**（供将来接结构化"扫描报告"artifact 用），不保留其临时落盘实现。
 
 **判据 #16：工具类门禁必须自带扫描面断言（三种形态齐备）**
 "工具报 0 违规"在扫描面未验证前不是结论，只是"没看见"。要求三种断言**同时具备**：
@@ -819,7 +856,12 @@ pay-service 现有 `@OperationLog` 只落 AUDIT logger、不落库 —— 这也
 - 需要一条指标：`撤权生效延迟 = 撤权时刻 → 用户首次被拒绝时刻`，并埋点/告警（超过 N 分钟报警）。
 - 没有这条指标，"撤权即时生效"只是**没有证据的断言**——与 `status` 那次同族（机制看起来在，实际没人验证过）。
 
-**批 8 待办（`setUserRole` 的第二道闸，与该端点挂 `rbac:admin` 同一个 commit 交付）**：
+**批 8 待办（`setUserRole` 的第二道闸）—— ✅ 已落地（2026-10-19 复核，代码与用例都在）**：
+> `UserAdminManager#setUserRole` 第 213-221 行已有 `if (target == ADMIN && !UserContext.hasRole(ADMIN)) throw ForbiddenException`，
+> 注释写死「当前恒真，勿删」及其理由；`UserAdminManagerTest` 三条用例覆盖（非法 roleType / 非管理员授 ADMIN 被拒 / 管理员授 ADMIN 通过并留痕）。
+> 下面保留的是**当初的要求原文**，不必再做一遍。
+
+
 `PUT /user/{id}/role` 已定挂 `rbac:admin`（能改角色 = 能造超管）。
 **另需一条代码断言**：授予 ADMIN 时要求**当前用户本身是 `ROLE_ADMIN`**，否则拒绝。
 - 今天是**冗余**的（`rbac:admin` 只有 ROLE_ADMIN 持有），但它防的是**未来的配置变更**：
@@ -831,6 +873,905 @@ pay-service 现有 `@OperationLog` 只落 AUDIT logger、不落库 —— 这也
 **宣称边界（写死）**：端到端 403 用例跑通之前，只能说「单测 + 门禁通过」，
 **不得声称「RBAC 已符合大厂标准」**；`sys_permission.path` 仍是装饰，本批不接路径解析层；
 数据权限（行级）不在本批。
+
+### 1.18 资金门禁真扫 + D 批拆类 + 三处小项收口（2026-10-19）
+
+> 批次定性：**上一批留下的「不可信」全部变成了「可执行」** —— 门禁从「扫 0 个文件也算绿」
+> 变成「扫不到就红」，拆类从「限时豁免挂账」变成「还清并删除基线」。
+
+#### 1.18.1 资金事务门禁：**扫描面是空的**（真缺陷，根因不是判据）
+
+`FundTransactionGuardTest#mainSources()` 用 `Path.of("..").toAbsolutePath()` 求后端根。
+surefire 的工作目录是 `architecture-tests`，故得到的字面路径是 `...\architecture-tests\..` ——
+**每一级子路径的字符串里都带着 `architecture-tests`**，于是紧随其后的
+`filter(p -> !p.toString().contains("architecture-tests"))` 把**全部源码**滤掉：
+扫到 0 个文件 ⇒ 0 违规 ⇒ **恒真空转**。
+
+- 这正是 §5.5 预言的失效形态，也直接回答了 §1.17 那句「"仓库实扫 0 违规" 在当前状态下依然不可信」——
+  **它是不可信，而且原因是空转，不是没违规**。
+- 修法一行：`.normalize()`。**但只修一行不算收口** —— 让这次事故可被机械发现的是三条扫描面断言：
+  ① **数量断言** `MIN_SCANNED_SOURCE_FILES`：源文件数低于下界即红；
+  ② **已知清单断言** `KNOWN_FUND_METHODS_AND_TOKENS`：三处已知资金方法必须被解析出来，
+     **且 body 必须含预期 token**（只查方法名会被"空壳 body"骗过）；
+  ③ **反例断言** 沿用既有六条合成用例（`FundWriteCounterTest`）。
+- 另加一条**结构性反空断言**：`REGISTERED_EXEMPTIONS` 为空而实扫全绿 ⇒ 红
+  （全绿且没有任何多写被识别 = 解析器跳过了真实违规，不是"仓库很干净"）。
+- **M13 / M14 变异（实测）**：摘掉 `payByBalance` 的豁免条目 → 红，报
+  「有 3 个资金写且含 Feign」，即 §1.17 记的**假阴性 N=3 现在肉眼可见**；
+  把 `normalize()` 退回 → 数量断言 + 已知清单**两条同时红**。均按备份复原并复跑全绿。
+
+#### 1.18.2 真扫之后抓到的第一个真问题：分支互斥被当成多写
+
+`ReconciliationManager#reconcile`：下载失败 → `saveFailedBatch` 早退；成功 → `saveBatchResult`。
+**单次执行只会有一个资金写**，但门禁按方法体计数 ⇒ 判红。
+
+- 处理方式：**拆方法**（`saveFailedBatch` / `saveSucceededBatch`），**不登记豁免**。
+  理由写死为规则：豁免表只该留「真的无法用事务保护」的形态；把「分支互斥」塞进去，
+  下一批人就会照着它塞更多，最终变成免责名单（§5.3）。
+- 判据沉淀：**门禁按方法体计数时，互斥分支必须拆方法**，而不是给门禁加"分支分析"——
+  后者会让判据与 Java 语法分析纠缠，正是 §1.17「换解析器」那次代价的来源。
+
+#### 1.18.3 D 批拆类：还清并删除基线（不是"再宽限一期"）
+
+| 类 | 改动前 | 改动后 | 拆法 |
+|---|---|---|---|
+| `PayManager` | 344 行 | 245 行 | 回调族 → `ChannelCallbackManager`；订单状态回写 → `TradeStatusNotifier` |
+| `RefundManager` | 334 行 | 291 行 | 退款回调 → `ChannelCallbackManager`（与支付回调同构，放一起才看得出同一口径） |
+
+- **为什么按「用例族」拆而不是按行数砍**：回调是独立用例族（ADR-025）——发起侧关心
+  「先落库再调渠道」，回调侧关心「验签 → 按对外号寻址 → 条件更新命中才通知」。
+  按行数砍会砍出「半个用例族」，下一个人接不上。
+- **`TradeStatusNotifier` 的存在理由**：同一段「回写订单状态 + fail-open 日志」被
+  支付成功与支付超时两条互不相关的链路共用。不抽出来，拆类就只能二选一：
+  要么留在 344 行的类里，要么**复制这段降级口径** —— 后者是事故源（降级口径必须只有一份）。
+- **测试同步迁移（不是删断言）**：支付/退款回调的用例迁入 `ChannelCallbackManagerTest`；
+  `PayManagerTest` / `RefundManagerTest` 保留各自用例族的用例（含「回调触发发票联动」一例，
+  它验的是 I56 联动，不是回调本身）。
+- 基线：两条 `PayManager` / `RefundManager` 条目按**「还清即删」**移除。
+  ⚠️ 不删会红（`BASELINE_REDEEMED`）—— 棘轮的另一半是「债还了必须销账」，否则基线会变成许可。
+
+#### 1.18.4 U19：未登记 4xx 的前端兜底（结论：**代码本来就对，缺的是用例**）
+
+- 实测 `getUserMessage` 的既有优先级已满足 U19 ①：`ERROR_MAP` → `isNotFound` →
+  **`err.message` 直显** → 通用兜底。即「状态码不在清单里」**不会**被改写成
+  「服务异常/第三方/稍后重试」。
+- 故本项**没有改运行代码**，只补**可执行用例** `front-end/scripts/check-error-fallback.mjs`，
+  并进 CI 的 `consistency` job。两条设计约束：
+  1. **同源**：直接 `import` 真实的 `packages/api/error-codes.ts`（Node 类型剥离），
+     不复制一份判据 —— 复制出来的判据守的是它自己的想象（§5.11）；
+  2. **不新增状态码白名单**（U19 明令）：用例逐个喂 409/412/422/429/451/499，
+     断言「有 msg ⇒ 原样直显」「无 msg ⇒ 通用兜底且不含甩锅平台话术」，并反向断言
+     这些 HTTP 状态**不被**判成第三方渠道错误（`4xxx` 是业务码段，混用会把透传的 4xx 误判成渠道挂了）。
+- **M15 变异**：把兜底改成 `return '服务异常，请稍后重试'` → 用例红（十一处），复原后绿。
+
+#### 1.18.5 U2 / U4 / U8：建库脚本口径订正 + 只读对账
+
+- **U2（`Initialize.sql` 头部三处错事实，已订正）**：
+  1. 软删段原文「未启用 `@TableLogic`、没有 `deleted` 列」**已成错**（`invoice_title.deleted` 落地）。
+     现改为「默认不启用，唯一例外登记在此」，并写明新增软删表必须同步本段；
+  2. 主键段补**联合主键例外**（三张纯关系载体表），并说明为什么不给它们加代理主键；
+  3. 新增第 5 条：`xxx_id` **同名不同型四组**（`user_id`/`spu_id`/`sku_id`/`coupon_id`）的 A/B 口径 ——
+     **A = 业务键 `BINARY(16)`**（聚合根自持 + 快照表 `order_item`，ADR-050/061）、
+     **B = 技术键 `BIGINT`**（引用列）。
+     判据一句话：**能出现在对外报文里的是 A，只在本库内 join/过滤的是 B**；
+     判定看有没有 `FOREIGN KEY ... REFERENCES`（有 ⇒ B），**不看列名**。
+     已知代价照实登记：同名列两种类型，跨表 join 时比较**不会报错、只会恒不相等**（静默错配）。
+- **U4（只读对账，`scripts/check-schema-keys.sh` → `.py`）**：**不进 CI、不阻塞提交**。
+  三块报告：① `DROP` 与 `CREATE` 双向差集（漏 DROP 会让「复跑重建」在建表处失败，
+  文件头 (e) 已把它写成硬要求）；② 四组键型分布；③ 名单 vs 实际类型核对 + 联合主键清单。
+  **M16 变异**：把 `order_item.sku_id` 改成 `BIGINT` → 报 `FAIL`（快照表存技术键 = 口径被破坏）。
+  配套：Windows 控制台 GBK 会在 `⇒` 上抛 `UnicodeEncodeError` —— 已在脚本内强制 UTF-8 输出，
+  理由是「工具要便宜到顺手就跑」，否则没人用。
+- **U8**：`docker-compose.yml` 里写死的过时表数改为**指向取数命令**（写死的计数必然漂）。
+
+#### 1.18.6 U6：软删与业务唯一键共存 → **ADR-067**（并纠正本文件自己的一句错话）
+
+- **落点**：`project-docs/adr/067-soft-delete-and-business-unique-key.md`（`uk_user_default` 多 NULL 唯一 + `@TableLogic`）。
+- **三条判据**：① 「腾占位」的清理语句**不得**过滤 `deleted`（否则被软删的默认行继续占槽位，用户删了却设不上新的）；
+  ② 软删**不**清 `is_default`（保留事实、便于恢复）；③ **自定义 SQL 自带 `deleted = 0`，MP 注入 SQL 交给 `@TableLogic`** ——
+  同一张表里两处正反例并存（`updateTitleById` 带、`clearDefaultByUserId` 不带），**都刻意如此**；唯一键里**不放** `deleted`。
+- **留档一次自我纠正**：本文件原写「`clearDefaultByUserId` 不带 `deleted=0` **恰好**没踩坑 —— "对的但是偶然的"」。
+  **这句是错的**：它是**必须**不带，属承重设计；把它读成偶然，下一个人就会「顺手补上」并因此制造缺陷。
+  教训写进 ADR：**看到一处「不一致」先判断它是遗漏还是承重**，写不清理由的那一处才是真的遗漏。
+- 顺带把根文档（`CLAUDE.md` / `AGENTS.md` 镜像）里「每张表都以 `BIGINT AUTO_INCREMENT` 为主键」这句改准
+  （三张关联表是双列联合主键），并把 `xxx_id` 同名不同型的 A/B 口径写进同一段 —— 与 U2 的 `Initialize.sql` 头部保持同口径。
+
+#### 1.18.7 A1：**换解析器**（自写文本扫描 → JavaParser），旧结论全部重验
+
+> 这是 §1.17「裁决 A」的落地。**动因不是某个 bug，是架构选择**：用 regex + 花括号计数逼近
+> Java 语法分析，代价是无穷的形态清单；实测已失效三次（`payByBalance` 假阴性、
+> `WalletManager#refund` 解析不出、注解参数括号让方法被命名成 `Transactional`）。
+
+**改了什么**
+
+| 项 | 内容 |
+|---|---|
+| 依赖 | `architecture-tests/pom.xml` 加 `com.github.javaparser:javaparser-core`（版本锁在 property，`test` scope） |
+| 解析唯一入口 | 新增 `JavaSourceParser`：`parse` / `methods` / `body` / `hasAnnotation` / `typeHasAnnotation` / `countFundWrites` / `mainSources`（另有 `hasNoBody` / `isInterfaceFile` / `typeNames` 供语料与 TRACE 用）|
+| 删除 | 自写 `MethodScanner`（含花括号计数、`stripComments`、`stripAnnotations`）**整文件删除**，连带其 11 条合成用例 |
+| **保留** | `TRACE` 开关（`-Dscanner.trace=true`）—— 但删掉「退出时落盘到 `/tmp/scanner-trace.log`」那套：跨 fork 落盘观测已被证明不可信（三轮预算、结论互相矛盾）。现在只把结构化摘要打到 stdout，作为将来接 artifact 的入口 |
+| 顺带删掉的规避代码 | ① 用正则按 `@Transactional ... 方法名(` **反抽**事务方法名（AST 直接读注解）；② 先 `stripComments` 再扫（AST 里注释不在语法树上，天然免疫「注释写着 @Transactional 就被当成有注解」） |
+
+**严格解析是判据的一部分（本轮实测到的坑）**：JavaParser 默认会在语法错误处**恢复**并给出
+**部分 AST**。这与「`orElseThrow` 就安全了」的直觉不同 —— 恢复出来的 AST 让「文件没解析干净」
+表现为「少数几个方法消失」，门禁看到 0 个资金写于是**判绿**。故判据取
+`ParseResult#isSuccessful()`（有任何 problem 即抛），**不是**「拿得到 AST 就算过」。
+自证用例：`shouldThrow_whenSourceIsNotParsable`（喂 `class Broken { void m( { }`）——
+首版用 `getResult().orElseThrow()` 时**这条用例是红的**，正是它把这条坑挖了出来。
+
+**新语料测试**（`JavaSourceParserCorpusTest`）：七个真实文件，每条**三件事齐备** ——
+方法数（精确）+ 方法名（必然存在的一组）+ **body token（按调用名判定）**。
+选样口径是「资金写 + 复杂语法混排」：`WalletManager` / `PayManager` / `RefundManager` /
+`ReconciliationManager` / `OrderLifecycleManager`（含 lambda 与 Feign）/ `InvoiceBuyerManager`（含注解）/
+`InvoiceTitleRepositoryImpl`（几十行 setter 连排，最能暴露「截断」）。
+另加三条：每个具体类方法**都必须有 body**（反空壳，反空断言落在**扫描面**上）、
+解析失败必须抛、注解可读性。
+
+**`FundWriteCounterTest` 六条在 JavaParser body 上重跑**：样本不再直接喂字符串给 `countFundWrites`，
+而是「包成一个可解析的类 → 解析 → 取方法 → 计数」，因为要验的正是「从源码到计数」这一步；
+若手工构造 AST 节点，就绕开了「解析器把这段文字切成什么」这个真问题。
+
+**旧结论作废重验（实测，不是推断）**
+
+| 结论 | 旧（文本扫描，且扫描面为空） | 新（JavaParser，AST 判定） |
+|---|---|---|
+| 扫描面 | 扫到 **0 个文件** ⇒ 0 违规 ⇒ 绿（假绿） | 源文件四位数、过资金预过滤者数十、解析出的方法数千（现场取数：`JavaSourceParserCorpusTest#shouldScanMainSourcesOnly` 与探针输出） |
+| ≥2 个资金写的方法 | 一个都没看见 | 只有三处：`PayManager#payByBalance`（n=3、无事务、含 Feign ⇒ **违规**，已登记豁免）、`WalletManager#deductBalance`（n=2、有事务 ⇒ 合规）、`WalletManager#refund`（n=2、有事务 ⇒ 合规） |
+| `payByBalance` 的「假阴性 N=3」 | 记为 0，判绿 | **实测就是 3**（`createPending` / `cancelPending` / `markBalancePaidIfPending`；`channelRouter.deductBalance` 是 Feign，不计） |
+| 上一轮的两个红（已知清单未命中 / 豁免条目陈旧） | — | **重判为正确**：它们是「扫描面为空」的正确表现；解析器换掉后两条都自然转绿，**不是**放宽判据换来的 |
+
+⇒ 一句话：**上批那句「仓库实扫 0 违规不可信」的结论成立，且原因是空转而非干净**；
+现在这条链路（解析 → 计数 → 判红 → 豁免 → 陈旧校验）每一环都有被测对象。
+
+**A2 的输入形态（复核结论，不是口号）**：`countFundWrites` **只有**两个签名，都吃 AST 节点 ——
+`JavaSourceParser#countFundWrites(MethodDeclaration, Predicate, Predicate)` 与
+`FundTransactionGuardTest#countFundWrites(MethodDeclaration)`；内部是
+`method.findAll(MethodCallExpr.class)` + `getScope()` 是否为单个标识符。**全仓已无 `countFundWrites(String)`**，
+`FundWriteCounterTest` 六条走的是「包成可解析类 → 解析 → 取 MethodDeclaration → 计数」。
+⇒ 「窗口串味」不是被换了地方，而是**输入不再是字符串**（receiver 的边界由语法树回答）。
+
+**语料测试的两处补充（2026-10-19 二次收口）**：
+1. **方法数精确断言的失败信息带维护提示**：直接告诉读者「若你刚增删/改名了方法，这是预期的 ——
+   把实测值抄进 `corpus(...)` 的第二参数；只有**没动过该类**时失败才该怀疑解析器漏切」。
+   实测：把 `STRESS_METHOD_COUNT` 从 35 改成 34，报告里能看到该提示（不是靠注释，而是**失败信息本身**）。
+2. **压力样本（锁解析器行为，不为抓违规）**：`OrderRepositoryImpl` —— 按**语句数**实测排序取第一名
+   （方法数与单方法体也最大，同时是全仓最大的类）。断言口径与语料一致（能精确的精确、会自然增长的取下界）：
+   精确方法数 + 每个方法都有 body + 语句数下界 + 最大单方法体下界 + 两个跨分支的 body token。
+   **为什么不堆更多压力样本**：lambda 密度第一的是 `KgEdgeIndexAdapter`（十几处 lambda），
+   已在该用例注释里登记为「将来要加第二个就选它」—— 现在加会变成两份要维护的冻结样本。
+
+**计数取数口径的可见性（原：只打 stdout）**：
+- **两条结构化通道**：GitHub annotation（`::warning title=计数取数口径::…`，PR 的 Checks 页可见）
+  + `GITHUB_STEP_SUMMARY` Markdown 块（运行页顶部直接渲染，含残留报告清单的折叠区）。
+- **CI 里直接判红**：`GITHUB_ACTIONS=true` 时出现残留即失败 —— CI 一律 clean 构建，
+  **出现残留就说明度量对象是脏的**，此时「数字对上」也不算过（`--check` 分支里单列了 exit 4 那条路）。
+  本地增量跑仍只告警（否则每改一次测试都要先 clean，门槛就贵到没人跑）。
+- **本轮踩到的第二种陈旧形态**：只比 `.class` 会漏掉「**源码删了、`.class` 与报告都还在**」
+  （增量构建不清理 target）—— 实测删掉探针类后总数涨了 1 且**零告警**。判据已补成「报告名对应的
+  **测试源码**必须存在（嵌套类折回外层类）」。自证：塞一份假报告 → 告警必现；塞假报告且在 CI 模式 → 判红。
+
+**TRACE 的调试姿势已登记进 `JavaSourceParser` 的类注释**（下一批人不用再试）：
+① `-Dscanner.trace=true` 直接可用（surefire 3.x 会把 Maven user properties 提升进 fork），且**不动 JaCoCo**；
+② `-DargLine="-Dscanner.trace=true"` 也可用，但**实测会挤掉 JaCoCo 的 agent**（同名属性）⇒ 本次不产 `jacoco.exec`；
+③ 输出在 **Maven 控制台**；`target/surefire-reports/*-output.txt` 默认**不存在**，
+   该目录的 `*.txt`/`TEST-*.xml` 只有计数与堆栈 ——「打了没看到」多半是找错了地方，搜 `[scanner-trace]`。
+
+**三次变异（M17/M18/M19，均按备份复原并复跑绿）—— 其中 M17 的第一次跑**没咬**，留档**：
+
+1. **M17（body 截断）**：让 `body()` 只返回前 200 字符。**首次结果：全绿** —— 因为我把
+   「body token」断言写成了 `method.findAll(MethodCallExpr.class)`（读 AST 调用列表），
+   而 `body()` 是另一条路径：**截断它，AST 断言照样看不见**。这正是 §5 判据「对我对变异的预期
+   不是证据」的又一次实例（同族：M3）。改法：token 断言挪到 **body 文本** `contains` 上，
+   再跑 → corpus 与守卫的已知清单**两处同红**。
+   教训写死：**「我要验的是 body，就不能让断言绕开 body」** —— 用 AST 更"高级"不等于验到了你以为的东西。
+2. **M18（去掉严格解析）**：退回 `getResult()`（容错恢复）→ `shouldThrow_whenSourceIsNotParsable` 红。
+   即「严格性」这条判据**只有那条用例在守**，删它就没有任何东西会红。
+3. **M19（`methods()` 恒返回空）**：模拟解析器整体失效 → 三条门禁共十余处红
+   （守卫 4、计数值 6、语料 3），且报错直接指名「方法数 0，期望 N」与「方法未被解析出来」。
+   这是判据 #16 三形态的**联合**效果：数量断言抓整体失效、已知清单抓局部漏扫、反例抓规则退化。
+
+#### 1.18.8 复核补丁：receiver 边界 / 压力样本成本 / 红粒度 / 共享文件留痕（2026-10-19 复审）
+
+**① `getScope() instanceof NameExpr` 的边界：补掉一半、登记另一半**
+
+- **能补的补掉**：`this.walletAccountRepository.deduct(...)` 的 receiver 是 `FieldAccessExpr`（scope 是 `this`），
+  此前被**静默排除** —— 同一句资金写换个前缀就不计数，属假阴性。现新增
+  `JavaSourceParser#receiverName`，两种形态都还原（`NameExpr` / `this.field`）。
+  **实测全仓该形态零命中**，故不改变任何既有判定（不是"改了判据才变绿"）。
+- **补不了的登记**：`getWalletAccountRepository().credit(...)` —— receiver 是**表达式**，
+  判它必须做类型推导（`getXxxRepository()` 的返回类型是不是资金仓储），超出「静态名字匹配」。
+  **不引入类型解析**，改为两只护栏：语料钉行为（`shouldIgnoreFactoryChainedCall`）+
+  **全仓体检** `shouldHaveNoFactoryChainedFundWrites`（真有人这么写就红，逼出「改写法 or 补类型解析」的决策）。
+- 三条语料断言已加：`shouldCountThisPrefixedFundWrite`（`this.` 必须算）、
+  `shouldIgnoreFactoryChainedCall`（链式不算，**行为钉死**）、`shouldHaveNoFactoryChainedFundWrites`（体检，含反射面反空断言）。
+
+**② 压力样本的维护成本（写死换样条件）**
+
+`OrderRepositoryImpl` 的精确方法数会随该类改动而红，因此它只适合**不常改**的文件。
+判据写进用例注释：**变更频率一旦超过「每月一次」就换 `KgEdgeIndexAdapter`**（lambda 密度第一、结构稳定），
+查频率的命令（近 30 天提交数）也在注释里；换样本时必须**同时**改该段与 `STRESS_*` 常量。
+理由：冻结样本若每月都要改，就会被人改成 `@Disabled` 或放宽成下界 —— 那时它既不再冻结，也没有告警能力。
+
+**③ CI 的红：先修「顺序假红」，再谈「取数脏」**
+
+- **发现真缺陷**：`verify-gates.sh full` 原顺序是 `fast_steps`（首步是计数门禁）→ 全量 `mvn test`。
+  而 CI 每个 job 都是**全新检出**、`target/surefire-reports` 一个都没有 ⇒ 计数门禁的
+  `--strict-tests` 立刻判「测试数无法度量」⇒ **任何 push 上这道闸都红，且与代码质量无关**。
+  也就是说：我要加的「残留报告判红」**永远不会触发**（先被假红挡住）。
+- **修法**：`full` 改为**先跑全量 `mvn test`，再跑 `fast_steps`**。附带两个好处：
+  取数天然来自本次构建（不是上一轮残留）；测试真红时先报测试红，不被计数红遮挡。
+- **红的粒度（退出码分开，语义不同）**：
+  | 退出码 | 含义 | 该怎么办 |
+  |---|---|---|
+  | **4** | **度量问题**：残留报告 / 完全无法度量 / 半量（下限见下） | 先 `mvn clean test` 再复跑；**不要**照着差异改文档 |
+  | **1** | **数字不一致**：取数可信，文档过期 | 跑 `--write` 回填 |
+  本地只告警不判红（否则每改一次测试都要先 clean，门槛贵到没人跑）；
+  **CI 里出现残留 ⇒ 判 4**（CI 是 clean 构建，出现残留说明度量对象是脏的）。
+  另外本地「有差异 + 有残留」时会显式提示「这份差异可能是脏数据算出来的」——避免去追幻影。
+- **新增「半量」下限**（本轮顺带堵的第三种脏取数）：只跑 `-pl <一个模块> test` 时报告数骤减，
+  总数会从四位数掉到两位数，而 `--write` 会把它**静默写进文档**（比残留更危险：残留让数字偏大，
+  半量让它偏小，看起来像一次真实的"测试被删了"）。判据：**实测 < 文档现值 × 0.8 ⇒ exit 4**，
+  逃生口是 `--tests=N`（显式 = 有人对这次缩小负责）。自证：只留下一个模块的报告 → 立刻 exit 4 并拒绝写回。
+
+**④ 共享文件留痕**
+
+- `open-items.md` 在本批期间被**另一会话**追加并暂存过内容（其中一段与 §1.17 近似重复，仅措辞/标点不同）。
+  我此前**没有读到**它（文件从 1172 行涨到 1390 行发生在我开工之后），是被门禁打红才发现。
+  处置：① 在 5b 段顶部加一行「**门禁修正，内容未变**」说明只改了一行（`共 N 个端点` → 取数命令指针）；
+  ② 删除尾部那段近似重复（保留 §1.17 正本 + 一个「去重留痕」指针），5b / SoD 两段**原样保留**。
+- 教训（补进 §5）：**共享文件的「我读过了」有有效期** —— 读完到写完之间它可能已经变了。
+  所以①涉及共享文件的改动，收尾必须重跑门禁；②「暂存区里有我的改动但不是我 `git add` 的」要当场说明，
+  否则提交会把两方内容算进一个人的提交。
+
+#### 1.18.9 复审三项落地：三段式门禁 / `--tests` 留痕 / 用例意图（2026-10-19 复审）
+
+**① `verify-gates.sh` 改**三段式**（顺序即因果）**
+
+| 段 | 内容 | 为什么在这一段 |
+|---|---|---|
+| 1 `report_free_steps` | 交接单 / ID 不变量 / ia-api 单测 / architecture-tests / 契约闭环 | **不依赖 surefire 报告**，与"跑没跑过测试"无关；放最前给最快反馈 |
+| 2 `test_step` | 全量 `mvn test` | 慢且一旦红要独占视线 |
+| 3 `count_step` | 根文档计数 | **输入是报告**，必须排在测试之后 |
+
+`fast` = 段1 + 段3（不跑全量测试）；`full` = 段1 + 段2 + 段3。
+修掉两个事故：**假红**（计数跑在测试前 ⇒ 全新检出必红）与**反馈被淹没**（测试红时第一眼看到的是"文档数字不对"）。
+
+**② `--tests=N` 只能是逃生口，不许成习惯**
+
+- 使用时**三条可见通道**同时留痕：控制台 + `::warning title=计数取数口径::` + Job Summary（写明"未经 surefire 实测"）。
+- **审计口径**：同一批里出现几次、是否同一原因。若开始**习惯性**出现 ⇒ 说明取数环境坏了（CI 顺序 / 只跑部分模块 / 报告被清），
+  **去修根因**，不要继续传参。
+- **阈值可调，参数不可滥用**：半量下限默认 0.8，改 `--complete-floor=0.7` 即可（越界值直接拒绝）。
+  写死的是「必须显式」，不是「必须是 0.8」—— 阈值会随仓库规模漂，**显式责任**不会。
+
+**③ `this.` 用例的意图写进注释（防"零命中 ⇒ 当冗余删掉"）**
+
+`shouldCountThisPrefixedFundWrite` 的 javadoc 现在明写：**它锁的是「实现不许回退」，不是「仓库里有没有这种写法」**；
+删掉 `receiverName` 的 `FieldAccessExpr(scope=this)` 分支即红。并与「零命中体检」（`shouldHaveNoFactoryChainedFundWrites`）作了区分：
+*体检抓"真实代码里出现了漏算写法"，本用例抓"漏算能力被加回来" —— 两者缺一不可。*
+
+### 1.19 B3 —— 营销域「只读运营」档位接线（2026-10-19）
+
+**先说清单（这是开工第一步，也是它改变了 B3 的范围）**
+
+营销域管理端共五个控制器，**GET 只有一个**：
+
+| 控制器 | 前缀 | GET | 写方法 |
+|---|---|---|---|
+| `AdminCouponController` | `/api/admin/coupon` | — | POST、PUT `/{couponId}/disable` |
+| `AdminFlashController` | `/api/admin/flash` | — | POST、PUT、DELETE |
+| `AdminPromotionController` | `/api/admin/promotion` | — | POST、PUT、DELETE |
+| `AdminGroupBuyController` | `/api/admin/group-buy` | — | POST、PUT、DELETE |
+| `AdminTaskController` | `/api/admin/task` | **GET**（AD51 分页） | POST、PUT `/{code}` |
+
+⇒ 「把营销域 GET 接 `marketing:read`」在现实里只有**一个**落点。运营依然**看不到**券/秒杀/促销/拼团的列表——
+因为契约里根本没有这些管理端查询端点（AD40-42 / AD48-50 / AD54-56 全是写）。**这是功能缺口，不是权限缺口**（见 §2.3 新增的 B3b）。
+
+**发现的真陷阱：类级与方法级 `@PreAuthorize` 是 AND，不是覆盖**
+
+若按"保留类级 `marketing:admin`、给 GET 加方法级 `marketing:read`"去接，**两个位都会被要求**：
+只读运营（仅 `marketing:read`）进 GET 仍 403，而管理员因为 `*:*:*` 通配**完全无感** ⇒ 缺陷会长期隐身。
+⇒ 要让"只看不改"成立，**整个类必须改成逐方法挂位**，类级注解必须清空。
+
+**改动（同一 commit，按你的要求）**
+
+1. `AdminTaskController`：删类级 `@PreAuthorize`；`page` → `marketing:read`；`create`/`update` → `marketing:admin`；
+   类注释写清 AND 语义与"为什么不能类级 + 方法级"。
+2. `AdminEndpointAuthorizationGuardTest`：把 `/api/admin/task` 加入 `METHOD_LEVEL_ADMIN_PREFIXES`
+   （该类走方法级，不再受"必须类级"约束；守卫要求注解数 ≥ 映射方法数）。
+3. `PermissionBitReferenceGuardTest`：**删掉 `marketing:read` 的零消费白名单条目**（已接线 ⇒ 陈旧即红）。
+
+**用例选型：结构断言（AST），不是 mock、更不是种子**
+
+- **mock 为什么不行**：`@PreAuthorize` 由 Spring Security 代理求值，纯 Mockito 里直接 `new` 的控制器**没有代理**，
+  "断言调用抛 403"是**假测试**（只证明没开方法安全，不证明权限配对了）。
+- **种子/端到端为什么不行**：需要 MySQL 与起服务（E1/E2 未解），且本仓 marketing-service 至今没有 `@SpringBootTest`。
+- **所以守"能机械验证的那一层"** —— 而这层恰是接线最常错的地方：新增 `MarketingReadTierGuardTest`
+  ① 类级注解必须为空（AND 陷阱）；② 逐方法位与预期**精确相等**（page=read、两个写=admin，且不许漏挂）；
+  ③ **反向**：营销域管理端任何写方法都不许挂 `marketing:read`（防"读位挂到写方法上"这种更危险的错）。
+  真正的 403 行为验证登记在 **E2**，不在这里假装守住。
+
+**变异（均按备份复原）**：M20 把类级 `@PreAuthorize` 加回 → 红（"类级注解会被同时要求"）；
+M22 把 `create` 的位改成 `marketing:read` → **两条同时红**（精确位 + 反向断言）。
+
+#### 1.19.1 两项存量任务的真实状态（2026-10-19 复核：**都未完成**）
+
+**5b 商家端权限替换 —— 未开始（不是"没发现"，是"已登记待替换"）**
+
+- `/api/seller/**` 实测 **19 个映射端点**，分布在四个控制器：
+  `MerchantController`（`/api/seller`，7）、`MerchantCouponController`（`/api/seller/coupon`，3）、
+  `SellerFinanceController`（`/api/seller/finance`，5）、`KnowledgeBaseController`（`/api/seller`，4）。
+  （`FreightTemplateController` 挂在 `/api/item/freight-template`，**不属**该前缀，别混进来。）
+- 四个控制器**全无** `@PreAuthorize`（`KnowledgeBaseController` 里唯一那处 "`@PreAuthorize`" 只出现在
+  类注释里，讲的是"语义等价于原 @PreAuthorize"）。守卫侧靠 **EXEMPT 表**放行：
+  `SellerFinanceController`、`MerchantCouponController` 等条目写的是"待矩阵执行（截止 **2026-11-15**）"。
+- ⇒ 现状 = **临时豁免 + 到期倒计时**，不是"已符合"。收口动作写死两条：① 逐端点按 §4.2 人工签；② 签完删 EXEMPT 条目，
+  让守卫转强制（`AdminEndpointAuthorizationGuardTest` 会因"陈旧豁免"或"缺注解"直接红）。
+
+**SoD 职责分离 —— 未实现（只有授权约定）**
+
+- 实测：全仓 grep 不存在任何"互斥位"模型（`invoice:issue` × `invoice:void` 的互斥**没有被系统强制**）。
+  当前靠**种子里不给同一个角色同时授予两位**来"实现"—— 属**约定**，管理员一次误配即失效。
+- 最小实现形态（另立项时按此开工）：在授权域加"互斥位对"注册表 + **授予时校验**（给角色加 A 位则拒绝其已持 B 位，
+  反之亦然），并对存量种子做一次一致性扫描（发现既有违规即报，不自动改）。
+- 连带项：`setUserRole` 的第二道闸（`UserAdminManager:213-221`）**已存在**，但它的注释自陈"当前恒真"——
+  在生产有多个管理员之后是否够用，随 SoD 一并评估（那正是"ADMIN 位与 rbac:admin 位可能分离"的场景）。
+
+
+#### 1.19.2 四项复审确认（2026-10-19 第二批）
+
+**① `fast` 的计数闸改为显式 `[skip]`**
+
+理由：段 3 的输入是 surefire 报告，本地要么**没有**（刚 clean）要么**是上一轮的**（没 clean）——
+两种红都与本次提交无关，属典型门禁疲劳。但跳过必须**说出口**：
+`[skip] …full 与 CI 会跑` + 收尾语改成「**报告无关门禁全通过** —— 计数闸已 `[skip]`，这**不是**「全部门禁绿」」。
+同时把判据 #13 的差异表里"文档计数 ✅"改成 `⛔ [skip]`，否则表格本身会教人误读。
+
+**② 配置→行为的静态断言（`MethodSecurityWiringGuardTest`，3 条）**
+
+| 断言 | 抓什么 |
+|---|---|
+| `@EnableMethodSecurity` 存在 | 没有它 ⇒ 全仓 `@PreAuthorize` 都是**装饰**，方法照跑 |
+| bean 名 `ss` 真有对应 bean 且方法齐（`hasPermi/hasAnyPermi/hasAllPermi/hasRole`） | 拼错时单测全绿、**运行期 EL 求值 500** |
+| 全仓 `@PreAuthorize` 表达式形态一致（bean 名 + 方法名） | 有人写 `hasPermission` 就会扩散 |
+
+实现踩到两个坑（都写进注释了）：`@Service("ss")` 是 **SingleMember** 而非 Normal 注解；
+`annotation.toString()` 会**带上前置注释**，于是注释里那句示例
+`@PreAuthorize("hasAuthority('order:read')")` 被当成真注解 —— 改用 `getMemberValue()` 取字符串实参。
+**变异**：M24a 把一处改成 `hasPermission(...)` → 红；M24b 注释掉 `@EnableMethodSecurity` → 红（两条均复原）。
+
+**③ `--complete-floor`：CI 值写死，CI 不读参数**
+
+- `CI_COMPLETE_FLOOR = 0.8` 是**常量**：CI（`GITHUB_ACTIONS=true`）永远用它，传 `--complete-floor` 会被**忽略并告警**。
+  要调整就改常量 —— **常量改动进 review diff，这是唯一的调整留痕**。
+- 本地可覆盖（并打印告警说明"本地放宽不改变 CI 的结论"），因为本地放宽是**调试**行为，不是判据变更。
+
+**④ `this.` 用例的"锁"已被变异证明（M23）**
+
+删掉 `receiverName` 里的 `FieldAccessExpr(scope=this)` 分支 → **`shouldCountThisPrefixedFundWrite` 单条红**，
+其余 8 条语料用例全绿（说明它锁的正是那一行，而不是被别的东西顺带覆盖）。按备份复原。
+
+
+### 1.20 签到幂等性实测（2026-10-19）：**并发幂等做到了，「发放」没做到**
+
+**结论先说**：当日去重是**真幂等**（原子），但「打标记 → 发积分」这个顺序让它变成**至多一次（at-most-once）**，
+失败即**永久少发**；且整条状态只存在 Redis，没有 DB 真源。
+
+**① 做到了什么（值得保留）**
+
+`RedisSignInStoreAdapter#markToday` 用 `SETBIT(key, dayOffset, true)` 并读**返回值**（Redis 返回该位**原值**）：
+
+```java
+Boolean alreadySigned = stringRedisTemplate.opsForValue().setBit(key, offset, true);
+if (Boolean.FALSE.equals(alreadySigned)) { ...; return true; }   // 只有真正「从 0 变 1」的那次返回 true
+return false;
+```
+
+⇒ 并发双击、重试、MQ 重放，只有一个调用拿到 `isFirstToday=true`，积分只发一次。
+这比「先 `GETBIT` 再 `SETBIT`」强得多（后者有 check-then-act 竞态），**这个形态要保留**。
+
+**② 三个缺口（按危险度排序）**
+
+| # | 缺口 | 后果 | 证据 |
+|---|---|---|---|
+| 1 | **先置位，后发积分** | `addPoints` 抛异常（DB 抖动/连接池满）⇒ 位已置、积分没发，**当天再也补不回来**（重试拿到 `isFirstToday=false`） | `SignManager#sign` 第 30-37 行 |
+| 2 | **`points_log` 没有幂等键/唯一键** | 一旦第 1 道的门失效（代码改动/未来并发路径变化），双发**没有 DB 兜底** | `Initialize.sql` 里 `points_log` 只有 `idx_user_id` / `idx_create_time` |
+| 3 | **签到状态只在 Redis Bitmap，无事实表** | Redis 丢数据（未持久化 / 主从切换 / key 误删）⇒ **断签 + 丢历史**，而连续天数是从 Bitmap 推出来的 | `SignInStore` 只有 Redis 实现；`countContinuous` 基于 Bitmap |
+
+**③ 需要做（T-SIGN，大厂形态）**
+
+1. **加事实表**：`sign_log(id, user_id, sign_date, source, create_time)` + `UNIQUE KEY uk_user_date (user_id, sign_date)`
+   —— **幂等由唯一键保证**：重复插入捕获 DuplicateKey 即「今天已签」，直接返回现状（无需前置查询，无竞态）。
+2. **顺序改成「同一本地事务内：insert sign_log + insert points_log」**，失败**整体回滚** ⇒ 位没置、下次可重试。
+   二者同库同域 ⇒ **本地事务足够**，不需要 Saga/Outbox（只有跨服务才需要）。
+3. **`points_log` 加 `biz_key` + `uk_biz_key`**，签到用 `sign:{userId}:{yyyyMMdd}` ——
+   与既有 `member_growth_log.uk_order_no` 同口径，重放不双发。
+4. **Redis Bitmap 降级为投影/快路径**：写路径以 DB 成功为准，Bitmap 写失败只影响显示（**fail-open**）；
+   连续天数从 `sign_log` 计算（或维护 `sign_streak` 汇总），**不再以 Bitmap 为真源**。
+5. **三条用例**（缺一条等于没做）：并发双签只发一次；发积分失败后**重试能补发**（证明回滚生效）；
+   重复调用返回 `signed=true, earnedPoints=0`（语义不变，防回归）。
+6. **迁移**：库无存量数据（ADR-045 口径）⇒ 直接改 `Initialize.sql`，**不需要**数据迁移脚本。
+
+
+### 1.21 5b 签字与接线前置（2026-10-19）
+
+**判断 A 已签：`seller:withdrawal` 独立成位 —— 但先 grep 了一次"有没有同步打款"，结论是没有**
+
+`WithdrawalManager#applyWithdrawal` 只做三件事：校验金额 ≤ 可用余额、`withdrawal_no` 生成、
+落库为 **`PENDING_REVIEW`**。出款在管理端 `review(id, status, …)`（打款成功才级联结算单为已打款）。
+⇒ 该位的准确语义是**「发起资金请求」而非「打款」**，必须写进位说明，否则会有人以为拿了它就能出款。
+
+**同一趟 grep 抓到的真缺陷（已登记 T-WITHDRAW，比位拆分更要紧）**：
+
+`SettlementManager#availableBalance` = 所有 `SETTLED` 结算单金额之和，**不扣任何提现**（待审、已打款都不扣）。
+⇒ 同一商家可连续申请 N 笔，每笔都通过 `amount <= available` 校验，**待审提现总额可超真实可提现余额**；
+财务若逐单放行就是真多付。同时 `WithdrawalManager` **无锁、无幂等键**（只有 `withdrawal_no` 唯一，挡不住同额重复提交）。
+修法：① 余额口径改为 `SETTLED − (PENDING_REVIEW + PAID_OUT)`；或 ② 提现时**预占**（新增冻结行/字段），
+并加"同额重复提交"去重。判据同 §5 判据：**资金口径的"可用"必须等于"能拿走的"，不能等于"账面上的"**。
+
+**判断 B 已签：两个 GET 写进契约「纯读无副作用」**
+
+| 端点 | 实测 | 契约改动 |
+|---|---|---|
+| `GET /api/seller/shops/{shopId}/decoration` | `findByShopId(...).orElseGet(ShopDecorationVO::empty)`，读时不建行 | 行内标注「纯读无副作用」+ **今后不得改成"读时初始化"**（要写就加显式写端点） |
+| `GET /api/seller/knowledge` | 纯 `listBySeller`，不触发摄取/重排 | 同上 |
+
+**接线前补的三件：两件已实现（守卫内），第三件随接线落地**
+
+1. **`seller:admin` 聚合位登记**（已实现）：`SELLER_ADMIN_AGGREGATE` 清单 + 面断言
+   「实际映射方法 == 登记清单 ∪ 端点级豁免」。**M25 实测**：新增 `probeNewEndpoint` 不更新清单 → 红并点名该方法。
+   这堵的是聚合位的核心危险：**新端点被静默授权**。
+2. **永久豁免 / 临时豁免分 `type`**（已实现）：`ExemptType{PERMANENT,TEMPORARY}` + `record Exempt(type, reason, deadline)`；
+   断言 `PERMANENT` 不得有截止日、`TEMPORARY` 必须有且**过期即红**；
+   另加**端点级豁免** `ENDPOINT_EXEMPT`（键 `Controller#method`），把 `MerchantController#apply` 登记为永久豁免，
+   使同类 6 个兄弟方法能被逐方法强制 —— 这是"整类豁免"和"类级注解"都做不到的形态。
+   配套断言：端点级豁免必须**仍存在且仍无注解**（补注解/改方法名 ⇒ 红）。
+3. **四个控制器的类级/方法级挂法**（随接线落地，表见 `rbac-permission-matrix-draft.md` §4.2b 二·六）：
+   knowledge / coupon → **类级**（端点同位）；finance / merchant → **方法级**（一个类两个位 / 有一个不能挂位）。
+   方法级的两个要登记进 `METHOD_LEVEL_ADMIN_CLASSES`（**按类名**，不要用 `/api/seller` 前缀，否则会把
+   "必须类级"的规则对全部商家端控制器一起放宽）。
+
+
+### 1.22 5b 接线完成（2026-10-19）：四个商家端控制器全部转为声明式，EXEMPT 清零
+
+**改了什么**
+
+| 控制器 | 挂法 | 位 |
+|---|---|---|
+| `KnowledgeBaseController` | 类级 | `seller:knowledge` |
+| `MerchantCouponController` | 类级 | `seller:coupon` |
+| `SellerFinanceController` | 方法级 | 4 个读 → `seller:finance`；提现 → **`seller:withdrawal`**（新位） |
+| `MerchantController` | 方法级 | 6 个 → `seller:admin`；`POST /apply` **无位**（Q4，端点级永久豁免） |
+
+- 种子：新增 `(31, '商家提现', 'seller:withdrawal', 3, '/api/seller/finance/withdrawal', 34, 1)`，
+  并把 `ROLE_SELLER` 的迁移授予清单补上本位（**存量不失权**，Q3 口径）。
+- 守卫：`METHOD_LEVEL_ADMIN_CLASSES` 增加 `SellerFinanceController` / `MerchantController`（**按类名**，不用 `/api/seller` 前缀，
+  否则会把"必须类级"的规则对全部商家端控制器一起放宽）。
+- **`EXEMPT` 表已清零**（四条临时豁免按"还清即删"移除）；机制保留：临时豁免必须有 deadline、永久豁免必须写清裁决依据。
+
+**语义写死在代码里（防误读）**：`POST /api/seller/finance/withdrawal` 的 `seller:withdrawal` 是
+**「发起资金请求」，不含打款权** —— 出款在管理端 `review`（`finance:admin`）。这条注释写在方法 javadoc 里，
+因为"能提现"最容易被读成"能打款"。
+
+**验证**：四个服务 `compile` + `test` 全绿；`architecture-tests` 四个相关守卫全绿；
+`verify-gates.sh fast` 全通过；文档计数与实测一致。
+
+**遗留（不在本批）**：T-WITHDRAW（`availableBalance` 不扣待审提现 ⇒ 可超额提现，见 §1.21）——
+它是**资金侧口径缺陷**，与权限位无关，签名/接位都不能解决它。
+
+
+### 1.23 T-WITHDRAW 开工前三确认（2026-10-19，实测）
+
+**① 打款后结算单状态 → 决定扣「待审」还是「待审+已打款」**
+
+`WithdrawalManager#review`：`status = PAID_OUT` 时调 `SettlementManager#markSellerSettlementsPaidOut(sellerId)`，
+后者是 `updateStatusBySellerAndStatus(sellerId, SETTLED, PAID_OUT)` —— **把该商家全部 SETTLED 结算单置为 PAID_OUT**。
+而 `availableBalance` 只统计 `SETTLED` ⇒ 打款后主动归零。
+
+⇒ **必须只扣「待审（PENDING_REVIEW）」**：再扣已打款就是**双重扣**（结算单已不在 SETTLED 里）。
+
+**② 但顺带发现更严重的第二个缺陷（T-WITHDRAW-2）**：`markSellerSettlementsPaidOut` 是**按商家全量**置位，
+不是按提现金额分配。若商家有 1000 已结算、只提 100 ⇒ 通过后 **1000 全部变 PAID_OUT**，剩下 900 **再也提不出来**（钱被卡住）。
+修法：按提现金额 **FIFO 分配**到结算单（或新增分配表 `withdrawal_settlement`），逐单/逐笔置位，不许全量置位。
+
+**③ 条件更新的前提：现在**没有可锁的余额行****
+
+用户要求的 `UPDATE … WHERE total - frozen >= ?`（与 `deductStock` 同形、不用行锁）在当前 schema 里**无处可写**：
+`withdrawal` / `settlement` 都是流水行，没有"每个商家一行"的余额聚合行。
+⇒ 必须先加表（否则只能在应用层 check-then-act，正是要避免的竞态）：
+
+```sql
+CREATE TABLE `seller_fund_account` (
+    `seller_id`      BIGINT PRIMARY KEY COMMENT '商家 user_id（一格一商家）',
+    `settled_total`  INT NOT NULL DEFAULT 0 COMMENT '已结算合计（分）',
+    `frozen_amount`  INT NOT NULL DEFAULT 0 COMMENT '待审提现冻结额（分）',
+    `paid_total`     INT NOT NULL DEFAULT 0 COMMENT '已打款合计（分）',
+    `update_time`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+-- 提现申请：一条语句同时完成"校验 + 冻结"（0 行 = 余额不足，与 deductStock 同形态）
+UPDATE seller_fund_account SET frozen_amount = frozen_amount + #{amount}
+ WHERE seller_id = #{sellerId} AND settled_total - frozen_amount >= #{amount};
+```
+
+**④ 幂等键：`Idempotency-Key` 由前端传，落 `withdrawal.request_key` + 唯一键 `(seller_id, request_key)`**；
+前端改不了时降级为「用户 + 金额 + 日期」，并在契约里写死**降级规则的代价**（同一天两笔同额会被判为重复）。
+
+**⑤ 5b 永久豁免的存在性仍被检查（M26 实测）**：把 `MerchantController#apply` 改名 → 守卫红并报
+「类里找不到方法 apply（改名/删方法？请删条目）」。**偏离说明**：用户说"只跳过是否已接线"，
+实现上**两条都查**（若 apply 将来被挂上位子，同样红）—— 理由是"永久豁免却被接线"本身就是需要人复核的信号。
+
+**⑥ T-SIGN 的格式基准（查了实际存法，不停在"同口径"）**：`member_growth_log` 存的是
+`order_no BINARY(16)`（订单业务键 **UUIDv7 原始字节**）+ 单列 `uk_order_no`；
+而"用户 + 日期"类幂等的**既有先例是 `task_record.uk_user_task_date(user_id, task_code, biz_date)`（复合唯一键）**。
+⇒ T-SIGN 应照 `task_record` 用**复合唯一键**，**不要**发明 `sign:{userId}:{yyyyMMdd}` 字符串；
+`points_log` 目前无 `biz_key` 列，签到发放改为"与 sign_log 同事务"后，幂等锚点由 sign_log 的唯一键承担。
+
+
+### 1.24 T-WITHDRAW 开工三件（契约先行，2026-10-19 裁决后）
+
+**裁决**：定时任务自动结算为主、手动确认异常兜底；两种触发**都调同一个 `SettlementManager#settle(settlementId)`**
+—— 触发方式后定，权威方案不退化。
+
+**① 「可结算条件」必须字段化（`period_end` 只是时间点，不是条件）**
+
+```java
+/**
+ * 结算单置为「已结算」（唯一入口：定时任务与手动兜底都调本方法）。
+ *
+ * <p><b>可结算条件（全部字段化，能用 WHERE 表达）</b>：
+ * <ol>
+ *   <li>{@code status = PENDING(1)} —— 幂等：已结算/已打款的再调必为 no-op；</li>
+ *   <li>{@code period_end <= now} —— 账期已走完（**时间条件**，不是"看起来该结了"）；</li>
+ *   <li>{@code settlement_amount > 0} —— 零额单不结算（否则白占余额行）；</li>
+ *   <li>{@code order_count > 0} —— 无订单的账期不结算。</li>
+ * </ol>
+ *
+ * <p><b>实现形态</b>：一条条件更新 + 影响行数判定，0 行 = 不满足条件（**幂等 no-op，不抛异常**）：
+ * <pre>
+ * UPDATE settlement SET status = 2, update_time = NOW()
+ *  WHERE id = ? AND status = 1 AND period_end &lt;= ? AND settlement_amount &gt; 0 AND order_count &gt; 0
+ * </pre>
+ * 与 {@code deductStock} 同形态：不用行锁，并发下只有一个事务拿到 1 行。
+ *
+ * <p><b>权威性</b>：命中 1 行时，**同事务**内更新 `seller_fund_account.settled_total += settlement_amount`
+ * （UPSERT）。这是唯一允许改动 `settled_total` 的两个入口之一（另一个是打款，见下面的分配表）。
+ *
+ * @return true=本次真的完成结算；false=条件不满足（已结算/未到期/零额/无订单）
+ */
+```
+
+**② 单笔提现限额（缩小自动结算 bug 的爆炸半径）**
+
+`WITHDRAWAL_MAX_PER_REQUEST`（配置项，不给魔法值）：超过则 400 `PARAM_ERROR`，文案给出上限值。
+理由写成注释：**限额不是风控，是止损**——当结算口径写错时，它把"一次可提走全部余额"降成"一次只能提走一部分"，
+给人留下发现与止血的时间窗。
+
+**③ 自检两条（只验数值相等会假绿）**
+
+| 检查 | 判据 | 为什么必须有 |
+|---|---|---|
+| 数值一致 | 每个商家 `seller_fund_account.settled_total` == Σ `settlement WHERE status=SETTLED` | 基础对账 |
+| **覆盖面一致** | `seller_fund_account` 行数 == **有 SETTLED 结算单的商家数**（用 `COUNT(DISTINCT seller_id)`） | 只有行数对得上，才能排除"少建了余额行/多建了空行" |
+| **非空断言** | 若 `settlement WHERE status=SETTLED` 为 **0 行** ⇒ **自检必须失败**（而不是"0==0 通过"） | 当前代码里没有 `PENDING→SETTLED` 入口，空集是常态 —— 空集上的自检只会安静地绿 |
+
+**④ `sign_type` 语义定为「签到类型」，纳入唯一键**
+
+`UNIQUE KEY uk_user_date (user_id, sign_date, sign_type)`（成本一行 DDL）。
+理由：**"来源标记"用注释/列就够，不需要进唯一键**；而"补签 / 活动签到 / 每日签到"是**同一用户同一天可能多条**的
+真实业务形态 —— 只有把它放进唯一键，才表达得了"每日签到一天一次、补签可另有一条"。
+若留在唯一键之外，将来加补签就必须改唯一键（带数据迁移），现在只是多一列。
+
+
+#### 1.24b T-WITHDRAW 实施计划（**第一步已落码，见 §1.25；第二步起未开工**，2026-10-19 定稿）
+
+> 状态：**第一步代码与用例已写（未执行，环境原因见 §1.25「验证边界」）；第二步之后一行未写。**
+> 本节是**可直接照着做的任务分解 + 验收口径**。与 T-5b **不合批**（用户裁决）；顺序固定为下面的 1 → 4。
+> ⚠ 第一步的**实际口径**以 §1.25 为准：`settled_total` 定为「累计已结算（只增）」，打款只加 `paid_total`，
+> `frozen_amount` 整列留到第二步 —— 本节原表「打款侧三分量一起动」的写法与自检等式不兼容，已订正。
+
+| 步 | 内容 | 触及文件 | 完成标志 |
+|---|---|---|---|
+| **1** | ~~合并「settle 加 + 打款减」~~ → **settle 累加 `settled_total` + 打款累加 `paid_total`**（`frozen_amount` 不动）：`SettlementRepository#settleConditionally` 条件更新（返回影响行数）→ `SettlementManager#settle` 命中则**同事务** `settled_total += amount`；打款侧 `paid_total += amount`（**不带额度条件**，额度属第 2 步的申请侧）同事务；**删除** 按商家全量置位的 `markSellerSettlementsPaidOut` | `SettlementRepository`(+Impl)、`SettlementManager`、`WithdrawalManager#review`、`seller_fund_account` 表 | **自检三条全绿**（用例：`SettlementFundAccountH2Test`） |
+| **2** | 单笔提现限额 `WITHDRAWAL_MAX_PER_REQUEST`（配置项，不给魔法值；注释写「限额不是风控，是止损」）**+ `applyWithdrawal` 预占 `frozen_amount`**（条件更新：「可提现额 ≥ amount」时 `frozen_amount += amount`，0 行=余额不足） | `WithdrawalManager` + 配置 + `SellerFundAccountRepository` | 超限 400 有用例；连提两笔第二笔必失败 |
+| **3** | `withdrawal_settlement` 分配表 + 打款按金额 FIFO **核销**（记「哪笔提现核掉哪些结算单」）+ **拒绝释放**（删/废分配行，`frozen_amount` 回 available）。⚠ **不做结算单行状态置位** —— `settlement` 不承载打款事实（见 §1.25 状态语义） | 新表、`WithdrawalSettlementRepository`、`WithdrawalManager` | 部分提现后剩余仍可提；提现 100 只核销 100 |
+| **4** | 用例三条：① 连提两笔（第二笔失败）② 重放同 `Idempotency-Key` 返回**原单**（不是报错、不是新单）③ 只核销被提走的那部分（剩余仍可提） | trade-service 测试 | 三条全绿 |
+
+**验收口径（用户定）：第一步做完，自检三条必须绿 —— 它是第一步的验收标准，不是第二步的。**
+（实施口径见 §1.25：`settled_total` = 已结算，取数**只用 `status = SETTLED`** ——
+`SETTLED` 的语义是「可提现」，不是「未打款」；**不要**再按 `IN (SETTLED, PAID_OUT)` 取数，理由见 §1.25 状态语义。）
+
+| 自检 | 判据 | 不绿 ⇒ 说明什么 |
+|---|---|---|
+| 数值一致 | 每商家 `settled_total` == Σ 该商家 `settlement_amount WHERE status = SETTLED` | 「加」与状态迁移**没同事务** |
+| 覆盖面一致 | `seller_fund_account` 行集合 == 「有 `status = SETTLED` 结算单的商家」集合 | 少建/多建了余额行 |
+| **非空断言** | 已结算集合为 **0 行** ⇒ **自检必须失败** | 第一步还没跑通一条真实结算（空集假绿）|
+
+**已知前置（不在本步骤内但会挡住它）**：当前代码**没有 `PENDING→SETTLED` 的触发者**（§1.23①），
+第一步只把 `settle()` 做成**唯一且原子的入口**；**触发入口本身仍是缺口，且已升级为上线阻塞项** ——
+`settle()` 无人调用 ⇒ 账户恒 0 ⇒ 提现恒拒，见 §1.25 头部与 §3。
+
+
+### 1.25 T-WITHDRAW 第一步落地（2026-10-19）：**只动 `settled_total` 与 `paid_total`**
+
+> 状态：**代码与用例已写；应收进临时分支并标 `[UNVERIFIED]`（未进主干）**。
+> ⚠ 该动作**本批没能执行**：shell 不可用（`0xC0000142`），`git` 调不起来 ⇒ 改动仍在**工作区**。
+> 恢复后第一件事：建 `wip/t-withdraw-step1-unverified` 分支并提交（命令与约定见本节末尾「验证边界」），
+> 再跑 **0→4** 顺序验证（任一步红即停）。清单见 `collaboration/unverified-worktree.md`。
+> 下面写的是**口径与意图**，不是「已跑绿」的声明。
+>
+> ⚠ **本步不是「部分收敛」，而是「生产功能中断」**（定性已订正，取代先前的「部分收敛」说法）：
+> `settle()` **目前没有任何触发者**（无定时任务、无手动入口、无运维脚本），而它现在是
+> `settled_total` 的**唯一写入者** ⇒ `seller_fund_account` 永远建不出行 / 恒为 0
+> ⇒ `availableBalance` 恒 0 ⇒ `applyWithdrawal` 恒拒 ⇒ **生产上提现完全不可用**。
+> 这与本批改动之前的实际状态一致（旧口径 `Σ status=SETTLED` 同样恒空，因为从来没有 `PENDING→SETTLED` 入口），
+> 即**本批没有把可用功能改成不可用，但也没有把不可用改成可用**。
+>
+> ⇒ **上线前置（阻塞项，不是后续任务）**：本批上线时**必须同时提供 `settle()` 的触发入口**（二者取一）：
+> ① 管理端手动按钮（`POST /api/admin/finance/settlement/{id}/settle`，挂 `finance:admin`，需先改契约）；
+> ② 运维脚本/一次性入口（走 `/internal/**` 或直连库的受控脚本，需在运维手册登记）。
+> **没有触发入口就不许上线** —— 否则等于新增一张只读的空表，并把「提现不可用」从「没人注意」变成「有表为证」。
+
+**范围 —— 用户裁决改掉了 §1.24b 的两处写法**
+
+1. **第一步只动两个累计字段**：`settled_total`（结算时加）、`paid_total`（打款时加）。
+   **`frozen_amount` 整列不碰**：它的「加」在第二步 `applyWithdrawal` 预占时才出现，
+   先做减法等于**减一个从未加过的字段**（余额凭空变小，且与结算单对不上）。
+2. **自检的非空断言必须有真实数据**：第一步的用例**自己造结算单并真的走一遍 `settle()`** ——
+   造数据 → 断言状态变 SETTLED → 断言 `settled_total` 增加 → 再跑三条自检。
+   若数据靠「直接插一行 status=SETTLED」准备，自检能过而入口可能一行都不通；**空集上的自检永远是绿的**，
+   且红的时候分不清是代码错还是没数据。
+
+**一处口径订正（§1.24b 自相矛盾处，按「让自检成立」的那一侧改）**
+
+§1.24b 一边写「打款侧 `settled_total -= amount`」，一边要求自检「每商家 `settled_total` == Σ 状态为已结算的结算单金额」。
+两句话不可能同时成立：`settled_total` 是「已结算」这一事实的镜像，而打款**不会**让结算单离开 SETTLED
+（打款事实根本不在这张表上）⇒ 打款再去减它，只会让两边永久对不上。故定死：
+
+| 字段 | 口径 | 唯一写入者 |
+|---|---|---|
+| `settled_total` | **累计已结算**（只增） | `SettlementManager#settle`（PENDING→SETTLED 的唯一入口，**同事务**） |
+| `paid_total` | **累计已打款**（只增） | 打款（管理端审核为「已打款」，**同事务**） |
+| `frozen_amount` | 待审提现冻结 | 第二步 `applyWithdrawal` 预占；**第一步不写** |
+
+- 可提现额 = `settled_total − frozen_amount − paid_total`。§1.23 那条条件更新式**同步补上 `paid_total` 项** ——
+  少这一项就等于「打过的钱还能再提一次」，与它要修的缺陷同源。
+- **打款只加 `paid_total`、不减 `settled_total`**：两个累计量各只增，才不会把同一笔钱扣两次。
+- **额度判定只在申请侧，审核侧不判**（用户裁决，写死）：`settled_total - frozen_amount - paid_total >= amount`
+  属于 `applyWithdrawal`（第二步做成**条件更新预占** `frozen_amount`）；`review` 只做「状态迁移 + 记账」。
+  在审核侧再判一次会制造**假拒绝**：申请时通过、打款时因期间余额变化（例如另一笔先打了款）被拒，
+  而钱其实已经按申请时的额度付出去了 —— 状态与资金两边都不对。
+  ⇒ 第一步里**唯一的额度守门**仍是 `applyWithdrawal` 现有的「先读再比」，它**不是原子的**（这正是第二步要换掉的东西）。
+- 自检取数**只用 `status = SETTLED`**（不用 `IN (SETTLED, PAID_OUT)`）：第一步没有任何路径把结算单迁出 SETTLED，
+  所以这就是「已结算」的准确表达；而且它**更严** —— 若第一步真有行被错误迁成 PAID_OUT，
+  `settled_total` 仍含那笔钱，自检当场红（取 IN 反而会把这类错误盖住）。
+  - ⚠ **条件性提示（不是无条件待办）**：**只有当第三步仍决定把结算单行标成 PAID_OUT（历史语义）时**，
+    才必须在同一 commit 内改宽两处取数 —— ① **数值一致** `settledAmountBySeller()` 的
+    `WHERE status = ?` → `IN (SETTLED, PAID_OUT)`；② **覆盖面一致** `settledSellersInLedger()` 同样改宽
+    （`accountSellerIds()` 读资金账户表，不用改）。
+  - 但按上面的状态语义（`SETTLED` = 可提现、已打款看 `withdrawal`、分配表与行状态解耦），
+    **预期第三步不写 `PAID_OUT`** ⇒ 两处取数**应保持 SETTLED-only、无需改动**。
+    若将来要做「结算单列表区分已打款」，那是**读模型**（join `withdrawal`），不是改行状态。
+
+**删掉的旧行为（是修缺陷，不是重构）**
+
+`SettlementManager#markSellerSettlementsPaidOut` 及其唯一调用点**已删除**：它是「按商家**全量**把已结算置为已打款」，
+提现 100 会把 1000 全部置成已打款、剩 900 看似再也提不出来（T-WITHDRAW-2）。
+按下面的状态语义，它**既错又无必要**：`settlement.status` 根本不承载打款事实（见下节），
+而「谁被打款了」由 `withdrawal` 记录。**宁可不写，也不写一个会被人当事实读的错标记。**
+
+**结算单状态的语义（用户裁决，写死）**
+
+- `settlement.status = 2 (SETTLED)` 的语义是 **「可提现」**，**不是「未打款」**；它**不承载打款事实**。
+- **已打款的事实源是 `withdrawal` 表**（`status = PAID_OUT`），聚合值看 `seller_fund_account.paid_total`。
+  **不要**从 `settlement` 表推断「这笔钱打没打过」。
+- **对账等式见下节**（两条，**分母不同源**，不要合并成一条）。
+- ⇒ **旧口径的根因重新表述**：不只是「Σ SETTLED 没扣待审提现」，而是**结算单不承载打款事实** ——
+  无论怎么过滤 `settlement.status` 都算不出「还能提多少」。这才是必须另立 `seller_fund_account` 的真正理由。
+- ⇒ **`withdrawal_settlement` 分配表与结算单行状态解耦**：它解决的是「按金额核销 + 拒绝释放」，
+  不是「补上 `settlement.PAID_OUT`」。`settlement.status = 3` 保留为**历史语义**（本批起不再写入）。
+
+**两条对账等式（各自独立，别互相推导）**
+
+| 等式 | 账户侧 | 事实侧 | 谁提供事实 |
+|---|---|---|---|
+| 已结算 | `settled_total` | Σ `settlement.settlement_amount WHERE status = SETTLED` | `settlement` |
+| **已打款** | `paid_total` | Σ `withdrawal.amount WHERE status = PAID_OUT` | **`withdrawal`（`settlement` 不提供）** |
+
+两条都由 `SettlementFundAccountH2Test` **机械验证**：第一条在「自检三条」里；第二条是**新增的第四条判据** ——
+它走**真实** `WithdrawalManager#review`（打款一笔、拒绝一笔），断言被拒的那笔不进 `paid_total`。
+写成表格而不是只写一句话，是因为这两条最容易被人合并成一条（「余额 = Σ 结算单 − Σ 提现」），
+而它们的**分母根本不同源**。
+
+**`PAID_OUT` 的去留（用户裁决）：保留符号，封死写路径**
+
+`SettlementStatusEnum.PAID_OUT` 是**死枚举值**：删它会让「历史上确实有过这个状态」失去唯一可引用的符号
+（下一个人写迁移/读模型时会自己造魔数 `3`）；留着它又可能被再写回去。故新增门禁
+`SettlementPaidOutRetiredGuardTest`：
+- **禁止**：作为 `setStatus` / `update*` / `settle*` / `mark*` / `review*` 的实参（含 `.getCode()` 包装）；
+- **禁止（变量绕过）**：**存进变量** —— 赋值右侧（`code = …`）或变量初始化（`int code = …`）。
+  这是「不当实参、先存下来」的经典绕过；必须在**存的那一刻**红，否则 `int code = PAID_OUT.getCode();`
+  之后怎么用静态就看不住了；
+- **禁止**：任何 `UPDATE settlement` 的 SQL 把 `status` 写成**数字字面量**（必须走 `#{toStatus}` 参数）；
+- **禁止**：静态导入它（会让「显式 scope」判定失效，等于把守卫弄瞎）；
+- **允许**：读侧比较/switch —— 将来做「结算单列表区分已打款」的读模型时，可以用它判断历史行。
+
+⚠ **退出条件（写死，别让它变成第 N 道判据）**：第三步动手时**先确认读模型到底需不需要 `PAID_OUT`**
+（按本批语义答案是「不需要」—— 打款去 `withdrawal` 查）。若确认不需要，则**删枚举值 + 删守卫类**，
+并同步清理三处引用：`Initialize.sql`（列注释与表注释）、`04-Data-Model` §7.4、本文档里提到 `status = 3` 的地方。
+**不要**在这种情况下再加第五条判据 —— 死符号越守越像真符号，**删干净比守住便宜**；
+只有当读模型确实需要它（历史数据必须有可引用的符号）时，才保留符号并让守卫继续存在。
+
+**落地清单**
+
+| 层 | 落点 |
+|---|---|
+| schema | `Initialize.sql`：新增 `seller_fund_account`（`uk_seller_id`）+ 同步补 DROP；逐表名清单用 `sync-doc-counts.mjs --list-tables` 取 |
+| domain | `domain/model/finance/SellerFundAccount`（`available()` = 三项相减，口径只此一处）、`domain/repository/SellerFundAccountRepository`、`SettlementRepository#settleConditionally` |
+| infrastructure | `SellerFundAccountPO/Mapper/RepositoryImpl`（两个增量写都**不带额度条件**；实现类两个写入各带 `@Transactional` —— 多语句本地写的事务归属落在仓储，REQUIRED 加入调用方事务）；`SettlementMapper#settleIfPending`（条件迁移：status + period_end + 金额 + 订单数）；`WithdrawalMapper#reviewIfPending`（条件迁移：待审核→终态，0 行=幂等） |
+| app | `SettlementManager#settle`（条件迁移命中才同事务累加 `settled_total`）、`#payout`（只记账，**不判额度**）、`#availableBalance` 改读账户；`WithdrawalManager#review` = **条件迁移**（0 行=重复审核 ⇒ 幂等返回，不重复记账）+ 记账，两步同一事务。审核侧**不判额度**（额度属 `applyWithdrawal`）|
+| 契约/数据模型 | `04-Data-Model` §7.4 增 `seller_fund_account` 口径 + `settlement.status` 语义（`SETTLED` = 可提现，已打款看 `withdrawal`）+ 订正「全量级联置为已打款」那段已不成立的旧文；`05-API-Specification` T22 `balance` 口径改写 + AD20/AD21 状态语义注记 + AD23 资金副作用注记 + 变更行 V5.25.0 |
+| 门禁 | `FundTransactionGuardTest`：动词表加 `add` / `increase` / `settle` / `payout`；已知清单加本批三个入口 + body token；新增两条反例（无事务必须红）+ 一条「有事务必须放行」。**新增** `SettlementPaidOutRetiredGuardTest`：封死 `SettlementStatusEnum.PAID_OUT` 的**写路径** —— ① 作 `setStatus`/`update*`/`settle*`/`mark*`/`review*` 实参；② **存进变量（赋值右侧 / 变量初始化）**；③ `UPDATE settlement` 里把 status 写成字面量；④ 静态导入。**读侧放行**（将来读模型判历史行要用它）；五条合成反例 + 扫描面三形态；残余局限（容器/反射/拼接 SQL）已登记为「靠 review」|
+| 测试 | `app/finance/SettlementFundAccountH2Test`（H2 真库，**三张表**：settlement / seller_fund_account / withdrawal）：① 造数据 → `settle()` → 断言 SETTLED + `settled_total` 增加 → 三条自检；② **第四条判据（对账等式）**：走真实 `WithdrawalManager#review` 打款一笔、拒绝一笔，断言 **Σ `withdrawal.amount WHERE status = PAID_OUT` == `paid_total`**（拒绝的不进），并另断言 **Σ `settlement_amount WHERE status = SETTLED` == `settled_total`**；③ `@BeforeAll` 调 `assertSchemaMatchesProduction()`，**读 `information_schema` 断言关键列与唯一键存在**（手写 DDL 漏列当场红）。对账全部 JDBC 直查，不借生产仓储自证 |
+| 单测 | `WithdrawalManagerTest`（打款记账 / 重复审核不重复记账 / **审核侧不判额度** / 拒绝不记账）|
+
+**为什么不是 upsert**：账户首建行走「先 UPDATE、0 行再 INSERT」，并发首建由 `uk_seller_id` 拦成
+`DuplicateKeyException` 后改写为累加。`INSERT ... ON DUPLICATE KEY UPDATE` 在 H2 兼容模式下不是可依赖的契约，
+而这段代码必须被 H2 自检用例原样跑通 —— **对账口径不能绑在「数据库支不支持那句语法」上**。
+
+**资金门禁的动词表已补（本批做，用户点名）**
+
+`FundTransactionGuardTest` 原写动词表只有 `insert/save/update/delete/deduct/credit/mark/create/cancel/void/bind/freeze/unfreeze`。
+本批新增的写法是 `settleConditionally` / `addSettled` / `increaseSettledTotal` / `addPaid` / `increasePaidTotal` / `payout` ——
+**旧表一个都不认**，于是「两个资金写 + 无事务」对门禁不可见（§5.5 的恒真空转形态：绿是因为没看见）。
+现已补 `add|increase|settle|payout` 四个前缀，并同步三件事：
+
+1. **已知清单**（判据 #16 形态②）加 `SettlementManager#settle`、`SellerFundAccountRepositoryImpl#addSettled`、
+   `#addPaid` + 各自 body token —— 解析器在新包里漏切方法会直接红，而不是「0 违规」；
+2. **反例**（形态③）加两条：「`addSettled` + `settleConditionally` 无事务必须红」「`addPaid` + `increasePaidTotal`
+   无事务必须红」，外加一条「同一组写法**有**事务必须放行」（防止新动词一律判红、逼人写豁免）；
+3. **补词表的代价是「人工 grep 推理」，不是门禁实跑**（本批 shell 不可用，门禁一次都没执行）。
+   已逐个核对新动词在资金命名 receiver 上的**全部**命中点：
+   - `pointsClient.addPoints` 只有两处 —— `OrderLifecycleManager#awardOrderRewardPoints` 与
+     `NewUserRewardServiceAdapter#award`，**每个方法各 1 次**（不到 2 的阈值）；
+     `pointsManager.addPoints`（`InternalPointsController` / `SignManager` / `TaskManager`）receiver 以 `Manager`
+     结尾、不匹配资金命名，**不计**；
+   - 其余命中全是本批新增方法，以及 `add`/`addAll` 这类列表操作（receiver 不在资金命名内，不计）。
+   ⇒ 「不改变任何既有判定」目前是**推理结论**。另：本批的 `SettlementManager#settle` 因此进入
+   「≥2 个资金写」集合，谁摘掉它的 `@Transactional`，门禁会点名 —— 但**只有跑过一次才算验证过**。
+
+⚠ 仍未验证：**这四条只有跑过才算数**（本环境跑不了）；`WRITE_VERB_PREFIXES` 是新动词的唯一真源，
+若将来出现「两个资金写但动词不在表里」的写法，本门禁仍是瞎的 —— 补动词时**必须同时**补一条合成反例。
+
+**精简文件清单（放在这里的原因：`unverified-worktree.md` 是**未跟踪文件**，`git clean` 会连它一起删掉；
+本文件是已跟踪的，清单跟着主文档走。完整说明仍以那份文件为准。）**
+
+**新增（未跟踪 ⇒ `git clean` 会删，最易丢）**
+- 主代码：`domain/model/finance/SellerFundAccount.java`、`domain/repository/SellerFundAccountRepository.java`、
+  `infrastructure/persistence/finance/SellerFundAccount{PO,Mapper,RepositoryImpl}.java`
+- 测试：`src/test/.../app/finance/SettlementFundAccountH2Test.java`
+- 门禁：`architecture-tests/.../SettlementPaidOutRetiredGuardTest.java`
+- 交接：`project-docs/collaboration/unverified-worktree.md`
+
+**修改（已跟踪；`clean` 不动它们，但 `checkout -- .` / `reset --hard` 会回滚）**
+- 主代码：`domain/model/finance/{Settlement,Withdrawal}.java`、`domain/enums/SettlementStatusEnum.java`、
+  `domain/repository/{SettlementRepository,WithdrawalRepository}.java`、
+  `infrastructure/persistence/finance/{SettlementMapper,SettlementRepositoryImpl,WithdrawalMapper,WithdrawalRepositoryImpl}.java`、
+  `app/finance/{SettlementManager,WithdrawalManager}.java`、
+  `adapter/admin/AdminFinanceController.java`、`adapter/response/SellerBalanceVO.java`
+- 测试：`src/test/.../app/finance/WithdrawalManagerTest.java`
+- 门禁：`architecture-tests/.../FundTransactionGuardTest.java`
+- 其他：`database/Initialize.sql`、`project-docs/backend/04-Data-Model.md`、
+  `project-docs/contract/05-API-Specification.md`、`project-docs/collaboration/open-items.md`（本文件）
+
+**为什么两处都写**：`clean` 删未跟踪、`checkout/reset` 回滚已跟踪 —— 两种丢失途径各有一份线索才说得过去。
+
+**仍未做（按顺序，属第二/三步）**
+
+1. `frozen_amount` 的预占与释放 + `applyWithdrawal` 走条件更新（第二步）；单笔限额 `WITHDRAWAL_MAX_PER_REQUEST`。
+   **在此之前超额提现仍可能** —— 本步只做**口径迁移**（把「还能提多少」交给权威账户），
+   **既不是「T-WITHDRAW 已修复」，也还不是「提现可用」**（后者缺 `settle()` 触发入口，见第 3 条）；
+2. `withdrawal_settlement` 分配表：**按金额核销**（哪笔提现核掉哪些结算单）+ 拒绝释放。
+   ⚠ 按上面裁定的状态语义，它**不负责把结算单行标成已打款**（`settlement` 不承载打款事实，已打款看 `withdrawal`），
+   所以本项的目的收窄为「按金额分配 + 拒绝时释放」，比 §1.24b 原描述少一半；
+3. **`settle()` 目前没有触发者 ⇒ 生产提现功能中断（上线阻塞项）**：定时任务 / 手动入口 / 运维脚本**一个都没有**
+   （§1.24b 的「触发方式后定」被本批的事实升级了 —— 它不是「以后选个触发方式」，而是「现在没有任何入口」）。
+   后果链写死：`settle()` 是 `settled_total` 唯一写入者 → 账户恒 0 → `availableBalance` 恒 0 → 申请恒拒。
+   ⇒ **本批上线必须同时交付触发入口**（管理端按钮 + 契约端点，或运维脚本 + 手册登记），否则不许上线。
+
+**验证边界（本批最要紧的一条）**
+
+**环境事实**：shell 不可用 —— `ops_bash` / `pwsh` 一律 **`0xC0000142`（STATUS_DLL_INIT_FAILED）**、**零输出**。
+失败点已定位到**进程创建/加载器**，不在命令：① bash 的**内建**命令 `true` 也失败（不需任何外部二进制）；
+② `pwsh` 里跑 `cmd /c echo ok` 同样失败；③ 两个互不相干的运行时（bash→msys DLL、pwsh→hostfxr/coreclr）同时坏；
+④ 同一时刻文件工具全部正常（含读 `.git/logs/HEAD`、`E:\maven\...`、`C:\Users\...\.jdks`）。
+⇒ 是「本会话起不了子进程」，不是「命令没装」「超时」「沙箱文件策略」（后两者有独立报错形态）。
+该故障**在本次会话第一次调用（`git log`）时即存在**，与本批改动无关。
+**且目前没有测试环境**。因此本批**没有**跑过 `mvn test` / `verify-gates.sh` / `sync-doc-counts.mjs` —— 一次都没有。
+
+**处置（用户裁决，已订正）：进临时分支、标 `[UNVERIFIED]`，不进主干。**
+原写法「不提交」被裁决纠正为 —— 原则是**不进主干**，不是「不进任何分支」：工作区已积累大量未提交改动，
+**丢失风险 > 未经证实进入历史的代价**（后者在临时分支上可回退，前者不可恢复）。
+
+⚠ **本批未能执行该动作**：当时 shell 不可用（`0xC0000142`），`git` 调不起来，所以**分支与提交都没建**。
+恢复后第一件事就是补上（在跑 0→4 之前，先把改动收进分支免得丢）：
+
+```bash
+git switch -c wip/t-withdraw-step1-unverified
+git add -A
+git commit -m "[UNVERIFIED] T-WITHDRAW 第一步：资金账户成权威（settled_total/paid_total），未跑构建与门禁"
+```
+
+约定：**分支名 `wip/*` + commit 前缀 `[UNVERIFIED]`** 固定不变，便于 `git log --grep='\[UNVERIFIED\]'`
+一次性找出所有「未验证批次」；验证通过（0→4 全绿）后再把这些提交整理进主干，并在合并提交里说明「已跑通哪些门禁」。
+本批的改动清单见 `project-docs/collaboration/unverified-worktree.md`（同批落盘，防止「哪些是新改的」靠回忆）。
+
+**工具链是否可执行 —— 「我跑不了」不等于「仓库不可验证」**
+
+用**文件工具**取证（不需要 shell），以下三项都在盘上：
+- JDK 21：`C:\Users\18279\.jdks\ms-21.0.10\bin\java.exe`（`.jdks` 下只此一个版本）；
+- Maven 3.9.7：`E:\maven\apache-maven-3.9.7\bin\mvn.cmd`（**不在 PATH 上**，环境事实 §4 已记）；
+- 本地仓库：`E:\maven\myRepository`（含 `org/nolazy/ia-common/1.0/ia-common-1.0.jar`，即旧版共享 jar）。
+
+**但本会话连 `echo` 都起不来**（`ops_bash` / `pwsh` 一律 `0xC0000142` / STATUS_DLL_INIT_FAILED，
+`git` 同样调不动）⇒ **无法执行 `mvn -v`，因此「mvn 能否跑」在本会话内不可判定**。
+
+⇒ 结论要分两句话说（这是「全阻塞还是只阻塞提交」的答案）：
+1. **对「我」**：**全过程阻塞**（编译、门禁、测试、计数、`git` 全部无法执行），不是只阻塞提交；
+2. **对「能起 shell 的人/另一会话」**：**只阻塞「由我来跑」** —— 工具链齐备，按 §4 的两条 `export`
+   （`JAVA_HOME=/c/Users/18279/.jdks/ms-21.0.10` + `PATH` 加 Maven）即可执行。
+   **判据只有一条**：跑 `mvn -v`，把它的输出（JDK 版本 + Maven 版本）贴回本文件 —— 在此之前，
+   任何人都不该说「mvn 不可用」或「环境已恢复」。
+
+**恢复后按 0 → 4 顺序跑；任何一步红就停，不要跳步往下跑。**
+
+```bash
+# 0) 全量编译（同时覆盖「门禁代码编译不过」这一类红）
+#    architecture-tests 的运行前提是「所有模块的 target/classes 都存在」
+#    （ArchitectureTest#importAll 缺任一目录会直接抛 IllegalStateException）
+mvn -f Implementation/back-end/pom.xml -DskipTests install
+
+# 1) 两个门禁类整类（含真实扫描 + 已知清单断言 + 新增守卫）
+mvn -f Implementation/back-end/pom.xml -pl architecture-tests test \
+  -Dtest='FundTransactionGuardTest,SettlementPaidOutRetiredGuardTest'
+
+# 2) 全量测试（顺带产出 surefire 报告）
+mvn -f Implementation/back-end/pom.xml clean test
+
+# 3) 回填计数（报告必须来自第 2 步）
+node Implementation/back-end/scripts/sync-doc-counts.mjs --write
+
+# 4) 门禁验收（此时计数已是实测值）
+bash Implementation/back-end/scripts/verify-gates.sh full
+```
+
+**为什么第 1 步不能省、且它红必须停**：本批**改了门禁代码**（动词表 + 已知清单 + 反例）**并新增了一个门禁类**
+（`SettlementPaidOutRetiredGuardTest`）。若直接跑 `full`，任何红都**无法归因** ——
+可能是业务代码真违规，也可能是门禁自己编译不过 / 反例写错 / 已知清单的 token 拼错 / 新守卫的 AST 判定写错。
+`mvn test-compile` 只覆盖「编译」，第 1 步还覆盖「合成反例会不会咬」，两者缺一都不算门禁可用。
+**第 1 步红 ⇒ 不执行 2/3/4**（此时跑全量只会产出一堆无法解释的红，还会把 `--write` 写进不可信的数字）。
+
+**命令错 ≠ 代码红**：若第 1 步报 `No tests matching pattern …` / `No tests were executed`
+（在 Surefire 里属于「按名字选测试没选中」），那是**我给的 `-Dtest=` 写错了**（类名/方法名拼写、模块没编译），
+不是门禁红 —— 先修命令再判红。判据：真红会带**断言消息与文件行号**，选测试失败只会说「没匹配到」。
+
+**`information_schema` 断言首次跑可能红（登记）**：本批 `SettlementFundAccountH2Test` 在 `@BeforeAll` 里读
+`information_schema` 断言关键列与唯一键 —— H2 2.3.232 与 MySQL 在列名大小写、`constraint_type` 字面量、
+「内联 UNIQUE 是否进 `table_constraints`」上并不完全一致。红时**先分清是「断言不兼容」还是「schema 真漂了」**：
+失败信息里带**实有清单**，列名只是大小写不同 ⇒ 改断言写法；清单里真没有 ⇒ 同步 `Initialize.sql` 与本文件 DDL。
+**两类都不许用「删断言」解决**（那等于把双源同步又退回「靠记得」）。
+
+**为什么 `--write` 必须在全量测试之后**：`sync-doc-counts` 的测试数只认 surefire 实测，无报告时它「不写、不臆测」
+（只告警）⇒ 把 `--write` 提前等于什么都不回填，计数仍是过期值。
+另外**回填前必须保证报告来自本次构建**（`clean` 或确认无残留）：残留报告让总数偏大，
+`--write` 会把脏数据写进文档 —— 若根目录 `clean` 与并行会话冲突，宁可等，也别用上一轮的报告回填。
+
+**等价写法（也接受）**：第 2 步直接跑 `verify-gates.sh full`（它含全量测试）—— **此时段 3（计数闸）红是预期**
+（根文档表数与测试数是旧值），段 1（架构守卫）+ 段 2（全量测试）的结论仍有效；再跑第 3、4 步。
+**判据**：只有「段 1 与段 2 全绿 **且** 回填计数后复跑 `full` 全绿」才算通过；第一次的计数红不算失败，也**不算通过**。
+两处必须由 `--write` 回填（不得手改）：根文档的表数与测试数。
+
+`fast` 里那道计数闸会 `[skip]`，所以「`fast` 绿」并不覆盖这一项。
+
 
 ---
 
@@ -849,26 +1790,38 @@ pay-service 现有 `@OperationLog` 只落 AUDIT logger、不落库 —— 这也
      并让两个 agent 各占**互不重叠**的文件集（pay-service+database / ia-api 测试+architecture-tests）。
 
 ### 2.2 排队（按既定顺序）
+> **优先级（2026-10-19 用户定，覆盖下表旧顺序）**：**T-5b 商家端权限（截止 2026-11-15，签完即做）> T-SIGN 签到幂等（已知在坏）> D1 数据权限范围文档（若做，必须带 `SellerScope` 静态断言，不能只写文档）> B1 拆类（截止 2026-12-31）**。
+> 依据：5b 有硬 deadline 且是**已登记的安全缺口**；D1/B1 无外部期限；T-SIGN 属「数据会丢」类缺陷但无 deadline。
+
 | 序 | 批 | 内容 |
 |---|---|---|
 | ~~—~~ | ~~**补偿重试**~~ | ✅ **已完成**（批次 G）：`InvoiceLinkCompensationRetryManager` + XXL/`@Scheduled` 双入口，4xx 短路为永久失败，见 §1.11 |
-| 1 | **D（拆类还债）** | `PayManager`（344 行）/ `RefundManager`（334 行）已登记**限时豁免 deadline `2026-11-15`**；另有 17 个类在 `class-size-baseline.tsv` 里只受「不许增长 / 陈旧即红」约束。**先出测量报告**再决定拆法 |
-| 2 | **H** | 小程序**仅文档**（用户已裁决：本轮完全排除代码）|
-| 3 | **Web 角色端开发** | seller / admin 两个 app（实测：**0 处 API 调用**，仅 Dockerfile 引用 `packages/api`；共 9 个源文件）。用户定的优先级：**Web 各角色平台先补完**。<br>**测量已交付**：三张表（端点→页面 / 页面→端点 / 端点→权限位）+ 缺口分解见 `frontend/23-Frontend-Platform-Gap-Matrix.md`——**别再引用「65 admin / 30 seller」这种数字**（口径不可复现，见该文 §2）。<br>**S0（基座）取证结论**：全仓 + git 历史**找不到取消记录**（唯一提及是本文件，无理由/时间/决策人；`git log -S"基座"` 只有引入那一次，`apps/admin|seller` 全历史零文件删除 ⇒ S0 从未以代码形态落地）。**因此 S0 的范围不能靠"当初为什么取消"来定，只能靠测量结果定。** |
+| ~~1~~ | ~~**D（拆类还债）**~~ | ✅ **已完成（§1.18.3）**：`PayManager` / `RefundManager` 按**用例族**拆出 `ChannelCallbackManager` + `TradeStatusNotifier`，回到硬约束内；两条基线条目已按「还清即删」移除。**剩余的超限类仍在基线里（只受「不许增长 / 陈旧即红 / 到期即红」约束）**——它们的拆法是下一批，判据见 §1.18.3（按用例族拆，不按行数砍） |
+| 1 | **H** | 小程序**仅文档**（用户已裁决：本轮完全排除代码）。⚠ 已有一批**未提交**的字段名修正在工作区（来自并行会话），不是本批产物，别当成已完成 |
+| 2 | **Web 角色端开发** | seller / admin 两个 app（实测：**0 处 API 调用**，仅 Dockerfile 引用 `packages/api`；共 9 个源文件）。用户定的优先级：**Web 各角色平台先补完**。<br>**测量已交付**：三张表（端点→页面 / 页面→端点 / 端点→权限位）+ 缺口分解见 `frontend/23-Frontend-Platform-Gap-Matrix.md`——**别再引用「65 admin / 30 seller」这种数字**（口径不可复现，见该文 §2）。<br>**S0（基座）取证结论**：全仓 + git 历史**找不到取消记录**（唯一提及是本文件，无理由/时间/决策人；`git log -S"基座"` 只有引入那一次，`apps/admin|seller` 全历史零文件删除 ⇒ S0 从未以代码形态落地）。**因此 S0 的范围不能靠"当初为什么取消"来定，只能靠测量结果定。** |
 
+### 2.2b 本轮新增任务（2026-10-19）
+
+| 编号 | 任务 | 内容与验收 | 依赖 / 期限 |
+|---|---|---|---|
+| ~~**T-5b**~~ | ✅ **已完成（§1.22）**：商家端权限接线（`/api/seller/**` 全量），EXEMPT 清零 | 按 `rbac-permission-matrix-draft.md` §4.2b 逐端点挂位；**接线与删 EXEMPT 同一个 commit**；验收 = 四个控制器转强制 + 无残留豁免 + 每映射方法都有 `@PreAuthorize` | **截止 2026-11-15**；等用户签 §4.2b（只需签两类判断） |
+| **T-WITHDRAW** | 提现缺口（=超额提现 + `mark-all` 吞余额 + 缺 `PENDING→SETTLED` 入口，§1.21/§1.23） | 实施计划与验收口径见 **§1.24b**；**第一步已落码（§1.25，未执行构建/测试）**，第二步起未开工。裁决：`seller_fund_account` 做成**权威**（唯一写入者 = `settle()` 与打款，且各自同事务），可提现额 = `settled_total − frozen_amount − paid_total`；`frozen_amount` 与 `applyWithdrawal` 预占一起做（第二步）；额度判定**只在申请侧**（审核侧不判）；`settlement.status` **不承载打款事实**（已打款看 `withdrawal`，故 `withdrawal_settlement` 分配表只解决「按金额核销 + 拒绝释放」）；幂等键前端传 `Idempotency-Key` | **与 T-5b 不合批**（用户裁决）；验收 = 第一步自检三条绿（`SettlementFundAccountH2Test`，**非空断言靠自造数据真走 `settle()`**）。⚠ **生产提现功能中断**：`settle()` 无触发者 ⇒ 账户恒 0 ⇒ 申请恒拒 ⇒ **上线必须同时提供触发入口（按钮/脚本），否则不许上线** |
+| **T-SIGN** | 签到幂等升级（§1.20） | 加 `sign_log` + `uk_user_date`；签到与积分发放进**同一本地事务**；`points_log` 加 `biz_key`+`uk_biz_key`；Redis Bitmap 降级为投影；三条用例（并发只发一次 / 失败可重试补发 / 重复调用语义不变） | 无外部期限；建议排在 D1 之后、B1 之前 |
+| **D1** | 数据权限范围文档（**带静态断言**） | 只写文档 + **一条 `SellerScope` 静态断言**（不许只有文档）：断言"按 seller 维度取数的仓储方法必须显式接收 `sellerId` 参数"或等价形态；文档范围 = 维度（本店/本部门/本人）+ 查询层强制注入方式 + 与 RBAC0 的边界 | 用户要求：若做就必须带断言 |
+| **B1** | 剩余基线超限类拆分 | 按**用例族**拆（§1.18.3 判据），不按行数砍；还清即删基线条目 | **截止 2026-12-31** |
 ### 2.3 审计交回、待排期
 | 项 | 内容 | 需要谁 |
 |---|---|---|
-| **U2** | `Initialize.sql` 两处过时注释（「未启用 `@TableLogic`、无 `deleted` 列」但 `invoice_title.deleted`+`@TableLogic` 已落地；「每表以 BIGINT AUTO_INCREMENT 为主键」但 3 张关联表是双列 PK）；并给 **4 组同名不同型列**（`spu_id`/`sku_id`/`user_id`/`coupon_id`）标注键型 | 我可直接做 |
+| ~~**U2**~~ | ✅ **已完成（§1.18.5）**：头部三处错事实已订正（软删唯一例外、联合主键例外、四组同名不同型列的 A/B 口径 + 「跨表 join 恒不相等」的已知代价）。判定口径写死为「看有没有 `FOREIGN KEY ... REFERENCES`，不看列名」| 已完成 |
 | ~~**U3**~~ | ✅ **已裁决并执行（本批）**：5 张零代码引用的死表**已从 `Initialize.sql` 删除**（`seller_application` / `flash_order_log` / `merchant_reply_template` / `ai_message` / `ai_conversation`；CREATE 块与 DROP 行同步移除，双向零差集）。理由：`flash_order_log` 列注释自称「秒杀幂等+兜底」是**假承诺**（实际靠 Lua + `orders.uk_order_no`）；`ai_*` 已被 `chat_message` 取代；`seller_application` 已被 `seller` 取代。设计意图仍留在 ADR/04（已加裁决注记）| 已完成 |
 | **U16** | **网关营销路由「静态已具备、运行时未验证」**：`gateway-service/application.yml:146-149` 已有 `/api/admin/{flash,promotion,task,group-buy}/**` 四族谓词（注释还留着「实测营销端点不可达」的历史说明），但**谓词顺序的运行时行为没测过**（`/api/admin/**` 兜底在其后，顺序错了就会被兜底吃掉）。要验证需起网关 + 路由断言，属运行态。文档已标 🟡，勿改标「已收口」| 中（运行态）|
 | ~~**U15**~~ | ✅ **已用门禁封住（S0-pre，2026-10-18）**：**不是「修好了越权」，而是把可利用面钉成构建期失败**。判据（实测）：`after_sale` 表**无 seller_id/shop_id**（只有 `order_no`+`user_id`）；admin 列表 `pageByStatus(status,…)` **只按状态过滤**；写侧 `PUT /{id}/review`、`/{id}/confirm-return` **只按 id 操作**。今天**不可利用** —— `PermissionService.hasPermi` 依次判「user/permissions 为 null → false」（fail-closed）、`*:*:*` 通配、**「roles 含 ROLE_ADMIN」短路**、否则查集合；ROLE_SELLER 只持 `[ai:chat, order:read, product:read, seller:admin]` ⇒ **403**。危险点在于：安全只靠种子少一行 `(3,5)`。故新增 `RbacSeedEscalationGuardTest`（纯函数判定 + 两条合成变异 + **真实文件注入 `(3,5)` 实测变红**）| 已封 |
 | ~~**U14**~~ | ✅ **已完成（同批）**：`04-Data-Model.md` 中 5 张死表的逐列小节已清理（§7.2/§7.3 整段删除，§9.1/§10.2 留标题位 + stub 以免断号与外部引用失效；悬空 FK `ai_message.id` 已改指 `chat_message.id`）。连带清掉 `Initialize.sql` 里**上次删表遗留的 6 行孤立节标题注释**与 1 处仍指向已删表的列 COMMENT —— 那些注释正好压在下一张表上方，属主动误导。`quality/20` 的 B3 条目已标收口，并留档「契约 CH6–CH9 仍标 ✅ 却无实现」这个**表侧已删、契约侧未动**的悬空项 | 已完成 |
-| **U4** | 60 行**只读**结构对账脚本（打印缺表/缺列/类型不符），**不进 CI、不阻塞提交** | 我可直接做 |
+| ~~**U4**~~ | ✅ **已交付（§1.18.5）**：`scripts/check-schema-keys.sh`（解释器探测包装）+ `.py`。三块报告：`DROP`/`CREATE` 双向差集、四组键型分布、名单 vs 实际类型 + 联合主键清单。**刻意不进 CI**（先当排障工具；是否升门禁按「这条规则会不会漂」再定）| 已完成 |
 | **U5** | 2 处缺索引（`sys_user_role.role_id` 非前导、`refund_order(status,create_time)`）+ 7 处冗余索引 + 6 处疑似死索引 | 低优先，**不建议现在删** |
-| **U6** | `invoice_title.uk_user_default` 与软删共存（软删行占默认位）；当前 `clearDefaultByUserId` 不带 `deleted=0` **恰好**没踩坑——"对的但是偶然的" | 记 ADR |
+| ~~**U6**~~ | ✅ **已记 ADR-067（§1.18.6）**：三条判据 + 一次自我纠正（原「恰好没踩坑 / 对的但是偶然的」**是错的** —— 它是**必须**不带，属承重设计）| 已完成 |
 | ~~**U7**~~ | ✅ **已裁决并执行（本批）**：`database/seed-data.js` **已退役删除** —— 它与 `Initialize.sql` 的种子写同一个 `USERNAME/'admin'` 唯一键、口令同为一个明文弱口令，且业务 ID 仍是 ADR-050 前的非 hex 形态 ⇒ 种子真源统一为 `Initialize.sql`。`20-Doc-Code-Consistency-Audit.md` 中「目录只有 Initialize.sql + seed-data.js + middleware」的事实已同步订正 | 已完成 |
-| **U8** | `docker-compose.yml:46` 注释仍写一个过时表数（以 `sync-doc-counts.mjs --list-tables` 为准）| 低 |
+| ~~**U8**~~ | ✅ **已改（§1.18.5）**：写死的过时表数改为**指向取数命令**（写死的计数必然漂）| 已完成 |
 | **U9** | 通知 `type` **无枚举化真源**（4 个服务各持私有常量，10 个值）→ 建议收口为 `ia-api` 共享枚举 | 架构，需立项 |
 | ~~**U11**~~ | ✅ **已改（本批）**：`confirmPaid` 的「**支付单**不存在」用错成 `ORDER_NOT_FOUND(3009，「订单不存在」)` → 改 `NO_RESOURCE_FOUND(1103)`（同为 404 / CLIENT，调用方零感知，与 R2 的 I40/AD43/PAY6/I55 同口径）。`initiatePayment` / `initiateJsapiPayment` 的「订单不存在」**保留 3009**（语义正确） | 已完成 |
 | **U12** | `[历史]` 审计快照：若干部份 spu 表无 `short_code` 列、部分 sku 表无 `sku_id` 列（逐表清单见 U1 的 H2 豁免记录）⇒ 这些 H2 表无法补唯一键。若日后参与写入用例，必须补列+补键 | 低（目前只读）|
@@ -876,7 +1829,7 @@ pay-service 现有 `@OperationLog` 只落 AUDIT logger、不落库 —— 这也
 | **U10** | 契约 §二 覆盖率数字（98/40/58 → 实测 99/52）—— **A/B/C/E 批的 E 项就是删这些数字** | 在 R2 批内 |
 | **U17** | **`void` 降级方法的兜底口径（方案 A：第一步已完成，见 §1.16；第二步待做）**。问题：语义门禁对「没抛异常」只做 `returnedDegradedValue++` 计数、**零校验**，而 `void` 的静默返回在调用方看来与真成功**完全同形**（正是 §1.10 里 `TradeInvoiceClientFallback` 那次事故的形态）。<br>**重要修正（M8 实测）**：光改 throw 不够 —— 处置表的 `THROWS` 只约束**不可用**分支，**4xx 分支的静默对 `void` 不可见**。故已补 `VOID_CLIENT_SILENT_ALLOWED`（当前为空）+ 双向陈旧检查（§1.16）。<br>**剩余（第二步）**：① `revokeUserTokens` 需先给 `UserAdminManager#updateStatus:110` 补调用点防护再改抛；② 补偿消费者 `operation_log` 对账（选型已定，前置见下）；③ 前端兜底分支见 U19。<br>**做法（不用手写控制流 lint）**：「能否抛」能从**类型**上强制就不做检查 —— 让该抛的方法 `throw` 复用现成的载体（`CarriedErrorException`），再加 ArchUnit 防回归。白名单若要求「日志 + 补偿记录 + 告警」，那三条**必须能被机器验**，否则又是会漂的注释。<br>**调用点已 grep（实测，别重查）**：<br>· `AfterSaleClientFallback#markRefunded` → `pay-service PayEventNotifier#writeBackAfterSaleRefunded:106-111` **有 `try/catch(Exception)`** ⇒ 已改 throw；<br>· `KgClientFallback#deleteEdges` → `item-service KgEdgeIngestManager#deleteEdgesSafely:179-181` **自有 try/catch** ⇒ 已改 throw；<br>· `AuthContextClientFallback#revokeUserTokens` → `user-service UserAdminManager#updateStatus:110` **无 try/catch**，且 DB 状态**已提交** ⇒ 直接改 throw 会让「已提交的禁用」对外报 5xx，**必须同步补调用点防护**（第二步）。<br>**两条硬约束**：① `revokeUserTokens` 若落补偿记录，**必须有真实消费者**（重试任务或管理端收敛入口）—— 否则就是造僵尸数据（`invoice_link_compensation` 那条教训）；② **删过时注释、留锚点**（已执行：`AfterSaleClientFallback` 的过时方法注释已删，改留锚点指向 `PayEventNotifier#writeBackAfterSaleRefunded`） | 第一步 ✅ / 第二步待做 |
 | ~~**U18**~~ | ✅ **无需另做**：「9 个 fallback 的 CLIENT 分支回归测试」这一项已被 §1.10 的**发现式**语义门禁覆盖 —— `FallbackDegradeContractTest` 扫描 `target/classes` 自动发现全部工厂（不维护类名清单），逐个方法验证 CLIENT 分支。**不要再手写逐工厂的 CLIENT 用例**：那既冗余，也会在新增工厂时静默漏测（清单必然漂） | 已覆盖 |
-| **U19** | **前端兜底分支（待办，随 U17 一起收）**：契约 §二 新增「下游透传」规则后，`/api/**` **可能出现不在 §2.1a 清单里的 4xx**（下游 409/422/429、非标准 499）。前端现状是「按已知码分支 + 其余落到通用提示」，需确认两件事：① **未登记的 4xx 必须落通用兜底**（通用错误 + 直显 `msg`），**不得**因为「状态码不在清单里」就走「服务异常」话术；② `check-error-codes.mjs` 当前报「未覆盖 0」是按**业务码**核对的（下游码也在本域 `ErrorCode` 里，所以仍覆盖），但**状态码维度没有门禁** ⇒ 前端若按状态码分支会漏。**不要**为此新增状态码白名单（会变成第二套映射），只补兜底分支 + 一条用例 | 随 U17 |
+| ~~**U19**~~ | ✅ **已收（§1.18.4）**：结论是**代码本来就对、缺的是用例** —— 补 `front-end/scripts/check-error-fallback.mjs`（直接 import 真实 TS，同源）并进 CI；M15 变异证明会咬。以下为原始问题描述（留档）：**前端兜底分支（随 U17 一起收）**：契约 §二 新增「下游透传」规则后，`/api/**` **可能出现不在 §2.1a 清单里的 4xx**（下游 409/422/429、非标准 499）。前端现状是「按已知码分支 + 其余落到通用提示」，需确认两件事：① **未登记的 4xx 必须落通用兜底**（通用错误 + 直显 `msg`），**不得**因为「状态码不在清单里」就走「服务异常」话术；② `check-error-codes.mjs` 当前报「未覆盖 0」是按**业务码**核对的（下游码也在本域 `ErrorCode` 里，所以仍覆盖），但**状态码维度没有门禁** ⇒ 前端若按状态码分支会漏。**不要**为此新增状态码白名单（会变成第二套映射），只补兜底分支 + 一条用例 | 随 U17 |
 
 #### U17 的完成定义（DoD）—— **catch 体审计是完成条件，不是附加项**
 
@@ -950,6 +1903,17 @@ pay-service 现有 `@OperationLog` 只落 AUDIT logger、不落库 —— 这也
 
 | 项 | 后果 |
 |---|---|
+| **`settle()` 无触发者 ⇒ 生产提现功能中断（上线阻塞项）** | 入口本身已落码，是 PENDING→SETTLED 的**唯一且原子**的迁移（条件更新 + 同事务累加）；但它**没有定时任务 / 手动入口 / 运维脚本**，而它是 `settled_total` 的**唯一写入者** ⇒ 账户恒 0 ⇒ `applyWithdrawal` 恒拒 ⇒ **生产上提现完全不可用**。这与本批改动之前一致（此前也从未有 `PENDING→SETTLED` 入口），即「没把可用改坏，也没把不可用改好」。⚠ 该入口**代码已写但从未执行过**（本环境无测试环境）——「唯一且原子」目前是**设计结论**，不是验证结论。**上线必须同时提供触发入口**（管理端按钮 `POST /api/admin/finance/settlement/{id}/settle` 挂 `finance:admin`，**需先改契约**；或运维脚本，**需登记手册**）。**没有入口不许上线** —— 否则只是新增一张只读空表 |
+| **`frozen_amount` 仍是 0，且审核侧不判额度 ⇒ 额度守门只剩申请侧的读校验（第二步）** | 第一步只做「已打款」这一项的扣减，**待审提现不冻结**；同时按裁决 `review` **不再判一次额度**（额度属 `applyWithdrawal`）。⇒ 第一步里唯一的额度守门是 `applyWithdrawal` 的「先读 `availableBalance` 再比」——**不是原子的**（并发/连提两笔仍可能超额）。**结论写死：本步是口径迁移，不是缺陷修复 —— 超额提现仍可能、且提现功能在生产上仍是中断的（缺 `settle()` 触发入口），任何口径都不得宣称 T-WITHDRAW 已修复**；第二步的条件预占（`frozen_amount += amount WHERE settled_total - frozen_amount - paid_total >= amount`）才真正堵住。**不要把额度条件临时塞回 `review`**：那会变成「申请通过、打款被拒，而钱已付出」的假拒绝 |
+| **自检取数当前只在 SETTLED（改宽是「条件性」动作，不是待办）** | `SettlementFundAccountH2Test` 的两处对账取数用 `status = SETTLED`：**① 数值一致** `settledAmountBySeller()`、**② 覆盖面一致** `settledSellersInLedger()`。第一步没有任何路径把结算单迁出 SETTLED ⇒ 现在准确且更严（若有行被错迁成 PAID_OUT，自检当场红）。**只有当后续步骤仍决定把行标成 PAID_OUT 时**，才必须在同一 commit 里把**两处**都改成 `IN (SETTLED, PAID_OUT)`，漏一处就自检突然红；按本批裁定的状态语义（`SETTLED` = 可提现、打款事实看 `withdrawal`、分配表与行状态解耦）**预期不写 PAID_OUT ⇒ 两处应保持不动**。「结算单列表区分已打款」属读模型（join `withdrawal`），不是改行状态 |
+| **资金门禁的新动词只做了静态补表，未跑过** | `add` / `increase` / `settle` / `payout` 已进 `WRITE_VERB_PREFIXES`、已知清单与三条合成反例（见 §1.25），但**没有一次真实执行**；`WRITE_VERB_PREFIXES` 仍是新动词的唯一真源 —— 出现「两个资金写但动词不在表里」的写法时门禁依旧瞎。恢复环境后**必须先单独跑门禁类**（`verify-gates.sh` 之前的第 1 步），否则 `full` 的红无法归因 |
+| **`settlement.status` 不承载打款事实（这是语义，不是缺陷）** | `SETTLED` = **可提现**，**不是「未打款」**；**已打款的事实源是 `withdrawal.status = PAID_OUT`**（聚合看 `seller_fund_account.paid_total`）。⇒「结算单列表看不到已打款」**不是缺口**，也**不要**从 `settlement` 反推打款。旧的全量置位（mark-all）已删除且**不打算恢复**；`settlement.status = 3` 保留为历史语义、本批起不再写入。要做「列表区分已打款」= **读模型**（join `withdrawal`），不是改行状态 |
+| **H2 用例的 schema 是手写子集（双源必须同步，且断言本身要适配 H2）** | `SettlementFundAccountH2Test` 的三张表 DDL 是**手工副本**（H2 跑不了 MySQL 专有子句），结构真源是 `Initialize.sql` ⇒ 任何列 / 类型 / 唯一键变更**必须同步该用例 DDL**。已加**可执行检查**：`@BeforeAll` 读 `information_schema` 断言关键列与唯一键存在（漏列当场红），不再只靠「记得」。⚠ **首次跑可能因 H2 / MySQL 的 `information_schema` 差异而红**（列名大小写、`constraint_type` 字面量、内联 UNIQUE 是否进 `table_constraints`）—— 红时先分清「断言不兼容」（改断言）还是「schema 真漂了」（同步 DDL），**不许删断言**。已知刻意差异：时间列可空且无 `ON UPDATE`、省略 `ENGINE`/`COLLATE`/`idx_*`、唯一键用表级 `CONSTRAINT`；判据：**行为相关的差异一条都不许有** |
+| **T-WITHDRAW 第一步的用例与门禁改动都未执行** | 本环境 shell 不可用（`0xC0000142`）**且目前没有测试环境** ⇒ `mvn test` / 门禁 / 计数脚本全未跑 ⇒ 三条自检「设计上齐备」**不等于**「已跑绿」；**门禁本批也改过**（动词表 + 已知清单 + 反例）**并新增了一个门禁类**（`SettlementPaidOutRetiredGuardTest`），所以 `full` 若红**无法直接归因**。另：**`mvn` 是否可执行未判定** —— 工具链（JDK 21 / Maven 3.9.7 / 本地仓库）**都在盘上**（文件工具取证），但本会话起不了任何进程，连 `mvn -v` 都跑不了；标定方式 = 有人跑一次 `mvn -v` 并把输出贴回 §1.25。提交前必须按 §1.25「验证边界」的 **0→4 顺序**跑，且**任一步红即停**（第 1 步 = 两个门禁类整类；若报 `No tests matching`，那是命令错不是红）|
+| **小程序三处死路径（U19 邻项，未做）** | `crosscheck-api-paths.mjs` 把它们列为**非阻塞报告项**：`/api/item/product/page`、`/api/item/product/{v}`、`/api/search/product` —— 都是 ADR-062 把资源段 `/product` 改名 `/spu` 时**只改了后端与 web**、小程序没跟上。另有一层**更深**的不一致：小程序用技术键 `id` 寻址 SPU 详情，而后端 `{spuId}` 已要求**业务键 32-hex**（ADR-062），即「改了路径也还是 400」。所以这不是改三处字符串，属小程序整体对接改造 ⇒ 归入 §2.2 的 H 批（用户已裁决本轮排除代码），**不要**当成顺手小修 |
+| **小程序仍用 `categoryId`（驼峰）当查询参数** | 后端 `SpuPageReq` 的线上名是 `category_id`（ADR-056），驼峰被**静默忽略** ⇒ 品类筛选点了没反应。与上一条同源（小程序没跟 ADR-056/062 的线格式改造），同样归 H 批 |
+| **工厂/链式 receiver 的资金写不被计数（已登记边界）** | `getRepo().credit(...)` 这类写法门禁**看不见**（receiver 是表达式，判它需类型推导）。当前全仓零命中，由 `shouldHaveNoFactoryChainedFundWrites` 做体检兜住；一旦出现会红并逼出「改写法 or 补类型解析」的决策。**另**：`this.repo.write(...)` 已补上（此前同样漏算）|
+| **根文档计数必须来自 clean 构建** | `sync-doc-counts.mjs` 按 surefire 报告聚合；残留报告让总数偏大、半量构建让它偏小，两者都会被当成"实测"。现已有三道防线：残留告警（含 CI 判红 exit 4）、半量下限（实测 < 文档现值 × 0.8 ⇒ exit 4）、CI 侧「先跑测试再判计数」（§1.18.8③）|
 | **小程序 17 个文件** | 仍读 `name`、仍打 `/api/item/product/**`、`categoryId` 静默失效 ⇒ **商品名显示空白**；用户已裁决本轮排除，只登记（见 `product/02` §九）|
 | **租约 ≠ 分布式锁** | 单次 Feign 调用超过租约时长（120s）仍可能被判过期而并发重调一次，靠下游幂等兜住。彻底消除需 ADR-024 的 `DistributedLock` 或 XXL 分片（跨 Job 决策，未做）|
 | **租约到期用应用时钟** | 多实例秒级时钟偏差不影响互斥（≪ 租约时长），但要在 NTP 严重漂移时留意 |
@@ -972,14 +1936,14 @@ pay-service 现有 `@OperationLog` 只落 AUDIT logger、不落库 —— 这也
 
 | 维度 | 状态 |
 |---|---|
-| 后端逻辑/编译 | ✅ 全量单测通过（自己跑 `verify-gates.sh full` 或 `mvn clean test` 取数；**必须 JDK 21**，JDK 25 下 JaCoCo 会全仓红）|
+| 后端逻辑/编译 | ✅ 全量单测通过（自己跑 `verify-gates.sh full` 或 `mvn clean test` 取数；**必须 JDK 21**，JDK 25 下 JaCoCo 会全仓红）。2026-10-19 本批改动后跑过 `mvn -o test`（root reactor）+ `verify-gates.sh fast`，均绿 |
 | 降级透传门禁 | ✅ **两层面均做过变异验证**（M1 改回无条件 `SYSTEM_BUSY` → 语义+结构同时红；M2 fail-closed→fail-open → 语义红；复原后全绿）|
 | **4xx 透传到达 HTTP** | ✅ **三层证据**：① 直调 handler（四类映射 + 接缝断言）；② 框架层 `CarriedErrorPassthroughMvcTest`（真实 `ExceptionHandlerExceptionResolver` + MockMvc，含装饰器包装与反向对照）；③ 突变 M5（双保险同时摘掉 → 框架层五条全红）。⚠ 边界：**真实网络/网关仍未验**（Nacos/Redis 不可达，服务起不来）|
-| 门禁自证 | ✅ `verify-gates.sh self-test` 会对门禁喂合成违规样本并断言其变红；Java 侧自证（`FallbackDegradeGateSelfTest` / guard fixture / 棘轮四条规则）随 `mvn test` 执行 |
-| 契约 ⇄ 代码 | ✅ 端点对账 289/0/43 + `check-section7` |
+| 门禁自证 | ✅ `verify-gates.sh self-test` 会对门禁喂合成违规样本并断言其变红；Java 侧自证（`FallbackDegradeGateSelfTest` / guard fixture / 棘轮四条规则）随 `mvn test` 执行。**2026-10-19 新增四次端到端变异（均按备份复原并复跑绿）**：M13 摘豁免 ⇒ 资金门禁红（假阴性 N=3 现形）；M14 退回未 `normalize()` 的路径 ⇒ 数量断言 + 已知清单同时红；M15 兜底改成「服务异常」⇒ U19 用例红；M16 快照表改存技术键 ⇒ 结构对账 `FAIL` |
+| 契约 ⇄ 代码 | ✅ 端点对账（`extract-endpoints.mjs`：matched / codeOnly=0 / docOnly）+ `check-section7`。2026-10-19 手工补跑了一致性六道闸 + 新增的 U19 兜底闸，全部 exit 0（**注意：这七道仍只在 CI 的 `consistency` job，`fast/full` 不含**）|
 | 建库脚本 | ✅ 真库实跑过一次、0 错误且幂等（MySQL 8.0.36）；⚠ `[历史]` 那次跑在新增 `invoice_link_compensation` **之前** ⇒ **该表尚未真库实跑**，目前只有 H2 与静态核对 |
-| 根文档计数 | ✅ `sync-doc-counts.mjs --write` 是唯一写入口，`--check --strict-tests` 已进 CI 与 pre-commit 钩子 |
-| **运行态** | ❌ **未验证**。Nacos(8848) / Redis(6379) 均**不可达**，15 个服务起不来 ⇒ **登录链路、网关路由、Feign 调用、限流全程无运行态证据** |
+| 根文档计数 | ✅ `sync-doc-counts.mjs --write` 是唯一写入口，`--check --strict-tests` 已进 CI 与 pre-commit 钩子。⚠️ **取数必须来自 clean 构建**：surefire 不清理旧报告，删掉测试类后跑增量测试会让总数**反向增长**（2026-10-19 实测：删掉一个含十余条用例的类、补了新语料用例，总数却上涨）。脚本已加**残留报告告警**（报告名在 `target/test-classes` 里找不到对应类 ⇒ 提示先 `mvn clean test`；自证方式：往 reports 目录塞一份假报告，告警必须出现），但它**只告警不改数字** —— 「哪份是陈旧的」不能由脚本猜，猜了就等于把度量变成推断。**可见性**已补齐：GitHub annotation + Job Summary + CI 判红（§1.18.7）|
+| **运行态** | ❌ **仍未验证**（2026-10-19 复测：Nacos 不可达、Redis 端口关闭）⇒ **登录链路、网关路由、Feign 调用、限流全程无运行态证据**。⚠️ **MySQL 端口这次是开的**，但**没有凭据**（`~/.my.cnf` 不存在、root 空口令被拒）⇒ `verify-rbac-seed.sh`（E1）**仍在等**。凭据由用户提供且不落仓库 —— **不要靠猜口令来「把 E1 跑绿」**，那即便跑通也不构成证据 |
 | **前端构建** | ❌ 未跑 `pnpm build`（环境约束）。仅 `tsc --noEmit` + 4 条静态脚本 |
 | **真实第三方** | ❌ 未验（微信支付/支付宝/短信/Geocoding 均为 mock 或未实测）|
 | Docker | ❌ daemon 不可用 |
@@ -1042,6 +2006,14 @@ pay-service 现有 `@OperationLog` 只落 AUDIT logger、不落库 —— 这也
 9. **「扫描源码找语义」必须先剥注释再判定**（被咬三次后才升格为规则）。三次事故：① grep 扫到 javadoc 里的 `@PreAuthorize`；② `KnowledgeBaseController` 的 javadoc 写着「语义等价于原 @PreAuthorize」，被朴素 `contains` 判成"已有注解"（假阳性）；③ `rbac:admin` 守卫把 `PermissionService` 注释里的提及判成"代码特判"。
    - 判据：**注释是给人和文档的，不是数据**。凡门禁要"从源码读出事实"，一律先 `stripComments` 再匹配；并且**这条规则本身必须有用例**（`RbacSeedEscalationGuardTest#shouldStripCommentsBeforeScanning`：注释里的字面量不得被识别、代码里的必须被识别）。
    - 附带：为"制造一个换行"写多行字符串时极易引入转义 bug（本轮因转义连红三次），测试里的输入尽量用单行拼接。
+   - **附注（2026-10-19，第四次形态，与「剥注释」相反的方向）**：换成 JavaParser 之后我以为"AST 天然免疫注释"，
+     但 `AnnotationExpr#toString()` **会把前置注释一起渲染出来** —— 于是注释里那句示例
+     `@PreAuthorize("hasAuthority('order:read')")` 被当成**真注解**读进表达式清单，`MethodSecurityWiringGuardTest`
+     一度把它报成"拼写不一致"。修法：**永远从结构化节点取值**（`asSingleMemberAnnotationExpr().getMemberValue()`），
+     **不要**把 AST 节点 `toString()` 之后再正则 —— `toString()` 的输出属于"打印/调试"用途，不承诺只含语法树。
+     判据升级为一句话：**"AST 免疫注释"只对节点本身成立，对节点的字符串化不成立。**
+     同一类的另一半坑：`@Service("ss")` 是 **SingleMember** 注解（不是 Normal），只认 Normal 会把 ss bean 判成不存在 ——
+     **注解形态要把 SingleMember / Normal / Marker 三种都处理**，否则"找不到"会被误读成"没配"。
 10. **（**限安全/权限/数据一致性**开关）停用机制必须验证到"真的停用"**。本轮实测发现两条权限装配查询都不过滤 `sys_permission.status`，即我们选定的"`status=0` 停用"**纯属装饰** —— 停用的位照样进 `user:perms:`、照样通过判权。判据：**安全、权限、数据一致性这三类"开关式"机制（位停用、灰度放量、双写开关），都要有一条断言证明"关掉之后行为真的变了"**，否则它只是一个字段。
    - **刻意不推广到所有配置项**：UI 开关、文案开关、超时值这类，给每个都补"关掉后行为变了"的断言，成本会高到没人愿意遵守 —— 判据一旦太贵就会被绕过，然后连该守的那三类也一起失守。**判据的门槛必须便宜到"顺手就做了"。**落地为 `PermissionStatusFilterGuardTest`（源码级 + 合成违规样本 + 真实变异 M11 验证会咬）。
 11. **门禁的输入解析必须与运行时读取同源**（这是 9、10 两条的一般化，也是它们的根）。门禁若自己解析一份数据（源码文本、种子 SQL、注解串），而运行时其实读的是**另一份**或**另一种写法**，那么门禁守的就不是运行时，而是它自己的想象。
@@ -1073,7 +2045,8 @@ pay-service 现有 `@OperationLog` 只落 AUDIT logger、不落库 —— 这也
 
       | 步骤 | fast | full | 不在 fast 的理由 |
       |---|---|---|---|
-      | ledger 事实门禁 / 文档计数 / ID 不变量 | ✅ | ✅ | — |
+      | ledger 事实门禁 / ID 不变量 | ✅ | ✅ | — |
+      | **根文档计数（测试数）** | ⛔ **`[skip]`**（2026-10-19 改） | ✅ | 输入是 surefire 报告：本地可能无报告（刚 clean）或报告是上一轮的（没 clean），两种都会给出与本次提交无关的红 ⇒ 典型门禁疲劳。**fast 必须显式打 `[skip]`**，因为它的绿只意味着「报告无关的门禁绿」，不等于全部绿 |
       | ia-api 单测（含降级语义契约门禁） | ✅ | ✅ | — |
       | **architecture-tests 全部守卫** | ✅（2026-10-18 补入） | ✅ | —（这正是原来的窟窿） |
       | 其余 14 个服务的业务单测（全量 reactor） | ❌ | ✅ | 见下两条 |
@@ -1090,6 +2063,27 @@ pay-service 现有 `@OperationLog` 只落 AUDIT logger、不落库 —— 这也
 
       **代价与选择**：把 14 个服务单测塞进 commit 会让每次提交 5~6 分钟，结果是大家加 `--no-verify`，
       门禁形同废除。**判据的门槛必须便宜到顺手就做**（与 §5.10 的成本论同源）。
+14. **类级与方法级 `@PreAuthorize` 是 AND，不是覆盖**（2026-10-19 B3 实测）。
+    想让同一控制器里「读=低权限、写=高权限」，在类级注解之外再给读方法加方法级注解是**无效**的：
+    两个注解会**同时**被要求 ⇒ 只有低权位的"只读运营"依旧 403；而持有 `*:*:*` 的管理员完全无感，
+    于是缺陷在生产里**长期隐身**（本地单测也看不见，见判据 #14 的补注）。
+    - **正确做法**：该控制器**清空类级注解**、逐方法挂位，并把类路径登记进
+      `AdminEndpointAuthorizationGuardTest#METHOD_LEVEL_ADMIN_PREFIXES`（守卫要求"注解数 ≥ 映射方法数"）。
+    - **检查方法（两条都要跑）**：
+      ```bash
+      # ① 找"类级与方法级并存"的控制器（有类级 @PreAuthorize 且方法级也有 ⇒ AND 风险）
+      grep -rl "@PreAuthorize" --include=*.java */src/main/java | while read f; do
+        c=$(awk '/^public class/{exit} /@PreAuthorize/{n++} END{print n+0}' "$f")
+        m=$(grep -c "@PreAuthorize" "$f")
+        [ "$c" -gt 0 ] && [ "$m" -gt "$c" ] && echo "⚠ $f 类级+方法级并存（AND）"
+      done
+      # ② 结构化断言（不依赖人看）：MarketingReadTierGuardTest 断言目标类**类级必须为空**，
+      #    MethodSecurityWiringGuardTest 断言 @EnableMethodSecurity / ss bean / 表达式拼写
+      ```
+    - **补注（为什么单测看不见）**：`@PreAuthorize` 由 Spring Security **代理**求值；纯 Mockito 里直接
+      `new` 出来的控制器没有代理，"断言它会 403"是**假测试**。所以静态层守"接线"（开没开、连没连、拼写对不对），
+      行为层留给 E2（端到端 403）—— **两层都要，缺一层就是盲区**。
+
 
 ---
 
@@ -1125,3 +2119,17 @@ pay-service 现有 `@OperationLog` 只落 AUDIT logger、不落库 —— 这也
 | 1. 可观测（Micrometer Counter） | ⬜ **未做** | 改判：`pay-service` 的 pom **没有** micrometer/actuator（只有 gateway / ia-common / notification 有），原「依赖已在，零新增」**不成立**。当前可观测性是「ERROR/WARN 日志 + 补偿表行」，指标留到重试批次一并加 |
 
 ⚠️ 改判记录：§6 原文假设「`kind` 可在 fallback 内落库」——**不成立**，ia-api 无持久化能力。最终形态是「fallback 抛 → 调用侧（pay-service，有持久化）落库」，即把「静默」升级为「**可观测 + 可补偿**」而不是在契约层造端口。
+
+> 【去重留痕】此处原有「资金事务门禁根因与重构决策 / A1 / A2 / 观测设施」一段，与 §1.17（第 555 行起）的**正本**内容近似重复（仅措辞与标点不同），两份并存必然漂 ⇒ 2026-10-19 按「同一决策只留一份」删除本处副本，**决策正文以 §1.17 为准**；A1/A2 的**落地结果**见 §1.18.7。
+
+**5b 商家端权限替换（未开始，等你签 —— 可直接签 `rbac-permission-matrix-draft.md` §4.2b 的 19 行表）**
+- 范围：`/api/seller/**` 的全部写端点（**数量不写死** —— 跑 `node Implementation/back-end/scripts/extract-endpoints.mjs` 取实测；投影预演报出的 `UNANNOTATED` 清单即以这批为主）；
+- 前置：**逐端点人工签字口径**（草案 §4.2），门禁 EXEMPT 期限 2026-11-15；
+- 现状：门禁对这批走 EXEMPT（临时豁免），到期必须收口——**不是"没发现"，是"已登记待替换"**；
+- 完成后：删 EXEMPT 条目并让门禁转强制。
+
+**SoD（职责分离，另立项）**
+- 已裁决但未实现：`invoice:issue` / `invoice:void` 的"开票员不持作废位"目前**只是授权约定**，
+  靠种植时不授予实现，**系统未强制**；
+- 需引入"互斥位"模型（同一实体两类动作互斥 + 授予时校验），否则管理员误配即失效；
+- 同类待办：`setUserRole` 的第二道闸（当前恒真护栏已加）在生产有多管理员后是否够用，需随 SoD 一并评估。

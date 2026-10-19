@@ -1,7 +1,6 @@
 package org.icedamericanomall.trade.infrastructure.persistence.finance;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -9,8 +8,9 @@ import org.icedamericanomall.common.utils.IdGenerator;
 import org.icedamericanomall.trade.domain.model.finance.Settlement;
 import org.icedamericanomall.trade.domain.repository.SettlementRepository;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -60,12 +60,8 @@ public class SettlementRepositoryImpl implements SettlementRepository {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void updateStatusBySellerAndStatus(Long sellerId, Integer fromStatus, Integer toStatus) {
-        settlementMapper.update(null, new LambdaUpdateWrapper<SettlementPO>()
-                .eq(SettlementPO::getSellerId, sellerId)
-                .eq(SettlementPO::getStatus, fromStatus)
-                .set(SettlementPO::getStatus, toStatus));
+    public int settleConditionally(Long id, Integer fromStatus, Integer toStatus, LocalDate today, LocalDateTime now) {
+        return settlementMapper.settleIfPending(id, fromStatus, toStatus, today, now);
     }
 
     // ==================== PO <-> 聚合 ====================

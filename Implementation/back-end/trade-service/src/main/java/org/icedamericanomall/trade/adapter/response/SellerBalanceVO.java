@@ -32,9 +32,11 @@ public class SellerBalanceVO implements Serializable {
     private Long sellerId;
 
     /**
-     * 可提现余额 = <b>所有已结算未打款</b>结算单
-     * （{@code settlement.status = SettlementStatusEnum.SETTLED}）的
-     * {@code settlement_amount} 合计。
+     * 可提现余额 = 商家资金账户的可提现额 = {@code settled_total − frozen_amount − paid_total}（单位：分）。
+     *
+     * <p><b>口径已迁（T-WITHDRAW 第一步）</b>：此前是「Σ 状态为已结算的结算单金额」，那个口径
+     * <b>既不扣已打款、也不扣待审提现</b> ⇒ 同一商家可连续申请多笔、每笔都能过校验。
+     * 现以 {@code seller_fund_account}（一格一商家）为唯一权威。
      *
      * <p><b>单位：分</b>（{@code 1280000} = 12800.00 元）。
      *
@@ -44,8 +46,8 @@ public class SellerBalanceVO implements Serializable {
      * {@code revenue}（{@code orders.total_amount} 原价口径、不含运费）<b>不同源</b>，
      * 两者不可互相校验。
      *
-     * <p><b>未扣减在途提现</b>：已申请但未打款的提现单不改变结算单状态，故本值不随提现申请减少
-     * （既有实现口径，本批未改）。
+     * <p><b>在途提现仍是已知缺口</b>：{@code frozen_amount} 的预占属第二步（`applyWithdrawal`），
+     * 在那之前「待审核的提现」不会让本值减少 —— 连提两笔仍可能超额（见 open-items §3）。
      */
     private Integer balance;
 }

@@ -687,7 +687,38 @@ public void createOrder(OrderDTO dto) {
 | seller_id | BIGINT | |
 | period_start / period_end | DATE | 结算周期 |
 | total_amount / commission / settlement_amount | INT | 订单总额/佣金(5%)/结算额（分） |
-| status | TINYINT | 1=待结算, 2=已结算, 3=已打款 |
+| status | TINYINT | 1=待结算, 2=已结算（**= 可提现，不代表「未打款」**）, 3=已打款（**历史语义**，不再写入） |
+
+> ⚠ **`settlement` 不承载打款事实（用户裁决，写死）**：「已打款」的唯一事实源是 **`withdrawal.status = PAID_OUT`**，
+> 聚合值看 `seller_fund_account.paid_total`。不要从 `settlement.status` 推断「这笔钱打没打过」；
+> 打款后**不回写**结算单状态（旧的「按商家全量置位」已删除，T-WITHDRAW-2，且不打算恢复）。
+> 「结算单列表要区分已打款」= **读模型**（join `withdrawal`），不是改行状态。
+> 对账等式两条各自独立：`settled_total` == Σ `settlement_amount WHERE status = SETTLED`；
+> `paid_total` == Σ `withdrawal.amount WHERE status = PAID_OUT`。
+
+**`seller_fund_account`** — 商家资金账户（一格一商家，T-WITHDRAW 第一步新增）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | BIGINT PK | |
+| seller_id | BIGINT UNIQUE(`uk_seller_id`) | 商家 `user_id`（与 `settlement.seller_id` 同口径） |
+| settled_total | INT | **累计已结算**（分），只增；唯一写入者 `SettlementManager#settle`（PENDING→SETTLED 的唯一入口） |
+| paid_total | INT | **累计已打款**（分），只增；审核为「已打款」时同事务累加 |
+| frozen_amount | INT | **待审提现冻结额**（分）；第一步**恒 0**（第二步 `applyWithdrawal` 预占时才写） |
+
+> **口径（唯一权威，别再回到「Σ 结算单」）**：可提现额 = `settled_total − frozen_amount − paid_total`。
+> 旧口径「Σ 状态为已结算的结算单金额」既不扣已打款也不扣待审提现 ⇒ 同一商家可连续申请多笔、每笔都过校验（T-WITHDRAW）。
+> **更根本的原因**：`settlement` 根本不承载打款事实（见上条），所以无论怎么过滤 `settlement.status`
+> 都算不出「还能提多少」—— 这才是必须另立本表的理由。
+> `settled_total` **不因打款减少**：若打款既减 `settled_total` 又加 `paid_total`，同一笔钱会被扣两次，
+> 且与「`settled_total` == Σ `settlement_amount WHERE status = SETTLED`」这条对账等式不一致。
+>
+> **额度判定只在申请侧**：`settled_total − frozen_amount − paid_total ≥ amount` 是 `applyWithdrawal` 的条件
+> （第二步改成条件更新预占冻结额）；**审核侧不判额度**，只做「状态迁移 + 记账」。审核再判一次会制造假拒绝
+> （申请通过、打款时因期间余额变化被拒，而钱已付出）。
+> ⚠ **第二步落地前，超额提现仍可能**：申请侧的额度校验目前是「先读再比」、不是原子的 ⇒ 这一步**不等于**提现缺口已修复。
+> 更要紧的是**功能面**：`settle()` 目前**没有任何触发者**（无定时任务 / 手动按钮 / 运维脚本），而它是
+> `settled_total` 的唯一写入者 ⇒ 账户恒 0 ⇒ 申请恒拒 ⇒ **生产上提现完全不可用**（与本批之前一致）。
+> **上线前置（阻塞项）**：必须同时提供 `settle()` 的触发入口，否则本表只是一张只读空表。
 
 **`withdrawal`** — 提现申请
 | 字段 | 类型 | 说明 |
@@ -699,7 +730,15 @@ public void createOrder(OrderDTO dto) {
 | status | TINYINT | 1=待审核, 2=已打款, 3=拒绝 |
 | bank_account / bank_name | VARCHAR(50)/(100) | |
 
-> **归属说明（2026-10 增量核对）**：`withdrawal` 归 **trade-service 结算域，暂不迁 wallet-service**——提现单与结算单（`settlement`）属同一聚合族的级联：提现审核通过（`PAID_OUT`）会将卖家结算单级联置为已打款（`WithdrawalServiceImpl.review` → `SettlementService.markSellerSettlementsPaidOut`）；与 C 端用户余额（`wallet_account`，wallet-service）是不同业务。此前「提现是钱包域迁移候选」的判断作废。
+> **归属说明（2026-10 增量核对）**：`withdrawal` 归 **trade-service 结算域，暂不迁 wallet-service** ——
+> 提现单与结算单（`settlement`）、资金账户（`seller_fund_account`）属同一结算聚合族；与 C 端用户余额
+> （`wallet_account`，wallet-service）是不同业务。此前「提现是钱包域迁移候选」的判断作废。
+>
+> ⚠️ **本节旧文（2026-10 之前）写的「提现审核通过会把卖家结算单级联置为已打款」已不成立**（T-WITHDRAW 第一步）：
+> 那不只是「全量置位的范围错」（提现 100 把 1000 全标成已打款，剩 900 看似再也提不出来，T-WITHDRAW-2），
+> 而是**方向就错**：`settlement` 不承载打款事实（见上条），**「已打款」的唯一事实源是本表 `withdrawal`**
+> （`status = PAID_OUT`）。故打款后**不回写**结算单状态，也不打算恢复该做法；
+> 「结算单列表要区分已打款」属读模型（join `withdrawal`）。
 
 ### 7.5 V5.0 站内信（`notification`，notification-service 所有）
 

@@ -21,10 +21,15 @@
 --       「结构变更后重建」静默跳过该表、留下旧结构 —— 与「全量重建」语义冲突。
 --
 -- 【设计说明】（大厂规范约定，代码/文档需与此保持一致）
---   1) 软删除策略：当前**未启用** MyBatis-Plus `@TableLogic`，也没有统一的
---      `deleted` 标志列。可恢复数据由**状态列**承担软删除语义：
+--   1) 软删除策略：**默认不启用** MyBatis-Plus `@TableLogic`，绝大多数表**没有** `deleted` 列。
+--      可恢复数据由**状态列**承担软删除语义：
 --        user.status(0 禁用) / spu.status(3 删除) / seller.status /
 --        shop.status / coupon.status / user_auth.status(0 已解绑)
+--      ⚠️ **唯一例外**：`invoice_title.deleted`（TINYINT，`@TableLogic`）——
+--      抬头是「用户私有、可随意增删」的配置类数据，需要软删（保留历史订单里的抬头快照可追溯）。
+--      此前本文件写着「未启用 @TableLogic、没有统一的 deleted 标志列」，在抬头落地后**已成错事实**，
+--      U2 已订正（判据：`grep -rn "TableLogic" --include=*.java` 能且只能命中抬头一族）。
+--      新增软删表时：本段必须同步登记，**不要**让「默认不启用」这句话继续说谎。
 --      明确的**物理删除**场景（删除即不可恢复，属用户主动意愿）：
 --        cart（购物车条目）、favorite（取消收藏）、address（用户主动删除）。
 --      订单及支付/物流/售后/结算等**事实数据禁止物理删除**，仅通过状态机推进
@@ -37,9 +42,34 @@
 --      内部调用统一走 `/internal/**` 接口（该路径异常直传，不包 Result）。
 --   3) 金额一律 `INT`（单位：**分**），禁止 float / double / BigDecimal；
 --      布尔用 TINYINT(1/0)；状态枚举用 TINYINT + 注释列明取值。
---   4) 每张表以 `BIGINT AUTO_INCREMENT` 为技术主键 `id`，业务标识另立
---      `xxx_id`（UUID）/ `xxx_no`（可读流水号）。原 order_logistics「主键复用 order_id」的
---      例外已在 V5.6 收敛为代理主键 id（order_id 降为 UNIQUE 键，见其表注释）。
+--   4) 技术主键：每张**业务表**以 `BIGINT AUTO_INCREMENT` 为技术主键 `id`，业务标识另立
+--      `xxx_id`（UUID，`BINARY(16)`）/ `xxx_no`（可读流水号）。原 order_logistics「主键复用
+--      order_id」的例外已在 V5.6 收敛为代理主键 id（order_id 降为 UNIQUE 键，见其表注释）。
+--      ⚠️ **例外（U2 订正）**：3 张**关联表**不设代理主键，用**双列联合主键**——
+--        sys_user_role(user_id, role_id) / sys_role_permission(role_id, permission_id) /
+--        sys_user_permission(user_id, permission_id)。
+--      理由：它们是纯关系载体（无独立生命周期、无业务键需求），联合主键本身就是
+--      「同对关系只允许一行」的约束，再加代理主键只会多一条永不被引用的序列。
+--   5) **`xxx_id` 同名不同型：按「聚合根/快照」vs「引用」两类语义读，不要按列名猜**（U2 标注）。
+--      实测存在四组同名列（`user_id` / `spu_id` / `sku_id` / `coupon_id`）两种物理类型，
+--      根因是 ADR-050（业务键 `BINARY(16)`）在「引用表仍存技术键」的过渡态：
+--
+--        ┌ 语义 A：**业务键**（`BINARY(16)`，对外 wire 形态 = 32-hex，ADR-050/062）
+--        │   · 聚合根表自持：`user.user_id` / `spu.spu_id` / `sku.sku_id` / `coupon.coupon_id`
+--        │   · **快照表**：`order_item.spu_id` / `order_item.sku_id`（ADR-061：订单项自持
+--        │     业务键，可跨域追溯商品源头；快照**不随主表变化**，这正是它存业务键的理由）
+--        └ 语义 B：**技术键**（`BIGINT`，= 被引用表的 `id`，可建 FK / 走索引）
+--            · 其余所有引用列：`cart.sku_id` / `review.spu_id` / `favorite.spu_id` /
+--             `user_coupon.coupon_id` / `flash_sale.spu_id` / 以及全部 `user_id`
+--             （除 `user.user_id` 自身）
+--
+--      **判据一句话**：能出现在**对外报文里**的标识是 A；只用来**在本库内 join/过滤**的是 B。
+--      要问「这张表的 `spu_id` 是哪一类」，看它有没有 `FOREIGN KEY ... REFERENCES spu(id)`
+--      （有 ⇒ B）——**不要**看列名，也不要看类型像不像 id。
+--      ⚠️ 已知代价（登记，不假装已解决）：同一个列名两种类型，**跨表 join 时必须先确认语义**，
+--      否则会出现「类型不报错、结果为空」的静默错配（BINARY(16) 与 BIGINT 比较恒不相等）。
+--      只读核对：`bash Implementation/back-end/scripts/check-schema-keys.sh`（U4，不进 CI）。
+
 --
 -- 适用数据库：MySQL 8.0+（推荐 8.4；语法不兼容 MySQL 5.7 之外的 MariaDB 扩展）
 -- 字符集/引擎：utf8mb4 + utf8mb4_unicode_ci / InnoDB（全表统一）
@@ -89,6 +119,7 @@ DROP TABLE IF EXISTS `user_coupon`;
 DROP TABLE IF EXISTS `coupon`;
 DROP TABLE IF EXISTS `settlement`;
 DROP TABLE IF EXISTS `withdrawal`;
+DROP TABLE IF EXISTS `seller_fund_account`;
 DROP TABLE IF EXISTS `after_sale`;
 DROP TABLE IF EXISTS `flash_sale`;
 DROP TABLE IF EXISTS `home_config`;
@@ -725,6 +756,9 @@ CREATE TABLE `after_sale` (
 
 
 -- settlement（结算单）— trade-service 结算域
+--   **状态语义**：1=待结算 / 2=已结算（**= 可提现，不代表「未打款」**）/ 3=已打款（**历史语义**，T-WITHDRAW 第一步起不再写入）。
+--   **已打款的事实源是 withdrawal 表**（status=PAID_OUT），聚合值看 seller_fund_account.paid_total ——
+--   **不要**从本表推断「这笔钱打没打过」。故本表不再做「打款后置位」；按金额核销由后续的分配表承担，与行状态解耦。
 CREATE TABLE `settlement` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
     `settlement_no` BINARY(16) NOT NULL UNIQUE COMMENT '结算单号（UUIDv7 原始字节，ADR-050）',
@@ -735,14 +769,15 @@ CREATE TABLE `settlement` (
     `total_amount` INT NOT NULL DEFAULT 0 COMMENT '订单总金额（分）',
     `commission` INT NOT NULL DEFAULT 0 COMMENT '平台佣金（分）',
     `settlement_amount` INT NOT NULL DEFAULT 0 COMMENT '结算金额（分）',
-    `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=待结算, 2=已结算, 3=已打款',
+    `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=待结算, 2=已结算(=可提现，不代表未打款), 3=已打款(历史语义，本批起不再写入；已打款事实看 withdrawal)',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY `idx_seller_id` (`seller_id`),
     KEY `idx_period` (`period_start`, `period_end`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='结算单';
 
--- withdrawal（提现申请）— trade-service 结算域（与 settlement 级联，不属钱包域）
+-- withdrawal（提现申请）— trade-service 结算域（不属钱包域）
+--   审核为「已打款」时在 seller_fund_account 上记 paid_total（不再把结算单全量置为已打款，见下表注释）
 CREATE TABLE `withdrawal` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
     `withdrawal_no` BINARY(16) NOT NULL UNIQUE COMMENT '提现单号（UUIDv7 原始字节，ADR-050）',
@@ -757,6 +792,24 @@ CREATE TABLE `withdrawal` (
     KEY `idx_seller_id` (`seller_id`),
     KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='提现申请';
+
+-- seller_fund_account（商家资金账户）— T-WITHDRAW 第一步：把「可提现额」从「Σ 结算单」搬到一行权威账户上
+--   口径（写死，别按列名猜）：可提现额 = settled_total - frozen_amount - paid_total。
+--   · settled_total：**累计已结算**，唯一写入者是 settle()（PENDING→SETTLED 的唯一入口），只增不减；
+--   · paid_total   ：**累计已打款**，打款时条件累加，只增不减；
+--   · frozen_amount：**待审提现冻结额**，第一步**不写**（第一步还没人冻结它，先做减法就会扣一个从未加过的字段）；
+--     由第二步 applyWithdrawal 预占时写入，拒绝/打款时释放。
+--   为什么不再用「Σ 结算单 amount」当余额：那个口径既不扣已打款、也不扣待审提现（T-WITHDRAW 可超额提现的根因）。
+CREATE TABLE `seller_fund_account` (
+    `id`            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `seller_id`     BIGINT   NOT NULL COMMENT '商家ID（seller.user_id；一格一商家，见 uk_seller_id）',
+    `settled_total` INT      NOT NULL DEFAULT 0 COMMENT '累计已结算金额（分）：settle() 同事务累加，只增',
+    `frozen_amount` INT      NOT NULL DEFAULT 0 COMMENT '待审提现冻结额（分）：第二步 applyWithdrawal 预占后写入；第一步恒 0',
+    `paid_total`    INT      NOT NULL DEFAULT 0 COMMENT '累计已打款金额（分）：打款时同事务累加，只增（审核侧不做额度判断，额度在申请侧）',
+    `create_time`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_seller_id` (`seller_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商家资金账户（权威余额：可提现额 = settled_total - frozen_amount - paid_total）';
 
 -- =====================================================================
 -- 七、AI 客服域：会话 / 消息 / 人工 IM / 知识库（V2.5 / V3.3 / V3.4）
@@ -1012,7 +1065,11 @@ INSERT INTO `sys_permission` (`id`, `name`, `code`, `type`, `path`, `sort_order`
 -- 批 8 裁决：审计日志查询独立成位（**不挂 user:read** —— 读审计不等于读用户资料）。
 (29, '审计日志查询','audit:read',     3, '/api/admin/log/**',         32, 1),
 -- Q1「每域两档」：发票域补读档（GET /page）。写档已拆 invoice:issue / invoice:void（Q2）。
-(30, '发票查询',    'invoice:read',   3, '/api/admin/invoice/**',     33, 1)
+(30, '发票查询',    'invoice:read',   3, '/api/admin/invoice/**',     33, 1),
+-- 判断 A（2026-10-19，5b 签字）：**提现申请独立成位**，不与 seller:finance 合并。
+-- 语义 = 「发起资金请求」，**不含打款权**（打款在管理端 review，属 finance:admin）。
+-- 理由：Q7 已裁决员工角色另立项，届时「能看账、不能提现」必须可分。
+(31, '商家提现',    'seller:withdrawal', 3, '/api/seller/finance/withdrawal', 34, 1)
 ON DUPLICATE KEY UPDATE
     `name` = VALUES(`name`), `code` = VALUES(`code`), `type` = VALUES(`type`),
     `path` = VALUES(`path`), `sort_order` = VALUES(`sort_order`), `status` = VALUES(`status`);
@@ -1048,7 +1105,7 @@ SELECT 4, id FROM `sys_permission` WHERE `code` = 'rbac:admin';
 
 INSERT INTO `sys_role_permission` (`role_id`, `permission_id`)
 SELECT 3, id FROM `sys_permission`
-WHERE `code` IN ('product:write', 'seller:finance', 'seller:coupon', 'seller:knowledge');
+WHERE `code` IN ('product:write', 'seller:finance', 'seller:coupon', 'seller:knowledge', 'seller:withdrawal');
 ON DUPLICATE KEY UPDATE `permission_id` = VALUES(`permission_id`);
 
 -- =====================================================================
