@@ -2973,6 +2973,25 @@ Spring 测试的 `@Transactional` 会**回滚整个测试**并把事务托管给
 **下一步**：`ReconciliationRepositoryImpl`（`findActiveBatch` → `claimBatch` → `refetch`）+ H2 六用例。
 
 ---
+### 1.69 仓储实现落地（2026-10-19）
+
+`ReconciliationRepositoryImpl`（三个 mapper 注入，哨兵只在此类出现）：
+
+| 方法 | 行为 |
+|---|---|
+| `findActiveBatch` | `selectActive`（`active_key='0'`）→ `Optional` |
+| `claimBatch` | 先 `canTransit` 白名单（非法抛 `IllegalReconciliationTransition`）→ 条件更新；0 行补查 `selectStatus` 抛 `ConcurrentClaim`（`expectedFrom` 为主、快照标注"可能为旧值"；批次不存在时快照为 null） |
+| `refetch` | `@Transactional`；seq 预校验 → `PENDING` 先 claim、`FETCHED` 直接删插、其余抛 `NotRefetchable` → **条件删**（逐笔/分片同判据）→ 0 行再判一次：仍可重拉 = 本来就空（首次拉取），否则 `StatusChanged` → 插入（哨兵编码在此） |
+
+**一个易错点（已处理）**：首次拉取时逐笔表本来就是空的，条件删必然返回 0 行 ——
+所以 0 行**不能**直接判"状态变了"，必须再查一次状态：仍可重拉 ⇒ 视为空，继续插入。
+
+**单测（mapper 全桩，6 用例绿）**：非法迁移不碰库 / 0 行并发异常带 `expectedFrom` 与快照 /
+批次不存在 / 已闭环不可重拉且不删不插 / seq 重复在任何库操作前就抛 / `PENDING` 先 claim 且空值编码成哨兵。
+
+**未验证**（归 H2 用例）：SQL 正确性、事务回滚、并发真实行为。
+
+---
 ---
 
 ## 2. 待办
