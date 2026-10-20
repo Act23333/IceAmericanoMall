@@ -2848,6 +2848,34 @@ WHERE b.batch_no = ? AND b.superseded_by IS NULL AND b.status IN (1,2))`，
 - 本条随第二批一并交付，交接单里的"已验证/未验证"两栏都要按实填写。
 
 ---
+### 1.62 条件删方案 A 的五项加固（2026-10-19）
+
+**① 删改 SQL 不再硬编码状态值**
+条件删里的 `status IN (1, 2)` 换成命名参数 `#{pendingCode}` / `#{fetchedCode}`，
+值由 `ReconciliationStatus.PENDING.getCode()` / `FETCHED.getCode()` 传入。
+**再加一条枚举值断言用例**（`assertEquals(期望码, PENDING.getCode())` 等）：
+一旦有人调号，测试先红，而不是让 SQL 悄悄指向别的状态 —— 这才是防"枚举漂移"的机制。
+
+**② 条件删 0 行后要分清两种原因**
+0 行时补查 `selectStatus(batchNo)`：
+- 查不到 ⇒ **批次不存在**（抛 `RECONCILIATION_BATCH_NOT_FOUND` 之类）；
+- 查到但状态不在放行集合 ⇒ **状态不可重拉**（抛对应业务异常，信息里带实际状态）。
+不区分的话，排查时看到的永远是同一句"重拉失败"。
+
+**③ `refetch` 只在 `PENDING` 时调 `claimBatch`**
+`FETCHED` 直接删后插。原因：白名单里**没有** `FETCHED → FETCHED` 这一跳
+（它本来就不算"推进"），若一律调 claim 就会**误抛**——把合法的重拉拒掉。
+（`PENDING` 仍然要 claim：那是真的状态推进，且必须与删插同一事务。）
+
+**④ `RawShard` 的 `seq` 重复在落库前校验**
+`refetch` 先校验 `seq` 唯一且从 1 连续，重复/跳号直接抛明确异常（指出重复的 seq 值）。
+理由：让它撞数据库唯一键，报出来的是 `DuplicateKeyException`，看不出是调用方分片错了。
+
+**⑤ "并发未验证"要写清**未验证的具体行为**，不是"没测"**
+写法要求：写明"**两个事务并发对同一 `batch_no` 调 `claimBatch` 时，是否恰好一个成功、另一个拿到 0 行抛并发异常**"
+这一条未在 H2 稳定复现（若无法稳定复现则登记此行）。空的"未测试"不算登记。
+
+---
 ---
 
 ## 2. 待办
