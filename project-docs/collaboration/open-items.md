@@ -3037,6 +3037,37 @@ H2 内存库 + 两线程并发 `claimBatch` 很难稳定复现"恰好一个成�
 改用 `String.join("", Files.readAllLines(file)).replace(" ", "")` —— 无反斜杠，稳。
 
 ---
+### 1.72 H2 测试类的五条前置（2026-10-19，开工即写进类注释）
+
+**① 初始化方式：照 `SettlementFundAccountH2Test` —— 手写 DDL 子集，不是整文件重放**
+已 grep 确认：该用例**不读** `Initialize.sql`，而是内联手写四张表的 DDL（`CREATE TABLE settlement /
+seller_fund_account / withdrawal / withdrawal_settlement`），并在类注释里写明「**H2 schema 是手写子集**，
+结构真源仍是 `Initialize.sql`；两者不一致时以真源为准并同步本文件」。
+⇒ 新的 H2 用例同样**手写三张 reconciliation_* 表的 DDL 子集**，并继承同一条同步义务：
+**改了 `Initialize.sql` 就要回改测试 DDL**（这是一处已知的双源，登记在案，不用自己发明第三种做法）。
+
+**② 第一个断言就验生成列的类型**
+建表后立刻断言 `active_key` 是**字符串 `'0'`**（不是数字 0、不是 null）：
+`SELECT active_key FROM reconciliation_batch WHERE …` 取出来 `assertEquals("0", …)`。
+理由：H2/MySQL 在 `CASE WHEN … THEN '0'` 上如果被当成数值，后续唯一键比较会走数值语义，
+**尽早暴露比在差异报表里发现错位便宜得多**。
+
+**③ 并发用例写"无法构造的时序"，不是"没测"**
+若 H2 下无法稳定构造两事务交错，注释要写清**具体构造不出来的时序**：
+「需要 T1 在 `selectStatus` 之后、`deleteByBatchIfRefetchable` 之前被挂起，H2 单连接无法让 T2 在同表同批次上推进，
+因此无法构造『查询后状态被改』这个窗口」。**禁止 `sleep`** 制造假稳定。
+
+**④ FETCHED 分支由"重拉不翻倍"覆盖（把登记改准确）**
+§1.70① 曾把「`refetch` 的 FETCHED 分支」登记为未覆盖 —— 更正：
+该分支由 **重拉不翻倍** 用例覆盖（第二次拉取时批次已是 `FETCHED`，正好走"不调 claim、直接删后插"的路径）。
+**仍真未覆盖**的只有 `findActiveBatch` 的 `Optional.empty` 与命中两种情况。
+
+**⑤ 回滚用例用**超长 `channel_ref`** 触发，不用哨兵值**
+用超过列宽（160）的 `channelRef` 让插入失败，从而验证"同事务先删后插"整体回滚、**旧数据还在**。
+不要用哨兵值触发 —— `encode("__NULL__")` 抛的是**调用前**的校验异常，根本走不到数据库，
+证明不了事务回滚。
+
+---
 ---
 
 ## 2. 待办
