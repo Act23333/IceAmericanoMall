@@ -3151,6 +3151,32 @@ H2 单连接下用两线程交错通常构造不出真竞争；若用"先 claim 
 **不是**并发正确性证明；真并发仍需独立环境（§1.62⑤ 的具体行为登记照旧）。
 
 ---
+### 1.76 串行等价与释放锁的两个细节 + active_key 可读性取证（2026-10-19）
+
+**① `getConnection().rollback()` 之后补 `session().close()`（双保险）**
+`getConnection().rollback()` 只回滚当前连接上的事务；**session 仍持有该连接**，
+若连接池复用连接、且未归还的连接还挂着锁的元数据，独立连接仍可能等锁。
+写法：
+```java
+try { session().getConnection().rollback(); } finally { session().close(); }
+```
+`close()` 会归还连接；连接池归还时通常 rollback 未提交事务并释放锁。
+（若 `SettlementFundAccountH2Test` 里已有"异常后 close"模式，照抄它，不发明第二种。）
+
+**② 串行等价的 claim 冲突：第二次 claim 必须在新 session/新事务里**
+若两次 claim 都在同一个 `inTx()` 里，第一次的 `UPDATE` **尚未提交**，第二次在**同一 session** 读到的是自己未提交的更新，
+影响行数可能是 0 —— 那模拟的是"**同一事务内重复 claim**"，不是"两个并发事务"。
+正确做法：第一次 claim 一个 `inTx()` **提交**（落 `FETCHED`）；两次之间 `session().close()` 或新开；
+第二次 claim 在新的 `inTx()` 里执行 ⇒ 看到已提交的 `FETCHED` ⇒ 0 行 ⇒ 抛 `ConcurrentClaim`。
+若坚持同一 session 跑，用例名必须改成"同一事务内重复 claim 被拒"，注释写明**这不是并发**。
+
+**③ `active_key == '0'` 能读出来（已取证，无需改断言）**
+- `selectActive` 是 `SELECT *`（第 33 行）⇒ 结果集含 `active_key`，MyBatis-Plus 默认按下划线转驼峰映射到 `activeKey`；
+- PO 上的 `FieldStrategy.NEVER` **只限制 insert/update**（第 51 行），**不影响读取**。
+⇒ 断言 `po.getActiveKey()` 等于字符串 `'0'` 可行，且它验证的正是"生成列在 H2 上按 `CASE WHEN` 算出 `'0'`"。
+（若将来改成显式 resultMap，记得把 `active_key` 加进去，否则 PO 字段会静默为 null。）
+
+---
 ---
 
 ## 2. 待办
