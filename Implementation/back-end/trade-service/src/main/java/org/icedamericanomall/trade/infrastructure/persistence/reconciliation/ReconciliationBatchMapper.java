@@ -17,7 +17,11 @@ import java.time.LocalDate;
 public interface ReconciliationBatchMapper extends BaseMapper<ReconciliationBatchPO> {
 
     /**
-     * 取当日有效批次（{@code superseded_by IS NULL}）。
+     * 取当日有效批次。
+     *
+     * <p>条件用 {@code active_key = '0'}（**与唯一键同列**，能走索引），
+     * 它与 {@code superseded_by IS NULL} 等价：生成列对有效批次恒为 {@code '0'}，
+     * 对已取代批次恒为 {@code superseded_by#batch_no}（必含 {@code #}，不可能等于 {@code '0'}）。
      *
      * <p>唯一性由 {@code UNIQUE(provider, biz_date, active_key)} 保证，所以这里最多一行 ——
      * 这不是"约定"，是数据库约束。
@@ -27,7 +31,7 @@ public interface ReconciliationBatchMapper extends BaseMapper<ReconciliationBatc
      * @return 有效批次，可能为 null
      */
     @Select("SELECT * FROM reconciliation_batch WHERE provider = #{provider} "
-            + "AND biz_date = #{bizDate} AND superseded_by IS NULL")
+            + "AND biz_date = #{bizDate} AND active_key = '0'")
     ReconciliationBatchPO selectActive(@Param("provider") String provider, @Param("bizDate") LocalDate bizDate);
 
     /**

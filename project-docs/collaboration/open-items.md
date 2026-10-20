@@ -2774,6 +2774,34 @@ Domain 层与 `refetch` 的入参都是**原始值**（`null` 就是 `null`）�
 第二批：`ReconciliationRepository(+Impl)` 与 H2 用例（含并发 claim、refetch 回滚、无批次、三终态拒重拉、哨兵往返）。
 
 ---
+### 1.59 第二批开工前的四项确认（2026-10-19）
+
+**① `active_key` 的类型/列宽与 `'0'` 不会冲突（有证明，不是假设）**
+`VARCHAR(160)`；值域只有两种形态：
+- 有效批次 = `'0'`（两字符）；
+- 已取代批次 = `CONCAT(superseded_by, '#', batch_no)`，最长 64+1+64 = 129 ≤ 160，**且必含 `#`**。
+⇒ 两种形态**互不相交**（`'0'` 不含 `#`），所以 `'0'` 不可能被真实批次占用；
+再叠加"`batch_no` 生成器不得产出 `'0'`"这条约束，唯一键不会误伤。
+
+**② H2 生成列支持：**本次未实测成功**（本机定位 h2 jar 失败：`settings.xml` 的 `localRepository` 是占位值
+`/path/to/local/repo` 并另写一行 `E:\maven\myRepository`，两次 `find` 都没命中）。
+**规则照你的要求钉住**：第二批第一步就是实测；
+**若 H2 不支持 `GENERATED ... STORED`**，登记「**双源 DDL 差异**」——
+即 MySQL 用生成列、H2 用例显式写入该列，**不许**在测试里写死值冒充生成逻辑。
+
+**③ `selectActive` 已与唯一键列对齐**：条件改为 `active_key = '0'`（同列可走索引），
+并在注释里写明它与 `superseded_by IS NULL` 等价的理由（见 ① 的值域证明）。
+
+**④ 六个用例的顺序（按依赖排，不按方便排）**
+`无批次` → `哨兵往返` → `重拉不翻倍` → `三终态拒重拉` → `并发 claim` → `refetch 回滚`。
+**H2 并发不稳定就登记"未验证"，禁止加 `sleep`** —— 加 sleep 只是把不稳定藏起来，不是修好。
+
+**⑤ `refetch` 的入参是 domain 类型，哨兵 encode 只在 Impl**
+签名收 `List<WithdrawalReconciliationComparer.Item>` 与原始报文列表；
+`ReconciliationSentinels.encode/decode` **只允许出现在 `ReconciliationRepositoryImpl`**，
+domain 与调用方永远看到 `null`，看不到 `__NULL__`。
+
+---
 ---
 
 ## 2. 待办
