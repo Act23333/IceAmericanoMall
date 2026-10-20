@@ -2992,6 +2992,38 @@ Spring 测试的 `@Transactional` 会**回滚整个测试**并把事务托管给
 **未验证**（归 H2 用例）：SQL 正确性、事务回滚、并发真实行为。
 
 ---
+### 1.70 H2 开工前的五项确认（2026-10-19）
+
+**① `findActiveBatch` 与 `FETCHED` 分支：当前**无测试覆盖**（登记，不许当成已验证）**
+现有 6 个单测覆盖的是：非法迁移 / 0 行并发 / 批次不存在 / 已闭环 / seq 重复 / `PENDING` 先 claim。
+**未覆盖**：`findActiveBatch`（含 `Optional.empty` 分支）、`refetch` 走 `FETCHED`（**不调 claimBatch**）那条路径。
+⇒ H2 一批必须补上这两条，否则"没测"和"测了通过"在台账里会混淆。
+
+**② 两份条件删的一致性：靠"同判据"口头约定，尚未有机器检查**
+`ReconciliationItemMapper` 与 `ReconciliationRawMapper` 的 `deleteByBatchIfRefetchable` 目前判据一致，
+但两份 SQL 是**各写一遍**，将来改一处忘另一处就会"逐笔删了、原文还在"。
+**建议**：H2 批里加一条源码守卫（两份 SQL 的 `EXISTS` 片段必须逐字相同），或把条件删抽成一张视图/一条 SQL 两份语句共享 —— 二选一，别只靠约定。
+
+**③ `claimBatch` 自调用：守卫已跑，绿**
+`refetch`（`@Transactional`）调 `claimBatch`（非事务）属**跨方法自调用但不跨事务边界**：
+外层事务覆盖内层，语义正确。`TransactionSelfInvocationGuardTest` 实跑 6 通过（0 失败）。
+**注意**：若将来给 `claimBatch` 加 `@Transactional`，它就会变成"事务方法被同类事务方法自调用"——
+守卫仍绿（调用方也是事务），但**别给它加 `REQUIRES_NEW`**，那会切开外层事务。
+
+**④ 并发用例的 H2 稳定性预期：先按"大概率不稳"准备**
+H2 内存库 + 两线程并发 `claimBatch` 很难稳定复现"恰好一个成功"。
+**约定**：能稳定复现就写用例；不能则按 §1.62⑤ 的格式登记
+（"两事务并发 claim 同一批次时，是否恰好一个成功、另一个拿到 0 行 —— 未能在 H2 稳定复现"），
+**禁止 `sleep` 制造假稳定**。
+
+**⑤ `-pl '!item-service'` 与 architecture-tests：不冲突，但要分清两种依赖**
+- 架构守卫多数**读源码**（`mainSources()` 扫磁盘文件），排除模块不影响它们读 `item-service` 的源码；
+- 少数守卫读**已编译 class**（如 `ArchitectureTest.importAll` 依赖 `ia-common/target/classes`）——
+  这些模块仍在 reactor 内，照常构建。
+⇒ 局部证明的前提是**其它模块先编译过**（本机已有 target）；全新检出上跑会因缺 class 报错，
+这与 §1.41②「陈旧/缺失 target」是同一类问题，记在同一条口径下。
+
+---
 ---
 
 ## 2. 待办
