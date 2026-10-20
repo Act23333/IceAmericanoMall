@@ -3095,6 +3095,30 @@ seller_fund_account / withdrawal / withdrawal_settlement`），并在类注释�
 断言到 `PENDING` 才能抓住这种"事务被切开"的错误。
 
 ---
+### 1.74 回滚用例的处置（2026-10-19，取证后决定）
+
+**取证结论：harness 不支持回滚，代码里已写明**
+`SettlementFundAccountH2Test` 第 960 行原文：
+「⚠ 本 harness 只能验『提交』，验不了『回滚』：这里没有 Spring 事务管理器，
+实测 `SqlSession.rollback()` 不会真的回滚（状态迁移会留在库里）」。
+辅助方法 `inTx()` 虽然 `catch` 里调了 `session().rollback()`，但**实测无效**。
+
+⇒ 若照原计划写「refetch 抛异常后断言批次回到 `PENDING`」，红的会是 **harness 不支持**，不是业务错。
+
+**处置：回滚用例改为「验证失败时没有部分提交」，不依赖回滚语义**
+做法：
+1. 先造一批旧数据并**显式提交**（`inTx`）；
+2. 触发失败（用超过列宽 160 的 `channel_ref`）；
+3. 异常之后用**另开 JDBC 连接**查询（harness 里 `intOf(...)` 就是这种连接）：
+   - `reconciliation_item` 的旧行数不变；
+   - `reconciliation_batch.status` 仍是 `PENDING`。
+4. 判据写清：**未提交的写入对独立连接不可见** ⇒ 看到旧值 = 没有部分提交。
+   这验证的是业务真正需要的东西（失败不留半截），而不是"数据库回滚 API 生效"。
+
+**同一条纪律的推广**：凡是"回滚"类断言，在这个 harness 里都只能这样写；
+要真验回滚，必须上 `@SpringBootTest` + `DataSourceTransactionManager`（§1.32 已登记为未覆盖项）。
+
+---
 ---
 
 ## 2. 待办
