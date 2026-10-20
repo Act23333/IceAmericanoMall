@@ -41,8 +41,42 @@ public interface WithdrawalMapper extends BaseMapper<WithdrawalPO> {
      * @param limit 上限
      * @return 主键列表
      */
-    @Select("SELECT id FROM withdrawal WHERE status = 4 ORDER BY id ASC LIMIT #{limit}")
-    java.util.List<Long> selectPayingIds(@Param("limit") int limit);
+    /**
+     * 取「到期待重试」的付款中单据：从未尝试过，或距上次尝试已超过节流窗口。
+     *
+     * <p><b>为什么不用 create_time</b>：那会把**首次**出款也推迟一个窗口 —— 那不是节流，是延迟到账。
+     */
+    @Select("SELECT id FROM withdrawal WHERE status = 4 "
+            + "AND (last_payout_attempt_at IS NULL OR last_payout_attempt_at < #{cutBefore}) "
+            + "ORDER BY id ASC LIMIT #{limit}")
+    java.util.List<Long> selectDuePayingIds(@Param("cutBefore") java.time.LocalDateTime cutBefore,
+                                            @Param("limit") int limit);
+
+    /**
+     * 标记「本次尝试」（事务 A，独立提交）：节流用，不改变业务状态。
+     *
+     * @param id 提现单主键
+     * @param at 尝试时间（与扫描同一个 now）
+     * @return 影响行数；0 = 状态已变，调用方必须跳过
+     */
+    @Update("UPDATE withdrawal SET last_payout_attempt_at = #{at} WHERE id = #{id} AND status = 4")
+    int markPayoutAttempt(@Param("id") Long id, @Param("at") java.time.LocalDateTime at);
+
+    /** 记录上次出款结果（分类:渠道号，超长截断并标记）。 */
+    @org.apache.ibatis.annotations.Update("UPDATE withdrawal SET last_payout_result = #{result} WHERE id = #{id}")
+    int markPayoutResult(@Param("id") Long id, @Param("result") String result);
+
+    /** 读上次出款结果（供告警体；NULL = 从未尝试）。 */
+    @Select("SELECT last_payout_result FROM withdrawal WHERE withdrawal_no = #{payoutNo}")
+    String selectPayoutResult(@Param("payoutNo") String payoutNo);
+
+    /**
+     * 告警去重账：同一 payout_no + 代次只落一行（多实例共用）。
+     *
+     * @return 1 = 首次（应当告警）；0 = 已告过
+     */
+    @Update("INSERT IGNORE INTO payout_alert_log(payout_no, alert_gen) VALUES(#{payoutNo}, #{gen})")
+    int markAlertedOnce(@Param("payoutNo") String payoutNo, @Param("gen") int gen);
 
     /**
      * 取「停留超过阈值」的付款中单据（供告警扫描）。

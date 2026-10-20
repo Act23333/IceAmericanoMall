@@ -786,6 +786,8 @@ CREATE TABLE `withdrawal` (
     `seller_id` BIGINT NOT NULL COMMENT '商家ID',
     `amount` INT NOT NULL COMMENT '提现金额（分）',
     `payout_no` VARCHAR(64) DEFAULT NULL COMMENT '出款幂等键（渠道去重依据，全生命周期不变）',
+    `last_payout_attempt_at` DATETIME DEFAULT NULL COMMENT '上次出款尝试时间（重试节流依据；NULL=从未尝试）',
+    `last_payout_result` VARCHAR(128) DEFAULT NULL COMMENT '上次出款结果 分类:渠道号（超长截断并标记）',
   `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=待审核, 2=已打款, 3=拒绝, 4=付款中（结果未知，仍占冻结）',
     `bank_account` VARCHAR(50) COMMENT '银行账号',
     `bank_name` VARCHAR(100) COMMENT '开户行',
@@ -1562,3 +1564,15 @@ INSERT IGNORE INTO `exchange_rate` (`code`, `rate_scaled`, `source`, `effect_tim
     UNIQUE KEY `uk_order_scene_kind` (`order_no`, `scene_ref`, `kind`),
     KEY `idx_status_next_retry` (`status`, `next_retry_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='发票联动补偿记录（I56 全额冲红 / I60 部分退款置标的联动失败承载，PENDING 待重试或人工收敛）';
+
+
+-- 出款停留告警的去重账（多实例共用；按 payout_no+代次 唯一）
+DROP TABLE IF EXISTS `payout_alert_log`;
+CREATE TABLE `payout_alert_log` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `payout_no` VARCHAR(64) NOT NULL COMMENT '出款幂等键',
+    `alert_gen` INT NOT NULL COMMENT '告警代次 = 停留分钟 / N',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_payout_alert` (`payout_no`, `alert_gen`),
+    KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='出款停留告警去重账（保留 180 天，每日批删）';

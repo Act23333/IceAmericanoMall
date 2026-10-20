@@ -18,6 +18,12 @@ public class WithdrawalPO implements Serializable {
     /** 出款幂等键（受理时生成，全生命周期不变）。 */
     private String payoutNo;
 
+    /** 上次出款尝试时间（重试节流；NULL = 从未尝试）。 */
+    private java.time.LocalDateTime lastPayoutAttemptAt;
+
+    /** 上次出款结果（分类:渠道号）。 */
+    private String lastPayoutResult;
+
     private Integer status;
     private String bankAccount;
     private String bankName;

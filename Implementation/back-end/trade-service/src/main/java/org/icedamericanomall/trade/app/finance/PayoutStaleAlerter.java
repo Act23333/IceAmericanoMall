@@ -11,8 +11,6 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 「付款中」停留告警。
@@ -50,8 +48,8 @@ public class PayoutStaleAlerter {
     @Value("${trade.withdrawal.payout.stale-alert-minutes:30}")
     private int staleMinutes = 30;
 
-    /** 进程级去重：键 = payoutNo#gen（同一单同一代次只告一次）。 */
-    private final Set<String> alerted = ConcurrentHashMap.newKeySet();
+    /** 本次实际发出的告警数（测试观测用；去重已交给 DB 的唯一键）。 */
+    private int raisedCount;
 
     public PayoutStaleAlerter(WithdrawalRepository withdrawalRepository,
                               org.springframework.beans.factory.ObjectProvider<Clock> clockProvider,
@@ -86,11 +84,12 @@ public class PayoutStaleAlerter {
             if (gen < 1) {
                 continue;       // 还没到第一个窗口
             }
-            String key = row.payoutNo() + "#" + gen;
-            if (!alerted.add(key)) {
+            // 去重交给 DB 唯一键（payout_no, alert_gen）——进程内集合在多实例下会重复告警
+            if (withdrawalRepository.markAlertedOnce(row.payoutNo(), gen) == 0) {
                 continue;       // 同一代次已告过
             }
             log.error("{}", body(row, dwellMinutes, gen));
+            raisedCount++;
             raised++;
         }
         return raised;
@@ -120,9 +119,9 @@ public class PayoutStaleAlerter {
         return LocalDateTime.ofInstant(clock.instant(), ZoneId.systemDefault());
     }
 
-    /** 测试/运维观测：已告警的去重键数。 */
-    int alertedKeyCount() {
-        return alerted.size();
+    /** 测试/运维观测：本进程累计发出的告警数。 */
+    int raisedCount() {
+        return raisedCount;
     }
 
     static int defaultLimit() {

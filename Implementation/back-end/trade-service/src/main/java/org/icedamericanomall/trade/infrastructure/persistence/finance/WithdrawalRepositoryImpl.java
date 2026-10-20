@@ -50,8 +50,28 @@ public class WithdrawalRepositoryImpl implements WithdrawalRepository {
     }
 
     @Override
-    public java.util.List<Long> findPayingIds(int limit) {
-        return withdrawalMapper.selectPayingIds(limit);
+    public java.util.List<Long> findDuePayingIds(java.time.LocalDateTime cutBefore, int limit) {
+        return withdrawalMapper.selectDuePayingIds(cutBefore, limit);
+    }
+
+    @Override
+    public int markPayoutAttempt(Long id, java.time.LocalDateTime at) {
+        return withdrawalMapper.markPayoutAttempt(id, at);
+    }
+
+    @Override
+    public int markPayoutResult(Long id, String result) {
+        return withdrawalMapper.markPayoutResult(id, result);
+    }
+
+    @Override
+    public String findPayoutResult(String payoutNo) {
+        return withdrawalMapper.selectPayoutResult(payoutNo);
+    }
+
+    @Override
+    public int markAlertedOnce(String payoutNo, int gen) {
+        return withdrawalMapper.markAlertedOnce(payoutNo, gen);
     }
 
     @Override

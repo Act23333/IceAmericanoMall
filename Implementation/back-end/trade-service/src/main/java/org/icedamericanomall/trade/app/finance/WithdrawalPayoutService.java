@@ -8,6 +8,7 @@ import org.icedamericanomall.trade.domain.port.WithdrawalPayoutPort;
 import org.icedamericanomall.trade.domain.repository.WithdrawalRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
 import java.util.List;
 
 /**
@@ -23,7 +24,6 @@ import java.util.List;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class WithdrawalPayoutService {
 
     /** 单次扫描上限（防一次任务拉爆渠道配额）。 */
@@ -32,18 +32,50 @@ public class WithdrawalPayoutService {
     private final WithdrawalRepository withdrawalRepository;
     private final WithdrawalPayoutPort payoutPort;
     private final WithdrawalManager withdrawalManager;
-
-    /** 每单最近一次出款结果（进程内；重启后丢失 —— 告警体标 NOT_ATTEMPTED 即可，不假装有历史）。 */
-    private final java.util.Map<String, String> lastResults = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.time.Clock clock;
 
     /**
-     * 最近一次出款结果（给告警体用）。
+     * 重试节流窗口（分钟）：与停留告警同一个配置项 —— 同一张单不会在窗口内被反复打向渠道。
+     */
+    @org.springframework.beans.factory.annotation.Value("${trade.withdrawal.payout.stale-alert-minutes:30}")
+    private int retryIntervalMinutes = 30;
+
+    /** 结果摘要：分类:渠道号；超 128 截断并标记（DB 列长 128）。 */
+    static String summarize(WithdrawalPayoutPort.PayoutResult result) {
+        String raw = result.accepted() ? "ACCEPTED:" + result.channelRef() : "REJECTED:" + result.reason();
+        return raw.length() <= 128 ? raw : raw.substring(0, 124) + "...";
+    }
+
+    /**
+     * 最近一次出款结果（**读库**，重启后仍可读）。
      *
      * @param payoutNo 出款幂等键
-     * @return 形如 {@code ACCEPTED(MOCK-WD-1)} / {@code REJECTED(MOCK_REJECTED)}；没试过返回 NOT_ATTEMPTED
+     * @return 形如 {@code ACCEPTED:MOCK-WD-1}；从未尝试返回 NOT_ATTEMPTED
      */
     public String lastResult(String payoutNo) {
-        return lastResults.getOrDefault(payoutNo, "NOT_ATTEMPTED");
+        String stored = withdrawalRepository.findPayoutResult(payoutNo);
+        return stored == null ? "NOT_ATTEMPTED" : stored;
+    }
+
+    public WithdrawalPayoutService(WithdrawalRepository withdrawalRepository,
+                                    WithdrawalPayoutPort payoutPort,
+                                    WithdrawalManager withdrawalManager,
+                                    org.springframework.beans.factory.ObjectProvider<Clock> clockProvider) {
+        this(withdrawalRepository, payoutPort, withdrawalManager,
+                clockProvider.getIfAvailable(Clock::systemUTC));
+    }
+
+    /**
+     * 测试用：显式时钟 —— 必须与停留告警用**同一个** Clock 实例（§1.48 ④）。
+     */
+    public WithdrawalPayoutService(WithdrawalRepository withdrawalRepository,
+                                   WithdrawalPayoutPort payoutPort,
+                                   WithdrawalManager withdrawalManager,
+                                   Clock clock) {
+        this.withdrawalRepository = withdrawalRepository;
+        this.payoutPort = payoutPort;
+        this.withdrawalManager = withdrawalManager;
+        this.clock = clock;
     }
 
     /**
@@ -53,9 +85,17 @@ public class WithdrawalPayoutService {
      * @return 本次成功落账的单数
      */
     public int settle(int limit) {
-        List<Long> payingIds = withdrawalRepository.findPayingIds(limit);
+        // now 只取一次：扫描上界与节流标记必须同一个值，否则边界处会抖动
+        java.time.LocalDateTime now = java.time.LocalDateTime.ofInstant(clock.instant(), java.time.ZoneId.systemDefault());
+        java.time.LocalDateTime cutBefore = now.minusMinutes(Math.max(1, retryIntervalMinutes));
+        List<Long> payingIds = withdrawalRepository.findDuePayingIds(cutBefore, limit);
         int settled = 0;
         for (Long id : payingIds) {
+            // 事务 A：先标记尝试（节流），0 行 = 状态已变 ⇒ 跳过。
+            // 顺序有意为之：先标记后调渠道 ⇒ 崩了也不会立刻重打一次（反过来才会重试风暴）
+            if (withdrawalRepository.markPayoutAttempt(id, now) == 0) {
+                continue;
+            }
             if (settleOne(id)) {
                 settled++;
             }
@@ -74,9 +114,7 @@ public class WithdrawalPayoutService {
         WithdrawalPayoutPort.PayoutResult result = payoutPort.pay(new WithdrawalPayoutPort.PayoutCommand(
                 withdrawal.getWithdrawalNo(), withdrawal.getId(), withdrawal.getSellerId(), amount,
                 withdrawal.getBankAccount(), withdrawal.getBankName()));
-        lastResults.put(withdrawal.getWithdrawalNo(), result.accepted()
-                ? "ACCEPTED(" + result.channelRef() + ")"
-                : "REJECTED(" + result.reason() + ")");
+        withdrawalRepository.markPayoutResult(withdrawal.getId(), summarize(result));
         if (!result.accepted()) {
             // 结果未知 ⇒ 保持 PAYING + 告警；**不判失败、不释放冻结**
             log.warn("[payout] 渠道未受理，保持付款中（结果未知≠失败） id={} reason={}", id, result.reason());

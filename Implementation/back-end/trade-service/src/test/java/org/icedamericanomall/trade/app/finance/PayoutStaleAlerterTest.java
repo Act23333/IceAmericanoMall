@@ -62,7 +62,7 @@ class PayoutStaleAlerterTest {
         assertEquals(1, alerter.alertStale(100));
         clock.advance(Duration.ofMinutes(THRESHOLD_MINUTES));
         assertEquals(1, alerter.alertStale(100), "跨过 N 分钟 ⇒ 新代次 ⇒ 再告一次");
-        assertEquals(2, alerter.alertedKeyCount());
+        assertEquals(2, alerter.raisedCount());
     }
 
     @Test
@@ -87,6 +87,12 @@ class PayoutStaleAlerterTest {
                 clock.instant().minus(Duration.ofMinutes(dwellMinutes)), ZoneId.systemDefault());
         when(withdrawalRepository.findStalePaying(any(), anyInt()))
                 .thenReturn(List.of(new StalePaying(7L, "WD-1", 9L, 4_000, created)));
+        // 去重账：同一 payout_no+gen 只有第一次返回 1（DB 唯一键的替身）
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        org.mockito.Mockito.lenient().when(withdrawalRepository.markAlertedOnce(any(), anyInt())).thenAnswer(inv -> {
+            String key = inv.getArgument(0) + "#" + inv.getArgument(1);
+            return seen.add(key) ? 1 : 0;
+        });
     }
 
     private StalePaying row() {

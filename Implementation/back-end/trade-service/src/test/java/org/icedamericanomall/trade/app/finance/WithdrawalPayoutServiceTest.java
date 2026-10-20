@@ -7,7 +7,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -15,6 +14,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -39,12 +39,20 @@ class WithdrawalPayoutServiceTest {
     @Mock private WithdrawalManager withdrawalManager;
     @Mock private Withdrawal withdrawal;
 
-    @InjectMocks private WithdrawalPayoutService payoutService;
+    private WithdrawalPayoutService payoutService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        payoutService = new WithdrawalPayoutService(withdrawalRepository, payoutPort, withdrawalManager,
+                java.time.Clock.fixed(java.time.Instant.parse("2026-10-19T00:00:00Z"), java.time.ZoneId.of("UTC")));
+        org.springframework.test.util.ReflectionTestUtils.setField(payoutService, "retryIntervalMinutes", 30);
+        when(withdrawalRepository.markPayoutAttempt(any(), any())).thenReturn(1);   // 节流标记成功
+    }
 
     @Test
     @DisplayName("渠道未受理 ⇒ 保持「付款中」：不落账、不释放冻结（结果未知 ≠ 失败）")
     void shouldKeepPaying_whenChannelNotAccepted() {
-        when(withdrawalRepository.findPayingIds(LIMIT)).thenReturn(List.of(WITHDRAWAL_ID));
+        when(withdrawalRepository.findDuePayingIds(any(), anyInt())).thenReturn(List.of(WITHDRAWAL_ID));
         stubWithdrawal();
         when(payoutPort.pay(any()))
                 .thenReturn(new WithdrawalPayoutPort.PayoutResult(false, null, "CHANNEL_DOWN"));
@@ -56,7 +64,7 @@ class WithdrawalPayoutServiceTest {
     @Test
     @DisplayName("渠道受理 ⇒ 落账一次；幂等键复用 withdrawalNo（重试不会出两次钱）")
     void shouldSettle_whenChannelAccepted() {
-        when(withdrawalRepository.findPayingIds(LIMIT)).thenReturn(List.of(WITHDRAWAL_ID));
+        when(withdrawalRepository.findDuePayingIds(any(), anyInt())).thenReturn(List.of(WITHDRAWAL_ID));
         stubWithdrawal();
         ArgumentCaptor<WithdrawalPayoutPort.PayoutCommand> captor =
                 ArgumentCaptor.forClass(WithdrawalPayoutPort.PayoutCommand.class);
@@ -73,7 +81,7 @@ class WithdrawalPayoutServiceTest {
     @Test
     @DisplayName("service — 同一单 settle 两次：渠道被调两次，但**只记账一次**（收口在 completePayout 的返回值）")
     void shouldAccountOnce_whenSettleRunsTwice() {
-        when(withdrawalRepository.findPayingIds(LIMIT)).thenReturn(List.of(WITHDRAWAL_ID));
+        when(withdrawalRepository.findDuePayingIds(any(), anyInt())).thenReturn(List.of(WITHDRAWAL_ID));
         stubWithdrawal();
         when(payoutPort.pay(any()))
                 .thenReturn(new WithdrawalPayoutPort.PayoutResult(true, "MOCK-WD-1", null));
@@ -86,6 +94,17 @@ class WithdrawalPayoutServiceTest {
         verify(payoutPort, times(2)).pay(any());          // ★ job 层确实调了两次
         verify(withdrawalManager, times(2)).completePayout(withdrawal);
         // 记账只发生一次：第二次 completePayout 返回 false，服务不往下推
+    }
+
+    @Test
+    @DisplayName("节流标记 0 行（状态已变）⇒ 根本不调渠道（先标记后调用的意义）")
+    void shouldSkipChannel_whenAttemptMarkMisses() {
+        when(withdrawalRepository.findDuePayingIds(any(), anyInt())).thenReturn(List.of(WITHDRAWAL_ID));
+        when(withdrawalRepository.markPayoutAttempt(any(), any())).thenReturn(0);
+        // 注意：这里**不能**桩 findById —— 标记 0 行就该直接跳过，连单子都不读
+
+        assertEquals(0, payoutService.settle(LIMIT));
+        verify(payoutPort, never()).pay(any());
     }
 
     private void stubWithdrawal() {

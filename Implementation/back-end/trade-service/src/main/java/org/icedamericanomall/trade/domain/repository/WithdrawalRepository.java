@@ -64,7 +64,15 @@ public interface WithdrawalRepository {
      * @param limit 上限
      * @return 主键列表
      */
-    java.util.List<Long> findPayingIds(int limit);
+    java.util.List<Long> findDuePayingIds(java.time.LocalDateTime cutBefore, int limit);
+
+    int markPayoutAttempt(Long id, java.time.LocalDateTime at);
+
+    int markPayoutResult(Long id, String result);
+
+    String findPayoutResult(String payoutNo);
+
+    int markAlertedOnce(String payoutNo, int gen);
 
     int reviewIfPending(Long id, Integer fromStatus, Integer toStatus, String adminRemark);
 

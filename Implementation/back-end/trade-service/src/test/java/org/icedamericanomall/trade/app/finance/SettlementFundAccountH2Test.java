@@ -198,6 +198,8 @@ class SettlementFundAccountH2Test {
                     seller_id BIGINT NOT NULL,
                     amount INT NOT NULL,
                     payout_no VARCHAR(64),
+                    last_payout_attempt_at TIMESTAMP,
+                    last_payout_result VARCHAR(128),
                     status TINYINT NOT NULL DEFAULT 1,
                     bank_account VARCHAR(50),
                     bank_name VARCHAR(100),
@@ -257,7 +259,7 @@ class SettlementFundAccountH2Test {
                 new TradeConverterImpl());
         payoutService = new org.icedamericanomall.trade.app.finance.WithdrawalPayoutService(
                 withdrawalRepository, new org.icedamericanomall.trade.infrastructure.adapter.payout.ManualPayoutAdapter(),
-                withdrawalManager);
+                withdrawalManager, java.time.Clock.systemUTC());
         // 生产默认关闭打款（只记账不付款）；H2 用例要验打款/核销路径，显式打开
         org.springframework.test.util.ReflectionTestUtils.setField(withdrawalManager, "payoutEnabled", true);
     }
