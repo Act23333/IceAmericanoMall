@@ -3119,6 +3119,38 @@ seller_fund_account / withdrawal / withdrawal_settlement`），并在类注释�
 要真验回滚，必须上 `@SpringBootTest` + `DataSourceTransactionManager`（§1.32 已登记为未覆盖项）。
 
 ---
+### 1.75 写 H2 用例前的三项确认（2026-10-19）
+
+**① `inTx()` 的异常路径**不 `commit`**（已核源码）**
+```java
+try { result = op.get(); session().commit(); return result; }
+catch (RuntimeException e) { session().rollback(); throw e; }
+```
+异常时只调 `rollback()`（**实测无效**）、**不会 commit** ⇒ 数据留在会话里未提交。
+所以回滚用例**可以直接用 `inTx()`**：只要异常向上抛出，独立连接就看不到那些写入。
+（前提是下一步的"释放锁"。）
+
+**② 异常之后必须释放会话，否则独立连接会锁超时**
+未提交的写会**持有行锁**；`SqlSession.rollback()` 又不生效 ⇒ 锁不释放。
+用例在异常后、用独立连接查之前，必须先：
+`session().getConnection().rollback()`（JDBC 层真回滚，顺带释放锁）或 `session().close()` 后重开。
+**不做这一步，`intOf(...)` 会卡在锁等待上**，红得莫名其妙。这条要写进用例注释。
+
+**③ `active_key == '0'` 的首断言放在"有批次"的用例里**
+"无批次"用例根本不插批次，拿不到 `active_key`。
+类型断言（`assertEquals("0", …)`）放进 `findActiveBatch` **命中**的那条用例，建完批次立刻断言。
+
+**④ 注释要说清 `findActiveBatch` **命中分支**由谁覆盖**
+建议放在"哨兵往返"或"重拉不翻倍"里顺带断言（那条用例本来就有批次），并在类注释里点名
+「`findActiveBatch` 命中分支由 X 用例覆盖；`Optional.empty` 分支由无批次用例覆盖」——
+否则下一个人会以为漏测。
+
+**⑤ 并发用例"等价于串行"，不是真并发**
+H2 单连接下用两线程交错通常构造不出真竞争；若用"先 claim 一次再 claim 一次"来模拟，
+**注释必须写明**：这是**串行等价验证**（验证第二次拿到 0 行并抛 `ConcurrentClaim`），
+**不是**并发正确性证明；真并发仍需独立环境（§1.62⑤ 的具体行为登记照旧）。
+
+---
 ---
 
 ## 2. 待办
