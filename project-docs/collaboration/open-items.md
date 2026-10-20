@@ -2818,6 +2818,36 @@ domain 与调用方永远看到 `null`，看不到 `__NULL__`。
   H2 保持不带（即回到双源），这一条在接真库时必须连 CI 一起确认。
 
 ---
+### 1.61 第二批开工前的五个细节（2026-10-19，写死）
+
+**① refetch 的"只放行"不能先查后删**
+先 `selectStatus` 再 `deleteByBatch` 之间存在并发窗口：别人可能在这期间把批次**推进到闭环**，
+我们却把它的 item 删了 ⇒ 已闭环批次被"清空"。
+**正确做法**：把判断做进**条件删**（或先 `SELECT ... FOR UPDATE` 锁行）——
+删除语句自带
+`DELETE FROM reconciliation_item WHERE batch_no = ? AND EXISTS (SELECT 1 FROM reconciliation_batch b
+WHERE b.batch_no = ? AND b.superseded_by IS NULL AND b.status IN (1,2))`，
+影响行数为 0 即说明"状态已不可重拉"，抛业务异常；或用 `FOR UPDATE` 把批次行锁住再删。
+
+**② raw 分片由调用方做，`refetch` 接 `List<RawShard>`**
+分片规则（每片条数、超长单独成片、`seq` 从 1 递增）属**拉取器**的职责；仓储只负责落库与唯一键。
+理由：分片策略会随渠道报文形态变化，不该焊在仓储层。
+
+**③ `claimBatch` 的 0 行补查不保证精确**
+补查得到的 `actualStatus` 只是**某一时刻的快照**，可能已被下一次更新覆盖。
+所以异常信息**以 `expectedFrom` 为主**（"我以为它是 X"），`actualStatus` 明确标注
+**"可能为旧值"**，避免排查时把快照当事实。
+
+**④ `refetch` 内部先 `claimBatch`（若当前是 `PENDING`）**
+把"检查 + 推进"放进**同一个事务**：`PENDING → FETCHED` 由 `refetch` 自己完成，
+而不是让调用方先 claim 再 refetch（两步之间又是一个窗口）。
+
+**⑤ H2 实测结论与"并发未验证"必须落在台账，不只留在对话**
+- 实测结论已在 §1.60（`CASE WHEN` 可移植、`IF`/`STORED` 被拒）；
+- **并发 claim 用例**：若 H2 下无法稳定复现并发，**登记"未验证"**（禁止 `sleep` 制造假稳定）；
+- 本条随第二批一并交付，交接单里的"已验证/未验证"两栏都要按实填写。
+
+---
 ---
 
 ## 2. 待办
