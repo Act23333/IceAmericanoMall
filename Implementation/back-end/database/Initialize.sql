@@ -1591,9 +1591,12 @@ CREATE TABLE `reconciliation_batch` (
     -- 表达式说明：有效批次 = '0'；被取代的批次 = superseded_by#batch_no。
     -- 为什么不能只用 COALESCE(superseded_by,'0')：若两个旧批次被**同一个**新批次取代，
     -- 它们的 active_key 会相同 ⇒ 唯一键误伤。拼上本行 batch_no 后天然唯一。
+    -- 表达式写 `CASE WHEN` 而不是 MySQL 的 `IF(...)`：H2 实测拒绝 IF（语法错），接受 CASE；
+    -- 也不写 STORED：H2 实测拒绝该关键字，MySQL 默认 VIRTUAL（可建索引）。
+    -- 这样 Initialize.sql 仍是**唯一结构真相源**，H2 用例不需要另写一套 DDL。
     `active_key` VARCHAR(160) GENERATED ALWAYS AS (
-        IF(`superseded_by` IS NULL, '0', CONCAT(`superseded_by`, '#', `batch_no`))
-    ) STORED COMMENT '有效批次标记（生成列，只读）',
+        CASE WHEN `superseded_by` IS NULL THEN '0' ELSE CONCAT(`superseded_by`, '#', `batch_no`) END
+    ) COMMENT '有效批次标记（生成列，只读）',
     UNIQUE KEY `uk_active_batch` (`provider`, `biz_date`, `active_key`),
     `fetched_at` DATETIME DEFAULT NULL,
     `matched_count` INT NOT NULL DEFAULT 0,

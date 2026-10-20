@@ -2783,7 +2783,7 @@ Domain 层与 `refetch` 的入参都是**原始值**（`null` 就是 `null`）�
 ⇒ 两种形态**互不相交**（`'0'` 不含 `#`），所以 `'0'` 不可能被真实批次占用；
 再叠加"`batch_no` 生成器不得产出 `'0'`"这条约束，唯一键不会误伤。
 
-**② H2 生成列支持：**本次未实测成功**（本机定位 h2 jar 失败：`settings.xml` 的 `localRepository` 是占位值
+**②-b H2 生成列支持：已实测（结论见 §1.60），改用可移植写法，不再需要双源 DDL。**本次（早先）未实测成功（本机定位 h2 jar 失败：`settings.xml` 的 `localRepository` 是占位值
 `/path/to/local/repo` 并另写一行 `E:\maven\myRepository`，两次 `find` 都没命中）。
 **规则照你的要求钉住**：第二批第一步就是实测；
 **若 H2 不支持 `GENERATED ... STORED`**，登记「**双源 DDL 差异**」——
@@ -2800,6 +2800,22 @@ Domain 层与 `refetch` 的入参都是**原始值**（`null` 就是 `null`）�
 签名收 `List<WithdrawalReconciliationComparer.Item>` 与原始报文列表；
 `ReconciliationSentinels.encode/decode` **只允许出现在 `ReconciliationRepositoryImpl`**，
 domain 与调用方永远看到 `null`，看不到 `__NULL__`。
+
+---
+### 1.60 H2 生成列实测结论（2026-10-19，h2 2.3.232 + MODE=MySQL，Java 21）
+
+| 写法 | 结果 | 证据 |
+|---|---|---|
+| `GENERATED ALWAYS AS (IF(...))` | **拒绝**（语法错，`[*]IF`） | `Syntax error ... expected "), INTERSECTS (, NOT, EXISTS, UNIQUE..."` |
+| `GENERATED ALWAYS AS (CASE WHEN ... END)` | **接受** | `exit=0` |
+| 同上 + `STORED` | **拒绝**（H2 不认识该关键字） | `Syntax error ... [*]STORED` |
+| `CASE WHEN` + 插入两行 + `UNIQUE(provider,biz_date,active_key)` | **通过** | `exit=0`，有效行 `'0'`、被取代行 `B1#B0` |
+
+**因此 DDL 统一改成可移植写法**（`CASE WHEN`、不带 `STORED`）：
+- MySQL 与 H2 **同一份 DDL**，`Initialize.sql` 仍是唯一结构真相源，**不需要"双源 DDL 差异"**；
+- MySQL 侧生成列默认为 `VIRTUAL`；InnoDB 支持在虚拟列上建二级索引与唯一键，故 `uk_active_batch` 成立。
+  ⚠ **残留风险（待真库验证）**：若某 MySQL 版本不允许在虚拟生成列上建**唯一**索引，退路是 MySQL 用 `STORED`、
+  H2 保持不带（即回到双源），这一条在接真库时必须连 CI 一起确认。
 
 ---
 ---
