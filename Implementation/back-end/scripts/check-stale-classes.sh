@@ -27,7 +27,18 @@ fi
 # 逐个源码比对自己的 .class；命中第一处即报（同类只报一次，避免刷屏）
 check_tree() { # $1=src根 $2=class根 $3=标签
   local src_root="$1" cls_root="$2" label="$3" src rel cls
-  [ -d "$src_root" ] && [ -d "$cls_root" ] || return 0
+  [ -d "$src_root" ] || return 0
+  if [ ! -d "$cls_root" ]; then
+    # 目录不存在**不能静默跳过**：有测试源码却没有 test-classes，等于"这套测试根本没编过"。
+    # 但仅当该模块主代码已编译（存在 target/classes）时才判红 —— 完全没构建过的模块留给扫描面自检去管。
+    if find "$src_root" -name '*.java' -print -quit 2>/dev/null | grep -q .; then
+      if [ -d "$(dirname "$cls_root")/classes" ]; then
+        echo "✗ 未编译${label}产物: ${src_root#"$BE"/} 有源码但 ${cls_root#"$BE"/} 不存在（该模块只编了主代码）"
+        return 1
+      fi
+    fi
+    return 0
+  fi
   while IFS= read -r src; do
     # 整文件被注释掉 / 无类型声明 ⇒ 不产生 .class，不算陈旧（ia-common 的 IMapper.java 就是这种）
     if ! grep -qE '^[[:space:]]*(public |abstract |final |sealed )*(class|interface|enum|record)[[:space:]]' "$src"; then
