@@ -3177,6 +3177,36 @@ try { session().getConnection().rollback(); } finally { session().close(); }
 （若将来改成显式 resultMap，记得把 `active_key` 加进去，否则 PO 字段会静默为 null。）
 
 ---
+### 1.77 H2 仓储集成尝试的结论与更正（2026-10-19，实测）
+
+**实测（写完后跑，六用例：1 failure + 1 error）**
+`ReconciliationRepositoryH2Test` 首跑结果：
+- `shouldNotPartiallyCommit_whenInsertFails` —— 断言「旧的逐笔还在」**失败**（expected 1，actual 0）；
+- `shouldThrowConcurrentClaim…` —— 在 `seedBatch` 阶段就 `Persistence` 异常（`reopenSession()` 后装配耦合）。
+**该文件已删除**，分支回到 26 用例绿的状态（不留红测试）。
+
+**① 更正 §1.74 的处置：这个 harness 连 JDBC 层回滚也不可靠**
+按 §1.74 的写法（异常后 `getConnection().rollback()` + `session.close()` + 重开，再用独立连接查），
+结果**旧行也不见了** ⇒ 「未提交的写入对独立连接不可见」这个前提在此 harness **不成立**。
+⇒ **任何"回滚 / 无部分提交"断言在本 harness 不可实现**。§1.74 的处置（改为验证"无部分提交"）**再次更正**：
+此路不通，不要在它上面继续凑。
+
+**② 两条出路（本分支选 B，A 另开批次）**
+- **A（另开批次）**：`@SpringBootTest` + `DataSourceTransactionManager` ⇒ 真事务，能验回滚。需要 DB 依赖，属独立批次。
+- **B（本分支收尾）**：H2 仓储集成只验**不依赖回滚**的三条：重拉不翻倍（走 `FETCHED` 分支）、
+  三态拒重拉（各造批次）、claim 冲突（串行等价）。失败路径与回滚语义留给 A。
+  理由：这三条覆盖了本批次真正的新逻辑；回滚是"横切能力"，应一次性在 Spring 批次里解决，而不是在 harness 里造替身。
+
+**③ 静态 session 耦合要修：抽出幂等的 `rebind()`**
+`reopenSession()` 之后重造 mapper/repository 的路径必须收敛成一个**幂等**方法：
+先关旧 session（若未关）、再开新 session、再重新 `getMapper` 并重建 `repository`。
+否则用例顺序一变就炸（本轮 `seedBatch` 的 `Persistence` 异常就是这个耦合）。
+
+**④ 下一轮开局动作**
+按 B 实现 H2 集成（三条用例 + `rebind()`），跑通后做局部证明；
+A（Spring 批次）单独排期，专门解决回滚与失败路径。
+
+---
 ---
 
 ## 2. 待办
