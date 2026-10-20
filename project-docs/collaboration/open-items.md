@@ -2960,6 +2960,19 @@ Spring 测试的 `@Transactional` 会**回滚整个测试**并把事务托管给
 这是它应有的行为，先 `mvn -DskipTests compile` 再提交。
 
 ---
+### 1.68 条件删已落（仓储第一批，2026-10-19）
+
+`ReconciliationItemMapper.deleteByBatchIfRefetchable` 与 `ReconciliationRawMapper.deleteByBatchIfRefetchable`：
+- 删除与状态判断写在**同一条 DELETE** 的 `EXISTS` 子查询里 ⇒ 先查后删的并发窗口消失；
+- 状态值走命名参数 `#{pendingCode}` / `#{fetchedCode}`（由 `ReconciliationStatus.getCode()` 传入）；
+- 逐笔与分片用**同一判据**，两边要么都删、要么都不动。
+- 返回 0 行的语义留给实现区分三件事（批次不存在 / 两步间状态已变 / 状态本不可重拉）。
+
+**验证**：编译通过；`ReconciliationMapperNoHardcodedStatusGuardTest` 对新增 SQL 判绿（它现在有真实内容可守，不再只是空跑）。
+
+**下一步**：`ReconciliationRepositoryImpl`（`findActiveBatch` → `claimBatch` → `refetch`）+ H2 六用例。
+
+---
 ---
 
 ## 2. 待办

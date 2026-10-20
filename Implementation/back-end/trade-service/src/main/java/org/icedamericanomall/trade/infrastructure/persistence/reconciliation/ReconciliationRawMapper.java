@@ -16,8 +16,20 @@ import java.util.List;
 @Mapper
 public interface ReconciliationRawMapper extends BaseMapper<ReconciliationRawPO> {
 
-    @Delete("DELETE FROM reconciliation_raw WHERE batch_no = #{batchNo}")
-    int deleteByBatch(@Param("batchNo") String batchNo);
+    /**
+     * 条件删分片（与逐笔同一条判据，保证两边要么都删、要么都不动）。
+     *
+     * @param batchNo     批次号
+     * @param pendingCode PENDING 的码值
+     * @param fetchedCode FETCHED 的码值
+     * @return 删除行数；0 = 不可重拉
+     */
+    @Delete("DELETE FROM reconciliation_raw WHERE batch_no = #{batchNo} AND EXISTS ("
+            + "SELECT 1 FROM reconciliation_batch b WHERE b.batch_no = #{batchNo} "
+            + "AND b.superseded_by IS NULL AND b.status IN (#{pendingCode}, #{fetchedCode}))")
+    int deleteByBatchIfRefetchable(@Param("batchNo") String batchNo,
+                                   @Param("pendingCode") int pendingCode,
+                                   @Param("fetchedCode") int fetchedCode);
 
     @Select("SELECT COUNT(*) FROM reconciliation_raw WHERE batch_no = #{batchNo}")
     int countByBatch(@Param("batchNo") String batchNo);
