@@ -90,6 +90,18 @@ class WithdrawalReconciliationComparerTest {
     }
 
     @Test
+    @DisplayName("同金额多笔候选 ⇒ **不猜**，一律归差异")
+    void shouldNotGuess_whenFuzzyCandidatesAreAmbiguous() {
+        Result result = WithdrawalReconciliationComparer.compare(
+                List.of(new Ours("WD-1", 4_000, DAY)),
+                List.of(new Channel("CH-1", null, 4_000, DAY),
+                        new Channel("CH-2", null, 4_000, DAY.plusDays(1))));
+
+        assertEquals(0, result.matched(), "候选不唯一时不得匹配，猜错会把差异抹平");
+        assertEquals(3, result.diff());
+    }
+
+    @Test
     @DisplayName("两边都空 ⇒ 空结果（不抛异常）")
     void shouldHandleEmptyInputs() {
         Result result = WithdrawalReconciliationComparer.compare(List.of(), List.of());
@@ -116,6 +128,14 @@ class WithdrawalReconciliationComparerTest {
         assertFalse(ReconciliationStatus.canTransit(ReconciliationStatus.MATCHED, ReconciliationStatus.DIFF));
         assertFalse(ReconciliationStatus.canTransit(ReconciliationStatus.RESOLVED, ReconciliationStatus.DIFF));
         assertFalse(ReconciliationStatus.canTransit(null, ReconciliationStatus.FETCHED));
+    }
+
+    @Test
+    @DisplayName("RESOLVED 允许改结论（处置错误要能纠正），但必须留历史")
+    void shouldAllowReResolve_withHistory() {
+        assertTrue(ReconciliationStatus.canTransit(ReconciliationStatus.RESOLVED, ReconciliationStatus.RESOLVED));
+        assertFalse(ReconciliationStatus.canTransit(ReconciliationStatus.RESOLVED, ReconciliationStatus.DIFF),
+                "改结论不等于退回未处置");
     }
 
     @Test

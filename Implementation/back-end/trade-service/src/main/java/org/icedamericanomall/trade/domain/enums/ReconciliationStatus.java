@@ -12,8 +12,9 @@ import java.util.Set;
  * <ul>
  *   <li>{@code PENDING / FETCHED} 可重入：同 {@code batch_no} 重拉会覆盖逐笔（幂等键见 item 唯一键），
  *       因为"还没闭环"的批次允许补拉/重跑；</li>
- *   <li>{@code MATCHED / DIFF / RESOLVED} <b>不可重入</b>：要重跑必须**新建批次**（换 {@code batch_no}）。
- *       否则会把已经人工处置过的结论覆盖掉 —— 那是审计灾难。</li>
+ *   <li>{@code MATCHED / DIFF} <b>不可重入</b>：要重跑必须**新建批次**（换 {@code batch_no}）。</li>
+ *   <li>{@code RESOLVED → RESOLVED} 允许：<b>处置错误时要能改结论</b>，但每次改都必须写一条
+ *       {@code reconciliation_resolution_log}（否则审计断链）。</li>
  * </ul>
  *
  * <p><b>注意</b>：本状态机不进 CI 门禁意义上的"账平"判定；它只描述批次自己走到哪一步。
@@ -42,7 +43,7 @@ public enum ReconciliationStatus {
             case FETCHED -> EnumSet.of(MATCHED, DIFF);
             case MATCHED -> EnumSet.of(RESOLVED);
             case DIFF -> EnumSet.of(RESOLVED);
-            case RESOLVED -> EnumSet.noneOf(ReconciliationStatus.class);
+            case RESOLVED -> EnumSet.of(RESOLVED);   // 只允许"改结论"，且必须留历史
         };
     }
 

@@ -96,7 +96,7 @@ public final class WithdrawalReconciliationComparer {
 
         List<Ours> stillPending = new ArrayList<>();
         for (Ours row : pending) {
-            int hit = fuzzyHit(row, channel, used);
+            int hit = uniqueFuzzyHit(row, channel, used);
             if (hit < 0) {
                 stillPending.add(row);
                 continue;
@@ -136,7 +136,14 @@ public final class WithdrawalReconciliationComparer {
         return null;
     }
 
-    private static int fuzzyHit(Ours row, List<Channel> channel, boolean[] used) {
+    /**
+     * 模糊匹配：<b>只在候选唯一时生效</b>。
+     *
+     * <p>同一金额有多笔候选时不做猜测 —— 猜错会把差异"抹平"，比留下差异更危险。
+     * 候选为多时返回 {@code -1}，调用方按差异处理。
+     */
+    private static int uniqueFuzzyHit(Ours row, List<Channel> channel, boolean[] used) {
+        int found = -1;
         for (int i = 0; i < channel.size(); i++) {
             if (used[i]) {
                 continue;
@@ -145,10 +152,14 @@ public final class WithdrawalReconciliationComparer {
             if (other.amount() != row.amount() || other.bizDate() == null || row.bizDate() == null) {
                 continue;
             }
-            if (Math.abs(ChronoUnit.DAYS.between(row.bizDate(), other.bizDate())) <= FUZZY_DAY_TOLERANCE) {
-                return i;
+            if (Math.abs(ChronoUnit.DAYS.between(row.bizDate(), other.bizDate())) > FUZZY_DAY_TOLERANCE) {
+                continue;
             }
+            if (found >= 0) {
+                return -1;      // 候选不唯一 ⇒ 不猜
+            }
+            found = i;
         }
-        return -1;
+        return found;
     }
 }

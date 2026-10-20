@@ -1623,3 +1623,16 @@ CREATE TABLE `reconciliation_raw` (
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY `uk_batch_seq` (`batch_no`, `seq`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='渠道原始报文留存（差异处置可回溯）';
+
+
+-- 对账处置历史（改结论必须留一条；一张批次可以有多次处置）
+DROP TABLE IF EXISTS `reconciliation_resolution_log`;
+CREATE TABLE `reconciliation_resolution_log` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `batch_no` VARCHAR(64) NOT NULL,
+    `conclusion` VARCHAR(32) NOT NULL COMMENT 'ACCEPT_DIFF / BOOKED / REVERTED',
+    `note` VARCHAR(500) NOT NULL COMMENT '依据（必填）',
+    `resolved_by` BIGINT NOT NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_batch_no` (`batch_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对账处置历史（结论变更可追溯）';
