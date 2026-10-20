@@ -2943,6 +2943,23 @@ Spring 测试的 `@Transactional` 会**回滚整个测试**并把事务托管给
 **变异验证的结果要写进提交信息**（"临时改 X ⇒ 红 ⇒ 已还原"），否则无法区分"守卫有效"与"守卫空转"。
 
 ---
+### 1.67 两个对账守卫已落 + 变异验证通过（补记，2026-10-19）
+
+| 守卫 | 判据 | 变异验证 |
+|---|---|---|
+| `ReconciliationStatusContractGuardTest` | 读源码断言 `PENDING=1 / FETCHED=2 / MATCHED=3 / DIFF=4 / RESOLVED=5` | `FETCHED(2, …)` → `FETCHED(9, …)` ⇒ **红**（`expected: <2> but was: <9>`）⇒ 已还原 |
+| `ReconciliationMapperNoHardcodedStatusGuardTest` | 只查 `Reconciliation*Mapper`，禁止 `status = 数字` / `status IN (数字` | `status = #{expectedFrom}` → `status = 1` ⇒ **红**（点名该文件）⇒ 已还原 |
+
+还原后复跑两条均绿；两条都带「扫描面为空直接红」，防空转。
+
+**两条实现细节（别再踩）**
+1. `architecture-tests` **无** trade-service 依赖 ⇒ 守卫只能读源码，不能导入枚举；
+2. 正则**不要写反斜杠转义**（`\s`/`\d` 多层转义后会变非法字符），用字符类 `[ ]*` / `[(]?` / `[0-9]`。
+
+**另一条过程事实**：变异后用 `git checkout --` 还原文件，mtime 变新 ⇒ **陈旧检查器拦截提交**（"源码比 class 新"）。
+这是它应有的行为，先 `mvn -DskipTests compile` 再提交。
+
+---
 ---
 
 ## 2. 待办
