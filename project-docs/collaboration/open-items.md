@@ -3068,6 +3068,33 @@ seller_fund_account / withdrawal / withdrawal_settlement`），并在类注释�
 证明不了事务回滚。
 
 ---
+### 1.73 写 H2 用例时的五条纪律（2026-10-19）
+
+**① DDL 子集要包含全部约束 —— 裁剪的是"表"，不是"约束"**
+手写子集时**必须**保留：`NOT NULL`（`payout_no`/`channel_ref`）、`UNIQUE(batch_no)`、
+`UNIQUE(provider, biz_date, active_key)`、生成列（`CASE WHEN` 形态）、列宽（`VARCHAR(160)` 等）、
+`UNIQUE(batch_no, seq)`、`UNIQUE(batch_no, payout_no, channel_ref)`。
+**理由**：这些约束正是被测行为（唯一键去重、NOT NULL 拒绝漏编码、生成列取值、超长拒绝）。
+省掉任何一条，用例就变成"在更宽松的库上通过"，绿得毫无意义。
+
+**② 每个用例用独立 `provider`/`bizDate` 隔离，不用 `@BeforeEach` 清理**
+清理会引入"清理本身是否成功"的新变量，且 `@BeforeEach` 与事务/连接复用的交互容易出错。
+用**数据隔离**（每个用例自己的 provider + 账期）最省心，也最接近真实多租户场景。
+
+**③ H2 连接模式照抄 `SettlementFundAccountH2Test`，不发明第三种**
+该用例已经解决了：URL 参数（`MODE=MySQL` 等）、`SimpleDriverDataSource`、`MybatisSqlSessionFactoryBean` 装配、
+共用 `SqlSession`（对应生产"一事务一 session"）。**照抄**，不要自己拼第二套。
+
+**④ 三态拒重拉的三个用例各自造批次，不共用一个再改状态**
+共用一个批次再改状态，等于让用例之间产生隐式依赖：一个用例失败会连带影响后面的，
+且"状态是被人为改成 MATCHED 的"还是"跑出来的"分不清。**各自造、各自断言。**
+
+**⑤ 回滚用例断言"批次状态回滚到 `PENDING`"，而不只是"旧数据还在"**
+这一条验证的是 **`refetch` 内部的 `claimBatch` 与外层 `@Transactional` 同源**：
+如果内层 claim 用了独立事务（例如加 `REQUIRES_NEW`），插入失败时批次会停在 `FETCHED` 而逐笔没插进去 ——
+断言到 `PENDING` 才能抓住这种"事务被切开"的错误。
+
+---
 ---
 
 ## 2. 待办
