@@ -1576,3 +1576,50 @@ CREATE TABLE `payout_alert_log` (
     UNIQUE KEY `uk_payout_alert` (`payout_no`, `alert_gen`),
     KEY `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='出款停留告警去重账（保留 180 天，每日批删）';
+
+
+-- ───────────────── 提现对账（逐笔、按日全量拉取）─────────────────
+DROP TABLE IF EXISTS `reconciliation_batch`;
+CREATE TABLE `reconciliation_batch` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `batch_no` VARCHAR(64) NOT NULL COMMENT '批次号（幂等键：同 provider+账期只允许一个有效批次）',
+    `provider` VARCHAR(32) NOT NULL COMMENT '渠道标识',
+    `biz_date` DATE NOT NULL COMMENT '账期',
+    `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=PENDING 2=FETCHED 3=MATCHED 4=DIFF 5=RESOLVED',
+    `fetched_at` DATETIME DEFAULT NULL,
+    `matched_count` INT NOT NULL DEFAULT 0,
+    `diff_count` INT NOT NULL DEFAULT 0,
+    `resolved_at` DATETIME DEFAULT NULL,
+    `resolved_by` BIGINT DEFAULT NULL COMMENT '处置人',
+    `resolve_note` VARCHAR(500) DEFAULT NULL COMMENT '处置依据',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_batch_no` (`batch_no`),
+    KEY `idx_biz_date` (`biz_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='提现对账批次';
+
+DROP TABLE IF EXISTS `reconciliation_item`;
+CREATE TABLE `reconciliation_item` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `batch_no` VARCHAR(64) NOT NULL,
+    `payout_no` VARCHAR(64) DEFAULT NULL COMMENT '我方幂等键（EXACT 匹配用）',
+    `channel_ref` VARCHAR(160) DEFAULT NULL COMMENT '渠道流水号',
+    `ours_amount` INT DEFAULT NULL,
+    `channel_amount` INT DEFAULT NULL,
+    `biz_date` DATE DEFAULT NULL,
+    `match_type` TINYINT NOT NULL COMMENT '1=EXACT 2=FUZZY 3=DIFF',
+    `diff_type` VARCHAR(32) DEFAULT NULL COMMENT 'CHANNEL_ONLY / OURS_ONLY / AMOUNT_MISMATCH',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_batch_item` (`batch_no`, `payout_no`, `channel_ref`),
+    KEY `idx_batch` (`batch_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='提现对账逐笔';
+
+DROP TABLE IF EXISTS `reconciliation_raw`;
+CREATE TABLE `reconciliation_raw` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `batch_no` VARCHAR(64) NOT NULL,
+    `seq` INT NOT NULL COMMENT '分片序号',
+    `payload` BLOB NOT NULL COMMENT '渠道原始报文（压缩后；不入本地文件系统）',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_batch_seq` (`batch_no`, `seq`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='渠道原始报文留存（差异处置可回溯）';
