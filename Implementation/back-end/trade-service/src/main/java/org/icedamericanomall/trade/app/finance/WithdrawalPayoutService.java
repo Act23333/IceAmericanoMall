@@ -40,10 +40,26 @@ public class WithdrawalPayoutService {
     @org.springframework.beans.factory.annotation.Value("${trade.withdrawal.payout.stale-alert-minutes:30}")
     private int retryIntervalMinutes = 30;
 
-    /** 结果摘要：分类:渠道号；超 128 截断并标记（DB 列长 128）。 */
+    /** 与 DB 列 `last_payout_result VARCHAR(128)` 对齐。 */
+    static final int MAX_RESULT_LEN = 128;
+
+    /**
+     * 结果摘要：{@code 分类:渠道号}，列长 128。
+     *
+     * <p><b>超长时保留尾部</b>：渠道流水号里有用的部分（唯一/可检索的那段）通常在末尾，
+     * 截头会留下"大家都一样的前缀"，反而不可用。截断本身是**防御性代码** ——
+     * 已知渠道流水号不超此长度，这条只在换渠道/异常报文时兜底。
+     */
     static String summarize(WithdrawalPayoutPort.PayoutResult result) {
-        String raw = result.accepted() ? "ACCEPTED:" + result.channelRef() : "REJECTED:" + result.reason();
-        return raw.length() <= 128 ? raw : raw.substring(0, 124) + "...";
+        String head = result.accepted() ? "ACCEPTED:" : "REJECTED:";
+        String tail = result.accepted() ? result.channelRef() : result.reason();
+        String raw = head + tail;
+        if (raw.length() <= MAX_RESULT_LEN) {
+            return raw;
+        }
+        int keep = MAX_RESULT_LEN - head.length() - 3;
+        String kept = tail.length() <= keep ? tail : tail.substring(tail.length() - keep);
+        return head + "..." + kept;
     }
 
     /**
