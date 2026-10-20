@@ -3424,6 +3424,36 @@ E1 交付时没有真库用例覆盖该语句，所以它一路绿灯到了这�
 >>>>>>> feat/reconciliation-daily
 
 ---
+### 1.88 二次合入与 E 项收口（2026-10-19）
+
+**二次合入**：`feat/reconciliation-daily` → `develop`，交接单两侧增量冲突已解（两节都保留），
+合入后 `full` **全门禁通过**（ID 不变量 / ia-api 单测 / 架构安全 / 跨服务契约 / 全量测试 / 计数闸），工作区干净。
+
+**E 项状态**
+| 项 | 结论 |
+|---|---|
+| E1 告警日志保留期清理 | 已完成；列名 bug（`create_time` → `created_at`）由 E2 的真库用例发现并长期守住 |
+| E2 告警去重真库用例 | 已完成（含变异验证：`INSERT IGNORE` → `INSERT` 即红） |
+| E3 lastPay 清理 | 撤销（登记错误：`lastPay` 只是告警 JSON 字段名） |
+| E4 真 MySQL 行为 | **待环境**，暂不做 |
+| E5 真并发 | **待环境**，暂不做 |
+
+**E4/E5 的准确含义（供日后接环境时直接接手）**
+- E4：H2 的 `MODE=MySQL` 不等于 MySQL —— 生成列能否建唯一索引、`INSERT IGNORE` 语义、
+  `DELETE ... WHERE created_at < ?` 的执行计划，都要在真库上验一遍才算数；
+- E5：`claim` 用例是**串行等价**（第一次提交后第二次拿 0 行），**不是**并发正确性证明。
+
+**F3 上线待办（可在无环境时先做）**
+1. XXL-Job 后台注册三个出款任务 + 清理任务：`payoutPendingWithdrawals` / `alertStalePayingWithdrawals` /
+   `cleanupPayoutAlertLog`，并配 cron —— **注册 ≠ 会跑**；
+2. 首次上线做**三段核对**：触发一次结算 → 核对 `settled_total` 与结算单；
+   触发一次出款（mock 通道）→ 核对 `frozen_amount` 与 `paid_total`；触发一次告警与清理 → 核对 `payout_alert_log` 行数与保留期。
+
+**F1/F2 仍需人决定（代码不阻塞，但决定实现方向）**
+- F1 渠道形态（纯同步 / 纯异步 / 同步+异步）与对账文件来源 ⇒ 决定是否需要回调日志批次；
+- F2 `FAILED` 的退款口径 ⇒ 决定失败后冻结是否释放（当前裁决：不自动释放，需双确认 + 依据 + 审计）。
+
+---
 ---
 
 ## 2. 待办
