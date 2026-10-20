@@ -3341,6 +3341,33 @@ A1（短码结构级断言）修好后，**全量测试通过**（`mvn -o test` 
 **仍需真库验证的**：MySQL 上的实际行为（H2 `MODE=MySQL` 不等价）、真并发（本条仍是串行等价）。
 
 ---
+### 1.85 合入完成与验收结论（2026-10-19，收尾）
+
+**合入方式**：`git worktree` 独立目录（`../ia-merge`）检出 `develop` 后 `--no-ff` 合入
+`feat/reconciliation-daily` —— **零冲突**，主工作区未被触碰。
+
+**commits**
+- `merge`：T-WITHDRAW 对账并入 develop（含架构解析器收口与整体同步）；
+- `chore(sync)`：整体同步主工作区未提交改动（选项 B，见 §1.84）；
+- `chore(docs)`：合入后计数回填（按 develop 实测）。
+
+**验收（`full`）**：首次跑除**计数闸**外全部通过 —— ID 不变量、ia-api 单测、
+架构/安全全守卫、跨服务契约闭环、全量 `mvn test`。
+计数闸红的原因不是代码，而是计数须按**合入后**的树重算（本分支新增了用例）；
+回填后 `--check --strict-tests` **零差异**。计数提交只动文档，不影响其余门禁 ⇒ **`full` 绿**。
+
+**三条风险（交付时必须同时说明）**
+1. **`develop` 引用已在本地推进，尚未推送** —— 合入是真实发生的，推送前须人工过目 merge 与 sync 两个提交；
+2. **`chore(sync)` 是整体同步**（含前端小程序、skills、ADR-067 等），**非本会话产物、未逐项 review**；
+   依据是"同步前该树 `full` 绿"，而非逐文件确认完成度 —— 若其中含未完成实验性改动，绿色会掩盖它；
+3. **仍未验证**：真 MySQL 行为（H2 `MODE=MySQL` 不等价）、真并发（claim 用例是串行等价）。
+
+**顺带清理**：临时产物 `_b11_measure.txt` 误入同步，已在 worktree 中移除。
+
+**遗留一项**：主工作区仍在 `feat/reconciliation-daily`，落后 `develop` 一个文档提交；
+下次开工前 `git switch develop && git pull`（或 `git merge --ff-only develop` 到该分支）即可对齐。
+
+---
 ---
 
 ## 2. 待办
