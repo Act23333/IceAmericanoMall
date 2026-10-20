@@ -3341,6 +3341,46 @@ A1（短码结构级断言）修好后，**全量测试通过**（`mvn -o test` 
 **仍需真库验证的**：MySQL 上的实际行为（H2 `MODE=MySQL` 不等价）、真并发（本条仍是串行等价）。
 
 ---
+### 1.84 合入验收受阻与「整体同步」处置（2026-10-19）
+
+**事实链（硬证据）**
+1. worktree 合入 `feat/reconciliation-daily` → `develop`：**零冲突**；
+2. 但 `full` 红，且**不是本分支造成**：
+   - develop 提交态 `architecture-tests` **编译不过** —— 已提交的守卫 `import com.github.javaparser.*`，
+     而 `architecture-tests/pom.xml` 无该依赖、`JavaSourceParser.java` **从未提交**（`git ls-files` 为零）；
+   - 半提交：已提交的 `FundWriteCounterTest` 按**旧签名**传 `String`，新 helper 要 `MethodDeclaration`；
+   - 补齐全套解析器重构后**仍红**：`AdminEndpointAuthorizationGuardTest`（admin/seller 控制器缺类级 `@PreAuthorize`）、
+     `ClassSizeRatchetTest`（超基线）、`FundTransactionGuardTest`（资金写缺事务）、`JavaSourceParserCorpusTest`。
+3. 根因：**收紧后的守卫与它们要求的业务侧修复分属不同会话的未提交改动**；
+   主工作区那批未提交的业务侧源文件正是守卫要求的东西 —— 在树里是绿的，只提守卫不提修复必红。
+4. 首次合入尝试已 **reset 回退**，`develop` 保持未动（合入验收是 `full` 绿，不是 merge 成功）。
+
+**处置（用户选 B）**：把工作区全部未提交改动**整体同步提交**，再重跑合入验收。
+**风险登记（必须写明）**：该批改动**非本会话产物、未逐项 review**；
+依据是"该树在同步前已跑过 `full` 绿"（单测与架构守卫均通过），而非逐文件确认完成度。
+若日后发现其中含未完成的实验性改动，绿色会掩盖它 —— 这是这次处置的已知代价。
+
+---
+### 1.86 E1 完成 + E3 撤销（2026-10-19）
+
+**E1 告警日志保留期清理：已实现**
+- `PayoutAlertLogCleaner`（应用层）：边界 = `now − 保留期`，保留期**写死在代码里**（合规口径，不做成配置 ——
+  免得某个环境悄悄把审计证据删早）；
+- `WithdrawalRepository.purgeAlertLogBefore` + `WithdrawalMapper.deleteAlertLogBefore`（一句 DELETE，不分批：
+  告警日志增长与「停留超阈值的出款单」正相关，量级很小；分批会带来「删一半」的中间态）；
+- `PayoutAlertLogCleanupJob`（XXL-Job `cleanupPayoutAlertLog`，薄壳）：与出款、告警任务**分开注册** ——
+  三件事的失败含义不同，混在一起会互相淹没。
+- 用例：边界计算 + 无可删记录返回零；**变异验证**：`minusDays` 改 `plusDays` ⇒ 用例红 ⇒ 已还原。
+
+**E3「lastPay 清理」：撤销（原登记有误）**
+`lastPay` 只是告警 JSON 里的一个字段名，并不存在对应的清理对象。
+单据上的 `last_payout_attempt_at` / `last_payout_result` 是**审计事实**（什么时候试过、结果是什么），
+出款争议时要靠它回溯 ⇒ **随单据生命周期存在，不做保留期删除**。
+之前把它登记成"待清理"是分类错误，这里正式撤销。
+
+**上线待办（新增）**：`cleanupPayoutAlertLog` 需在 XXL-Job 后台注册并配 cron（与既有两个出款任务同批）。
+
+---
 ---
 
 ## 2. 待办

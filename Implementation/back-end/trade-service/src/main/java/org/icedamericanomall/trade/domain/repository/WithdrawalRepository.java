@@ -74,6 +74,14 @@ public interface WithdrawalRepository {
 
     int markAlertedOnce(String payoutNo, int gen);
 
+    /**
+     * 清理早于给定时点的告警日志（保留期由应用层决定，仓储只管删）。
+     *
+     * @param before 早于此时刻的记录被删除
+     * @return 删除行数
+     */
+    int purgeAlertLogBefore(java.time.LocalDateTime before);
+
     int reviewIfPending(Long id, Integer fromStatus, Integer toStatus, String adminRemark);
 
     /** 商家提现单分页（创建时间倒序）。 */

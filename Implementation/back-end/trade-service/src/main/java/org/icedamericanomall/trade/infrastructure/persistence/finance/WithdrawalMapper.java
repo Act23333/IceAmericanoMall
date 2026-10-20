@@ -75,6 +75,18 @@ public interface WithdrawalMapper extends BaseMapper<WithdrawalPO> {
      *
      * @return 1 = 首次（应当告警）；0 = 已告过
      */
+    /**
+     * 按保留期清理告警日志（一次一句 DELETE，不分批循环）。
+     *
+     * <p>为什么不带 LIMIT：告警日志的增长速率与「停留超阈值的出款单」正相关，量级很小；
+     * 引入分批反而带来「删一半」的中间态。真到需要分批时再按 id 区间切，并有测试兜着改。
+     *
+     * @param before 早于此时刻的记录被删除
+     * @return 删除行数
+     */
+    @org.apache.ibatis.annotations.Delete("DELETE FROM payout_alert_log WHERE create_time < #{before}")
+    int deleteAlertLogBefore(@Param("before") java.time.LocalDateTime before);
+
     @Update("INSERT IGNORE INTO payout_alert_log(payout_no, alert_gen) VALUES(#{payoutNo}, #{gen})")
     int markAlertedOnce(@Param("payoutNo") String payoutNo, @Param("gen") int gen);
 
