@@ -1604,8 +1604,8 @@ DROP TABLE IF EXISTS `reconciliation_item`;
 CREATE TABLE `reconciliation_item` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
     `batch_no` VARCHAR(64) NOT NULL,
-    `payout_no` VARCHAR(64) DEFAULT NULL COMMENT '我方幂等键（EXACT 匹配用）',
-    `channel_ref` VARCHAR(160) DEFAULT NULL COMMENT '渠道流水号',
+    `payout_no` VARCHAR(64) NOT NULL COMMENT '我方幂等键；无则存哨兵（DB 不接受 NULL）',
+    `channel_ref` VARCHAR(160) NOT NULL COMMENT '渠道流水号；无则存哨兵（DB 不接受 NULL）',
     `ours_amount` INT DEFAULT NULL,
     `channel_amount` INT DEFAULT NULL,
     `biz_date` DATE DEFAULT NULL,

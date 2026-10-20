@@ -4,6 +4,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -36,6 +38,15 @@ class ReconciliationSentinelsTest {
     void shouldRejectValueEqualToSentinel() {
         assertThrows(IllegalArgumentException.class,
                 () -> ReconciliationSentinels.encode(ReconciliationSentinels.NULL_SENTINEL));
+    }
+
+    @Test
+    @DisplayName("大小写变体同样视为哨兵（不依赖 DB collation）")
+    void shouldTreatCaseVariantsAsSentinel() {
+        assertThrows(IllegalArgumentException.class, () -> ReconciliationSentinels.encode("__null__"));
+        assertNull(ReconciliationSentinels.decode("__Null__"));
+        assertTrue(ReconciliationSentinels.isSentinel("__NULL__"));
+        assertFalse(ReconciliationSentinels.isSentinel("__NULL__x"));
     }
 
     @Test

@@ -32,10 +32,21 @@ public final class ReconciliationSentinels {
         if (value == null) {
             return NULL_SENTINEL;
         }
-        if (NULL_SENTINEL.equals(value)) {
+        if (isSentinel(value)) {
             throw new IllegalArgumentException("值恰好等于对账哨兵 " + NULL_SENTINEL + "，会被误还原成 NULL");
         }
         return value;
+    }
+
+    /**
+     * 是否哨兵：**大小写不敏感**比较。
+     *
+     * <p>为什么不用 {@code equals}：MySQL 的列 collation 可能是 {@code _ci}（大小写不敏感），
+     * 一旦库里存的是 {@code __null__}，用 {@code equals} 就认不出来、把占位当真实值放进报表。
+     * 这里不依赖数据库 collation，由代码自己判。
+     */
+    public static boolean isSentinel(String value) {
+        return value != null && NULL_SENTINEL.equalsIgnoreCase(value);
     }
 
     /**
@@ -45,6 +56,6 @@ public final class ReconciliationSentinels {
      * @return 原值
      */
     public static String decode(String stored) {
-        return NULL_SENTINEL.equals(stored) ? null : stored;
+        return isSentinel(stored) ? null : stored;
     }
 }
