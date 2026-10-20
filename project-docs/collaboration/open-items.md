@@ -2437,6 +2437,40 @@ mock 的 `ASYNC_CALLBACK` 由注入 `Clock` 驱动；但 **resume job 目前没�
 **教训（进判据候选）**：概率估算要写成"命中面 × 单次概率"，别用"整串相等"的量级去估"含子串"。
 
 ---
+### 1.46 陈旧编译：根因查清 + 对上一轮归因的更正（2026-10-19，子 agent 实测）
+
+**① 根因（不是"增量只编子集"）**
+`maven-compiler-plugin 3.13.0` 默认 `useIncrementalCompilation=true` + `staleMillis=0`：
+**模块级**用时间戳判定每个 `.java` 是否比自己的 `.class` 新 —— 判"没变化"就整模块**不调 javac**
+（`Nothing to compile`），判"有变化"就**全模块重编**。本仓 pom 对该插件无任何覆盖项 ⇒ 判据完全交给 mtime。
+复现：`touch` 一个源文件 ⇒ `Recompiling the module` + 编译**全部 35 个**源文件（不是 1 个）；
+把 mtime 回退 ⇒ `Nothing to compile`。所谓"危险的子集模式"（`useIncrementalCompilation=false`）**本仓没开**。
+
+**② 更正：`§1.41②` 的"本轮实证 = 陈旧 target 掩盖失败"是错的归因**
+`ShortCodeTest` 实测失败率 **0.273%/次**（20 万次复刻：546 次失败）。而现有 4 份 clean 全量日志里该测试**都是 8/8 绿**。
+⇒ "早期绿 / clean 后红"最可能是**概率命中**，不是陈旧产物。陈旧 target 这条**机制成立**（沙箱里改 12→13 再回退 mtime ⇒ 8/8 假绿、clean 后红），
+但**不能拿来解释这次事故**。上一轮把它写成"本轮实证"是我的过度归因，此处更正。
+
+**③ 修掉的两个真缺陷**
+- `.githooks/commit-msg` 索引模式是 **100644** ⇒ **git 根本不执行它**，`[SKIP-STALE]` 留痕一直是空的。
+  已 `chmod +x` + `git update-index --chmod=+x`（复核 `100755`），并删掉末尾 `|| true` 的死代码。
+- 检查器 `discover()` 只认 `target/classes` ⇒ **`architecture-tests` 完全不在扫描面**（它只有 `test-classes`），
+  而那恰是"陈旧 test-class 假绿"最贵的地方。已改为同时按 `target/test-classes` 发现模块。
+
+**④ 仍存在的缺口（登记，未修）**
+| 缺口 | 内容 | 代价 |
+|---|---|---|
+| C | 检查器与编译器**共用同一 mtime 判据** ⇒ mtime 被回退时**两者一起漏** | 只有内容比对能兜；已验证可行（fresh 编译 vs 仓库产物 164/164 + 40/40 字节相同），成本高 |
+| A | 全新检出 / 局部构建后跑检查器 ⇒ 只发现一个模块 ⇒ "扫描面异常" exit 1 假红 | pre-commit 已背上；提示文案要写清"先 install" |
+| D | 编译后仅 `touch` 或只改注释重写 ⇒ 报陈旧 | 修法即提示里的 `mvn -o -DskipTests install`，可接受 |
+| 概率测试 | 强制 clean **不能**让 `ShortCodeTest` 稳定，红绿仍由 0.273% 决定 | 必须改断言（结构级 provenance），单独立项 |
+
+**⑤ CI 接线（提案，未落盘）**：放在 `build` job 的 `Package` **之后**、失败**阻断**；
+不能放 `Gates` 之前（全新检出 target 为空 ⇒ 扫描面异常 = 假红）。CI 不需要强制 `clean`（每 job 全新检出，
+`cache: maven` 只缓存 `~/.m2`）；真正需要"绿对应干净重编"的是**本地增量** `full`。
+另建议把 `commit-msg` 加入 CI 的「hooks present & executable」循环（现在只查 pre-commit/pre-push，看不见 100644 这个洞）。
+
+---
 ---
 
 ## 2. 待办

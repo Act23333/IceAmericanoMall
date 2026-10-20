@@ -4,7 +4,6 @@
 # 为什么需要：只用环境变量跳过，跳过会变成默认且无人知晓；要求在 message 里留标记，
 # 历史里能 grep 出来，谁跳过的、跳过几次一目了然。
 set -uo pipefail
-ROOT="$(git rev-parse --show-toplevel)"
 GITDIR="$(git rev-parse --git-dir)"
 MSG_FILE="$1"
 
@@ -17,4 +16,3 @@ if [ -f "$GITDIR/STALE_SKIP_PENDING" ]; then
   rm -f "$GITDIR/STALE_SKIP_PENDING"
 fi
 
-bash "$ROOT/Implementation/back-end/scripts/check-stale-classes.sh" >/dev/null 2>&1 || true
