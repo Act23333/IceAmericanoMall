@@ -1586,6 +1586,8 @@ CREATE TABLE `reconciliation_batch` (
     `provider` VARCHAR(32) NOT NULL COMMENT '渠道标识',
     `biz_date` DATE NOT NULL COMMENT '账期',
     `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=PENDING 2=FETCHED 3=MATCHED 4=DIFF 5=RESOLVED',
+    `is_active` TINYINT NOT NULL DEFAULT 1 COMMENT '是否有效批次（同日重跑时旧批次置 0）',
+    `superseded_by` VARCHAR(64) DEFAULT NULL COMMENT '被哪个新批次取代',
     `fetched_at` DATETIME DEFAULT NULL,
     `matched_count` INT NOT NULL DEFAULT 0,
     `diff_count` INT NOT NULL DEFAULT 0,
