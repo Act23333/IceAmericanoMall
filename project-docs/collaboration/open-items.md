@@ -2912,6 +2912,17 @@ Spring 测试的 `@Transactional` 会**回滚整个测试**并把事务托管给
 **短码不阻塞本分支**：它属于 `item-service` 的已提交测试（他人文件），与本分支的对账代码无交集。
 
 ---
+### 1.65 对账仓储端口已定稿（2026-10-19）
+
+`ReconciliationRepository` 已落（**只声明，无实现**）：
+`findActiveBatch`（`Optional`）/ `claimBatch`（白名单 + 条件更新）/ `refetch`（同事务删后插）；
+`Batch` / `RawShard` 两个 record；五个可区分原因的异常
+（`IllegalReconciliationTransition` / `ConcurrentClaim` / `BatchNotFound` / `StatusChanged` / `NotRefetchable` / `DuplicateSeq`）。
+
+**实现时必须守的三条**（已写进接口注释）：哨兵只在实现里；只放行用条件删或锁行；异常消息必须不同。
+**未验证**：接口未接实现、未跑 SQL、无测试。
+
+---
 ---
 
 ## 2. 待办
