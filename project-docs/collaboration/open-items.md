@@ -2741,6 +2741,30 @@ Domain 层与 `refetch` 的入参都是**原始值**（`null` 就是 `null`）�
 **已具备的前置**：两列 `NOT NULL`；哨兵大小写不敏感；`canTransit` 白名单；`RESOLVED→RESOLVED` 可纠错。
 
 ---
+### 1.58 有效批次唯一性定稿 + 并发创建处置（2026-10-19）
+
+**① 生成列方案成立，我的"不可行"判断是错的**
+我上一轮说"生成列不能引用 AUTO_INCREMENT、不能用非确定性函数"——那条限制**只针对** `id` 与 `UUID()` 之类；
+引用 `superseded_by`（普通列 + 确定性 `IF/CONCAT`）**完全合法**。已改回生成列，`is_active` 列删除。
+
+**② 但 `COALESCE(superseded_by,'0')` 有一个具体冲突，必须加固**
+场景：批次 A、B 先后被**同一个**新批次 C 取代 ⇒ 两者 `superseded_by = 'C'` ⇒ `active_key` 都是 `'C'`
+⇒ 唯一键 `(provider, biz_date, active_key)` **误伤**（B 插不进或 A 更新失败）。
+因此表达式改为 `IF(superseded_by IS NULL, '0', CONCAT(superseded_by,'#',batch_no))`：
+有效批次仍是 `'0'`（同时消掉了 `'ACTIVE'` 魔法字符串的值域冲突），被取代的批次拼上自身 `batch_no` 天然唯一。
+**配套约束**：`batch_no` 生成器永不产出 `'0'`（否则与有效标记撞车）。
+
+**③ 并发创建批次的 `DuplicateKeyException` 处置：报错 + Job 跳过 + 告警，不静默重试**
+两个实例同时建同日批次时，后到者会撞 `uk_active_batch`。定法：
+- 仓储层**原样抛出**（包装成业务异常并带 `provider/biz_date/batchNo`），**不吞、不自动换 batch_no 重试**；
+- 拉取 Job 捕获后**跳过该 provider/账期**，记一条告警（"已有有效批次"），本轮不重复拉；
+- 理由：静默重试会造出"同一天多个批次"的假象，正是唯一键要防的事。
+
+**④ 仓储分两批**
+第一批：三个 PO + 三个 Mapper（纯映射，无事务逻辑）；
+第二批：`ReconciliationRepository(+Impl)` 与 H2 用例（含并发 claim、refetch 回滚、无批次、三终态拒重拉、哨兵往返）。
+
+---
 ---
 
 ## 2. 待办

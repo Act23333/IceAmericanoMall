@@ -1586,9 +1586,14 @@ CREATE TABLE `reconciliation_batch` (
     `provider` VARCHAR(32) NOT NULL COMMENT '渠道标识',
     `biz_date` DATE NOT NULL COMMENT '账期',
     `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=PENDING 2=FETCHED 3=MATCHED 4=DIFF 5=RESOLVED',
-    `is_active` TINYINT NOT NULL DEFAULT 1 COMMENT '是否有效批次（同日重跑时旧批次置 0）',
-    `active_key` VARCHAR(64) NOT NULL DEFAULT 'ACTIVE' COMMENT '有效批次标记：有效=ACTIVE，被取代=本批次号（唯一键用）',
-    `superseded_by` VARCHAR(64) DEFAULT NULL COMMENT '被哪个新批次取代',
+    `superseded_by` VARCHAR(64) DEFAULT NULL COMMENT '被哪个新批次取代（NULL=当前有效批次）',
+    -- 有效批次唯一性：由生成列承载，应用不必维护。
+    -- 表达式说明：有效批次 = '0'；被取代的批次 = superseded_by#batch_no。
+    -- 为什么不能只用 COALESCE(superseded_by,'0')：若两个旧批次被**同一个**新批次取代，
+    -- 它们的 active_key 会相同 ⇒ 唯一键误伤。拼上本行 batch_no 后天然唯一。
+    `active_key` VARCHAR(160) GENERATED ALWAYS AS (
+        IF(`superseded_by` IS NULL, '0', CONCAT(`superseded_by`, '#', `batch_no`))
+    ) STORED COMMENT '有效批次标记（生成列，只读）',
     UNIQUE KEY `uk_active_batch` (`provider`, `biz_date`, `active_key`),
     `fetched_at` DATETIME DEFAULT NULL,
     `matched_count` INT NOT NULL DEFAULT 0,
