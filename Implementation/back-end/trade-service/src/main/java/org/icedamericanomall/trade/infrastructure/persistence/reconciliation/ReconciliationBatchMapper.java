@@ -35,6 +35,18 @@ public interface ReconciliationBatchMapper extends BaseMapper<ReconciliationBatc
     ReconciliationBatchPO selectActive(@Param("provider") String provider, @Param("bizDate") LocalDate bizDate);
 
     /**
+     * 读当前状态（{@code Optional}：查不到 = 批次不存在，与 {@code findActiveBatch} 一致）。
+     *
+     * <p>用途：条件删/条件更新 0 行后区分"批次不存在"与"状态已变"（§1.63②）。
+     * 注意返回值只是**某一时刻的快照**，异常信息里要标注"可能为旧值"。
+     *
+     * @param batchNo 批次号
+     * @return 状态码；批次不存在时为空
+     */
+    @Select("SELECT status FROM reconciliation_batch WHERE batch_no = #{batchNo}")
+    java.util.Optional<Integer> selectStatus(@Param("batchNo") String batchNo);
+
+    /**
      * 条件迁移状态：只有当前状态等于 {@code expectedFrom} 才更新。
      *
      * @param batchNo     批次号

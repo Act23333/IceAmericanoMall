@@ -2902,6 +2902,16 @@ Spring 测试的 `@Transactional` 会**回滚整个测试**并把事务托管给
 放模块内测试只保护了本模块；放 architecture-tests 才能在**全仓**层面拦住漂移。
 
 ---
+### 1.64 本分支的验证口径（2026-10-19）
+
+**结论口径**：`feat/reconciliation-daily` 的验证以 **「排除 item-service 的全量 reactor」** 做局部证明：
+`mvn -o -f Implementation/back-end/pom.xml test -pl '!item-service'`。
+交接单里固定写两句：**「本分支的绿 = 排除 item-service 的局部证明」+「主干绿待短码修复（§1.45）」** ——
+不得写成"主干全绿"，也不得因为一个无关模块红就怀疑本分支。
+
+**短码不阻塞本分支**：它属于 `item-service` 的已提交测试（他人文件），与本分支的对账代码无交集。
+
+---
 ---
 
 ## 2. 待办
