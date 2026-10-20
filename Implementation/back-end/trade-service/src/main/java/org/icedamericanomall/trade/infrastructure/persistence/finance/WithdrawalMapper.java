@@ -84,7 +84,9 @@ public interface WithdrawalMapper extends BaseMapper<WithdrawalPO> {
      * @param before 早于此时刻的记录被删除
      * @return 删除行数
      */
-    @org.apache.ibatis.annotations.Delete("DELETE FROM payout_alert_log WHERE create_time < #{before}")
+    // 列名是 created_at（从 Initialize.sql 实体对齐）：写错成 create_time 时，
+    // 只要有一条真库用例覆盖该语句就会当场红 —— 这就是 PayoutAlertLogDedupeTest 存在的意义之一。
+    @org.apache.ibatis.annotations.Delete("DELETE FROM payout_alert_log WHERE created_at < #{before}")
     int deleteAlertLogBefore(@Param("before") java.time.LocalDateTime before);
 
     @Update("INSERT IGNORE INTO payout_alert_log(payout_no, alert_gen) VALUES(#{payoutNo}, #{gen})")

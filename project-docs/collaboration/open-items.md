@@ -3381,6 +3381,23 @@ A1（短码结构级断言）修好后，**全量测试通过**（`mvn -o test` 
 **上线待办（新增）**：`cleanupPayoutAlertLog` 需在 XXL-Job 后台注册并配 cron（与既有两个出款任务同批）。
 
 ---
+### 1.87 E2 完成：告警去重的真库用例（2026-10-19）
+
+`PayoutAlertLogDedupeTest`（`@SpringJUnitConfig` + H2 `MODE=MySQL`，DDL 抄自 `Initialize.sql`）：
+1. 同单同代次重复触发 ⇒ 首记一条、再触发影响行数为零（**`INSERT IGNORE` + 唯一键**真的在挡重投）；
+2. 代次推进或换了单据 ⇒ 视为新事件，可以再记；
+3. 保留期清理按 `created_at` 删：旧记录消失、新记录留下。
+
+**变异验证**：把 `INSERT IGNORE` 改成 `INSERT` ⇒ 用例红（`DuplicateKeyException`）
+⇒ 已还原。这条断言证明的是"唯一键真的生效"，不是"代码调了方法"。
+
+**这个用例当场抓出一个真 bug（已修）**
+E1 的清理语句写成了 `WHERE create_time < ?`，而 `payout_alert_log` 的真实列名是 **`created_at`**。
+E1 交付时没有真库用例覆盖该语句，所以它一路绿灯到了这里 ——
+到真 MySQL 上会直接报列不存在。修好后由本用例第 3 条长期守住。
+**教训**：新增 SQL 必须有一条真库用例覆盖，否则"编译通过 + 单测通过"完全不能证明它能执行。
+
+---
 ---
 
 ## 2. 待办
