@@ -3,6 +3,7 @@ package org.icedamericanomall.pay.adapter.web;
 import com.jayway.jsonpath.JsonPath;
 import org.icedamericanomall.pay.adapter.response.JsapiPayParamsVO;
 import org.icedamericanomall.pay.app.PayManager;
+import org.icedamericanomall.pay.app.ChannelCallbackManager;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,11 +58,14 @@ class PayControllerTest {
     @Mock
     private PayManager payManager;
 
+    @Mock
+    private ChannelCallbackManager callbackManager;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new PayController(payManager)).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(new PayController(payManager, callbackManager)).build();
     }
 
     private MvcResult postCallback() throws Exception {
@@ -97,7 +101,7 @@ class PayControllerTest {
         // 控制器只搬运：签名头 + 逐字节原文交给 Manager（不解密、不组装语义键）
         ArgumentCaptor<Map<String, String>> headersCaptor = ArgumentCaptor.forClass(Map.class);
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(payManager).handleWechatCallback(headersCaptor.capture(), bodyCaptor.capture());
+        verify(callbackManager).handleWechatCallback(headersCaptor.capture(), bodyCaptor.capture());
 
         Map<String, String> headers = headersCaptor.getValue();
         assertEquals("sig", headers.get("Wechatpay-Signature"));
@@ -111,7 +115,7 @@ class PayControllerTest {
     @DisplayName("验签失败 — HTTP 500 + {\"code\":\"FAIL\"}，且 message 不含内部异常文案")
     void shouldReturnFailBodyAnd500_whenSignatureInvalid() throws Exception {
         doThrow(new BizException(ErrorCode.ILLEGAL_REQUEST, "支付回调验证失败"))
-                .when(payManager).handleWechatCallback(anyMap(), anyString());
+                .when(callbackManager).handleWechatCallback(anyMap(), anyString());
 
         MvcResult result = postCallback();
         String body = body(result);
@@ -139,7 +143,7 @@ class PayControllerTest {
     @DisplayName("业务处理失败 — HTTP 500 + FAIL（触发微信重推），message 仍为固定文案")
     void shouldReturnFailBodyAnd500_whenBusinessHandlingFails() throws Exception {
         doThrow(new BizException(ErrorCode.ORDER_NOT_FOUND, "支付单不存在: PAY-1"))
-                .when(payManager).handleWechatCallback(anyMap(), anyString());
+                .when(callbackManager).handleWechatCallback(anyMap(), anyString());
 
         MvcResult result = postCallback();
         String body = body(result);

@@ -20,14 +20,15 @@ import org.icedamericanomall.pay.domain.repository.RefundOrderRepository;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
-
 /**
  * 退款编排 Manager（F1 买家退款资金流）—— pay-service 退款用例族的唯一编排入口。
  *
  * <p><b>职责边界（ADR-025 用例族划分）</b>：{@code RefundManager} 独占退款单（{@code refund_order}）
  * 的生命周期，独立于 {@code PayManager}（支付单用例族）。两者只在「读支付单取渠道/金额」上单向依赖。
  * 出参装配（Domain → VO / CO）内聚在本层，控制器不持有转换器。
+ *
+ * <p><b>回调不在这里</b>：微信退款回调（PAY6）在 {@link ChannelCallbackManager} —— 它与支付回调
+ * 同构（按对外号寻址 → 条件更新命中才通知），放在一起才看得出两者是同一口径（D 批拆类）。
  *
  * <p><b>事务纪律</b>：本类方法一律<b>不</b>加 {@code @Transactional} ——
  * 渠道调用（Wallet/微信/支付宝）与回写 trade 都是 Feign，事务内调 Feign 属硬约束违规。
@@ -52,8 +53,6 @@ import java.util.Map;
  *   Then 返回既有退款单，不新建（uk_after_sale 兜底）
  * Scenario: 渠道退款失败
  *   Then 退款单置失败并记录 failReason，售后单停留 APPROVED（异常向上透出，管理端 AD43 重试）
- * Scenario: 微信退款回调成功
- *   Then 按 out_refund_no 查退款单 → 条件置成功（仅处理中可迁移，重复通知幂等）→ I42 回写售后单
  * </pre>
  *
  * <p><b>与 {@link RefundResumeManager} / {@link OrderRefundManager} 的关系</b>：悬挂退款补偿
@@ -150,48 +149,6 @@ public class RefundManager {
         }
         log.info("[refund][retry] refundNo={} 重置为处理中并重新发起渠道退款", refundNo);
         return execute(refundOrder, payOrder, null);
-    }
-
-    /**
-     * 处理微信退款回调（PAY6）—— 验签解密后条件置成功并回写售后单。
-     *
-     * <p>非成功终态（{@code CLOSED} / {@code ABNORMAL}）仅告警、不改状态（保守：退款单终态收敛
-     * 由管理端重试/对账承担，避免渠道异常态直接推翻本地状态机）。
-     * 重复通知命中幂等分支（退款单非处理中）时静默返回，控制器仍应答 200 SUCCESS（ADR-029）。
-     *
-     * @param headers HTTP 请求头（微信签名头）
-     * @param rawBody 回调原始报文
-     * @throws BizException {@code ILLEGAL_REQUEST} 验签/解密失败 / {@code NO_RESOURCE_FOUND} 退款单不存在
-     */
-    public void handleWechatRefundCallback(Map<String, String> headers, String rawBody) {
-        var result = channelRouter.parseWechatRefundCallback(headers, rawBody);
-        if (!result.success()) {
-            log.warn("微信退款回调非成功终态，退款单状态保持不变: outRefundNo={}, refundStatus={}, refundId={}",
-                    result.outRefundNo(), result.rawRefundStatus(), result.refundId());
-            return;
-        }
-        confirmRefunded(result.outRefundNo(), result.refundId());
-    }
-
-    /**
-     * 退款确认成功：<b>按对外退款项号</b>查单 → 条件置成功（仅处理中命中）→ 命中才回写售后单。
-     * 并发/重复回调安全。
-     *
-     * @param outRefundNo 渠道回传的 {@code out_refund_no}（= 本地 {@code out_refund_no}）
-     * @param refundId    渠道退款单号（微信 {@code refund_id}，落 {@code channel_refund_no}）
-     */
-    private void confirmRefunded(String outRefundNo, String refundId) {
-        RefundOrder refundOrder = refundOrderService.getByOutRefundNo(outRefundNo);
-        if (refundOrder == null) {
-            log.error("退款单不存在（按对外退款项号查无）: outRefundNo={}, refundId={}", outRefundNo, refundId);
-            // 实体是「退款单」：码名与实体对齐（1103 / 404），文案带对外退款项号，便于渠道工单定位
-            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "退款单不存在: outRefundNo=" + outRefundNo);
-        }
-        if (!refundOrderService.markSuccessIfProcessing(refundOrder.getRefundNo(), refundId)) {
-            log.info("退款回调重复（退款单非处理中），忽略: refundNo={}", refundOrder.getRefundNo());
-            return;
-        }
-        payEventNotifier.onRefundSuccess(refundOrder);
     }
 
     /**

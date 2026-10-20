@@ -20,7 +20,8 @@ export default function CartPage() {
 
   async function updateQty(skuId: number, qty: number) {
     if (qty <= 0) { await removeItem(skuId); return; }
-    try { await apiClient('/api/cart/item', { method: 'PUT', body: JSON.stringify({ skuId, quantity: qty }) }); fetchCart(); }
+    // ★ 请求体字段更正：CartUpdateReq 为 `sku_id` / `quantity`（CartUpdateReq 无 @JsonProperty）
+    try { await apiClient('/api/cart/item', { method: 'PUT', body: JSON.stringify({ sku_id: skuId, quantity: qty }) }); fetchCart(); }
     catch {}
   }
 
@@ -55,8 +56,9 @@ export default function CartPage() {
     <View className="page">
       <View className="cart-list">
         {items.map((item: any) => (
-          <View key={item.skuId} className="cart-item">
-            <View className={`check-box ${item.selected ? 'checked' : ''}`} onClick={() => toggleSelect(item.skuId, !item.selected)}>
+          // ★ 字段更正：CartItemVO 为 snake_case —— sku_id / product_name
+          <View key={item.sku_id} className="cart-item">
+            <View className={`check-box ${item.selected ? 'checked' : ''}`} onClick={() => toggleSelect(item.sku_id, !item.selected)}>
               {item.selected && <Text>✓</Text>}
             </View>
             {item.image ? (
@@ -67,14 +69,14 @@ export default function CartPage() {
               </View>
             )}
             <View className="cart-info">
-              <Text className="cart-name">{item.productName}</Text>
+              <Text className="cart-name">{item.product_name}</Text>
               {item.spec && <Text className="cart-spec">{item.spec}</Text>}
               <Text className="cart-price">¥{formatPrice(item.price)}</Text>
             </View>
             <View className="cart-qty">
-              <View className="qty-btn" onClick={() => updateQty(item.skuId, item.quantity - 1)}><Text>-</Text></View>
+              <View className="qty-btn" onClick={() => updateQty(item.sku_id, item.quantity - 1)}><Text>-</Text></View>
               <Text className="qty-val">{item.quantity}</Text>
-              <View className="qty-btn" onClick={() => updateQty(item.skuId, item.quantity + 1)}><Text>+</Text></View>
+              <View className="qty-btn" onClick={() => updateQty(item.sku_id, item.quantity + 1)}><Text>+</Text></View>
             </View>
           </View>
         ))}

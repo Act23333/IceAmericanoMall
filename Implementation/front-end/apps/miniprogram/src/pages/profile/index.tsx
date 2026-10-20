@@ -40,8 +40,10 @@ export default function ProfilePage() {
 
   async function fetchUnread() {
     try {
-      const data = await apiClient<{ count: number }>('/api/user/notifications/unread-count');
-      setUnread(data?.count || 0);
+      // ★ 路径更正：`/api/notifications/unread-count`（去掉 `/user` 前缀）
+      // ★ 字段更正：响应为 `{"unread": n}`（Map<String,Integer>），旧代码读的 `.count` 不存在
+      const data = await apiClient<{ unread: number }>('/api/notifications/unread-count');
+      setUnread(data?.unread || 0);
     } catch {}
   }
 
@@ -72,7 +74,9 @@ export default function ProfilePage() {
             {wxProfile?.nickName || user?.username || '登录/注册'}
           </Text>
           <Text className="subtitle">
-            {user ? `余额 ¥${((user.balance || 0) / 100).toFixed(2)}` : '点击登录账号'}
+            {/* ⚠️ UserInfoResp 自 V5.4 起不含 balance（余额归 wallet-service，取 GET /api/wallet）；
+                小程序端尚未接余额端点，故此处只显示登录态（见交接摘要「发现但未改」）。 */}
+            {user ? '已登录' : '点击登录账号'}
           </Text>
         </View>
         {user && <Text className="arrow">›</Text>}
@@ -81,17 +85,17 @@ export default function ProfilePage() {
       {/* 快捷入口 */}
       {user && (
         <View className="stats-row">
-          <View className="stat-item">
-            <Text className="stat-val">{((user.balance || 0) / 100).toFixed(2)}</Text>
-            <Text className="stat-label">余额</Text>
-          </View>
           <View className="stat-item" onClick={() => Taro.navigateTo({ url: '/pages/coupons/index' })}>
-            <Text className="stat-val">0</Text>
+            <Text className="stat-val">—</Text>
             <Text className="stat-label">优惠券</Text>
           </View>
           <View className="stat-item" onClick={() => Taro.navigateTo({ url: '/pages/points/index' })}>
-            <Text className="stat-val">0</Text>
+            <Text className="stat-val">—</Text>
             <Text className="stat-label">积分</Text>
+          </View>
+          <View className="stat-item" onClick={() => Taro.navigateTo({ url: '/pages/notifications/index' })}>
+            <Text className="stat-val">{unread}</Text>
+            <Text className="stat-label">未读消息</Text>
           </View>
         </View>
       )}

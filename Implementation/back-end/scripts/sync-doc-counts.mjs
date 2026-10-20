@@ -80,6 +80,33 @@ const LIST_TABLES = has('--list-tables');
 const STRICT_TESTS = has('--strict-tests');
 const TESTS_ARG = opt('tests');
 
+// 度量完整性下限（默认 0.8）：实测总量低于文档现值的该比例 ⇒ 判「半量构建」。
+// 它是**阈值**：不适配就调这里（或命令行 --complete-floor），**不要**用 --tests 绕过。
+// CI 的阈值**写死在这里，不读命令行参数**（2026-10-19 定）：参数是「临时放宽」的入口，
+// 而 CI 的红必须是「仓库状态」的结论，不能是「这次谁传了什么」。要改就改这个常量 ——
+// 常量改动会出现在 review diff 里，**这是唯一的调整留痕**；命令行只对本地生效。
+const CI_COMPLETE_FLOOR = 0.8;
+const IN_CI = process.env.GITHUB_ACTIONS === 'true';
+const COMPLETE_FLOOR = (() => {
+  const raw = opt('complete-floor');
+  if (IN_CI) {
+    if (raw !== null) {
+      console.log('::warning title=计数取数口径::CI 忽略 --complete-floor=' + raw
+        + '（阈值写死在脚本 CI_COMPLETE_FLOOR，防用参数绕过；要改请改常量，让改动进 review diff）');
+    }
+    return CI_COMPLETE_FLOOR;
+  }
+  if (raw === null) return CI_COMPLETE_FLOOR;
+  const v = Number(raw);
+  if (!Number.isFinite(v) || v <= 0 || v > 1) {
+    console.error('--complete-floor=' + raw + ' 非法：必须是 (0, 1] 的小数，例如 0.8');
+    process.exit(2);
+  }
+  console.log('::warning title=计数取数口径::本地覆盖 --complete-floor=' + v
+    + '（CI 用写死的 ' + CI_COMPLETE_FLOOR + '；本地放宽不改变 CI 的结论）');
+  return v;
+})();
+
 if (!MODE && !LIST_TABLES) {
   console.error('用法: node sync-doc-counts.mjs --check | --write | --list-tables  [--verbose] [--tests=N] [--strict-tests]');
   process.exit(2);
@@ -97,6 +124,14 @@ const die = (code, msg) => {
   console.error(`\n✗ ${msg}`);
   process.exit(code);
 };
+
+/** 写 Job Summary（Actions 运行页顶部渲染）；非 Actions 环境静默跳过。 */
+function summaryAppend(md) {
+  if (!process.env.GITHUB_STEP_SUMMARY) return;
+  try {
+    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
+  } catch { /* summary 写失败不影响主流程 */ }
+}
 
 /* ─────────────────────── 1. 度量（只测量，不手填）─────────────────────── */
 
@@ -161,12 +196,67 @@ function measureTests() {
   let skipped = 0;
   let unparsed = 0;
   let newest = 0;
+  /**
+   * 已删除测试类的**残留报告**（只告警，不改数字）。
+   *
+   * 为什么需要：surefire 不会清理旧报告，于是「删掉一个测试类再跑增量测试」会让总数**变大** ——
+   * 2026-10-19 就踩过：删掉一个含 11 条用例的类、新增语料用例后，总数反而上涨。
+   * 这种漂是「测量被污染」，比文档写错更难发现（数字看起来是实测的）。
+   * 判据：报告的类名在 `target/test-classes` 里找不到对应的 `.class` ⇒ 报告已陈旧。
+   * ⚠️ 只有 clean 构建才保证报告与代码同代；取数请用 `mvn clean test` 后再 `--write`。
+   */
+  const staleReports = [];
+  const moduleTestClasses = new Map();
+  /**
+   * 报告文件名有两种形态：surefire 默认写**全限定名**（`org.foo.BarTest.txt`），
+   * 也可能按配置写简单类名。故两边都收：全限定名集合 + 简单名集合，任一命中即视为「类还在」。
+   * （首版只比简单名，于是 351 份「全限定名」报告全被判成陈旧 —— 告警自己先成了噪声。）
+   */
+  const hasTestClass = (reportFile, reportName) => {
+    const moduleDir = reportFile.slice(0, reportFile.indexOf(`${path.sep}target${path.sep}`));
+    if (!moduleTestClasses.has(moduleDir)) {
+      const fqcn = new Set();
+      const simple = new Set();
+      const marker = `${path.sep}target${path.sep}test-classes${path.sep}`;
+      for (const c of walkFiles(moduleDir, (p) => p.endsWith('.class') && p.includes(marker))) {
+        const rel = c.slice(c.indexOf(marker) + marker.length).replace(/\.class$/, '');
+        // 保留 `$`：嵌套测试类（`Outer$Inner`）的报告名里就带 `$`，剥掉会把它误判成陈旧
+        const dotted = rel.split(path.sep).join('.');
+        fqcn.add(dotted);
+        simple.add(dotted.slice(dotted.lastIndexOf('.') + 1));
+        // 同时收「外层类」形态：`updateById` 之类按外层名的报告也能命中
+        if (dotted.includes('$')) {
+          const outer = dotted.replace(/\$.*$/, '');
+          fqcn.add(outer);
+          simple.add(outer.slice(outer.lastIndexOf('.') + 1));
+        }
+      }
+      moduleTestClasses.set(moduleDir, { fqcn, simple });
+    }
+    const { fqcn, simple } = moduleTestClasses.get(moduleDir);
+    // 该模块一个 class 都没有 ⇒ 无法判定（可能是只跑了报告、没编译），不误报
+    if (fqcn.size === 0) return true;
+    if (!(fqcn.has(reportName) || simple.has(reportName))) return false;
+    // 第二种陈旧形态：**源码删了但 .class 与报告都还在**（增量构建不会清理 target）。
+    // 只比对 .class 会漏掉它 —— 2026-10-19 实测：删掉探针类后总数涨了 1，却没有任何告警。
+    // 判据：报告名对应的测试**源码**必须存在（嵌套类折回外层类）。
+    const outer = reportName.includes('$') ? reportName.replace(/\$.*$/, '') : reportName;
+    const relPath = (simple.has(outer) && !outer.includes('.')
+      ? outer
+      : outer.split('.').join('/'));
+    return fs.existsSync(path.join(moduleDir, 'src', 'test', 'java', relPath + '.java'))
+      || fs.existsSync(path.join(moduleDir, 'src', 'it', 'java', relPath + '.java'));
+  };
   for (const f of files) {
     const txt = fs.readFileSync(f, 'utf8');
     const m = txt.match(/Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)/);
     if (!m) {
       unparsed++;
       continue;
+    }
+    const className = path.basename(f).replace(/^TEST-/, '').replace(/\.txt$/, '');
+    if (!hasTestClass(f, className)) {
+      staleReports.push(path.relative(BE, f));
     }
     total += Number(m[1]);
     failures += Number(m[2]);
@@ -198,6 +288,7 @@ function measureTests() {
     newestReport: newest,
     newestJava,
     newestJavaFile,
+    staleReports,
   };
 }
 
@@ -285,6 +376,15 @@ if (tests.total !== null) {
 } else if (TESTS_ARG !== null) {
   testsValue = Number(TESTS_ARG);
   testsSource = `--tests=${TESTS_ARG}（无 surefire 报告，显式传入）`;
+  // --tests=N 是**逃生口**，不是常规路径：每次使用都要留可见痕迹。
+  // 审计口径：同一批里出现几次、是否同一原因；若成习惯 ⇒ 说明取数环境坏了（CI 顺序/只跑部分模块/报告被清），
+  // 去修根因；半量构建调 --complete-floor，**不要**用本参数绕过。
+  console.log('::warning title=计数取数口径::本次测试数由 --tests=N 显式声明，**未经 surefire 实测**；'
+    + '这是逃生口不是常规路径（若成习惯，说明取数环境有问题，应修根因）');
+  summaryAppend(['## ⚠ 本次计数用 `--tests=' + TESTS_ARG + '` 显式声明（未经实测）', '',
+    '正常路径是 `mvn clean test` 后由 surefire 报告实测。',
+    '若它**习惯性**出现，说明取数环境有问题（CI 顺序、只跑部分模块、报告被清）—— 去修根因；',
+    '半量构建的阈值用 `--complete-floor=` 调，**不要**用本参数绕过。', ''].join(String.fromCharCode(10)));
 } else {
   testsValue = null;
   testsSource = '无法度量（未找到 surefire 报告；先跑 mvn -f Implementation/back-end/pom.xml test）';
@@ -536,6 +636,25 @@ function scanDoc(rel) {
 
 const scans = DOCS.map(scanDoc);
 
+/*
+ * ─────────────────── 4.5 度量完整性下限（防「只跑了部分模块」）───────────────────
+ * surefire 报告是**按模块**收集的：只跑 `-pl ia-api test` 时，报告里只有一个模块的用例，
+ * 总数会从四位数掉到两位数。这种「脏取数」如果直接 `--write`，会把文档里的基线数字**静默缩小**，
+ * 而且看起来完全像一次正常的实测（这条比"残留报告"更危险：残留让数字偏大，半量让它偏小，
+ * 偏小更像"测试被删了"的一次真实变更）。
+ *
+ * 判据：实测 < 文档现值 × 0.8 ⇒ 判定「度量不完整」→ 退出码 4（度量问题，不是数字问题）。
+ * 逃生口：确属大规模删减，用 `--tests=N` 显式声明；「显式」是这里唯一要的东西。
+ */
+const documentedTests = Math.max(0, ...scans.flatMap((s) => s.hits.flatMap((h) => h.groups
+  .filter((g) => g.metric === 'tests_total').map((g) => g.old))));
+if (testsValue !== null && documentedTests > 0 && testsValue < documentedTests * COMPLETE_FLOOR) {
+  die(4, `测试数实测 ${testsValue}，低于文档现值 ${documentedTests} × ${COMPLETE_FLOOR}⇒ **度量不完整**，`
+    + '大概率只跑了部分模块。' + String.fromCharCode(10) +
+      '修法：跑全量 `mvn -f Implementation/back-end/pom.xml clean test` 后复跑本脚本；' + String.fromCharCode(10) +
+      '    若确为大规模删减，用 `--tests=N` 显式声明（显式 = 有人对这次缩小负责）。');
+}
+
 /* ─────────────────────── 5. 输出 ─────────────────────── */
 
 console.log('════════ sync-doc-counts ════════');
@@ -560,6 +679,7 @@ if (tablesM.commented.length) {
 }
 if (TESTS_ARG !== null && tests.total === null) console.log(`  ℹ 测试数来自命令行显式传入（无 surefire 报告）：--tests=${TESTS_ARG}`);
 if (tests.total !== null && tests.unparsed) console.log(`  ⚠ ${tests.unparsed} 份 surefire 报告无法解析（未计入）`);
+let STALE_IN_CI = false;
 if (tests.total === null) {
   console.log('  ⚠ 测试数无法度量：不写入、不臆测。请先跑 mvn -f Implementation/back-end/pom.xml test，或用 --tests=N 显式传入。');
 }
@@ -568,6 +688,50 @@ if (tests.total !== null && tests.newestJava > tests.newestReport) {
     `  ⚠ surefire 报告可能过期：最新报告 ${fmtTime(tests.newestReport)}，而源码 ${fmtTime(tests.newestJava)} 更新` +
       `（${path.relative(ROOT, tests.newestJavaFile)}）—— 建议先 mvn test 再回填。`,
   );
+}
+if (tests.staleReports && tests.staleReports.length > 0) {
+  // 残留报告会被计入总数（surefire 不清理旧报告）⇒ 删过测试类后总数会「反向增长」。
+  // **不改数字**：真正的修法是 `mvn clean test`；猜哪份陈旧就等于把度量变成推断。
+  //
+  // 可见性（stdout 会被 CI 日志淹没，故另走两条结构化通道）：
+  //   ① GitHub annotation —— PR 的 Checks 页/文件级提示都看得到；
+  //   ② Job Summary —— Actions 运行页顶部直接渲染 Markdown；
+  //   ③ CI 里判红 —— CI 一律 clean 构建，出现残留就说明度量对象是脏的，「数字对上」也不算过。
+  const NL = String.fromCharCode(10);
+  const n = tests.staleReports.length;
+  const list = tests.staleReports.slice(0, 12).map((r) => '  - ' + r).join(NL);
+  const more = n > 12 ? NL + '  - …（其余 ' + (n - 12) + ' 份同类）' : '';
+  console.log('  ⚠ 有 ' + n + ' 份 surefire 报告找不到对应的测试类（可能是已删除用例的残留）——'
+    + '总数因此可能偏大，请用 mvn clean test 重新取数：');
+  for (const r of tests.staleReports.slice(0, 8)) console.log('      ' + r);
+  if (n > 8) console.log('      …（其余 ' + (n - 8) + ' 份同类）');
+
+  console.log('::warning title=计数取数口径::有 ' + n + ' 份残留 surefire 报告（对应测试类已不存在），'
+    + '测试总数可能偏大；请用 mvn clean test 重新取数后执行 --write');
+
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    const md = [
+      '## ⚠ 计数取数口径：' + n + ' 份残留 surefire 报告',
+      '',
+      '测试总数可能**偏大**（surefire 不清理旧报告，被删测试类的报告仍被计入）。',
+      '修法：`mvn -f Implementation/back-end/pom.xml clean test` 后重跑 `--write`。',
+      '',
+      '<details><summary>残留报告清单</summary>',
+      '',
+      list + more,
+      '',
+      '</details>',
+      '',
+    ].join(NL);
+    try {
+      fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
+    } catch { /* summary 写失败不影响主流程：annotation 仍会出 */ }
+  }
+
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    console.log('::error title=计数取数口径::CI 为 clean 构建，出现残留 ⇒ 度量不可信，判红');
+    STALE_IN_CI = true;
+  }
 }
 if (VERBOSE) {
   console.log('\n  [verbose] 每模块测试数（surefire 聚合）：');
@@ -679,9 +843,20 @@ if (MODE === 'check') {
     console.log(`  测试数相关命中 ${unmeasuredHits} 处无法度量（保留原值，未参与比对）。`);
     if (STRICT_TESTS) {
       console.log('  ✗ --strict-tests：测试数无法度量即判失败。');
-      process.exit(1);
+      console.log('     退出码 4 = **度量问题**（没有报告/报告不可信），2 者请与「数字对不上(1)」区分看待：');
+      console.log('     这条红通常说明「本步跑在 mvn test 之前」—— 先跑测试，再看计数。');
+      process.exit(4);
     }
     console.log('  ⚠ 已跳过测试数比对（未加 --strict-tests）。这不是「通过」，是「未度量」。');
+  }
+  // 先判「取数是否可信」，再判「数字对不对」—— 两者是不同的红，退出码也不同：
+  //   exit 4 = 度量问题（残留报告 / 无法度量）⇒ 此时「数字对不上」可能只是脏数据造成的假差异
+  //   exit 1 = 真差异（取数可信，文档数字确实过期）
+  if (STALE_IN_CI) {
+    console.log('  ✗ **取数不可信**（CI 出现残留 surefire 报告）⇒ 判红（exit 4），见上方清单。');
+    console.log('     这是一条「度量问题」的红，**不是**「文档数字写错了」：先 mvn clean test 再复跑，');
+    console.log('     不要照着下面的差异去改文档 —— 那份差异可能是脏数据算出来的。');
+    process.exit(4);
   }
   if (mismatch === 0) {
     console.log('  ✓ 文档计数与实测一致（0 处差异）');
@@ -691,6 +866,10 @@ if (MODE === 'check') {
   for (const s of scans)
     for (const h of s.hits.filter((x) => x.needsChange))
       console.log(`      ${s.rel}:${h.line}  ${h.oldText} → ${h.newText}   [${h.rule}]`);
+  if (tests.staleReports && tests.staleReports.length > 0) {
+    console.log(`  ⚠ 注意：本次取数含 ${tests.staleReports.length} 份残留报告 —— 上面的差异**可能是脏数据算出来的**。` +
+      '先 `mvn clean test` 再复跑，别照着它改文档。');
+  }
   console.log('  修复命令（一条）：node Implementation/back-end/scripts/sync-doc-counts.mjs --write');
   process.exit(1);
 }

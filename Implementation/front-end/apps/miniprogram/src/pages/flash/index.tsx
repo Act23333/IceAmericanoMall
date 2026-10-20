@@ -18,9 +18,10 @@ export default function FlashPage() {
 
   async function buy(flashId: number) {
     try {
-      const result = await apiClient<any>(`/api/flash/buy?flashId=${flashId}&addressId=1`, { method: 'POST' });
+      const result = await apiClient<any>(`/api/flash/buy?flash_id=${flashId}&address_id=1`, { method: 'POST' });
       Taro.showToast({ title: '抢购成功', icon: 'success' });
-      if (result?.orderNo) Taro.navigateTo({ url: `/pages/pay/index?orderNo=${result.orderNo}` });
+      // ★ 字段更正：FlashBuyVO.order_no
+      if (result?.order_no) Taro.navigateTo({ url: `/pages/pay/index?orderNo=${result.order_no}` });
     } catch (e: any) { Taro.showToast({ title: e?.message || '抢购失败', icon: 'none' }); }
   }
 
@@ -28,11 +29,13 @@ export default function FlashPage() {
     <View className="page">
       <Text className="page-title">⚡ 限时秒杀</Text>
       {list.map((fs: any) => {
-        const endMs = new Date(fs.endTime).getTime();
+        // ★ 字段更正：FlashSaleVO = { id, product_id, sku_id, flash_price, stock, sold_count, start_time, end_time, status }
+        //   后端**不投影** product_name / 原价 / 主图，故此处只渲染已有字段
+        const endMs = new Date(fs.end_time).getTime();
         const remain = Math.max(0, endMs - now);
         const m = Math.floor(remain / 60000);
         const s = Math.floor((remain % 60000) / 1000);
-        const progress = fs.stock > 0 ? Math.round((fs.soldCount || 0) / (fs.stock + (fs.soldCount || 0)) * 100) : 0;
+        const progress = fs.stock > 0 ? Math.round((fs.sold_count || 0) / (fs.stock + (fs.sold_count || 0)) * 100) : 0;
         return (
           <View key={fs.id} className="flash-card">
             <View className="flash-header">
@@ -41,12 +44,9 @@ export default function FlashPage() {
             </View>
             <View className="flash-body">
               <View className="flash-info">
-                <Text className="flash-product">{fs.productName || '秒杀商品'}</Text>
+                <Text className="flash-product">秒杀商品 #{fs.product_id}</Text>
                 <View className="flash-prices">
-                  <Text className="flash-price">¥{formatPrice(fs.flashPrice || fs.price)}</Text>
-                  {fs.flashPrice && fs.price && fs.flashPrice < fs.price && (
-                    <Text className="flash-original">¥{formatPrice(fs.price)}</Text>
-                  )}
+                  <Text className="flash-price">¥{formatPrice(fs.flash_price || 0)}</Text>
                 </View>
               </View>
               <View className="flash-btn" onClick={() => buy(fs.id)}><Text>抢购</Text></View>

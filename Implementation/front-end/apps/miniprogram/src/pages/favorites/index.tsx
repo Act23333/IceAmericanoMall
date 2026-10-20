@@ -16,7 +16,14 @@ export default function FavoritesPage() {
     <View className="page">
       <Text className="page-title">我的收藏</Text>
       {list.length === 0 ? <View className="empty"><Text>还没有收藏商品</Text></View> :
-        <View className="product-grid">{list.map((p: any) => <ProductCard key={p.id} product={p} />)}</View>}
+        <View className="product-grid">
+          {/* ★ 字段更正 + 边界映射：后端 FavoriteVO 只有 { id, user_id, product_id, create_time }，
+              不投影商品名/主图/价（契约 §4.2.6 示例与实现不符）。
+              故此处把 `product_id` 映射为卡片的 `id`（卡片用它做跳转目标）。 */}
+          {list.map((f: any) => (
+            <ProductCard key={f.id} product={{ id: f.product_id, name: `商品 #${f.product_id}` }} />
+          ))}
+        </View>}
     </View>
   );
 }

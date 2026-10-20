@@ -8,12 +8,9 @@ import org.icedamericanomall.pay.domain.model.payorder.PayOrder;
 import org.icedamericanomall.pay.adapter.response.JsapiPayParamsVO;
 import org.icedamericanomall.pay.adapter.response.PayOrderVO;
 import org.icedamericanomall.dto.OrderSummaryCO;
-import org.icedamericanomall.integration.payment.AlipayPaymentClient;
 import org.icedamericanomall.integration.payment.JsapiPayResult;
-import org.icedamericanomall.integration.payment.WechatCallbackResult;
 import org.icedamericanomall.pay.domain.enums.PayChannelEnum;
 import org.icedamericanomall.pay.domain.enums.PayTypeEnum;
-import org.icedamericanomall.pay.domain.enums.TradeOrderStatusEnum;
 import org.icedamericanomall.pay.domain.repository.PayOrderRepository;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
@@ -21,11 +18,14 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 /**
- * 支付编排 Manager —— 按渠道（微信/支付宝/余额）路由发起支付与回调，编排跨服务 Feign。
- * 领域内的支付单读写下沉至 {@link PayOrderRepository}。
+ * 支付编排 Manager —— 按渠道（微信/支付宝/余额）路由<b>发起支付</b>、查询与超时关单，
+ * 编排跨服务 Feign。领域内的支付单读写下沉至 {@link PayOrderRepository}。
+ *
+ * <p><b>回调不在这里</b>：渠道异步回调（支付 + 退款）是独立的用例族，在
+ * {@link ChannelCallbackManager}；跨服务订单状态回写在 {@link TradeStatusNotifier}。
+ * 本类只承担「用户主动发起」这条链路（D 批拆类，原 344 行 → 硬约束 300 行内）。
  *
  * <p><b>资金链路口径（本类最关键的约束）</b>：对渠道只发「对外渠道号」
  * {@code pay_order.channel_trade_no}，内部 {@code order_no} / {@code pay_order_no} <b>绝不外发</b>；
@@ -49,11 +49,8 @@ import java.util.Map;
  * Scenario: 余额支付
  *   Then 先落"待支付"支付单（余额渠道本地闭环，无对外渠道号）→ 事务外 Feign 扣余额
  *        → 扣款成功条件置成功并通知订单；扣款失败则条件取消支付单并抛 BALANCE_INSUFFICIENT
- * Scenario: 回调/超时
- *   Then 微信回调经通道适配层整包解析（验签 + 解密 + 提取强类型结果，ADR-033），
- *        非成功终态仅告警不改状态；成功则<b>按渠道号</b>查支付单 → 条件更新（PENDING→SUCCESS）
- *        命中才通知订单待发货；支付宝回调走表单参数验签 + 直接取键（同为渠道号）；
- *        超时条件取消（PENDING→TIMEOUT_CANCEL）命中才通知订单已取消，并发/重复调用安全
+ * Scenario: 超时关单
+ *   Then 超时条件取消（PENDING→TIMEOUT_CANCEL）命中才通知订单已取消，并发/重复调用安全
  * </pre>
  */
 @Slf4j
@@ -68,6 +65,7 @@ public class PayManager {
     private final OrderClient orderClient;
     private final PaymentChannelRouter channelRouter;
     private final PayEventNotifier payEventNotifier;
+    private final TradeStatusNotifier tradeStatusNotifier;
 
     /**
      * 发起支付（微信/支付宝/余额）。
@@ -210,86 +208,8 @@ public class PayManager {
             log.warn("余额已扣但支付单未命中状态迁移，需人工核对: payOrderNo={}", payOrder.getPayOrderNo());
         }
         payOrder.markPaid(LocalDateTime.now());
-        notifyOrderPaid(orderNo);
-        payEventNotifier.notifyPaySuccess(payOrder);
+        tradeStatusNotifier.notifyPaid(orderNo);        payEventNotifier.notifyPaySuccess(payOrder);
         return payOrder;
-    }
-
-    /**
-     * 处理微信支付回调（微信 v3：裸 JSON + {@code resource} 密文）。
-     *
-     * <p><b>时序</b>：通道适配层整包解析（验签 + AES-GCM 解密 + 提取，见 ADR-033）→ 非成功终态则
-     * 仅告警并返回（<b>不改支付单状态</b>）→ <b>按对外渠道号</b>查单（不存在抛 {@code NO_RESOURCE_FOUND}）→
-     * 条件置成功（仅 {@code PENDING_PAY} 命中才通知订单待发货；未命中视为重复通知，静默返回）。
-     *
-     * <p><b>非成功终态（{@code CLOSED} / {@code PAYERROR} / {@code REVOKED} 等）为何不改状态</b>：
-     * 本平台支付单只有「待支付 → 成功 / 超时取消」两条迁移，引入渠道侧关闭态会牵出新的状态机分支
-     * 与对账口径；而用户的支付单最终由本地超时关单（{@code PayTimeoutJob}）收敛。因此这里只记录
-     * {@code trade_state} 供人工/对账排查，保持保守。
-     *
-     * @param headers HTTP 请求头（微信签名头 {@code Wechatpay-*}）
-     * @param rawBody 回调原始报文体
-     * @throws BizException {@code ILLEGAL_REQUEST} 解析失败（控制器转 500 触发渠道重推）/
-     *                      {@code NO_RESOURCE_FOUND} 支付单不存在
-     */
-    public void handleWechatCallback(Map<String, String> headers, String rawBody) {
-        WechatCallbackResult result = channelRouter.parseWechatCallback(headers, rawBody);
-        if (!result.success()) {
-            log.warn("微信回调非成功终态，支付单状态保持不变: channelTradeNo={}, tradeState={}, transactionId={}",
-                    result.outTradeNo(), result.rawState(), result.channelTradeNo());
-            return;
-        }
-        confirmPaid(result.outTradeNo(), result.rawState(), result.channelTradeNo());
-    }
-
-    /**
-     * 处理支付宝支付回调（表单参数口径，业务字段直接在参数里可见）。
-     *
-     * <p>与微信路径的差别：无需解密，验签 → 直接按表单参数取 {@code out_trade_no} /
-     * {@code trade_status}（协议键收在 {@link AlipayPaymentClient} 常量）。支付宝真实通道尚未接入
-     * （当前仅 Mock），故此处保持既有「条件置成功」语义，不额外增加终态分支。
-     *
-     * @param params 支付宝异步通知表单参数
-     * @throws BizException {@code ILLEGAL_REQUEST} 验签失败 / {@code NO_RESOURCE_FOUND} 支付单不存在
-     */
-    public void handleAlipayCallback(Map<String, String> params) {
-        if (!channelRouter.verifyAlipayCallback(params)) {
-            log.error("支付宝回调签名验证失败: channelTradeNo={}", params.get(AlipayPaymentClient.PARAM_OUT_TRADE_NO));
-            throw new BizException(ErrorCode.ILLEGAL_REQUEST, "支付回调验证失败");
-        }
-        confirmPaid(params.get(AlipayPaymentClient.PARAM_OUT_TRADE_NO),
-                params.get(AlipayPaymentClient.PARAM_TRADE_STATUS), null);
-    }
-
-    /**
-     * 回调确认收款：<b>按对外渠道号</b>查单 → 条件置成功 → 命中才通知订单。并发/重复回调安全
-     * （仅受影响行数=1 的调用会推进订单状态）。
-     *
-     * <p><b>错误承载（批次 R2 同口径）</b>：按渠道号查不到支付单 = <b>资源不存在</b>，抛
-     * {@code NO_RESOURCE_FOUND(1103)} / HTTP 404。此前抛 {@code ORDER_NOT_FOUND(3009)} 属<b>语义错位</b>
-     * —— 那个码名说的是「订单」，而这里查的实体是<b>支付单</b>；1103 与 3009 同为 404、
-     * {@code ErrorCategory} 同为 {@code CLIENT}，故调用方（渠道、前端）<b>零感知</b>，
-     * 只是把码名与实体对齐（与 I40/AD43/PAY6/I55 的处理一致）。
-     *
-     * @param channelTradeNo  渠道回传的 {@code out_trade_no}（= 本地 {@code channel_trade_no}）
-     * @param channelState    渠道交易状态串（落 {@code result_code} 供排障）
-     * @param channelTxnId    渠道交易号（微信 {@code transaction_id}，仅日志）
-     * @throws BizException {@code NO_RESOURCE_FOUND} 渠道号查不到支付单
-     */
-    private void confirmPaid(String channelTradeNo, String channelState, String channelTxnId) {
-        PayOrder payOrder = payOrderService.getByChannelTradeNo(channelTradeNo);
-        if (payOrder == null) {
-            log.error("支付单不存在（按对外渠道号查无）: channelTradeNo={}, channelState={}, channelTxnId={}",
-                    channelTradeNo, channelState, channelTxnId);
-            throw new BizException(ErrorCode.NO_RESOURCE_FOUND, "支付单不存在");
-        }
-        if (!payOrderService.markSuccessIfPending(payOrder.getPayOrderNo(), channelState)) {
-            log.info("支付回调重复（支付单非待支付状态），忽略: payOrderNo={}, channelState={}",
-                    payOrder.getPayOrderNo(), channelState);
-            return;
-        }
-        notifyOrderPaid(payOrder.getBizOrderNo());
-        payEventNotifier.notifyPaySuccess(payOrder);
     }
 
     /**
@@ -314,31 +234,12 @@ public class PayManager {
                     log.info("支付单已支付/已取消，跳过订单取消: payOrderNo={}", payOrder.getPayOrderNo());
                     continue;
                 }
-                cancelOrderQuietly(payOrder.getBizOrderNo());
+                tradeStatusNotifier.notifyCancelled(payOrder.getBizOrderNo());
                 log.info("支付超时已取消: payOrderNo={}, orderNo={}",
                         payOrder.getPayOrderNo(), payOrder.getBizOrderNo());
             } catch (Exception e) {
                 log.error("处理支付超时订单失败: payOrderId={}", payOrder.getId(), e);
             }
-        }
-    }
-
-    /** Feign：通知 trade-service 订单进入待发货（非致命，失败可对账修复）。 */
-    private void notifyOrderPaid(String orderNo) {
-        try {
-            orderClient.updateOrderStatus(orderNo, TradeOrderStatusEnum.PENDING_SHIPMENT.getCode());
-            log.info("支付成功，订单状态已更新: orderNo={}", orderNo);
-        } catch (Exception e) {
-            log.error("支付成功但订单状态更新失败: orderNo={}", orderNo, e);
-        }
-    }
-
-    /** Feign：通知 trade-service 取消订单（非致命，超时订单也可由 trade 侧兜底任务取消）。 */
-    private void cancelOrderQuietly(String orderNo) {
-        try {
-            orderClient.updateOrderStatus(orderNo, TradeOrderStatusEnum.CANCELLED.getCode());
-        } catch (Exception e) {
-            log.error("支付超时取消订单失败: orderNo={}", orderNo, e);
         }
     }
 }

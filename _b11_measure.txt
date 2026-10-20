@@ -1,0 +1,28 @@
+TOTAL_OLD_PATH_OCCURRENCES=38  FILES=5
+   24  project-docs/adr/062-external-identifier-and-addressing.md
+    6  project-docs/adr/061-order-item-business-key-snapshot-and-price-compare.md
+    4  project-docs/collaboration/07-Tasks.md
+    2  project-docs/adr/020-sku-stock-atomic-sql-deduction.md
+    2  project-docs/contract/05-API-Specification.md
+LINES_WITHOUT_PRE_CHANGE_MARKER=21
+  project-docs/adr/062-external-identifier-and-addressing.md:78  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:79  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:80  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:81  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:82  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:83  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:84  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:85  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:86  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:87  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:88  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:89  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:90  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:91  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:95  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:101  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:102  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:103  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:106  x1
+  project-docs/adr/062-external-identifier-and-addressing.md:275  x1
+  project-docs/contract/05-API-Specification.md:2993  x2

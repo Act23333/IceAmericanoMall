@@ -11,6 +11,7 @@ import org.icedamericanomall.merchant.app.seller.MerchantManager;
 import org.icedamericanomall.merchant.app.seller.ShopManager;
 import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.common.security.UserContext;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -58,12 +59,14 @@ public class MerchantController {
      *
      * <p>多店铺入口（ADR-019）；单店铺商家返回长度为 1 的列表。
      */
+    @PreAuthorize("@ss.hasPermi('seller:admin')")
     @GetMapping("/shops")
     public Result<List<ShopVO>> myShops() {
         return Result.ok(shopManager.listMyShops(UserContext.getUserId()));
     }
 
     /** 更新指定店铺资料（校验归属）。 */
+    @PreAuthorize("@ss.hasPermi('seller:admin')")
     @PutMapping("/shops/{shopId}")
     public Result<Void> updateMyShop(@PathVariable Long shopId, @Valid @RequestBody UpdateShopReq req) {
         shopManager.updateMyShop(UserContext.getUserId(), shopId, req);
@@ -80,6 +83,7 @@ public class MerchantController {
      *   Then 返回 ShopDecorationVO；未装修时各字段为空值 / 空数组；非本人店铺 → FORBIDDEN
      * </pre>
      */
+    @PreAuthorize("@ss.hasPermi('seller:admin')")
     @GetMapping("/shops/{shopId}/decoration")
     public Result<ShopDecorationVO> getDecoration(@PathVariable Long shopId) {
         return Result.ok(shopManager.getDecoration(UserContext.getUserId(), shopId));
@@ -96,6 +100,7 @@ public class MerchantController {
      *        非本人店铺 → FORBIDDEN，内容不合法 → 400 PARAM_ERROR
      * </pre>
      */
+    @PreAuthorize("@ss.hasPermi('seller:admin')")
     @PutMapping("/shops/{shopId}/decoration")
     public Result<Void> saveDecoration(@PathVariable Long shopId,
                                        @Valid @RequestBody ShopDecorationReq req) {
@@ -109,6 +114,7 @@ public class MerchantController {
      * @deprecated 单店铺时代的别名，改用 {@code GET /api/seller/shops}。
      */
     @Deprecated
+    @PreAuthorize("@ss.hasPermi('seller:admin')")
     @GetMapping("/shop")
     public Result<ShopVO> getDefaultShop() {
         return Result.ok(shopManager.getMyDefaultShop(UserContext.getUserId()));
@@ -120,6 +126,7 @@ public class MerchantController {
      * @deprecated 改用 {@code PUT /api/seller/shops/{shopId}}。
      */
     @Deprecated
+    @PreAuthorize("@ss.hasPermi('seller:admin')")
     @PutMapping("/shop")
     public Result<Void> updateDefaultShop(@Valid @RequestBody UpdateShopReq req) {
         shopManager.updateMyDefaultShop(UserContext.getUserId(), req);

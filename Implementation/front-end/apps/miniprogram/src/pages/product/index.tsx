@@ -19,14 +19,15 @@ export default function ProductPage() {
       setProduct(data);
       if (data?.skus?.length > 0) setSelectedSku(data.skus[0]);
       // 记录浏览历史（fire-and-forget）
-      apiClient(`/api/user/history?productId=${id}`, { method: 'POST' }).catch(() => {});
+      apiClient(`/api/user/history?product_id=${id}`, { method: 'POST' }).catch(() => {});
     } catch { Taro.showToast({ title: '商品不存在', icon: 'none' }); }
   }
 
   async function addToCart() {
     if (!selectedSku) return;
     try {
-      await apiClient('/api/cart/item', { method: 'POST', body: JSON.stringify({ skuId: selectedSku.id, quantity: qty }) });
+      // ★ 请求体更正：CartAddReq 为 `sku_id` / `quantity`（无 @JsonProperty → SNAKE_CASE）
+      await apiClient('/api/cart/item', { method: 'POST', body: JSON.stringify({ sku_id: selectedSku.id, quantity: qty }) });
       Taro.showToast({ title: '已加入购物车', icon: 'success' });
     } catch (e: any) {
       Taro.showToast({ title: e?.message || '加购失败', icon: 'none' });
@@ -45,8 +46,8 @@ export default function ProductPage() {
   return (
     <View className="page">
       {/* 商品图片 — 有真实URL用Image，否则用View占位 */}
-      {product.mainImage ? (
-        <Image src={product.mainImage} mode="aspectFill" style="width:100%;height:600rpx" />
+      {product.main_image ? (
+        <Image src={product.main_image} mode="aspectFill" style="width:100%;height:600rpx" />
       ) : (
         <View style="width:100%;height:600rpx;background:#F5F3F0;display:flex;align-items:center;justify-content:center;flex-direction:column">
           <Text style="font-size:120rpx;opacity:0.4">📷</Text>
@@ -62,8 +63,9 @@ export default function ProductPage() {
         {/* Price */}
         <View className="detail-price-row">
           <Text className="detail-price">¥{formatPrice(selectedSku?.price || 0)}</Text>
-          {selectedSku?.originalPrice && selectedSku.originalPrice > selectedSku.price && (
-            <Text className="detail-original">¥{formatPrice(selectedSku.originalPrice)}</Text>
+          {/* ★ 字段更正：SkuVO.original_price */}
+          {selectedSku?.original_price && selectedSku.original_price > selectedSku.price && (
+            <Text className="detail-original">¥{formatPrice(selectedSku.original_price)}</Text>
           )}
         </View>
 

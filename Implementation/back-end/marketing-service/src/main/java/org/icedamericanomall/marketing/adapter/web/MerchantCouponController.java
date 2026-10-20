@@ -7,6 +7,7 @@ import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.marketing.adapter.request.CouponCreateReq;
 import org.icedamericanomall.marketing.adapter.response.CouponVO;
 import org.icedamericanomall.marketing.app.coupon.CouponAdminManager;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,6 +28,7 @@ import java.util.List;
  * 与前台同属 web（分组维度是受众，不是业务功能）。
  */
 @RestController
+@PreAuthorize("@ss.hasPermi('seller:coupon')")
 @RequestMapping("/api/seller/coupon")
 @RequiredArgsConstructor
 public class MerchantCouponController {

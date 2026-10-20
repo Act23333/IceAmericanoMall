@@ -11,6 +11,7 @@ import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.common.security.UserContext;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.ForbiddenException;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,6 +37,7 @@ import java.util.List;
  * 卖家角色校验用 {@link UserContext#hasRole} 显式判断（语义等价于原 @PreAuthorize）。
  */
 @RestController
+@PreAuthorize("@ss.hasPermi('seller:knowledge')")
 @RequestMapping("/api/seller")
 @RequiredArgsConstructor
 public class KnowledgeBaseController {

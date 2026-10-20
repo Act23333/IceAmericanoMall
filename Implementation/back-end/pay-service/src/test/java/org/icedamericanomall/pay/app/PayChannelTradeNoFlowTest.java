@@ -68,6 +68,7 @@ class PayChannelTradeNoFlowTest {
     private RecordingPaymentClient wechatClient;
     private OrderClient orderClient;
     private PayManager payManager;
+    private ChannelCallbackManager callbackManager;
 
     @BeforeEach
     void setUp() {
@@ -82,7 +83,13 @@ class PayChannelTradeNoFlowTest {
 
         payManager = new PayManager(payOrderRepository, new PayOrderConverterImpl(), orderClient, router,
                 new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient,
-                        payOrderRepository, mock(InvoiceLinkCompensationRepository.class)));
+                        payOrderRepository, mock(InvoiceLinkCompensationRepository.class)),
+                new TradeStatusNotifier(orderClient));
+        callbackManager = new ChannelCallbackManager(payOrderRepository,
+                mock(org.icedamericanomall.pay.domain.repository.RefundOrderRepository.class), router,
+                new PayEventNotifier(notificationClient, afterSaleClient, tradeInvoiceClient,
+                        payOrderRepository, mock(InvoiceLinkCompensationRepository.class)),
+                new TradeStatusNotifier(orderClient));
 
         OrderSummaryCO summary = new OrderSummaryCO();
         summary.setOrderNo(ORDER_NO);
@@ -149,7 +156,7 @@ class PayChannelTradeNoFlowTest {
         PayOrder persisted = payOrderRepository.getByBizOrderNo(ORDER_NO);
         wechatClient.callbackOutTradeNo = persisted.getChannelTradeNo();
 
-        payManager.handleWechatCallback(Map.of("Wechatpay-Signature", "sig"), "{\"id\":\"EV-1\"}");
+        callbackManager.handleWechatCallback(Map.of("Wechatpay-Signature", "sig"), "{\"id\":\"EV-1\"}");
 
         PayOrder afterCallback = payOrderRepository.getByBizOrderNo(ORDER_NO);
         assertEquals(PayStatusEnum.SUCCESS.getCode(), afterCallback.getStatus(), "回调应置支付成功");
@@ -166,14 +173,14 @@ class PayChannelTradeNoFlowTest {
         // ① 历史错误用法：把 orders.order_no 当 out_trade_no
         wechatClient.callbackOutTradeNo = ORDER_NO;
         BizException byOrderNo = assertThrows(BizException.class,
-                () -> payManager.handleWechatCallback(Map.of(), "{}"));
+                () -> callbackManager.handleWechatCallback(Map.of(), "{}"));
         // U11：查的是支付单，资源不存在统一 NO_RESOURCE_FOUND(1103)/404（不是 3009「订单不存在」）
         assertEquals(ErrorCode.NO_RESOURCE_FOUND, byOrderNo.getErrorCode());
 
         // ② 另一种历史混用：把 pay_order_no 当 out_trade_no
         wechatClient.callbackOutTradeNo = persisted.getPayOrderNo();
         BizException byPayOrderNo = assertThrows(BizException.class,
-                () -> payManager.handleWechatCallback(Map.of(), "{}"));
+                () -> callbackManager.handleWechatCallback(Map.of(), "{}"));
         assertEquals(ErrorCode.NO_RESOURCE_FOUND, byPayOrderNo.getErrorCode());
 
         // 两次都不得推进支付单，也不得通知订单

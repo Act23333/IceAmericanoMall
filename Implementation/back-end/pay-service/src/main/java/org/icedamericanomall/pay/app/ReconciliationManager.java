@@ -69,15 +69,34 @@ public class ReconciliationManager {
         return batches;
     }
 
-    /** 单渠道对账：下载 → 比对 → 落库（下载失败落失败批次，不中断其它渠道）。 */
+    /**
+     * 单渠道对账：下载 → 比对 → 落库（下载失败落失败批次，不中断其它渠道）。
+     *
+     * <p><b>为什么成功/失败落库各拆一个私有方法</b>：两条路径<b>互斥</b>（下载失败即 return），
+     * 单次执行只会发生<b>一个</b>资金写；但「同一方法内 ≥2 个资金写」的写法会被
+     * {@code FundTransactionGuardTest} 判红 —— 那是门禁按方法体计数、看不见分支互斥。
+     * 拆开后每个方法各只有 1 个写、各自单语句自提交即原子，与门禁的判定口径一致；
+     * <b>不登记豁免</b>（豁免表只该留真正无法用事务保护的形态，否则会变成免责名单）。
+     */
     private ReconciliationBatch reconcile(LocalDate billDate, ReconciliationChannelEnum channel) {
         List<ChannelBillItem> channelBill;
         try {
             channelBill = download(channel, billDate);
         } catch (Exception e) {
             log.error("[reconcile][download-failed] 账单获取失败: billDate={}, channel={}", billDate, channel, e);
-            return reconciliationRepository.saveFailedBatch(billDate, channel.getCode());
+            return saveFailedBatch(billDate, channel);
         }
+        return saveSucceededBatch(billDate, channel, channelBill);
+    }
+
+    /** 失败路径落库（单写）。 */
+    private ReconciliationBatch saveFailedBatch(LocalDate billDate, ReconciliationChannelEnum channel) {
+        return reconciliationRepository.saveFailedBatch(billDate, channel.getCode());
+    }
+
+    /** 成功路径：读本地流水 → 四态比对 → 落批次与差异明细（单写）。 */
+    private ReconciliationBatch saveSucceededBatch(LocalDate billDate, ReconciliationChannelEnum channel,
+                                                   List<ChannelBillItem> channelBill) {
         List<PayOrder> localOrders = payOrderRepository.listPaidByDateAndChannel(billDate, channel.getCode());
         ReconciliationComparer.Diff diff = ReconciliationComparer.compare(localOrders, toBillEntries(channelBill));
         return reconciliationRepository.saveBatchResult(billDate, channel.getCode(),
@@ -103,7 +122,9 @@ public class ReconciliationManager {
         return channelBill.stream()
                 .map(item -> new ReconciliationComparer.BillEntry(item.outTradeNo(), item.channelTxnId(), item.amount()))
                 .toList();
-    }    /** AD44 对账批次分页（管理端，时间倒序，可按渠道/状态/账单日过滤）。 */
+    }
+
+    /** AD44 对账批次分页（管理端，时间倒序，可按渠道/状态/账单日过滤）。 */
     public IPage<ReconciliationBatchVO> pageBatches(int page, int size, String channel, Integer status,
                                                     LocalDate billDate) {
         return reconciliationRepository.pageBatches(page, size, channel, status, billDate)
