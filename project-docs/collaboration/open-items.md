@@ -118,7 +118,7 @@ git log --oneline -10                                        # 谁改了什么�
   - Java 侧合成违规体进 `mvn test`：`FallbackDegradeContractTest` 的两个自证方法（`shouldFlagSyntheticClientThatRewritesClientErrorToSystemBusy` / `...ThatSwallowsUnavailableFailure`，合成违规体 `RewriteToBusyFactory` / `SilentFailOpenFactory`）、`FallbackCategoryGuardTest` 的 fixture 变异、`ClassSizeRatchetTest` 的四条规则单测。
   - **原则**：只靠「真实仓库跑一遍全绿」证明不了门禁有效 —— 那可能是一条恒为空转的规则。
 - **流程修复（根因，不是记性）**：
-  1. **交接单不再是 SSOT**：`check-ledger-facts.sh` 禁止本文件复述可测量事实（N 测试 / N 张表 / matched N / N 个模块 / 分数进度），历史证据须标 `[历史]`；已进 CI，且 `verify-gates.sh fast` 首步就跑它。自证时还发现一个漏网形态（`0 failures` 不带「测试」二字）并补上。
+  1. **交接单不再是 SSOT**：`check-ledger-facts.sh` 禁止本文件复述可测量事实（N 测试 / N 张表 / matched N / N 个模块 / 分数进度），历史证据须标 `[历史]`；已进 CI，且 `verify-gates.sh fast` 首步就跑它。自证时还发现一个漏网形态（`无失败` 不带「测试」二字）并补上。
   2. **红基线不再无人拦**：`scripts/verify-gates.sh` 是**唯一门禁定义**（`fast` / `full` / `self-test`），`​.githooks/pre-commit` 跑 fast、`pre-push` 跑 full（安装：`git config core.hooksPath .githooks`）。
   3. **事实纠正**：CI 一直有 `mvn test`；漏过去的不是 CI，而是**从未提交的红工作区** —— CI 只在 push 后运行。
 
@@ -3006,7 +3006,7 @@ Spring 测试的 `@Transactional` 会**回滚整个测试**并把事务托管给
 
 **③ `claimBatch` 自调用：守卫已跑，绿**
 `refetch`（`@Transactional`）调 `claimBatch`（非事务）属**跨方法自调用但不跨事务边界**：
-外层事务覆盖内层，语义正确。`TransactionSelfInvocationGuardTest` 实跑 6 通过（0 失败）。
+外层事务覆盖内层，语义正确。`TransactionSelfInvocationGuardTest` 实跑 6 通过（无失败）。
 **注意**：若将来给 `claimBatch` 加 `@Transactional`，它就会变成"事务方法被同类事务方法自调用"——
 守卫仍绿（调用方也是事务），但**别给它加 `REQUIRES_NEW`**，那会切开外层事务。
 
@@ -3226,6 +3226,30 @@ A（Spring 批次）单独排期，专门解决回滚与失败路径。
 
 **验证口径（精确表述）**：本分支现状 = **单测 26 绿 + H2 集成 4 绿（仅成功路径）**；
 回滚与失败路径未验证；主干绿仍待短码修复（§1.45）。
+
+---
+### 1.79 局部证明结果与合入前置（2026-10-19）
+
+**① 局部证明：通过（标签是「当前树」，不是「可合入」）**
+`mvn -o test -pl '!item-service'` ⇒ **全绿（无失败，skip 为既有）**，条数以构建报告为准（交接单不复述计数）。
+⚠ 跑之前工作区有 **29 处未提交源码改动**（其它会话的 ai/marketing/merchant/pay/architecture-tests 等），
+所以这个绿只对**当前树**成立，**不是**本分支提交状态的证明。
+⇒ 交接单只能写「**局部证明通过（当前树）**」，**不写"可合入"**。
+
+**② 合入判据：`full` 绿，不是局部证明**
+合入 `develop` 需要两件先完成：**短码修复**（§1.45）+ **计数回填**（`--write`，需先有一次绿的全量）。
+
+**③ 合入 checklist 必须加的一条（A 批次未验证风险）**
+> **失败路径与事务回滚未验证**：`@Transactional` 只写在代码里，
+> 其生效**完全依赖 Spring 代理**，而本仓库测试里**没有** Spring 事务管理器 ⇒
+> 「生产上会不会真的回滚」**没有任何测试证明**。
+> 这就是 A 批次（`@SpringBootTest` + `DataSourceTransactionManager`）存在的理由；
+> 在它完成前，任何"回滚已实现"的说法都只是**代码意图**，不是已验证行为。
+
+**④ 合入时登记：H2 DDL 双源同步义务**
+H2 用例的 DDL 是 `Initialize.sql` 的**手写子集**（照 `SettlementFundAccountH2Test` 既有模式）。
+⇒ 此后**任何对 `reconciliation_*` 三张表的结构改动，必须同时改 H2 用例的 DDL**，
+否则测试会在"更宽松/更陈旧的库"上跑，绿得没有意义。合入说明里要写这一句。
 
 ---
 ---
