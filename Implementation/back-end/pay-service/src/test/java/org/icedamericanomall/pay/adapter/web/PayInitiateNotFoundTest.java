@@ -3,6 +3,7 @@ package org.icedamericanomall.pay.adapter.web;
 import org.icedamericanomall.common.aspect.GlobalExceptionHandler;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
+import org.icedamericanomall.pay.app.ChannelCallbackManager;
 import org.icedamericanomall.pay.app.PayManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,11 +40,14 @@ class PayInitiateNotFoundTest {
     @Mock
     private PayManager payManager;
 
+    @Mock
+    private ChannelCallbackManager callbackManager;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new PayController(payManager))
+        mockMvc = MockMvcBuilders.standaloneSetup(new PayController(payManager, callbackManager))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }

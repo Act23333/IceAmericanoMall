@@ -87,16 +87,29 @@ async function doRefresh(): Promise<string> {
 export async function apiClient<T>(path: string, options?: {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   data?: any;
+  /** 兼容 Web 端 `body: JSON.stringify(...)` 的调用写法（Taro.request 只认 `data`）。 */
+  body?: string;
   header?: Record<string, string>;
 }): Promise<T> {
   const method = options?.method || 'GET';
   const token = getAccessToken();
 
+  // ★ 修复：此前 `body: JSON.stringify(...)` 的调用点（商品加购、下单）传入的 body
+  //   被本函数忽略（只读 options.data），请求体实际为空。现统一归一化到 payload。
+  let payload: any = options?.data;
+  if (options?.body !== undefined) {
+    try {
+      payload = JSON.parse(options.body);
+    } catch {
+      payload = undefined;
+    }
+  }
+
   const doRequest = (authToken?: string) =>
     Taro.request({
       url: `${BASE_URL}${path}`,
       method,
-      data: options?.data,
+      data: payload,
       header: {
         'Content-Type': 'application/json',
         ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),

@@ -11,6 +11,7 @@ import org.icedamericanomall.trade.adapter.response.SettlementVO;
 import org.icedamericanomall.trade.adapter.response.WithdrawalVO;
 import org.icedamericanomall.trade.app.finance.SettlementManager;
 import org.icedamericanomall.trade.app.finance.WithdrawalManager;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 /** 商家财务中心 */
@@ -23,6 +24,7 @@ public class SellerFinanceController {
     private final WithdrawalManager withdrawalManager;
 
     /** 结算单列表 */
+    @PreAuthorize("@ss.hasPermi('seller:finance')")
     @GetMapping("/settlement/page")
     public Result<IPage<SettlementVO>> pageSettlement(@RequestParam(defaultValue = "1") int page,
                                                       @RequestParam(defaultValue = "20") int size) {
@@ -30,6 +32,7 @@ public class SellerFinanceController {
     }
 
     /** 结算单详情 */
+    @PreAuthorize("@ss.hasPermi('seller:finance')")
     @GetMapping("/settlement/{id}")
     public Result<SettlementVO> settlementDetail(@PathVariable Long id) {
         return Result.ok(settlementManager.getSellerSettlement(id, UserContext.getUserId()));
@@ -44,12 +47,19 @@ public class SellerFinanceController {
      * 线上键随之由 camelCase 的 {@code sellerId} 变为契约声明的 {@code seller_id}
      * （<b>线上键 BREAKING</b>，实测前端零消费）。
      */
+    @PreAuthorize("@ss.hasPermi('seller:finance')")
     @GetMapping("/balance")
     public Result<SellerBalanceVO> balance() {
         return Result.ok(settlementManager.sellerBalance(UserContext.getUserId()));
     }
 
-    /** 申请提现 */
+    /**
+     * 申请提现。
+     *
+     * <p><b>权限（B3/5b）</b>：独立位 {@code seller:withdrawal} —— 语义是「发起资金请求」，
+     * <b>不含打款权</b>（出款在管理端 {@code review}）。故不能与只读的 {@code seller:finance} 合并。
+     */
+    @PreAuthorize("@ss.hasPermi('seller:withdrawal')")
     @PostMapping("/withdrawal")
     public Result<WithdrawalVO> withdraw(@Valid @RequestBody WithdrawalApplyReq req) {
         return Result.ok(withdrawalManager.applyWithdrawal(UserContext.getUserId(), req));
@@ -58,6 +68,7 @@ public class SellerFinanceController {
     /**
      * 提现记录（商家端视图：仅回脱敏账号 {@code bankAccountMasked}，明文账号不回传 —— 安全模型 12.3）。
      */
+    @PreAuthorize("@ss.hasPermi('seller:finance')")
     @GetMapping("/withdrawal/page")
     public Result<IPage<WithdrawalVO>> pageWithdrawal(@RequestParam(defaultValue = "1") int page,
                                                       @RequestParam(defaultValue = "20") int size) {

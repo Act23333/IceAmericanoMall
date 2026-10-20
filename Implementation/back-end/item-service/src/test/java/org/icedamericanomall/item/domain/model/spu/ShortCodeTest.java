@@ -39,13 +39,24 @@ class ShortCodeTest {
 
     @Test
     @DisplayName("newCode — 与业务键无派生关系（不含其任何 4 位连续子串）")
-    void shouldNotDeriveFromBusinessId() {
-        String businessId = Spu.newBusinessId();
-        String code = ShortCode.newCode();
-        for (int i = 0; i + 4 <= code.length(); i++) {
-            assertFalse(businessId.contains(code.substring(i, i + 4)),
-                    "短码不得复用业务键子串（可反解）: " + code);
-        }
+    void shouldNotDeriveFromBusinessId() throws Exception {
+        // 值级抽样（"短码不含业务键的任意 4 位子串"）是**不可满足的断言**：
+        // 命中面 = 7 窗口 × 29 偏移 × 16^-4 ≈ 1/323，每跑一次都有约 0.3% 概率红（实测 2.951e-03）。
+        // 它测的也不是它声称的东西 —— 短码与业务键是两个独立随机串，本来就可能偶然撞片段。
+        // 改为**结构级 provenance**：断言"结构上拿不到业务键"，与随机数彻底解耦。
+
+        // ① 签名：newCode() 无入参 —— 没有入参就没有派生入口
+        java.lang.reflect.Method newCode = ShortCode.class.getDeclaredMethod("newCode");
+        assertEquals(0, newCode.getParameterCount(),
+                "newCode() 不得接受入参：一旦能传入业务键，派生就重新变可能");
+
+        // ② 源码：不引用业务键与其生成器；且必须来自独立随机源
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(
+                "src/main/java/org/icedamericanomall/item/domain/model/spu/ShortCode.java"));
+        assertFalse(source.contains("spuId"), "ShortCode 不得引用 spuId");
+        assertFalse(source.contains("Spu."), "ShortCode 不得调用 Spu");
+        assertFalse(source.contains("nextId"), "ShortCode 不得调用业务键生成器");
+        assertTrue(source.contains("randomHex"), "短码必须来自独立随机源（randomHex）");
     }
 
     @Test

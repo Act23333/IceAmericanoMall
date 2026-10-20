@@ -25,7 +25,7 @@ export default function CouponsPage() {
 
   async function claim(couponId: string) {
     try {
-      await apiClient(`/api/coupon/claim?couponId=${couponId}`, { method: 'POST' });
+      await apiClient(`/api/coupon/claim?coupon_id=${couponId}`, { method: 'POST' });
       Taro.showToast({ title: '领取成功', icon: 'success' });
       fetchMyCoupons();
     } catch (e: any) { Taro.showToast({ title: e?.message || '领取失败', icon: 'none' }); }
@@ -42,26 +42,29 @@ export default function CouponsPage() {
       {tab === 'available' ? (
         myCoupons.length === 0 ? <View className="empty"><Text>暂无优惠券</Text></View> :
         myCoupons.map((c: any) => (
+          // ★ 字段更正：UserCouponVO = { id, coupon_id, status, used_order_no, use_time, create_time }
+          //   —— 后端**不投影**券面（name/value/min_amount），故只能展示券号 + 状态
           <View key={c.id} className="coupon-card">
             <View className="coupon-left">
-              <Text className="coupon-amount">¥{formatPrice(c.value || 0)}</Text>
+              <Text className="coupon-amount">券</Text>
             </View>
             <View className="coupon-right">
-              <Text className="coupon-name">{c.name || '优惠券'}</Text>
-              <Text className="coupon-desc">{c.minAmount > 0 ? `满¥${formatPrice(c.minAmount)}可用` : '无门槛'}</Text>
+              <Text className="coupon-name">优惠券 #{c.coupon_id}</Text>
+              <Text className="coupon-desc">{c.status === 0 ? '可用' : c.status === 1 ? '已使用' : '已过期'}</Text>
             </View>
           </View>
         ))
       ) : (
         templates.map((t: any) => (
-          <View key={t.couponId || t.id} className="coupon-card">
+          // ★ 字段更正：CouponVO = { coupon_id, name, type, value, min_amount, price_in_cents, ... }
+          <View key={t.coupon_id} className="coupon-card">
             <View className="coupon-left">
-              <Text className="coupon-amount">¥{formatPrice(t.priceInCents || t.value || 0)}</Text>
+              <Text className="coupon-amount">¥{formatPrice(t.price_in_cents || t.value || 0)}</Text>
             </View>
             <View className="coupon-right">
               <Text className="coupon-name">{t.name}</Text>
-              <Text className="coupon-desc">{t.minAmountInCents > 0 ? `满¥${formatPrice(t.minAmountInCents)}可用` : '无门槛'}</Text>
-              <View className="claim-btn" onClick={() => claim(t.couponId || String(t.id))}><Text>立即领取</Text></View>
+              <Text className="coupon-desc">{t.min_amount > 0 ? `满¥${formatPrice(t.min_amount)}可用` : '无门槛'}</Text>
+              <View className="claim-btn" onClick={() => claim(t.coupon_id)}><Text>立即领取</Text></View>
             </View>
           </View>
         ))

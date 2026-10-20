@@ -27,10 +27,17 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p><b>审计（ADR-032 管道一）</b>：写操作均标注 {@code @OperationLog}，产出单行 JSON
  * 审计日志（logger {@code AUDIT}）；默认不记参数值（PII 安全默认）。
+ *
+ * <p><b>权限（B3）</b>：本类是**逐方法**挂位：查询 {@code marketing:read}、两个写方法 {@code marketing:admin}。
+ * 目的是建立"只读运营"档位 —— 否则 {@code marketing:admin} 只由 {@code ROLE_ADMIN} 持有，
+ * 「能看」自动等于「能改」。必须在方法上标而不是类级 + 方法级，理由见类上 {@code @RequestMapping} 上方注释。
  */
 @RestController
-// 权限位拆分（5a 批 7，2026-10-18）：每日任务定义管理（任务配置属营销域；GET 在 /api/admin/task，非公开）
-@PreAuthorize("@ss.hasPermi('marketing:admin')")
+// 权限位**按方法**（5a 批 7 + B3 只读档位，2026-10-19）：
+//   为什么**不能**保留类级 marketing:admin 再给 GET 加方法级 marketing:read ——
+//   Spring 的类级与方法级 @PreAuthorize 是 **AND（不是覆盖）**：两个注解都要满足，
+//   于是「只有 marketing:read 的只读运营」依旧 403（管理员因 *:*:* 通配才无感，问题被掩盖）。
+//   要让「运营只看不改」真的成立，整个类必须改成**逐方法**标注。
 @RequestMapping("/api/admin/task")
 @RequiredArgsConstructor
 public class AdminTaskController {
@@ -47,6 +54,7 @@ public class AdminTaskController {
     private final TaskAdminManager taskAdminManager;
 
     /** AD51：分页查询任务定义（status 过滤可选；page 缺省 1，size 缺省 20；code 升序）。 */
+    @PreAuthorize("@ss.hasPermi('marketing:read')")
     @GetMapping
     public Result<IPage<TaskDefVO>> page(@RequestParam(required = false) Integer status,
                                          @RequestParam(defaultValue = "1") int page,
@@ -55,6 +63,7 @@ public class AdminTaskController {
     }
 
     /** AD52：创建任务定义（code 重复 → 400 PARAM_ERROR；type 缺省 1=每日，Phase 2 扩展位）。 */
+    @PreAuthorize("@ss.hasPermi('marketing:admin')")
     @OperationLog(module = MODULE_MARKETING_TASK, action = ACTION_CREATE_TASK, description = "创建任务定义")
     @PostMapping
     public Result<Void> create(@RequestBody @Valid TaskCreateReq req) {
@@ -63,6 +72,7 @@ public class AdminTaskController {
     }
 
     /** AD53：编辑任务定义（code 不可改；不存在 → 1103；rewardPoints 调整立即生效，status=0 停用即触发口失效）。 */
+    @PreAuthorize("@ss.hasPermi('marketing:admin')")
     @OperationLog(module = MODULE_MARKETING_TASK, action = ACTION_UPDATE_TASK, description = "编辑任务定义")
     @PutMapping("/{code}")
     public Result<Void> update(@PathVariable String code, @RequestBody @Valid TaskUpdateReq req) {

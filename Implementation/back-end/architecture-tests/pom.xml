@@ -21,6 +21,7 @@
 
     <properties>
         <archunit.version>1.3.0</archunit.version>
+        <javaparser.version>3.26.4</javaparser.version>
     </properties>
 
     <dependencies>
@@ -28,6 +29,23 @@
             <groupId>com.tngtech.archunit</groupId>
             <artifactId>archunit-junit5</artifactId>
             <version>${archunit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!--
+          真正的 Java 语法解析（ADR 记于 open-items §1.17「裁决 A：换解析器」）。
+
+          为什么不再自写文本扫描：用 regex + 花括号计数去**近似** Java 语法分析，代价是
+          「无穷的形态清单」（lambda / 匿名类 / switch / 字符串 / 字符字面量 / 文本块 /
+          注解括号 / 跨行签名 / 泛型尖括号 / record / sealed / 嵌套类型）。实测已失效三次：
+          payByBalance 的 3 个本地资金写被判 0（假阴性）、WalletManager#refund 解析不出、
+          注解参数里的括号让方法被命名成 `Transactional`。每补一个形态就冒出下一个。
+
+          版式锁：3.26.x（解析失败必须 orElseThrow，见 JavaSourceParser）。
+        -->
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>${javaparser.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>

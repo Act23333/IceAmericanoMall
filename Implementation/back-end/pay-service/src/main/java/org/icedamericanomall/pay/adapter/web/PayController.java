@@ -8,6 +8,7 @@ import org.icedamericanomall.pay.adapter.request.JsapiPayReq;
 import org.icedamericanomall.pay.adapter.response.JsapiPayParamsVO;
 import org.icedamericanomall.pay.adapter.response.PayOrderVO;
 import org.icedamericanomall.pay.domain.enums.PayChannelEnum;
+import org.icedamericanomall.pay.app.ChannelCallbackManager;
 import org.icedamericanomall.pay.app.PayManager;
 import org.icedamericanomall.common.api.Result;
 import org.icedamericanomall.common.security.UserContext;
@@ -56,6 +57,7 @@ public class PayController {
     static final String RESPONSE_MESSAGE_FAIL = WechatCallbackSupport.MESSAGE_FAIL;
 
     private final PayManager payManager;
+    private final ChannelCallbackManager callbackManager;
 
     /**
      * 发起支付。channel 可选 WECHAT（默认）/ALIPAY/BALANCE。
@@ -85,7 +87,7 @@ public class PayController {
     /**
      * 微信支付回调通知（微信支付 API v3 规范应答）。
      *
-     * <p>控制器<b>只做搬运</b>：把原始请求头与原始报文体原样交给 {@link PayManager}，由通道适配层
+     * <p>控制器<b>只做搬运</b>：把原始请求头与原始报文体原样交给 {@link ChannelCallbackManager}，由通道适配层
      * 完成验签、AES-GCM 解密与业务字段提取（ADR-033）——回调业务字段（{@code out_trade_no} 等）
      * 位于解密后的报文中，控制器不得、也无法在参数层组装语义键。
      *
@@ -99,7 +101,7 @@ public class PayController {
     @PostMapping("/callback/wechat")
     public ResponseEntity<Map<String, String>> wechatCallback(HttpServletRequest request) {
         try {
-            payManager.handleWechatCallback(WechatCallbackSupport.readHeaders(request),
+            callbackManager.handleWechatCallback(WechatCallbackSupport.readHeaders(request),
                     WechatCallbackSupport.readRawBody(request));
         } catch (Exception e) {
             // 验签失败 / 解密失败 / 报文不可读 / 业务处理失败 —— 统一 FAIL + 500，让渠道重推
@@ -115,7 +117,7 @@ public class PayController {
      */
     @PostMapping("/callback/alipay")
     public String alipayCallback(@RequestParam Map<String, String> params) {
-        payManager.handleAlipayCallback(params);
+        callbackManager.handleAlipayCallback(params);
         return "success";
     }
 

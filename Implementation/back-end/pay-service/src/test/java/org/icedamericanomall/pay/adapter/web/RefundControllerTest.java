@@ -3,7 +3,7 @@ package org.icedamericanomall.pay.adapter.web;
 import com.jayway.jsonpath.JsonPath;
 import org.icedamericanomall.common.enums.ErrorCode;
 import org.icedamericanomall.common.exception.BizException;
-import org.icedamericanomall.pay.app.RefundManager;
+import org.icedamericanomall.pay.app.ChannelCallbackManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,13 +48,13 @@ class RefundControllerTest {
                          "associated_data":"refund"}}""";
 
     @Mock
-    private RefundManager refundManager;
+    private ChannelCallbackManager callbackManager;
 
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new RefundController(refundManager)).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(new RefundController(callbackManager)).build();
     }
 
     private MvcResult postCallback() throws Exception {
@@ -85,7 +85,7 @@ class RefundControllerTest {
 
         ArgumentCaptor<Map<String, String>> headersCaptor = ArgumentCaptor.forClass(Map.class);
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(refundManager).handleWechatRefundCallback(headersCaptor.capture(), bodyCaptor.capture());
+        verify(callbackManager).handleWechatRefundCallback(headersCaptor.capture(), bodyCaptor.capture());
         assertEquals("sig", headersCaptor.getValue().get("Wechatpay-Signature"));
         assertEquals(CALLBACK_BODY, bodyCaptor.getValue(), "验签要求逐字节原文，不得被控制器改写");
     }
@@ -94,7 +94,7 @@ class RefundControllerTest {
     @DisplayName("验签/解密失败 — 500 + FAIL，且 message 为固定文案（不外泄内部细节）")
     void shouldReturnFailAnd500_whenSignatureInvalid() throws Exception {
         doThrow(new BizException(ErrorCode.ILLEGAL_REQUEST, "微信回调解密失败"))
-                .when(refundManager).handleWechatRefundCallback(anyMap(), anyString());
+                .when(callbackManager).handleWechatRefundCallback(anyMap(), anyString());
 
         MvcResult result = postCallback();
         String body = body(result);

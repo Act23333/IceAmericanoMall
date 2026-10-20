@@ -46,9 +46,21 @@ mvn_verdict() {
   ( cd "$BE" && mvn $MVN_ARGS -q "$@" >/dev/null 2>&1 ) && echo PASS || echo FAIL
 }
 
-fast_steps() {
+# ─────────────────────── 三段式（2026-10-19 定稿）───────────────────────
+# 为什么分三段而不是一个列表：**每段的红要能按"谁的问题"被读到**。
+#   段 1  report_free_steps()：**不依赖 surefire 报告**的校验（交接单/ID/ia-api/架构守卫/契约闭环）。
+#         放最前，提供最快反馈，且与"有没有跑过测试"无关。
+#   段 2  test_step()        ：全量 mvn test。它一定慢，且一旦红就要独占视线。
+#   段 3  count_step()       ：**依赖报告**的计数门禁。
+#
+# 这个顺序同时修掉两个真实事故：
+#   ① 「假红」：计数门禁跑在测试之前时，全新检出（CI 每个 job 都是全新检出）没有任何
+#      `target/surefire-reports` ⇒ `--strict-tests` 立刻判「无法度量」⇒ **任何 push 都红**，
+#      且与代码质量无关（§1.18.8③）。
+#   ② 「反馈被淹没」：测试红与计数红同时出现时，若计数在前，人第一眼看到的是"文档数字不对"，
+#      而真正该修的是测试 —— 红必须按**因果顺序**呈现。
+report_free_steps() {
   run "交接单未复述可测量事实" bash "$BE/scripts/check-ledger-facts.sh"
-  run "根文档计数与实测一致"   node "$BE/scripts/sync-doc-counts.mjs" --check --strict-tests
   run "ID 不变量（ADR-050/051）" bash "$BE/scripts/check-id-invariants.sh"
   run "ia-api 单测（含降级语义契约门禁）" mvn $MVN_ARGS -q -f "$BE/pom.xml" -pl ia-api test
   # ★ 2026-10-18 补：**fast 必须 ⊇ full 的全部"安全类"门禁**（架构/鉴权/降级/RBAC 语义）。
@@ -66,13 +78,35 @@ fast_steps() {
   run "跨服务契约闭环（Feign ↔ 提供方端点）"  bash "$BE/scripts/closure-audit.sh"
 }
 
+test_step() {
+  run "全量 mvn test（含 architecture-tests 全部守卫）" mvn $MVN_ARGS -f "$BE/pom.xml" test
+}
+
+count_step() {
+  # 必须排在 test_step 之后：这条闸的输入是 surefire 报告。退出码语义：
+  #   4 = 度量问题（无报告/残留/半量）→ 先 mvn clean test；1 = 数字真的不一致 → 跑 --write。
+  run "根文档计数与实测一致"   node "$BE/scripts/sync-doc-counts.mjs" --check --strict-tests
+}
+
 case "$MODE" in
   fast)
-    fast_steps
+    # 提交前：段 1 + 段 3（不跑全量测试）。本地有报告时计数照常校验；
+    # 没有报告时退出码 4 会明确告诉你"先跑 mvn test"，而不是给一个含糊的红。
+    report_free_steps
+    # 提交前：只跑段 1。**段 3 显式跳过并打 [skip]**（2026-10-19 定）。
+    # 为什么跳过：段 3 的输入是 surefire 报告，而本地报告可能**不存在**（刚 clean 过）
+    # 或**是上一轮的**（没 clean）—— 两种都会给出与本次提交无关的红，属典型门禁疲劳。
+    # 为什么必须显式打 [skip]：fast 的绿只意味着「报告无关的门禁绿」，**不等于全部绿**。
+    # 不写这一行，就会有人把「提交前全过」读成「计数也对」，然后带着过期数字提交。
+    printf '\n── 根文档计数与实测一致 ──\n'
+    printf '[skip] 依赖 surefire 报告（本地可能无报告/有残留）⇒ fast 不跑；full 与 CI 会跑。\n'
+    printf '       想在本机验：bash scripts/verify-gates.sh full，或 node scripts/sync-doc-counts.mjs --check --strict-tests\n'
+    skipped=1
     ;;
   full)
-    fast_steps
-    run "全量 mvn test（含 architecture-tests 全部守卫）" mvn $MVN_ARGS -f "$BE/pom.xml" test
+    report_free_steps
+    test_step
+    count_step
     ;;
   self-test)
     # 门禁自身的变异测试：**故意喂违规样本，断言门禁会红**。
@@ -128,7 +162,12 @@ esac
 
 printf '\n════════════════════════════\n'
 if [ "$fail" -eq 0 ]; then
-  echo "门禁全通过（mode=$MODE）"
+  if [ "${skipped:-0}" -eq 1 ]; then
+    # 语义必须说清：跳过计数闸时**不能**说「全部门禁绿」
+    echo "报告无关门禁全通过（mode=$MODE）—— 计数闸已 [skip]，这**不是**「全部门禁绿」"
+  else
+    echo "门禁全通过（mode=$MODE）"
+  fi
   exit 0
 fi
 echo "门禁未通过（mode=$MODE）—— 不要在这个状态下说『已完成』，也不要提交/推送。" >&2

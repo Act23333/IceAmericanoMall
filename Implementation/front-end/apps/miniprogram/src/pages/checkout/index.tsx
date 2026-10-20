@@ -28,11 +28,14 @@ export default function CheckoutPage() {
     if (!addrId) { Taro.showToast({ title: '请选择地址', icon: 'none' }); return; }
     setSubmitting(true);
     try {
+      // ★ 请求体更正：CreateOrderReq = { address_id, user_coupon_id?, remark?, display_currency? }
+      //   后端**不接受** `cart_item_ids` —— 下单件数取自服务端购物车（/api/cart）。
       const order = await apiClient<any>('/api/trade/order', {
         method: 'POST',
-        body: JSON.stringify({ addressId: addrId, cartItemIds: cartItems.map((i: any) => i.skuId), remark: remk }),
+        body: JSON.stringify({ address_id: addrId, remark: remk || undefined }),
       });
-      Taro.redirectTo({ url: `/pages/pay/index?orderNo=${order.orderNo}` });
+      // ★ 字段更正：OrderVO.order_no
+      Taro.redirectTo({ url: `/pages/pay/index?orderNo=${order.order_no}` });
     } catch (e: any) {
       Taro.showToast({ title: e?.message || '下单失败', icon: 'none' });
     } finally { setSubmitting(false); }
@@ -58,7 +61,7 @@ export default function CheckoutPage() {
       <View className="section-title">商品清单</View>
       {cartItems.map((item: any, i: number) => (
         <View key={i} className="order-item">
-          <Text className="item-name">{item.productName} x{item.quantity}</Text>
+          <Text className="item-name">{item.product_name} x{item.quantity}</Text>
           <Text className="item-price">¥{formatPrice(item.price * item.quantity)}</Text>
         </View>
       ))}

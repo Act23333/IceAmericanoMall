@@ -1576,3 +1576,78 @@ CREATE TABLE `payout_alert_log` (
     UNIQUE KEY `uk_payout_alert` (`payout_no`, `alert_gen`),
     KEY `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='出款停留告警去重账（保留 180 天，每日批删）';
+
+
+-- ───────────────── 提现对账（逐笔、按日全量拉取）─────────────────
+DROP TABLE IF EXISTS `reconciliation_batch`;
+CREATE TABLE `reconciliation_batch` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `batch_no` VARCHAR(64) NOT NULL COMMENT '批次号（幂等键：同 provider+账期只允许一个有效批次）',
+    `provider` VARCHAR(32) NOT NULL COMMENT '渠道标识',
+    `biz_date` DATE NOT NULL COMMENT '账期',
+    `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=PENDING 2=FETCHED 3=MATCHED 4=DIFF 5=RESOLVED',
+    `superseded_by` VARCHAR(64) DEFAULT NULL COMMENT '被哪个新批次取代（NULL=当前有效批次）',
+    -- 有效批次唯一性：由生成列承载，应用不必维护。
+    -- 表达式说明：有效批次 = '0'；被取代的批次 = superseded_by#batch_no。
+    -- 为什么不能只用 COALESCE(superseded_by,'0')：若两个旧批次被**同一个**新批次取代，
+    -- 它们的 active_key 会相同 ⇒ 唯一键误伤。拼上本行 batch_no 后天然唯一。
+    -- 表达式写 `CASE WHEN` 而不是 MySQL 的 `IF(...)`：H2 实测拒绝 IF（语法错），接受 CASE；
+    -- 也不写 STORED：H2 实测拒绝该关键字，MySQL 默认 VIRTUAL（可建索引）。
+    -- 这样 Initialize.sql 仍是**唯一结构真相源**，H2 用例不需要另写一套 DDL。
+    `active_key` VARCHAR(160) GENERATED ALWAYS AS (
+        CASE WHEN `superseded_by` IS NULL THEN '0' ELSE CONCAT(`superseded_by`, '#', `batch_no`) END
+    ) COMMENT '有效批次标记（生成列，只读）',
+    UNIQUE KEY `uk_active_batch` (`provider`, `biz_date`, `active_key`),
+    `fetched_at` DATETIME DEFAULT NULL,
+    `matched_count` INT NOT NULL DEFAULT 0,
+    `diff_count` INT NOT NULL DEFAULT 0,
+    `resolved_at` DATETIME DEFAULT NULL,
+    `resolved_by` BIGINT DEFAULT NULL COMMENT '处置人',
+    `resolve_note` VARCHAR(500) DEFAULT NULL COMMENT '处置依据',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_batch_no` (`batch_no`),
+    KEY `idx_biz_date` (`biz_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='提现对账批次';
+
+DROP TABLE IF EXISTS `reconciliation_item`;
+CREATE TABLE `reconciliation_item` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `batch_no` VARCHAR(64) NOT NULL,
+    `payout_no` VARCHAR(64) NOT NULL COMMENT '我方幂等键；无则存哨兵（DB 不接受 NULL）',
+    `channel_ref` VARCHAR(160) NOT NULL COMMENT '渠道流水号；无则存哨兵（DB 不接受 NULL）',
+    `ours_amount` INT DEFAULT NULL,
+    `channel_amount` INT DEFAULT NULL,
+    `biz_date` DATE DEFAULT NULL,
+    `match_type` TINYINT NOT NULL COMMENT '1=EXACT 2=FUZZY 3=DIFF',
+    `diff_type` VARCHAR(32) DEFAULT NULL COMMENT 'CHANNEL_ONLY / OURS_ONLY / AMOUNT_MISMATCH',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_batch_item` (`batch_no`, `payout_no`, `channel_ref`),
+    KEY `idx_batch` (`batch_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='提现对账逐笔';
+
+DROP TABLE IF EXISTS `reconciliation_raw`;
+CREATE TABLE `reconciliation_raw` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `batch_no` VARCHAR(64) NOT NULL,
+    `seq` INT NOT NULL COMMENT '分片序号',
+    `payload` BLOB NOT NULL COMMENT '渠道原始报文（压缩后；不入本地文件系统）',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_batch_seq` (`batch_no`, `seq`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='渠道原始报文留存（差异处置可回溯）';
+
+
+-- 对账处置历史（改结论必须留一条；一张批次可以有多次处置）
+DROP TABLE IF EXISTS `reconciliation_resolution_log`;
+CREATE TABLE `reconciliation_resolution_log` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `batch_no` VARCHAR(64) NOT NULL,
+    `conclusion` VARCHAR(32) NOT NULL COMMENT 'ACCEPT_DIFF / BOOKED / REVERTED',
+    `note` VARCHAR(500) NOT NULL COMMENT '依据（必填）',
+    `resolved_by` BIGINT NOT NULL,
+    `booked_amount` INT DEFAULT NULL COMMENT '补记金额（仅 BOOKED 结论）',
+    `paid_total_before` INT DEFAULT NULL COMMENT '补记前 paid_total（审计独立可验）',
+    `paid_total_after` INT DEFAULT NULL COMMENT '补记后 paid_total',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_batch_no` (`batch_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对账处置历史（结论变更可追溯）';

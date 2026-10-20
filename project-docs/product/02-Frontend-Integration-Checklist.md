@@ -96,10 +96,15 @@
 | **SPU 名称键** | 小程序卡片仍读 **`name`**（`apps/miniprogram/src/components/product-card.tsx` 的入参类型写着 `name: string`） | 后端已统一为 **`spu_name`**，`name` 键不复存在 ⇒ Jackson `SNAKE_CASE` + `FAIL_ON_UNKNOWN_PROPERTIES=false` 下落 `undefined`：**商品名显示空白**（P1 列表 / P2 详情 / SE1 搜索均受影响） |
 | **商品资源段路径** | 仍打**旧路径**：`/api/item/product/page`（首页、市场）、`/api/item/product/{id}`（详情）、`/api/search/product`（搜索） | 后端资源段已改为 **`/api/item/spu/**`** 与 **`/api/search/spu`** ⇒ 上述调用**取不到数据**（空列表 / 空详情，页面不报错） |
 | **类目筛选参数** | 仍以 **`categoryId`** 作查询参数名（`pages/marketplace/index.tsx`） | 线上参数名是 **`category_id`** ⇒ Spring 绑定不到、**筛选条件被静默忽略**（返回未过滤结果，不报错）。与 ADR-063「缺陷前形态 3」同源 |
+| **标识寻址（技术键 vs 业务键）** | 小程序全程用**技术键**寻址商品：`product-card.tsx` 跳详情传 `?id=${product.id}`、详情页 `fetchProduct(Number(id))`、收藏页读 **`f.product_id`**、浏览历史 POST 发 **`?product_id=`** | 后端对外的商品标识已统一为**业务键 32-hex**（ADR-050/062）：`SpuVO.spu_id`、`FavoriteVO.spu_id`、`HistoryVO.spu_id`，且 `GET /api/item/spu/{spuId}` 在适配层 `IdGenerator.requireWire` **fail-fast** ⇒ 传技术键得到 **400 + 1101**（不是 404）。读 `product_id` 则得到 `undefined` ⇒ 收藏页显示「商品 #undefined」。**这一条决定了「只改路径也还是坏的」** |
 
 **为什么不在本批修**：① 用户已明确本轮排除（范围纪律：避免顺手扩范围）；② 它不是「改一个字段名就好」—— 同时踩了**名称键 + 资源段 + 查询参数**三处口径，需要一轮独立的前端同步，且应在 [21-Frontend-Refactor-Readiness](../frontend/21-Frontend-Refactor-Readiness.md) 的准入条件满足后再做。
 
-**接手时的最小修复面**（供后续批次估算，**不是**本批任务）：`components/product-card.tsx`（`name` → `spu_name`）；`pages/{index,marketplace,product}/index.tsx`（`/api/item/product/**` → `/api/item/spu/**`）；`pages/search/index.tsx`（`/api/search/product` → `/api/search/spu`）；`pages/marketplace/index.tsx`（`categoryId` → `category_id`）。
+**接手时的最小修复面**（供后续批次估算，**不是**本批任务）：`components/product-card.tsx`（`name` → `spu_name`，跳详情的入参改用 `spu_id`）；`pages/{index,marketplace,product}/index.tsx`（`/api/item/product/**` → `/api/item/spu/**`，详情形参由 `Number` 改 `String`）；`pages/search/index.tsx`（`/api/search/product` → `/api/search/spu`）；`pages/marketplace/index.tsx`（`categoryId` → `category_id`）；`pages/{favorites,product}/index.tsx`（读 `spu_id` 而不是 `product_id`；历史 POST 参数 `spu_id`）。
+
+⚠️ **别把它当「改几个字符串」**：三处口径（名称键 / 资源段 / 查询参数）之外还有**第四处** —— **标识寻址从技术键换成业务键**（上表最后一行）。只改路径不改寻址，详情页会从「404 取不到」变成「400 参数非法」，**仍然打不开**，但错误形态变了 —— 那时最容易得出「后端又坏了」的错误结论。
+
+**可机械核对的现状**：`node Implementation/front-end/scripts/crosscheck-api-paths.mjs` 的「未匹配明细」会直接列出这三条死路径（当前属**非阻塞报告项**，不拦 CI）。
 
 ---
 
@@ -115,6 +120,7 @@
 
 | 版本 | 日期 | 变更内容 |
 | :-- | :-- | :-- |
+| V1.3 | 2026-10-19 | §九 增补第四类缺口「**标识寻址（技术键 vs 业务键）**」：小程序用技术键 `id` / 读 `product_id`，而后端对外标识已统一为 32-hex 业务键（`spu_id`），`GET /api/item/spu/{spuId}` 对非 32-hex **fail-fast 400/1101**；据此改写「最小修复面」（补 `spu_id` 寻址与历史 `spu_id` 参数）并加一条警告：**只改路径会从 404 变成 400，仍打不开**；附可机械核对的命令。仍**不改小程序代码**（用户裁决不变）|
 | V1.2 | 2026-10-18 | 新增 §九「已知未修 —— 小程序端」：按用户裁决登记「名称键仍读 `name` / 仍打旧资源段 `/api/item/product/**`、`/api/search/product` / 查询参数仍用 `categoryId`」及其后果（商品名空白、取不到数据、筛选静默失效），明确**本轮完全排除**；正文其余各节未改 |
 | V1.1 | 2026-10-15 | 补齐元信息头（归属域 / Owner / 更新触发条件 / 版本）——由 ADR-053 归属 product-manager；正文各节未改（V5.14-V5.18 对接内容与契约收紧注记保持原样） |
 | V1.0 | 2026-10-06 | 初版：V5.14-V5.18 全部契约增量按页面场景组织（小程序登录/拼团/发票/知识图谱搭配/多币种展示/小程序支付拉起/分享小程序码）＋多币种共享换算测试向量 ＋ ADR-050 契约收紧注记 |

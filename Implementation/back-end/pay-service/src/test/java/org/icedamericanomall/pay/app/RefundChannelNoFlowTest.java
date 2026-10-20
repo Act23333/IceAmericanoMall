@@ -58,6 +58,7 @@ class RefundChannelNoFlowTest {
     private InMemoryRefundOrderRepository refundOrderRepository;
     private RecordingPaymentClient wechatClient;
     private RefundManager refundManager;
+    private ChannelCallbackManager callbackManager;
     private PayOrder paidPayOrder;
 
     @BeforeEach
@@ -75,6 +76,8 @@ class RefundChannelNoFlowTest {
                 tradeInvoiceClient, payOrderRepository, mock(InvoiceLinkCompensationRepository.class));
         refundManager = new RefundManager(refundOrderRepository, payOrderRepository, router,
                 mock(BalanceClient.class), new RefundConverterImpl(), notifier);
+        callbackManager = new ChannelCallbackManager(payOrderRepository, refundOrderRepository, router,
+                notifier, new TradeStatusNotifier(mock(org.icedamericanomall.client.OrderClient.class)));
 
         // 造一笔已支付的微信支付单（渠道号由生产工厂生成）
         paidPayOrder = payOrderRepository.createPending(ORDER_NO, USER_ID, REFUND_AMOUNT,
@@ -123,7 +126,7 @@ class RefundChannelNoFlowTest {
         wechatClient.refundCallbackOutRefundNo = refundOrder.getOutRefundNo();
         wechatClient.refundCallbackRefundId = "wx-rfd-9001";
 
-        refundManager.handleWechatRefundCallback(Map.of("Wechatpay-Signature", "sig"), "{\"resource\":{}}");
+        callbackManager.handleWechatRefundCallback(Map.of("Wechatpay-Signature", "sig"), "{\"resource\":{}}");
 
         RefundOrder after = refundOrderRepository.getByRefundNo(refundOrder.getRefundNo());
         assertEquals(RefundStatusEnum.SUCCESS.getCode(), after.getStatus());
@@ -140,7 +143,7 @@ class RefundChannelNoFlowTest {
         wechatClient.refundCallbackOutRefundNo = refundOrder.getRefundNo();
 
         BizException ex = assertThrows(BizException.class,
-                () -> refundManager.handleWechatRefundCallback(Map.of(), "{}"));
+                () -> callbackManager.handleWechatRefundCallback(Map.of(), "{}"));
 
         // 【语义变更（批次 R2，改严）】实体是退款单：3009 → 1103（同为 404，零新增码）
         assertEquals(ErrorCode.NO_RESOURCE_FOUND, ex.getErrorCode());

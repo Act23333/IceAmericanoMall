@@ -13,10 +13,13 @@ export default function PointsPage() {
   });
 
   async function fetchBalance() {
-    try { const data = await apiClient<{balance: number}>('/api/user/points/balance'); setBalance(data?.balance || 0); } catch {}
+    // ★ 路径更正：积分域归 marketing-service —— `GET /api/points/balance`
+    //   （原 `/api/user/points/balance` 在后端不存在）
+    try { const data = await apiClient<{user_id: number; balance: number}>('/api/points/balance'); setBalance(data?.balance || 0); } catch {}
   }
   async function fetchLogs() {
-    try { const data = await apiClient<any>('/api/user/points/history?page=1&size=30'); setLogs(data?.records || []); } catch {}
+    // ★ 路径更正：`GET /api/points/history`
+    try { const data = await apiClient<any>('/api/points/history?page=1&size=30'); setLogs(data?.records || []); } catch {}
   }
 
   return (

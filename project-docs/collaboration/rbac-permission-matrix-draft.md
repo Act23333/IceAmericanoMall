@@ -93,6 +93,144 @@
 | `KnowledgeBaseController` | 4 | **`seller:knowledge`** | 现为代码内 `hasRole`，应改声明式 |
 | `MerchantController` | 7 | `seller:admin`（6 个） | **`POST /api/seller/apply` 保持无权限位**（入驻申请，任何登录用户可调）→ 见 Q4 |
 
+### 4.2b 执行草案 v2（2026-10-19，**待逐端点签字**）
+
+> 本节的目的是把 §4.2 从「按控制器给的位」变成「**可以直接照着改代码的 19 行**」，
+> 并且把需要**业务判断**的地方单独挑出来 —— 其余都是机械工作，不需要你逐个看。
+> 签字后执行顺序固定：**接线（改注解）与删 EXEMPT 必须同一个 commit**（理由见本节末）。
+
+#### 一、19 个端点 → 5 个位（我给的收敛结果）
+
+| # | 端点 | 拟挂位 | 读/写 | 副作用 |
+|---|---|---|---|---|
+| 1 | `POST /api/seller/apply` | **无位**（Q4 已裁决） | 写 | 入驻申请，任何登录用户可调；靠限流+状态机，不靠位 |
+| 2 | `GET /api/seller/shops` | `seller:admin` | 读 | 无 |
+| 3 | `PUT /api/seller/shops/{shopId}` | `seller:admin` | 写 | 改店铺资料（含归属校验 `loadOwnedShop`） |
+| 4 | `GET /api/seller/shops/{shopId}/decoration` | `seller:admin` | 读 | **无**（实测 `orElseGet(empty)`，读时**不建行**） |
+| 5 | `PUT /api/seller/shops/{shopId}/decoration` | `seller:admin` | 写 | 覆盖装修 |
+| 6 | `GET /api/seller/shop` | `seller:admin` | 读 | 无 |
+| 7 | `PUT /api/seller/shop` | `seller:admin` | 写 | 改店铺资料 |
+| 8 | `GET /api/seller/finance/settlement/page` | `seller:finance` | 读 | 无（按 `sellerId` 过滤） |
+| 9 | `GET /api/seller/finance/settlement/{id}` | `seller:finance` | 读 | 无（`getSellerSettlement(id, sellerId)` 带归属校验） |
+| 10 | `GET /api/seller/finance/balance` | `seller:finance` | 读 | 无 |
+| 11 | `GET /api/seller/finance/withdrawal/page` | `seller:finance` | 读 | 无（仅回脱敏账号） |
+| 12 | **`POST /api/seller/finance/withdrawal`** | **`seller:withdrawal`**（新位，见判断 A） | 写 | **真资金动作**：发起提现 |
+| 13 | `GET /api/seller/knowledge` | `seller:knowledge` | 读 | **无**（实测纯 list） |
+| 14 | `POST /api/seller/knowledge` | `seller:knowledge` | 写 | 建条目（触发向量摄取） |
+| 15 | `PUT /api/seller/knowledge/{id}` | `seller:knowledge` | 写 | 改条目（重摄取） |
+| 16 | `DELETE /api/seller/knowledge/{id}` | `seller:knowledge` | 写 | 删条目 |
+| 17 | `POST /api/seller/coupon` | `seller:coupon` | 写 | 建券 |
+| 18 | `GET /api/seller/coupon` | `seller:coupon` | 读 | 无 |
+| 19 | `PUT /api/seller/coupon/{couponId}/disable` | `seller:coupon` | 写 | 停券（**不可撤销**） |
+
+- 5 位 = `seller:admin`(6) + `seller:finance`(4) + **`seller:withdrawal`**(1) + `seller:knowledge`(4) + `seller:coupon`(3) + 无位(1) = 19。
+- 若你不同意判断 A，则 `withdrawal` 合并回 `seller:finance`，共 **4 位**（仍在 4–6 区间内，照样可执行）。
+
+#### 二、需要你签字的**两类**业务判断（其余不用看）
+
+**判断 A（资金侧）**：提现是否独立成位？
+
+- 现状：`seller:finance` 一位覆盖「看余额 / 看结算单 / 看提现记录 / **发起提现**」。今天只有 `ROLE_SELLER` 一个商家角色，
+  所以"能看=能提"谁都不吃亏；但 **Q7 已裁决「员工角色另立项」** —— 一旦出现「财务（能看账、不能打款）」这类角色，
+  这一位就必须拆，届时是一次**带数据迁移的权限变更**（新位、种子、缓存清理、存量角色补齐）。
+- **我的建议：现在就拆**（成本 = 1 个种子行 + 4 行注解）；理由与 ADR-035「资金面独立」同源：
+  资金侧的口径**只在"还没有第二个角色"的时候最便宜**。
+
+**判断 B（GET 是否有副作用）**：我已实测两个可疑 GET，**都是纯读**：
+
+| GET | 实测 | 结论 |
+|---|---|---|
+| `GET /shops/{shopId}/decoration` | `findByShopId(...).orElseGet(ShopDecorationVO::empty)` —— **不建行** | 挂读位安全 |
+| `GET /knowledge` | 纯 `listBySeller` | 挂读位安全 |
+
+- 需要你确认的是**业务意图**，不是代码现状：这两处将来会不会改成"读时初始化默认装修 / 读时重排知识库"？
+  若会，则应改成一个显式的**写端点**，而不是让 GET 悄悄写 —— 因为 GET 会被网关/浏览器/监控**预取和重放**。
+
+#### 二·五 判断 A / B 已签（2026-10-19）+ 接线前补的三件
+
+**判断 A 已签：提现独立成位 `seller:withdrawal`。先 grep 了有没有同步打款 —— 结论是「没有」：**
+
+```java
+// WithdrawalManager#applyWithdrawal（trade-service）
+withdrawal.setStatus(WithdrawalStatusEnum.PENDING_REVIEW.getCode());   // 只落"待审核"
+return tradeConverter.toSellerVO(withdrawalRepository.save(withdrawal));
+```
+
+出款在**管理端** `review(id, status, …)`（"打款成功时级联结算单已打款"）。所以 `seller:withdrawal`
+的准确语义是**「发起资金请求」而不是「打款」**，这一点必须写进权限位说明 —— 否则会有人以为给了这个位就能出款。
+
+⚠️ **grep 顺带抓到一个真缺陷（比位拆分更要紧，已登记 T-WITHDRAW）**：
+`availableBalance` = 所有 `SETTLED` 结算单之和，**不扣待审/已通过的提现**。
+⇒ 商家可以连续申请 N 次，每次都能通过 `amount <= available` 校验，**待审提现总额可以超过真实可提现余额**；
+财务逐单放行就是真多付。修法：`available = SETTLED 合计 − (待审 + 已打款) 提现合计`，或提现时**预占余额**（冻结），
+并加请求级幂等（`withdrawal_no` 已有，但缺"同额重复提交"的去重/锁）。
+
+**判断 B 已签：两个 GET 纯读无副作用，已写进契约。**
+
+| 端点 | 实测 | 契约标注 |
+|---|---|---|
+| `GET /api/seller/shops/{shopId}/decoration` | `findByShopId(...).orElseGet(ShopDecorationVO::empty)` —— **读时不建行** | 纯读无副作用 |
+| `GET /api/seller/knowledge` | 纯 `listBySeller` | 纯读无副作用 |
+
+附带写进契约的约束：**这两个 GET 将来不得改成"读时初始化/重排"** —— 要写就加显式写端点，
+因为 GET 会被网关、浏览器、监控预取与重放。
+
+#### 二·六 接线前补的三件（已完成两件、第三件随接线）
+
+**补①：`seller:admin` 聚合位登记（已实现，守卫内）**
+
+聚合位的危险是「**新端点被静默吃掉**」：新增一个方法挂上 `seller:admin`，就"有权限了"，没人再审"它该不该属于商家店铺域"。
+所以在 `AdminEndpointAuthorizationGuardTest` 里登记成**清单 + 面断言**：
+
+```java
+private static final Set<String> SELLER_ADMIN_AGGREGATE = Set.of(
+        "MerchantController#myShops", "MerchantController#updateMyShop",
+        "MerchantController#getDecoration", "MerchantController#saveDecoration",
+        "MerchantController#getDefaultShop", "MerchantController#updateDefaultShop");
+```
+
+断言：控制器实际映射方法集合 **== 登记清单 ∪ 端点级豁免**，不一致即红。
+**M25 实测**：给 `MerchantController` 加一个 `probeNewEndpoint` 而不更新清单 → 红，且报错直接点名该方法。
+
+**补②：永久豁免与临时豁免分 `type`（已实现，守卫内）**
+
+| 类型 | 语义 | 断言 |
+|---|---|---|
+| `PERMANENT` | 业务上永远不该有位（如入驻申请，Q4） | **不得有截止日**；理由必须写清裁决依据 |
+| `TEMPORARY` | 待权限矩阵执行 | **必须有截止日**；**过期即红**（倒计时，不是永久免责） |
+
+两者若混在一张只有 String 理由的表里，「永久」就能借「临时」的名义长期存在（§5 判据 3 的"免责名单"）。
+另加**端点级豁免** `ENDPOINT_EXEMPT`（键 `Controller#method`）：把 `MerchantController#apply` 登记为
+`PERMANENT`，使其 6 个兄弟方法能被逐方法强制，而 apply 不被封 —— 这是"整类豁免"与"类级注解"二者都做不到的形态。
+配套断言：端点级豁免条目必须**仍存在且仍无注解**（补上注解或方法改名 ⇒ 红）。
+
+**补③：四个控制器的类级/方法级挂法（随接线一次性落地）**
+
+| 控制器 | 挂法 | 位 | 理由 |
+|---|---|---|---|
+| `KnowledgeBaseController` | **类级** | `seller:knowledge` | 4 个端点同位 ⇒ 类级最省 |
+| `MerchantCouponController` | **类级** | `seller:coupon` | 3 个端点同位 |
+| `SellerFinanceController` | **方法级** | 4 读 → `seller:finance`；提现 → `seller:withdrawal` | 一个类两个位，**必须**方法级（类级 + 方法级是 AND） |
+| `MerchantController` | **方法级** | 6 个 → `seller:admin`；`apply` → 无位 | 同类里有一个不能挂位（Q4） |
+
+- 方法级的两个控制器要登记进 `METHOD_LEVEL_ADMIN_CLASSES`（**按类名**，不要用 `/api/seller` 前缀 ——
+  那会把"必须类级"的规则对全部商家端控制器一起放宽）。
+- 类级的两个控制器**不需要**登记，但它们一旦有"新增端点要不同位"的需求，就得改方法级并同步本表。
+
+#### 三、执行要求（写死）
+
+1. **接线与删 EXEMPT 必须同一个 commit**。分开提交会在中间态制造两种红：
+   只接线不删 EXEMPT ⇒ 守卫因「陈旧豁免」红；只删 EXEMPT 不接线 ⇒ 守卫因「缺注解」红。
+   合并成一次，仓库任何时刻都是可解释的状态。
+2. `POST /api/seller/apply` 的豁免要从「2026-11-15 到期」那条**移到永久豁免**并写理由（Q4 已裁决），
+   否则到期会误红。
+3. **归属校验不得被权限位替代**：`loadOwnedShop` / `pageBySeller(sellerId)` / `getSellerSettlement(id, sellerId)`
+   是**数据面**校验，位只回答"能不能进这个域"。删掉它们等于把"能进"变成"能看别家"。
+4. 验收三条（缺一条就不算完成）：
+   - 守卫对这四个控制器**转强制**（不再走 EXEMPT），且 EXEMPT 表里没有它们的残留条目；
+   - `rbac:admin` 之外的位引用全部在种子里 `status=1`；
+   - 新增/沿用一条结构断言：这四个控制器**每个映射方法都有 `@PreAuthorize`**（`AdminEndpointAuthorizationGuardTest` 已具备该能力）。
+
 ### 4.3 角色-权限映射（拟议）
 
 | 角色 | 位 |

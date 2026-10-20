@@ -20,12 +20,13 @@ export default function PayPage() {
   async function doPay() {
     if (!order) return;
     try {
-      const pay = await apiClient<any>(`/api/pay/order/${order.orderNo}?channel=${channel}`, { method: 'POST' });
+      // ★ 字段更正：OrderVO.order_no / PayOrderVO.qr_code_url / pay_amount（snake_case）
+      const pay = await apiClient<any>(`/api/pay/order/${order.order_no}?channel=${channel}`, { method: 'POST' });
       if (pay.status === 3) {
         Taro.showToast({ title: '支付成功', icon: 'success' });
-        setTimeout(() => Taro.redirectTo({ url: `/pages/order-detail/index?orderNo=${order.orderNo}` }), 1000);
-      } else if (pay.qrCodeUrl) {
-        setPayUrl(pay.qrCodeUrl);
+        setTimeout(() => Taro.redirectTo({ url: `/pages/order-detail/index?orderNo=${order.order_no}` }), 1000);
+      } else if (pay.qr_code_url) {
+        setPayUrl(pay.qr_code_url);
       }
     } catch (e: any) { Taro.showToast({ title: e?.message || '支付失败', icon: 'none' }); }
   }
@@ -35,11 +36,11 @@ export default function PayPage() {
     if (!order || !payUrl) return;
     const t = setInterval(async () => {
       try {
-        const p = await apiClient<any>(`/api/pay/order/${order.orderNo}/status`);
+        const p = await apiClient<any>(`/api/pay/order/${order.order_no}/status`);
         if (p.status === 3) {
           clearInterval(t);
           Taro.showToast({ title: '支付成功', icon: 'success' });
-          setTimeout(() => Taro.redirectTo({ url: `/pages/order-detail/index?orderNo=${order.orderNo}` }), 500);
+          setTimeout(() => Taro.redirectTo({ url: `/pages/order-detail/index?orderNo=${order.order_no}` }), 500);
         }
       } catch {}
     }, 3000);
@@ -53,7 +54,7 @@ export default function PayPage() {
       <Text className="page-title">收银台</Text>
       <View className="pay-amount">
         <Text className="pay-label">应付金额</Text>
-        <Text className="pay-price">¥{formatPrice(order.payAmount)}</Text>
+        <Text className="pay-price">¥{formatPrice(order.pay_amount)}</Text>
       </View>
 
       <View className="channel-list">

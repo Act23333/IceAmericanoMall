@@ -55,23 +55,24 @@ export default function OrdersPage() {
         <View className="empty"><Text>暂无订单</Text></View>
       ) : (
         orders.map((o: any) => (
-          <View key={o.orderNo} className="order-card" onClick={() => Taro.navigateTo({ url: `/pages/order-detail/index?orderNo=${o.orderNo}` })}>
+          // ★ 字段更正：OrderVO 为 snake_case（order_no / pay_amount），OrderItemVO 为 product_name
+          <View key={o.order_no} className="order-card" onClick={() => Taro.navigateTo({ url: `/pages/order-detail/index?orderNo=${o.order_no}` })}>
             <View className="order-header">
-              <Text className="order-no">{o.orderNo}</Text>
+              <Text className="order-no">{o.order_no}</Text>
               <Text className="order-status">{STATUS_MAP[o.status] || o.status}</Text>
             </View>
             {o.items?.slice(0, 3).map((item: any) => (
               <View key={item.id} className="order-item">
-                <Text className="item-name">{item.productName} x{item.quantity}</Text>
+                <Text className="item-name">{item.product_name} x{item.quantity}</Text>
                 <Text className="item-price">¥{formatPrice(item.price)}</Text>
               </View>
             ))}
             <View className="order-footer">
-              <Text className="order-total">合计 ¥{formatPrice(o.payAmount)}</Text>
+              <Text className="order-total">合计 ¥{formatPrice(o.pay_amount)}</Text>
               <View className="order-actions" onClick={(e: any) => e.stopPropagation()}>
-                {o.status === 1 && <View className="action-btn" onClick={() => cancel(o.orderNo)}><Text>取消</Text></View>}
-                {o.status === 1 && <View className="action-btn primary" onClick={() => Taro.navigateTo({ url: `/pages/pay/index?orderNo=${o.orderNo}` })}><Text>去支付</Text></View>}
-                {o.status === 3 && <View className="action-btn primary" onClick={() => confirm(o.orderNo)}><Text>确认收货</Text></View>}
+                {o.status === 1 && <View className="action-btn" onClick={() => cancel(o.order_no)}><Text>取消</Text></View>}
+                {o.status === 1 && <View className="action-btn primary" onClick={() => Taro.navigateTo({ url: `/pages/pay/index?orderNo=${o.order_no}` })}><Text>去支付</Text></View>}
+                {o.status === 3 && <View className="action-btn primary" onClick={() => confirm(o.order_no)}><Text>确认收货</Text></View>}
               </View>
             </View>
           </View>

@@ -43,7 +43,9 @@ services:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      # Initialize.sql = 全库唯一结构真相源（48 表终态）；2026-10-05 起迁移文件机制废除（ADR-045，库无存量数据），结构变更直接修改本快照
+      # Initialize.sql = 全库唯一结构真相源；2026-10-05 起迁移文件机制废除（ADR-045，库无存量数据），
+      # 结构变更直接修改本快照。**表数不写在这里**（写死的数字必然漂：U8 曾留着过时表数）——
+      # 要数字就 `node Implementation/back-end/scripts/sync-doc-counts.mjs --list-tables`。
       - ./database/Initialize.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
       - ./database/middleware/nacos-mysql.sql:/docker-entrypoint-initdb.d/11-nacos-mysql.sql:ro
       - ./database/middleware/xxl-job-mysql.sql:/docker-entrypoint-initdb.d/12-xxl-job-mysql.sql:ro

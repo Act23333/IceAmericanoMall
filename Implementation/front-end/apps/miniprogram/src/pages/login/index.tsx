@@ -44,8 +44,9 @@ export default function LoginPage() {
         // 未授权时也可登录，使用默认昵称
       }
 
-      // 3. 发送 code 到后端
-      const res = await apiClient<any>('/api/auth/login/wechat', {
+      // 3. 发送 code 到后端 —— 小程序登录专用端点（`wx.login()` 的临时 code 换 openid）
+      //    ★ 原 `/api/auth/login/wechat` 是 Web 端 OAuth2 回调端点，小程序应走 mini 端点
+      const res = await apiClient<any>('/api/auth/wechat/mini/login', {
         method: 'POST',
         data: { code: loginRes.code },
       });
@@ -96,9 +97,12 @@ export default function LoginPage() {
     setLoading(true);
     setAuthError('');
     try {
-      const res = await apiClient<any>('/api/auth/login', {
+      // ★ 路径更正：`POST /api/auth/web/login`（原 `/api/auth/login` 不存在）
+      // ★ 字段更正：WebLoginReq 无 @JsonProperty → 全平台 SNAKE_CASE，键名为
+      //   identity_type / credential_type（旧写法 identityType/credentialType 会被静默忽略）
+      const res = await apiClient<any>('/api/auth/web/login', {
         method: 'POST',
-        data: { identityType: 'PHONE', credentialType: 'PASSWORD', account: phone, credential: password },
+        data: { identity_type: 'PHONE', credential_type: 'PASSWORD', account: phone, credential: password },
       });
       setTokens(res.access_token, res.refresh_token);
       try {
@@ -122,9 +126,9 @@ export default function LoginPage() {
     setLoading(true);
     setAuthError('');
     try {
-      const res = await apiClient<any>('/api/auth/login', {
+      const res = await apiClient<any>('/api/auth/web/login', {
         method: 'POST',
-        data: { identityType: 'PHONE', credentialType: 'SMS_CODE', account: phone, credential: code },
+        data: { identity_type: 'PHONE', credential_type: 'SMS_CODE', account: phone, credential: code },
       });
       setTokens(res.access_token, res.refresh_token);
       try { saveUser(await apiClient<any>('/api/user/info')); } catch {}
@@ -151,9 +155,9 @@ export default function LoginPage() {
         data: { phone, password, code, username: username || undefined },
       });
       // 注册成功后自动登录
-      const res = await apiClient<any>('/api/auth/login', {
+      const res = await apiClient<any>('/api/auth/web/login', {
         method: 'POST',
-        data: { identityType: 'PHONE', credentialType: 'PASSWORD', account: phone, credential: password },
+        data: { identity_type: 'PHONE', credential_type: 'PASSWORD', account: phone, credential: password },
       });
       setTokens(res.access_token, res.refresh_token);
       try { saveUser(await apiClient<any>('/api/user/info')); } catch {}
@@ -169,9 +173,21 @@ export default function LoginPage() {
   async function sendCode() {
     if (!phone) { Taro.showToast({ title: '请输入手机号', icon: 'none' }); return; }
     try {
-      await apiClient('/api/user/code', { method: 'POST', data: { phone } });
+      // ★ 路径更正：发码统一走 verification-service（ADR-016 收口）
+      //   `POST /api/verification/codes`（原 `/api/user/code` 已下线）
+      await apiClient('/api/verification/codes', {
+        method: 'POST',
+        data: {
+          channel: 'SMS',
+          target: phone,
+          scene: mode === 'register' ? 'REGISTER' : 'LOGIN',
+          request_id: `${Date.now()}`,
+        },
+      });
       Taro.showToast({ title: '验证码已发送', icon: 'none' });
-    } catch {}
+    } catch (e: any) {
+      Taro.showToast({ title: e?.message || '发送失败', icon: 'none' });
+    }
   }
 
   // ==================== 渲染 ====================

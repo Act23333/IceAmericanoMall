@@ -65,13 +65,18 @@ export const MOCK_BANNERS = [
   { id: 3, title: '限时秒杀 — 每日10点开抢', image: bannerImage(3), link: '/pages/flash/index' },
 ];
 
+/**
+ * 兜底商品数据（后端不可达时展示）。
+ * 字段名与线上报文一致（snake_case）—— `ProductCard` 直接按报文键名取值，
+ * 故 mock 不能再用 camelCase，否则价格/销量渲染不出来。
+ */
 export const MOCK_PRODUCTS = [
-  { id: 1, name: '手工陶瓷茶杯',  price: 12800, soldCount: 1280 },
-  { id: 2, name: '原木台灯',      price: 26800, soldCount: 860 },
-  { id: 3, name: '亚麻编织毯',    price: 18800, soldCount: 450 },
-  { id: 4, name: '棉麻围巾',      price: 8900,  soldCount: 2100 },
-  { id: 5, name: '手工皮革托特包', price: 39800, soldCount: 620 },
-  { id: 6, name: '真无线降噪耳机', price: 59900, soldCount: 3200 },
-  { id: 7, name: '氮化镓充电器',  price: 12900, soldCount: 1800 },
-  { id: 8, name: '明前龙井',      price: 19800, soldCount: 560 },
+  { id: 1, name: '手工陶瓷茶杯',  min_price: 12800, sold_count: 1280 },
+  { id: 2, name: '原木台灯',      min_price: 26800, sold_count: 860 },
+  { id: 3, name: '亚麻编织毯',    min_price: 18800, sold_count: 450 },
+  { id: 4, name: '棉麻围巾',      min_price: 8900,  sold_count: 2100 },
+  { id: 5, name: '手工皮革托特包', min_price: 39800, sold_count: 620 },
+  { id: 6, name: '真无线降噪耳机', min_price: 59900, sold_count: 3200 },
+  { id: 7, name: '氮化镓充电器',  min_price: 12900, sold_count: 1800 },
+  { id: 8, name: '明前龙井',      min_price: 19800, sold_count: 560 },
 ];
