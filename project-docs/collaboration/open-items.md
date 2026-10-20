@@ -2713,6 +2713,34 @@ Domain 层与 `refetch` 的入参都是**原始值**（`null` 就是 `null`）�
 `MATCHED` / `DIFF` / `RESOLVED` **三个都要**（只测 `RESOLVED` 会漏掉前两个——它们同样不可重拉）。
 
 ---
+### 1.57 写仓储前的六项（2026-10-19）
+
+**① 有效批次唯一性：`UNIQUE(provider, biz_date, active_key)`**
+**技术更正**：MySQL 的**生成列不能引用 `AUTO_INCREMENT` 列、也不能用 `UUID()`**（非确定性函数禁止），
+所以"生成列"这条路走不通。改成**应用维护的普通列** `active_key`：
+有效批次写 `ACTIVE`，被取代时写自己的 `batch_no`（天然唯一）。唯一键 `(provider, biz_date, active_key)`
+就把"同一天只能有一个有效批次"变成**数据库保证**，`findActiveBatch` 的唯一性不再是假设。
+代价：写 `is_active = 0` 的那条更新必须**同时**改 `active_key` —— 两列要么一起改，要么都不改（仓储层一处实现）。
+
+**② `resolution_log` 只引用 `batch_no`，不引用 `item_id`**
+因为重拉会**删掉并重建 item**（主键变化）。审计若挂在 item 上，一次重拉就把历史指歪。
+
+**③ `claimBatch` 校验通过但 0 行 ⇒ 抛并发异常，且带三要素**
+`batchNo` / `expectedFrom` / `actualStatus`（0 行时再查一次当前状态填进去）。
+没有这三样，日志里只会写"claim 失败"，无法区分"被别的实例抢先"还是"数据被改坏"。
+
+**④ `findActiveBatch` 无批次是正常返回值，不是异常**
+返回 `Optional.empty()`；只有"期望有却没有"的调用方（例如结算汇总）才需要自己决定报错。
+
+**⑤ 补记要能独立验证**
+`resolution_log` 增 `booked_amount` / `paid_total_before` / `paid_total_after`：
+审计不必回头查当时余额，只看日志就能验证"补了多少、前后对不对"。
+
+**⑥ 列宽校验**：`payout_no` 64、`channel_ref` 160，均 ≥ 哨兵（八字符）✔。
+
+**已具备的前置**：两列 `NOT NULL`；哨兵大小写不敏感；`canTransit` 白名单；`RESOLVED→RESOLVED` 可纠错。
+
+---
 ---
 
 ## 2. 待办

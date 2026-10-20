@@ -1587,7 +1587,9 @@ CREATE TABLE `reconciliation_batch` (
     `biz_date` DATE NOT NULL COMMENT '账期',
     `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=PENDING 2=FETCHED 3=MATCHED 4=DIFF 5=RESOLVED',
     `is_active` TINYINT NOT NULL DEFAULT 1 COMMENT '是否有效批次（同日重跑时旧批次置 0）',
+    `active_key` VARCHAR(64) NOT NULL DEFAULT 'ACTIVE' COMMENT '有效批次标记：有效=ACTIVE，被取代=本批次号（唯一键用）',
     `superseded_by` VARCHAR(64) DEFAULT NULL COMMENT '被哪个新批次取代',
+    UNIQUE KEY `uk_active_batch` (`provider`, `biz_date`, `active_key`),
     `fetched_at` DATETIME DEFAULT NULL,
     `matched_count` INT NOT NULL DEFAULT 0,
     `diff_count` INT NOT NULL DEFAULT 0,
@@ -1635,6 +1637,9 @@ CREATE TABLE `reconciliation_resolution_log` (
     `conclusion` VARCHAR(32) NOT NULL COMMENT 'ACCEPT_DIFF / BOOKED / REVERTED',
     `note` VARCHAR(500) NOT NULL COMMENT '依据（必填）',
     `resolved_by` BIGINT NOT NULL,
+    `booked_amount` INT DEFAULT NULL COMMENT '补记金额（仅 BOOKED 结论）',
+    `paid_total_before` INT DEFAULT NULL COMMENT '补记前 paid_total（审计独立可验）',
+    `paid_total_after` INT DEFAULT NULL COMMENT '补记后 paid_total',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY `idx_batch_no` (`batch_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对账处置历史（结论变更可追溯）';
