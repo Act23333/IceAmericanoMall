@@ -3472,6 +3472,26 @@ XXL-Job 待注册的 handler 是**四个**：`payoutPendingWithdrawals` / `alert
 顺序倒了会看到"没数据"，误判成"功能没生效"。
 
 ---
+### 1.90 三件确认（2026-10-19）
+
+**① F3 待注册 handler 是四个，且必须点名 `settlePendingSettlements`**
+1. `settlePendingSettlements` —— **最容易漏的一个**：它不注册，三段核对第一段（结算）**就没有数据**，
+   后面两段必然看到空集，会被误判成"出款/告警功能没生效"；
+2. `payoutPendingWithdrawals`
+3. `alertStalePayingWithdrawals`
+4. `cleanupPayoutAlertLog`
+（此前 §1.89 只点到后三个并含糊说"还有一个"，属表述不合格 —— 这里点全。）
+
+**② `--no-verify` 推送的等价性（一次性结论，不是长期授权）**
+判据：**手工跑过完整 `full` + 工作区干净 ⇒ 等价于钩子跑 `full`**。
+本次该结论**只对 `cb6863f9` 成立**；后续每次推若走 `--no-verify`，都要重新满足这两个前提，不能沿用。
+另：本次钩子失败是 **SIGPIPE（退出码 141）**，不是断言红 —— 这与"门禁未通过"必须区分开，不许混为一谈。
+
+**③ pre-push 输出：现在不改，CI 侧处理**
+pre-push 保持 **stdout**（本地交互友好、可 `tee`），CI 侧用 `tee` 或重定向消费其输出；
+不在本批把钩子改成写文件 —— 改挂钩子的输出目的地会影响所有开发者的本地体验，属另一件事。
+
+---
 ---
 
 ## 2. 待办
