@@ -2671,6 +2671,22 @@ completePayout(withdrawal)   ← 事务 B：状态迁移 + 释放冻结 + 记 pa
   **审计以处置日志（`reconciliation_resolution_log`）为准**。
 
 ---
+### 1.55 仓储实现开工：哨兵层先落（2026-10-19）
+
+**本批已完成**：`ReconciliationSentinels`（`__NULL__` 编码/解码）+ 往返单测。
+**反向风险已挡在写入侧**：真实值恰好等于哨兵时 `encode` 抛 `IllegalArgumentException` ——
+否则读出时会凭空造出一个 NULL，而这类"占位泄漏"在差异统计里极难发现。
+解码只认完整哨兵，`__NULL__x` / `_NULL_` 这类形近值不受影响（有用例）。
+
+**为什么先做这一层再写 Mapper**：它是 `UNIQUE(batch_no, payout_no, channel_ref)` 能真正去重的前提；
+Mapper 里每次写都要过 encode、每次读都要过 decode，先把这个函数钉死，后面才不会各处各写一遍。
+
+**下一步（仓储实现）**：
+`ReconciliationBatchPO` / `ReconciliationItemPO` / `ReconciliationRawPO` + 三个 Mapper +
+`ReconciliationRepository`（`findActiveBatch` 唯一入口、`claimBatch` 条件迁移、重拉同事务先删后插）+
+H2 用例（重拉幂等不翻倍 / 闭环后重拉被拒 / 哨兵往返）。
+
+---
 ---
 
 ## 2. 待办
