@@ -2923,6 +2923,26 @@ Spring 测试的 `@Transactional` 会**回滚整个测试**并把事务托管给
 **未验证**：接口未接实现、未跑 SQL、无测试。
 
 ---
+### 1.66 守卫的写法要点与**变异验证**要求（2026-10-19）
+
+**① `JavaSourceParser` 的可用 API（已核，不用再猜）**
+`mainSources()` → `List<Path>`；`parse(Path)` → `CompilationUnit`；`methods(CompilationUnit)` → `List<MethodDeclaration>`；
+`body(MethodDeclaration)` → `String`；另有 `hasAnnotation` / `typeHasAnnotation` / `typeNames` / `hasNoBody`。
+参考写法见 `FundTransactionGuardTest`（`mainSources` 遍历 + `parse` + `methods` + `body`）。
+⇒ `architecture-tests` **没有** trade-service 依赖，所以守卫只能**读源码**，不能导入 `ReconciliationStatus`。
+
+**② 两个守卫的判据**
+- `ReconciliationStatusContractGuardTest`：断言枚举声明的码值恰为 `PENDING=1 / FETCHED=2 / MATCHED=3 / DIFF=4 / RESOLVED=5`；
+- `ReconciliationMapperNoHardcodedStatusGuardTest`：断言 `ReconciliationBatchMapper` 的 SQL 里不出现
+  `status IN (数字` 或 `status = 数字` 这类硬编码，必须走 `#{pendingCode}` / `#{fetchedCode}`。
+
+**③ 两个守卫都必须做变异验证（硬要求）**
+只写不验的守卫，和"检查器永远绿"是同一类东西。每条守卫写完要**亲手把它弄红**：
+- 码值守卫：临时把 `FETCHED(2, …)` 改成 `FETCHED(9, …)` ⇒ 守卫必须红；然后改回；
+- 硬编码守卫：临时把 `#{pendingCode}` 改成 `1` ⇒ 守卫必须红；然后改回。
+**变异验证的结果要写进提交信息**（"临时改 X ⇒ 红 ⇒ 已还原"），否则无法区分"守卫有效"与"守卫空转"。
+
+---
 ---
 
 ## 2. 待办
