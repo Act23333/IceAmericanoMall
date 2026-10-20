@@ -40,8 +40,8 @@ public class WithdrawalPayoutService {
     @org.springframework.beans.factory.annotation.Value("${trade.withdrawal.payout.stale-alert-minutes:30}")
     private int retryIntervalMinutes = 30;
 
-    /** 与 DB 列 `last_payout_result VARCHAR(128)` 对齐。 */
-    static final int MAX_RESULT_LEN = 128;
+    /** 与 DB 列 `last_payout_result VARCHAR(160)` 对齐（留余量，应对更长渠道号）。 */
+    static final int MAX_RESULT_LEN = 160;
 
     /**
      * 结果摘要：{@code 分类:渠道号}，列长 128。

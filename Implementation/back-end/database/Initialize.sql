@@ -787,7 +787,7 @@ CREATE TABLE `withdrawal` (
     `amount` INT NOT NULL COMMENT '提现金额（分）',
     `payout_no` VARCHAR(64) DEFAULT NULL COMMENT '出款幂等键（渠道去重依据，全生命周期不变）',
     `last_payout_attempt_at` DATETIME DEFAULT NULL COMMENT '上次出款尝试时间（重试节流依据；NULL=从未尝试）',
-    `last_payout_result` VARCHAR(128) DEFAULT NULL COMMENT '上次出款结果 分类:渠道号（超长截断并标记）',
+    `last_payout_result` VARCHAR(160) DEFAULT NULL COMMENT '上次出款结果 分类:渠道号（超长截断并标记）',
   `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=待审核, 2=已打款, 3=拒绝, 4=付款中（结果未知，仍占冻结）',
     `bank_account` VARCHAR(50) COMMENT '银行账号',
     `bank_name` VARCHAR(100) COMMENT '开户行',

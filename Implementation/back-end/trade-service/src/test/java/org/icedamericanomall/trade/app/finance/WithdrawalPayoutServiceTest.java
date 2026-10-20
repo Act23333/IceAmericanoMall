@@ -13,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
@@ -46,7 +47,8 @@ class WithdrawalPayoutServiceTest {
         payoutService = new WithdrawalPayoutService(withdrawalRepository, payoutPort, withdrawalManager,
                 java.time.Clock.fixed(java.time.Instant.parse("2026-10-19T00:00:00Z"), java.time.ZoneId.of("UTC")));
         org.springframework.test.util.ReflectionTestUtils.setField(payoutService, "retryIntervalMinutes", 30);
-        when(withdrawalRepository.markPayoutAttempt(any(), any())).thenReturn(1);   // 节流标记成功
+        // lenient：截断用例不经过扫描/标记路径，严格桩会误报 UnnecessaryStubbing
+        org.mockito.Mockito.lenient().when(withdrawalRepository.markPayoutAttempt(any(), any())).thenReturn(1);
     }
 
     @Test
@@ -105,6 +107,19 @@ class WithdrawalPayoutServiceTest {
 
         assertEquals(0, payoutService.settle(LIMIT));
         verify(payoutPort, never()).pay(any());
+    }
+
+    @Test
+    @DisplayName("结果摘要超长 ⇒ 截断到列宽内且**保留尾部**（渠道号唯一段在末尾）")
+    void summarizeShouldTruncateKeepingTail() {
+        String longRef = "X".repeat(200);
+        String stored = WithdrawalPayoutService.summarize(
+                new WithdrawalPayoutPort.PayoutResult(true, longRef, null));
+
+        assertTrue(stored.length() <= WithdrawalPayoutService.MAX_RESULT_LEN,
+                "必须落在列宽内，否则写库会被截断（静默）或报错");
+        assertTrue(stored.startsWith("ACCEPTED:..."), "保留分类前缀 + 截断标记");
+        assertTrue(stored.endsWith(longRef.substring(longRef.length() - 20)), "尾部必须是原文尾部，不能截头");
     }
 
     private void stubWithdrawal() {

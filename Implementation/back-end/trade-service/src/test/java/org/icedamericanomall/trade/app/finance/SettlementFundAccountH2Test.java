@@ -199,7 +199,7 @@ class SettlementFundAccountH2Test {
                     amount INT NOT NULL,
                     payout_no VARCHAR(64),
                     last_payout_attempt_at TIMESTAMP,
-                    last_payout_result VARCHAR(128),
+                    last_payout_result VARCHAR(160),
                     status TINYINT NOT NULL DEFAULT 1,
                     bank_account VARCHAR(50),
                     bank_name VARCHAR(100),

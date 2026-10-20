@@ -2551,6 +2551,25 @@ completePayout(withdrawal)   ← 事务 B：状态迁移 + 释放冻结 + 记 pa
 而回调恰恰是会丢的那个环节。
 
 ---
+### 1.50 B1 五项补充（2026-10-19）
+
+**① `last_payout_result` 列宽 160，截断有测试**
+留余量应对更长渠道号；`summarize()` 的 `MAX_RESULT_LEN` 与列宽**同源对齐**（改列必须改常量，反之亦然）。
+新增用例：构造 200 字符 `channelRef` ⇒ 断言 `length <= 列宽`、`startsWith("ACCEPTED:...")`、`endsWith(原文尾部)`。
+
+**② `分类:渠道号` 按第一个 `:` 切分，渠道号允许含 `:`**
+解析时用 `indexOf(':')` 取分类，**剩余全部**算渠道号 —— 不许 `split(":")` 后取 `[1]`（会把含 `:` 的渠道号截断）。
+
+**③ `commit-verified.sh` 的 `TESTS` 必须覆盖本次改动涉及的测试类**
+改 mapper/DDL/仓储实现时，单模块单类往往不够 —— 要么把相关测试类列全，要么 `MODULES=''` 跑全量，
+要么在提交信息里明写"由 full 覆盖"。**不写清楚就等于把验证责任丢给下一次构建。**
+
+**④ 多实例去重的真库验证：补全条件与更稳的实现**
+补全条件：**批次 1 开工前或渠道接入前**必须有一条真库（H2/MySQL）用例证明"同 key 第二次插入返回 0"。
+实现建议：`markAlertedOnce` 改成 **`INSERT` + catch `DuplicateKeyException` ⇒ 返回 0**，
+这样 H2 与 MySQL 行为一致，不必依赖 `INSERT IGNORE` 方言。
+
+---
 ---
 
 ## 2. 待办
