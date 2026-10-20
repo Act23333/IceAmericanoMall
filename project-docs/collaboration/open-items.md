@@ -2760,7 +2760,16 @@ Domain 层与 `refetch` 的入参都是**原始值**（`null` 就是 `null`）�
 - 拉取 Job 捕获后**跳过该 provider/账期**，记一条告警（"已有有效批次"），本轮不重复拉；
 - 理由：静默重试会造出"同一天多个批次"的假象，正是唯一键要防的事。
 
-**④ 仓储分两批**
+**④ 仓储分两批（第一批已完成：三个 PO + 三个 Mapper）**
+- PO：`ReconciliationBatchPO` / `ReconciliationItemPO` / `ReconciliationRawPO`；
+  `activeKey` 用 `FieldStrategy.NEVER`（生成列，写它会被数据库拒绝）；
+  item 的两个键列在 PO 层**不许写 NULL** —— 空由哨兵承载。
+- Mapper：`selectActive(provider, bizDate)`（`superseded_by IS NULL`，唯一性由 `uk_active_batch` 保证）、
+  `claimStatus(batchNo, expectedFrom, to)`（条件更新；白名单校验仍在仓储层）、
+  item/raw 的 `deleteByBatch` + `countByBatch`（重拉先删后插的幂等断言要用）。
+- 装配：`@MapperScan` 已覆盖 `infrastructure.persistence`（含子包），无需额外注册。
+
+**④-b 第二批（未做）**
 第一批：三个 PO + 三个 Mapper（纯映射，无事务逻辑）；
 第二批：`ReconciliationRepository(+Impl)` 与 H2 用例（含并发 claim、refetch 回滚、无批次、三终态拒重拉、哨兵往返）。
 
