@@ -3024,6 +3024,19 @@ H2 内存库 + 两线程并发 `claimBatch` 很难稳定复现"恰好一个成�
 这与 §1.41②「陈旧/缺失 target」是同一类问题，记在同一条口径下。
 
 ---
+### 1.71 条件删判据一致性守卫（2026-10-19）
+
+`ReconciliationConditionalDeleteConsistencyGuardTest`：把 `ReconciliationItemMapper` 与
+`ReconciliationRawMapper` 的 `EXISTS` 判据（去空白后）**逐字比较**，不一致即红。
+
+**变异验证**：把 Raw 的 `#{fetchedCode}` 改成 `#{fetched}` ⇒ **红**（差异两串原文都打出来了）
+⇒ 已还原 ⇒ 复跑绿。这条守卫现在不再依赖"我记得两处一起改"。
+
+实现细节：不要用 `replace("
+","")` 去空白（多层转义会把字符串写坏，本轮就栽过一次），
+改用 `String.join("", Files.readAllLines(file)).replace(" ", "")` —— 无反斜杠，稳。
+
+---
 ---
 
 ## 2. 待办
