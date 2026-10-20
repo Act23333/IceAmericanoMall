@@ -45,7 +45,7 @@ mvn -f Implementation/back-end/pom.xml clean install -DskipTests
 # Build a single service (and its dependencies)
 mvn -f Implementation/back-end/pom.xml -pl user-service -am clean install
 
-# Run tests (2515 tests across all 19 modules, 0 failures, 1 pre-existing @Disabled skip — strict four-layer DDD everywhere, ADR-038/039)
+# Run tests (2518 tests across all 19 modules, 0 failures, 1 pre-existing @Disabled skip — strict four-layer DDD everywhere, ADR-038/039)
 mvn -f Implementation/back-end/pom.xml test
 
 # Run tests for a specific module
@@ -74,7 +74,7 @@ Docker Compose infra exists: `Implementation/back-end/docker-compose.yml` + `doc
 
 ## Architecture Overview
 
-IceAmericanoMall is a B2B2C e-commerce platform (similar to Taobao/JD) built as a distributed microservices system. **Backend is fully implemented** (35/35 PRD features + P1/P2 growth lines + P3 拼团/发票/知识图谱/多币种 Phase 1 + 需求对账缺口收敛 + 小程序后端增量; **19 Maven modules** = 15 services + `architecture-tests` + 3 shared libs (`ia-common`/`ia-api`/`ia-integration`; `database/` is a script dir, **not** a module), **290 HTTP endpoints** measured (227 public + **63** `/internal/**`) — `project-docs/contract/05-API-Specification.md` §四 is the single source of truth (code↔contract diff closed: 0 un-documented), **2515 tests green** (all services strict four-layer DDD, ADR-038/039); re-measured 2026-10-15). The core transaction flow (register → browse → cart → order → pay → ship → confirm) is implemented end-to-end; module boundaries were finalized in the 2026-10 boundary refactor, round 6 (merchant-service) included (see `project-docs/backend/02-Architecture.md` §3).
+IceAmericanoMall is a B2B2C e-commerce platform (similar to Taobao/JD) built as a distributed microservices system. **Backend is fully implemented** (35/35 PRD features + P1/P2 growth lines + P3 拼团/发票/知识图谱/多币种 Phase 1 + 需求对账缺口收敛 + 小程序后端增量; **19 Maven modules** = 15 services + `architecture-tests` + 3 shared libs (`ia-common`/`ia-api`/`ia-integration`; `database/` is a script dir, **not** a module), **290 HTTP endpoints** measured (227 public + **63** `/internal/**`) — `project-docs/contract/05-API-Specification.md` §四 is the single source of truth (code↔contract diff closed: 0 un-documented), **2518 tests green** (all services strict four-layer DDD, ADR-038/039); re-measured 2026-10-15). The core transaction flow (register → browse → cart → order → pay → ship → confirm) is implemented end-to-end; module boundaries were finalized in the 2026-10 boundary refactor, round 6 (merchant-service) included (see `project-docs/backend/02-Architecture.md` §3).
 
 ### Technical Stack
 
@@ -300,7 +300,7 @@ void shouldReturnToken_whenNewPhoneAndValidCode() { ... }
 - Service/Domain unit tests use JUnit 5 + Mockito (`@ExtendWith(MockitoExtension.class)`)
 - Controller integration tests use `@SpringBootTest` + Testcontainers
 
-**Current test coverage**: **2515 tests** across all **19 Maven modules** (0 failures, 0 errors, **1** pre-existing `@Disabled` skip; `database/` ships SQL only, is **not** a module, and carries no tests). Per-module counts in the table above are last fully re-measured 2026-10-10 (sums to 1667 incl. the `database` row) — the 2026-10-15 baseline of **2515** is authoritative for the repo total; refresh the per-module column with `mvn -f Implementation/back-end/pom.xml clean test` + surefire report parse when convenient. Tests are mostly JUnit 5 + Mockito unit tests; several services carry self-contained H2-backed persistence tests (`UserProvisioningH2Test` in user, `OrderRepositoryImplH2Test` in trade, `FlashSaleManagerH2Test` in marketing — manual MyBatis-Plus wiring against repository impls). No `@SpringBootTest`/Testcontainers integration tests yet.
+**Current test coverage**: **2518 tests** across all **19 Maven modules** (0 failures, 0 errors, **1** pre-existing `@Disabled` skip; `database/` ships SQL only, is **not** a module, and carries no tests). Per-module counts in the table above are last fully re-measured 2026-10-10 (sums to 1667 incl. the `database` row) — the 2026-10-15 baseline of **2518** is authoritative for the repo total; refresh the per-module column with `mvn -f Implementation/back-end/pom.xml clean test` + surefire report parse when convenient. Tests are mostly JUnit 5 + Mockito unit tests; several services carry self-contained H2-backed persistence tests (`UserProvisioningH2Test` in user, `OrderRepositoryImplH2Test` in trade, `FlashSaleManagerH2Test` in marketing — manual MyBatis-Plus wiring against repository impls). No `@SpringBootTest`/Testcontainers integration tests yet.
 
 **MyBatis-Plus testing limitation**: Methods using `lambdaQuery()`/`lambdaUpdate()` chains cannot be unit-tested with Mockito mocks (the mapper proxy's `currentModelClass()` reads generic type info lost on Mockito proxies). These methods require `@SpringBootTest` with H2 or Testcontainers. Methods using only standard `BaseMapper` methods (`save()`, `getById()`, `updateById()`) are fully testable with Mockito.
 
