@@ -56,7 +56,7 @@ jobs:
       - name: Git hooks present & executable
         run: |
           set -e
-          for h in .githooks/pre-commit .githooks/pre-push; do
+          for h in .githooks/pre-commit .githooks/pre-push .githooks/commit-msg; do
             test -f "$h" || { echo "::error::缺少钩子文件 $h"; exit 1; }
             mode=$(git ls-files -s "$h" | awk '{print $1}')
             test "$mode" = "100755" || { echo "::error::$h 索引模式为 $mode（应为 100755）"; exit 1; }
@@ -65,6 +65,12 @@ jobs:
 
       - name: Package
         run: mvn -f Implementation/back-end/pom.xml package -DskipTests
+
+      # 陈旧产物检查：必须放在**真正跑过编译**的步骤之后 —— 全新检出时 target 为空，
+      # 提前跑会因「扫描面异常」直接 exit 1（假红）。放在 Package 之后可覆盖本次构建的产物。
+      # 失败**阻断**：陈旧产物意味着这次的门禁绿不指向当前源码。
+      - name: 陈旧 class 检查（任一源码不得新于自己的 .class）
+        run: bash Implementation/back-end/scripts/check-stale-classes.sh
 
   # Stage 1b: 前端设计 token 一致性
   # 依据 project-docs/frontend/17-Frontend-Design-System.md §2.4。
@@ -114,6 +120,12 @@ jobs:
 
       - name: 查询参数命名（snake_case / POJO 绑定）
         run: node Implementation/front-end/scripts/check-query-param-naming.mjs
+
+      # U19：契约 §二 的「下游透传」生效后，`/api/**` 会出现**不在 §2.1a 清单里的 4xx**。
+      # 本步锁死「未登记状态码 → 直显 msg / 通用兜底」，且**不得**改走「服务异常」话术
+      # （那会把一次客户传错参数说成平台故障）。脚本直接跑真实的 error-codes.ts（同源，不复制判据）。
+      - name: 未登记 4xx 的前端兜底口径（U19）
+        run: node Implementation/front-end/scripts/check-error-fallback.mjs
 
       # 端点漂移的唯一判据：codeOnly（代码里有、契约里没有）必须为 0。
       # docOnly 是契约里标计划中的端点，属登记在册的待办，不是漂移，故不拦截。

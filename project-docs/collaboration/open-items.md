@@ -2468,7 +2468,8 @@ mock 的 `ASYNC_CALLBACK` 由注入 `Clock` 驱动；但 **resume job 目前没�
 **⑤ CI 接线（提案，未落盘）**：放在 `build` job 的 `Package` **之后**、失败**阻断**；
 不能放 `Gates` 之前（全新检出 target 为空 ⇒ 扫描面异常 = 假红）。CI 不需要强制 `clean`（每 job 全新检出，
 `cache: maven` 只缓存 `~/.m2`）；真正需要"绿对应干净重编"的是**本地增量** `full`。
-另建议把 `commit-msg` 加入 CI 的「hooks present & executable」循环（现在只查 pre-commit/pre-push，看不见 100644 这个洞）。
+**已接线**：`commit-msg` 已加入 CI 的「hooks present & executable」循环（此前只查 pre-commit/pre-push，看不见 100644 这个洞）；
+陈旧检查已作为 CI 的独立 step 放在 `Package` **之后**、失败阻断；CI 不强制 `clean`（每 job 全新检出）。
 
 ---
 ---
