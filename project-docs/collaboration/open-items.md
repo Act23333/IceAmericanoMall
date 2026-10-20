@@ -3366,6 +3366,62 @@ A1（短码结构级断言）修好后，**全量测试通过**（`mvn -o test` 
 
 **遗留一项**：主工作区仍在 `feat/reconciliation-daily`，落后 `develop` 一个文档提交；
 下次开工前 `git switch develop && git pull`（或 `git merge --ff-only develop` 到该分支）即可对齐。
+### 1.84 合入验收受阻与「整体同步」处置（2026-10-19）
+
+**事实链（硬证据）**
+1. worktree 合入 `feat/reconciliation-daily` → `develop`：**零冲突**；
+2. 但 `full` 红，且**不是本分支造成**：
+   - develop 提交态 `architecture-tests` **编译不过** —— 已提交的守卫 `import com.github.javaparser.*`，
+     而 `architecture-tests/pom.xml` 无该依赖、`JavaSourceParser.java` **从未提交**（`git ls-files` 为零）；
+   - 半提交：已提交的 `FundWriteCounterTest` 按**旧签名**传 `String`，新 helper 要 `MethodDeclaration`；
+   - 补齐全套解析器重构后**仍红**：`AdminEndpointAuthorizationGuardTest`（admin/seller 控制器缺类级 `@PreAuthorize`）、
+     `ClassSizeRatchetTest`（超基线）、`FundTransactionGuardTest`（资金写缺事务）、`JavaSourceParserCorpusTest`。
+3. 根因：**收紧后的守卫与它们要求的业务侧修复分属不同会话的未提交改动**；
+   主工作区那批未提交的业务侧源文件正是守卫要求的东西 —— 在树里是绿的，只提守卫不提修复必红。
+4. 首次合入尝试已 **reset 回退**，`develop` 保持未动（合入验收是 `full` 绿，不是 merge 成功）。
+
+**处置（用户选 B）**：把工作区全部未提交改动**整体同步提交**，再重跑合入验收。
+**风险登记（必须写明）**：该批改动**非本会话产物、未逐项 review**；
+依据是"该树在同步前已跑过 `full` 绿"（单测与架构守卫均通过），而非逐文件确认完成度。
+若日后发现其中含未完成的实验性改动，绿色会掩盖它 —— 这是这次处置的已知代价。
+
+---
+### 1.86 E1 完成 + E3 撤销（2026-10-19）
+
+**E1 告警日志保留期清理：已实现**
+- `PayoutAlertLogCleaner`（应用层）：边界 = `now − 保留期`，保留期**写死在代码里**（合规口径，不做成配置 ——
+  免得某个环境悄悄把审计证据删早）；
+- `WithdrawalRepository.purgeAlertLogBefore` + `WithdrawalMapper.deleteAlertLogBefore`（一句 DELETE，不分批：
+  告警日志增长与「停留超阈值的出款单」正相关，量级很小；分批会带来「删一半」的中间态）；
+- `PayoutAlertLogCleanupJob`（XXL-Job `cleanupPayoutAlertLog`，薄壳）：与出款、告警任务**分开注册** ——
+  三件事的失败含义不同，混在一起会互相淹没。
+- 用例：边界计算 + 无可删记录返回零；**变异验证**：`minusDays` 改 `plusDays` ⇒ 用例红 ⇒ 已还原。
+
+**E3「lastPay 清理」：撤销（原登记有误）**
+`lastPay` 只是告警 JSON 里的一个字段名，并不存在对应的清理对象。
+单据上的 `last_payout_attempt_at` / `last_payout_result` 是**审计事实**（什么时候试过、结果是什么），
+出款争议时要靠它回溯 ⇒ **随单据生命周期存在，不做保留期删除**。
+之前把它登记成"待清理"是分类错误，这里正式撤销。
+
+**上线待办（新增）**：`cleanupPayoutAlertLog` 需在 XXL-Job 后台注册并配 cron（与既有两个出款任务同批）。
+
+---
+### 1.87 E2 完成：告警去重的真库用例（2026-10-19）
+
+`PayoutAlertLogDedupeTest`（`@SpringJUnitConfig` + H2 `MODE=MySQL`，DDL 抄自 `Initialize.sql`）：
+1. 同单同代次重复触发 ⇒ 首记一条、再触发影响行数为零（**`INSERT IGNORE` + 唯一键**真的在挡重投）；
+2. 代次推进或换了单据 ⇒ 视为新事件，可以再记；
+3. 保留期清理按 `created_at` 删：旧记录消失、新记录留下。
+
+**变异验证**：把 `INSERT IGNORE` 改成 `INSERT` ⇒ 用例红（`DuplicateKeyException`）
+⇒ 已还原。这条断言证明的是"唯一键真的生效"，不是"代码调了方法"。
+
+**这个用例当场抓出一个真 bug（已修）**
+E1 的清理语句写成了 `WHERE create_time < ?`，而 `payout_alert_log` 的真实列名是 **`created_at`**。
+E1 交付时没有真库用例覆盖该语句，所以它一路绿灯到了这里 ——
+到真 MySQL 上会直接报列不存在。修好后由本用例第 3 条长期守住。
+**教训**：新增 SQL 必须有一条真库用例覆盖，否则"编译通过 + 单测通过"完全不能证明它能执行。
+>>>>>>> feat/reconciliation-daily
 
 ---
 ---

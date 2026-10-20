@@ -75,6 +75,11 @@ public class WithdrawalRepositoryImpl implements WithdrawalRepository {
     }
 
     @Override
+    public int purgeAlertLogBefore(java.time.LocalDateTime before) {
+        return withdrawalMapper.deleteAlertLogBefore(before);
+    }
+
+    @Override
     public int reviewIfPending(Long id, Integer fromStatus, Integer toStatus, String adminRemark) {
         return withdrawalMapper.reviewIfPending(id, fromStatus, toStatus, adminRemark);
     }
