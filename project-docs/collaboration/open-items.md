@@ -3207,6 +3207,27 @@ try { session().getConnection().rollback(); } finally { session().close(); }
 A（Spring 批次）单独排期，专门解决回滚与失败路径。
 
 ---
+### 1.78 H2 仓储集成（成功路径）已通过（2026-10-19）
+
+`ReconciliationRepositoryH2Test` **四用例通过**（真库、真 SQL）：
+1. 重拉不翻倍（第二次走 `FETCHED` 分支，不调 claim、直接删后插；分片同样不叠加；空值落库为哨兵）；
+2. 三态（`MATCHED`/`DIFF`/`RESOLVED`）各自造批次、各自拒绝重拉；
+3. `claim` 串行等价（第一次提交后 `rebind()`，第二次在新 session 拿 0 行抛 `ConcurrentClaim`）；
+4. `findActiveBatch`：无批次 `empty`、有批次命中，且生成列 `active_key` 在 H2 上确实算出字符串 `'0'`。
+
+**关键做法**：`rebind()` 放在**每次操作之后**（操作边界），不是 `@BeforeEach` ——
+三条用例都依赖"下一次操作看到已提交状态"；只在方法开头 rebind 会读到未提交视图，红在装配而非逻辑。
+
+**覆盖边界（说清楚，别让后来人误读）**
+- ✅ 已覆盖：重拉幂等、三态拒重拉、claim 冲突（串行等价）、生成列取值、哨兵落库、`findActiveBatch` 两分支；
+- ❌ 未覆盖：**失败路径与事务回滚** —— 本 harness 无法验证（`SqlSession.rollback()` 与
+  `getConnection().rollback()` 均无效，§1.77）⇒ 属 **A 批次**（`@SpringBootTest` + `DataSourceTransactionManager`）；
+- ❌ 未覆盖：**真并发**（本条是串行等价，不是并发正确性证明）。
+
+**验证口径（精确表述）**：本分支现状 = **单测 26 绿 + H2 集成 4 绿（仅成功路径）**；
+回滚与失败路径未验证；主干绿仍待短码修复（§1.45）。
+
+---
 ---
 
 ## 2. 待办
