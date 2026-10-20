@@ -15,8 +15,10 @@
 #     文件里 → 构建失败。
 #   · **每一行都必须有 deadline（不允许空）**：`deadline < 今天` 即构建红。
 #     理由：只写「不许增长」是**冻结**，不是约束 —— 冻结久了就变成遗产（没人再问它为什么这么大）。
-#     统一 deadline 2026-12-31（pay-service 的 PayManager / RefundManager 在 D 批拆类轨道上，
-#     取更早的 2026-11-15）：到期要么拆完（条目消失），要么在**显式提交**里改期并写明理由。
+#     统一 deadline 2026-12-31：到期要么拆完（条目消失），要么在**显式提交**里改期并写明理由。
+#     [2026-10-19] D 批已完成：pay-service 的 PayManager（原 344 行 → 245 行）与
+#     RefundManager（原 334 行 → 291 行）按「用例族」拆出 ChannelCallbackManager /
+#     TradeStatusNotifier 后回到硬约束内，两条基线已按「还清即删」移除。
 #     改期是可评审动作，不是默认行为。
 #
 # 格式（TSV，正好 4 列，理由必填，路径不许重复，空行与 # 注释行忽略）：
@@ -26,6 +28,7 @@
 #   · deadline 留空 = 只受「不许增长 / 还清即删」约束；填了日期 = 到期（deadline < 今天）即红。
 #
 # 登记时间：2026-10-18（HEAD 34e28c6e，19 个类实测值，最大 trade OrderRepositoryImpl 581 行）
+# 最近变更：2026-10-19 D 批还清 2 个（PayManager / RefundManager），余 17 个
 # =============================================================================
 authorization-service/src/main/java/org/icedamericanomall/auth/app/AuthManager.java	313	2026-12-31	登录/注册/改密多策略编排集中在一类，登记时已超限；可拆出凭证校验与注册两族
 cart-service/src/main/java/org/icedamericanomall/cart/app/CartManager.java	434	2026-12-31	购物车写路径与读时视图装配（ADR-021）同处一类，读侧可抽独立 assembler
@@ -41,7 +44,5 @@ item-service/src/main/java/org/icedamericanomall/item/app/content/NoteManager.ja
 item-service/src/main/java/org/icedamericanomall/item/infrastructure/persistence/SpuRepositoryImpl.java	358	2026-12-31	SPU 仓储实现：PO↔聚合转换 + 查询拼装同处一类，转换可抽静态转换为独立类
 marketing-service/src/main/java/org/icedamericanomall/marketing/adapter/assembler/MarketingConverter.java	301	2026-12-31	MapStruct 装配器：逐字段映射随 VO 增长，属机械映射类
 merchant-service/src/main/java/org/icedamericanomall/merchant/app/seller/ShopManager.java	352	2026-12-31	店铺用例族（公开页/自有店铺/装修 ADR-048/遗留 sellerId 解析 ADR-019）合并一类
-pay-service/src/main/java/org/icedamericanomall/pay/app/PayManager.java	344	2026-11-15	改动前就已超限；D 批拆类前的限时豁免 —— 支付编排（多渠道 + 回调 + 买家通知 ADR-042）需按渠道/回调拆分
-pay-service/src/main/java/org/icedamericanomall/pay/app/RefundManager.java	334	2026-11-15	改动前就已超限；D 批拆类前的限时豁免 —— 三通道原路退款编排（ADR-035/049）需按通道拆分
 trade-service/src/main/java/org/icedamericanomall/trade/app/order/OrderCreationManager.java	376	2026-12-31	下单 Saga 全链路（校验→建单→扣库存→落库→afterCreate）单方法族集中一类，可抽核对与补偿段
 trade-service/src/main/java/org/icedamericanomall/trade/infrastructure/persistence/order/OrderRepositoryImpl.java	581	2026-12-31	订单仓储实现：PO↔聚合转换 + 多语句条件更新 SQL 集中于此，全仓最大类

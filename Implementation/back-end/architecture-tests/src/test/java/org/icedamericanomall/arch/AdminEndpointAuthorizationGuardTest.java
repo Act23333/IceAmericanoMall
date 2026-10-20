@@ -90,7 +90,12 @@ class AdminEndpointAuthorizationGuardTest {
      * 若把 `/api/admin` 放进前缀集合，会**削弱整个管理端的"必须类级"规则**。
      * 故此类按**类名**精确放行。
      */
-    private static final String[] METHOD_LEVEL_ADMIN_CLASSES = {"AdminUserController"};
+    private static final String[] METHOD_LEVEL_ADMIN_CLASSES = {
+            "AdminUserController",
+            // 5b（2026-10-19）：一个类要挂两个位（读 seller:finance / 提现 seller:withdrawal）
+            "SellerFinanceController",
+            // 5b：同类里 POST /apply 不能挂位（Q4），其余 6 个挂 seller:admin ⇒ 只能逐方法
+            "MerchantController"};
 
     private static final String[] METHOD_LEVEL_ADMIN_PREFIXES = {
             "/api/trade/admin",
@@ -98,9 +103,17 @@ class AdminEndpointAuthorizationGuardTest {
             // 整类挂任一位都是错的：挂 pay:admin 让"只看列表"的客服拿到退款权，
             // 挂 aftersale:read 则写不了。所以它必须进本集合，而不是被"必须有类级注解"卡住。
             "/api/admin/after-sale",
+            // B3（2026-10-19）：任务定义管理端**必须按方法**（查询 marketing:read / 两个写方法 marketing:admin）——
+            // 这是"只读运营"档位的唯一入口。类级挂 marketing:admin 再给 GET 加方法级是**无效**的：
+            // Spring 的类级与方法级 @PreAuthorize 是 AND 而非覆盖 ⇒ 只读运营仍 403。
+            "/api/admin/task",
             // 末批：发票管理端**必须按方法**（查询 invoice:read / 开具 invoice:issue / 作废与冲红 invoice:void）——
             // 整类挂任一位都会错：挂 issue 让"只看列表"的人能开票，挂 void 则让开票员也能作废（破坏 SoD）。
             "/api/admin/invoice"};
+
+    /** public 方法签名（取方法名，供端点级豁免匹配）：{@code public Result<X> name(}。 */
+    private static final Pattern METHOD_SIGNATURE =
+            Pattern.compile("\\bpublic\\s+[^()]*?\\b([A-Za-z_$][\\w$]*)\\s*\\(");
 
     /** 任意映射注解（逐方法覆盖判定用）。 */
     private static final Pattern MAPPING_ANNOTATION =
@@ -116,25 +129,55 @@ class AdminEndpointAuthorizationGuardTest {
     private static final Pattern CLASS_MAPPING = Pattern.compile("@RequestMapping\\(\\s*\"([^\"]+)\"");
 
     /**
-     * 豁免表（简单类名 → 理由 + 截止）。<b>全部是「待权限矩阵执行」</b>，见
-     * {@code rbac-permission-matrix-draft.md}；裁定并执行后应补注解并删条目。
+     * 豁免表（简单类名 → 类型 + 理由 + 截止）。<b>两类必须分开</b>：
+     * <ul>
+     *   <li><b>PERMANENT</b>：业务上永远不该有位（如入驻申请，Q4 裁决）—— 无截止日，但理由必须写清裁决依据；</li>
+     *   <li><b>TEMPORARY</b>：待权限矩阵执行 —— <b>必须有截止日</b>，到期即红（是倒计时，不是永久免责）。</li>
+     * </ul>
+     * 两者混在一张只有 String 的理由表里，「永久豁免」就能借「临时」的名义长期存在 ——
+     * 本仓已踩过「白名单膨胀成免责名单」（§5 判据 3），故用类型把它们分开，并各有断言。
      */
-    private static final Map<String, String> EXEMPT = buildExempt();
+    private static final Map<String, Exempt> EXEMPT = buildExempt();
 
-    private static Map<String, String> buildExempt() {
-        Map<String, String> table = new LinkedHashMap<>();
-        table.put("SellerFinanceController",
-                "待矩阵执行（截止 2026-11-15）：端点由 UserContext 取 sellerId 自证身份，但没有声明式权限位；"
-                        + "Q3 已裁决拆三位，待执行（seller:finance）");
-        table.put("MerchantCouponController",
-                "待矩阵执行（截止 2026-11-15）：Q3 已裁决拆三位，待执行（seller:coupon）");
-        table.put("KnowledgeBaseController",
-                "待矩阵执行（截止 2026-11-15）：控制器内有显式 UserContext.hasRole(ROLE_SELLER)，"
-                        + "属「代码内判定」不可 grep 审计；按 Q3 应改为声明式 seller:knowledge");
-        table.put("MerchantController",
-                "待矩阵执行（截止 2026-11-15）：**同类里有一条必须永久豁免** —— POST /api/seller/apply 是"
-                        + "入驻申请（Q4 裁决：无权限位，任何登录用户可调），不能挂 seller:admin；"
-                        + "其余端点属商家自有店铺");
+    /**
+     * <b>端点级豁免</b>（{@code Controller#method}）：只放过**单个方法**，同类其余方法照常要求逐方法注解。
+     *
+     * <p>存在理由（实测）：{@code MerchantController} 里 6 个方法要挂 {@code seller:admin}，
+     * 而 {@code POST /apply}（入驻申请）按 Q4 裁决**不能挂任何位**（任何登录用户可调）——
+     * 若整类走临时豁免，那 6 个方法就一起裸露；若整类必须类级注解，apply 又会被封。
+     * 只有"按方法豁免"能同时满足两边，所以豁免必须能下沉到方法这一级。
+     */
+    private static final Map<String, Exempt> ENDPOINT_EXEMPT = buildEndpointExempt();
+
+    /** 豁免类型。 */
+    private enum ExemptType { PERMANENT, TEMPORARY }
+
+    /**
+     * 一条豁免。
+     *
+     * @param type     永久 / 临时
+     * @param reason   理由（必须写清裁决依据或收口动作，不接受"暂时这样"）
+     * @param deadline 临时豁免的截止日；永久豁免必须为 {@code null}
+     */
+    private record Exempt(ExemptType type, String reason, java.time.LocalDate deadline) {
+
+        String describe() {
+            return type + (deadline == null ? "" : "（截止 " + deadline + "）") + "：" + reason;
+        }
+    }
+
+    private static Map<String, Exempt> buildExempt() {
+        Map<String, Exempt> table = new LinkedHashMap<>();
+        java.time.LocalDate deadline = java.time.LocalDate.of(2026, 11, 15);
+        // 5b 已完成接线（2026-10-19）：四个商家端控制器全部改为声明式，条目已按「还清即删」移除。
+        // 保留空表与类型机制 —— 下一个临时豁免必须带 deadline，永久豁免必须写清裁决依据。
+        return Map.copyOf(table);
+    }
+
+    private static Map<String, Exempt> buildEndpointExempt() {
+        Map<String, Exempt> table = new LinkedHashMap<>();
+        table.put("MerchantController#apply", new Exempt(ExemptType.PERMANENT,
+                "入驻申请，Q4 裁决：无权限位，任何登录用户可调；靠限流 + 状态机约束，不靠权限位", null));
         return Map.copyOf(table);
     }
 
@@ -220,9 +263,9 @@ class AdminEndpointAuthorizationGuardTest {
     void shouldFailWhenExemptionIsStale() {
         List<SourceFile> scanned = scanControllers();
 
-        for (Map.Entry<String, String> entry : EXEMPT.entrySet()) {
+        for (Map.Entry<String, Exempt> entry : EXEMPT.entrySet()) {
             String simpleName = entry.getKey();
-            String reason = entry.getValue();
+            String reason = entry.getValue().describe();
 
             List<SourceFile> matches = scanned.stream()
                     .filter(source -> source.simpleName().equals(simpleName))
@@ -238,6 +281,105 @@ class AdminEndpointAuthorizationGuardTest {
                         .isFalse();
             }
         }
+    }
+
+    // ==================================================================================
+    // ②b 豁免的「类型」与「聚合位登记」
+    // ==================================================================================
+
+    /** {@code seller:admin} 是**聚合位**：一个位覆盖商家自有店铺的一组动作。 */
+    private static final java.util.Set<String> SELLER_ADMIN_AGGREGATE = java.util.Set.of(
+            "MerchantController#myShops",
+            "MerchantController#updateMyShop",
+            "MerchantController#getDecoration",
+            "MerchantController#saveDecoration",
+            "MerchantController#getDefaultShop",
+            "MerchantController#updateDefaultShop");
+
+    @Test
+    @DisplayName("豁免类型 — 永久不得有截止日；临时必须有截止日且未过期（过期即红）")
+    void shouldClassifyExemptionsByType() {
+        java.time.LocalDate today = java.time.LocalDate.now();
+
+        List<String> problems = new ArrayList<>();
+        for (Map<String, Exempt> table : List.of(EXEMPT, ENDPOINT_EXEMPT)) {
+            for (Map.Entry<String, Exempt> entry : table.entrySet()) {
+                Exempt exempt = entry.getValue();
+                if (exempt.reason() == null || exempt.reason().length() < 15) {
+                    problems.add(entry.getKey() + " 理由过短（" + exempt.reason() + "）—— 豁免必须写清依据");
+                }
+                if (exempt.type() == ExemptType.PERMANENT && exempt.deadline() != null) {
+                    problems.add(entry.getKey() + " 标了 PERMANENT 却带截止日 —— 二者互斥，别让永久豁免看起来像临时的");
+                }
+                if (exempt.type() == ExemptType.TEMPORARY) {
+                    if (exempt.deadline() == null) {
+                        problems.add(entry.getKey() + " 标了 TEMPORARY 却没有截止日 —— 倒计时缺失 = 永久免责");
+                    } else if (exempt.deadline().isBefore(today)) {
+                        problems.add(entry.getKey() + " 临时豁免已过期（" + exempt.deadline() + "）—— 要么收口，要么重新裁决");
+                    }
+                }
+            }
+        }
+        assertThat(problems).as("豁免分类不合规：%s", problems).isEmpty();
+    }
+
+    @Test
+    @DisplayName("端点级豁免 — 条目必须仍存在、仍无注解（已补注解或方法改名都红）")
+    void shouldFailWhenEndpointExemptionIsStale() {
+        List<SourceFile> scanned = scanControllers();
+        List<String> problems = new ArrayList<>();
+
+        for (String key : ENDPOINT_EXEMPT.keySet()) {
+            String[] parts = key.split("#");
+            String simpleName = parts[0];
+            String method = parts[1];
+            SourceFile source = scanned.stream()
+                    .filter(file -> file.simpleName().equals(simpleName))
+                    .findFirst().orElse(null);
+            if (source == null) {
+                problems.add(key + "：找不到类 " + simpleName);
+                continue;
+            }
+            String covered = source.segmentFor(method);
+            if (covered == null) {
+                // 原因一：**方法不在了**（改名/删方法/类搬家）——处理动作是"删条目或改键"
+                problems.add("【豁免条目失效 · 方法已不存在】" + key
+                        + " —— 类里找不到方法 " + method
+                        + "。处理：确认是改名还是删方法，然后删掉本条，或把键改成新方法名");
+            } else if (covered.contains("@PreAuthorize")) {
+                // 原因二：**方法已被接线**——处理动作是"删条目"，绝不能反过来把注解删掉
+                problems.add("【豁免条目失效 · 该方法已接线】" + key
+                        + " —— 现在已经有 @PreAuthorize 了，豁免已无意义。"
+                        + "处理：删掉本条（**不要**为了保住豁免去删注解：那是把已获得的能力退回去）");
+            }
+        }
+        assertThat(problems).as("端点级豁免陈旧：%s", problems).isEmpty();
+    }
+
+    @Test
+    @DisplayName("聚合位 seller:admin — 登记清单必须与实际挂位方法完全一致（新端点不许被静默吃掉）")
+    void shouldRegisterSellerAdminAggregateBit() {
+        SourceFile controller = scanControllers().stream()
+                .filter(file -> file.simpleName().equals("MerchantController"))
+                .findFirst().orElseThrow(() -> new AssertionError("找不到 MerchantController —— 扫描面失效"));
+
+        java.util.Set<String> actualMapped = controller.mappingMethodNames();
+        // 登记清单里写成 Controller#method（跨类可读）；比对时取方法名，与扫描结果同形态
+        java.util.Set<String> expected = SELLER_ADMIN_AGGREGATE.stream()
+                .map(key -> key.substring(key.indexOf('#') + 1))
+                .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
+        expected.addAll(ENDPOINT_EXEMPT.keySet().stream()
+                .filter(key -> key.startsWith("MerchantController#"))
+                .map(key -> key.substring("MerchantController#".length()))
+                .toList());
+
+        assertThat(actualMapped)
+                .as("MerchantController 的映射方法集合与登记清单不一致。%n"
+                        + " 实际=%s%n 登记=%s%n"
+                        + "  聚合位（seller:admin）的危险就在这里：新增端点若不更新清单，会被这个位**静默授权**，"
+                        + "  而没有人再判断「这个动作该不该属于商家店铺域」。新增/删除端点时请同步登记。",
+                        actualMapped, expected)
+                .isEqualTo(expected);
     }
 
     // ==================================================================================
@@ -348,6 +490,36 @@ class AdminEndpointAuthorizationGuardTest {
             return noBlockComment.replaceAll("(?m)//.*$", " ");
         }
 
+        /** 某方法签名之前的那一段（上一个映射之后 → 本映射之前），用于端点级豁免的陈旧判定。 */
+        String segmentFor(String methodName) {
+            String cleaned = cleaned();
+            Matcher matcher = MAPPING_ANNOTATION.matcher(cleaned);
+            int previousEnd = 0;
+            while (matcher.find()) {
+                String segment = cleaned.substring(previousEnd, matcher.start());
+                String name = methodNameAfter(cleaned, matcher.end());
+                if (methodName.equals(name)) {
+                    return segment;
+                }
+                previousEnd = matcher.end();
+            }
+            return null;
+        }
+
+        /** 全部映射方法名（按出现顺序）。 */
+        java.util.Set<String> mappingMethodNames() {
+            String cleaned = cleaned();
+            Matcher matcher = MAPPING_ANNOTATION.matcher(cleaned);
+            java.util.Set<String> names = new java.util.TreeSet<>();
+            while (matcher.find()) {
+                String name = methodNameAfter(cleaned, matcher.end());
+                if (name != null) {
+                    names.add(name);
+                }
+            }
+            return names;
+        }
+
         /** 类级 {@code @RequestMapping} 的路径（取 {@code public class} 之前那一处）。 */
         String classMapping() {
             String cleaned = cleaned();
@@ -381,12 +553,26 @@ class AdminEndpointAuthorizationGuardTest {
             Matcher matcher = MAPPING_ANNOTATION.matcher(cleaned);
             int previousEnd = 0;
             while (matcher.find()) {
-                if (!cleaned.substring(previousEnd, matcher.start()).contains("@PreAuthorize")) {
-                    return false;
+                String segment = cleaned.substring(previousEnd, matcher.start());
+                if (!segment.contains("@PreAuthorize")) {
+                    // 端点级豁免：只放过登记过的那一个方法，同类其余方法不放过
+                    String method = methodNameAfter(cleaned, matcher.end());
+                    if (method == null || !ENDPOINT_EXEMPT.containsKey(simpleName + "#" + method)) {
+                        return false;
+                    }
                 }
                 previousEnd = matcher.end();
             }
             return true;
+        }
+
+        /** 映射注解之后的第一个 public 方法名（用于端点级豁免匹配）。 */
+        private static String methodNameAfter(String cleaned, int from) {
+            Matcher signature = METHOD_SIGNATURE.matcher(cleaned);
+            if (signature.find(from)) {
+                return signature.group(1);
+            }
+            return null;
         }
 
         /** 平台配置用：**写**方法逐个覆盖（公开读方法允许没有注解）。 */
