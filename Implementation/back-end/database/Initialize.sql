@@ -785,7 +785,8 @@ CREATE TABLE `withdrawal` (
     `withdrawal_no` BINARY(16) NOT NULL UNIQUE COMMENT '提现单号（UUIDv7 原始字节，ADR-050）',
     `seller_id` BIGINT NOT NULL COMMENT '商家ID',
     `amount` INT NOT NULL COMMENT '提现金额（分）',
-    `payout_no` VARCHAR(64) DEFAULT NULL COMMENT '出款幂等键（渠道去重依据，全生命周期不变）',
+    -- 派生指针：指向「当前有效尝试」的 payout_no；真相在 withdrawal_payout_attempt（同事务写入）
+    `payout_no` VARCHAR(64) DEFAULT NULL COMMENT '当前有效尝试的出款单号（派生指针，真相在尝试表）',
     `last_payout_attempt_at` DATETIME DEFAULT NULL COMMENT '上次出款尝试时间（重试节流依据；NULL=从未尝试）',
     `last_payout_result` VARCHAR(160) DEFAULT NULL COMMENT '上次出款结果 分类:渠道号（超长截断并标记）',
   `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1=待审核, 2=已打款, 3=拒绝, 4=付款中（结果未知，仍占冻结）',
@@ -1576,6 +1577,27 @@ CREATE TABLE `payout_alert_log` (
     UNIQUE KEY `uk_payout_alert` (`payout_no`, `alert_gen`),
     KEY `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='出款停留告警去重账（保留 180 天，每日批删）';
+
+-- 出款尝试账（一提现可多尝试；渠道契约要求「失败后换新单据」，单值列表达不了）
+-- 不变量：同一 withdrawal_id 最多只有一个非终态尝试（REQUESTED / UNKNOWN）—— 由 claimNewAttempt 以 SELECT ... FOR UPDATE 保证
+CREATE TABLE `withdrawal_payout_attempt` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `withdrawal_id` BIGINT NOT NULL COMMENT '提现单技术主键',
+    `attempt_no` INT NOT NULL COMMENT '尝试序号，只增不减、生成即占号',
+    `payout_no` VARCHAR(64) NOT NULL COMMENT '出款幂等键 = 短哈希(16)+"-"+序号；不可反解，靠本表回溯提现单',
+    `channel` VARCHAR(32) NOT NULL COMMENT '渠道标识（渠道差异放列，不拆表）',
+    `state` TINYINT NOT NULL COMMENT '1=REQUESTED 2=UNKNOWN 3=SUCCESS 4=FAILED 5=CANCELLED',
+    `channel_ref` VARCHAR(128) DEFAULT NULL COMMENT '渠道单号/流水',
+    `channel_message` VARCHAR(500) DEFAULT NULL COMMENT '渠道返回摘要（截断保存）',
+    `requested_at` DATETIME NOT NULL COMMENT '发起时刻（重试节流依据）',
+    `finished_at` DATETIME DEFAULT NULL COMMENT '终态时刻',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_payout_no` (`payout_no`),
+    UNIQUE KEY `uk_withdrawal_attempt` (`withdrawal_id`, `attempt_no`),
+    KEY `idx_withdrawal_state` (`withdrawal_id`, `state`),
+    KEY `idx_requested_at` (`requested_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='出款尝试账（一提现多尝试，终态后重发即新尝试）';
 
 
 -- ───────────────── 提现对账（逐笔、按日全量拉取）─────────────────
