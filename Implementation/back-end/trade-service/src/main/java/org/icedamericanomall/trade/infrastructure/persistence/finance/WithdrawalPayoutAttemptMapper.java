@@ -38,6 +38,16 @@ public interface WithdrawalPayoutAttemptMapper extends BaseMapper<WithdrawalPayo
     @Select("SELECT COUNT(*) FROM withdrawal_payout_attempt WHERE withdrawal_id = #{withdrawalId} AND state = #{state}")
     int countByState(@Param("withdrawalId") Long withdrawalId, @Param("state") int state);
 
+    /**
+     * 打标 + 写派生指针（同一条 UPDATE，在 claimAndMark 的事务里执行）。
+     *
+     * <p>条件带 {@code status = 4}（PAYING）：状态已变则不写 —— 避免把指针挂到一张已终结的单上。
+     */
+    @Update("UPDATE withdrawal SET last_payout_attempt_at = #{at}, payout_no = #{payoutNo} "
+            + "WHERE id = #{id} AND status = 4")
+    int markAttemptAndPointer(@Param("id") Long id, @Param("at") java.time.LocalDateTime at,
+                              @Param("payoutNo") String payoutNo);
+
     /** 条件状态更新：0 行 = 状态已变或单号不存在。 */
     @Update("UPDATE withdrawal_payout_attempt SET state = #{to}, finished_at = #{finishedAt} "
             + "WHERE payout_no = #{payoutNo} AND state = #{from}")

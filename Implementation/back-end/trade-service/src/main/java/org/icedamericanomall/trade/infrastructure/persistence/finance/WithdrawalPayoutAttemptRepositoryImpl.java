@@ -1,6 +1,7 @@
 package org.icedamericanomall.trade.infrastructure.persistence.finance;
 
 import lombok.RequiredArgsConstructor;
+import org.icedamericanomall.trade.domain.port.PayoutNoFactory;
 import org.icedamericanomall.trade.domain.repository.WithdrawalPayoutAttemptRepository;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,7 +25,7 @@ public class WithdrawalPayoutAttemptRepositoryImpl implements WithdrawalPayoutAt
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Attempt claimNewAttempt(Long withdrawalId, String payoutNo, String channel, LocalDateTime now) {
+    public Attempt claimAndMark(Long withdrawalId, String channel, PayoutNoFactory factory, LocalDateTime now) {
         if (withdrawalId == null) {
             throw new IllegalArgumentException("withdrawalId 不能为空");
         }
@@ -49,12 +50,22 @@ public class WithdrawalPayoutAttemptRepositoryImpl implements WithdrawalPayoutAt
         WithdrawalPayoutAttemptPO po = new WithdrawalPayoutAttemptPO();
         po.setWithdrawalId(withdrawalId);
         po.setAttemptNo(nextAttemptNo);
+        // 单号在锁内生成：序号只有这里知道，规则由 domain 的工厂提供（纯函数）
+        // withdrawal_no 是 BINARY(16)，转成与 IdGenerator 相同的十六进制字符串形态后交给工厂
+        String payoutNo = factory.create(java.util.HexFormat.of().formatHex(locked.getWithdrawalNo()),
+                nextAttemptNo);
         po.setPayoutNo(payoutNo);
         po.setChannel(channel);
         po.setState(AttemptState.REQUESTED.ordinal() + 1);
         po.setRequestedAt(now);
         // 撞 UNIQUE(withdrawal_id, attempt_no) 会在这里直接抛出：锁已保证串行，撞键说明有代码绕过锁，不重试
         mapper.insert(po);
+        // 先插 attempt 再写指针：反过来一旦事务没生效，就会留下指向不存在尝试的悬空指针
+        if (mapper.markAttemptAndPointer(withdrawalId, now, payoutNo) == 0) {
+            // 0 行 = 提现单已不是 PAYING：必须抛，让上面的 attempt 插入一起回滚。
+            // 不抛的话会留下「有尝试、没指针、没打标」的静默不一致，对账时无法解释。
+            throw new IllegalStateException("提现单状态已非 PAYING，指针未写入: " + withdrawalId);
+        }
         return toAttempt(po);
     }
 

@@ -47,14 +47,19 @@ public interface WithdrawalPayoutAttemptRepository {
     /**
      * 占号：为提现单创建一条新尝试（**锁提现单行**，见类注释）。
      *
+     * <p>**一个事务内完成四件事**：锁提现单行 → 插 attempt → 打标 → 写 {@code withdrawal.payout_no} 派生指针。
+     * 四者必须原子：否则出现「有尝试没打标」或「有指针没尝试」。
+     * 顺序有意为之：**先插 attempt，再写指针** —— 反过来的话，一旦事务没生效就会留下悬空指针。
+     *
      * @param withdrawalId 提现单技术主键
-     * @param payoutNo     **已生成**的出款单号（由 {@code PayoutNoGenerator} 产出，本方法不生成）
      * @param channel      渠道标识
+     * @param factory      单号工厂（锁内以 {@code withdrawalNo + attemptNo} 调用，必须是纯函数）
      * @param now          发起时刻（重试节流与到达判定依据）
      * @return 落库后的尝试（含 {@code attemptNo}）
      * @throws IllegalStateException 已达重试上限，或存在未收敛的非终态尝试
      */
-    Attempt claimNewAttempt(Long withdrawalId, String payoutNo, String channel, LocalDateTime now);
+    Attempt claimAndMark(Long withdrawalId, String channel,
+                         org.icedamericanomall.trade.domain.port.PayoutNoFactory factory, LocalDateTime now);
 
     /**
      * 状态写回（给 {@code query()} 的结果一个落点）。

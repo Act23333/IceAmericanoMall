@@ -91,7 +91,7 @@ class WithdrawalPayoutAttemptH2Test {
                 )""");
             stmt.execute("DELETE FROM withdrawal_payout_attempt");
             stmt.execute("DELETE FROM withdrawal");
-            stmt.execute("INSERT INTO withdrawal(id, withdrawal_no, status) VALUES (1, 'WD-TEST-1', 3)");
+            stmt.execute("INSERT INTO withdrawal(id, withdrawal_no, status) VALUES (1, 'WD-TEST-1', 4)");
         }
     }
 
@@ -120,10 +120,10 @@ class WithdrawalPayoutAttemptH2Test {
     @Test
     @DisplayName("已存在非终态尝试 ⇒ 再占号被拒")
     void shouldRejectSecondClaim_whenNonTerminalExists() {
-        repository.claimNewAttempt(WITHDRAWAL_ID, "PN-1", "MOCK", NOW);
+        repository.claimAndMark(WITHDRAWAL_ID, "MOCK", org.icedamericanomall.trade.domain.service.PayoutNoGenerator.FACTORY, NOW);
 
         IllegalStateException ex = assertThrows(IllegalStateException.class,
-                () -> repository.claimNewAttempt(WITHDRAWAL_ID, "PN-2", "MOCK", NOW));
+                () -> repository.claimAndMark(WITHDRAWAL_ID, "MOCK", org.icedamericanomall.trade.domain.service.PayoutNoGenerator.FACTORY, NOW));
         assertTrue(ex.getMessage().contains("未收敛"), "报错要说明原因，不能只说失败");
         assertEquals(1, countAll());
     }
@@ -131,7 +131,7 @@ class WithdrawalPayoutAttemptH2Test {
     @Test
     @DisplayName("撞 UNIQUE(withdrawal_id, attempt_no) 直接抛，不静默重试")
     void shouldThrowOnUniqueViolation() {
-        repository.claimNewAttempt(WITHDRAWAL_ID, "PN-1", "MOCK", NOW);
+        repository.claimAndMark(WITHDRAWAL_ID, "MOCK", org.icedamericanomall.trade.domain.service.PayoutNoGenerator.FACTORY, NOW);
 
         WithdrawalPayoutAttemptPO po = new WithdrawalPayoutAttemptPO();
         po.setWithdrawalId(WITHDRAWAL_ID);
@@ -152,31 +152,60 @@ class WithdrawalPayoutAttemptH2Test {
             insertAttempt(i, "PN-F" + i, AttemptState.FAILED);
         }
         assertThrows(IllegalStateException.class,
-                () -> repository.claimNewAttempt(WITHDRAWAL_ID, "PN-F4", "MOCK", NOW),
+                () -> repository.claimAndMark(WITHDRAWAL_ID, "MOCK", org.icedamericanomall.trade.domain.service.PayoutNoGenerator.FACTORY, NOW),
                 "连续失败达上限后必须停手，否则就是无限重试器");
 
         execute("DELETE FROM withdrawal_payout_attempt");
         for (int i = 1; i <= 3; i++) {
             insertAttempt(i, "PN-C" + i, AttemptState.CANCELLED);
         }
-        var attempt = repository.claimNewAttempt(WITHDRAWAL_ID, "PN-C4", "MOCK", NOW);
+        var attempt = repository.claimAndMark(WITHDRAWAL_ID, "MOCK", org.icedamericanomall.trade.domain.service.PayoutNoGenerator.FACTORY, NOW);
         assertEquals(4, attempt.attemptNo(), "撤销是主动终止，不该被算成失败次数");
     }
 
     @Test
     @DisplayName("updateState 条件更新：状态已变时 0 行，不覆盖")
     void shouldNotOverwrite_whenStateAlreadyChanged() {
-        repository.claimNewAttempt(WITHDRAWAL_ID, "PN-1", "MOCK", NOW);
+        var attempt = repository.claimAndMark(WITHDRAWAL_ID, "MOCK",
+                org.icedamericanomall.trade.domain.service.PayoutNoGenerator.FACTORY, NOW);
 
-        assertEquals(1, repository.updateState("PN-1", AttemptState.REQUESTED, AttemptState.SUCCESS));
-        assertEquals(0, repository.updateState("PN-1", AttemptState.REQUESTED, AttemptState.FAILED),
+        assertEquals(1, repository.updateState(attempt.payoutNo(), AttemptState.REQUESTED, AttemptState.SUCCESS));
+        assertEquals(0, repository.updateState(attempt.payoutNo(), AttemptState.REQUESTED, AttemptState.FAILED),
                 "状态已变必须返回 0，不能把成功改成失败");
+    }
+
+    @Test
+    @DisplayName("同事务写指针：Attempt.payoutNo == withdrawal.payout_no，且打标已写")
+    void shouldWriteDerivedPointerInSameTransaction() throws SQLException {
+        var attempt = repository.claimAndMark(WITHDRAWAL_ID, "MOCK",
+                org.icedamericanomall.trade.domain.service.PayoutNoGenerator.FACTORY, NOW);
+
+        String pointer = queryString("SELECT payout_no FROM withdrawal WHERE id = 1");
+        assertEquals(attempt.payoutNo(), pointer,
+                "派生指针必须等于本次尝试的单号：不等说明指针与尝试不同源");
+        assertTrue(queryString("SELECT CAST(last_payout_attempt_at AS VARCHAR) FROM withdrawal WHERE id = 1") != null,
+                "打标必须同时写入，否则节流失效");
+    }
+
+    @Test
+    @DisplayName("工厂抛异常 ⇒ 整个事务回滚：无 attempt、无指针、无打标")
+    void shouldRollback_whenFactoryThrows() throws SQLException {
+        assertThrows(IllegalStateException.class, () -> repository.claimAndMark(WITHDRAWAL_ID, "MOCK",
+                (withdrawalNo, attemptNo) -> {
+                    throw new IllegalStateException("工厂故意失败");
+                }, NOW));
+
+        assertEquals(0, countAll(), "attempt 不得留下（先插后写指针的前提是有事务）");
+        assertEquals(null, queryString("SELECT payout_no FROM withdrawal WHERE id = 1"),
+                "指针不得留下：否则会指向一条不存在的尝试");
+        assertEquals(null, queryString("SELECT CAST(last_payout_attempt_at AS VARCHAR) FROM withdrawal WHERE id = 1"),
+                "打标不得留下");
     }
 
     private boolean claimOrFalse(CyclicBarrier barrier, String payoutNo) throws Exception {
         barrier.await(5, TimeUnit.SECONDS);
         try {
-            repository.claimNewAttempt(WITHDRAWAL_ID, payoutNo, "MOCK", NOW);
+            repository.claimAndMark(WITHDRAWAL_ID, "MOCK", org.icedamericanomall.trade.domain.service.PayoutNoGenerator.FACTORY, NOW);
             return true;
         } catch (IllegalStateException e) {
             return false;
@@ -197,6 +226,14 @@ class WithdrawalPayoutAttemptH2Test {
     private void execute(String sql) throws SQLException {
         try (Connection conn = dataSource.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.executeUpdate();
+        }
+    }
+
+    private String queryString(String sql) throws SQLException {
+        try (Connection conn = dataSource.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            return rs.next() ? rs.getString(1) : null;
         }
     }
 
