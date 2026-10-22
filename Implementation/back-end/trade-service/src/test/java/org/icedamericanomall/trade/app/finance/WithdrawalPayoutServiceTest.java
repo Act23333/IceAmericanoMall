@@ -57,7 +57,7 @@ class WithdrawalPayoutServiceTest {
         when(withdrawalRepository.findDuePayingIds(any(), anyInt())).thenReturn(List.of(WITHDRAWAL_ID));
         stubWithdrawal();
         when(payoutPort.pay(any()))
-                .thenReturn(new WithdrawalPayoutPort.PayoutResult(false, null, "CHANNEL_DOWN"));
+                .thenReturn(new WithdrawalPayoutPort.PayoutResult(false, false, null, "CHANNEL_DOWN"));
 
         assertEquals(0, payoutService.settle(LIMIT), "未受理不得计入完成");
         verify(withdrawalManager, never()).completePayout(any());
@@ -71,7 +71,7 @@ class WithdrawalPayoutServiceTest {
         ArgumentCaptor<WithdrawalPayoutPort.PayoutCommand> captor =
                 ArgumentCaptor.forClass(WithdrawalPayoutPort.PayoutCommand.class);
         when(payoutPort.pay(captor.capture()))
-                .thenReturn(new WithdrawalPayoutPort.PayoutResult(true, "MOCK-REF", null));
+                .thenReturn(new WithdrawalPayoutPort.PayoutResult(true, false, "MOCK-REF", null));
         when(withdrawalManager.completePayout(withdrawal)).thenReturn(true);
 
         assertEquals(1, payoutService.settle(LIMIT));
@@ -86,7 +86,7 @@ class WithdrawalPayoutServiceTest {
         when(withdrawalRepository.findDuePayingIds(any(), anyInt())).thenReturn(List.of(WITHDRAWAL_ID));
         stubWithdrawal();
         when(payoutPort.pay(any()))
-                .thenReturn(new WithdrawalPayoutPort.PayoutResult(true, "MOCK-WD-1", null));
+                .thenReturn(new WithdrawalPayoutPort.PayoutResult(true, false, "MOCK-WD-1", null));
         // 第一次落账成功；第二次状态已变（幂等）⇒ 返回 false
         when(withdrawalManager.completePayout(withdrawal)).thenReturn(true, false);
 
@@ -114,7 +114,7 @@ class WithdrawalPayoutServiceTest {
     void summarizeShouldTruncateKeepingTail() {
         String longRef = "X".repeat(200);
         String stored = WithdrawalPayoutService.summarize(
-                new WithdrawalPayoutPort.PayoutResult(true, longRef, null));
+                new WithdrawalPayoutPort.PayoutResult(true, false, longRef, null));
 
         assertTrue(stored.length() <= WithdrawalPayoutService.MAX_RESULT_LEN,
                 "必须落在列宽内，否则写库会被截断（静默）或报错");

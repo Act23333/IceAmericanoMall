@@ -29,7 +29,7 @@ public class WithdrawalPayoutAttemptRepositoryImpl implements WithdrawalPayoutAt
             throw new IllegalArgumentException("withdrawalId 不能为空");
         }
         // ① 先锁提现单行：锁只在事务内有效（本方法 @Transactional，且不得被同类方法自调用）
-        Long locked = mapper.lockWithdrawal(withdrawalId);
+        WithdrawalPO locked = mapper.lockWithdrawal(withdrawalId);
         if (locked == null) {
             throw new IllegalArgumentException("提现单不存在: " + withdrawalId);
         }

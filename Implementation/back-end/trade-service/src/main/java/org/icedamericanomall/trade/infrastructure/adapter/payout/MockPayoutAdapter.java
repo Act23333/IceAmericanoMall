@@ -132,8 +132,8 @@ public class MockPayoutAdapter implements WithdrawalPayoutPort {
     private PayoutResult decide(PayoutCommand command) {
         return switch (mode) {
             case ACCEPTED -> accept(command);
-            case REJECTED -> new PayoutResult(false, null, "MOCK_REJECTED");
-            case TIMEOUT -> new PayoutResult(false, null, "MOCK_TIMEOUT");
+            case REJECTED -> new PayoutResult(false, true, null, "MOCK_REJECTED");   // 明确拒绝 = 终态失败
+            case TIMEOUT -> new PayoutResult(false, false, null, "MOCK_TIMEOUT");     // 超时 = 未知，等 query
             case ASYNC_CALLBACK -> decideAsync(command);
         };
     }
@@ -141,7 +141,7 @@ public class MockPayoutAdapter implements WithdrawalPayoutPort {
     private PayoutResult decideAsync(PayoutCommand command) {
         Instant accepted = acceptedAt.computeIfAbsent(command.payoutNo(), key -> clock.instant());
         if (clock.instant().isBefore(accepted.plus(callbackDelay))) {
-            return new PayoutResult(false, null, "MOCK_AWAITING_CALLBACK");
+            return new PayoutResult(false, false, null, "MOCK_AWAITING_CALLBACK");   // 等回执 = 未知
         }
         PayoutResult result = accept(command);
         terminal.putIfAbsent(command.payoutNo(), result);
@@ -149,7 +149,7 @@ public class MockPayoutAdapter implements WithdrawalPayoutPort {
     }
 
     private PayoutResult accept(PayoutCommand command) {
-        return new PayoutResult(true, CHANNEL_PREFIX + command.payoutNo(), null);
+        return new PayoutResult(true, false, CHANNEL_PREFIX + command.payoutNo(), null);   // 受理 ≠ 到账
     }
 
     /**

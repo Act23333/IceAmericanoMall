@@ -67,7 +67,10 @@ class WithdrawalPayoutAttemptH2Test {
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS withdrawal (
                     id BIGINT PRIMARY KEY,
-                    status TINYINT NOT NULL DEFAULT 1
+                    withdrawal_no VARCHAR(64) NOT NULL,
+                    status TINYINT NOT NULL DEFAULT 1,
+                    payout_no VARCHAR(64),
+                    last_payout_attempt_at TIMESTAMP
                 )""");
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS withdrawal_payout_attempt (
@@ -88,7 +91,7 @@ class WithdrawalPayoutAttemptH2Test {
                 )""");
             stmt.execute("DELETE FROM withdrawal_payout_attempt");
             stmt.execute("DELETE FROM withdrawal");
-            stmt.execute("INSERT INTO withdrawal(id, status) VALUES (1, 3)");
+            stmt.execute("INSERT INTO withdrawal(id, withdrawal_no, status) VALUES (1, 'WD-TEST-1', 3)");
         }
     }
 

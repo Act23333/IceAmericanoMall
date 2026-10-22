@@ -100,6 +100,6 @@ public interface WithdrawalPayoutPort {
      * @param channelRef 渠道流水号（对账用；人工确认为 {@code MANUAL}）
      * @param reason     拒绝原因分类（供展示，不放原始报文）
      */
-    record PayoutResult(boolean accepted, String channelRef, String reason) {
+    record PayoutResult(boolean accepted, boolean terminal, String channelRef, String reason) {
     }
 }

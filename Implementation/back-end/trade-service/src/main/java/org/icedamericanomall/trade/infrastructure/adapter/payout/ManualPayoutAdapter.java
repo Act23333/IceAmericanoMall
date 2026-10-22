@@ -28,7 +28,7 @@ public class ManualPayoutAdapter implements WithdrawalPayoutPort {
         // 刻意不打印账户全量与开户行：日志也是泄露面
         log.info("[payout] 人工出款确认 payoutNo={} withdrawalId={} amount={}（无渠道回执）",
                 command.payoutNo(), command.withdrawalId(), command.amount());
-        return new PayoutResult(true, CHANNEL_REF, null);
+        return new PayoutResult(true, true, CHANNEL_REF, null);   // 人工确认 = 终态：钱已在系统外转出
     }
 
     /**

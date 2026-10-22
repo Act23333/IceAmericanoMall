@@ -20,8 +20,8 @@ public interface WithdrawalPayoutAttemptMapper extends BaseMapper<WithdrawalPayo
      *
      * @return 行存在时返回其 id；不存在返回 null（调用方据此判"提现单不存在"）
      */
-    @Select("SELECT id FROM withdrawal WHERE id = #{withdrawalId} FOR UPDATE")
-    Long lockWithdrawal(@Param("withdrawalId") Long withdrawalId);
+    @Select("SELECT id, withdrawal_no FROM withdrawal WHERE id = #{withdrawalId} FOR UPDATE")
+    WithdrawalPO lockWithdrawal(@Param("withdrawalId") Long withdrawalId);
 
     /** 当前最大尝试序号（无尝试时为 0）。 */
     @Select("SELECT COALESCE(MAX(attempt_no), 0) FROM withdrawal_payout_attempt WHERE withdrawal_id = #{withdrawalId}")
