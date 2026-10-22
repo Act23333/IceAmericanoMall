@@ -3556,6 +3556,21 @@ pre-push 保持 **stdout**（本地交互友好、可 `tee`），CI 侧用 `tee`
 **未做**：把 `claimNewAttempt` 接进 `WithdrawalPayoutService`（涉及"`withdrawal.payout_no` 同事务派生指针 + 校验等式"，属第 4 步）。
 
 ---
+### 1.94 第 4 步-子步1 完成：`PayoutNoFactory` 接口与工厂契约用例（2026-10-19）
+
+**接口**：`domain/port/PayoutNoFactory`（`@FunctionalInterface`，`create(withdrawalNo, attemptNo)`），
+注释写死三条实现约束：**不得捕获可变状态**、**同一入参同一单号**、**不得做 I/O**（会在持锁临界区被调用）。
+
+**实现**：`PayoutNoGenerator.FACTORY` 是 **`static final` 字段而非 lambda** ——
+从形态上杜绝"捕获可变状态"，因为 ArchUnit 兜不住 lambda（捕获变量在字节节码里成为合成字段）。
+
+**用例**（全绿）：工厂与生成器结果一致；**反复调用结果不变**（纯映射，否则幂等键漂移）；
+工厂字段是 `static final`（防止被换成带状态实现）。
+
+**未做（下一步合并做）**：`PayoutResult` 加 `terminal`（五处构造点）与 `claimAndMark` 组合方法一起改 ——
+两者都是编译器可查的签名改动，合并成一次编译 + 一次回归，编译器会把漏改点全列出来。
+
+---
 ---
 
 ## 2. 待办
