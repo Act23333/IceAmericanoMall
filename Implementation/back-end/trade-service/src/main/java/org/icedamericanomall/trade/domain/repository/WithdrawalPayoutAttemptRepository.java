@@ -38,6 +38,27 @@ public interface WithdrawalPayoutAttemptRepository {
         CANCELLED
     }
 
+    /**
+     * 状态迁移白名单（**唯一**权威，仓储先校验再更新）。
+     *
+     * <p>为什么必须有：条件更新只保证"当前状态等于 from"，**不保证"这次迁移合理"** ——
+     * 单靠它会允许 `SUCCESS → REQUESTED` 这种倒退，把已到账的单子拉回"待收敛"。
+     *
+     * @return 是否允许 {@code from → to}
+     */
+    static boolean canTransit(AttemptState from, AttemptState to) {
+        if (from == null || to == null || from == to) {
+            return false;
+        }
+        return switch (from) {
+            case REQUESTED -> to == AttemptState.UNKNOWN || to == AttemptState.SUCCESS
+                    || to == AttemptState.FAILED || to == AttemptState.CANCELLED;
+            case UNKNOWN -> to == AttemptState.SUCCESS || to == AttemptState.FAILED
+                    || to == AttemptState.CANCELLED;
+            case SUCCESS, FAILED, CANCELLED -> false;   // 终态不可再迁
+        };
+    }
+
     /** 一次尝试的视图。 */
     record Attempt(Long id, Long withdrawalId, int attemptNo, String payoutNo, String channel,
                    AttemptState state, String channelRef, LocalDateTime requestedAt,

@@ -21,7 +21,8 @@ public interface PayoutNoFactory {
     /**
      * 生成单号。
      *
-     * @param withdrawalNo 提现单号（仓储在锁内取出后传入，Service 不碰）
+     * @param withdrawalNo 提现单号的**十六进制字符串形态（32 字符）**，与 {@code IdGenerator.nextId()} 一致；
+     *                     由仓储在锁内把 {@code withdrawal_no}（{@code BINARY(16)}）转换后传入，Service 不碰
      * @param attemptNo    尝试序号（锁内由 {@code max(attempt_no) + 1} 得出）
      * @return 出款单号
      */

@@ -51,9 +51,8 @@ public class WithdrawalPayoutAttemptRepositoryImpl implements WithdrawalPayoutAt
         po.setWithdrawalId(withdrawalId);
         po.setAttemptNo(nextAttemptNo);
         // 单号在锁内生成：序号只有这里知道，规则由 domain 的工厂提供（纯函数）
-        // withdrawal_no 是 BINARY(16)，转成与 IdGenerator 相同的十六进制字符串形态后交给工厂
-        String payoutNo = factory.create(java.util.HexFormat.of().formatHex(locked.getWithdrawalNo()),
-                nextAttemptNo);
+        // withdrawal_no 是 BINARY(16)；转成与 IdGenerator.nextId() 同形态的十六进制字符串后交给工厂
+        String payoutNo = factory.create(hex(locked.getWithdrawalNo()), nextAttemptNo);
         po.setPayoutNo(payoutNo);
         po.setChannel(channel);
         po.setState(AttemptState.REQUESTED.ordinal() + 1);
@@ -64,7 +63,9 @@ public class WithdrawalPayoutAttemptRepositoryImpl implements WithdrawalPayoutAt
         if (mapper.markAttemptAndPointer(withdrawalId, now, payoutNo) == 0) {
             // 0 行 = 提现单已不是 PAYING：必须抛，让上面的 attempt 插入一起回滚。
             // 不抛的话会留下「有尝试、没指针、没打标」的静默不一致，对账时无法解释。
-            throw new IllegalStateException("提现单状态已非 PAYING，指针未写入: " + withdrawalId);
+            Integer actual = mapper.selectWithdrawalStatus(withdrawalId);
+            throw new IllegalStateException("提现单状态已非 PAYING，指针未写入: " + withdrawalId
+                    + "，当前状态=" + actual + "（PAYING=4）");
         }
         return toAttempt(po);
     }
@@ -72,6 +73,10 @@ public class WithdrawalPayoutAttemptRepositoryImpl implements WithdrawalPayoutAt
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int updateState(String payoutNo, AttemptState from, AttemptState to) {
+        // 白名单先于条件更新：条件更新挡"状态已变"，白名单挡"迁移本身不合法"（如 SUCCESS→REQUESTED 倒退）
+        if (!WithdrawalPayoutAttemptRepository.canTransit(from, to)) {
+            throw new IllegalArgumentException("非法的尝试状态迁移: " + from + " → " + to);
+        }
         boolean terminal = to == AttemptState.SUCCESS || to == AttemptState.FAILED
                 || to == AttemptState.CANCELLED;
         return mapper.updateStateConditional(payoutNo, from.ordinal() + 1, to.ordinal() + 1,
@@ -83,6 +88,16 @@ public class WithdrawalPayoutAttemptRepositoryImpl implements WithdrawalPayoutAt
         return Optional.ofNullable(mapper.selectNonTerminal(withdrawalId,
                         AttemptState.REQUESTED.ordinal() + 1, AttemptState.UNKNOWN.ordinal() + 1))
                 .map(this::toAttempt);
+    }
+
+    /**
+     * BINARY(16) → 十六进制字符串（32 字符），与 {@code IdGenerator.nextId()} 同形态。
+     *
+     * <p>收敛在仓储内部：这是"工厂收到的单号是什么形态"的唯一约定点，
+     * 散落在调用处就会出现"工厂收到 16 字节、哈希出另一个号"—— 单号照样生成，但回溯对不上。
+     */
+    private static String hex(byte[] raw) {
+        return java.util.HexFormat.of().formatHex(raw);
     }
 
     private Attempt toAttempt(WithdrawalPayoutAttemptPO po) {

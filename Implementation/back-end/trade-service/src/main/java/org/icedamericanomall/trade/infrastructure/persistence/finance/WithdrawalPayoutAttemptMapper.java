@@ -54,6 +54,10 @@ public interface WithdrawalPayoutAttemptMapper extends BaseMapper<WithdrawalPayo
     int updateStateConditional(@Param("payoutNo") String payoutNo, @Param("from") int from,
                                @Param("to") int to, @Param("finishedAt") java.time.LocalDateTime finishedAt);
 
+    /** 提现单当前状态（用于把"状态已变"写进异常信息，免去值班再查一次库）。 */
+    @Select("SELECT status FROM withdrawal WHERE id = #{id}")
+    Integer selectWithdrawalStatus(@Param("id") Long id);
+
     /** 按单号查（{@code query()} 写回入口）。 */
     @Select("SELECT * FROM withdrawal_payout_attempt WHERE payout_no = #{payoutNo}")
     WithdrawalPayoutAttemptPO selectByPayoutNo(@Param("payoutNo") String payoutNo);
