@@ -3510,6 +3510,29 @@ pre-push 保持 **stdout**（本地交互友好、可 `tee`），CI 侧用 `tee`
 **不得据此实现**，落实现前须补官方原文链接。
 
 ---
+### 1.92 第 2 步完成：端口 `query()` + 未知态契约（2026-10-19）
+
+**端口新增** `query(String payoutNo)` 与 `PayoutQueryResult` / `QueryState`
+（`SUCCESS` / `FAILED` / `CANCELLED` / `UNKNOWN`）。
+
+**修正原裁决**：此前定过「resume 复用 `pay`，不另设 query」。该裁决**不足**——
+复用 `pay` 只能处理"我方没发出"，处理不了"发出了但不知道结果"；
+渠道契约里"未知"是正常状态，官方要求主动查询。`query()` 是查询兜底与对账的**共同前提**（F1-a/F1-b 都要）。
+
+**适配器实现**
+- `ManualPayoutAdapter.query` ⇒ **`UNKNOWN`**：人工渠道没有可查状态。三种做法里只有这一种对——
+  报 `SUCCESS` 会凭空断定到账，抛异常会让查询任务每次红；
+- `MockPayoutAdapter.query` ⇒ 四类映射：`REJECTED`⇒`FAILED`、`TIMEOUT`⇒**`UNKNOWN`**（超时是"不知道"）、
+  异步未到点⇒`UNKNOWN`、已冻结成功⇒`SUCCESS`。
+
+**用例（全部绿）**：人工⇒`UNKNOWN`；超时⇒`UNKNOWN`（不许报 `FAILED`）；拒绝⇒`FAILED`；
+受理⇒`SUCCESS`；异步"未到点 `UNKNOWN` → 到点 `SUCCESS`"（用可控时钟推进，不用 `sleep`）。
+
+**变异验证**：把 mock 的超时查询改成报 `FAILED` ⇒ 用例**红**（`timeoutShouldReportUnknown`）⇒ 已还原 ⇒ 复绿。
+
+**未做（留待后续子步）**：查询兜底任务本身（含"对 `MANUAL` 跳过"）尚未落 —— 本步只落端口与适配器契约。
+
+---
 ---
 
 ## 2. 待办

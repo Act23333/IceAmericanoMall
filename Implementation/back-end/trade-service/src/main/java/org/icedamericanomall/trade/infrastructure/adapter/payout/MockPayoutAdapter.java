@@ -152,6 +152,38 @@ public class MockPayoutAdapter implements WithdrawalPayoutPort {
         return new PayoutResult(true, CHANNEL_PREFIX + command.payoutNo(), null);
     }
 
+    /**
+     * 查询：按 mock 模式模拟真实渠道的四类查询结果。
+     *
+     * <p>关键映射（与真实渠道契约一致）：
+     * <ul>
+     *   <li>{@code TIMEOUT} ⇒ {@code UNKNOWN}（真实渠道里"超时"就是"不知道"，**不是失败**）；</li>
+     *   <li>{@code ASYNC_CALLBACK} 未到回调时刻 ⇒ {@code UNKNOWN}（还在处理中）；</li>
+     *   <li>{@code REJECTED} ⇒ {@code FAILED}（明确失败，可换号重发）；</li>
+     *   <li>已冻结成功终态 ⇒ {@code SUCCESS}。</li>
+     * </ul>
+     * 这条映射本身就是用例：mock 若把 TIMEOUT 报成 FAILED，"未知态不得当失败"的规矩就形同虚设。
+     */
+    @Override
+    public PayoutQueryResult query(String payoutNo) {
+        PayoutResult frozen = terminal.get(payoutNo);
+        if (frozen != null && frozen.accepted()) {
+            return new PayoutQueryResult(QueryState.SUCCESS, frozen.channelRef(), null);
+        }
+        return switch (mode) {
+            case REJECTED -> new PayoutQueryResult(QueryState.FAILED, null, "MOCK_REJECTED");
+            case TIMEOUT -> new PayoutQueryResult(QueryState.UNKNOWN, null, "MOCK_TIMEOUT");
+            case ASYNC_CALLBACK -> {
+                Instant accepted = acceptedAt.get(payoutNo);
+                boolean arrived = accepted != null && !clock.instant().isBefore(accepted.plus(callbackDelay));
+                yield arrived
+                        ? new PayoutQueryResult(QueryState.SUCCESS, CHANNEL_PREFIX + payoutNo, null)
+                        : new PayoutQueryResult(QueryState.UNKNOWN, null, "MOCK_AWAITING_CALLBACK");
+            }
+            case ACCEPTED -> new PayoutQueryResult(QueryState.SUCCESS, CHANNEL_PREFIX + payoutNo, null);
+        };
+    }
+
     /** 供测试与运维观测：已冻结的终态数（真实渠道里对应「已出款笔数」）。 */
     public int settledCount() {
         return terminal.size();

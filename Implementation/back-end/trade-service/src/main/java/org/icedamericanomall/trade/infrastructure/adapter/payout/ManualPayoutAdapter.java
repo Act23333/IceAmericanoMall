@@ -30,4 +30,17 @@ public class ManualPayoutAdapter implements WithdrawalPayoutPort {
                 command.payoutNo(), command.withdrawalId(), command.amount());
         return new PayoutResult(true, CHANNEL_REF, null);
     }
+
+    /**
+     * 人工渠道**没有可查的渠道状态** —— 必须返回 {@link QueryState#UNKNOWN}。
+     *
+     * <p>三种做法里只有这一种是对的：
+     * 返回 {@code SUCCESS} 会凭空断定资金已到账；抛异常会让查询任务每次都红；
+     * 返回 {@code UNKNOWN} 才是事实（"我不知道"），由人工录入结果收尾。
+     * 查询兜底任务对 {@code MANUAL} 直接跳过，不调用本方法（open-items §11.1）。
+     */
+    @Override
+    public PayoutQueryResult query(String payoutNo) {
+        return new PayoutQueryResult(QueryState.UNKNOWN, CHANNEL_REF, "人工渠道无可查状态");
+    }
 }
