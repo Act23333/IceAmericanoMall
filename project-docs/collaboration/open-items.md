@@ -3533,6 +3533,29 @@ pre-push 保持 **stdout**（本地交互友好、可 `tee`），CI 侧用 `tee`
 **未做（留待后续子步）**：查询兜底任务本身（含"对 `MANUAL` 跳过"）尚未落 —— 本步只落端口与适配器契约。
 
 ---
+### 1.93 第 3 步主体完成：尝试账仓储 + 真并发用例（2026-10-19）
+
+**实现**：`WithdrawalPayoutAttemptPO` / `Mapper` / `RepositoryImpl`
+（`claimNewAttempt` 锁提现单行 → 查非终态 → `FAILED` 上限 → 取 `max+1` → 插入；`updateState` 条件更新；`findActiveAttempt`）。
+四条实现约束按 §12.2 落地：锁提现单行、`@Transactional` 无自调用、撞键即抛不重试、上限收敛在此。
+
+**用例（H2 真库，全绿）**
+1. **真并发占号**：两线程 + `CyclicBarrier` 同时发起 ⇒ **恰好一次成功**（不是串行等价）；
+2. 已存在非终态 ⇒ 再占号被拒（报错含"未收敛"，不只说失败）；
+3. 撞 `UNIQUE(withdrawal_id, attempt_no)` ⇒ 抛 `DuplicateKeyException`（模拟"绕过锁"，不静默重试）；
+4. `FAILED` 达上限 ⇒ 拒绝占号；**`CANCELLED` 不计入** ⇒ 仍可占第 4 号；
+5. `updateState` 条件更新：`SUCCESS` 后不能改成 `FAILED`（返回 0）。
+
+**变异验证（去掉行锁）**：并发用例**红** —— 但红的方式值得记：
+不是"两次都成功"，而是 **`DuplicateKeyException`**。
+⇒ 说明**唯一键在兜底，锁的作用是让第二个请求被"业务拒绝"而不是"数据库报错"**。
+两者都不能省：锁给语义（可预期的拒绝），唯一键给正确性（兜底不破）。
+
+**全模块回归**：`trade-service` 全绿。
+
+**未做**：把 `claimNewAttempt` 接进 `WithdrawalPayoutService`（涉及"`withdrawal.payout_no` 同事务派生指针 + 校验等式"，属第 4 步）。
+
+---
 ---
 
 ## 2. 待办
